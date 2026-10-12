@@ -24,12 +24,12 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HostConfine, HostSpawnSpec } from "./host.ts";
+import type { HostSpawnSpec } from "./host.ts";
 import { files, readStatus, type WorkerStatus } from "./workers-dir.ts";
 import { lowerPriority } from "./priority.ts";
 
 export const HOST_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "host.ts");
-type SpawnImpl = (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv; hosted?: unknown }) => ChildProcess;
+type SpawnImpl = (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv }) => ChildProcess;
 
 export interface HostHello { hostPid: number; hostStartTime?: number; workerPid?: number; workerStartTime?: number }
 
@@ -296,8 +296,6 @@ export function hostedSpawnImpl(launch: HostLaunch): SpawnImpl {
 			v: 1, command, args, cwd: options.cwd, sock: launch.sock, outLog: f.out, statusFile: f.status, hostInfoFile: f.host, inLog: f.in,
 			...(launch.lingerMs === undefined ? {} : { lingerMs: launch.lingerMs }),
 			...(launch.orphanTtlMs === undefined ? {} : { orphanTtlMs: launch.orphanTtlMs }),
-			// A confined launch (claude-code runner.ts ClaudeHostedConfine): the host wraps it itself.
-			...(options.hosted ? { confine: options.hosted as HostConfine } : {}),
 		};
 		fs.writeFileSync(f.spawn, JSON.stringify(spec), { mode: 0o600 });
 		const transport = new HostTransport(launch.sock, { statusFile: f.status, ...launch.transport });

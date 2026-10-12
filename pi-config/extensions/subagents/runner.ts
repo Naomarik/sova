@@ -38,6 +38,7 @@ import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
 import { lowerPriority } from "./priority.ts";
 import { getPiInvocation } from "./pi-invocation.ts";
 import { LLM_STATUS_KEY, parseCounts, setChildCounts, type LlmChildReport } from "../llm-inflight/tracker.ts";
+import { claudeModel } from "../claude-code/catalog.ts";
 
 /** Pi's built-in tool names. `--tools` and `--exclude-tools` also govern extension tools, so restriction must be phrased per case. */
 export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -120,7 +121,6 @@ const DEFAULT_LIMITS: RunnerLimits = {
 	maxItemChars: 256 * 1024,
 };
 
-/** One stdio MCP server entry, in the shape Claude Code's mcp.json expects. */
 /**
  * The claude-code extension's pi provider (claude-code/provider/index.ts: CLAUDE_PROVIDER_ID and
  * CLAUDE_PROVIDER_FLAG; the literals are repeated here so this extension loads without that one).
@@ -130,6 +130,11 @@ const DEFAULT_LIMITS: RunnerLimits = {
  */
 export const CLAUDE_CODE_CLI_PROVIDER = "claude-code-cli";
 export const CLAUDE_CODE_PROVIDER_FLAG = "claude-code-provider";
+/**
+ * The provider's flag naming one more model to register (claude-code/provider/index.ts
+ * CLAUDE_MODEL_FLAG): a Claude id Sova's catalog doesn't know yet is still used.
+ */
+export const CLAUDE_CODE_MODEL_FLAG = "claude-code-model";
 /** The provider/model of a `claude-code-cli/<id>` ref, or undefined for every other model (argv as today). */
 export function rpcScopedModel(model: string | undefined): { provider: string; modelId: string } | undefined {
 	if (!model) return undefined;
@@ -154,7 +159,8 @@ function realpathOr(p: string): string {
 }
 /**
  * A pi child on a `claude-code-cli/<id>` model loads the claude-code extension (last) with
- * `--claude-code-provider`, so the provider exists when the runner sets the model over RPC.
+ * `--claude-code-provider`, so the provider exists when the runner sets the model over RPC; an id
+ * the catalog doesn't know is named with `--claude-code-model`, so the provider registers it too.
  * Every other model gets the inputs back unchanged.
  */
 export function claudeCodeProviderLoad(
@@ -162,14 +168,10 @@ export function claudeCodeProviderLoad(
 	extensions: string[],
 	flags: Record<string, string | true> | undefined,
 ): { extensions: string[]; flags: Record<string, string | true> | undefined } {
-	if (!rpcScopedModel(model)) return { extensions, flags };
-	return { extensions: [...extensions, CLAUDE_CODE_EXTENSION], flags: { ...(flags ?? {}), [CLAUDE_CODE_PROVIDER_FLAG]: true } };
-}
-
-export interface McpServerSpec {
-	command: string;
-	args: string[];
-	env?: Record<string, string>;
+	const scoped = rpcScopedModel(model);
+	if (!scoped) return { extensions, flags };
+	const unknown: Record<string, string> = claudeModel(scoped.modelId) ? {} : { [CLAUDE_CODE_MODEL_FLAG]: scoped.modelId };
+	return { extensions: [...extensions, CLAUDE_CODE_EXTENSION], flags: { ...(flags ?? {}), [CLAUDE_CODE_PROVIDER_FLAG]: true, ...unknown } };
 }
 export interface SpawnOptions {
 	backend?: string;
@@ -203,12 +205,6 @@ export interface SpawnOptions {
 	sessionDir?: string;
 	/** Pi only: `--approve`, trust the project's local files for this run (a child has no trust dialog). */
 	approve?: boolean;
-	/**
-	 * Stdio MCP servers the child should launch, keyed by server name. Backends
-	 * that run an MCP-capable CLI (claude-code) honor it; the pi runner ignores it
-	 * because Pi children get their tools through `extensions`.
-	 */
-	mcpServers?: Record<string, McpServerSpec>;
 	/** @internal Directory for the temp system-prompt file. Default os.tmpdir(). */
 	tmpDir?: string;
 	/** @internal Injection seam: replace the real spawn with a fake child. */
@@ -345,6 +341,8 @@ export class SubagentRunner implements Worker {
 	steerCount = 0;
 	/** A model kept out of argv and set over RPC once the child is ready (rpcScopedModel). */
 	private readonly rpcModel: { provider: string; modelId: string } | undefined;
+	/** The level the spawn asked for: set again once an RPC-set model is in place (begin()). */
+	private readonly requestedEffort: string | undefined;
 	unreadCount = 0;
 
 	private proc: ChildProcess | null = null;
@@ -451,6 +449,7 @@ export class SubagentRunner implements Worker {
 		this.model = options.model;
 		this.rpcModel = options.adopt ? undefined : rpcScopedModel(options.model);
 		this.effort = options.effort;
+		this.requestedEffort = options.effort;
 		this.onChange = handlers.onChange;
 		const adopt = options.adopt;
 		this.adopted = Boolean(adopt);
@@ -671,6 +670,14 @@ export class SubagentRunner implements Worker {
 			}
 			const set = res.data;
 			this.model = set?.id ? (set.provider ? `${set.provider}/${set.id}` : String(set.id)) : `${provider}/${modelId}`;
+			// A model switch takes the thinking level pi keeps for that model, and `--thinking` was
+			// clamped to the child's start-up model: the level asked for is set again on this one.
+			const effort = this.requestedEffort;
+			if (effort) {
+				const level = await this.request("set_thinking_level", { level: effort });
+				if (this.closed || this.killInitiated || this.leaderExited) return;
+				if (level?.success === true) this.effort = effort;
+			}
 			this.touch();
 		}
 		if (this.resumed) {

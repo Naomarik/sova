@@ -23,7 +23,7 @@ import { startOutreach } from "./outreach/core";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
-import { acquireChat, disposeAllChats, getModelRuntime, heldChat, heldChats, onAgentSettled, onReceiverIdle, warmClaudeCodeProvider } from "./chat-manager";
+import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, getModelRuntime, onAgentSettled, onChatEvent, onReceiverIdle, warmClaudeCodeProvider } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { LIVE_DIR } from "./paths";
@@ -72,7 +72,10 @@ process.on("uncaughtException", (err) => console.error("[uncaughtException]", er
 process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", err));
 
 const { app, autoTitleSweep, claudeAccounts, meshResync } = buildApp({
-  extensionEntriesOf: async (path) => extensionEntries(heldChat(path)?.harness.branch() ?? (await readBranch(path))),
+  extensionEntriesOf: async (path) => {
+    const held = chatHandle(path);
+    return extensionEntries(held ? await held.branch() : await readBranch(path));
+  },
 });
 
 // The build this process runs, recorded once now: commit, tracked-files dirty state and protocol
@@ -87,8 +90,9 @@ startTopicDelivery({
     if (!s) return null;
     return { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)) };
   },
-  acquire: (path) => acquireChat(path),
+  acquire: (path) => acquireChatHandle(path),
   onIdle: onReceiverIdle,
+  onChatEvent,
   onArchived: onSessionArchived,
 });
 // Outreach (§app/outreach): receipts of earlier sends find their log lines once the sender replays them.
@@ -175,7 +179,7 @@ startScheduleKeeper((path, init) => app.request(path, init));
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   liveDir: LIVE_DIR,
-  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.harness.id, cwd: c.harness.cwd })),
+  held: () => chatHandles().map((c) => ({ path: c.path, sessionId: c.mirror.sessionId, cwd: c.mirror.cwd })),
   titleOf: cachedTitleOf,
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
@@ -213,7 +217,7 @@ const attentionSignals = new AttentionSignals({
   list: listSessions,
   summary: (path) => getSessionSummary(path),
   lastReply: lastReplyOf,
-  held: (path) => !!heldChat(path),
+  held: (path) => !!chatHandle(path),
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),
   duties: teamDuties,
@@ -226,7 +230,7 @@ onAgentSettled((path) => attentionSignals.turnSettled(path));
 startSessionTags({
   list: listSessions,
   onAgentSettled,
-  held: (path) => !!heldChat(path),
+  held: (path) => !!chatHandle(path),
   provider: decisions,
   settings: decisionSettings,
   ready: () => {
@@ -240,7 +244,7 @@ onTagsChanged(() => nudgeMarks());
 // merge (§app.decisions/merge-followup) goes through the same seam, only with attention signals on.
 configureReadiness({
   followUps: new MergeFollowUps({ provider: decisions, settings: decisionSettings, ready: decisionsReady }),
-  terminal: (s) => terminalSession(s, !!heldChat(s.path)),
+  terminal: (s) => terminalSession(s, !!chatHandle(s.path)),
 });
 
 // Register the Claude Code provider now rather than when the user first opens a session, so its
@@ -285,7 +289,7 @@ async function shutdown() {
   markShutdown();
   // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
   runLedger.freeze();
-  for (const chat of heldChats()) if (chat.harness.isRunning()) chat.harness.abort().catch(() => {});
+  for (const chat of chatHandles()) if (chat.mirror.running) chat.abort().catch(() => {});
   usagePoller.stop();
   // A plateau's held-back last reading is written, so the next start knows how long it lasted.
   try {

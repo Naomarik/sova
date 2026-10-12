@@ -338,6 +338,11 @@ export interface WorkerManifest {
 	 */
 	resumedAt?: number;
 	/**
+	 * The older session a resume continued this worker from, when it could not reopen it (a Claude
+	 * Code worker that ran the CLI's own tools): its backend and transcript. Its own records stay.
+	 */
+	continuedFrom?: { backend: string; ref?: WorkerTranscriptRef };
+	/**
 	 * The minor modes the worker was given at its start (the mode extension's worker-scope ones, e.g.
 	 * `["spec"]`; `[]` for none), newest start winning: a resume records the ones it gave. Absent from
 	 * records of older writers, which then say nothing about modes.

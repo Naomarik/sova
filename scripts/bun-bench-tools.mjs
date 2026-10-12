@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Node vs Bun: cold start + run time of the spec tools, spec hooks, worker host and team MCP server,
+// Node vs Bun: cold start + run time of the spec tools and the worker host,
 // invoked with the same argv the server/extensions use (process.execPath + script + args).
 // Usage: node scripts/bun-bench-tools.mjs [--runs N] [--out DIR] [--only name,name]
 // Runs are interleaved node/bun to spread machine-load drift evenly; one warmup each is discarded.
@@ -20,23 +20,10 @@ const NODE = process.execPath;
 const BUN = process.env.BUN_BIN || path.join(execFileSync("mise", ["where", "bun@latest"], { encoding: "utf8" }).trim(), "bin", "bun");
 const runtimes = { node: NODE, bun: BUN };
 const core = path.join(root, "pi-config/extensions/spec/core");
-const hooks = path.join(root, "pi-config/extensions/claude-code/spec-hooks.ts");
 const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8" }).trim();
 const HEAD = git("rev-parse", "HEAD");
 const BASE = git("rev-parse", "HEAD~10");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sova-bun-bench-"));
-
-// Hook state seeded once (node, one turn) and copied fresh per run so every run sees the same state.
-const seed = path.join(tmp, "hook-seed");
-fs.mkdirSync(seed);
-const hookInput = (event, extra = {}) => JSON.stringify({ session_id: "bench-session", cwd: root, hook_event_name: event, ...extra });
-spawnSync(NODE, [hooks, "turn", "--core", core, "--state", seed], { input: hookInput("UserPromptSubmit", { prompt: "bench" }), cwd: root });
-const hookCase = (event, input) => ({
-	name: `hook:${event}`,
-	argv: (state) => [hooks, event, "--core", core, "--state", state],
-	stdin: input,
-	setup: () => { const d = fs.mkdtempSync(path.join(tmp, "st-")); fs.cpSync(seed, d, { recursive: true }); return d; },
-});
 
 const cases = [
 	{ name: "bare -e 0", argv: () => ["-e", "0"] },
@@ -50,11 +37,7 @@ const cases = [
 	{ name: "draft status", argv: () => [path.join(core, "sova-spec-draft.mjs"), "status", "server-runtime", "--root", root, "--json"], env: { NO_COLOR: "1" } },
 	// mode/spec-assessment.ts callAssessment
 	{ name: "assess status", argv: () => [path.join(core, "sova-spec-assess.mjs"), "status", "--owner-session", "bench-session", "--root", root, "--json"] },
-	hookCase("turn", hookInput("UserPromptSubmit", { prompt: "bench" })),
-	hookCase("pre", hookInput("PreToolUse", { tool_name: "Bash", tool_input: { command: "ls" } })),
-	hookCase("post", hookInput("PostToolUse", { tool_name: "Bash", tool_input: { command: "ls" }, tool_response: { stdout: "x", stderr: "", interrupted: false } })),
 	{ name: "worker host (to hello)", ready: hostReady },
-	{ name: "team MCP (to initialize reply)", ready: mcpReady },
 ].filter((c) => !ONLY?.length || ONLY.includes(c.name));
 
 function runOnce(c, exe) {
@@ -99,25 +82,6 @@ async function hostReady(exe) {
 	}
 	await new Promise((r) => (exited ? r() : host.once("exit", r)));
 	return { ms, exit: hello ? 0 : 1, stdout, stderr: fs.readFileSync(f("host.log"), "utf8").replace(/\d+/g, "N") };
-}
-
-// Team MCP server: a member context in a scratch team dir, one initialize request, time to the reply line.
-async function mcpReady(exe) {
-	const d = fs.mkdtempSync(path.join(tmp, "team-"));
-	const env = { ...process.env, PI_SUBAGENTS_TEAM_MEMBER: JSON.stringify({ version: 1, teamId: "team_99", teamName: "bench", workerId: "ag_01", role: "bench", orchestrator: false, dir: d }) };
-	const t0 = process.hrtime.bigint();
-	const p = spawn(exe, [path.join(root, "pi-config/extensions/subagents/member-mcp.ts")], { cwd: root, env, stdio: ["pipe", "pipe", "pipe"] });
-	let err = ""; p.stderr.on("data", (b) => { err += b; });
-	p.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "bench", version: "0" } } }) + "\n");
-	const line = await new Promise((resolve) => {
-		let buf = "";
-		p.stdout.on("data", (b) => { buf += b; const nl = buf.indexOf("\n"); if (nl >= 0) resolve(buf.slice(0, nl)); });
-		p.on("exit", () => resolve(undefined));
-	});
-	const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-	p.stdin.end();
-	await new Promise((r) => (p.exitCode !== null ? r() : p.once("exit", r)));
-	return { ms, exit: line ? 0 : 1, stdout: line ?? "", stderr: err };
 }
 
 const q = (xs, p) => { const s = [...xs].sort((a, b) => a - b); const i = (s.length - 1) * p; const lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };

@@ -1,6 +1,6 @@
 import type { BatchPromptResult, BatchRefusal, BatchRefusalCode } from "../shared/protocol";
 import { isArchived } from "./archived-sessions";
-import { acquireChat, activeConfigFailure, BusyError, ConfigError, heldChat } from "./chat-manager";
+import { acquireChatHandle, activeConfigFailure, BusyError, chatHandle, ConfigError } from "./chat-handle";
 import { readLive } from "./live";
 import { readAssignments, readGroups } from "./session-groups";
 import { idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
@@ -47,7 +47,7 @@ export interface BatchDeps {
   streaming(path: string): boolean;
   /** Another process has written this file: the held runtime saw a foreign line, or nobody holds
       it and it was written inside RECENT_WRITE_MS by a writer we can't identify. */
-  foreignWriter(path: string): boolean;
+  foreignWriter(path: string): boolean | Promise<boolean>;
   /** ACCEPT the prompt, through the same guards as a /ws/chat prompt: resolves once the turn is
       queued, never when it finishes. Rejects only for an acceptance failure. */
   accept(path: string, text: string): Promise<void>;
@@ -75,23 +75,22 @@ export const realBatchDeps: BatchDeps = {
   archived: (id) => isArchived(id),
   misconfigured: (path) => activeConfigFailure(path) !== undefined,
   streaming: (path) => {
-    const chat = heldChat(path);
-    return !!chat && chat.harness.isRunning();
+    const chat = chatHandle(path);
+    return !!chat && chat.mirror.running;
   },
-  foreignWriter: (path) => {
-    const chat = heldChat(path);
-    return chat ? chat.hasForeignWrites() : recentForeignWriteAgeSec(path) !== null;
+  foreignWriter: async (path) => {
+    const chat = chatHandle(path);
+    return chat ? await chat.checkWrites() : recentForeignWriteAgeSec(path) !== null;
   },
   async accept(path, text) {
-    const chat = await acquireChat(path);
-    // Guards throw here, synchronously, and that is the acceptance failure. The turn itself is
+    const chat = await acquireChatHandle(path);
+    // Guards refuse here, at the call, and that is the acceptance failure. The turn itself is
     // deliberately NOT awaited: its failure belongs in that member's own pane.
     // A member that is mid-turn is refused by this path's own pre-check, so this normally starts a
     // turn; if one began in the gap it is queued as a follow-up instead (origin "server"), and the
     // resolved `turn` is not a claim that it ran.
     // The user typed it, so the members' extensions see a person's input (§app.overseer/input-source).
-    const { turn } = chat.acceptPrompt(text, undefined, "server", undefined, { byPerson: true });
-    void turn.catch((err) => chat.reportTurnFailure(err));
+    await chat.send({ text, origin: "server", byPerson: true });
   },
 };
 
@@ -113,14 +112,16 @@ const refusal = (id: string, path: string, code: BatchRefusalCode, message = SEN
  * Which refusal applies to one member, or null when it can take the message. Order matters only
  * for which reason the user is shown first; each is independently true.
  */
-function check(id: string, path: string | undefined, deps: BatchDeps): BatchRefusal | null {
+function check(id: string, path: string | undefined, deps: BatchDeps): BatchRefusal | null | Promise<BatchRefusal | null> {
   if (!path) return refusal(id, "", "missing");
   if (deps.live(path)) return refusal(id, path, "tui-live");
   if (deps.archived(id)) return refusal(id, path, "archived");
   if (deps.misconfigured(path)) return refusal(id, path, "config");
   if (deps.streaming(path)) return refusal(id, path, "mid-turn");
-  if (deps.foreignWriter(path)) return refusal(id, path, "busy");
-  return null;
+  // A held chat answers by running its write guard (a command); nobody else waits a tick for it.
+  const foreign = deps.foreignWriter(path);
+  if (typeof foreign !== "boolean") return foreign.then((f) => (f ? refusal(id, path, "busy") : null));
+  return foreign ? refusal(id, path, "busy") : null;
 }
 
 /** A failure raised by the send itself, in the same vocabulary as the pre-check. */
@@ -162,7 +163,8 @@ export async function promptGroup(groupId: string, text: string, subset: string[
   const paths = await deps.paths(targets);
   const refused: BatchRefusal[] = [];
   for (const id of targets) {
-    const r = check(id, paths.get(id), deps);
+    const checked = check(id, paths.get(id), deps);
+    const r = checked instanceof Promise ? await checked : checked;
     if (r) refused.push(r);
   }
   if (refused.length > 0) return { ok: false, status: 409, refused }; // nothing sent

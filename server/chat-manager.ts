@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
+import type { ChatDialogInfo, ChatLifecycleEvent } from "../shared/chat-runtime";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
@@ -669,14 +670,7 @@ interface PendingUi {
 }
 
 /** One live-pending extension dialog of a hosted chat, as the Overseer sees it. */
-export interface PendingDialog {
-  id: string;
-  method: "select" | "confirm" | "input" | "editor";
-  title: string;
-  message?: string;
-  options?: string[];
-  since: number;
-}
+export type PendingDialog = ChatDialogInfo;
 
 /** Session events after which Sova's queue re-reads the SDK's own queue lengths. `run.settled` and
     `run.end` are here because a turn that ends with our queue non-empty must start the next one;
@@ -1539,7 +1533,7 @@ class ChatSession {
         });
       if (event.type === "run.start") {
         this.releaseLinks(true);
-        startedTurn(this.path);
+        emitChatEvent(this.path, "started");
         // The runs in flight, for resuming what a restart cuts off (§app.overseer/auto-resume).
         runLedger.started(this.path);
       }
@@ -1572,7 +1566,7 @@ class ChatSession {
           if (!this.harness.isRunning() && !this.starting) for (const m of stale) this.dropTopicMark(m);
         }, 0);
       }
-      if (event.type === "run.settled" || event.type === "compaction.end") receiverIdle(this.path);
+      if (event.type === "run.settled" || event.type === "compaction.end") emitChatEvent(this.path, "receiverIdle");
       if (event.type === "run.settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
         // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
@@ -1583,7 +1577,7 @@ class ChatSession {
           if (!this.harness.isRunning()) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
         }, 0);
       }
-      if (event.type === "run.settled") settledTurn(this.path);
+      if (event.type === "run.settled") emitChatEvent(this.path, "settled");
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -2366,6 +2360,22 @@ class ChatSession {
     return this.enterQueued(await this.stopRun(keep), since);
   }
 
+  /**
+   * Stop the reply in flight and keep every queued message, written into the transcript as its
+   * sender's (a baton session's stop-reply). A queue wake could start another run as this one
+   * settles, so it checks again, a few times at most. Returns how many it wrote.
+   */
+  async interruptKeepingQueued(): Promise<number> {
+    const since = this.leafId();
+    const kept: WebQueueItem[] = [];
+    for (let i = 0; i < 3 && (this.harness.isRunning() || this.isCompacting() || this.turnStarting); i++) {
+      // A turn that is starting (a message just handed over) can't be aborted until its run begins.
+      await this.whenStarted();
+      kept.push(...(await this.stopRun(() => true)));
+    }
+    return this.enterQueued(kept, since);
+  }
+
   /** The current leaf, the point `enterQueued` looks back to for messages the run took itself. */
   leafId(): string | null {
     return this.harness.leafId();
@@ -3077,6 +3087,7 @@ class ChatSession {
     this.pendingUi.clear();
     if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one
     this.onDisposed();
+    emitChatEvent(this.path, "closed");
     try {
       await this.host.dispose();
     } catch (err) {
@@ -3139,9 +3150,6 @@ class ChatSession {
   };
 }
 
-/** Listeners told each time a hosted chat's run settles (attention signals, tags). A registry, not
-    an import, so those modules can import the list without a cycle back into this one. */
-const settledListeners = new Set<(path: string) => void>();
 /** Where a session's `links` rows come from (§mesh.links/agents-pane): server/mesh/links.ts
     registers it through server/link-delivery.ts. Unset, no chat gets a `links` frame. */
 type LinksSource = (sessionId: string, path: string) => Promise<LinkedAgentInfo[]>;
@@ -3176,52 +3184,51 @@ export function notifyLinksChanged(sessionIds: readonly string[]): void {
   }
 }
 
-/** A hosted session started a turn (agent_start): a project's build hears it as `turn/started` (F21). */
-const startedListeners = new Set<(path: string) => void>();
-export function onAgentStarted(fn: (path: string) => void): () => void {
-  startedListeners.add(fn);
-  return () => startedListeners.delete(fn);
+/** Every chat's lifecycle events, numbered across this runtime (shared/chat-runtime.ts
+    ChatLifecycleEvent); the server hears them through server/chat-handle.ts. The newest are kept,
+    so a consumer that missed some can ask for the ones after the last seq it saw. */
+let eventSeq = 0;
+const EVENTS_KEPT = 256;
+const recentEvents: ChatLifecycleEvent[] = [];
+const eventListeners = new Set<(event: ChatLifecycleEvent) => void>();
+const LISTENER_NAME: Record<ChatLifecycleEvent["type"], string> = {
+  started: "agent_start",
+  settled: "agent_settled",
+  receiverIdle: "receiver-idle",
+  closed: "closed",
+  topicEntered: "topic-entered",
+  topicGone: "topic-gone",
+};
+/** Listeners run inside the event, each on its own: one that throws is logged and the rest still run. */
+export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void {
+  eventListeners.add(fn);
+  return () => eventListeners.delete(fn);
 }
-function startedTurn(path: string): void {
-  for (const fn of startedListeners) {
+/** The kept events with a seq above `seq`, oldest first. */
+export const chatEventsSince = (seq: number): ChatLifecycleEvent[] => recentEvents.filter((e) => e.seq > seq);
+export function emitChatEvent(chatId: string, type: ChatLifecycleEvent["type"], batch?: string): void {
+  const event: ChatLifecycleEvent = { seq: ++eventSeq, chatId, type, at: Date.now(), ...(batch ? { batch } : {}) };
+  recentEvents.push(event);
+  if (recentEvents.length > EVENTS_KEPT) recentEvents.shift();
+  for (const fn of eventListeners) {
     try {
-      fn(path);
+      fn(event);
     } catch (err) {
-      console.error("[chat] agent_start listener failed", err);
+      console.error(`[chat] ${LISTENER_NAME[type]} listener failed`, err);
     }
   }
 }
-
-const receiverIdleListeners = new Set<(path: string) => void>();
+const onEventOf = (type: ChatLifecycleEvent["type"], fn: (path: string) => void): (() => void) =>
+  onChatEvent((e) => {
+    if (e.type === type) fn(e.chatId);
+  });
+/** A hosted session started a turn (agent_start): a project's build hears it as `turn/started` (F21). */
+export const onAgentStarted = (fn: (path: string) => void): (() => void) => onEventOf("started", fn);
 /** A hosted runtime's turn settled or its compaction ended: a topic receiver may take its next
     batch (server/topic-delivery.ts). Called inside the event; listeners defer their own work. */
-export function onReceiverIdle(fn: (path: string) => void): () => void {
-  receiverIdleListeners.add(fn);
-  return () => receiverIdleListeners.delete(fn);
-}
-function receiverIdle(path: string): void {
-  for (const fn of receiverIdleListeners) {
-    try {
-      fn(path);
-    } catch (err) {
-      console.error("[chat] receiver-idle listener failed", err);
-    }
-  }
-}
-
-export function onAgentSettled(fn: (path: string) => void): () => void {
-  settledListeners.add(fn);
-  return () => settledListeners.delete(fn);
-}
-function settledTurn(path: string): void {
-  for (const fn of settledListeners) {
-    try {
-      fn(path);
-    } catch (err) {
-      console.error("[chat] agent_settled listener failed", err);
-    }
-  }
-}
+export const onReceiverIdle = (fn: (path: string) => void): (() => void) => onEventOf("receiverIdle", fn);
+/** A hosted chat's run settled (attention signals, tags). */
+export const onAgentSettled = (fn: (path: string) => void): (() => void) => onEventOf("settled", fn);
 
 /**
  * The model and thinking a new session opens on instead of the saved new-session defaults, for the

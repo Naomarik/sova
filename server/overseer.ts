@@ -30,22 +30,22 @@ import { senderAttention } from "./outreach/health";
 import { notSentAttention } from "./outreach/log";
 import { readinessChecksOf, restartItems } from "./merge-readiness";
 import {
-  acquireChat,
+  acquireChatHandle,
   BusyError,
-  type ChatSession,
-  disposeHeldChat,
-  drainQueueThenAbort,
+  type ChatHandle,
+  chatHandle,
+  chatHandleOf,
+  closeChat,
   getModelRuntime,
-  heldChat,
   isSessionBusy,
   setOverseerRuntime,
-} from "./chat-manager";
+} from "./chat-handle";
+import { heldChat } from "./chat-manager";
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
-import { mergeMode } from "./mode-state";
 import {
   DEFAULT_CAPS,
   DEFAULT_EXPLORER,
@@ -194,10 +194,10 @@ async function dropHistory(ids: string[]): Promise<void> {
     back (the `opened` hook below), so a stale mode entry on its branch never stands; a switch is
     refused (ChatSession.switchMode). A chat already normal is left untouched, so opening writes
     nothing. `strict` is Delegate's alone and is left as it is. */
-async function keepNormal(chat: ChatSession): Promise<void> {
+async function keepNormal(chat: ChatHandle): Promise<void> {
   try {
-    const s = chat.modeState;
-    if (s.mode !== "normal" || s.minorModes.length) await chat.applyMode(mergeMode(s, { mode: "normal", minorModes: [] }));
+    const s = chat.mirror.mode;
+    if (s.mode !== "normal" || s.minorModes.length) await chat.applyMode({ mode: "normal", minorModes: [] });
   } catch (err) {
     console.warn("[overseer] could not set the normal mode:", err instanceof Error ? err.message : String(err));
   }
@@ -206,7 +206,7 @@ async function keepNormal(chat: ChatSession): Promise<void> {
 /** A brand-new file (creation, /clear): open it, which makes it normal. */
 async function normalMode(path: string): Promise<void> {
   try {
-    await keepNormal(await acquireChat(path));
+    await keepNormal(await acquireChatHandle(path));
   } catch (err) {
     console.warn("[overseer] could not set the normal mode:", err instanceof Error ? err.message : String(err));
   }
@@ -245,9 +245,9 @@ export async function clearOverseer(): Promise<OverseerInfo> {
   const old = oldPath ? await overseerEntries() : null;
   const carried = old && st ? carriedRules(old.branch, old.all, st.current) : [];
   if (oldPath) {
-    const chat = heldChat(oldPath);
-    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
-    await disposeHeldChat(oldPath, "The Overseer was cleared. Opening the new conversation.");
+    const chat = chatHandle(oldPath);
+    if (chat?.mirror.running) await chat.drainAndAbort().catch(() => {});
+    await closeChat(oldPath, "The Overseer was cleared. Opening the new conversation.");
   }
   limits.reset();
   turns.reset();
@@ -339,12 +339,12 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     // Proposed verb playbook runs (§app.project-runtime/review), by their session file.
     const reviews = playbookReviews();
     const rows: AttentionRow[] = sessions.map((s) => {
-      const chat = heldChat(s.path);
+      const chat = chatHandle(s.path)?.mirror;
       const live = byPath.get(s.path);
       return {
         summary: s,
-        dialogs: chat ? chat.pendingDialogs().map((d) => d.title || d.method) : [],
-        queued: chat ? chat.queue.size : 0,
+        dialogs: chat ? chat.dialogs.map((d) => d.title || d.method) : [],
+        queued: chat ? chat.queue.web : 0,
         failedWorkers: live?.failed ?? 0,
         workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
         viewing: isViewing(s.id),
@@ -429,28 +429,28 @@ async function applySettingsNow(): Promise<void> {
   if (!pendingApply) return;
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
+  const chat = path ? chatHandle(path) : undefined;
   if (!chat) {
     pendingApply = false; // the next open syncs from the file (chat-manager syncOverseerModel)
     return;
   }
-  if (chat.harness.isRunning()) return;
+  if (chat.mirror.running) return;
   pendingApply = false;
   // A conversation that has written no model or thinking yet (nothing sent): reopen it rather than
   // switch it. A switch would first flush the open-time pi-default model/thinking entries and then
   // record the new model — three info rows before the first message. A reopen seeds the runtime
   // from overseer.json directly (chat-manager createRuntime), so the file only ever records the
   // chosen model, at the first prompt. Open tabs get "reloaded" and reconnect.
-  const untouched = !chat.harness.entries().some(sentOrSet);
+  const untouched = !(await chat.entries()).some(sentOrSet);
   if (untouched) {
-    await disposeHeldChat(chat.path, "The Overseer's model changed; reopening it.");
+    await closeChat(chat.path, "The Overseer's model changed; reopening it.");
     return;
   }
   const s = readOverseerSettings();
-  const cur = chat.harness.model()?.ref ?? null;
+  const cur = chat.mirror.model?.ref ?? null;
   try {
-    if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-    if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
+    if (s.model && s.model !== cur) await chat.setModel(s.model);
+    if (s.thinking && s.thinking !== chat.mirror.thinking) await chat.setThinking(s.thinking);
   } catch (err) {
     console.warn("[overseer] applying settings failed:", err instanceof Error ? err.message : String(err));
   }
@@ -556,27 +556,27 @@ const host: OverseerToolHost = {
   insight: (path) => getSessionInsight(path),
   checks: (path) => readinessChecksOf(path),
   held(path) {
-    const chat = heldChat(path);
+    const chat = chatHandle(path)?.mirror;
     if (!chat) return null;
-    return { streaming: chat.harness.isRunning(), queued: chat.queue.size, dialogs: chat.pendingDialogs() };
+    return { streaming: chat.running, queued: chat.queue.web, dialogs: chat.dialogs };
   },
   answerDialog(path, dialogId, value, answer) {
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) throw new Error("That session isn't open on this server, so it has no dialog waiting here.");
-    chat.answerDialog(dialogId, value, answer, host.overseerId());
+    return chat.answerDialog(dialogId, value, answer, host.overseerId());
   },
   open: async (path) => {
-    await acquireChat(path);
+    await acquireChatHandle(path);
   },
   setModel: async (path, ref) => {
-    const chat = await acquireChat(path);
-    await chat.setModelRef(ref);
+    const chat = await acquireChatHandle(path);
+    await chat.setModel(ref);
   },
-  setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
+  setThinking: async (path, level) => (await acquireChatHandle(path)).setThinking(level),
   pinMode: async (path) => {
-    if (!(await acquireChat(path)).pinMode()) throw new Error("its mode entry could not be written");
+    if (!(await (await acquireChatHandle(path)).pinMode())) throw new Error("its mode entry could not be written");
   },
-  sandbox: async (path) => (await acquireChat(path)).sandboxInfo(),
+  sandbox: async (path) => (await acquireChatHandle(path)).sandboxInfo(),
   // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
   sandboxDefault: () => {
     const f = loadPolicyFile(policyFilePath(agentRoot()));
@@ -709,8 +709,8 @@ async function overseerEntries(): Promise<{ path: string; branch: readonly HEntr
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return null;
-  const chat = heldChat(path);
-  if (chat) return { path, branch: chat.harness.branch(), all: chat.harness.entries() };
+  const chat = chatHandle(path);
+  if (chat) return { path, branch: await chat.branch(), all: await chat.entries() };
   const { entries } = parsePi(await readFile(path, "utf8").catch(() => ""));
   return { path, branch: branchOf(entries), all: entries };
 }
@@ -730,8 +730,8 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
   const p = e ? foldPermits(e.branch, e.all, Date.now()).find((x) => x.id === id) : undefined;
   if (!e || !p) return { ok: false, status: 404, error: `No approval or rule ${id} in the current Overseer conversation.` };
   if (p.status !== "live") return { ok: false, status: 409, error: `${id} has already ${p.status === "expired" ? "expired" : "been revoked"}.` };
-  const chat = await acquireChat(e.path);
-  chat.harness.state.append(REVOKE, { v: 1, id, at: new Date().toISOString(), by: "user" });
+  const chat = await acquireChatHandle(e.path);
+  await chat.appendState(REVOKE, { v: 1, id, at: new Date().toISOString(), by: "user" });
   return { ok: true };
 }
 
@@ -1062,7 +1062,7 @@ setOverseerRuntime({
   saveChoice(patch) {
     patchOverseerSettings(patch);
   },
-  opened: keepNormal,
+  opened: (chat) => keepNormal(chatHandleOf(chat)),
   // The user's message goes to the SDK through userSend; the run becomes theirs (and the caps
   // renew) when the message that call produced enters the context. Every run starts unattended, and
   // a brief, a wake-up or an extension's message never goes through it: read-only, on the same budget.
@@ -1188,18 +1188,16 @@ async function tick(): Promise<void> {
   if (!path) return;
   // The user looked at the Overseer since the last brief: the unattended run starts over.
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
-  const chat = heldChat(path);
-  const idle = !chat || (!chat.harness.isRunning() && chat.queue.size === 0);
+  const chat = chatHandle(path)?.mirror;
+  const idle = !chat || (!chat.running && chat.queue.web === 0);
   const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
   const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
   announced = d.announced;
   if (!d.brief.length) return;
   const text = briefText(act.filter((i) => d.brief.includes(blockerKey(i))));
   try {
-    const overseer = await acquireChat(path);
-    overseer.assertModelAllowed();
-    const { turn } = overseer.acceptPrompt(text, undefined, "server");
-    void turn.catch((err) => overseer.reportTurnFailure(err));
+    const overseer = await acquireChatHandle(path);
+    await overseer.send({ text, origin: "server", checkModel: true });
     lastBriefAt = Date.now();
     unattended++;
   } catch (err) {
@@ -1213,10 +1211,8 @@ async function sendBrief(body: string): Promise<void> {
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return;
-  const overseer = await acquireChat(path);
-  overseer.assertModelAllowed();
-  const { turn } = overseer.acceptPrompt(serverRedactor().redact(`${OVERSEER_BRIEF_PREFIX} ${body}`), undefined, "server");
-  void turn.catch((err) => overseer.reportTurnFailure(err));
+  const overseer = await acquireChatHandle(path);
+  await overseer.send({ text: serverRedactor().redact(`${OVERSEER_BRIEF_PREFIX} ${body}`), origin: "server", checkModel: true });
   lastBriefAt = Date.now();
 }
 

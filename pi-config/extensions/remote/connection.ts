@@ -5,15 +5,14 @@
  * rate-limit backoff) in one place.
  *
  * This is index.ts's `Remote` minus everything local: no cwd, no path mapping, no pi tool
- * operations. `Remote extends Connection` adds those; remote/mcp-server.ts (the workers' MCP server)
- * uses Connection directly, which is why this file must stay:
+ * operations. `Remote extends Connection` adds those. This file stays:
  *  - pi-runtime-free — node builtins, argv.ts, exec.ts and channel.ts only, NEVER
  *    @earendil-works/pi-coding-agent (hence `agentDir` as a dep instead of pi's `getAgentDir()`);
  *  - loadable by `node <file>.ts` (strip-only type stripping), like channel.ts: no parameter
  *    properties, enums or namespaces.
  *
  * The far working directory is given once, by the caller (`farCwd`): the extension derives it from
- * the session's local cwd (the placeholder), a worker's MCP server gets it in its identity.
+ * the session's local cwd (the placeholder).
  */
 import { homedir } from "node:os";
 import { join } from "node:path";

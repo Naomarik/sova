@@ -7,12 +7,12 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, LLM_INFLIGHT_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, LLM_INFLIGHT_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
+import { claudeOffer } from "../claude-code/catalog.ts";
 import { placeholderDir } from "../remote/argv.ts";
-import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
+import { REMOTE_SESSION_EVENT } from "../remote/workers.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
-import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
 /** The retired worker-ledger variable: no worker is given it now. */
 const LEDGER_ENV = "SOVA_SPEC_LEDGER";
 import { workerSpecBrief } from "./spec-brief.ts";
@@ -152,7 +152,7 @@ function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 function fakeBackend(created: any[]): BackendRegistration {
 	return {
 		version: 1,
-		id: "claude-code",
+		id: "native-cli",
 		validate(spec) {
 			if (spec.fork || spec.extensions !== undefined || spec.agentType !== undefined) throw new Error("Unsupported Claude option");
 			if (spec.model === "invalid") throw new Error("Invalid Claude model");
@@ -356,12 +356,12 @@ test("worker snapshots include Claude and do not depend on working UI methods", 
 	try {
 		await h.call("agent_spawn", { agents: [
 			{ prompt: "Pi background task", wake: false },
-			{ prompt: "Claude background task", backend: "claude-code", wake: false },
+			{ prompt: "Claude background task", backend: "native-cli", wake: false },
 		] });
 		assert.equal(snapshots.at(-1).workers.length, 2);
 		assert.equal(snapshots.at(-1).workers[1].model, "claude-sonnet-5-5");
 		assert.equal(snapshots.at(-1).workers[1].preview, "Claude result");
-		assert.equal(snapshots.at(-1).workers[1].backend, "claude-code");
+		assert.equal(snapshots.at(-1).workers[1].backend, "native-cli");
 		assert.equal(snapshots.at(-1).workers[0].backend, "pi");
 		created[0].settle();
 		await new Promise(resolve => setTimeout(resolve, 150));
@@ -382,7 +382,7 @@ test("worker snapshots never publish an uncommitted failed spawn batch", async (
 	const snapshots: any[] = [];
 	const off = h.bus.on("subagents:workers-snapshot", data => snapshots.push(data));
 	try {
-		await assert.rejects(h.call("agent_spawn", { prompt: "task", backend: "claude-code", count: 2 }), /factory failed/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "task", backend: "native-cli", count: 2 }), /factory failed/);
 		h.bus.emit("subagents:workers-request", { version: 1 });
 		assert.ok(snapshots.length);
 		assert.ok(snapshots.every(snapshot => snapshot.workers.length === 0));
@@ -400,13 +400,15 @@ test("agent_models discovers active Pi and native backend models with explicit e
 		assert.equal(pi.details.models[0].id, "ollama-cloud/deepseek-v4.1-flash");
 		assert.equal(cliCalls, 0);
 		const all = await h.call("agent_models", {});
-		assert.equal(all.details.models.length, 2);
-		assert.equal(all.details.models.find((m: any) => m.backend === "claude-code").efforts[0], "low");
+		assert.equal(all.details.models.length, 2 + claudeOffer().length, "pi, the registered backend, and claude-code's catalog");
+		assert.equal(all.details.models.find((m: any) => m.backend === "native-cli").efforts[0], "low");
+		assert.deepEqual(all.details.models.filter((m: any) => m.backend === "claude-code").map((m: any) => m.id).sort(), claudeOffer().map((m) => m.id).sort());
+		assert.ok(all.details.backends.includes("claude-code"));
 		assert.equal(cliCalls, 1);
 		assert.equal((await h.call("agent_models", { backend: "missing" })).details.errors[0].backend, "missing");
 		const limited = await h.call("agent_models", { limit: 1 });
 		assert.equal(limited.details.models.length, 1);
-		assert.equal(limited.details.totalMatches, 2);
+		assert.equal(limited.details.totalMatches, 2 + claudeOffer().length);
 	} finally { await h.close(); }
 });
 
@@ -433,41 +435,53 @@ test("/subagents and /agents only open the monitor: arguments are ignored, no mo
 	} finally { await h.close(); }
 });
 
-test("team_create against the real Claude backend rejects an oversized composed prompt before any worker starts", async () => {
+test("a claude-code team member is a pi worker on the Claude Code provider: its model, effort, tools and the member extension", async () => {
 	const h = harness();
-	const claudePi = {
-		events: h.bus,
-		registerTool: (_t: any) => {},
-		on: (e: string, f: any) => (e === "session_shutdown" ? (() => { (h.shutdownHooks ??= []).push(f); return f; })() : (() => {})()),
-		registerCommand: (_n: string, _c: any) => {},
-		registerShortcut() {},
-		appendEntry: () => {},
-		getActiveTools: () => [],
-		sendMessage: () => {},
-		sendUserMessage: () => {},
-		registerFlag: () => {},
-		getFlag: () => undefined,
-	};
-	const { registerClaudeCode } = await import("../claude-code/index.ts");
-	const { MAX_CLAUDE_INPUT_CHARS } = await import("../claude-code/runner.ts");
-	registerClaudeCode(claudePi as any);
 	try {
-		await assert.rejects(
-			h.call("team_create", {
-				name: "oversized",
-				objective: "Validate header composition reaches the real length limit",
-				defaults: { backend: "claude-code" },
-				members: [{ role: "builder", prompt: "x".repeat(MAX_CLAUDE_INPUT_CHARS), tools: [] }],
-			}),
-			/Claude prompt is \d+ characters/,
-		);
-		const listed = await h.call("team_list");
-		assert.equal(listed.details.teams.length, 0);
-		assert.equal(h.workers.length, 0);
-	} finally {
-		for (const f of h.shutdownHooks ?? []) await f({}, h.ctx);
-		await h.close();
-	}
+		await h.call("team_create", {
+			name: "claude",
+			objective: "Claude members run on Sova's tools",
+			defaults: { backend: "claude-code" },
+			members: [{ role: "builder", prompt: "build", tools: ["Read", "Glob", "bash"], effort: "xhigh" }],
+		});
+		const w = h.workers[0];
+		assert.equal(w.backend, "pi");
+		assert.equal(w.model, "claude-code-cli/claude-sonnet-5-5");
+		assert.equal(w.effort, "xhigh");
+		assert.deepEqual(w.tools, ["read", "find", "bash"]);
+		assert.ok(w.extensions.includes(MEMBER_EXTENSION));
+		assert.ok(w.extensions.includes(CLAUDE_CODE_EXTENSION));
+		assert.equal(w.flags[CLAUDE_CODE_PROVIDER_FLAG], true);
+		assert.ok(decodeMemberContext(w.env?.[MEMBER_ENV]), "the member identity rides the pi worker's env");
+		assert.equal(w.mcpServers, undefined);
+	} finally { await h.close(); }
+});
+
+test("claude-code spawns: catalog ids, Claude tool names, effort and backendOptions map onto the pi worker, or are refused with the reason", async () => {
+	const h = harness();
+	try {
+		h.ctx.modelRegistry.find = () => undefined; // the child registers the provider itself
+		await h.call("agent_spawn", { prompt: "old id", backend: "claude-code", model: "opus[1m]", wake: false });
+		assert.equal(h.workers[0].model, "claude-code-cli/claude-opus-5-5", "an old id runs as its catalog id");
+		assert.equal(h.workers[0].effort, "medium");
+		assert.deepEqual(h.workers[0].tools, ["read", "bash", "edit", "write", "grep", "find", "ls"]);
+		await h.call("agent_spawn", { prompt: "plan", backend: "claude-code", backendOptions: { permissionMode: "plan" }, wake: false });
+		assert.deepEqual(h.workers[1].tools, ["read", "grep", "find", "ls"]);
+		await h.call("agent_spawn", { prompt: "unknown", backend: "claude-code", model: "claude-opus-6", wake: false });
+		assert.equal(h.workers[2].model, "claude-code-cli/claude-opus-6");
+		assert.equal(h.workers[2].flags["claude-code-model"], "claude-opus-6", "an id the catalog doesn't know is registered by the child");
+		const r = await h.call("agent_spawn", { prompt: "unknown again", backend: "claude-code", model: "claude-opus-6", wake: false });
+		assert.match(r.content[0].text, /Not verified: claude-opus-6 is not in Sova's Claude catalog\. It will still be used\./);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", tools: ["WebFetch"] }), /Claude workers run on Sova's tools: .*"WebFetch" has no equivalent/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", backendOptions: { permissionMode: "manual" } }), /permissionMode manual is not supported/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", backendOptions: { maxBudgetUsd: 1 } }), /maxBudgetUsd is not supported/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", backendOptions: { allowedTools: ["Bash(git:*)"] } }), /allowedTools is not supported/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", effort: "minimal" }), /Claude effort must be low, medium, high, xhigh, or max/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", model: "zai/glm-5.3" }), /Claude model must be a Claude model ID/);
+		assert.equal(h.workers.length, 4, "a refused spec starts nothing");
+		const listed = await h.call("agent_list");
+		assert.equal(listed.details.agents[0].backend, "pi");
+	} finally { await h.close(); }
 });
 
 for (const order of ["backend-first", "host-first"] as const) {
@@ -482,18 +496,18 @@ for (const order of ["backend-first", "host-first"] as const) {
 		try {
 			h.ctx.modelRegistry.find = () => { throw new Error("Pi registry must not be consulted"); };
 			await h.start();
-			const r = await h.call("agent_spawn", { prompt: "task", backend: "claude-code", backendOptions: { permissionMode: "plan" } });
+			const r = await h.call("agent_spawn", { prompt: "task", backend: "native-cli", backendOptions: { permissionMode: "plan" } });
 			assert.equal(h.workers.length, 0);
 			assert.equal(created.length, 1);
 			assert.equal(created[0].model, "claude-sonnet-5-5");
 			assert.equal(created[0].effort, undefined);
 			assert.equal(created[0].tools, undefined);
 			assert.equal(created[0].backendOptions.permissionMode, "plan");
-			assert.equal(r.details.spawned[0].backend, "claude-code");
+			assert.equal(r.details.spawned[0].backend, "native-cli");
 			created[0].settle();
 			assert.equal(h.messages.length, 1);
 			const listed = await h.call("agent_list");
-			assert.equal(listed.details.agents[0].backend, "claude-code");
+			assert.equal(listed.details.agents[0].backend, "native-cli");
 			const signal = new AbortController().signal;
 			await h.call("agent_steer", { id: "ag_01", message: "next", mode: "followUp" }, signal);
 			assert.deepEqual(created[0].lastSteer, { message: "next", signal, mode: "followUp" });
@@ -689,17 +703,17 @@ test("backend validation is atomic across mixed batches and fails closed without
 	const h = harness();
 	const created: any[] = [];
 	try {
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code" }), /unavailable backend/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli" }), /unavailable backend/);
 		h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), version: 2 });
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code" }), /unavailable backend/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli" }), /unavailable backend/);
 		h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code", model: "invalid" }] }), /Invalid Claude model/);
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "claude", backend: "claude-code" }, { prompt: "pi", model: "missing/model" }] }), /Unknown model/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli", model: "invalid" }] }), /Invalid Claude model/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "claude", backend: "native-cli" }, { prompt: "pi", model: "missing/model" }] }), /Unknown model/);
 		assert.equal(h.workers.length, 0); assert.equal(created.length, 0);
 		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], backend: "pi" }), /Shorthand/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", backendOptions: {} }), /not supported/);
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", fork: true }), /Unsupported/);
-		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code", model: "claude-opus-5-5" }] });
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli", fork: true }), /Unsupported/);
+		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli", model: "claude-opus-5-5" }] });
 		assert.equal(h.workers.length, 1); assert.equal(created.length, 1);
 	} finally { await h.close(); }
 });
@@ -710,17 +724,15 @@ test("model policy disables providers and models for spawns, teams and discovery
 	const writePolicy = (providers: string[], models: string[]) =>
 		fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: providers, disabledModels: models }));
 	const h = harness(eventBus(), { policyFile });
-	const created: any[] = [];
 	h.ctx.modelRegistry.getAvailable = () => [
 		{ provider: "test", id: "model", name: "Test Model" },
 		{ provider: "zai", id: "glm-5.3", name: "GLM" },
 	];
-	const backend = { ...fakeBackend(created), listModels: async () => [{ id: "claude-sonnet-5-5", name: "Sonnet" }, { id: "claude-opus-5-5", name: "Opus" }] };
-	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
+	const catalog = claudeOffer().map((m) => m.id);
 	try {
 		// No policy file yet: everything is spawnable and discoverable.
 		let models = await h.call("agent_models", {});
-		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["claude-opus-5-5", "claude-sonnet-5-5", "test/model", "zai/glm-5.3"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), [...catalog, "test/model", "zai/glm-5.3"].sort());
 		await h.call("agent_spawn", { prompt: "control", wake: false });
 		assert.equal(h.workers.length, 1);
 
@@ -733,7 +745,7 @@ test("model policy disables providers and models for spawns, teams and discovery
 		writePolicy(["zai"], []);
 		await assert.rejects(h.call("agent_spawn", { prompt: "provider gone", model: "zai/glm-5.3", wake: false }), /Provider zai is disabled/);
 		models = await h.call("agent_models", {});
-		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["claude-opus-5-5", "claude-sonnet-5-5", "test/model"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), [...catalog, "test/model"].sort());
 
 		// Backend-level rules: a disabled backend id rejects model-less specs (their default is
 		// still that provider's model) and explicit ones; single backend models can be disabled
@@ -744,8 +756,9 @@ test("model policy disables providers and models for spawns, teams and discovery
 		writePolicy([], ["claude-code/claude-opus-5-5"]);
 		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Claude-Opus-5-5", wake: false }), /claude-opus-5-5 is disabled/i, "the policy matches whatever the case; the catalog id runs");
 		await h.call("agent_spawn", { prompt: "sonnet stays", backend: "claude-code", model: "claude-sonnet-5-5", wake: false });
+		assert.equal(h.workers.at(-1).model, "claude-code-cli/claude-sonnet-5-5");
 		models = await h.call("agent_models", { backend: "claude-code" });
-		assert.deepEqual(models.details.models.map((m: any) => m.id), ["claude-sonnet-5-5"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), catalog.filter((id) => id !== "claude-opus-5-5").sort());
 
 		// The team path shares spawnBatch, so a disabled member model is rejected there too.
 		writePolicy([], ["claude-code/claude-sonnet-5-5"]);
@@ -755,8 +768,7 @@ test("model policy disables providers and models for spawns, teams and discovery
 		);
 
 		// Nothing but the two allowed controls ever started.
-		assert.equal(h.workers.length, 1);
-		assert.equal(created.length, 1);
+		assert.equal(h.workers.length, 2);
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 		await h.close();
@@ -883,8 +895,8 @@ test("backend prepare receives the same resolved cwd as its worker", async () =>
 	backend.prepare = (spec) => { preparedCwds.push(spec.cwd!); return {}; };
 	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
 	try {
-		await h.call("agent_spawn", { prompt: "task", backend: "claude-code", cwd: "extensions" });
-		await h.call("agent_spawn", { prompt: "task", backend: "claude-code" });
+		await h.call("agent_spawn", { prompt: "task", backend: "native-cli", cwd: "extensions" });
+		await h.call("agent_spawn", { prompt: "task", backend: "native-cli" });
 		assert.deepEqual(preparedCwds, [path.resolve(h.ctx.cwd, "extensions"), h.ctx.cwd]);
 		assert.deepEqual(created.map(w => w.cwd), preparedCwds);
 	} finally { await h.close(); }
@@ -1365,7 +1377,7 @@ test("exit-only completion prunes finished workers and failed factories leave no
 	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
 	try {
 		for (let i = 0; i < 55; i++) {
-			await assert.rejects(h.call("agent_spawn", { prompt: "bad", backend: "claude-code" }), /factory failed/);
+			await assert.rejects(h.call("agent_spawn", { prompt: "bad", backend: "native-cli" }), /factory failed/);
 			await h.call("agent_spawn", { prompt: "task" });
 			h.workers.at(-1).exit();
 		}
@@ -1474,7 +1486,7 @@ test("backend registration cannot replace Pi or hijack another backend", async (
 		h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(second), id: "pi" });
 		h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(first));
 		h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(second));
-		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code" }] });
+		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli" }] });
 		assert.equal(h.workers.length, 1); assert.equal(first.length, 1); assert.equal(second.length, 0);
 	} finally { await h.close(); }
 });
@@ -1960,7 +1972,7 @@ test("team_create composes headers before backend validation, commits membership
 		const r = await h.call("team_create", {
 			name: "Alpha",
 			objective: "Ship the thing",
-			defaults: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
+			defaults: { backend: "native-cli", model: "claude-opus-5-5", effort: "high" },
 			members: [
 				{ role: "builder", prompt: "Implement it.", ownedPaths: ["src/api"] },
 				{ role: "reviewer", prompt: "Review it.", backend: "pi", wake: false },
@@ -1969,7 +1981,7 @@ test("team_create composes headers before backend validation, commits membership
 		assert.equal(r.details.teamId, "team_01");
 		assert.equal(r.details.groupId, "run_01");
 		assert.deepEqual(r.details.members, [
-			{ workerId: "ag_01", role: "builder", backend: "claude-code", model: "claude-opus-5-5" },
+			{ workerId: "ag_01", role: "builder", backend: "native-cli", model: "claude-opus-5-5" },
 			{ workerId: "ag_02", role: "reviewer", backend: "pi", model: "test/model" },
 		]);
 		assert.match(r.content[0].text, /Created team_01 \(Alpha\) with 2 member\(s\) in run_01/);
@@ -2011,7 +2023,7 @@ test("team_create composes headers before backend validation, commits membership
 		);
 		assert.deepEqual(
 			teamEntries[0].data.members.map((m: any) => [m.workerId, m.role, m.backend, m.model, m.groupId, m.ownedPaths]),
-			[["ag_01", "builder", "claude-code", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
+			[["ag_01", "builder", "native-cli", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
 		);
 		assert.equal(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") > -1, true);
 		assert.ok(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") < h.appended.indexOf(teamEntries[0]));
@@ -2052,7 +2064,7 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 		// Backend validation rejects before any factory runs (pi and claude mixed).
 		await assert.rejects(h.call("team_create", {
 			name: "Mixed", objective: "o",
-			members: [{ role: "one", prompt: "a", backend: "claude-code" }, { role: "two", prompt: "b", model: "missing/model" }],
+			members: [{ role: "one", prompt: "a", backend: "native-cli" }, { role: "two", prompt: "b", model: "missing/model" }],
 		}), /Unknown model/);
 		assert.equal(h.workers.length, 0);
 		assert.equal(created.length, 0);
@@ -2060,7 +2072,7 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 		// no team, no entry, no group; the created worker is confirmed terminated.
 		await assert.rejects(h.call("team_create", {
 			name: "Doomed", objective: "o",
-			defaults: { backend: "claude-code" },
+			defaults: { backend: "native-cli" },
 			members: [{ role: "one", prompt: "a" }, { role: "two", prompt: "b" }],
 		}), /factory failed for second member/);
 		assert.equal(created.length, 1);
@@ -2093,14 +2105,14 @@ test("team_add extends a session team in another run, reuses defaults and persis
 	try {
 		await h.call("team_create", {
 			name: "Core", objective: "obj",
-			defaults: { backend: "claude-code", model: "claude-opus-5-5" },
+			defaults: { backend: "native-cli", model: "claude-opus-5-5" },
 			members: [{ role: "lead", prompt: "start" }],
 		});
 		const add = await h.call("team_add", { team: "core", members: [{ role: "docs", prompt: "write docs", ownedPaths: ["docs/"] }] });
 		assert.equal(add.details.teamId, "team_01");
 		assert.equal(add.details.groupId, "run_02", "teams span independent run groups");
 		assert.match(add.content[0].text, /Added 1 member\(s\) to team_01 \(Core\) in run_02/);
-		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "claude-code", model: "claude-opus-5-5" }]);
+		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "native-cli", model: "claude-opus-5-5" }]);
 		// The joiner's header lists the create-time roster; existing members are never rewritten.
 		assert.match(created[1].task, /Other members when you joined:\n- lead: none declared/);
 		assert.match(created[1].task, /Your declared ownership: docs\//);
@@ -2115,8 +2127,8 @@ test("team_add extends a session team in another run, reuses defaults and persis
 		await assert.rejects(h.call("team_add", { team: "team_09", members: [{ role: "x", prompt: "p" }] }), /No such team: team_09/);
 		const list = await h.call("team_list", { team: "team_01" });
 		assert.match(list.content[0].text, /team_01 — Core \[this session\] · 2 working/);
-		assert.match(list.content[0].text, /ag_01 lead \[claude-code\] working \(running\) · context — · owns: none declared/);
-		assert.match(list.content[0].text, /ag_02 docs \[claude-code\] working \(running\) · context — · owns: docs\//);
+		assert.match(list.content[0].text, /ag_01 lead \[native-cli\] working \(running\) · context — · owns: none declared/);
+		assert.match(list.content[0].text, /ag_02 docs \[native-cli\] working \(running\) · context — · owns: docs\//);
 		assert.deepEqual(list.details.teams.map((t: any) => t.id), ["team_01"]);
 	} finally { await h.close(); }
 });
@@ -2425,7 +2437,7 @@ function teamHarness() {
 	return { ...h, root, memberOf, ask, cleanup: async () => { await h.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
 
-test("team members get a parent-issued identity, private mailbox and only the member extension; Claude members get the tools through an MCP server", async () => {
+test("team members get a parent-issued identity, private mailbox and only the member extension; Claude members are pi workers with the same tools", async () => {
 	const h = teamHarness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -2455,17 +2467,18 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		assert.equal(me.dir, path.join(h.root, "team_01", "ag_01"));
 		assert.ok(fs.statSync(memberPaths(me.dir).requests).isDirectory() && fs.statSync(memberPaths(me.dir).responses).isDirectory());
 		assert.equal(h.memberOf("ag_02")!.orchestrator, false);
-		// The Claude worker's own environment never carries the identity; the MCP server's does.
-		assert.equal(created[0].env, undefined, "the CLI process gets no identity");
-		assert.equal(created[0].extensions.length, 0);
-		const server = created[0].mcpServers.team;
-		assert.deepEqual([server.command, server.args], [process.execPath, [MEMBER_MCP]]);
-		const writer = decodeMemberContext(server.env[MEMBER_ENV])!;
+		// A Claude member is a pi worker on the Claude Code provider: the member extension, the identity in its env.
+		assert.equal(created.length, 0, "no native Claude process");
+		const claude = h.workers.find((w: any) => w.id === "ag_03");
+		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.equal(claude.mcpServers, undefined);
+		const writer = h.memberOf("ag_03")!;
 		assert.deepEqual({ ...writer, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_03", role: "writer", orchestrator: false, dir: undefined });
 		assert.equal(writer.dir, path.join(h.root, "team_01", "ag_03"));
 		assert.ok(fs.statSync(memberPaths(writer.dir).requests).isDirectory(), "a Claude member has a mailbox too");
-		assert.match(created[0].task, /call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask; .*\nTeam tools: team_msg/);
-		assert.doesNotMatch(created[0].task, /no tool to reply/);
+		assert.match(claude.task, /Team tools: team_msg/);
+		assert.doesNotMatch(claude.task, /mcp__team__|no tool to reply/);
 		assert.match(dev.task, /Team tools: team_msg/);
 		assert.equal(dev.mcpServers, undefined, "pi members load member.ts instead");
 		// Persisted with the flag; team_list marks the orchestrator.
@@ -2484,12 +2497,12 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "test" }] });
 		assert.equal(h.memberOf("ag_05")!.role, "qa");
 		assert.match(h.workers.find((w: any) => w.id === "ag_05").task, /- lead \(orchestrator\): none declared/);
-		// A Claude orchestrator is accepted; its MCP identity carries the flag and its header names the sibling powers with the prefix.
+		// A Claude orchestrator is accepted; its identity carries the flag and its header names the sibling powers.
 		await h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "claude-code" }] });
-		const boss = decodeMemberContext(created.at(-1).mcpServers.team.env[MEMBER_ENV])!;
+		const boss = h.memberOf("ag_06")!;
 		assert.deepEqual([boss.workerId, boss.role, boss.orchestrator], ["ag_06", "boss", true]);
-		assert.match(created.at(-1).task, /call them as mcp__team__team_roster, mcp__team__team_steer, mcp__team__team_msg, .*\nYou are this team's orchestrator/);
-		assert.match((await h.call("team_list")).content[0].text, /ag_06 boss \(orchestrator\) \[claude-code\]/);
+		assert.match(h.workers.at(-1).task, /You are this team's orchestrator/);
+		assert.match((await h.call("team_list")).content[0].text, /ag_06 boss \(orchestrator\) \[pi\]/, "recorded as the pi worker it is");
 	} finally { await h.cleanup(); }
 });
 
@@ -2507,6 +2520,7 @@ test("member messages are delivered through the steer path with provenance, inbo
 		});
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
 		const lead = h.workers.find((w: any) => w.id === "ag_01");
+		const writerWorker = h.workers.find((w: any) => w.id === "ag_03");
 		// dev → lead by role (normalized), pi recipient: default steering, reply hint, inbox copy.
 		const one = await h.ask("ag_02", { type: "message", to: " LEAD ", message: "API is ready" });
 		assert.equal(one.ok, true);
@@ -2514,19 +2528,19 @@ test("member messages are delivered through the steer path with provenance, inbo
 		assert.equal(lead.lastSteer.mode, undefined);
 		assert.equal(lead.lastSteer.message, "[Team message from dev (ag_02), team_01]\nAPI is ready\n(Reply with team_msg to \"dev\" if needed; team_inbox lists delivered messages.)");
 		assert.deepEqual(readInbox(h.memberOf("ag_01")!.dir).map((r) => [r.kind, r.from, r.fromId, r.text]), [["message", "dev", "ag_02", "API is ready"]]);
-		// lead → Claude member by ID: queued as a follow-up with a reply hint naming the MCP tools, plus an inbox copy.
+		// lead → Claude member by ID: a pi worker, so the same steering and reply hint, plus an inbox copy.
 		const two = await h.ask("ag_01", { type: "message", to: "ag_03", message: "Document the API" });
 		assert.equal(two.ok, true);
-		assert.equal(created[0].lastSteer.mode, "followUp");
-		assert.equal(created[0].lastSteer.message, "[Team message from lead, orchestrator (ag_01), team_01]\nDocument the API\n(Reply with the mcp__team__team_msg tool to \"lead\" if needed; mcp__team__team_inbox lists delivered messages.)");
-		const writerDir = decodeMemberContext(created[0].mcpServers.team.env[MEMBER_ENV])!.dir;
+		assert.equal(writerWorker.lastSteer.mode, undefined);
+		assert.equal(writerWorker.lastSteer.message, "[Team message from lead, orchestrator (ag_01), team_01]\nDocument the API\n(Reply with team_msg to \"lead\" if needed; team_inbox lists delivered messages.)");
+		const writerDir = h.memberOf("ag_03")!.dir;
 		assert.deepEqual(readInbox(writerDir).map((r) => [r.kind, r.from, r.text]), [["message", "lead", "Document the API"]]);
 		// The Claude member answers through the same mailbox: sender identity comes from its directory.
-		const back = await h.ask("ag_03", { type: "message", to: "lead", message: "Done" }, created);
+		const back = await h.ask("ag_03", { type: "message", to: "lead", message: "Done" });
 		assert.equal(back.ok, true);
 		assert.equal(lead.lastSteer.message, "[Team message from writer (ag_03), team_01]\nDone\n(Reply with team_msg to \"writer\" if needed; team_inbox lists delivered messages.)");
 		// Broadcast reaches every sibling, never the sender; partial failure is reported per recipient.
-		created[0].status = "killed";
+		writerWorker.status = "killed";
 		const all = await h.ask("ag_02", { type: "message", to: "all", message: "sync" });
 		assert.equal(all.ok, true, "one delivery succeeded");
 		assert.match(all.text, /^Partially delivered\.\nlead \(ag_01\): accepted or queued\nwriter \(ag_03\): failed — writer \(ag_03\) is no longer live$/);
@@ -2688,7 +2702,7 @@ function remoteHarness(agentDir: string, announce: boolean) {
 	return h;
 }
 
-test("a remote session's workers run on the target: pi loads the remote extension with --target, claude gets the remote MCP server and no built-in tools", async () => {
+test("a remote session's workers run on the target: pi and claude-code workers load the remote extension with --target", async () => {
 	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-agent-"));
 	const prev = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -2708,36 +2722,30 @@ test("a remote session's workers run on the target: pi loads the remote extensio
 		assert.equal(piWorker.mcpServers, undefined);
 
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", tools: ["Read"], systemPrompt: "be terse", cwd: "sub/dir" });
-		const claude = created[0];
-		assert.deepEqual(claude.tools, [], "every built-in tool is gone (--tools \"\")");
-		assert.equal(claude.extensions.length, 0);
-		assert.deepEqual(claude.env, { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) }, "claude's own env carries only the MCP deadline");
-		assert.deepEqual(Object.keys(claude.mcpServers), [REMOTE_MCP_SERVER_NAME]);
-		const server = claude.mcpServers.remote;
-		assert.deepEqual([server.command, server.args], [process.execPath, [REMOTE_MCP]]);
-		const identity = decodeRemoteMcpIdentity(server.env[REMOTE_MCP_ENV])!;
-		assert.deepEqual(identity, { version: 1, target: "box", farCwd: "/srv/app/sub/dir", agentDir, label: "The box" }, "a relative worker cwd is resolved on the target");
+		const claude = h.workers[1];
+		assert.equal(created.length, 0, "no native Claude process");
+		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
+		assert.deepEqual(claude.tools, ["read"], "Claude's names map to Sova's, which run on the target");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.flags, { target: "box", [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		assert.equal(claude.cwd, placeholderDir(agentDir, "box", "/srv/app/sub/dir"), "its local cwd is the placeholder of that far directory");
-		assert.ok(fs.statSync(claude.cwd).isDirectory(), "created so the CLI can start there");
-		assert.match(claude.systemPrompt, /^be terse\n\n/);
-		assert.match(claude.systemPrompt, /remote target "The box \(box\)" in \/srv\/app\/sub\/dir/);
-		assert.match(claude.systemPrompt, /no local file or shell tools/);
-		assert.equal(claude.model, "claude-sonnet-5-5", "the backend's own preparation is kept");
+		assert.equal(claude.systemPrompt, "be terse");
+		assert.equal(claude.mcpServers, undefined);
 
-		// A team member of a remote session gets both servers; a pi member both extensions.
+		// A team member of a remote session gets both extensions, on either backend.
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
 		const lead = h.workers.find((w: any) => w.id === "ag_03");
 		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
 		assert.deepEqual(lead.flags, { target: "box" });
-		const writer = created[1];
-		assert.deepEqual(Object.keys(writer.mcpServers).sort(), [REMOTE_MCP_SERVER_NAME, "team"]);
-		assert.equal(decodeRemoteMcpIdentity(writer.mcpServers.remote.env[REMOTE_MCP_ENV])!.farCwd, "/srv/app");
-		assert.ok(decodeMemberContext(writer.mcpServers.team.env[MEMBER_ENV]));
+		const writer = h.workers.find((w: any) => w.id === "ag_04");
+		assert.deepEqual(writer.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.ok(decodeMemberContext(writer.env[MEMBER_ENV]));
 
 		// A cwd the parent cannot resolve, and a backend without remote tooling, are refused before any worker starts.
 		await assert.rejects(h.call("agent_spawn", { prompt: "t", cwd: "~/x" }), /absolute path on the target/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "t", backend: "other" }), /cannot run workers of a remote session/);
 		assert.equal(h.workers.length + created.length, 4);
+		assert.equal(created.length, 0);
 	} finally {
 		await h.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
@@ -2782,14 +2790,14 @@ test("a local session's workers are untouched by the remote wiring", async () =>
 		assert.doesNotMatch((await h.call("agent_list")).content[0].text, /Remote session/);
 		assert.equal(h.workers[0].flags, undefined);
 		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli" });
 		assert.equal(created[0].mcpServers, undefined);
 		assert.equal(created[0].env, undefined);
 		assert.equal(created[0].tools, undefined, "the backend's default tool list applies");
 	} finally { await h.close(); }
 });
 
-test("worker session marker: every pi worker loads worker-mark.ts first; claude-code workers never do", async () => {
+test("worker session marker: every pi worker loads worker-mark.ts first; another backend's workers never do", async () => {
 	assert.equal(path.basename(MARKER_EXTENSION), "worker-mark.ts");
 	assert.ok(fs.existsSync(MARKER_EXTENSION));
 	assert.equal(path.dirname(MARKER_EXTENSION), path.dirname(MEMBER_EXTENSION), "a sibling of member.ts, under this extension's own directory");
@@ -2809,12 +2817,12 @@ test("worker session marker: every pi worker loads worker-mark.ts first; claude-
 		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["npm:definitely-not-installed-xyz"] });
 		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz"], "a worker with its own extensions");
 		assert.match(given.content[0].text, /  extensions=npm:definitely-not-installed-xyz(  |$)/m, "only the user's extensions are listed");
-		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "native-cli" }] });
 		const member = h.workers.at(-1);
 		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");
-		await h.call("agent_spawn", { prompt: "claude", backend: "claude-code" });
+		await h.call("agent_spawn", { prompt: "claude", backend: "native-cli" });
 		assert.equal(created.length, 2);
-		for (const claude of created) assert.equal(claude.extensions.length, 0, "claude-code workers are untouched");
+		for (const other of created) assert.equal(other.extensions.length, 0, "another backend's workers are untouched");
 		// The marker is spawn plumbing, never a user-facing source.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MARKER_EXTENSION] }), /do not nest/);
 	} finally {
@@ -2944,23 +2952,23 @@ const SANDBOX_ON: SandboxStateEvent = { version: 1, on: true, extensionPath: SAN
 /** A worker's launch options without the per-worker identity or the fake worker's own closures. */
 const launchShape = ({ id, groupId, name, ...rest }: any) => Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== "function"));
 
-test("pin: with the sandbox off and no worktree, a claude worker's create() options are exactly these", async () => {
+test("pin: with the sandbox off and no worktree, a claude-code worker's launch options are exactly these", async () => {
 	const h = harness();
-	const created: any[] = [];
-	const capture = fakeBackend(created);
-	const options: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, { ...capture, create(o: any, handlers: any) { options.push(o); return capture.create(o, handlers); } });
 	try {
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
 		const want = {
-			model: "claude-sonnet-5-5", effort: undefined, tools: undefined, systemPrompt: "be terse", extensions: undefined, forkSession: undefined,
-			backendOptions: { permissionMode: "default" }, backend: "claude-code", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
+			model: "claude-code-cli/claude-sonnet-5-5", effort: "medium", tools: ["read", "bash", "edit", "write", "grep", "find", "ls"], systemPrompt: "be terse",
+			extensions: [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], forkSession: undefined,
+			backendOptions: undefined, flags: { [CLAUDE_CODE_PROVIDER_FLAG]: true }, backend: "pi", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
 		};
-		assert.deepEqual(Object.keys(options[0]).sort(), [...Object.keys(want), "id"].sort(), "no sandbox, env, settings, confinement or mcp key");
-		assert.deepEqual({ ...options[0], id: undefined }, { ...want, id: undefined });
-		assert.deepEqual({ ...options[1], id: undefined, groupId: "run_01" }, { ...want, id: undefined }, "an off sandbox changes nothing");
+		const shape = (w: any) => ({ ...launchShape(w), id: undefined });
+		for (const w of h.workers) for (const key of Object.keys(want)) if (key !== "groupId") assert.deepEqual(w[key], (want as any)[key], key);
+		assert.equal(h.workers[0].env, undefined, "no env, settings, confinement or mcp key");
+		assert.equal(h.workers[0].mcpServers, undefined);
+		assert.equal(h.workers[0].confine, undefined);
+		assert.deepEqual({ ...shape(h.workers[1]), groupId: undefined }, { ...shape(h.workers[0]), groupId: undefined }, "an off sandbox changes nothing");
 	} finally { await h.close(); }
 });
 
@@ -2970,10 +2978,10 @@ test("sandbox off: workers launch exactly as without the sandbox extension; on: 
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	try {
 		await h.call("agent_spawn", { prompt: "pi task" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", backendOptions: { permissionMode: "bypassPermissions" } });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 		await h.call("agent_spawn", { prompt: "pi task" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", backendOptions: { permissionMode: "bypassPermissions" } });
 		assert.deepEqual(launchShape(h.workers[1]), launchShape(h.workers[0]), "an off parent's pi worker is today's");
 		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		assert.equal(h.workers[1].flags, undefined);
@@ -2998,83 +3006,33 @@ test("sandbox off: workers launch exactly as without the sandbox extension; on: 
 	} finally { await h.close(); }
 });
 
-test("sandbox on: a claude worker is confined by the sandbox under its own session-qualified owner, with no settings of the sandbox's and the spec's permission mode; a refusal or another backend fails the spawn", async () => {
+test("sandbox on: a claude-code worker is sandboxed as a pi worker (the extension and its flags); a refusal or another backend fails the spawn", async () => {
 	const h = harness();
 	const created: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
 	const asked: any[] = [];
 	try {
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: (req: any) => (asked.push(req), workerLaunchOf()(req)) });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
-		const claude = created[0];
-		const key = `unsaved-${process.pid}-`;
-		assert.equal(asked.length, 2, "asked once to validate the batch, once under the worker's own id");
-		assert.equal(asked[1].backend, "claude-code");
-		assert.ok(asked[1].owner.startsWith(key) && asked[1].owner.endsWith("-ag_01"), asked[1].owner);
-		assert.deepEqual(claude.confine, { scope: JSON.stringify({ owner: asked[1].owner, root: null }), module: LAUNCH_MODULE, key: asked[1].owner, agentDir: NO_AGENT_DIR, writable: [], describe: "the session's sandbox" });
-		assert.ok(!("settingsJson" in claude), "the sandbox gives no Claude settings; the runner turns Claude's own sandbox off");
-		assert.equal(claude.permissionMode, undefined, "no forced mode: the runner's default bypassPermissions, or the spec's own");
-		assert.deepEqual(claude.backendOptions, { permissionMode: "bypassPermissions" });
-		assert.deepEqual(claude.extensions, []);
+		const claude = h.workers[0];
+		assert.equal(asked.length, 1, "asked once, as for any pi worker");
+		assert.equal(asked[0].backend, "pi");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.flags, { ...WORKER_FLAGS, [CLAUDE_CODE_PROVIDER_FLAG]: true });
+		assert.equal(claude.confine, undefined);
+		assert.equal(claude.backendOptions, undefined);
 
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, enforcement: "partial", workerLaunch: () => ({ kind: "refused", reason: "Sandbox enforcement is partial (x); set acceptPartial." }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), { message: "Sandbox enforcement is partial (x); set acceptPartial." });
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: undefined });
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker launch/);
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "pi", extensionPath: SANDBOX_DIR, flags: {} }) });
-		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave the claude-code worker no confinement/);
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "other" }), /cannot run workers while this session's sandbox is on/);
 		// A mixed batch fails as a whole: the pi worker never starts either.
 		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "p" }, { prompt: "c", backend: "other" }] }), /sandbox is on/);
-		assert.equal(created.length, 1);
-		assert.equal(h.workers.length, 0);
+		assert.equal(created.length, 0);
+		assert.equal(h.workers.length, 1);
 	} finally { await h.close(); }
-});
-
-test("confined claude: a team member's mailbox is writable; a hosted worker gets the host's own tmp; session_start sweeps the private dirs of workers no longer recorded, never a recorded one", async () => {
-	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-confined-")));
-	const agentDir = path.join(root, "agent");
-	const sessionFile = path.join(agentDir, "sessions", "--cwd--", "2026-09-30T00-00-00-000Z_sess-1.jsonl");
-	fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-	fs.writeFileSync(sessionFile, "");
-	const mailboxRoot = path.join(root, "mailbox");
-	const h = harness(eventBus(), { agentDir, mailboxRoot, mailboxPollMs: 10, hosting: { root: path.join(root, "workers"), enabled: true } });
-	h.ctx.sessionManager.getSessionId = () => "sess-1";
-	h.ctx.sessionManager.getSessionFile = () => sessionFile;
-	const created: any[] = [];
-	const fake = fakeBackend(created);
-	// Hosted workers are bound to their registry entry until they close.
-	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fake, create: (o: any, handlers: any) => Object.assign(fake.create(o, handlers), { whenClosed: new Promise(() => {}) }) });
-	h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
-	try {
-		await h.start();
-		await h.call("team_create", { name: "T", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true, backend: "claude-code" }] });
-		const member = created[0];
-		assert.equal(member.confine.key, "sess-1-ag_01");
-		assert.equal(member.confine.writable.length, 1);
-		assert.ok(member.confine.writable[0].endsWith(path.join("team_01", "ag_01")) && fs.statSync(member.confine.writable[0]).isDirectory(), "its own mailbox");
-		assert.equal(decodeMemberContext(member.mcpServers.team.env[MEMBER_ENV])!.dir, member.confine.writable[0]);
-		assert.equal(member.confine.hostedTmpDir, path.join(member.tmpDir, "tmp"), "hosted: the host's own tmp, inside its worker dir");
-		assert.ok(fs.statSync(member.confine.hostedTmpDir).isDirectory());
-
-		// The sweep: an old dir of a recorded worker stays, one of an unrecorded worker goes.
-		const old = (Date.now() - 2 * 24 * 3600_000) / 1000;
-		const dirOf = (key: string) => path.join(agentDir, "sova", "sandbox", "claude", key);
-		for (const key of ["sess-1-ag_01", "sess-1-ag_07", "gone-session-ag_01"]) {
-			fs.mkdirSync(dirOf(key), { recursive: true });
-			fs.utimesSync(dirOf(key), old, old);
-		}
-		h.ctx.sessionManager.getEntries = () => h.appended.map((e: any) => ({ type: "custom", ...e }));
-		await h.start();
-		assert.ok(fs.existsSync(dirOf("sess-1-ag_01")), "a recorded worker keeps its state for a resume");
-		assert.ok(!fs.existsSync(dirOf("sess-1-ag_07")), "no record of it left");
-		assert.ok(!fs.existsSync(dirOf("gone-session-ag_01")), "its owner session's file is gone");
-	} finally {
-		await h.close();
-		fs.rmSync(root, { recursive: true, force: true });
-	}
 });
 
 test("sandbox: the state is asked for at load, malformed announcements are ignored, and a remote session's workers never load the extension", async () => {
@@ -3123,7 +3081,7 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "p", cwd: "extensions" });
 		await h.call("agent_spawn", { prompt: "c", backend: "claude-code" });
-		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "claude-code" }, { cwd: h.ctx.cwd, backend: "claude-code" }], "the resolved cwd and the backend (a claude worker is asked again under its own id)");
+		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "pi" }], "the resolved cwd and the backend (a claude-code worker is a pi worker)");
 		for (const backend of [undefined, "claude-code"]) {
 			await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "fine" }, { prompt: "p", cwd: outside, backend }] }), { message: `Sandbox: worker cwd ${outside} is outside the parent's sandbox` });
 		}
@@ -3155,8 +3113,7 @@ test("team_eject: parent-only, refuses occupied members, persists the op, frees 
 	try {
 		// Members and orchestrators never get the tool.
 		const { MEMBER_TOOLS, ORCHESTRATOR_TOOLS } = await import("./member.ts");
-		const mcp = await import("./member-mcp.ts");
-		for (const list of [MEMBER_TOOLS, ORCHESTRATOR_TOOLS, mcp.MEMBER_TOOLS, mcp.ORCHESTRATOR_TOOLS]) assert.ok(!(list as readonly string[]).includes("team_eject"));
+		for (const list of [MEMBER_TOOLS, ORCHESTRATOR_TOOLS]) assert.ok(!(list as readonly string[]).includes("team_eject"));
 		assert.ok(h.tools.has("team_eject"));
 		await h.call("team_create", {
 			name: "Crew", objective: "Ship", members: [
@@ -3310,7 +3267,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		const handoffs = path.join(h.agentDir, "sova", "teams", SESSION_ID, "team_01", "handoffs");
 		assert.match(text, new RegExp(`Handover notes: ${handoffs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 		assert.ok(fs.statSync(handoffs).isDirectory());
-		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=claude-code {2}model=claude-opus-5-5 {2}effort=medium/);
+		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=pi {2}model=claude-code-cli\/claude-opus-5-5 {2}effort=medium/);
 		assert.match(text, /ag_04 {2}monitor \(monitor\) .* wake=false/);
 		assert.match(text, /Coordinated team: only the coordinator reaches you/);
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.role, m.duty]), [["ag_01", "coordinator", "coordinator"], ["ag_02", "dev", undefined], ["ag_03", "writer", undefined], ["ag_04", "monitor", "monitor"]]);
@@ -3319,19 +3276,19 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), writer = h.worker("ag_03"), monitor = h.worker("ag_04");
 		assert.deepEqual([coordinator.wake, dev.wake, writer.wake, monitor.wake], [true, false, false, false], "only the coordinator wakes the parent");
 		assert.deepEqual(monitor.tools, [], "the monitor has no built-in tools");
-		assert.equal(coordinator.tools, undefined);
+		assert.deepEqual(coordinator.tools, ["read", "bash", "edit", "write", "grep", "find", "ls"], "a claude-code coordinator's default: Sova's seven tools");
 		assert.deepEqual(h.memberOf("ag_01"), { ...h.memberOf("ag_01")!, orchestrator: true, duty: "coordinator" });
 		assert.equal(h.memberOf("ag_01")!.coordinated, undefined);
 		assert.equal(h.memberOf("ag_02")!.coordinated, true);
 		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.coordinated, h.memberOf("ag_04")!.orchestrator], ["monitor", true, false]);
-		assert.match(coordinator.task, /call them as mcp__team__team_roster, mcp__team__team_steer, mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask, mcp__team__team_report, mcp__team__team_succeed;/);
+		assert.doesNotMatch(coordinator.task, /mcp__team__/, "a claude-code coordinator loads the member extension like a pi member");
 		assert.match(coordinator.task, /Your role: coordinator \(coordinator\)/);
 		assert.match(coordinator.task, /You are this team's coordinator\. You do no implementation yourself/);
 		assert.match(coordinator.task, /- monitor \(monitor\): none declared/);
 		assert.match(dev.task, /This team has a coordinator, coordinator: report to it, not to the operator\./);
 		assert.match(dev.task, new RegExp(`Your handover note path: ${path.join(handoffs, "dev.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`));
 		assert.match(dev.task, /team_ask sends a question to your team's coordinator/);
-		assert.match(monitor.task, /call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_roster, mcp__team__wake_nudge;/);
+		assert.doesNotMatch(monitor.task, /mcp__team__/);
 		assert.match(monitor.task, /at or over 60% of its context window: team_msg it with notice "wrap-up"/);
 		assert.match(monitor.task, /AT\/OVER the pause threshold \(it marks one only when no login of that provider has headroom — a non-weekly window such as 5h at 90% or more, or a 7d window at 100%; a 7d window below 100% is informational[^)]*\): team_msg coordinator with notice "pause".*plus 5 min/);
 		assert.match(monitor.task, /wake_nudge schedule delay "10m" and end your turn\. Never sleep or poll in a shell/);
@@ -3341,8 +3298,8 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.doesNotMatch(monitor.task, /handover note path|read its handover note/, "a monitor has no file tools: it hands over by team_msg");
 		const list = (await h.call("team_list")).content[0].text;
 		assert.match(list, /Coordinated \(team defaults\)/);
-		assert.match(list, /ag_01 coordinator \(coordinator\) \[claude-code\]/);
-		assert.match(list, /ag_04 monitor \(monitor\) \[claude-code\]/);
+		assert.match(list, /ag_01 coordinator \(coordinator\) \[pi\]/);
+		assert.match(list, /ag_04 monitor \(monitor\) \[pi\]/);
 		// team_add into a coordinated team: routed and wake:false; another orchestrator is refused.
 		await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "test", wake: true }] });
 		assert.equal(h.worker("ag_05").wake, false);
@@ -3353,11 +3310,11 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 });
 
 test("team defaults pick the fallback when the primary cannot run, and refuse the team when neither can", async () => {
-	const withFallback = { ...DEFAULTS_FILE, coordinator: { ...DEFAULTS_FILE.coordinator, primary: { backend: "claude-code", model: "invalid" }, fallback: { backend: "pi", model: "test/model", effort: "high" } } };
+	const withFallback = { ...DEFAULTS_FILE, coordinator: { ...DEFAULTS_FILE.coordinator, primary: { backend: "claude-code", model: "zai/glm-5.3" }, fallback: { backend: "pi", model: "test/model", effort: "high" } } };
 	const h = coordinatedHarness(withFallback);
 	try {
 		const r = await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.match(r.content[0].text, /coordinator coordinator added on pi\/test\/model\/high \(fallback; primary claude-code\/invalid refused: Invalid Claude model\)/);
+		assert.match(r.content[0].text, /coordinator coordinator added on pi\/test\/model\/high \(fallback; primary claude-code\/zai\/glm-5\.3 refused: Claude model must be a Claude model ID/);
 		assert.equal(h.worker("ag_01").backend, "pi");
 		assert.equal(h.memberOf("ag_01")!.duty, "coordinator");
 	} finally { await h.cleanup(); }
@@ -3366,7 +3323,7 @@ test("team defaults pick the fallback when the primary cannot run, and refuse th
 	try {
 		await assert.rejects(
 			n.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }),
-			/Team not created: team defaults require a coordinator \(coordinator\), but no configured model can run — primary claude-code\/invalid: Invalid Claude model; fallback pi\/nope\/x: unknown model nope\/x .*defaults\.coordinator: false/,
+			/Team not created: team defaults require a coordinator \(coordinator\), but no configured model can run — primary claude-code\/zai\/glm-5\.3: Claude model must be a Claude model ID.*; fallback pi\/nope\/x: unknown model nope\/x .*defaults\.coordinator: false/,
 		);
 		assert.equal(n.workers.length + n.created.length, 0, "nothing started");
 		assert.equal(n.appended.filter((e) => e.customType === "subagents-team-v1").length, 0, "nothing recorded");
@@ -3375,10 +3332,12 @@ test("team defaults pick the fallback when the primary cannot run, and refuse th
 		assert.match(ok.content[0].text, /coordinator turned off for this team \(defaults\.coordinator: false\); no coordinator or monitor/);
 		assert.equal(n.workers[0].wake, true);
 	} finally { await n.cleanup(); }
-	const noClaude = coordinatedHarness(DEFAULTS_FILE, { claude: false });
+	// claude-code is built in: a harness with no registered backend still runs the Claude defaults.
+	const noBackend = coordinatedHarness(DEFAULTS_FILE, { claude: false });
 	try {
-		await assert.rejects(noClaude.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }), /primary claude-code\/claude-opus-5-5\/medium: backend claude-code is not loaded; fallback: no fallback is configured/);
-	} finally { await noClaude.cleanup(); }
+		const r = await noBackend.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		assert.match(r.content[0].text, /coordinator coordinator added on claude-code\/claude-opus-5-5\/medium \(primary\)/);
+	} finally { await noBackend.cleanup(); }
 	// The model policy is a denial like any other.
 	const policyDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-td-policy-"));
 	const policyFile = path.join(policyDir, "policy.json");
@@ -3432,15 +3391,14 @@ test("routing: members report to the coordinator, the monitor stays silent, and 
 		dev.settle();
 		await h.tick();
 		assert.equal(h.parentMessages("subagent-complete").length, 0, "a member's completion never reaches the parent");
-		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]\n### ag_02 \(dev\) — waiting[\s\S]*built it[\s\S]*mcp__team__team_msg tool to "dev"/);
+		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]\n### ag_02 \(dev\) — waiting[\s\S]*built it[\s\S]*Reply with team_msg to "dev"/);
 		assert.equal(coordinator.lastSteer.mode, "followUp");
 		const steers = coordinator.steerCount;
 		monitor.settle();
 		await h.tick();
 		assert.equal(coordinator.steerCount, steers, "a monitor check settles silently");
 		monitor.status = "running";
-		monitor.error = "rate limited";
-		monitor.settle();
+		monitor.settle("rate limited");
 		await h.tick();
 		assert.match(coordinator.lastSteer.message, /Team report from monitor \(ag_04\), team_01: failed/);
 		monitor.error = undefined;
@@ -3510,6 +3468,7 @@ test("routing: a parent agent_wait returns the coordinator's completion instead 
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
 		h.messages.length = 0;
 		const onCoordinator = h.call("agent_wait", { ids: ["ag_01"] });
+		coordinator.output = "Claude result";
 		coordinator.settle();
 		assert.match((await onCoordinator).content[0].text, /### ag_01 \(coordinator\) — waiting[\s\S]*Claude result/);
 		assert.equal(h.parentMessages("subagent-complete").length, 0, "the wait returned the coordinator's completion");
@@ -3555,7 +3514,7 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		monitor.usage.contextTokens = 150_000;
 		const roster = await h.ask("ag_03", { type: "roster" });
 		assert.equal(roster.ok, true);
-		assert.match(roster.text, /ag_01 coordinator \(coordinator\) \[claude-code, has team tools\] working \(running\) · context 640k\/1M \(64%\)/);
+		assert.match(roster.text, /ag_01 coordinator \(coordinator\) \[pi, has team tools\] working \(running\) · context 640k\/1M \(64%\)/);
 		assert.match(roster.text, /ag_02 dev \[pi, has team tools\] working \(running\) · context — /);
 		assert.match(roster.text, /ag_03 monitor \(monitor\) .* context 150k\/200k \(75%\)/);
 		assert.match(roster.text, /Thresholds \(team defaults, read now\): wrap-up at 60% context · check every 10 min · usage pause when no login of a provider has headroom \(a non-weekly window at 90%, a 7d window at 100%\), resume 5 min after the reset/);
@@ -3571,7 +3530,7 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		assert.match(reread, /wrap-up at 70% context/);
 		assert.doesNotMatch(reread, /wrap-up at 80%/, "the library shadows a legacy team-defaults.json written after seeding");
 		assert.equal((await h.ask("ag_02", { type: "roster" })).ok, false, "a worker has no roster");
-		assert.match((await h.call("team_list")).content[0].text, /ag_01 coordinator \(coordinator\) \[claude-code\] working \(running\) · context 640k\/1M \(64%\)/);
+		assert.match((await h.call("team_list")).content[0].text, /ag_01 coordinator \(coordinator\) \[pi\] working \(running\) · context 640k\/1M \(64%\)/);
 		// Notices: delivered with their kind, recorded as actions; pause/resume also as session events.
 		const paused = await h.ask("ag_03", { type: "message", to: "coordinator", message: "claude 5h at 92%, resets 18:19Z", notice: "pause" });
 		assert.equal(paused.ok, true);
@@ -4049,10 +4008,11 @@ test("a monitor's successor: the monitor task, team_ready on both backends, and 
 			const r = await h.ask("ag_01", { type: "succeed", to: "monitor" });
 			assert.equal(r.ok, true, r.text);
 			const next = h.worker("ag_04");
-			assert.equal(next.backend, backend);
+			assert.equal(next.backend, "pi", "a claude-code monitor is a pi worker on the provider");
+			if (backend === "claude-code") assert.match(next.model, /^claude-code-cli\//);
 			const me = h.memberOf("ag_04")!;
 			assert.deepEqual([me.duty, me.successorOf], ["monitor", "monitor"]);
-			// B2: the successor monitor really has team_ready (the same list feeds member.ts and member-mcp.ts).
+			// B2: the successor monitor really has team_ready (the list member.ts serves).
 			assert.ok(memberToolNames(me).includes("team_ready"), `${backend}: team_ready`);
 			assert.deepEqual(next.tools, [], "still no built-in tools");
 			// B4: the monitor's task, not a worker's.
@@ -4147,8 +4107,8 @@ test("members default: member's own model, then the call's, then the profile's; 
 		const dev = h.worker("ag_02"), own = h.worker("ag_03"), cc = h.worker("ag_04");
 		assert.deepEqual([dev.backend, dev.model, dev.effort], ["pi", "test/model", "high"], "the profile fills the member nobody gave a model");
 		assert.deepEqual([own.backend, own.model, own.effort], ["pi", "test/model", "low"], "the member's own choice wins over the profile");
-		assert.equal(cc.model, "claude-sonnet-5-5", "a member naming another backend keeps to it: the backend's own prepare fills the model (the fixture's sonnet), never the pi default");
-		assert.notEqual(cc.effort, "high");
+		assert.equal(cc.model, "claude-code-cli/claude-sonnet-5-5", "a member naming claude-code keeps to it: Claude's default (Sonnet), never the pi default");
+		assert.equal(cc.effort, "medium");
 		const entry = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "create").at(-1);
 		const recOf = (id: string) => entry.data.members.find((m: any) => m.workerId === id);
 		assert.deepEqual(recOf("ag_02").modelOverride, {}, "a profile-filled member records no explicit choice");
@@ -4256,22 +4216,25 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		assert.deepEqual(flagsFor, [wt], "confined to the worktree's top level, not its subdir");
 		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
-		// Claude Code: confined to the worktree too (write-only while off), under its own id.
+		// Claude Code: a pi worker, confined to the worktree the same way (write-only while off).
 		await h.call("agent_spawn", { prompt: "claude in tree", cwd: wt, backend: "claude-code" });
-		assert.equal(created.length, 1);
-		assert.equal(flagsFor.length, 1);
-		assert.deepEqual(JSON.parse(created[0].confine.scope), { owner: created[0].confine.key, root: wt }, "the worktree's top level is its root");
-		assert.equal(created[0].confine.describe, `write-only to ${wt}`, "its transcript line: the sandbox is off");
-		assert.equal(created[0].cwd, wt);
+		const claude = h.workers.at(-1);
+		assert.equal(created.length, 0);
+		assert.deepEqual(flagsFor, [wt, wt]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }), [CLAUDE_CODE_PROVIDER_FLAG]: true });
+		assert.equal(claude.cwd, wt);
+		// Another backend cannot be confined to it.
+		await assert.rejects(h.call("agent_spawn", { prompt: "other in tree", cwd: wt, backend: "native-cli" }), /cannot run workers in a tracked worktree/);
 		// A dropped worktree admits nothing; the refusal names the active set.
 		await assert.rejects(h.call("agent_spawn", { prompt: "d", cwd: dropped }), new RegExp(`outside this session's cwd and its worktrees \\(${wt}\\)`));
 		await assert.rejects(h.call("team_add", { team: "team_01", members: [{ role: "x", prompt: "p", cwd: dropped }] }), /outside this session's cwd|No such team/);
 		// On: the sandbox's narrowed scope replaces its session-wide worker flags.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "on", cwd: wt });
-		await h.call("agent_spawn", { prompt: "claude on", cwd: wt, backend: "claude-code" });
-		assert.equal(created.at(-1).confine.describe, `the session's sandbox, narrowed to ${wt}`);
 		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
+		await h.call("agent_spawn", { prompt: "claude on", cwd: wt, backend: "claude-code" });
+		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }), [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		await h.call("agent_spawn", { prompt: "on, session cwd" });
 		assert.deepEqual(h.workers.at(-1).flags, WORKER_FLAGS);
 		// Fail closed: a worktree worker the sandbox cannot scope does not start, of either backend.
@@ -4308,7 +4271,7 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "no sandbox extension, no flags");
 		assert.equal(h.workers.at(-1).flags, undefined);
 		await h.call("agent_spawn", { prompt: "claude off", cwd: wt, backend: "claude-code" });
-		assert.equal(created.at(-1).confine, undefined, "a Claude Code worker is not confined either");
+		assert.deepEqual(h.workers.at(-1).flags, { [CLAUDE_CODE_PROVIDER_FLAG]: true }, "a Claude Code worker is not confined either");
 		// Fail closed: the same none without workers off (an older sandbox) still refuses, of either backend.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: () => ({ kind: "none" }) });
 		for (const backend of [undefined, "claude-code"])
@@ -4326,8 +4289,9 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 		const list = (await h.call("agent_list", {})).content[0].text as string;
 		const lineOf = (id: string) => list.split("\n").find((l) => l.includes(` ${id} `)) ?? "";
 		const ids = h.workers.map((w: any) => w.id ?? w.options?.id).filter(Boolean);
-		assert.equal(ids.length, 5, `pi workers: ${ids.join(",")}`);
+		assert.equal(ids.length, 6, `pi workers (a claude-code one included): ${ids.join(",")}`);
 		assert.match(lineOf(ids[0]), /· sandbox: none(\s|$|·)/, "pi off");
+		assert.match(lineOf(ids[1]), /· sandbox: none(\s|$|·)/, "claude-code off");
 		assert.match(list, new RegExp(`sandbox: write-only to ${wt.replace(/[/.]/g, "\\$&")}`), "pi sub");
 		assert.match(list, new RegExp(`sandbox: on, narrowed to ${wt.replace(/[/.]/g, "\\$&")}`), "pi on");
 		assert.match(lineOf(ids.at(-1)), /· sandbox: on(\s|$|·)/, "pi on here");
@@ -4381,69 +4345,54 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
 const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
 
-test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir; no worker gets a spec ledger", async () => {
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief and the census hook; no worker gets a spec ledger", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
 	const h = harness(bus);
-	const created: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	const brief = workerSpecBrief(SPEC_CORE_DIR);
 	try {
 		assert.equal(asked, 1, "the mode state is asked for at load");
 		await h.call("agent_spawn", { prompt: "pi task" });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
-		assert.equal(h.workers[0].systemPrompt, undefined, "spec off: no brief");
-		assert.ok(!h.workers[0].extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
-		assert.ok(!("settingsJson" in created[0]), "spec off: no hooks");
+		for (const w of h.workers) {
+			assert.equal(w.systemPrompt, undefined, "spec off: no brief");
+			assert.ok(!w.extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
+		}
 
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
-		assert.equal(h.workers[1].systemPrompt, `Be terse.\n\n${brief}`);
+		assert.equal(h.workers[2].systemPrompt, `Be terse.\n\n${brief}`);
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
-		assert.equal(h.workers[1].env?.[LEDGER_ENV], undefined, "no spec ledger");
+		assert.equal(h.workers[2].env?.[LEDGER_ENV], undefined, "no spec ledger");
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
-		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
-		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
+		assert.equal(h.workers[3].systemPrompt, undefined, "a worker that cannot write gets no brief");
+		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
+		// A claude-code worker is a pi worker: the same brief and census hook, its landed file named in its env.
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
-		const claude = created[1];
+		const claude = h.workers[4];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
-		const hooks = JSON.parse(claude.settingsJson).hooks;
-		assert.deepEqual(Object.keys(hooks).sort(), ["PermissionDenied", "PostToolUse", "PostToolUseFailure", "PreToolUse", "UserPromptSubmit"], "nothing at the turn's end");
-		const post = hooks.PostToolUse[0];
-		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
-		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
-		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
-		assert.ok(!post.hooks[0].command.includes("--ledger"), "no ledger");
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.equal(claude.settingsJson, undefined, "no Claude Code hooks");
+		assert.ok(Object.values(claude.env ?? {}).some((v) => typeof v === "string" && v.includes(path.join(SPEC_HOOK_STATE, "landed"))), "its landed file is named in its env");
+		assert.equal(claude.env?.[LEDGER_ENV], undefined);
 		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
-		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
-
-		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
-		const confined = created[3];
-		const merged = JSON.parse(confined.settingsJson);
-		assert.equal(merged.sandbox, undefined, "no Claude sandbox settings from the sandbox (the runner turns it off)");
-		const confinedPost = merged.hooks.PostToolUse[0].hooks[0].command as string;
-		const ownState = path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers", confined.confine.key);
-		assert.ok(confinedPost.endsWith(` --state ${ownState}`), confinedPost);
-		assert.equal(merged.hooks.Stop, undefined);
-		assert.deepEqual(confined.confine.writable, [ownState], "its hook state writable inside, nothing else of the agent dir");
-		assert.ok(fs.statSync(ownState).isDirectory(), "made before the launch");
-		assert.ok(!fs.existsSync(path.join(NO_AGENT_DIR, "sova", "spec-ledger")), "no ledger file is made");
-		fs.rmSync(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers"), { recursive: true, force: true });
-		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+		assert.equal(h.workers[5].systemPrompt, undefined, "a read-only claude worker gets no brief");
+		assert.ok(!h.workers[5].extensions.includes(SPEC_WORKER_EXTENSION));
 
 		await h.call("team_create", { name: "T", objective: "o", members: [
 			{ role: "a", prompt: "p", backend: "claude-code", model: "claude-sonnet-5-5" },
 			{ role: "b", prompt: "p", backend: "pi" },
 		] });
-		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
-		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
-		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
-		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
-		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
+		const [a, b] = h.workers.slice(-2);
+		assert.ok(a.systemPrompt.endsWith(brief), "a claude member");
+		assert.deepEqual(a.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.ok(b.systemPrompt.endsWith(brief), "a pi member");
+		assert.deepEqual(b.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
+		assert.equal(b.env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
+		assert.ok(Object.keys(b.env).length > 1);
 
 		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, version: 2 });
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_OFF);
@@ -4459,7 +4408,7 @@ const SPEC_ON: ModeWorkerEvent = { version: 1, minorModes: ["spec"], prompt: WOR
 const SPEC_OFF: ModeWorkerEvent = { version: 1, minorModes: [] };
 const manifestOf = (h: { appended: any[] }, id: string) => h.appended.filter((e) => e.customType === "subagents-worker-manifest" && e.data.workerId === id).map((e) => e.data);
 
-test("mode: pi and claude workers get the parent's worker prompt last, as a snapshot; the launch keeps the raw brief; modes are recorded and published", async () => {
+test("mode: pi and another backend's workers get the parent's worker prompt last, as a snapshot; the launch keeps the raw brief; modes are recorded and published", async () => {
 	const h = harness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -4468,7 +4417,7 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 	try {
 		// No mode extension: exactly as before.
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", systemPrompt: "BRIEF" });
 		assert.equal(h.workers[0].systemPrompt, "BRIEF");
 		assert.equal(created[0].systemPrompt, "BRIEF");
 		assert.deepEqual(manifestOf(h, "ag_01")[0].modes, [], "given none: recorded as none");
@@ -4476,10 +4425,10 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
 		await h.call("agent_spawn", { prompt: "pi task, no brief" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", systemPrompt: "BRIEF" });
 		assert.equal(h.workers[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "after the brief");
 		assert.equal(h.workers[2].systemPrompt, WORKER_BLOCK);
-		assert.equal(created[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "claude: in the prepared prompt the runner uses");
+		assert.equal(created[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "another backend: in the prepared prompt the runner uses");
 		const record = manifestOf(h, "ag_03")[0];
 		assert.equal(record.launch.systemPrompt, "BRIEF", "the launch keeps the raw brief: a resume takes the modes afresh");
 		assert.deepEqual(record.modes, ["spec"]);
@@ -4498,7 +4447,7 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 		// Spec off: new workers get nothing; running ones keep what they started with.
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_OFF);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
-		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", systemPrompt: "BRIEF" });
 		assert.equal(h.workers[4].systemPrompt, "BRIEF");
 		assert.equal(created[2].systemPrompt, "BRIEF");
 		assert.equal(h.workers[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "a switch never reaches a running worker");
@@ -4506,7 +4455,7 @@ test("mode: pi and claude workers get the parent's worker prompt last, as a snap
 	} finally { await h.close(); }
 });
 
-test("mode: the worker modes are asked for at load; a remote claude worker gets brief, remote instructions, then the block", async () => {
+test("mode: the worker modes are asked for at load; a remote claude-code worker gets its brief, then the block", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_WORKER_DISCOVER_EVENT, (d: any) => { if (d?.version === 1) { asked++; bus.emit(MODE_WORKER_EVENT, SPEC_ON); } });
@@ -4521,16 +4470,13 @@ test("mode: the worker modes are asked for at load; a remote claude worker gets 
 	const prev = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	const r = remoteHarness(agentDir, true);
-	const created: any[] = [];
-	r.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	try {
 		r.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await r.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse" });
-		const parts = created[0].systemPrompt.split("\n\n");
-		assert.equal(parts[0], "be terse");
-		assert.match(created[0].systemPrompt, /^be terse\n\n[\s\S]*remote target[\s\S]*\n\n# Minor mode: spec \(worker form, test\)$/, "brief → remote instructions → block");
+		assert.equal(r.workers[0].systemPrompt, `be terse\n\n${WORKER_BLOCK}`, "brief → block; the remote extension tells it the rest");
+		assert.ok(r.workers[0].extensions.includes(REMOTE_EXTENSION));
 		await r.call("agent_spawn", { prompt: "pi task", systemPrompt: "be terse" });
-		assert.equal(r.workers[0].systemPrompt, `be terse\n\n${WORKER_BLOCK}`);
+		assert.equal(r.workers[1].systemPrompt, `be terse\n\n${WORKER_BLOCK}`);
 	} finally {
 		await r.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
@@ -4565,10 +4511,8 @@ test("worker marker: says it is a worker at load and to anyone who asks later (a
 	assert.doesNotThrow(() => workerMarkExtension({ on() {} } as any), "no bus: inert");
 });
 
-test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook and hooks stay", async () => {
+test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook stays", async () => {
 	const h = harness();
-	const created: any[] = [];
-	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	const brief = workerSpecBrief(SPEC_CORE_DIR);
 	try {
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
@@ -4577,8 +4521,8 @@ test("spec on with the parent's worker modes (mode:worker) too: the spec block c
 		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
 		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
-		assert.equal(created[0].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
-		assert.ok(!created[0].systemPrompt.includes(brief));
-		assert.ok(JSON.parse(created[0].settingsJson).hooks.PostToolUse, "the hooks still come");
+		assert.equal(h.workers[1].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
+		assert.ok(!h.workers[1].systemPrompt.includes(brief));
+		assert.ok(h.workers[1].extensions.includes(SPEC_WORKER_EXTENSION), "the census hook still comes");
 	} finally { await h.close(); }
 });

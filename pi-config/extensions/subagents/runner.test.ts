@@ -2177,9 +2177,16 @@ test("a claude-code-cli model is kept out of argv and set over RPC after readine
 	assert.equal(h.runner.status, "starting");
 	h.child.reply(set.id, true, { provider: "claude-code-cli", id: "opus[1m]" });
 	await flush();
-	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "set_model", "prompt"]);
+	// The level asked for, set again on the new model (a switch takes the level pi keeps for it).
+	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "set_model", "set_thinking_level"]);
+	const level = h.child.sentLines()[2];
+	assert.equal(level.level, "medium");
+	h.child.reply(level.id, true);
+	await flush();
+	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "set_model", "set_thinking_level", "prompt"]);
 	assert.equal(h.runner.model, "claude-code-cli/opus[1m]", "the runner reports the model it set, not the default get_state showed");
-	const prompt = h.child.sentLines()[2];
+	assert.equal(h.runner.effort, "medium");
+	const prompt = h.child.sentLines()[3];
 	assert.equal(prompt.message, "count to three");
 	h.child.reply(prompt.id, true);
 	await flush();

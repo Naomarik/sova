@@ -74,7 +74,13 @@ export const LOADOUT_TOOLS = [...BATON_TOOLS, READ_LINK_TOOL, ...FILE_TOOLS, WRA
     file intake `inspect_files` and `confirm_file` (§app.baton/files). */
 export function activeBatonTools(sessionId: string): string[] {
   const row = batonById(sessionId)?.row;
-  return [...BATON_TOOLS, ...(row && abilitiesOf(row).readLinks ? [READ_LINK_TOOL] : []), ...(row && takesFiles(row) ? FILE_TOOLS : [])];
+  return [
+    ...BATON_TOOLS,
+    ...(row && abilitiesOf(row).readLinks ? [READ_LINK_TOOL] : []),
+    ...(row && takesFiles(row) ? FILE_TOOLS : []),
+    // Test only: the chat-runtime trial's slow served tool stays callable (SOVA_CHAT_TEST_SERVED=1).
+    ...(process.env.SOVA_CHAT_TEST_SERVED === "1" ? ["trial_served_sleep"] : []),
+  ];
 }
 
 const NO_BROWSE = "You cannot read files, run commands or browse.";

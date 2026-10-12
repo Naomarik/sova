@@ -353,8 +353,9 @@ export interface SpecialHost {
   runStart(path: string, ctx: HookCtx, a: { images: boolean }): Promise<RunStartAnswer>;
   compact?(path: string, ctx: HookCtx): Promise<RunStartAnswer["message"] | null>;
   agentEnd?(path: string, text: string): Promise<RunStartAnswer["message"] | null>;
-  /** Each run event of the kind's chat, inside the chat's own event (here) or in arrival order (a chat process). */
-  runEvent?(path: string, e: ChatRunEvent): void;
+  /** Each run event of the kind's chat, inside the chat's own event (here) or in arrival order (a chat
+      process). `n`: its number, increasing per chat (a chat process's frame number; here a counter). */
+  runEvent?(path: string, e: ChatRunEvent, n: number): void;
   /** Every open, once bound. */
   opened?(chat: ChatHandle): Promise<void>;
   /** A message from this server's own composer: who sent it, or throw a refusal the client is told.
@@ -432,6 +433,9 @@ export async function adoptSpecial(kind: ChatSpecialKind, path: string): Promise
 /** A server action's outcome as a port answers it: the action's own result. */
 const actionOutcome = (out: ServerToolOutcome<ToolResult>): ServerToolOutcome<unknown> => (out.ok ? { ok: true, result: out.result.details } : out);
 
+/** The run events each chat in this process told its kind, by path (their numbers). */
+const eventsHere = new Map<string, number>();
+
 /** The loopback to a special kind, for a chat in this process. */
 class LocalSpecialPort implements SpecialPort {
   private actions = 0;
@@ -452,7 +456,9 @@ class LocalSpecialPort implements SpecialPort {
     return this.host.agentEnd ? this.host.agentEnd(this.path, a.text) : null;
   }
   runEvent(e: ChatRunEvent): void {
-    this.host.runEvent?.(this.path, e);
+    const n = (eventsHere.get(this.path) ?? 0) + 1;
+    eventsHere.set(this.path, n);
+    this.host.runEvent?.(this.path, e, n);
   }
   action(name: "@clientSend" | "@clientSendRefused" | "@saveChoice", args: unknown): Promise<ServerToolOutcome<unknown>> {
     const call: ServerToolCall = { effectId: `${this.path}#${name}#${++this.actions}#${randomUUID()}`, chatId: this.path, toolCallId: name, name, params: args, attended: false, card: null };
@@ -531,6 +537,9 @@ let router: ChatRouter | null = null;
 export function setChatRouter(r: ChatRouter | null): void {
   router = r;
 }
+
+/** Resolves once the chats a previous server left running are taken back (bounded): at once with no router. */
+export const chatsReady = (): Promise<void> => router?.ready() ?? Promise.resolve();
 
 /** The open chat of a session id, or undefined. */
 export const chatHandleById = (sessionId: string): ChatHandle | undefined => chatHandles().find((h) => h.mirror.sessionId === sessionId);

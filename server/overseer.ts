@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -1005,6 +1005,9 @@ class LivePrompt {
   }
 }
 
+/** The approvals card clicks write, one after another. */
+let approvalWrites: Promise<void> = Promise.resolve();
+
 /** The Overseer's prompt as each of its chats opened it (a conversation's LivePrompt; a clear opens the next one). */
 const prompts = new Map<string, LivePrompt>();
 const promptOf = (path: string, tools = buildOverseerTools()): LivePrompt => {
@@ -1105,19 +1108,26 @@ registerSpecialHost({
     if (event.type === "user.entered") limits.reset();
     // A click that approves for later or adopts a rule: the server writes it, once the click's
     // message is in the file (the chat writes it right after this event).
+    // One at a time, each reading what the one before wrote: a click told again (a chat process tells
+    // the next server what the last may have heard) finds its approval written and writes none.
     if (event.type === "user.end") {
       const card = event.card;
-      setImmediate(() => {
-        const chat = chatHandle(path);
-        if (!chat) return;
-        void Promise.all([chat.branch(), chat.entries()])
-          .then(([branch, entries]) => {
-            const w = permitOnClick(card, branch, entries);
-            if (!w) return;
-            return w.type === RULE_ENTRY ? chat.appendState(RULE, w.data) : chat.appendState(GRANT, w.data);
-          })
-          .catch((err) => console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err)));
-      });
+      const write = () =>
+        new Promise<void>((done) =>
+          setImmediate(() => {
+            const chat = chatHandle(path);
+            if (!chat) return done();
+            void Promise.all([chat.branch(), chat.entries()])
+              .then(([branch, entries]) => {
+                const w = permitOnClick(card, branch, entries);
+                if (!w) return;
+                return w.type === RULE_ENTRY ? chat.appendState(RULE, w.data) : chat.appendState(GRANT, w.data);
+              })
+              .catch((err) => console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err)))
+              .finally(() => done());
+          }),
+        );
+      approvalWrites = approvalWrites.then(write);
     }
   },
 });
@@ -1194,7 +1204,7 @@ export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "
   return redactor().redact(`${OVERSEER_BRIEF_PREFIX} ${items.length === 1 ? "A new blocker" : `${items.length} new blockers`} appeared while you were idle:\n${lines.join("\n")}`);
 }
 
-async function tick(): Promise<void> {
+async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error: string }> {
   await applySettingsNow();
   const settings = readOverseerSettings();
   const st = readOverseerState();
@@ -1202,31 +1212,41 @@ async function tick(): Promise<void> {
   // every proactivity. With nothing to send to, the digest is read only for a brief.
   const wanted = pushWanted();
   if (!wanted) resetPushState();
-  if (!st && !wanted) return; // no Overseer yet and no phone to tell: nothing to do
+  if (!st && !wanted) return { briefed: [] }; // no Overseer yet and no phone to tell: nothing to do
   const digest = await attentionDigest();
   const act = digest.items.filter((i) => i.tier === "act");
   if (wanted) await notifyBlockers(act, digest.badge.act);
-  if (!st) return; // no Overseer yet: nothing to brief
+  if (!st) return { briefed: [] }; // no Overseer yet: nothing to brief
   const path = await pathOfId(st.current);
-  if (!path) return;
+  if (!path) return { briefed: [] };
   // The user looked at the Overseer since the last brief: the unattended run starts over.
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
   const chat = chatHandle(path)?.mirror;
   const idle = !chat || (!chat.running && chat.queue.web === 0);
   const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
-  const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
+  const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt: ignoreGap ? 0 : lastBriefAt, unattended: ignoreGap ? 0 : unattended, overseerIdle: idle });
+  const before = announced;
   announced = d.announced;
-  if (!d.brief.length) return;
+  if (!d.brief.length) return { briefed: [] };
   const text = briefText(act.filter((i) => d.brief.includes(blockerKey(i))));
   try {
     const overseer = await acquireChatHandle(path);
-    await overseer.send({ text, origin: "server", checkModel: true });
+    // Keyed by what it briefs (§app.chat-processes/server-messages): sent again after a lost answer, one turn.
+    await overseer.send({ text, origin: "server", checkModel: true, key: `brief:${briefKey(d.brief.map((k) => `${k}=${counts.get(k) ?? ""}`))}` });
     lastBriefAt = Date.now();
     unattended++;
+    return { briefed: d.brief };
   } catch (err) {
-    console.warn("[overseer] brief skipped:", err instanceof Error ? err.message : String(err));
+    // Not sent: its blockers stay new, and the next check tries again (§app.overseer/proactivity).
+    announced = before;
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn("[overseer] brief skipped:", error);
+    return { error };
   }
 }
+
+/** A brief's key: a digest of what it says. */
+const briefKey = (parts: readonly string[]): string => createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 32);
 
 /** One brief to the Overseer under Brief Me (the auto-resume report); nothing under any other proactivity. */
 async function sendBrief(body: string): Promise<void> {
@@ -1235,9 +1255,14 @@ async function sendBrief(body: string): Promise<void> {
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return;
   const overseer = await acquireChatHandle(path);
-  await overseer.send({ text: serverRedactor().redact(`${OVERSEER_BRIEF_PREFIX} ${body}`), origin: "server", checkModel: true });
+  const text = serverRedactor().redact(`${OVERSEER_BRIEF_PREFIX} ${body}`);
+  await overseer.send({ text, origin: "server", checkModel: true, key: `brief:${briefKey([text])}` });
   lastBriefAt = Date.now();
 }
+
+/** Test only (SOVA_CHAT_TEST_SERVED=1, server/chat-trial-routes.ts): one check now, the 10-minute gap
+    and the unattended count ignored: the blocker keys it briefed, or why the brief was not sent. */
+export const tickNowForTest = (o: { ignoreGap?: boolean } = {}): Promise<{ briefed: string[] } | { error: string }> => tick(!!o.ignoreGap);
 
 /** Free slots of the running-at-once cap, for a schedule's fire as for a resume (§chat.schedules/fire). */
 export const freeRunSlots = (): number => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt);
@@ -1267,7 +1292,7 @@ export function startAutoResume(): void {
 export function resumeCrashedChat(path: string, since: number, before: (path: string) => Promise<void>): void {
   const timer = setTimeout(() => {
     const deps = resumeDeps();
-    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text) => (await before(p), deps.prompt(p, text)) }, { markResuming: () => {} }, "crash").catch((err) =>
+    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text, key) => (await before(p), deps.prompt(p, text, key)) }, { markResuming: () => {} }, "crash").catch((err) =>
       console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)),
     );
   }, RESUME_DELAY_MS);
@@ -1284,8 +1309,8 @@ function resumeDeps(): ResumeDeps {
       return { ...s, name: sessionName(s, readAliases()[s.id]), projectOverseer: !!projectOverseerOfPath(path) };
     },
     freeSlots: () => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt),
-    prompt: async (path, text) => {
-      const r = await promptSession(path, text, readOverseerState()?.current);
+    prompt: async (path, text, key) => {
+      const r = await promptSession(path, text, readOverseerState()?.current, "followUp", undefined, key);
       if (!r.ok) throw new Error(r.error);
       host.started(path, true);
     },

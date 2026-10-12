@@ -64,10 +64,11 @@ test("org sessions: counted in the total, never Live & web, Last active or Needs
   assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["a"]);
 });
 
-test("Last active skips a profile session, however new: Profiles lists it", () => {
+test("Last active is a profile session when it moved last, like any other", () => {
   const profile = { id: "reviewer", label: "Reviewer", icon: "eye" } as SessionSummary["profile"];
   const withProfile = [...list, session("p", { profile, origin: "web", lastActiveAt: "2026-02-01T00:00:00Z" })];
-  assert.equal(sessionsGlance(withProfile, undefined, "badge").last?.id, "a");
+  assert.equal(sessionsGlance(list, undefined, "badge").last?.id, "a");
+  assert.equal(sessionsGlance(withProfile, undefined, "badge").last?.id, "p");
 });
 
 test("a session in a project's folder: Live & web, Last active and Needs you count it, a build does not", () => {

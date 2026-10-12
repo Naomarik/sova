@@ -621,7 +621,7 @@ export const approveProfile = (cwd: string, p: { id: string; grant: string[]; ov
   });
 export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
   request<ProfilesListing>("/api/profiles/hidden", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, hidden, ...(cwd ? { cwd } : {}) }) });
-/** A new session in `cwd` with a profile picked; nothing is sent (the shelf's Run and Start, the chip's Run Again). */
+/** A new session in `cwd` with a profile picked; nothing is sent (the chip's Run Again). */
 export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
   request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });
 

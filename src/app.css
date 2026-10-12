@@ -985,12 +985,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-card .card-title { font-size: var(--fs-body); margin: 0; }
 .profile-card .card-head > .text-muted { margin-left: auto; font-size: var(--fs-caption); }
 .profile-card-refused .card-head > .icon { color: var(--status-warn, var(--color-ink-muted)); }
-/* The list: the badge, the shelf and New Session's menu. */
+/* The list: the badge, and the shelf's sub-groups (Automations draws them). */
 .session-profile-badge { display: inline-flex; vertical-align: -2px; margin-right: var(--space-1); color: var(--color-accent); }
-.sidebar-profiles > .profile-shelf-group:last-child,
-.sidebar-profiles > .profile-shelf-slot:last-child { padding-bottom: var(--space-2); }
-.profile-shelf-head,
-.profile-shelf-slot {
+.sidebar-profiles > .profile-shelf-group:last-child { padding-bottom: var(--space-2); }
+.profile-shelf-head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1001,7 +999,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink-2);
 }
 .profile-shelf-name { font-weight: var(--fw-medium); color: var(--color-ink); }
-.profile-shelf-run { margin-left: auto; }
 .profile-shelf-project { color: var(--color-ink-muted); }
 /* Settings → Profiles. */
 .profiles-list { list-style: none; margin: 0 0 var(--space-4); padding: 0; display: flex; flex-direction: column; }

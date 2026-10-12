@@ -129,6 +129,7 @@ import { decisions } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
+import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, SERVER_HEADER, unlock, pair, revealToken } from "./auth";
@@ -991,6 +992,8 @@ export function buildApp(deps: AppDeps) {
   app.route("/api/sessions/tags", tagRoutes);
   // Phone notifications (Web Push): state, devices, settings, Send Test (server/push-routes.ts).
   app.route("/api/push", pushRoutes);
+  // Test only: the chat-runtime trial fires the Overseer's brief on demand (server/chat-trial-routes.ts).
+  if (process.env.SOVA_CHAT_TEST_SERVED === "1") app.route("/api/test", chatTrialRoutes);
 
   // Settings → Summaries: which model writes the sidebar's summary line. The file is the
   // topic-outline extension's; the TUI and every runtime read it once per session, at session start,

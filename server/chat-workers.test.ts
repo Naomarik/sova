@@ -202,6 +202,24 @@ describe("WorkerRegistry", () => {
     assert.deepEqual(r.list("sid"), []);
   });
 
+  test("a second report of the same death while its resume reopens is ignored: one decision, the resume runs on", async () => {
+    const logged: unknown[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { procs, handles } = fakeProcs();
+    const slow: WorkerProcesses = { ...procs, start: async (rec, prefer) => (handles.length ? await gate : undefined, procs.start(rec, prefer)) };
+    const r = reg(slow, { logged });
+    const ref = await r.start(start("k", null));
+    const death: ChatDeath = { chatId: ref.chatId, sessionPath: ref.sessionFile, unit: "u", cause: "crashed", exit: null, signal: "KILL", logTail: [], at: "t1" };
+    r.died(death, { since: 1 } as never);
+    r.died({ ...death, at: "t1b" }, { since: 1, auto: true } as never);
+    release();
+    await new Promise((res) => setTimeout(res, 10));
+    assert.equal(logged.length, 1);
+    assert.equal(r.list("sid")[0]!.state, "open");
+    assert.deepEqual(handles[1]!.calls.map((c) => c.method), ["markResuming", "send"]);
+  });
+
   test("with the setting off, a death mid-run ends it", async () => {
     const { procs, handles } = fakeProcs();
     const r = reg(procs, { autoResume: false });

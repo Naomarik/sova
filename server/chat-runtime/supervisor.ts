@@ -653,6 +653,8 @@ export class ChatSupervisor {
     }
     if (this.chats.get(chatId) !== t) return "unknown";
     const death = t.rec.exiting ? null : await this.deathOf(t.rec, st);
+    // Another look (the watch, a link's end) reported it meanwhile, or a new process took the id: once.
+    if (this.chats.get(chatId) !== t) return "unknown";
     if (!death) {
       this.forget(chatId);
       return "ended";
@@ -671,6 +673,7 @@ export class ChatSupervisor {
     if (!t) return;
     await this.deps.driver.stop(t.rec.unit).catch(() => {});
     const logs = (await this.deps.driver.logs(t.rec.unit, LOG_TAIL).catch(() => [])).map((l) => l.text);
+    if (this.chats.get(chatId) !== t) return; // reported meanwhile, or a new process took the id
     const death: ChatDeath = { chatId, sessionPath: t.rec.sessionPath, unit: t.rec.unit, cause: "lost", exit: null, signal: null, detail, logTail: logs, at: new Date(this.now()).toISOString() };
     // One that never said hello did not start: a failed start, not a death.
     if (!t.connected) return this.bootFailed(t, death);

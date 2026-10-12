@@ -24,9 +24,8 @@ export const KNOBS = {
   driver: "SOVA_CHAT_DRIVER",
   /** The slice chat units go into: a stand-in, never sova-chats.slice. */
   slice: "SOVA_CHAT_SLICE",
-  /** Idle stop after this many minutes (fractional; 0 never). */
-  idle: "SOVA_CHAT_IDLE_MIN",
-  idleMs: "SOVA_CHAT_IDLE_MS",
+  /** Idle stop after this many ms (0 never; default 30 min). */
+  idle: "SOVA_CHAT_IDLE_MS",
   /** The server build a chat is labelled with. */
   build: "SOVA_BUILD",
   /** A chat process whose build equals this exits 3 before hello (the rollout failure case). */
@@ -90,16 +89,14 @@ export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").
 
 /** The server's environment: the scratch agent dir, the knobs, and nothing that names a real login
     or key (only the mock, or an auth.json copied in, may answer). `on`: the switch; `driver`:
-    "detached" or "systemd" (then `slice` is the stand-in slice); `idleMin`, `build`, `failBoot`. */
-export function serverEnv({ agent, port, on, driver, slice, idleMin, build, failBoot, extra = {} }) {
+    "detached" or "systemd" (then `slice` is the stand-in slice); `idleMs`, `build`, `failBoot`. */
+export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
   Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off" });
   if (on) env[KNOBS.switch] = "out";
   if (on && driver === "detached") env[KNOBS.driver] = "detached";
   if (on && slice) env[KNOBS.slice] = slice;
-  // The idle knob's name is not settled (SOVA_CHAT_IDLE_MIN in the design and supervisor.ts, _MS in
-  // a later message): both are set, each in its own unit.
-  if (idleMin !== undefined) Object.assign(env, { [KNOBS.idle]: String(idleMin), [KNOBS.idleMs]: String(Math.round(idleMin * 60_000)) });
+  if (idleMs !== undefined) env[KNOBS.idle] = String(idleMs);
   if (build) env[KNOBS.build] = build;
   if (failBoot) env[KNOBS.failBoot] = failBoot;
   return { ...env, ...extra };

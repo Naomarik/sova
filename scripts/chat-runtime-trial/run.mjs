@@ -494,9 +494,17 @@ async function t4() {
   await B.s.until(delta(/part 3\//), 30000, "B streams");
   const pidA = chatPid(A.path);
   const pidB = chatPid(B.path);
-  A.s.close();
+  // Chat C: idle, nobody attached, never asked: the automatic reload alone moves it.
+  const C = await newChat();
+  prompt(C.s, "say ok");
+  await settled(C.s, 0, 60000);
+  const pidC = chatPid(C.path);
+  C.s.close();
+  // A's browser stays attached: the restart drops it (its pane is kept as an orphan) and it comes
+  // straight back, as a page does.
   B.s.close();
   await restart({ [KNOBS.build]: "trial-b" });
+  A.s.close();
   const a2 = await chat(c, A.path);
   const older = await a2.until((m) => m.type === "code", 15000, "A's code state").catch(() => null);
   R.check(older?.state === "older", `t4: an attached chat on the old build shows "older" (${JSON.stringify(older)})`);
@@ -515,7 +523,9 @@ async function t4() {
   R.check(mockLog(mock.log).some((e) => e.event === "done" && e.tag === "t4b") && turnAssistants(B.path, "[long 30 #t4b]").length === 1, "t4: B's reply ran to its end, never cut by a reload");
   for (let i = 0; i < 60 && chatPid(B.path) === pidB; i++) await sleep(500);
   const recB = record(B.path);
-  R.check(chatPid(B.path) && chatPid(B.path) !== pidB && recB?.build === "trial-b", `t4: B reloaded by itself at the quiet moment (pid ${pidB} → ${chatPid(B.path)}, build ${recB?.build})`);
+  R.check(chatPid(B.path) && chatPid(B.path) !== pidB && recB?.build === "trial-b", `t4: B (Reload now while busy) reloaded at its quiet moment (pid ${pidB} → ${chatPid(B.path)}, build ${recB?.build})`);
+  for (let i = 0; i < 60 && chatPid(C.path) === pidC; i++) await sleep(500);
+  R.check(chatPid(C.path) && chatPid(C.path) !== pidC && record(C.path)?.build === "trial-b", `t4: an idle unattended chat reloaded by itself (pid ${pidC} → ${chatPid(C.path)}, build ${record(C.path)?.build})`);
   // A: attached, so it waits for the dwell; Reload now reloads at once.
   R.check(chatPid(A.path) === pidA, "t4: A, attached, did not reload by itself");
   const from = a2.got.length;

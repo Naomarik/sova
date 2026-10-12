@@ -15,20 +15,27 @@ export const ROOT = resolve(import.meta.dirname, "..", "..");
 const HERE = import.meta.dirname;
 export { sleep };
 
-// What the stage-2 server reads. One place, so a renamed knob is one edit here.
+// What the stage-2 server reads (stage2-design.md §8, §10). One place, so a renamed knob is one edit.
 export const KNOBS = {
-  /** The per-server switch (§ draft chat-runtime-s2): "out" runs ordinary chats in their own process. */
-  switchEnv: "SOVA_CHAT_HOST",
-  switchOn: "out",
-  /** The slice chat units are launched into: a stand-in, never sova-chats.slice of a real install. */
-  sliceEnv: "SOVA_CHAT_SLICE",
-  /** Idle stop after this many ms (q2's 30 min, shortened for a test). */
-  idleEnv: "SOVA_CHAT_IDLE_MS",
-  /** Chat units are named <prefix>…; the trial lists them by this. */
+  /** The per-server switch: "out" runs ordinary chats in their own process. */
+  switch: "SOVA_CHAT_HOST",
+  /** "detached" (test-only): chats run as setsid children instead of systemd units, so a trial
+      survives a server restart with no user bus. */
+  driver: "SOVA_CHAT_DRIVER",
+  /** The slice chat units go into: a stand-in, never sova-chats.slice. */
+  slice: "SOVA_CHAT_SLICE",
+  /** Idle stop after this many minutes (fractional; 0 never). */
+  idle: "SOVA_CHAT_IDLE_MIN",
+  /** The server build a chat is labelled with. */
+  build: "SOVA_BUILD",
+  /** A chat process whose build equals this exits 3 before hello (the rollout failure case). */
+  failBoot: "SOVA_CHAT_TEST_FAIL_BOOT",
+  /** Chat units are named sova-chat-<stateHash>-<session id>. */
   unitPrefix: "sova-chat-",
 };
 
 export const RESUME_TEXT = "The Sova server restarted and cut off your last turn. Continue where you left off.";
+export const CRASH_RESUME_TEXT = "This chat's process stopped unexpectedly and cut off your last turn. Continue where you left off.";
 
 export const modelsJson = (port) => ({
   providers: {
@@ -81,13 +88,17 @@ export async function startMock({ port, log, step }) {
 export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 /** The server's environment: the scratch agent dir, the knobs, and nothing that names a real login
-    or key (only the mock, or an auth.json copied in, may answer). */
-export function serverEnv({ agent, port, on, slice, idleMs, extra = {} }) {
+    or key (only the mock, or an auth.json copied in, may answer). `on`: the switch; `driver`:
+    "detached" or "systemd" (then `slice` is the stand-in slice); `idleMin`, `build`, `failBoot`. */
+export function serverEnv({ agent, port, on, driver, slice, idleMin, build, failBoot, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
   Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off" });
-  if (on) env[KNOBS.switchEnv] = KNOBS.switchOn;
-  if (slice) env[KNOBS.sliceEnv] = slice;
-  if (idleMs) env[KNOBS.idleEnv] = String(idleMs);
+  if (on) env[KNOBS.switch] = "out";
+  if (on && driver === "detached") env[KNOBS.driver] = "detached";
+  if (on && slice) env[KNOBS.slice] = slice;
+  if (idleMin !== undefined) env[KNOBS.idle] = String(idleMin);
+  if (build) env[KNOBS.build] = build;
+  if (failBoot) env[KNOBS.failBoot] = failBoot;
   return { ...env, ...extra };
 }
 
@@ -108,6 +119,7 @@ export { sc, show };
  * restart. mode "child" runs it as a plain child instead (no user bus: the switch-off check).
  */
 export function server({ tag, env, mode = "unit", log }) {
+  env = { ...env };
   const unit = `sova-trial-server-${tag}.service`;
   const start = join(ROOT, "scripts", "start-server.sh");
   let child = null;
@@ -141,8 +153,11 @@ export function server({ tag, env, mode = "unit", log }) {
     /** The server's main pid. */
     pid: () => (mode === "unit" ? Number(show(unit, "MainPID")) : child?.pid ?? 0),
     cgroup: () => (mode === "unit" ? show(unit, "ControlGroup") : ""),
-    async restart() {
-      if (mode === "unit") sc("restart", unit);
+    /** A restart as the service manager does it; `changes` (env) start the new server differently
+        (another SOVA_BUILD, say), which for a unit means stop and start again. */
+    async restart(changes) {
+      if (changes) Object.assign(env, changes);
+      if (mode === "unit" && !changes) sc("restart", unit);
       else {
         await down();
         up();

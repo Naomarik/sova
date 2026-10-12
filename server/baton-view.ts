@@ -355,6 +355,3 @@ export function batonView(input: ViewInput): BatonView {
     items,
   };
 }
-
-/** The reply's text so far from a streaming assistant message: text blocks only. */
-export const streamingText = (message: unknown): string => textOf((message as { content?: unknown } | null)?.content);

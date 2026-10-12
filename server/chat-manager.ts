@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import type { ChatDialogInfo, ChatLifecycleEvent } from "../shared/chat-runtime";
+import type { ChatDialogInfo, ChatLifecycleEvent, ChatRunEvent, ServerToolCall, ServerToolDecl, ServerToolOutcome } from "../shared/chat-runtime";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
@@ -27,7 +27,7 @@ import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
 import { onWire, withRows } from "./wire-rows";
-import type { CompactOutcome, DialogBridge, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind, StateView } from "../shared/harness";
+import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
 import { historyOf, lineHeader, storedAsString } from "./harness/pi/reader";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
@@ -73,6 +73,8 @@ import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
+import { UserTurns } from "./user-turns";
+import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -176,9 +178,10 @@ export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string
 let runtimeWarm: Promise<void> | null = null;
 /**
  * The chat runtime's own start, once per process: its instrumented model runtime (getModelRuntime
- * counts every call it makes) with the Claude Code provider registered in it. A loadout that loads
- * no extension (a project overseer, a baton) never registers the provider itself, so its open waits
- * for this rather than for whoever else started the process. Best-effort; never throws.
+ * counts every call it makes) with the Claude Code provider registered in it, whatever extensions
+ * the chats it opens load. A loadout that loads no extension (a project overseer, a baton) never
+ * registers the provider itself, so once this has started its open waits for it. Best-effort; never
+ * throws.
  */
 export function warmChatRuntime(): Promise<void> {
   runtimeWarm ??= getModelRuntime().then(
@@ -497,22 +500,27 @@ export interface OverseerRuntime {
     /** Run the memory engine (§chat/memory) in this loadout, as an ordinary chat does: the chat binds
         it to itself, after the loadout's own extensions. */
     memory?: boolean;
+    /** Tell the person's turns apart (§app.overseer/input-source): a message the person sent from a
+        composer is marked by the object it reaches the agent as, and the run it enters is theirs
+        (ChatStateMirror.attended, ChatRunEvent user.entered). */
+    attribution?: boolean;
+    /** Its model requests are background work under a provider's request limit (§app.provider-limits/queue). */
+    background?: boolean;
+    /** The system prompt's text as a run starting on this branch should have it: when it changed since
+        the last run, the base prompt is rebuilt from the loader's parts (quirk P19). */
+    promptAtRunStart?(branch: readonly HEntry[]): string;
   }>;
   /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
   saveChoice(patch: { model?: string; thinking?: string }): void;
   /** Every open of an Overseer runtime, once bound: brings its mode back to normal with no minor
       modes, whatever its branch restored. */
   opened(chat: ChatSession): Promise<void>;
-  /** Called with every session the Overseer's runtime builds, so `userSend` can recognise the
-      message it produced when that message reaches the Agent, and every run is decided from the
-      session's own event stream. */
-  watchSession(session: HarnessSession): void;
-  /** Runs the SDK call that hands the Overseer a message the user sent from the UI (a prompt, a
-      steer, a regenerate; `origin` "client"). The turn the resulting message opens is the user's,
-      whatever an extension's `input` handler or a template made of its text: full tools, and the
-      per-turn caps start over. Server-started runs (a brief, a wake-up) never go through it.
-      `confirm`: the message is a click on the confirm card of that tool call (never typed). */
-  userSend<T>(send: () => T, confirm?: string): T;
+  /** Each run event of the Overseer's chat, inside the chat's own event. A message the user sent
+      from the UI (a prompt, a steer, a regenerate, a confirm card's click; `origin` "client") makes
+      the run the user's (`user.entered`), whatever an extension's `input` handler or a template made
+      of its text: full tools, and the per-turn caps start over. Server-started runs (a brief, a
+      wake-up) never do. */
+  runEvent(path: string, event: ChatRunEvent): void;
 }
 
 let overseerRuntime: OverseerRuntime | null = null;
@@ -536,21 +544,22 @@ export interface SpecialLoadout {
   loadout(path: string): Promise<SpecialLoadoutResult>;
   /** Every open, once bound. */
   opened?(chat: ChatSession): Promise<void>;
-  /** Every session the runtime builds. */
-  watchSession?(session: HarnessSession, path: string): void;
+  /** Each run event of this kind's chat, inside the chat's own event. */
+  runEvent?(path: string, event: ChatRunEvent): void;
+  /** Its run events carry the streaming reply's text (`reply.text`). */
+  replyText?: boolean;
   /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
-      refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
-      kind recorded for it when the runtime then refuses the message. `text` and `images`, when
+      refusal the client is told. Absent: sent as usual, unattributed. `text` and `images`, when
       given, are what is sent instead (a baton session's attached images, inline). */
-  clientSend?(path: string, msg: { images: number; text: string }): { by: string; undo?(): void; text?: string; images?: ImageInput[] };
+  clientSend?(path: string, msg: { images: number; text: string }): { by: string; text?: string; images?: ImageInput[] };
+  /** The runtime refused the message `clientSend` attributed after all: put back what the kind
+      recorded for it. */
+  clientSendRefused?(path: string): void;
   /** A client gesture this kind refuses (a message for the client), or null. */
   refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
   /** Its composer takes nothing right now (a message for the client), or null: an archived
       project's overseer (§app.organizations/archive). */
   composerClosed?(path: string): string | null;
-  /** Runs the SDK call that hands this runtime a message the operator sent from the UI (origin
-      "client"), like the Overseer's `userSend`: the kind can tell the operator's turns by identity. */
-  userSend?<T>(path: string, send: () => T): T;
   /** The composer changed this runtime's model or thinking (`save: true`): the kind keeps it. */
   saveChoice?(path: string, patch: { model?: string; thinking?: string }): void;
   /** The directory this kind's runtime opens in on THIS host, or null (not this kind's file): used
@@ -786,6 +795,10 @@ class ChatSession {
   special: SpecialKind | null = null;
   /** The registered loadout of a non-Overseer special kind. */
   specialEntry: SpecialLoadout | null = null;
+  /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
+  userTurns: UserTurns | null = null;
+  /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
+  runTag: { next?: string } = {};
   /** This runtime is the Overseer's. */
   get overseer(): boolean {
     return this.special === "overseer";
@@ -1056,13 +1069,15 @@ class ChatSession {
     });
   }
 
-  /** Hand a message to the SDK. In the Overseer, one the user sent from the UI (`origin` "client")
-      goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
+  /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
+      project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
+      the turn it opens is known as theirs by identity, not text; a confirm card's click only in the
+      Overseer. */
   private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.specialEntry?.userSend) return this.specialEntry.userSend(this.path, send);
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.overseer ? confirm : undefined);
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
-    return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send, confirm) : send();
+    return send();
   }
 
   /**
@@ -2659,7 +2674,7 @@ class ChatSession {
                 ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
               });
             } catch (err) {
-              sent.undo?.();
+              this.specialEntry.clientSendRefused?.(this.path);
               throw err;
             }
             const { queued, turn } = accepted;
@@ -3322,6 +3337,152 @@ async function syncOverseerModel(chat: ChatSession, path: string): Promise<void>
     harness.setThinking(want.thinking);
 }
 
+// ---- server-hosted tools: the chat's side of the loopback ----------------------------------------
+
+/** What a server-hosted tool reads and writes of the chat that runs it, beyond its ToolCtx. In one
+    process it is the chat itself; a chat in its own process sends the reads with the call and takes
+    the writes and nested calls as calls of their own (al_3 stage 3). */
+export interface ServerToolChat {
+  /** The active branch, root first. */
+  branch(): HEntry[];
+  /** Every entry of the session file, any branch. */
+  entries(): HEntry[];
+  append<T>(kind: StateKind<T>, data: T): EntryId;
+  /** A tool the chat's runtime registered (the subagents extension's), to call within this call. */
+  tool(name: string): ToolSpec | undefined;
+}
+/** What travels with a server-hosted tool's call only while chat and server share a process. */
+export interface ServerToolLocal {
+  signal: AbortSignal | undefined;
+  onUpdate: ToolUpdate | undefined;
+  ctx: ToolCtx | undefined;
+  chat: ServerToolChat;
+  /** Set by the server when the run threw: the very error, for the chat to throw again. */
+  error?: unknown;
+}
+/** The server's side of server-hosted tools (server/chat-handle.ts installs it). */
+export interface ServerToolPort {
+  call(call: ServerToolCall, local: ServerToolLocal): Promise<ServerToolOutcome<ToolResult>>;
+  /** The declaration's `prepares`: the server rewrites the arguments (in one process only: pi asks
+      for them synchronously). */
+  prepare(chatId: string, name: string, args: unknown): unknown;
+}
+let serverToolPort: ServerToolPort | null = null;
+export function setServerToolPort(port: ServerToolPort): void {
+  serverToolPort = port;
+}
+const portOrThrow = (): ServerToolPort => {
+  if (!serverToolPort) throw new Error("This server runs no server-hosted tools.");
+  return serverToolPort;
+};
+
+/**
+ * A server-hosted tool as the chat registers it: its declaration (data), each run a call to the
+ * server under an effect id of its own, answered with the run's outcome. The chat's turn as it stands
+ * goes with the call (`attended`, `card`), and what the tool reads and writes of the chat beyond its
+ * ToolCtx is the chat's own (ServerToolChat).
+ */
+export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
+  const { prepares, ...fields } = decl;
+  return {
+    ...fields,
+    ...(prepares ? { prepareArguments: (args: unknown) => portOrThrow().prepare(chatId, decl.name, args) } : {}),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const chat = heldChat(chatId);
+      if (!chat) throw new Error("This chat is closed.");
+      const turns = chat.userTurns;
+      const call: ServerToolCall = {
+        effectId: `${chatId}#${toolCallId}#${randomUUID()}`,
+        chatId,
+        toolCallId,
+        name: decl.name,
+        params,
+        attended: turns?.attended() ?? false,
+        card: turns?.confirmedCard() ?? null,
+      };
+      const local: ServerToolLocal = {
+        signal,
+        onUpdate,
+        ctx,
+        chat: {
+          branch: () => [...chat.harness.branch()],
+          entries: () => [...chat.harness.entries()],
+          append: (kind, data) => chat.harness.state.append(kind, data),
+          tool: (name) => chat.harness.registeredTool(name),
+        },
+      };
+      const out = await portOrThrow().call(call, local);
+      if (out.ok) return out.result;
+      throw local.error ?? new Error(out.error.message);
+    },
+  };
+}
+
+/** What one chat's special loadout hears of its runs, across the runtimes it builds. */
+interface RunHearing {
+  turns: UserTurns | null;
+  tag: { next?: string };
+}
+
+/** The text of a streaming assistant message so far: its text blocks only. */
+const replyTextOf = (message: unknown): string => {
+  const content = (message as { content?: unknown } | null)?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string)
+    .join("");
+};
+
+/**
+ * A special loadout's ear on one runtime its chat builds: the driving session's stream, as data
+ * (ChatRunEvent), to the kind's `runEvent`, in the event and its tick. The person's turns are told
+ * apart here, by the object their message reaches the agent as (UserTurns), and the prompt is
+ * rebuilt at a run's start when the loadout's text for it changed (quirk P19).
+ */
+function hearRuns(
+  session: HarnessSession,
+  path: string,
+  runs: RunHearing,
+  o: { hook: Pick<SpecialLoadout, "runEvent"> | null; replyText: boolean; prompt?: (branch: readonly HEntry[]) => string },
+): void {
+  const turns = runs.turns;
+  turns?.watch(session);
+  const emit = (event: ChatRunEvent) => {
+    try {
+      o.hook?.runEvent?.(path, event);
+    } catch (err) {
+      console.error("[chat] run event listener failed", err);
+    }
+  };
+  let prompt: string | undefined;
+  session.subscribe((event) => {
+    if (event.type === "run.start") {
+      if (o.prompt) {
+        const text = o.prompt(session.branch());
+        if (text !== prompt) {
+          prompt = text;
+          // The SDK rebuilds the base prompt options from the loader's parts (quirk P19).
+          session.refreshSystemPrompt();
+        }
+      }
+      const tag = runs.tag.next;
+      runs.tag.next = undefined;
+      emit({ type: "run.start", ...(tag !== undefined ? { tag } : {}) });
+    }
+    if (turns?.observe(event)) emit({ type: "user.entered", card: turns.confirmedCard() });
+    if (event.type === "message.update" && event.role === "assistant" && o.replyText) emit({ type: "reply.text", text: replyTextOf(event.handle) });
+    if (event.type === "message.end") {
+      const card = event.role === "user" ? turns?.confirmedCard() : null;
+      if (card) emit({ type: "user.end", card });
+      emit({ type: "message.end" });
+    }
+    if (event.type === "entry.appended") emit({ type: "entry.appended" });
+    if (event.type === "run.settled") emit({ type: "run.settled" });
+  });
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
@@ -3337,6 +3498,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // What the chat's align mode starts with (alignLaunchOf): its record once the file has one; until
   // then the values its first build took, kept for every rebuild, and written with its first message.
   const launch: AlignLaunch = { data: null, recorded: false };
+  // A special loadout's run events and the person's turns (SpecialLoadoutResult.attribution): one
+  // for the chat, kept across the runtimes it builds.
+  const runs: RunHearing = { turns: null, tag: {} };
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
@@ -3351,7 +3515,10 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
     const kind = specialFor(read, path);
     const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
-    if (special?.resourceLoaderOptions.noExtensions) await warmChatRuntime();
+    // A loadout that loads no extension never registers the provider itself: it waits for the
+    // runtime's own start, when this process started it (the server at boot; a chat's own process).
+    if (special?.resourceLoaderOptions.noExtensions && runtimeWarm) await runtimeWarm;
+    if (special?.attribution) runs.turns ??= new UserTurns();
     // An ordinary chat gets the default extensions plus the vis feedback extension
     // (server/vis-check.ts); the special loadouts keep exactly their own.
     const data = special ? null : (read.state.branch().latest(PROFILE)?.data ?? null);
@@ -3428,9 +3595,17 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
           run.turns.watch(session);
           session.subscribe((event) => run.observe(event));
         }
-        // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
-        if (kind?.kind === "overseer") overseerRuntime?.watchSession(session);
-        else kind?.entry?.watchSession?.(session, path);
+        // A special loadout hears its runs, and tells a message the user sent from every other by
+        // the object it reaches the Agent as, from here: where its own watch was, so every listener
+        // keeps its place in the order.
+        if (kind && special) {
+          if (special.background) markBackground(session.id);
+          hearRuns(session, path, runs, {
+            hook: kind.kind === "overseer" ? overseerRuntime : kind.entry,
+            replyText: !!kind.entry?.replyText,
+            ...(special.promptAtRunStart ? { prompt: special.promptAtRunStart } : {}),
+          });
+        }
       },
     };
   };
@@ -3462,6 +3637,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       if (!launch.recorded) chat.deferredAppends.push(() => chat.recordAlignLaunch());
     }
     chat.profileState = profile;
+    chat.userTurns = runs.turns;
+    chat.runTag = runs.tag;
     if (!specialFor(file.read, path)) chat.loadoutState = loadout;
     const kind = specialFor(file.read, path);
     // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or

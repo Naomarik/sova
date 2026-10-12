@@ -26,11 +26,10 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
-import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type SessionMarks } from "./chat-handle";
+import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
 import type { HEntry } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
@@ -52,7 +51,6 @@ import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overs
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes } from "./overseer-store";
 import { readTodos, updateTodo } from "./overseer-todos";
-import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
@@ -143,15 +141,17 @@ const PROMPT_FILE = join(import.meta.dirname, "project-overseer-prompt.md");
 
 interface Rt {
   projectId: string;
-  turns: UserTurns;
-  session: HarnessSession | null;
-  /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
-  lookStarting?: boolean;
-  /** The run id of the look whose message was just handed in, and of the look whose turn runs now: an act the
-      overseer makes in it names it (`lookRun`), so the history links it to that look. */
-  lookPending?: string;
+  /** The chat of its current conversation, once its runtime was built. */
+  chatId?: string;
+  /** Whether the run in progress answers a message the operator sent (UserTurns, in the chat). */
+  attended(): boolean;
+  /** The run id of the look whose turn runs now: an act the overseer makes in it names it (`lookRun`),
+      so the history links it to that look. */
   lookRun?: string;
 }
+/** A look's message names its run (`ChatSendInput.runTag`): the run it starts is the look's (the watch
+    hears `turn/started {look}`), with the look's run id after the prefix. */
+const LOOK_TAG = "look:";
 const rts = new Map<string, Rt>();
 /** The clock the watch loop, the counters and held items read (tests move it to another day). */
 let clock = (): number => Date.now();
@@ -159,11 +159,18 @@ export function setClockForTest(fn: (() => number) | null): void {
   clock = fn ?? (() => Date.now());
   setOrgClockForTest(fn);
 }
+/** The operator's turn as the chat tells it: a server-hosted tool reads it as its call carried it;
+    anything else reads the chat. A runtime not built yet is unattended (fail closed). */
+function attendedOf(rt: Rt): boolean {
+  const run = serverToolCall();
+  if (run && run.call.chatId === rt.chatId) return run.call.attended;
+  return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
+}
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
-    rt = { projectId, turns: new UserTurns(), session: null };
-    rts.set(projectId, rt);
+    const made: Rt = { projectId, attended: () => attendedOf(made) };
+    rts.set(projectId, (rt = made));
   }
   return rt;
 }
@@ -270,8 +277,6 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
     if (chat?.mirror.running) await chat.drainAndAbort().catch(() => {});
     await closeChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
-  const rt = rtOf(projectId);
-  rt.turns.reset();
   const made = createPoFile(projectId);
   await tellProjectStatechart(projectId, "overseer/clear", made.id);
   await dropHistory(droppedSince(st, readPoState(p)));
@@ -541,16 +546,16 @@ function partCtx(rt: Rt, paths: ProjectOverseerPaths): OverseerPartCtx {
     project: () => projectOf(projectId),
     settings: () => readPoSettings(paths),
     effective: () => effectiveOf(projectId),
-    attended: () => rt.turns.attended(),
+    attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
-    envelope: () => overseerEnvelope(projectId, paths, rt.turns.attended()),
+    envelope: () => overseerEnvelope(projectId, paths, rt.attended()),
     gatheringChoice: (input) => gatheringChoice(projectId, input),
     limitRefused: (kind) => limitRefused(rt, paths, kind),
   };
 }
 
 async function limitRefused(rt: Rt, paths: ProjectOverseerPaths, kind: PoLimitKind): Promise<void> {
-  const e = overseerEnvelope(rt.projectId, paths, rt.turns.attended());
+  const e = overseerEnvelope(rt.projectId, paths, rt.attended());
   const a = e.allowance[kind];
   if (a.max !== null) await watchFact(rt.projectId, "limit/refused", { kind, ledger: e.ledger, used: a.used, max: a.max });
 }
@@ -559,7 +564,7 @@ function toolHost(rt: Rt): PoToolHost {
   const { projectId } = rt;
   const paths = projectOverseerPaths(projectId);
   const settings = () => readPoSettings(paths);
-  const envelope = () => overseerEnvelope(projectId, paths, rt.turns.attended());
+  const envelope = () => overseerEnvelope(projectId, paths, rt.attended());
   const engine = () => engineOrThrow(projectId);
   const projectSessionSid = projectSid(projectId);
   return {
@@ -567,7 +572,7 @@ function toolHost(rt: Rt): PoToolHost {
     project: () => projectOf(projectId),
     settings,
     effective: () => effectiveOf(projectId, settings()),
-    attended: () => rt.turns.attended(),
+    attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),
@@ -1080,6 +1085,7 @@ registerSpecialLoadout({
     const p = projectOverseerPaths(rt.projectId);
     if (readPoState(p)?.current !== sessionIdOfFile(path))
       throw new BusyError("This is a previous conversation of the project overseer. It is read-only; open the current one from the project page.", "busy");
+    rt.chatId = path;
     const project = projectOf(rt.projectId);
     const tools = projectOverseerTools(toolHost(rt));
     const template = readFileSync(PROMPT_FILE, "utf8");
@@ -1102,7 +1108,8 @@ registerSpecialLoadout({
           {
             name: "sova-project-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(toPiTool(t));
+              // Its tools' state lives in this server: hosted here, run through the chat's loopback.
+              for (const t of serveTools(path, tools)) pi.registerTool(toPiTool(t));
               pi.on("before_agent_start", (event, ctx) => {
                 const branch = toolCtx(ctx).branch();
                 const recorded = openingOn(branch);
@@ -1146,40 +1153,32 @@ registerSpecialLoadout({
         },
         {
           protectedRoots: confinedOut,
-          attended: () => rt.turns.attended(),
+          attended: () => rt.attended(),
           unattended: PO_UNATTENDED_WRITE_REFUSAL,
           log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
         },
       ),
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
+      // An operator's message makes the run theirs: the watch's message allowance, the write rule.
+      attribution: true,
     };
   },
-  watchSession(session, path) {
+  runEvent(path, event) {
     const rt = rtOfPath(path);
-    rt.session = session;
-    rt.turns.watch(session);
-    session.subscribe((event) => {
-      // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
-      if (event.type === "run.start") {
-        const look = !!rt.lookStarting;
-        rt.lookStarting = false;
-        rt.lookRun = look ? rt.lookPending : undefined;
-        rt.lookPending = undefined;
-        void watchFact(rt.projectId, "turn/started", { look });
-      }
-      if (rt.turns.observe(event)) {
-        // The watch starts a fresh message allowance (its ledger/reset-message).
-        void watchFact(rt.projectId, "turn/user-entered");
-      }
-      if (event.type === "run.settled") {
-        rt.lookRun = undefined;
-        void watchFact(rt.projectId, "turn/ended");
-      }
-    });
-  },
-  userSend(path, send) {
-    return rtOfPath(path).turns.send(send);
+    rt.chatId = path;
+    // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
+    if (event.type === "run.start") {
+      const look = event.tag?.startsWith(LOOK_TAG) ?? false;
+      rt.lookRun = look ? event.tag!.slice(LOOK_TAG.length) || undefined : undefined;
+      void watchFact(rt.projectId, "turn/started", { look });
+    }
+    // The watch starts a fresh message allowance (its ledger/reset-message).
+    if (event.type === "user.entered") void watchFact(rt.projectId, "turn/user-entered");
+    if (event.type === "run.settled") {
+      rt.lookRun = undefined;
+      void watchFact(rt.projectId, "turn/ended");
+    }
   },
   saveChoice(path, patch) {
     const rt = rtOfPath(path);
@@ -1201,14 +1200,13 @@ export const toolsForTest = (projectId: string, opts: { attended?: boolean } = {
   const rt = rtOf(projectId);
   if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
   // As in a turn the operator started (or not), whatever the runtime's own turn says.
-  const turns = Object.create(rt.turns) as typeof rt.turns;
-  turns.attended = () => opts.attended!;
-  const as = { ...rt, turns };
-  return projectOverseerTools(toolHost(as));
+  return projectOverseerTools(toolHost({ ...rt, attended: () => opts.attended! }));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
-export const attendedForTest = (projectId: string) => rtOf(projectId).turns.attended();
+export const attendedForTest = (projectId: string) => rtOf(projectId).attended();
+/** The look whose run is in progress (tests). */
+export const lookRunForTest = (projectId: string) => rtOf(projectId).lookRun;
 
 // ---- idea / to-do items → people and sessions ------------------------------------------------------------
 
@@ -1481,10 +1479,7 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     const po = await acquireChatHandle(path);
     await po.assertModelAllowed();
     const from = (await po.branch()).length;
-    const rt = rtOf(projectId);
-    rt.lookStarting = true;
-    rt.lookPending = runId;
-    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true });
+    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true, runTag: `${LOOK_TAG}${runId ?? ""}` });
     const end = async (err?: string) => {
       const e = runEnd(await po.branch(), po.mirror.streamTrip, from, err);
       // Cut off by this process's shutdown: the next start's resume records it (the statechart's `sova/resumed`).
@@ -1500,7 +1495,6 @@ async function runLook(projectId: string, text: string, report: InvocationReport
       });
     } else void po.turnEnd(receipt).then((t) => end(t.ok ? undefined : t.error));
   } catch (err) {
-    rtOf(projectId).lookStarting = false;
     report("not-started", err instanceof Error ? err.message : String(err));
   }
 }

@@ -923,8 +923,7 @@ itself.
   killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
   own restart ended: a worker this server restored (§app.worker-restore/restore) in its own
   runtime, whose recorded ending is an error at a time between the previous server's stop and this
-  server's start, on any backend (a claude-code worker's "Claude exited before expected closure
-  (SIGTERM)", a pi worker's "pi exited with code 143" alike). The stop is the moment the previous
+  server's start, on any backend (a pi worker's "pi exited with code 143", a Claude Code worker's included). The stop is the moment the previous
   server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
   at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack
   (the workers die on the same signal). Without that file (a crash, or a stop by a server that

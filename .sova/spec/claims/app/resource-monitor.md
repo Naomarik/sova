@@ -4,8 +4,8 @@
 What this server and everything it started are costing the machine, right now and over the last
 hour, **charged to the session and worker that started it**. A load spike is only worth measuring
 if it can be traced to a session afterwards, so attribution is the point of the surface, not a
-detail of it: every process a Sova session or worker starts — pi and claude workers, the Claude
-Code provider process, member-mcp helpers, and their tool children such as a JVM test REPL, `tsc`,
+detail of it: every process a Sova session or worker starts — pi workers (a Claude Code worker
+included), the Claude Code provider process, and their tool children such as a JVM test REPL, `tsc`,
 `vite` or a test run — counts against that worker and its session.
 
 It is **read-only**. Its only actions are **Open Session** links; it never stops a worker or

@@ -283,25 +283,24 @@ decisions, topic outlines, compaction, cache warming.
     process shares. A call is counted once however many wrappers it passes through.
   - **Claude Code.** A chat session on the `claude-code` provider is a pi call like any other: one
     per model request of its stream, until the reply stops for a tool or ends. A Claude Code worker
-    counts while its CLI reports it is requesting the model, until that reply ends. Calls the CLI
-    makes internally without reporting them (its own subagents, side queries, compaction) can't be
-    seen, so while a Claude Code turn runs, in a session or a worker, the count is **partial**
-    (below), never a guessed number.
+    is a pi worker on that provider and counts the same way. Calls the CLI makes internally without
+    reporting them (its own subagents, side queries, compaction) can't be seen, so while a Claude
+    Code turn runs, in a session or a worker, the count is **partial** (below), never a guessed
+    number.
   - **One-shot `claude -p`** (a decision, a title, a topic outline): counted as one call from the
     spawn to the process's exit — **approximate**: the process's start-up and exit count too, so
     for part of that time it may not be calling at all, and what it does inside can't be seen.
   - **Jev** (§app/decisions): from the request to its answer.
 - **How a host adds up.** Sova's server reads its own process directly. A subagent's calls reach
-  the host through the session that runs it: a pi worker reports its count to its parent over the
-  worker's own channel, and a Claude Code worker is observed by its parent, so the parent's count
-  includes its workers' (each worker's report replaces its last one, and goes when the worker
+  the host through the session that runs it: a worker reports its count to its parent over the
+  worker's own channel, so the parent's count includes its workers' (each worker's report replaces its last one, and goes when the worker
   does; until a worker's first report, or after one that can't be read, it is unknown, never 0).
   The parent also names every worker it counts this way, transitively, so a worker that publishes
   a live record of its own as well is never counted twice; past 64 named workers it sums no more
   of them (it can't name them), and its count is partial instead. A detached worker that no running
   session has adopted (after a restart, before it is adopted again) is counted by the server from
-  its host's record of the worker's last report, or, with no such report (a Claude Code worker),
-  makes the count partial; once adopted, only its parent counts it. Every other process on the host publishes its count in its live record (`presence.llm`,
+  its host's record of the worker's last report, or, with no such report, makes the count
+  partial; once adopted, only its parent counts it. Every other process on the host publishes its count in its live record (`presence.llm`,
   `pi-config/extensions/sessions/public/SCHEMA.md`), rewritten only when the count or its coverage
   changes, never per token. A call's output tokens land in that same rewrite, at the moment it ends. The server counts each process once (by its producer id, so a
   process with several live records is not counted twice, and the records its own hosted chats
@@ -356,9 +355,8 @@ host and every connected host.**
   than 30 minutes is gone. The shares are rounded so a call's slots add up to exactly its count.
 - **Where it is measured.** In the counter that counts the calls (§app.insights/llm-inflight), at
   the same boundary: a pi process reads the final message's output count of each call its model
-  runtime makes; a Claude Code worker's call takes the last output count its CLI streams for that
-  reply. A chat on the `claude-code` provider is counted once, as its pi call, never again by the
-  CLI it drives. A one-shot `claude -p` and Jev add no tokens.
+  runtime makes. A chat on the `claude-code` provider, and a Claude Code worker (a pi worker on that
+  provider), is counted once, as its pi call, never again by the CLI it drives. A one-shot `claude -p` and Jev add no tokens.
 - **How it adds up.** As the calls do. A pi worker carries its ring in the report it already sends
   its parent, and the parent sums it with its own; a worker that ends leaves its tokens in its
   parent's ring until they age out (a worker detached for another session to adopt takes its
@@ -467,7 +465,7 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   does nothing for a call but that one append.
 - **Recorded at the boundary that already counts calls** (§app.insights/llm-inflight): the pi model
   runtime records each call when its stream ends; a Claude Code CLI (a chat on the `claude-code`
-  provider or a Claude Code worker) is recorded from its stream, once per Anthropic message id,
+  provider, a Claude Code worker's included) is recorded from its stream, once per Anthropic message id,
   plus what its cumulative per-model totals show beyond those messages (its own subagents, side
   queries, compaction), measured against the last total recorded for that Claude session so a
   resume or re-adoption never counts history again; a `claude -p` one-shot and a Jev call are

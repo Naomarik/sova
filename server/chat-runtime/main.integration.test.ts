@@ -73,9 +73,18 @@ test("SIGTERM closes it as the operator's stop", { timeout: 60_000 }, async () =
   const p = chatProcess();
   const { link, hello } = await dial(p.sock, 1);
   if (hello.state !== "ready") await awaitFrame(link, "hello", 30_000, (h) => h.state === "ready");
+  const opened = awaitFrame(link, "opened", 30_000);
+  link.send({ t: "open", id: "o1", path: p.path, force: true, link: null, served: [] });
+  assert.equal((await opened).ok, true, p.out());
+  const sends: string[] = [];
+  link.on("client.send", (f) => sends.push(f.json));
+  link.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await new Promise((r) => setTimeout(r, 300));
   const exit = awaitFrame(link, "exit", 30_000);
   p.child.kill("SIGTERM");
   assert.deepEqual(await exit, { t: "exit", cause: "operator" });
+  // The pane reconnects quietly, as after a reload.
+  assert.deepEqual(JSON.parse(sends.at(-1)!), { type: "error", code: "reloaded", message: "Reconnecting. Your draft is kept." });
   assert.deepEqual(await p.exited, { code: 0, signal: null });
 });
 

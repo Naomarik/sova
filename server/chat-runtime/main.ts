@@ -64,17 +64,19 @@ const server = await serveLink(sock, {
 });
 
 let stopping = false;
+// A stop from outside (the unit stopped): the panes reconnect quietly, as after a reload, to a new
+// process, never told the chat stopped unexpectedly.
 const stop = (signal: string) => {
   if (stopping) return;
   stopping = true;
   console.error(`[chat-runtime] ${signal}: closing`);
-  if (host) void host.close("operator", { dispose: true });
+  if (host) void host.close("operator", { dispose: true, message: RELOAD_MESSAGE });
   else exitNow("operator", early?.link ?? null);
 };
 process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
 
-const { ChatRuntimeHost, warmChatRuntime } = await import("./host");
+const { ChatRuntimeHost, RELOAD_MESSAGE, warmChatRuntime } = await import("./host");
 await warmChatRuntime();
 if (!exiting) {
   host = new ChatRuntimeHost({
@@ -94,5 +96,5 @@ if (!exiting) {
     pending.link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: pending.control.epoch, ...host.hello() });
   }
   early = null;
-  if (stopping) void host.close("operator", { dispose: true });
+  if (stopping) void host.close("operator", { dispose: true, message: RELOAD_MESSAGE });
 }

@@ -149,7 +149,7 @@ test("read: main record plus <uuid>/subagents/*.jsonl sidechains, deduped across
 	assert.equal(claudeSidechainFiles(main).length, 1);
 
 	const adapter = createClaudeTranscriptAdapter({ root: p.root });
-	assert.deepEqual(adapter.capabilities(), { read: true, usage: "tokens-only", perModel: true, cost: false, items: true, resume: "native" });
+	assert.deepEqual(adapter.capabilities(), { read: true, usage: "tokens-only", perModel: true, cost: false, items: true, resume: "none" }, "a native Claude worker's session stays readable, never resumed");
 	const s = await adapter.read(ref(), { items: "tail", limit: 1 });
 	assert.equal(s.found, true);
 	assert.equal(s.file, fs.realpathSync(main));

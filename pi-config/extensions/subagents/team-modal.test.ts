@@ -17,8 +17,7 @@ import type { TeamHost } from "./team-modal.ts";
 import type { MemberState, TeamAction, TeamMemberView, TeamView } from "./teams.ts";
 import type { Worker } from "./contracts.ts";
 import { registerSubagents } from "./index.ts";
-import { BACKEND_DIALOG_EVENT, BACKEND_REGISTER_EVENT } from "./contracts.ts";
-import { registerClaudeCode } from "../claude-code/index.ts";
+import { BACKEND_DIALOG_EVENT } from "./contracts.ts";
 
 // ── key data (raw terminal bytes, as the TUI would deliver them) ────────────
 
@@ -1096,34 +1095,6 @@ for (const handleFirst of [true, false]) {
 		} finally { await h.close(); }
 	});
 }
-
-test("integration: the real Claude permission emitter hides and restores the team workspace", async () => {
-	const bus = eventBus();
-	// Subagents owns the workspace; Claude registration is real up to the
-	// permission queue/dialog events (its create() is never exercised here).
-	const h = harness(bus);
-	let backend: any;
-	bus.on(BACKEND_REGISTER_EVENT, (b: any) => { backend = b; });
-	registerClaudeCode({ events: bus, on: () => {}, registerFlag: () => {}, getFlag: () => undefined } as any);
-	assert.ok(backend, "backend registered with the manager");
-	captureOverlay(h.ctx);
-	const overlay = overlayOf(h.ctx);
-	const opened = h.commands.get("team").handler("", h.ctx);
-	try {
-		const permission = backend.prepare({ prompt: "task" }, h.ctx).onPermission;
-		h.ctx.ui.confirm = async () => {
-			assert.equal(overlay.visibility.at(-1), true, "permission dialog must not be covered by the team workspace");
-			return true;
-		};
-		const decision = await permission({ requestId: "p", toolName: "Bash", input: { command: "echo test" }, workerId: "ag_01", workerName: "reviewer", cwd: h.ctx.cwd }, new AbortController().signal);
-		assert.equal(decision.behavior, "allow");
-		assert.deepEqual(overlay.visibility.slice(-2), [true, false], "hidden during the dialog, restored after");
-	} finally {
-		overlay.done(null);
-		await opened;
-		await h.close();
-	}
-});
 
 test("integration: follow-up and redirect editors reach the exact member, record the action, and hide the workspace", async () => {
 	const h = harness();

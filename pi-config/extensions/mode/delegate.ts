@@ -61,7 +61,7 @@ export const DELEGATE_BACKENDS: readonly DelegateBackend[] = ["pi", "claude-code
 
 /** pi's thinking-level ladder (what a pi worker's `effort` is). A model may support fewer. */
 export const PI_EFFORTS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-/** What the claude-code backend accepts at all (claude-code/policy.ts validateClaudeEffort). */
+/** What the claude-code backend accepts at all (subagents/claude-workers.ts). */
 export const CLAUDE_EFFORTS: readonly string[] = ["low", "medium", "high", "xhigh", "max"];
 
 export const backendEfforts = (backend: DelegateBackend): readonly string[] => (backend === "pi" ? PI_EFFORTS : CLAUDE_EFFORTS);

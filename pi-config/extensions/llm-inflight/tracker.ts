@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 /** The setStatus key a pi worker reports its counts under, on its RPC stdout (index.ts). */
 export const LLM_STATUS_KEY = "sova-llm-inflight";
 
-export type LlmCallSource = "runtime" | "claude-raw" | "claude-oneshot" | "jev";
+export type LlmCallSource = "runtime" | "claude-oneshot" | "jev";
 
 /** What one process publishes (its live record's `presence.llm`), and what a child reports. */
 export interface LlmCounts {
@@ -24,7 +24,7 @@ export interface LlmCounts {
 	approximate: number;
 	/** Claude Code turns running now, whose internal calls the counter cannot see. */
 	claudeTurns: number;
-	/** Some calls this process makes can't be seen (runtime not instrumented, response-only Claude, …). */
+	/** Some calls this process makes can't be seen (runtime not instrumented, …). */
 	degraded: boolean;
 }
 

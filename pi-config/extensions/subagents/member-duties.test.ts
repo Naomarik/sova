@@ -4,7 +4,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { registerMemberTools } from "./member.ts";
-import { createMemberMcpServer, memberMcpTools } from "./member-mcp.ts";
 import { decodeMemberContext, decodeRequest, encodeMemberContext, initMemberDir, memberToolNames, takeRequests, writeResponse, type MemberContext } from "./mailbox.ts";
 
 const base = (dir: string, extra: Partial<MemberContext> = {}): MemberContext =>
@@ -26,7 +25,7 @@ async function parentAnswers(dir: string, respond: (request: any) => { ok: boole
 	throw new Error("no request appeared");
 }
 
-test("each duty gets its own tool set, identically for pi members and Claude members; only the monitor has wake_nudge", () => {
+test("each duty gets its own tool set (every member, a Claude one included, loads member.ts); only the monitor has wake_nudge", () => {
 	const dir = "/tmp/never-used";
 	const cases: [string, Partial<MemberContext>, string[]][] = [
 		["plain", {}, ["team_msg", "team_inbox", "team_ask"]],
@@ -41,23 +40,18 @@ test("each duty gets its own tool set, identically for pi members and Claude mem
 	for (const [name, extra, expected] of cases) {
 		const me = base(dir, extra);
 		assert.deepEqual([...piTools(me).keys()].sort(), [...expected].sort(), `pi ${name}`);
-		assert.deepEqual(memberMcpTools(me).map((t) => t.name).sort(), [...expected].sort(), `mcp ${name}`);
 		assert.deepEqual(memberToolNames(me).sort(), [...expected].sort(), `names ${name}`);
 		assert.equal(memberToolNames(me).includes("wake_nudge"), extra.duty === "monitor", `${name}: wake_nudge only for the monitor`);
 	}
-	// The monitor's team_msg carries the notice enum on both surfaces; nobody else's does.
+	// The monitor's team_msg carries the notice enum; nobody else's does.
 	const monitor = base(dir, { duty: "monitor" });
 	assert.ok(piTools(monitor).get("team_msg").parameters.properties.notice);
-	assert.deepEqual((memberMcpTools(monitor).find((t) => t.name === "team_msg")!.inputSchema as any).properties.notice.enum, ["wrap-up", "pause", "resume"]);
 	assert.equal(piTools(base(dir)).get("team_msg").parameters.properties.notice, undefined);
-	assert.equal((memberMcpTools(base(dir)).find((t) => t.name === "team_msg")!.inputSchema as any).properties.notice, undefined);
-	// A successor monitor confirms its takeover like any successor, on both surfaces, and its text names no note.
+	// A successor monitor confirms its takeover like any successor, and its text names no note.
 	const monitorSuccessor = base(dir, { duty: "monitor", coordinated: true, successorOf: "monitor" });
 	assert.doesNotMatch(piTools(monitorSuccessor).get("team_ready").description, /handover note/);
-	assert.match(memberMcpTools(monitorSuccessor).find((t) => t.name === "team_ready")!.description, /briefed you over team_msg/);
 	// A coordinated worker's team_ask says where the question goes.
 	assert.match(piTools(base(dir, { coordinated: true })).get("team_ask").description, /coordinator \(not the operator/);
-	assert.match(memberMcpTools(base(dir, { coordinated: true })).find((t) => t.name === "team_ask")!.description, /coordinator \(not the operator/);
 });
 
 test("the identity carries duty, coordination and succession, strictly", () => {
@@ -83,7 +77,7 @@ test("new requests decode strictly: notices, nudges, report/succeed/ready", () =
 	assert.equal(ok({ type: "report", message: "m", reportKind: "blocker" }), undefined, "only milestone or concern");
 });
 
-test("contract: team_report takes an optional kind (milestone | concern) on both surfaces and sends it as reportKind", async () => {
+test("contract: team_report takes an optional kind (milestone | concern) and sends it as reportKind", async () => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-duties-"));
 	try {
 		const dir = path.join(root, "team_01", "ag_01");
@@ -97,48 +91,8 @@ test("contract: team_report takes an optional kind (milestone | concern) on both
 		const plainCall = pi.get("team_report").execute("id", { report: "Done." }, undefined, () => {}, {});
 		const plainRequest = await parentAnswers(dir, () => ({ ok: true, text: "Report shown" }));
 		await plainCall;
-		const schema = memberMcpTools(me).find((t) => t.name === "team_report")!.inputSchema as any;
-		assert.deepEqual([schema.required, schema.properties.kind.enum], [["report"], ["milestone", "concern"]]);
-		const server = createMemberMcpServer(me, { timeoutMs: 2000, pollMs: 5 });
-		const mcpCall = server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "team_report", arguments: { report: "Tests flaky.", kind: "concern" } } });
-		const mcpRequest = await parentAnswers(dir, () => ({ ok: true, text: "Report shown" }));
-		await mcpCall;
 		assert.deepEqual([piRequest.type, piRequest.message, piRequest.reportKind], ["report", "Tests flaky.", "concern"]);
-		assert.deepEqual([mcpRequest.message, mcpRequest.reportKind], [piRequest.message, piRequest.reportKind]);
 		assert.equal("reportKind" in plainRequest, false, "no kind: none sent");
-		const bad = (await server.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "team_report", arguments: { report: "x", kind: "blocker" } } })) as any;
-		assert.match(JSON.stringify(bad), /kind must be milestone or concern/);
-	} finally {
-		fs.rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("pi and Claude monitors send the same wake_nudge and notice requests to the parent", async () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-duties-"));
-	try {
-		const dir = path.join(root, "team_01", "ag_03");
-		initMemberDir(dir);
-		const me = base(dir, { workerId: "ag_03", role: "monitor", duty: "monitor", coordinated: true });
-		const pi = piTools(me);
-		const piCall = pi.get("wake_nudge").execute("id", { action: "schedule", delay: "10m", reason: "next check" }, undefined, () => {}, {});
-		const piRequest = await parentAnswers(dir, () => ({ ok: true, text: "Scheduled n1" }));
-		assert.equal((await piCall).content[0].text, "Scheduled n1");
-		const server = createMemberMcpServer(me, { timeoutMs: 2000, pollMs: 5 });
-		const mcpCall = server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "wake_nudge", arguments: { action: "schedule", delay: "10m", reason: "next check" } } });
-		const mcpRequest = await parentAnswers(dir, () => ({ ok: true, text: "Scheduled n2" }));
-		assert.equal(((await mcpCall) as any).result.content[0].text, "Scheduled n2");
-		assert.deepEqual(piRequest.nudge, mcpRequest.nudge);
-		assert.deepEqual(piRequest.nudge, { action: "schedule", delay: "10m", reason: "next check" });
-		const noticeCall = server.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "team_msg", arguments: { to: "coordinator", message: "claude 5h at 92%", notice: "pause" } } });
-		const notice = await parentAnswers(dir, () => ({ ok: true, text: "Delivered" }));
-		await noticeCall;
-		assert.deepEqual([notice.type, notice.to, notice.notice], ["message", "coordinator", "pause"]);
-		// A non-monitor Claude member cannot smuggle a notice.
-		const worker = createMemberMcpServer(base(dir), { timeoutMs: 200, pollMs: 5 });
-		const refused = (await worker.handle({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "team_msg", arguments: { to: "lead", message: "x", notice: "pause" } } })) as any;
-		assert.match(JSON.stringify(refused), /monitor only/);
-		const unlisted = (await worker.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "wake_nudge", arguments: { action: "list" } } })) as any;
-		assert.equal(unlisted.result.isError, true, "a non-monitor has no wake_nudge");
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}

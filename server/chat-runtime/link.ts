@@ -3,7 +3,8 @@
 // with the chat's `hello`; the server answers `control` with its controller epoch, and the chat keeps
 // one controller at a time: an epoch below the highest it has seen is refused, an equal one while
 // its link is up is refused, a higher one replaces the link before it. Each side pings the other
-// every 10 s and counts the link lost after 3 pings go unanswered.
+// every 10 s and counts the link lost after 3 pings go unanswered. `hello` is always a link's first
+// frame; a later hello on the same link only says the runtime's new `state`: it is never a reconnect.
 import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";

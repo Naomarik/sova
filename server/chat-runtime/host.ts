@@ -36,7 +36,6 @@ import {
   chatEventsSince,
   disposeHeldChat,
   heldChat,
-  markRunResuming,
   notifyLinksChanged,
   onChatEvent,
   setChatHosts,
@@ -106,7 +105,7 @@ const NOTHING: { [M in ChatAskMethod]: ChatAsks[M]["result"] } = {
 };
 
 /** The text a pane gets when its chat process closes to reload on current code (ChatView reconnects quietly). */
-const RELOAD_MESSAGE = "Reconnecting. Your draft is kept.";
+export const RELOAD_MESSAGE = "Reconnecting. Your draft is kept.";
 
 export class ChatRuntimeHost {
   private state: State = "ready";
@@ -356,7 +355,6 @@ export class ChatRuntimeHost {
   /** The commands a chat process answers its own way; the rest are the shared table's. */
   private readonly own: Partial<{ [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"]) => Promise<ChatMethods[M]["result"]> | ChatMethods[M]["result"] }> = {
     releaseIdleModelChild: () => releaseIdleClaudeChildren("idle session released by the server's cap"),
-    markResuming: (chat) => (markRunResuming(chat.path), null),
     reacquire: async (chat, { force }) => {
       assertNotLive(chat.path);
       if (!chat.hasForeignWrites()) return "ok";

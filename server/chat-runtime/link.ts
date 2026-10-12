@@ -23,6 +23,9 @@ import {
 } from "../../shared/chat-runtime-wire";
 
 export type HelloFrame = FrameOf<"hello">;
+
+/** Frames kept for a listener not there yet, at most. */
+const HELD_MAX = 256;
 export type ControlFrame = FrameOf<"control">;
 
 /** Why a link ended. */
@@ -46,6 +49,10 @@ export class Link {
   private readonly decoder: FrameDecoder;
   private readonly listeners = new Map<string, Set<(frame: never) => void>>();
   private readonly unknown = new Set<string>();
+  /** Frames that came before anyone listened for their type (the peer answered a control or an
+      attach in the same breath as the frame its listener waits for): handed to the first listener of
+      their type. A type nobody ever listens for is dropped past HELD_MAX, oldest first. */
+  private held: ChatWireFrame[] = [];
   private pingTimer: NodeJS.Timeout | null = null;
   private pingN = 0;
   private unanswered = 0;
@@ -92,6 +99,13 @@ export class Link {
     let set = this.listeners.get(t);
     if (!set) this.listeners.set(t, (set = new Set()));
     set.add(fn as (frame: never) => void);
+    if (this.held.some((h) => h.t === t)) {
+      const mine = this.held.filter((h) => h.t === t);
+      this.held = this.held.filter((h) => h.t !== t);
+      queueMicrotask(() => {
+        for (const h of mine) if (!this.ended) this.deliver(h);
+      });
+    }
     return () => set.delete(fn as (frame: never) => void);
   }
 
@@ -157,14 +171,24 @@ export class Link {
       this.end({ reason: "refused", refusal: frame });
       return;
     }
-    const set = this.listeners.get(frame.t);
-    if (!set?.size) {
-      if (frame.t !== "ping" && frame.t !== "pong" && !this.unknown.has(frame.t)) {
-        this.unknown.add(frame.t);
-        this.log(`ignoring frames of type ${frame.t}`);
+    if (frame.t === "ping" || frame.t === "pong") return void this.deliver(frame);
+    if (!this.listeners.get(frame.t)?.size) {
+      this.held.push(frame);
+      if (this.held.length > HELD_MAX) {
+        const gone = this.held.shift()!;
+        if (!this.unknown.has(gone.t)) {
+          this.unknown.add(gone.t);
+          this.log(`ignoring frames of type ${gone.t}`);
+        }
       }
       return;
     }
+    this.deliver(frame);
+  }
+
+  private deliver(frame: ChatWireFrame): void {
+    const set = this.listeners.get(frame.t);
+    if (!set?.size) return;
     for (const fn of [...set]) {
       try {
         (fn as (f: ChatWireFrame) => void)(frame);

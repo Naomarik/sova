@@ -57,6 +57,27 @@ test("hello, then control: the runtime has a controller and frames flow both way
   await srv.close();
 });
 
+test("frames that come before anyone listens for their type wait for the first listener", async () => {
+  const { sock, srv, controls } = await runtime();
+  const { link } = await dialAs(sock, 1);
+  await until(() => controls.length === 1);
+  // The runtime answers control with a state and a tool call in one breath; the server listens late.
+  controls[0]!.link.send({ t: "touched" });
+  controls[0]!.link.send({ t: "tool.abort", effectId: "e1" });
+  controls[0]!.link.send({ t: "tool.abort", effectId: "e2" });
+  await new Promise((r) => setTimeout(r, 50));
+  const got: string[] = [];
+  link.on("tool.abort", (f) => got.push(f.effectId));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(got, ["e1", "e2"], "in order, once");
+  link.on("tool.abort", (f) => got.push(`again:${f.effectId}`));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(got, ["e1", "e2"], "handed over once, not to each later listener");
+  assert.deepEqual(await awaitFrame(link, "touched", 500), { t: "touched" });
+  link.close();
+  await srv.close();
+});
+
 test("one controller by epoch: lower refused, equal refused while up, higher replaces", async () => {
   const { sock, srv, controls } = await runtime();
   const first = await dialAs(sock, 100);

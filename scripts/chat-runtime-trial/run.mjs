@@ -1764,13 +1764,16 @@ async function t21c() {
   prompt(s, "/explain a claude topic");
   const ex = await workerOf(path, (r) => r.kind === "explain");
   R.check(ex, `t21c: /explain started a hidden chat (${ex?.spec?.model ?? "none"})`);
-  await waitFor(() => usageRecords().some((r) => !before.has(r.key) && r.parent === sid && String(r.worker ?? "").startsWith("explain")), 90000);
+  // The hidden chats' own worker ids (explain: its run id, the topic's slug; btw: btw-contextual-…).
+  const exId = ex?.parent?.workerId;
+  const btId = bt?.parent?.workerId;
+  await waitFor(() => usageRecords().some((r) => !before.has(r.key) && r.parent === sid && r.worker === exId), 90000);
   await sleep(3000);
   const fresh = usageRecords().filter((r) => !before.has(r.key) && r.parent === sid);
-  const by = (prefix) => fresh.filter((r) => String(r.worker ?? "").startsWith(prefix) && /^claude/.test(r.src));
+  const by = (id) => fresh.filter((r) => id && r.worker === id && /^claude/.test(r.src));
   R.note(`t21c: new usage under the parent: ${fresh.map((r) => `${r.worker}:${r.src}/${r.model} out ${r.output}`).join(", ") || "none"}`);
-  R.check(by("btw").length >= 1, `t21c: /btw's Claude Code usage is recorded under the parent as its hidden chat (${by("btw").length})`);
-  R.check(by("explain").length >= 1, `t21c: /explain's Claude Code usage is recorded under the parent as its hidden chat (${by("explain").length})`);
+  R.check(by(btId).length >= 1, `t21c: /btw's Claude Code usage is recorded under the parent as its hidden chat ${btId} (${by(btId).length})`);
+  R.check(by(exId).length >= 1, `t21c: /explain's Claude Code usage is recorded under the parent as its hidden chat ${exId} (${by(exId).length})`);
   noRpc("t21c");
   s.close();
 }

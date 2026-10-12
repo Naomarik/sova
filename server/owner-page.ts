@@ -21,7 +21,7 @@ import type {
   OwnerWaiting,
 } from "../shared/owner";
 import { allBatons, currentOffer, sessionPathOf } from "./baton";
-import { isSessionBusy } from "./chat-manager";
+import { isSessionBusy } from "./chat-handle";
 import { readConflicts, readDecisionStore } from "./decisions";
 import { operatorName, orgDir, OrgError, ownerOf, readOrg, readProjects, readRoster } from "./orgs";
 import { handleOf } from "./person-links";

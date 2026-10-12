@@ -7,7 +7,7 @@ import { linkAccess, nameOf, noteMessage, sessionPathOf, undoNote } from "../bat
 import { filesFor } from "../baton-files";
 import { countFileUpload, ensureFilesSweep, FileRefusal, fileLine, receiveFiles, reserveUpload, stageFile, takeStagedFiles, type FileRecord } from "../project-files";
 import { findLink, hashToken, tokenTag } from "../baton-links";
-import { acquireChat } from "../chat-manager";
+import { acquireChatHandle } from "../chat-handle";
 import { OrgError } from "../orgs";
 import { imageForToken, refreshShare, viewForToken } from "./hub";
 import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
@@ -192,15 +192,15 @@ export function createShareApp(): Hono {
     // Nothing is counted or claimed until the runtime is open and would take the message.
     let chat;
     try {
-      chat = await acquireChat(sessionPathOf(access.dir, access.row));
-      chat.assertModelAllowed();
+      chat = await acquireChatHandle(sessionPathOf(access.dir, access.row));
+      await chat.assertModelAllowed();
     } catch (err) {
       return busy(err);
     }
     // The photos, read before anything is counted: an expired one sends the page back to upload it.
     let images: SdkImage[] | undefined;
     if (photos && photoIds.length) {
-      if (photoCount(chat.harness.branch()) + photoIds.length > photos.perConversation)
+      if (photoCount(await chat.branch()) + photoIds.length > photos.perConversation)
         return c.json(refusal("photo-limit", "This conversation has reached its photo limit."), 409);
       try {
         images = takeStaged(sessionId, by, photoIds);
@@ -222,7 +222,8 @@ export function createShareApp(): Hono {
     // One line per file after the person's text: what the model reads, never bytes.
     const sender = nameOf(access.row.orgId, by);
     const said = files.length ? [text, ...files.map((f) => fileLine(sender, f))].filter(Boolean).join("\n") : text;
-    // From here to the hand-over, one synchronous stretch: nothing interleaves. The lock
+    // From here to the hand-over, one synchronous stretch: nothing interleaves (the chat takes or
+    // refuses the message inside the send call; only its answer comes later). The lock
     // (§app.baton/offers-and-leases): noteMessage decides whether this message may enter — and on
     // an open offer, that this sender now holds it; a runtime refusal then undoes exactly that.
     try {
@@ -238,8 +239,7 @@ export function createShareApp(): Hono {
       return busy(err);
     }
     try {
-      const r = chat.acceptPrompt(said, images, "server", undefined, { sentByBaton: { by } });
-      void r.turn.catch((err) => chat.reportTurnFailure(err));
+      await chat.send({ text: said, ...(images ? { images } : {}), origin: "server", sentByBaton: { by } });
     } catch (err) {
       // Refused: its staged photos stay for the retry.
       undoNote(sessionId);

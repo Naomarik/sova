@@ -4361,7 +4361,7 @@ export type MonitorScope = "unit" | "tree" | "none";
 /** How a process was charged to its session/worker, strongest first. Exact: `worker-pid` the
     runtime's in-process worker pid; `session-id` a `claude --resume/--session-id` uuid (a
     worker's session id, or a hosted session's Claude Code provider); `live-record` a pi
-    worker's own live record; `team-env` a member-mcp helper's team env; `env` the
+    worker's own live record; `team-env` a team member's env (PI_SUBAGENTS_TEAM_MEMBER); `env` the
     PI_SESSION_FILE pi's bash tool puts in its child's environment (a hosted session's or a pi
     worker's tool child, and everything it started); `descendant` below a charged process;
     `sid` a session id (setsid group) already seen under a charged process (orphans, nohup,
@@ -4374,7 +4374,7 @@ export type MonitorVia =
 
 /** Coarse kind of a process from its argv, parsed once per process. */
 export type MonitorProcKind =
-  | "server" | "pi-worker" | "claude-worker" | "claude-provider" | "member-mcp"
+  | "server" | "pi-worker" | "claude-worker" | "claude-provider"
   | "node" | "java" | "python" | "browser" | "shell" | "build" | "other";
 
 /** Linux pressure-stall `some avg10` (and `full avg10` where it exists), in percent. */

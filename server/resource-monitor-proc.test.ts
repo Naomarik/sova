@@ -104,9 +104,6 @@ describe("classifyArgv", () => {
     assert.equal(fresh.claudeSession, undefined);
     assert.equal(c("claude", "-p", "--session-id", "not-a-uuid").claudeSession, undefined);
   });
-  test("member-mcp helper", () => {
-    assert.deepEqual(c("/usr/bin/node", "/home/u/sova/pi-config/extensions/subagents/member-mcp.ts"), { kind: "member-mcp", cmd: "node member-mcp.ts" });
-  });
   test("node: interpreter flags skipped, tsx named, paths shortened", () => {
     assert.equal(c("/x/bin/node", "--import", "tsx", "server/index.ts").cmd, "node server/index.ts");
     assert.equal(c("node", "/wt/node_modules/.pnpm/tsx@4/node_modules/tsx/dist/cli.mjs", "server/index.ts").cmd, "node tsx server/index.ts");

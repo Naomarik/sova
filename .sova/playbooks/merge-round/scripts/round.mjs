@@ -284,7 +284,7 @@ export function expandArgs(argv, cwd) {
 
 /** A changed file that makes `check` run the spec replay suite (a landing gate, never run while working). */
 export const touchesSpecReplay = (file) =>
-  /^pi-config\/extensions\/spec\/(?:core|tests\/replay)\//.test(file) || file === "pi-config/extensions/mode/spec-guard.ts" || file === "pi-config/extensions/claude-code/spec-hooks.ts";
+  /^pi-config\/extensions\/spec\/(?:core|tests\/replay)\//.test(file) || file === "pi-config/extensions/mode/spec-guard.ts";
 
 /** A path glob as a whole-path RegExp: `**` any depth (`dir/**` the dir's every file), `*` within one segment, `?` one char. */
 export function globRe(glob) {

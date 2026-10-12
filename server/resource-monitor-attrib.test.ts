@@ -140,9 +140,9 @@ describe("attribute", () => {
     assert.deepEqual(owners.get(400), { session: "/s/a.jsonl", worker: "ag_03", via: "live-record" });
   });
 
-  test("member-mcp team env: only when exactly one session has that worker id (and team)", () => {
+  test("team env: only when exactly one session has that worker id (and team)", () => {
     const team = { teamId: "team_01", workerId: "ag_04" };
-    const procs = table(proc(st(SERVER, 1)), proc(st(500, 1), ["node", "/x/subagents/member-mcp.ts"], { team }));
+    const procs = table(proc(st(SERVER, 1)), proc(st(500, 1), ["node", "/x/tool.mjs"], { team }));
     const b = { ...hostedA(), path: "/s/b.jsonl", sessionId: "sess-b", providerIds: [] };
     assert.deepEqual(run(procs, [hostedA({ workers: [{ id: "ag_04", teamId: "team_01" }] })]).owners.get(500),
       { session: "/s/a.jsonl", worker: "ag_04", via: "team-env" });

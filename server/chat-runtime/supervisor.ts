@@ -20,7 +20,7 @@ import { stateRoot } from "../state-root";
 export const CHAT_SLICE = "sova-chats.slice";
 /** Systemd's stop grace for a chat: SIGTERM to the chat process, then SIGKILL to the whole unit. */
 export const CHAT_STOP_SEC = 30;
-export const IDLE_STOP_MIN = 30;
+export const IDLE_STOP_MS = 30 * 60_000;
 /** Idle Claude CLI children kept across all chat processes (the bridge's own `maxIdleSessions`). */
 export const CLAUDE_IDLE_MAX = 4;
 const LOG_TAIL = 20;
@@ -51,7 +51,7 @@ export interface SupervisorConfig {
 }
 
 /** The supervisor's knobs from the server's env: `SOVA_CHAT_SLICE`, `SOVA_CHAT_DRIVER=detached` (tests),
-    `SOVA_CHAT_IDLE_MIN` (fractional minutes, 0 never), `SOVA_CHAT_CLAUDE_IDLE_MAX`. */
+    `SOVA_CHAT_IDLE_MS` (milliseconds, 0 never), `SOVA_CHAT_CLAUDE_IDLE_MAX`. */
 export function supervisorConfig(env: NodeJS.ProcessEnv = process.env): SupervisorConfig {
   const num = (v: string | undefined, dflt: number) => {
     const n = v === undefined || v.trim() === "" ? Number.NaN : Number(v);
@@ -60,7 +60,7 @@ export function supervisorConfig(env: NodeJS.ProcessEnv = process.env): Supervis
   return {
     slice: env.SOVA_CHAT_SLICE?.trim() || CHAT_SLICE,
     driver: env.SOVA_CHAT_DRIVER?.trim() === "detached" ? "detached" : "systemd",
-    idleMs: Math.round(num(env.SOVA_CHAT_IDLE_MIN, IDLE_STOP_MIN) * 60_000),
+    idleMs: Math.round(num(env.SOVA_CHAT_IDLE_MS, IDLE_STOP_MS)),
     claudeIdleMax: Math.floor(num(env.SOVA_CHAT_CLAUDE_IDLE_MAX, CLAUDE_IDLE_MAX)),
   };
 }
@@ -283,7 +283,7 @@ export class ChatSupervisor {
     this.deaths = deps.deathsFile ?? deathsFile;
     this.sockOf = deps.socketPath ?? ((id, suffix) => chatSocketPath(id, { suffix }));
     this.prefix = deps.unitPrefix ?? chatUnitPrefix();
-    this.idleMs = deps.idleMs ?? IDLE_STOP_MIN * 60_000;
+    this.idleMs = deps.idleMs ?? IDLE_STOP_MS;
     this.claudeMax = deps.claudeIdleMax ?? CLAUDE_IDLE_MAX;
     this.now = deps.now ?? Date.now;
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));

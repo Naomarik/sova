@@ -787,6 +787,12 @@ time. Both kinds of approval come only from the user's click on a card option th
 - **Told once.** Under Brief Me (§app.overseer/proactivity) the Overseer gets one brief listing each
   session resumed and each one not resumed with why, as in-app links. Every resume is also a line in
   `overseer-actions.jsonl` (tool `auto_resume`).
+- **Chats in their own process** (§app/chat-processes) are never in the ledger: a server stop
+  doesn't cut their runs off. Each such chat records its own run in flight
+  (`<stateRoot>/chats/inflight/<session id>.json`), and only when its process dies with a run in
+  flight is it resumed (§app.chat-processes/crash), once, with "This chat's process stopped
+  unexpectedly and cut off your last turn. Continue where you left off.", under the same setting,
+  exclusions, cap, log line and brief (which then says a chat process stopped).
 
 ## §app.overseer/session-names — How the Overseer names sessions
 
@@ -921,8 +927,9 @@ itself.
   while a live record is up; one item either way, dated by the reply, its detail the error message
   — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
   killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
-  own restart ended: a worker this server restored (§app.worker-restore/restore) in its own
-  runtime, whose recorded ending is an error at a time between the previous server's stop and this
+  own restart ended: a worker this server restored (§app.worker-restore/restore) in a runtime of
+  the server's own process (never one in a chat process of its own, §app/chat-processes, whose
+  workers outlive the restart, so an error of theirs is real), whose recorded ending is an error at a time between the previous server's stop and this
   server's start, on any backend (a pi worker's "pi exited with code 143", a Claude Code worker's included). The stop is the moment the previous
   server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
   at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack

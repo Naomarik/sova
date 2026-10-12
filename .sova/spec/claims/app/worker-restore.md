@@ -2,7 +2,8 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A session's subagent workers are child processes of the runtime that hosts the session. When
-the Sova server restarts (a deploy, `systemctl restart`, a crash), those processes die, and until
+the Sova server restarts (a deploy, `systemctl restart`, a crash), those processes die (unless
+the session runs in a chat process of its own, whose workers keep running, §app.chat-processes/survives-restart), and until
 now the session forgot them: `agent_list` came back empty, the pane lost its rows and the
 lifetime Σ restarted at zero. This surface makes a worker outlive its process **as a record**:
 what it was, where its transcript is, what it spent. It does not make the process outlive the

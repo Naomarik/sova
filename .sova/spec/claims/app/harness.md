@@ -191,13 +191,18 @@ driving session or pi's agent session. The handle is what a chat in a process of
 like to the server (`shared/chat-runtime.ts`): commands that are calls with ids, answered with a
 result or a typed refusal (busy, refused, config) that is thrown again as the error class the chat
 threw; a state mirror read without asking; lifecycle events numbered for a reader that missed some;
-and browser frames passed through. Today the chat runs in the server's process, so a command runs
-the chat's own method at once, the mirror reads the chat as it is, and the driving session answers
-as before: whether a reply is running, whether the agent still holds queued messages, the model
+and browser frames passed through. The handle has two forms. A chat in the server's process (every
+chat with `SOVA_CHAT_HOST` off, and the special ones always) runs a command as the chat's own method
+at once, and the mirror reads the chat as it is. A chat in a process of its own (§app/chat-processes)
+gets each command over its socket and answers it there, a refusal as the same typed refusal; the
+mirror is the copy the chat last sent, which it sends before answering a command that changed it;
+and its lifecycle events reach the server's listeners as an in-server chat's do. Either way the
+driving session answers as before: whether a reply is running, whether the agent still holds queued messages, the model
 (and whether it takes images) and the thinking level, the session's id, folder and active branch,
 what its runtime loaded for its prompt (context files, skills, the system prompt's sources), and
-stopping a reply at shutdown. Whose live record belongs to one of this server's chats is decided
-by a set of processes, today this one, never by comparing with the server's own pid. A folder no runtime holds is read with pi's own
+stopping a reply at shutdown, which only an in-server chat's reply does. Whose live record belongs
+to one of this server's chats is decided by a set of processes, this one and each chat process it
+hosts, never by comparing with the server's own pid. A folder no runtime holds is read with pi's own
 loader, without extensions, by the adapter (`server/harness/pi/resources.ts`). The Overseer's
 alignment reads fold a session's neutral entries, and the worktree cleanup and a link's sandbox read
 the session file through the neutral reader. Every answer is the one pi gave before: the routes,
@@ -238,7 +243,12 @@ setup included, is over.
 Extension dialogs reach the chat through a dialog bridge (`DialogBridge`, `shared/harness-session.ts`;
 pi's side is `server/harness/pi/ui-bridge.ts`, which turns pi's UI calls — select, confirm, input,
 editor, notify, status, the theme — into bridge requests). The chat keeps the pending dialogs and
-their broadcast, answer, timeout, abort and fallback. A session's title (its name, else its first
+their broadcast, answer, timeout, abort and fallback. A pane that attaches while a dialog is
+pending gets it again, after the chat's state, with the time it has left. When the last pane
+leaves, a pending dialog is answered with its fallback; when a chat in its own process loses its
+server instead (§app.chat-processes/survives-restart), its panes are kept as orphans: dialogs stay
+pending and new ones may open, and the fallback applies only if no pane attaches within a minute of
+the server reconnecting. A session's title (its name, else its first
 message's text, else "Untitled") is read from the neutral history; a first message stored as a bare
 string, as legacy files keep it, still titles "Untitled". None of this changes what a client, a
 session file or an extension sees: the session goldens pin the session file, pi's calls and the

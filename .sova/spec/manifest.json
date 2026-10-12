@@ -8,6 +8,130 @@
     ]
   },
   "claims": {
+    "§app.chat-processes/code-pickup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/rollout.ts",
+        "server/chat-runtime/rollout.test.ts",
+        "server/chat-runtime/host.ts",
+        "server/chat-manager.ts",
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/CodeState.tsx",
+        "src/lib/code-state.ts",
+        "src/lib/code-state.test.ts",
+        "shared/protocol.ts",
+        "src/app.css",
+        "server/chat-host.ts",
+        "server/chat-handle-remote.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.chat-processes/supervision"
+      ]
+    },
+    "§app.chat-processes/crash": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-host.ts",
+        "server/chat-handle-remote.ts",
+        "server/auto-resume.ts",
+        "server/overseer.ts",
+        "server/ws.ts",
+        "server/chat-manager.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.overseer/auto-resume",
+        "§chat.transcript/own-writes-across-restart"
+      ]
+    },
+    "§app.chat-processes/idle-stop": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/supervisor.ts",
+        "server/chat-runtime/supervisor.test.ts",
+        "server/chat-runtime/host.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.worker-restore/restore",
+        "§app.chat-processes/supervision"
+      ]
+    },
+    "§app.chat-processes/server-actions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/host.ts",
+        "shared/chat-runtime.ts",
+        "shared/chat-runtime-wire.ts",
+        "server/chat-handle.ts",
+        "server/served-tools.ts",
+        "server/chat-manager.ts",
+        "server/project-services/tools.ts",
+        "server/project-services/note.ts",
+        "server/chat-handle-remote.ts",
+        "server/chat-host.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§chat.topics/push",
+        "§app.project-services/instance-note"
+      ]
+    },
+    "§app.chat-processes/supervision": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/supervisor.ts",
+        "server/chat-runtime/supervisor.test.ts",
+        "server/chat-runtime/fake-driver.ts",
+        "server/chat-runtime/supervisor-standin.ts",
+        "server/chat-runtime/supervisor.integration.test.ts",
+        "server/project-services/drivers.ts",
+        "server/chat-host.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.claude-code-provider/continuity"
+      ]
+    },
+    "§app.chat-processes/survives-restart": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-host.ts",
+        "server/chat-handle-remote.ts",
+        "server/chat-handle.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/ws.ts",
+        "server/overseer.ts",
+        "server/chat-joins.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.overseer/auto-resume",
+        "§app.harness/session-open"
+      ]
+    },
+    "§app.chat-processes/wire": {
+      "kind": "note",
+      "authority": "accepted",
+      "code": [
+        "shared/chat-runtime-wire.ts",
+        "server/chat-runtime/link.ts",
+        "server/chat-runtime/main.ts",
+        "server/chat-runtime/writer-lock.ts"
+      ],
+      "requires": [
+        "§app/chat-processes"
+      ]
+    },
     "§app.insights/aggregate-chips-live-vs-working": {
       "kind": "behavior",
       "authority": "accepted",
@@ -629,6 +753,23 @@
         "src/lib/api.ts",
         "server/usage-helper/query.ts",
         "shared/usage/wire.ts"
+      ]
+    },
+    "§app/chat-processes": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/chat-host.ts",
+        "server/chat-handle.ts",
+        "server/chat-handle-remote.ts",
+        "server/index.ts",
+        "server/app.ts",
+        "server/chat-host.test.ts",
+        "server/chat-runtime/trial-code.integration.test.ts",
+        "server/chat-runtime/trial-crash-idle.integration.test.ts",
+        "server/chat-runtime/trial-hosting.integration.test.ts",
+        "server/chat-runtime/trial-restart-more.integration.test.ts",
+        "server/chat-runtime/trial-restart.integration.test.ts"
       ]
     },
     "§app/extension-dialogs": {
@@ -8254,7 +8395,8 @@
         "shared/protocol.ts",
         "pi-config/extensions/subagents/index.ts",
         "server/resource-monitor-attrib.test.ts",
-        "server/resource-monitor-proc.test.ts"
+        "server/resource-monitor-proc.test.ts",
+        "server/chat-host.ts"
       ]
     },
     "§app.resource-monitor/entry-button": {
@@ -10290,7 +10432,9 @@
         "server/app.ts",
         "server/overseer-store.ts",
         "shared/protocol.ts",
-        "src/components/OverseerSettings.tsx"
+        "src/components/OverseerSettings.tsx",
+        "server/overseer.ts",
+        "server/chat-host.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -14175,7 +14319,8 @@
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
         "server/runtime-choice.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/chat-host.ts"
       ],
       "requires": [
         "§chat.profiles/live-commit",
@@ -15370,7 +15515,9 @@
         "shared/chat-runtime.ts",
         "server/automation-session.ts",
         "server/live.ts",
-        "server/live.test.ts"
+        "server/live.test.ts",
+        "server/chat-handle-remote.ts",
+        "server/chat-host.ts"
       ],
       "requires": [
         "§app.harness/boundary",
@@ -15421,7 +15568,8 @@
         "server/project-overseer.ts",
         "server/harness/pi/quirks.ts",
         "server/harness/pi/QUIRKS.md",
-        "server/chat-model.test.ts"
+        "server/chat-model.test.ts",
+        "server/chat-joins.test.ts"
       ],
       "requires": [
         "§app.harness/boundary",

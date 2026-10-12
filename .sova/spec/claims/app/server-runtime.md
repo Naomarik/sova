@@ -60,7 +60,11 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 (§chat.profiles/live-commit): `name` is the runtime this process runs on (`"bun"` when
 `process.versions.bun` is set, else `"node"`), `version` that runtime's version, `chosen` the
 runtime the choice asks for (`"node"` when its environment has `SOVA_RUNTIME=node`, else `"bun"`),
-read once at start. The answer's other fields, `unknownEntries` among them (a number only, never an
+read once at start. It also adds `chatHost: {mode, why}`: `mode` is `"out"` when ordinary chats
+run in processes of their own (§app/chat-processes), else `"in"`, and `why` is one fixed short
+reason (`switch off`, `not Linux`, `server not on Bun`, `no systemd user manager`, `systemd user
+units`, `test driver`, or `starting` before it is decided), never a value from the environment; the
+full reason is in the server's log. The answer's other fields, `unknownEntries` among them (a number only, never an
 entry's type or content: the route needs no sign-in), are §chat.profiles/live-commit's.
 
 ## §app.server-runtime/quirks — Runtime differences, worked around in one place

@@ -150,6 +150,9 @@ export interface AttribInput {
   hosted: readonly HostedInfo[];
   /** pi worker pid → its own session file, from the live records (`p<pid>-*.json`). */
   liveRecordPids: ReadonlyMap<number, string>;
+  /** A process in a chat's unit of its own → that chat's process (the unit holds what the chat started,
+      reparented or not). */
+  unitOf?: ReadonlyMap<number, number>;
   sids: SidMemory;
 }
 
@@ -256,6 +259,12 @@ export function attribute(input: AttribInput): Attribution {
       const up = resolve(ppid);
       if (inTree.has(ppid)) inTree.add(pid);
       if (!owner && up) owner = up.session === undefined && up.worker?.startsWith("unowned:") ? up : { ...up, via: "descendant" };
+    }
+    // In a chat's unit but no longer under it (setsid'd, reparented): still the chat's.
+    const chat = owner ? undefined : input.unitOf?.get(pid);
+    if (chat && chat !== pid && procs.has(chat)) {
+      const o = resolve(chat);
+      if (o) owner = { ...o, via: "descendant" };
     }
     // A worker-looking child of the server that matched nothing is its own (unowned) group.
     if (!owner && ppid === serverPid && (p.argv.kind === "pi-worker" || p.argv.kind === "claude-worker"))

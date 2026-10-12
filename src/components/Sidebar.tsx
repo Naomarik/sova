@@ -117,11 +117,13 @@ import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon, trapFocus } from "./ui";
 import { showSummaries } from "../lib/summary-line";
 import {
+  downPeerIds,
   effectiveHostFilter,
   HOST_FILTER_KEY,
   hostFilterShown,
   hostLabel,
   hostOf,
+  listedWhileDown,
   meshPeers,
   passesHostFilter,
   peerInfo,
@@ -1457,14 +1459,19 @@ export function Sidebar(props: {
   const agentsLabel = () => `Agents: ${workSentence()}`;
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
-      row's object across feed messages that don't touch it, so rows update in place. */
-  const all = createMemo<SessionSummary[]>((prev) =>
-    reuseUnchanged(
+      row's object across feed messages that don't touch it, so rows update in place. A down
+      peer's rows are left out unless the host filter names it (lib/mesh.ts `listedWhileDown`). */
+  const all = createMemo<SessionSummary[]>((prev) => {
+    const down = downPeerIds(meshPeers());
+    const filter = hostFilter();
+    return reuseUnchanged(
       // A cleared project overseer conversation is drawn nowhere: its overseer's History opens it.
-      (props.sessions ?? []).filter((s) => isMainThread(s) && !isClearedOverseer(s)).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
+      (props.sessions ?? [])
+        .filter((s) => isMainThread(s) && !isClearedOverseer(s) && listedWhileDown(hostOf(s.path), filter, down))
+        .map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
       prev,
-    ),
-  );
+    );
+  });
   /** The folder the server lists sessions from (its own agent dir's), read once the list is empty. */
   const isEmpty = createMemo(() => !!props.sessions && all().length === 0);
   const [dirInfo] = createResource(

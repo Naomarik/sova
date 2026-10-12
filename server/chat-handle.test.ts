@@ -112,10 +112,8 @@ test("closing a chat is an event with a higher seq than any before, kept for a l
 
 test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  // The chat's host: the handle itself and the pi adapter the chat runs on. The one file left is the
-  // Overseer's memory engine hook, loadout policy that runs with the chat (it moves with the special
-  // loadouts, al_3 stage 3); the list only shrinks.
-  const allowed = new Set(["server/chat-handle.ts", "server/overseer.ts"]);
+  // The chat's host: the handle itself and the pi adapter the chat runs on.
+  const allowed = new Set(["server/chat-handle.ts"]);
   const importers = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
     .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && f !== "server/chat-manager.ts")

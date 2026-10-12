@@ -1163,3 +1163,11 @@ describe("write and edit run only in a turn the user started (§app.overseer/too
     assert.doesNotMatch(JSON.stringify(writes()), /9:00/, "no content in the log");
   });
 });
+
+describe("the Overseer's memory (§chat.memory/overseer)", () => {
+  test("its runtime runs the same memory engine as a chat's, bound to its own chat", async () => {
+    const chat = await overseerChat();
+    assert.equal(chat.memoryAvailable(), true, "the engine's recall tools are registered");
+    assert.ok(chat.memoryHost(), "the engine's host is the chat's own");
+  });
+});

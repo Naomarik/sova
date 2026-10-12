@@ -45,6 +45,7 @@ import {
   newClientId,
   queuedText,
   runDetail,
+  seedLive,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -52,6 +53,7 @@ import {
   type LiveUserState,
 } from "../lib/live";
 import { appendItems } from "../lib/explain";
+import { codeFailure, codeView, type CodeControl, type CodeView } from "../lib/code-state";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionHrefOn, sessionViewKey } from "../lib/mesh";
@@ -197,6 +199,8 @@ export function ChatView(props: {
   onClaudeLogin?(login: ChatClaudeLogin | null): void;
   /** The session's profile as the socket said it (the head chip, §chat.profiles/after-first-message). */
   onProfile?(info: ChatProfileInfo): void;
+  /** This chat's code state and its Reload Now, for the head (§app.chat-processes/code-pickup); null when the view goes. */
+  onCode?(control: CodeControl | null): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
@@ -516,6 +520,12 @@ export function ChatView(props: {
   const [memoryStatus, setMemoryStatus] = createSignal<MemoryStatus | null>(null);
   /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
   const [compacting, setCompacting] = createSignal(false);
+  /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
+  const [code, setCode] = createSignal<CodeView | null>(null);
+  /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
+  const reloadCode = () => void socket.send({ type: "reload_code" });
+  props.onCode?.({ view: code, quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
+  onCleanup(() => props.onCode?.(null));
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -682,8 +692,10 @@ export function ChatView(props: {
       switch (msg.type) {
         case "hello":
           dropNotFound();
-          // A hello starts the socket's account again: memory says itself right after it, or is off.
+          // A hello starts the socket's account again: memory says itself right after it, or is off;
+          // so does the code, or it is current.
           setMemoryStatus(null);
+          setCode(null);
           cancelAnimationFrame(frame);
           frame = 0;
           queue = [];
@@ -699,6 +711,8 @@ export function ChatView(props: {
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
+            // Joined mid-reply: the reply so far and its running tools, which the deltas after this continue.
+            seedLive(setLive, msg.live);
             setCompacting(!!msg.isCompacting);
           });
           setModel(msg.model);
@@ -900,6 +914,9 @@ export function ChatView(props: {
         // This chat's memory (§chat.composer/memory-status): only while it is on, or the turn it goes off.
         case "memory_status":
           setMemoryStatus(msg.status.state === "off" ? null : msg.status);
+          break;
+        case "code":
+          setCode(codeView(msg));
           break;
         case "sandbox":
           setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
@@ -1734,6 +1751,21 @@ export function ChatView(props: {
           <div class="stack-2">
             <Show when={!archivedPane()}>
               <ConnectionBanner socket={socket} />
+            </Show>
+            {/* A reload onto new code that didn't start: the chat keeps working on older code. */}
+            <Show when={codeFailure(code())}>
+              {(f) => (
+                <Banner
+                  tone="warn"
+                  title={f().title}
+                  body={f().body}
+                  action={
+                    <button type="button" class="button button-sm" onClick={reloadCode}>
+                      Try Again
+                    </button>
+                  }
+                />
+              )}
             </Show>
             {/* Permanent until the world it names changes: the diagnosis and the gestures that
                 fix it, derived in src/lib/open-failure.ts. The first action is the primary one. */}

@@ -7,7 +7,7 @@ import { produce, type SetStoreFunction } from "solid-js/store";
 import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
-import type { TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
+import type { HelloLive, TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { fromV1 } from "../../shared/wire-v1";
 import {
   compactionEndEffects,
@@ -362,6 +362,22 @@ export type LiveEvent = SovaEvent | { type: typeof BATON_SENT_EVENT; by: string 
     one that wasn't asked; a message_end's `entryId` lands inside its `message.end`). */
 export function liveEventsOf(frame: V1EventFrame | V2EventFrame): SovaEvent[] {
   return "v" in frame && frame.v === 2 ? (isObj(frame.event) ? [frame.event] : []) : fromV1(frame);
+}
+
+/**
+ * A hello's `live` snapshot on the store just reset by that hello: the reply still streaming and the
+ * tools still running, as the events that built them would have left them, so the deltas after the
+ * hello continue them by index. Their effects are dropped: joining a reply is not its start.
+ */
+export function seedLive(set: SetStoreFunction<LiveState>, snapshot: HelloLive | undefined): void {
+  if (!snapshot) return;
+  const message = snapshot.message;
+  if (message) applyEvent(set, { type: "message.start", role: "assistant", parts: message.parts ?? [], ...(message.model ? { model: message.model } : {}) });
+  for (const t of snapshot.tools ?? []) {
+    const parent = t.parentCallId ? { parentCallId: t.parentCallId } : {};
+    applyEvent(set, { type: "tool.start", callId: t.callId, name: t.name, args: t.args, ...parent });
+    applyEvent(set, { type: "tool.update", callId: t.callId, output: t.output, images: t.images, ...parent });
+  }
 }
 
 /** What an event with no effects returns: one shared array, never written. */

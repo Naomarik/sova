@@ -27,7 +27,9 @@ import { sessionsChanged } from "./list-generation";
 export const UNREACHABLE = "The chat's process is not reachable right now.";
 /** How long a command waits for a chat whose link is down to be linked again (a reconnect, a reload). */
 export const RELINK_WAIT_MS = 15_000;
-/** How often the run events handled are acknowledged, at most. */
+/** The run events a chat keeps until acknowledged (its outbox); the others are ticks. */
+const FACTS = new Set(["run.start", "user.entered", "user.end", "run.settled"]);
+/** How often the ticks handled are acknowledged, at most. */
 const RUN_ACK_MS = 200;
 
 /** What the server does with what a chat process tells it, beyond the handle itself. */
@@ -267,7 +269,10 @@ export class RemoteChatHandle extends ChatHandle {
     } catch (err) {
       console.error("[chat] run event listener failed", err);
     }
-    this.scheduleAck(link);
+    // A fact (a run's start or end, the person's message, a card click) is acknowledged at once, so a
+    // restart can catch few of them unacknowledged; ticks are acknowledged in batches.
+    if (FACTS.has(f.event.type)) this.flushAck(link);
+    else this.scheduleAck(link);
   }
   private scheduleAck(link: Link): void {
     if (this.ackTimer) return;

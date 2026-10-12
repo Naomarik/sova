@@ -104,6 +104,29 @@ test("a chat process that dies is reported once, with systemd's exit and its las
   assert.equal(await sup.check("c1"), "unknown");
 });
 
+test("two looks at one death race: it is reported once, and a process started from that report (a worker's resume) stays tracked and recorded", async () => {
+  const d = new FakeDriver();
+  let restarted: Promise<unknown> | null = null;
+  const reports: ChatDeath[] = [];
+  const { sup } = make(d, {
+    onDeath: (death) => {
+      reports.push(death);
+      clock += 1000;
+      restarted = sup.start(chat);
+    },
+  });
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  d.die(rec.unit, ["sova-chat-test01-c1.service: Main process exited, code=killed, status=9/KILL"]);
+  await Promise.all([sup.check("c1"), sup.check("c1"), sup.tick()]);
+  await restarted;
+  assert.equal(reports.length, 1);
+  const now = sup.record("c1");
+  assert.ok(now && now.startedAt !== rec.startedAt, "the new process is tracked");
+  assert.ok(readdirSync(reg).length === 1, "and its record kept");
+  assert.equal(await sup.check("c1"), "up");
+});
+
 test("a signal death reads as crashed with the signal; a unit gone without a word is lost; exit 0 unannounced is an operator stop", async () => {
   assert.deepEqual(exitOfLog(["x.service: Main process exited, code=killed, status=9/KILL"]), { exit: null, signal: "KILL" });
   const d = new FakeDriver();

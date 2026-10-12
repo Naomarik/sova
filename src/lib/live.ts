@@ -25,7 +25,16 @@ import { isObj } from "./message";
 export type LiveBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "toolCall"; id: string; name: string; argsText: string; args?: unknown };
+  | {
+      type: "toolCall";
+      id: string;
+      name: string;
+      argsText: string;
+      args?: unknown;
+      /** Joined mid-arguments (a hello's `live`): the JSON so far wasn't sent, so the deltas after it
+          are a tail with no head. They are left out; the call's end brings the whole arguments. */
+      joined?: true;
+    };
 
 /**
  * Where an outgoing message of ours stands:
@@ -372,7 +381,16 @@ export function liveEventsOf(frame: V1EventFrame | V2EventFrame): SovaEvent[] {
 export function seedLive(set: SetStoreFunction<LiveState>, snapshot: HelloLive | undefined): void {
   if (!snapshot) return;
   const message = snapshot.message;
-  if (message) applyEvent(set, { type: "message.start", role: "assistant", parts: message.parts ?? [], ...(message.model ? { model: message.model } : {}) });
+  if (message) {
+    applyEvent(set, { type: "message.start", role: "assistant", parts: message.parts ?? [], ...(message.model ? { model: message.model } : {}) });
+    // A tool call still streaming its arguments carries none yet (they come whole at its end).
+    set(
+      produce((s) => {
+        const entry = streamingAssistant(s);
+        for (const b of entry?.blocks ?? []) if (b?.type === "toolCall" && b.args === undefined) b.joined = true;
+      }),
+    );
+  }
   for (const t of snapshot.tools ?? []) {
     const parent = t.parentCallId ? { parentCallId: t.parentCallId } : {};
     applyEvent(set, { type: "tool.start", callId: t.callId, name: t.name, args: t.args, ...parent });
@@ -393,7 +411,7 @@ function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" 
     else entry.blocks[i] = { type: event.kind, text: "" };
   } else if (event.type === "part.delta") {
     if (event.kind === "toolCall") {
-      if (cur?.type === "toolCall") cur.argsText += event.delta;
+      if (cur?.type === "toolCall" && !cur.joined) cur.argsText += event.delta;
     } else if (cur?.type === event.kind) cur.text += event.delta;
     else entry.blocks[i] = { type: event.kind, text: event.delta };
   } else if (event.kind === "toolCall") {

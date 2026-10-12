@@ -28,6 +28,8 @@ const LOG_TAIL = 20;
 /** How long an accepted drain, or a predecessor still exiting, is waited for. */
 const EXIT_WAIT_MS = 30_000;
 const PREDECESSOR_WAIT_MS = 10_000;
+/** A Claude child asked to go that the mirror still shows idle after this counts again. */
+const REAP_WAIT_MS = 30_000;
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 
 export const chatsRoot = () => join(stateRoot(), "chats");
@@ -217,7 +219,7 @@ export interface SupervisorDeps {
   /** Ask the chat to close (`drain{reason, force:false}`); it re-checks and may refuse. */
   drain?(chatId: string, reason: "idle" | "reload"): Promise<{ ok: boolean }>;
   /** Ask chat `chatId` to let its idle Claude CLI child go (the handle's releaseIdleModelChild). */
-  reapClaude?(chatId: string): void;
+  reapClaude?(chatId: string): void | Promise<"released" | "busy" | "none" | void>;
   /** Whether a process other than a chat's exiting one still holds the session's writer lock. */
   lockHeld?(sessionPath: string): boolean;
   /** Count `pid` among this server's own chat processes until the returned call (live.ts addOwnPid). */
@@ -249,7 +251,8 @@ interface Tracked {
   draining: boolean;
   claude: "none" | "idle" | "busy";
   claudeIdleSince: number;
-  reaping: boolean;
+  /** When a release was asked: until the mirror answers, it counts as let go (cleared after 30 s). */
+  reaping: number | null;
 }
 
 const isUp = (s: UnitStatus) => s.state === "active" || s.state === "activating";
@@ -313,7 +316,7 @@ export class ChatSupervisor {
   }
   private track(rec: ChatRecord): Tracked {
     this.chats.get(rec.chatId)?.releasePid();
-    const t: Tracked = { rec, releasePid: rec.pid && this.deps.ownPid ? this.deps.ownPid(rec.pid) : () => {}, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: false };
+    const t: Tracked = { rec, releasePid: rec.pid && this.deps.ownPid ? this.deps.ownPid(rec.pid) : () => {}, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null };
     this.chats.set(rec.chatId, t);
     return t;
   }
@@ -547,17 +550,35 @@ export class ChatSupervisor {
     if (!t) return;
     if (state === "idle" && t.claude !== "idle") t.claudeIdleSince = this.now();
     t.claude = state;
-    t.reaping = false;
+    t.reaping = null;
     this.capClaude();
   }
 
   /** Beyond the cap, the idle Claude children idle longest are let go; busy ones never. */
   private capClaude(): void {
-    const idle = [...this.chats.entries()].filter(([, t]) => t.claude === "idle" && !t.reaping).sort((a, b) => a[1].claudeIdleSince - b[1].claudeIdleSince);
+    const idle = [...this.chats.entries()].filter(([, t]) => t.claude === "idle" && t.reaping === null).sort((a, b) => a[1].claudeIdleSince - b[1].claudeIdleSince);
     for (let i = 0; i < idle.length - this.claudeMax; i++) {
       const [id, t] = idle[i]!;
-      t.reaping = true;
-      this.deps.reapClaude?.(id);
+      const asked = this.now();
+      t.reaping = asked;
+      // A release that failed, or found no idle child, must not keep the chat out of the count: the
+      // cap would let one more go than needed.
+      const unmark = (claude?: "busy" | "none") => {
+        if (this.chats.get(id) !== t || t.reaping !== asked) return;
+        t.reaping = null;
+        if (claude) t.claude = claude;
+      };
+      let asking: ReturnType<NonNullable<SupervisorDeps["reapClaude"]>>;
+      try {
+        asking = this.deps.reapClaude?.(id);
+      } catch {
+        unmark();
+        continue;
+      }
+      Promise.resolve(asking).then(
+        (r) => (r === "busy" || r === "none" ? unmark(r) : undefined),
+        () => unmark(),
+      );
     }
   }
 
@@ -592,6 +613,10 @@ export class ChatSupervisor {
     try {
       for (const [id, t] of [...this.chats]) {
         if (t.draining || (await this.check(id)) !== "up") continue;
+        if (t.reaping !== null && this.now() - t.reaping >= REAP_WAIT_MS) {
+          t.reaping = null;
+          this.capClaude();
+        }
         if (this.idleMs > 0 && !t.rec.exiting && t.idleSince !== null && this.now() - t.idleSince >= this.idleMs) await this.idleStop(id, t);
       }
     } finally {

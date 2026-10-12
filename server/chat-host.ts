@@ -15,7 +15,7 @@ import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTI
 import { sovaToken } from "./auth";
 import {
   acquireChatHandle,
-  activeConfigFailure,
+  assertOpenConfig,
   assertNotLive,
   BusyError,
   ConfigError,
@@ -26,6 +26,7 @@ import {
   errorOfRefusal,
   onLinksNotified,
   openKindOf,
+  recordConfigFailure,
   servedToolsFor,
   setChatRouter,
   takeOpeningChoice,
@@ -325,8 +326,7 @@ export class ChatHostRouter {
     if (!summary || summary.workerSession) return null;
     // The cheap refusals first, as the in-process open makes them: no process for a doomed open.
     assertNotLive(path);
-    const known = activeConfigFailure(path);
-    if (known) throw known;
+    assertOpenConfig(path);
     if (!force) {
       const age = recentForeignWriteAgeSec(path);
       if (age !== null) throw new BusyError(`modified ${age}s ago by a process we can't identify`, "recent");
@@ -357,6 +357,8 @@ export class ChatHostRouter {
       // A refusal (busy, recent, config) is the caller's, as in-process; the process exits by itself.
       this.sup.expectExit(rec.chatId, "refused");
       link.close();
+      // A config failure is remembered here too: the next open answers from it, with no process.
+      if (err instanceof ConfigError) recordConfigFailure(path, err);
       if (err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError) throw err;
       log(`${path}: did not open in its process (${err instanceof Error ? err.message : String(err)}); it runs in the server until it restarts`);
       await this.sup.stop(rec.chatId, "refused").catch(() => {});

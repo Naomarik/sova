@@ -323,6 +323,31 @@ export function activeConfigFailure(path: string): ConfigError | undefined {
 }
 
 /**
+ * Throw the open's permanent config failure, if the chat has one, and remember it: the cheap check
+ * before any expensive open, in this process or a chat process of its own (chat-host.ts).
+ */
+export function assertOpenConfig(path: string): void {
+  // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
+  // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
+  // makes a deleted directory exist.
+  const known = activeConfigFailure(path);
+  if (known) throw known;
+  // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
+  // would otherwise build a model runtime before the SDK reached the same conclusion.
+  const cwd = cwdOverride(path) ?? storedCwd(path);
+  if (cwd && !existsSync(cwd)) {
+    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
+    configFailures.set(path, failure);
+    throw failure;
+  }
+}
+
+/** Remember a permanent failure an open found elsewhere (a chat process's refusal). */
+export function recordConfigFailure(path: string, err: ConfigError): void {
+  configFailures.set(path, err);
+}
+
+/**
  * The session's stored cwd, read straight from the JSONL header, so a missing directory can be
  * detected before doing any of the expensive open work (model runtime, extensions, SDK session).
  * Unreadable or headerless files return null and are left to the normal open path to report.
@@ -3872,19 +3897,7 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   }
   assertNotLive(path);
   // The cheap pre-checks before the expensive open (model runtime, extensions, SDK session).
-  const cwd = cwdOverride(path) ?? storedCwd(path);
-  // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
-  // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
-  // makes a deleted directory exist.
-  const known = activeConfigFailure(path);
-  if (known) throw known;
-  // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
-  // below would otherwise build a model runtime before the SDK reached the same conclusion.
-  if (cwd && !existsSync(cwd)) {
-    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
-    configFailures.set(path, failure);
-    throw failure;
-  }
+  assertOpenConfig(path);
   if (!force) {
     // Shared constant with the frontend: RECENT_WRITE_MS (120s) in server/write-guard.ts.
     const age = recentForeignWriteAgeSec(path);

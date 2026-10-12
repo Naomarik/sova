@@ -3,7 +3,7 @@
 // process, linked to the router over an in-memory stream pair (the unit tier opens no sockets). On a
 // throwaway PI_CODING_AGENT_DIR with no credentials: no model is ever called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -23,7 +23,7 @@ const { ChatHostRouter } = await import("./chat-host");
 const { ChatRuntimeHost } = await import("./chat-runtime/host");
 const { Link } = await import("./chat-runtime/link");
 const { FakeDriver } = await import("./chat-runtime/fake-driver");
-const { BusyError, disposeAllChats } = await import("./chat-manager");
+const { activeConfigFailure, BusyError, ConfigError, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { LINK_MEMBER_ENTRY } = await import("../shared/mesh-links");
@@ -170,4 +170,23 @@ test("shutdown: a chat process is told goodbye and runs on; no unit is stopped",
   assert.deepEqual(t.driver.stopped, []);
   assert.equal(t.driver.table.get(t.driver.started[0]!.unit)?.status.state, "active");
   assert.deepEqual(t.exits, [], "the chat did not exit");
+});
+
+test("a chat whose folder is gone is refused before any process, and remembered until the folder is back", async () => {
+  const t = setup();
+  const gone = join(agentDir, "gone");
+  mkdirSync(gone);
+  const s = session();
+  writeFileSync(s.path, readFileSync(s.path, "utf8").replace(JSON.stringify(cwd), JSON.stringify(gone)));
+  const old = new Date(Date.now() - 10 * 60_000);
+  utimesSync(s.path, old, old);
+  rmSync(gone, { recursive: true });
+  for (let i = 0; i < 2; i++) await assert.rejects(t.router.acquire(s.path, false), (err: unknown) => err instanceof ConfigError && err.cwd === gone);
+  assert.ok(activeConfigFailure(s.path) instanceof ConfigError, "remembered");
+  assert.equal(t.driver.started.length, 0, "no process for a doomed open");
+  mkdirSync(gone);
+  assert.equal(activeConfigFailure(s.path), undefined, "the folder came back");
+  const h = await t.router.acquire(s.path, false);
+  assert.equal(h?.where, "process");
+  t.router.detach();
 });

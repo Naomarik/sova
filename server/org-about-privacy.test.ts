@@ -174,6 +174,9 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
   await orgs.patchOrg(org.id, { about: ABOUT });
   await po.ensureProjectOverseer(project.id);
+  // No unattended looks: the watch's soon look (60 s) could reopen the overseer's conversation after the
+  // coding-session test closes it, off the stub, on a real model. Through the patch, so the watch hears it.
+  await po.patchProjectOverseer(project.id, { watch: false });
 
   /** Every hand-off session this test ran, with a token for its share page when it has one. */
   const handoffs: { label: string; sessionId: string; path: string; token?: string; person: string }[] = [];

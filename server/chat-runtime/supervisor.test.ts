@@ -614,3 +614,40 @@ test("a chat whose main process came after the start stopped waiting is recorded
   assert.ok(owned.has(pid));
   assert.equal(JSON.parse(readFileSync(join(reg, "c1.json"), "utf8")).pid, pid);
 });
+
+test("a start asked for before adoption finished never starts a surviving chat twice, nor makes adoption stop it", async () => {
+  const d = new FakeDriver();
+  const first = make(d);
+  const a = await first.sup.start(chat);
+  first.sup.detach();
+  const second = make(d);
+  // The router's wait for adoption timed out (a slow build check), and a start came first.
+  await assert.rejects(second.sup.start(chat), /still running from before this server started/);
+  assert.equal(d.started.length, 1, "nothing started twice");
+  assert.equal(JSON.parse(readFileSync(join(reg, "c1.json"), "utf8")).unit, a.unit, "its record is untouched");
+  const { adopted } = await second.sup.adopt();
+  assert.deepEqual(adopted.map((r) => r.chatId), ["c1"]);
+  assert.deepEqual(d.stopped, [], "the surviving chat's unit is not stopped");
+});
+
+test("a chat started while adoption runs is not stopped as unrecorded", async () => {
+  const d = new FakeDriver();
+  const first = make(d);
+  await first.sup.start(chat);
+  first.sup.detach();
+  const second = make(d);
+  let started: Promise<unknown> | null = null;
+  const status = d.status.bind(d);
+  d.status = async (unit: string) => {
+    // While adoption checks c1's unit, another chat starts (its own status reads pass straight through).
+    if (unit.endsWith("-c1") && !started) {
+      started = second.sup.start({ ...chat, chatId: "c5", sessionPath: "/s/c5.jsonl" });
+      await started;
+    }
+    return status(unit);
+  };
+  await second.sup.adopt();
+  assert.deepEqual(d.stopped, []);
+  assert.ok(second.sup.record("c5"));
+});
+

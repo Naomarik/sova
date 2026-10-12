@@ -485,6 +485,12 @@ export class ChatSupervisor {
         throw new Error(`The chat's previous process (${held.rec.unit}) is still closing.`);
       await this.check(chat.chatId);
     }
+    // A process a previous server left running that this one has not taken back yet (a start asked
+    // for before adoption finished): never started twice, and its record never overwritten, or the
+    // adoption would find it unrecorded and stop it.
+    const prior = held ? null : readRecord(this.file(chat.chatId));
+    if (prior && !prior.death && isUp(await this.deps.driver.status(prior.unit)))
+      throw new Error(`This chat's process (${prior.unit}) is still running from before this server started; it is being taken back.`);
     const unit = this.unitOf(chat.chatId);
     const sock = this.sockOf(chat.chatId);
     // Recorded before the unit exists: a server that dies in between adopts it, or reports it lost.
@@ -493,7 +499,9 @@ export class ChatSupervisor {
     try {
       rec = await this.spawn(chat, unit, sock);
     } catch (err) {
-      rmSync(this.file(chat.chatId), { force: true });
+      // The record before this start (a death to deliver, say) stays as it was.
+      if (prior) this.write(prior);
+      else rmSync(this.file(chat.chatId), { force: true });
       throw err;
     }
     this.write(rec);
@@ -696,6 +704,10 @@ export class ChatSupervisor {
         c.release();
         this.claims.delete(id);
       }
+    // A unit recorded or started since the list above was read (a start made while this adoption ran) is ours too.
+    for (const rec of this.records()) named.add(rec.unit);
+    for (const t of this.chats.values()) named.add(t.rec.unit);
+    for (const unit of this.replacementClaims.keys()) named.add(unit);
     for (const unit of await this.deps.driver.units(this.prefix).catch(() => [] as string[])) {
       if (named.has(unit)) continue;
       this.log(`${unit}: no chat records it; stopping it`);

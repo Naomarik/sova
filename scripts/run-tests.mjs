@@ -62,6 +62,7 @@ const GLOBS = [
   "scripts/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
+  "server/chat-runtime/*.test.ts",
   "server/projects/*.test.ts",
   "server/mesh/*.test.ts",
   "server/sync/*.test.ts",

@@ -30,6 +30,8 @@
 //     t9        an outside SIGTERM to a chat process with a pane attached: the pane gets a quiet
 //               reloaded (no crash text), reconnects within seconds and gets a fresh hello
 //     real      (only with --model) t1 on a real model
+//     plumbing  (only when asked) the trial's stage-3 steps work: an Overseer tool call, an org with a
+//               baton, a project overseer and a look now
 //
 //   --driver <d>      detached (default with --mode child) or systemd (default with --mode unit)
 //   --mode <m>        unit: the server runs as a stand-in unit sova-trial-server-<tag>.service
@@ -79,7 +81,7 @@ const opt = (name, fallback) => {
 const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
-for (const a of asked) if (![...ALL, "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
+for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
 const checks = asked.length && !asked.includes("all") ? asked : [...ALL, ...(opt("model") ? ["real"] : [])];
 const tag = `${process.pid}`;
 const mode = opt("mode", userBus() ? "unit" : "child");
@@ -241,6 +243,35 @@ async function newChat(model = "trial/m1", cl = c) {
   await s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
   return { path, s };
 }
+const post = (path, body, cl = c) => cl.api(path, { method: "POST", body: JSON.stringify(body ?? {}) });
+/** Opens a chat the server names (the Overseer's, a project overseer's, a baton's) on the mock model. */
+async function openOn(path, model = "trial/m1", cl = c) {
+  const s = await chat(cl, path);
+  s.send({ type: "set_model", ref: model });
+  await s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
+  return { path, s };
+}
+/** The Overseer's chat, as the page opens it. */
+async function overseer(cl = c) {
+  const st = await cl.api("/api/overseer");
+  const path = st?.path ?? st?.current?.path ?? st?.session?.path;
+  if (!path) throw new Error(`no Overseer session: ${JSON.stringify(st)?.slice(0, 160)}`);
+  return path;
+}
+let orgs = 0;
+/** An org in the scratch dir with one project (the trial's proj) and one person. */
+async function orgSetup(cl = c) {
+  const org = await post("/api/orgs", { name: `Trial ${++orgs}`, dir: join(scratch, `ws-${orgs}`) }, cl);
+  const pg = await post(`/api/orgs/${org.id}/projects`, { name: "Portal", root: proj }, cl);
+  const pp = await post(`/api/orgs/${org.id}/people`, { name: "Dana", role: "Staff" }, cl);
+  return { orgId: org.id, projectId: pg.projectList[0].id, personId: pp.roster.find((x) => x.name === "Dana").id };
+}
+/** The project's overseer, created if it has none: {path, id, ...}. */
+const projectOverseer = (projectId, cl = c) => post(`/api/projects/${projectId}/overseer`, {}, cl);
+/** A look at the project now (what the schedule fires). */
+const lookNow = (projectId, cl = c) => post(`/api/projects/${projectId}/overseer/run`, {}, cl);
+/** A baton handed to `to`: {path, sessionId, link}. */
+const startBaton = (o, cl = c) => post("/api/baton", { orgId: o.orgId, projectId: o.projectId, to: o.personId, publicTitle: "Trial", goal: "trial goal" }, cl);
 const prompt = (s, text) => s.send({ type: "prompt", text, clientId: `trial-${Date.now()}` });
 const isEvent = (t) => (m) => m.type === "event" && m.event?.type === t;
 const settled = (s, from = 0, ms = 180000) => s.until(isEvent("run.settled"), ms, "run.settled", from);
@@ -737,9 +768,29 @@ async function t9() {
   s2?.close();
 }
 
+/** The stage-3 steps work on this server, wherever these chats run: an Overseer turn calling one of
+    its server-state tools, an org with a project, a person and a baton, a project overseer and a look
+    asked for now. Not in the default set: it checks the trial's own plumbing. */
+async function plumbing() {
+  const ov = await openOn(await overseer());
+  prompt(ov.s, '[call sova_todo {"op":"add","text":"TRIAL-TODO one"}] add it');
+  await settled(ov.s, 0, 60000);
+  const todos = await c.api("/api/overseer/todos");
+  R.check(JSON.stringify(todos).split("TRIAL-TODO one").length === 2, `plumbing: the Overseer's sova_todo call added the todo once (${JSON.stringify(todos).slice(0, 160)})`);
+  ov.s.close();
+  const o = await orgSetup();
+  R.check(o.orgId && o.projectId && o.personId, `plumbing: an org with a project and a person (${JSON.stringify(o)})`);
+  const b = await startBaton(o);
+  R.check(b.path && existsSync(b.path), `plumbing: a baton started (${b.sessionId})`);
+  const po = await projectOverseer(o.projectId);
+  R.check(po.path, `plumbing: the project has an overseer (${po.id})`);
+  const look = await lookNow(o.projectId).then(() => "started", (e) => String(e.message ?? e));
+  R.note(`plumbing: a look now: ${look}`);
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 try {
   await boot();

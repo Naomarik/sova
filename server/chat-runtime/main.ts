@@ -46,6 +46,9 @@ function exitNow(cause: ExitCause, link: Link | null): void {
   if (exiting) return;
   exiting = true;
   link?.send({ t: "exit", cause });
+  // Read by the supervisor off the unit's log (server/chat-runtime/supervisor.ts announcedExit): an end
+  // no server heard of is still an end on purpose, never a death. The format is that parser's.
+  console.error(`[chat-runtime] exit ${cause} (pid ${process.pid})`);
   void server.close().finally(() => setTimeout(() => process.exit(0), 50));
 }
 
@@ -85,7 +88,8 @@ if (!exiting) {
     unit,
     build,
     startedAt,
-    exit: (cause) => exitNow(cause, host?.controllerLink ?? null),
+    // The host already sent `exit` on its link.
+    exit: (cause) => exitNow(cause, null),
   });
   state = "ready";
   // Set by onControl meanwhile (a callback: the compiler can't see it).

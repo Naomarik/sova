@@ -729,6 +729,24 @@ nodeTest("seedLive carries the running tools' output, and their end replaces it"
   assert.equal(s.tools.b1?.output, "214 passed");
 });
 
+nodeTest("a tool call joined mid-arguments shows no argument tail, and its end brings them whole", () => {
+  const [s, set] = store();
+  seedLive(set, { message: { parts: [{ kind: "text", text: "Running it." }, { kind: "toolCall", id: "b1", name: "bash" }] } });
+  applyEvent(set, { type: "part.delta", index: 1, kind: "toolCall", delta: 'test"}' });
+  const e = s.entries[0];
+  assert.equal(e?.kind, "assistant");
+  if (e?.kind !== "assistant") return;
+  const b = e.blocks[1];
+  assert.equal(b?.type === "toolCall" && b.argsText, "", "the tail of JSON whose head the hello never had is left out");
+  applyEvent(set, { type: "part.end", index: 1, kind: "toolCall", id: "b1", name: "bash", args: { command: "pnpm test" } });
+  const end = e.blocks[1];
+  assert.equal(end?.type, "toolCall");
+  if (end?.type === "toolCall") {
+    assert.deepEqual({ ...(end.args as object) }, { command: "pnpm test" });
+    assert.equal(end.joined, undefined);
+  }
+});
+
 nodeTest("seedLive with tools only, or nothing, draws no reply", () => {
   const [s, set] = store();
   seedLive(set, undefined);

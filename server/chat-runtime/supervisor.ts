@@ -280,14 +280,24 @@ export function announcedExit(lines: readonly string[], pid: number | null): Exi
 
 /** systemd's own account of how a unit's main process ended, from its journal lines. */
 export function exitOfLog(lines: readonly string[]): { exit: number | null; signal: string | null } | null {
+  // Back to this run's "Started" line. A main process that ended on its own says so ("Main process
+  // exited", then "Failed with result"); a unit that ended cleanly by itself says "Deactivated
+  // successfully" (older systemd: "Succeeded."); one stopped by request whose process exited 0 says only
+  // "Stopping …" and "Stopped …".
+  let failed: string | null = null;
+  let stopped = false;
   for (let i = lines.length - 1; i >= 0; i--) {
-    // A clean exit is not "Main process exited" but the unit deactivating (older systemd: "Succeeded.").
-    if (/: (Deactivated successfully|Succeeded)\.$/.test(lines[i]!)) return { exit: 0, signal: null };
-    const m = /Main process exited, code=(\w+), status=(\d+)(?:\/(\w+))?/.exec(lines[i]!);
-    if (!m) continue;
-    return m[1] === "exited" ? { exit: Number(m[2]), signal: null } : { exit: null, signal: m[3] ?? `signal ${m[2]}` };
+    const line = lines[i]!;
+    if (/: (Deactivated successfully|Succeeded)\.$/.test(line)) return { exit: 0, signal: null };
+    const m = /Main process exited, code=(\w+), status=(\d+)(?:\/(\w+))?/.exec(line);
+    if (m) return m[1] === "exited" ? { exit: Number(m[2]), signal: null } : { exit: null, signal: m[3] ?? `signal ${m[2]}` };
+    const f = /Failed with result '([\w-]+)'/.exec(line);
+    if (f) failed ??= f[1]!;
+    else if (/^Stopped /.test(line)) stopped = true;
+    else if (/^Started /.test(line)) break;
   }
-  return null;
+  if (failed) return { exit: null, signal: failed };
+  return stopped ? { exit: 0, signal: null } : null;
 }
 
 export class ChatSupervisor {

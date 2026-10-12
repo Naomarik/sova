@@ -460,9 +460,50 @@ would list master's changes instead.
     e4449e4a; computed together with lane B2 above.
   - Numbers: 25-§ fixture, line 432 → 290 characters; all 25 § still listed by the command.
 
+### 2026-10-11
+
+- **`where` also ranks claims by the words of a topic.**
+  - Commit: 1ecd9cf9 (the promotion), branch `feat/spec-search`; master fast-forwarded to 8d26139c.
+  - Changed:
+    - `where` reads several unquoted words as one query, the same as those words quoted, and beside
+      its name and path rows ranks claims and areas by field-weighted BM25 over the heading, the first
+      sentence, the backticked names, the prose and the area's heading (`core/topic.mjs`; computed on
+      each call, nothing stored); a single argument that is a file keeps the path reading;
+    - topic rows are a section of their own: `type: "topic"` lines with `score` and `matched`,
+      `counts.topic`, `topicTerms` and a `topicNotice`; name rows keep their top ten and topic rows
+      fill only the places left free;
+    - a token query with no name match but topic matches exits 0 (was 1);
+    - a search bench (`tests/search/`): 52 dev queries from real asks, 48 held-out, a leak check and
+      the CLI harness.
+  - §: +§tools.spec/where-topic; §tools.spec/where-lookup, §tools/spec reworded. Base: 67d6803b, master
+    before the fast-forward.
+  - Numbers (search bench, `tests/search/experiments/REPORT.md` and `tests/search/results/REVIEW.md`):
+    dev (52 queries) R@3 0% → 59.6%, MRR 0 → 0.532 against the a9b87037 baseline; held-out (48, run
+    once at 0b43feb9) R@3 64.6%, MRR 0.552; 110 name and path lookups (80 tokens, 25 `code` paths, 5
+    edge cases) identical to a9b87037 on rows, counts and exit, no JSON key lost. Agent A/B with the
+    old mode text (GLM 5.3 medium, 24 questions × 2 reps, the same tools in both arms): no measurable
+    difference, because agents rarely used it (`map` in every run, `where` nearly always with one
+    word): correct 90 and 87 of 96, about 55k tokens per run in both. Hence the mode text change below.
+
 ### 2026-10-12
 
-- **Spec mode finds roots with a word search first (M2b).** `feat/spec-where-first`: step 1 is `where` with 3–5 of the task's words, one retry with other words, then `map`; §tools.spec/mode-reading reworded. Numbers (blind-graded, 36 questions × 2 reps, GLM 5.3 high and DeepSeek Flash 4.1 low): median tokens per run −27% to −37% in all four sets; correct 265 / 288 against 270 / 288, wrong 2 against 1; a titles-only area list was tried and dropped (−11 / 288, 3 wrong).
+- **Spec mode finds roots with a word search first (M2b).**
+  - Commit: 6f33e2ac (the promotion), branch `feat/spec-where-first`; not on master yet: the merge
+    round folds it in.
+  - Changed:
+    - `mode/spec-mode.md` step 1: find roots with `where` and 3–5 of the task's words, never one, or
+      a path or name; if no hit fits, try other words once, then `map` (also for a whole-area task);
+      the tools line lists `where <path|name|topic words>` before `map`; the guide's word cap
+      834 → 868;
+    - the site docs (`modes/spec.md`) and `.sova/spec/USAGE.md` say the same.
+  - §: §tools.spec/mode-reading reworded (it now requires §tools.spec/where-topic). Base: 8d26139c.
+  - Numbers (agent arm, blind-graded, 36 questions × 2 reps, GLM 5.3 high and DeepSeek Flash 4.1 low,
+    the same tools, only the mode text differing): median tokens per run −27% to −37% in all four sets
+    (GLM 46.1k → 29.1k and 59.3k → 41.0k; DeepSeek 78.1k → 51.2k and 91.1k → 66.1k); correct 265 / 288
+    against 270 / 288 for master's text; wrong answers 2 against 1. The misses cluster on questions
+    worded unlike the spec, where a plausible wrong hit replaces the overview the area list gave. A
+    titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped:
+    −11 / 288 correct, 3 wrong (ad3a61e3, reverted in 9116abae).
 
 ## Integration → master
 
@@ -497,7 +538,7 @@ The tools are Node standard library only. Nothing is installed.
    | `sova-spec.mjs` | Read-only core: `check`, `census`, `foreign`, `scope`, `impact`, `packet` |
    | `packet.mjs` | Packet paging |
    | `toc.mjs`, `read.mjs` | The pull path |
-   | `map.mjs`, `where.mjs`, `graph.mjs` | The look views and `impact --near` |
+   | `map.mjs`, `where.mjs`, `topic.mjs`, `graph.mjs` | The look views and `impact --near`; `topic.mjs` ranks `where`'s topic rows |
    | `fields.mjs` | The optional record fields and the frame |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
@@ -579,3 +620,12 @@ The tools are Node standard library only. Nothing is installed.
    - **Merge recovery.** A spec conflict a Git merge leaves is resolved one way only: `git checkout
      --no-overlay <default branch> -- .sova/spec/manifest.json .sova/spec/claims`, never `--ours`,
      then promote the branch's drafts again (`PROMOTE.md`).
+9. **The 2026-10-11/12 round.** Copy every `core/*.mjs` again (step 1), `topic.mjs` included, then:
+   - **`where` takes a topic.** Several unquoted words are one query (the same as quoted), and the
+     answer adds ranked topic rows in their own section: `type: "topic"` lines (`score`,
+     `matched`), `counts.topic`, `topicTerms` and `topicNotice`. Name and path rows, their counts
+     and their exits are unchanged, except that a token query with no name match but topic matches
+     now exits 0 (was 1).
+   - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
+     first, tries other words once, then `map`. A project that points its agents at
+     `mode/spec-mode.md` gets it with this upgrade.

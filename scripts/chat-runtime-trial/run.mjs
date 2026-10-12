@@ -31,7 +31,7 @@
 //     t9        an outside SIGTERM to a chat process with a pane attached: the pane gets a quiet
 //               reloaded (no crash text), reconnects within seconds and gets a fresh hello
 //     stage 3 (stage3-design.md §10.2):
-//     t10       the Overseer out: sova_list_sessions, read, sova_note, sova_idea explore (the explorer a
+//     t10       the Overseer out: sova_list_sessions, read, edit (applied; a bad one refused), sova_note, sova_idea explore (the explorer a
 //               child of its process); the run note in the file
 //     t11       a restart mid an Overseer's served tool: unknown, ran once; a message queued before the
 //               restart reaches the next server's limits (reset)
@@ -884,6 +884,16 @@ async function t10() {
   R.check(r1.length === 1 && !r1[0].message.isError, `t10: sova_list_sessions answered (${resultText(r1[0])})`);
   const r2 = await turn(ov, `[call read {"path":"${join(proj, "trial-read.txt")}"}]`);
   R.check(r2.length === 1 && /READ-ME-TRIAL/.test(JSON.stringify(r2[0])), `t10: the read file tool answered with the file (${resultText(r2[0])})`);
+  // edit, served: pi validates its arguments against the schema as it crossed the socket (plain
+  // JSON, TypeBox's Symbol keys dropped), and the edit lands.
+  const editArgs = { path: join(proj, "trial-read.txt"), edits: [{ oldText: "READ-ME-TRIAL", newText: "EDITED-TRIAL" }] };
+  const r2b = await turn(ov, `[call edit ${JSON.stringify(editArgs)}]`);
+  const edited = readFileSync(join(proj, "trial-read.txt"), "utf8");
+  R.check(r2b.length === 1 && !r2b[0].message.isError, `t10: the edit file tool answered, no error (${resultText(r2b[0])})`);
+  R.check(edited === "EDITED-TRIAL\n", `t10: the edit applied to the file (${JSON.stringify(edited)})`);
+  // Arguments the schema refuses (edits missing): a validation error, the file untouched.
+  const r2c = await turn(ov, `[call edit ${JSON.stringify({ path: join(proj, "trial-read.txt") })}]`);
+  R.check(r2c.length === 1 && r2c[0].message.isError && readFileSync(join(proj, "trial-read.txt"), "utf8") === edited, `t10: an edit the schema refuses is an error and changes nothing (${resultText(r2c[0])})`);
   const r3 = await turn(ov, '[call sova_note {"op":"append","text":"TRIAL-NOTE one"}]');
   const notes = (await c.api("/api/overseer/notes"))?.text ?? "";
   R.check(r3.length === 1 && !r3[0].message.isError && notes.split("TRIAL-NOTE one").length === 2, `t10: sova_note (attended) wrote the note once (${resultText(r3[0])})`);
@@ -893,7 +903,7 @@ async function t10() {
   R.check(r5.length === 1 && /Launched/.test(JSON.stringify(r5[0])), `t10: sova_idea explore launched the explorer (${resultText(r5[0])})`);
   await waitFor(() => mockLog(mock.log).some((e) => e.tag === "explorer"), 30000);
   await sleep(1500);
-  const workers = tree(pid).filter((p) => p.pid !== pid && /--mode rpc/.test(p.cmd));
+  const workers = pid ? tree(pid).filter((p) => p.pid !== pid && /--mode rpc/.test(p.cmd)) : [];
   R.check(workers.length === 1, `t10: the explorer is a child of the Overseer's process (${workers.map((w) => w.pid).join(", ") || "none"})`);
   await mock.plain("");
   const runNotes = entries(ov.path).filter((e) => JSON.stringify(e).includes("[now] It is")).length;

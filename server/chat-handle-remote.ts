@@ -39,6 +39,28 @@ export interface RemoteHooks {
   linkLive?(sessionId: string): boolean;
 }
 
+const REQUEST_FRAMES = ["tool.call", "tool.abort", "ask"] as const;
+type RequestFrame = FrameOf<(typeof REQUEST_FRAMES)[number]>;
+
+/** A chat's requests that arrive before its handle exists, kept for it. */
+export interface HeldRequests {
+  /** Stop holding; the requests held so far, in order. */
+  release(): RequestFrame[];
+}
+
+/** Hold what the chat asks on `link` until a handle takes the link: on adoption the chat sends the
+    calls it queued while no server was there as soon as it gets `control`, before its `state`. */
+export function holdRequests(link: Link): HeldRequests {
+  const held: RequestFrame[] = [];
+  const offs = REQUEST_FRAMES.map((t) => link.on(t, (f) => void held.push(f as RequestFrame)));
+  return {
+    release() {
+      for (const off of offs) off();
+      return held.splice(0);
+    },
+  };
+}
+
 /** Where a chat's process runs: its unit and pid (the supervisor's record). */
 export interface RemoteWhere {
   unit: string;
@@ -67,10 +89,12 @@ export class RemoteChatHandle extends ChatHandle {
     mirror: ChatRuntimeMirror,
     private readonly epoch: number,
     private readonly hooks: RemoteHooks = {},
+    held?: HeldRequests,
   ) {
     super();
     this.mirror = mirror;
     this.bind(link);
+    for (const f of held?.release() ?? []) this.request(link, f);
   }
 
   get closed(): boolean {
@@ -117,14 +141,7 @@ export class RemoteChatHandle extends ChatHandle {
       if (c.sendRaw) c.sendRaw(f.json);
       else c.send(JSON.parse(f.json));
     });
-    on("tool.call", (f) => void this.runTool(f));
-    on("tool.abort", (f) => this.running.get(f.effectId)?.abort());
-    on("ask", (f) => {
-      answerChatAsk(this.path, f.method, f.args).then(
-        (result) => link.send({ t: "answer", id: f.id, ok: true, result: result ?? null }),
-        (err) => link.send({ t: "answer", id: f.id, ok: false, error: { message: err instanceof Error ? err.message : String(err) } }),
-      );
-    });
+    for (const t of REQUEST_FRAMES) on(t, (f) => this.request(link, f));
     on("reload.request", (f) => this.hooks.reload?.(this, f.auto));
     on("exit", (f) => {
       this.ended = true;
@@ -136,6 +153,17 @@ export class RemoteChatHandle extends ChatHandle {
       this.hooks.linkEnd?.(this, end);
     });
     this.pushLinkLive();
+  }
+
+  /** What the chat asks of the server: a server-hosted tool call, its abort, an ask. */
+  private request(link: Link, f: RequestFrame): void {
+    if (f.t === "tool.call") void this.runTool(f);
+    else if (f.t === "tool.abort") this.running.get(f.effectId)?.abort();
+    else
+      answerChatAsk(this.path, f.method, f.args).then(
+        (result) => link.send({ t: "answer", id: f.id, ok: true, result: result ?? null }),
+        (err) => link.send({ t: "answer", id: f.id, ok: false, error: { message: err instanceof Error ? err.message : String(err) } }),
+      );
   }
 
   private failPending(): void {

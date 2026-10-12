@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { RunStartAnswer, ServerToolDecl, SpecialSpec } from "../shared/chat-runtime";
+import { NOT_RUN_NO_SERVER } from "../shared/chat-runtime-wire";
 import type { SpecialPort } from "./chat-manager";
 import { specialLoadout } from "./chat-special";
 
@@ -92,7 +93,7 @@ test("the Overseer's loadout: the user's parts then its own, a run's answer spli
 });
 
 test("no answer in time: the run starts on the last prompt it had, without a run note", async () => {
-  const port = portOf([{ prompt: {}, append: ["OURS-1"], message: { customType: "note", content: "n1", display: false } }, new Error("The Sova server isn't answering")]);
+  const port = portOf([{ prompt: {}, append: ["OURS-1"], message: { customType: "note", content: "n1", display: false } }, new Error(NOT_RUN_NO_SERVER)]);
   const b = build(specOf(), port);
   (b.loader as any).appendSystemPromptOverride(["USER"]);
   const { pi, handlers } = fakePi();
@@ -102,6 +103,11 @@ test("no answer in time: the run starts on the last prompt it had, without a run
   const out = await handlers.get("before_agent_start")!(event, ctx);
   assert.equal(event.systemPromptOptions.appendSystemPrompt, "USER\n\nOURS-1");
   assert.equal(out, undefined, "no run note");
+  // Anything but no server answering is the run's own error, never a silent fallback.
+  const strict = build(specOf(), portOf([new Error("Not a registered baton session.")]));
+  const { pi: pi2, handlers: h2 } = fakePi();
+  (strict.loader as any).extensionFactories[0].factory(pi2);
+  await assert.rejects(h2.get("before_agent_start")!({ systemPromptOptions: {} }, ctx), /Not a registered baton session/);
 });
 
 test("a baton's loadout: no operator setup, its prompt options set verbatim, owner areas re-registered, abilities set", async () => {
@@ -155,6 +161,7 @@ test("chat-special imports only what a chat process may load: shared types, the 
   const imports = [...src.matchAll(/^import[^"]*"([^"]+)";/gm)].map((m) => m[1]!).sort();
   assert.deepEqual(imports, [
     "../shared/chat-runtime",
+    "../shared/chat-runtime-wire",
     "../shared/harness",
     "./author-context",
     "./chat-manager",

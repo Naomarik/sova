@@ -373,6 +373,8 @@ export interface SpecialHost {
   composerClosed?(path: string): string | null;
   /** Its chat's process died: the kind cleans up what the run left in its own state. */
   died?(path: string): void;
+  /** Its chat closed: what the kind kept for it goes. */
+  closed?(path: string): void;
   /** Its chat's process is linked again (a reconnect, a reload): what waited for it goes now. */
   relinked?(path: string): void;
 }
@@ -591,7 +593,13 @@ function serveOnce(): void {
   serving = true;
   setServerToolPort(port);
   onChatEvent((e) => {
-    if (e.type === "closed") hostedTools.delete(e.chatId);
+    if (e.type !== "closed") return;
+    hostedTools.delete(e.chatId);
+    // What a special kind kept for the chat goes with it.
+    const kind = kindOfChat.get(e.chatId);
+    kindOfChat.delete(e.chatId);
+    eventsHere.delete(e.chatId);
+    if (kind) specialHostOf(kind)?.closed?.(e.chatId);
   });
 }
 

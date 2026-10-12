@@ -1099,6 +1099,7 @@ registerSpecialHost({
   saveChoice(_path, patch) {
     patchOverseerSettings(patch);
   },
+  closed: (path) => void prompts.delete(path),
   opened: (chat) => {
     overseerPath = chat.path;
     return keepNormal(chat);

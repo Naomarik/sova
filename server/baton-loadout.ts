@@ -818,6 +818,10 @@ registerSpecialHost({
       if (!wrapupActive(sessionId) && !stopped) void replyFact(sessionId, "reply/ended");
     }
   },
+  closed(path) {
+    offered.delete(path);
+    runOfChat.delete(path);
+  },
   // Its chat's process is linked again: the entries that waited for it are written.
   relinked(path) {
     void flushEntries(path).catch(() => {});

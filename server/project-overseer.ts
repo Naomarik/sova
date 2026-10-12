@@ -1197,6 +1197,10 @@ registerSpecialHost({
       void watchFact(rt.projectId, "turn/ended");
     }
   },
+  closed(path) {
+    openedValues.delete(path);
+    builtFor.delete(path);
+  },
   saveChoice(path, patch) {
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);

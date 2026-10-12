@@ -392,7 +392,7 @@ export class ChatHostRouter {
     const lock = readLock(path);
     if (lock && pid !== null && lock.pid === pid && !holderAlive(lock)) {
       try {
-        if (statSync(path).mtimeMs <= Date.parse(d.at)) markOwned(path);
+        if (statSync(path).mtimeMs <= Date.parse(d.endedAt ?? d.at)) markOwned(path);
       } catch {
         // the file is gone: nothing to record
       }

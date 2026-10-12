@@ -177,7 +177,7 @@ Install. `models.json` contains no keys; the local Ollama entry's
 ```sh
 node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
-cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
+cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/extension-toggle && node --test index.test.ts
 cd extensions/compact-handoff && node tests/run.mjs
 cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts spec-assessment.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/style-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs && node tests/assessment-absence.mjs

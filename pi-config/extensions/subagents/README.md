@@ -2,9 +2,11 @@
 
 Background workers with separate sessions, plus a monitor at `/agents`
 (`/subagents` alias). Spawning returns immediately; waiting is an explicit operation.
-Pi is the default backend. The separate [Claude Code extension](../claude-code/README.md)
-adds `backend: "claude-code"` to the same tools and monitor; mixed batches are supported.
-Options below describe Pi unless stated otherwise.
+Pi is the default backend. `backend: "claude-code"` runs a Claude model on Sova's tools: the
+worker is a pi worker whose model is the [Claude Code extension](../claude-code/README.md)'s
+provider (`claude-code-cli/<catalog id>`), the path a Claude Code chat runs on
+(`claude-workers.ts`, see [Claude Code workers](#claude-code-workers)). Mixed batches are
+supported. Options below describe Pi unless stated otherwise.
 
 Installed globally through this symlink:
 
@@ -34,9 +36,8 @@ the parent session so old references cannot target unrelated new workers.
 | `team_eject`       | Release an ended member's seat in a session team (parent only; see below).       |
 
 Team members additionally get `team_msg`, `team_inbox`, `team_ask`, and for an
-orchestrator member `team_roster` and `team_steer`: Pi members through a
-restricted member extension (`member.ts`), Claude Code members through a stdio
-MCP server (`member-mcp.ts`, tools named `mcp__team__<tool>`). See
+orchestrator member `team_roster` and `team_steer`, through a restricted member
+extension (`member.ts`); a Claude Code member is a pi worker and loads it too. See
 [Team messaging](#team-messaging-orchestrators-and-operator-questions).
 
 Find models without guessing IDs or invoking a separate Pi CLI:
@@ -47,8 +48,8 @@ Find models without guessing IDs or invoking a separate Pi CLI:
 
 Pass this to `agent_models`; optionally set `backend: "pi"` or `"claude-code"`
 and `limit` (default 30, maximum 100). Pi uses the current session registry,
-including extension/cloud providers. Claude asks its CLI's initialization endpoint
-for models/effort choices without submitting a model task. Discovery failures are
+including extension/cloud providers. `claude-code` lists Sova's Claude catalog
+(`claude-code/catalog.ts`) with each model's efforts, with no `claude` process. Discovery failures are
 reported per backend, not silently converted into an empty model list.
 
 Spawn one worker:
@@ -77,9 +78,10 @@ Agent options work both inside `agents` and in the single-worker shorthand:
 
 - `count`: positive integer; default 1. At most 8 workers per call and 12 live
   workers overall. Idle, steerable workers still consume a live slot.
-- `backend`: default `pi`; `claude-code` requires the separate extension. Backend-specific
-  defaults and validation apply; Claude does not inherit Pi model/tools/effort.
-- `backendOptions`: options owned by the selected backend (unsupported for Pi).
+- `backend`: default `pi`; `claude-code` runs a Claude model on Sova's tools (below). Its
+  defaults and validation apply; it does not inherit the parent's model/tools/effort.
+- `backendOptions`: options owned by the selected backend (unsupported for Pi; for
+  `claude-code`, see below).
 - `model`: exact `provider/model` ID. Defaults to the parent's current model,
   not the model saved in global settings. A named definition can override it.
 - `effort`: Pi reasoning level; defaults to the parent's current level. Pi clamps
@@ -124,7 +126,7 @@ Agent options work both inside `agents` and in the single-worker shorthand:
   parent session; an ephemeral (`--no-session`) parent cannot fork.
 
 Do not mix `agents` with shorthand options. The whole batch is validated before
-any child starts (including backend checks such as Claude's prompt-size limit).
+any child starts (including backend checks such as a Claude spawn's model, tools and options).
 If a factory throws during creation, already-created batch members are stopped;
 no partial run or completion wake is published. The failed `agent_spawn` waits
 at most 10 seconds for their termination and returns at once if cancelled.
@@ -141,14 +143,9 @@ Use IDs when names are duplicated:
 ```
 
 Optional `mode: "followUp"` queues instructions after current work. `mode: "redirect"`
-uses Pi's normal steering, or Claude's interrupt-then-replacement protocol. Omitting
-mode preserves existing Pi steering and defaults to redirect for Claude. A queued
-acknowledgment is not task completion. Claude follow-ups do not automatically
-continue after a task errors or aborts, but follow-ups queued before or during a
-redirect survive the abort that redirect itself requested and run after the
-replacement. Claude redirects require both an interrupt control response and
-settlement correlated to the interrupted request; the control response may be
-negative if that request has settled.
+uses Pi's normal steering (a Claude Code worker is a pi worker and steers the same way).
+Omitting mode preserves existing Pi steering. A queued acknowledgment is not task
+completion.
 
 Pi itself continues queued messages after a failed run (its own queue, not
 this extension's). The runner cannot reliably prevent that, so it reports it: the
@@ -193,16 +190,8 @@ also extend a queued steer's wait, still within the 10-minute cap. While a steer
 awaits acceptance, its `queue_update` and even its delivery may arrive before the
 acknowledgment; the task boundary moves at delivery either way. A longer wait
 also widens the window in which another client's or an extension's queue entry
-can be mistaken for the steer (see above). Claude allows 15 seconds
-for interrupt response plus correlated settlement, and 30 seconds for
-message-delivery acknowledgment. If delivery or interruption remains ambiguous
-at these deadlines, the worker is stopped and an error is reported, subject to the
-cancellation behavior below. One Claude exception: if the interrupted task has
-already settled and only the interrupt response is missing, the redirect is
-rejected and the idle worker is kept. No new turn starts until that interrupt is
-answered; if it stays unanswered through the 30-second control deadline, the
-worker is stopped so a delayed interrupt cannot abort later work. Replacement instructions are not silently assumed
-to have run. Strict protocol parsing and fail-closed handling are intentional
+can be mistaken for the steer (see above). Replacement instructions are not silently
+assumed to have run. Strict protocol parsing and fail-closed handling are intentional
 safeguards.
 
 Cancelling `agent_steer` **only cancels the acceptance wait, not the worker**.
@@ -213,9 +202,7 @@ not cause a delayed acceptance-timeout kill. If the acknowledgment never arrives
 the runner asks Pi for its state (`get_state`): when two consecutive readings show
 no active or queued run, the worker returns to `waiting` with outcome `error`
 ("acceptance unknown"), not success; if Pi does not answer, the worker stays
-`running` with an error diagnostic and must be stopped explicitly. For Claude, an in-flight bounded
-redirect transaction continues after the caller stops waiting; its normal
-protocol deadlines and failure handling still apply. Inspect `agent_list` /
+`running` with an error diagnostic and must be stopped explicitly. Inspect `agent_list` /
 `agent_transcript` before retrying to avoid duplicate work. Use `agent_kill`
 explicitly to stop a worker.
 
@@ -249,13 +236,13 @@ re-adopted after a restart with a cwd no longer allowed keeps running; `agent_li
 Every worker start, pi or Claude Code, asks the sandbox extension's one `workerLaunch({cwd, root?,
 backend, owner})`. A worker started inside a tracked worktree is confined to writing there
 (`root` set: the parent's scope narrowed to the worktree while the parent's sandbox is on; a
-write-only scope while it is off). A pi worker gets extension flags. A Claude Code worker gets an
-opaque `scope` that the runner, or its host when it is hosted, hands to the sandbox's
-`confineLaunch` at every launch (see the claude-code README, **Under the sandbox**). This file
-only passes that data through and interprets no policy. If the sandbox extension is not loaded, or
-refuses, the spawn is refused.
+write-only scope while it is off). Every worker is a pi worker and gets extension flags: the
+sandbox confines each of its tool calls. This file only passes that data through and interprets
+no policy. If the sandbox extension is not loaded, or refuses, the spawn is refused. A backend
+registered by another extension is refused while the sandbox is on or the start is
+worktree-confined, since nothing confines it.
 
-`useWorktreeConfig: true` (agent_spawn, pi only, cwd inside an active tracked worktree with a
+`useWorktreeConfig: true` (agent_spawn, pi or claude-code, cwd inside an active tracked worktree with a
 `.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, `--session-dir`
 the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
 tree's `extensions/mode` loaded by path with `--major normal --minor spec`, and `--approve`.
@@ -285,14 +272,9 @@ When the parent runs on a remote target (pi-config's `remote` extension, `--targ
 such sessions in an empty local placeholder directory), every worker runs on the target as well —
 no backend ever gets local tools against the placeholder:
 
-- pi workers load the remote extension (`-e …/remote/index.ts --target <name>`; the runner's
-  `flags` option), so their built-in tools are the remote ones under the same names. Tool
-  allowlists keep working by name.
-- claude-code workers start with `--tools ""` and the `remote` MCP server
-  (`remote/mcp-server.ts`; tools `mcp__remote__remote_bash`, `remote_read`, `remote_write`,
-  `remote_edit`, `remote_ls`, `remote_find`, `remote_grep`), plus `MCP_TOOL_TIMEOUT` in their own
-  environment so a long remote command is not cut at claude's 60 s default. Team members get the
-  `team` server beside it.
+- pi workers, a Claude Code worker included, load the remote extension (`-e …/remote/index.ts
+  --target <name>`; the runner's `flags` option), so their built-in tools are the remote ones
+  under the same names. Tool allowlists keep working by name.
 - other backends are refused in a remote session, as is any spawn while the session's target
   failed to load.
 
@@ -300,33 +282,51 @@ The session is recognised from the remote extension's `remote:session` event on 
 from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`). See the remote
 extension's README ("Workers").
 
+## Claude Code workers
+
+`backend: "claude-code"` (agent_spawn, a team member, a coordinator or monitor, Delegate) is
+mapped onto a pi worker by `claude-workers.ts` (`claudeOnPi`, inside `spawnBatch`) and recorded
+with backend `pi`. The runner then loads the claude-code provider into the child
+(`claudeCodeProviderLoad`) and passes the model id with `--claude-code-model`, so a Claude id the
+catalog doesn't list still runs (the result says "Not verified").
+
+- `model`: a Claude catalog id (an old alias read as its catalog model), default the current
+  Sonnet; it runs as `claude-code-cli/<id>`.
+- `effort`: `low`, `medium` (default), `high`, `xhigh` or `max`, kept as the worker's thinking
+  level after its model is set; the provider hands it to the CLI. Anything else is refused.
+- `tools`: Claude's names map to Sova's (`Read`→`read`, `Bash`→`bash`, `Edit`→`edit`,
+  `Write`→`write`, `Grep`→`grep`, `Glob`→`find`, `LS`→`ls`); Sova's names are accepted as they
+  are; any other name is refused. Omitted: all seven.
+- `backendOptions`: `permissionMode` `bypassPermissions` or `dontAsk` change nothing; `plan` keeps
+  only `read`, `grep`, `find` and `ls`. `acceptEdits`, `manual`, `allowedTools` and
+  `maxBudgetUsd` are refused with the reason (Sova's tools have no per-call approval and no spend
+  ceiling); an unknown key is refused.
+
+Team tools, the sandbox, remote targets, spec mode, restore/resume, the death message's last
+output lines and login failover (the provider bridge's) are the pi worker's. A native Claude Code
+worker recorded before this change stays readable through `adapters/`; resuming it continues on
+Sova's tools in a new session (see "Restored workers and `agent_resume`").
+
 ## Spec mode
 
 While the spawning session has the `spec` minor mode on (the mode extension announces its active
 modes as `mode:state` on `pi.events`; `mode:discover` asks), every worker that can change code
-(pi: `bash`, `edit` or `write`; Claude Code: `Bash`, `Edit`, `Write`, `MultiEdit`,
-`NotebookEdit`) gets the **worker spec brief** appended to its system prompt: `spec-brief.ts`,
+(`bash`, `edit` or `write`, a Claude Code worker's included) gets the **worker spec brief** appended to its system prompt: `spec-brief.ts`,
 whole sentences quoted from `mode/spec-mode.md` by anchor, with `$core` pinned to this pi-config's
 `spec/core`. `spec-brief.test.ts` pins the generated text, so a change to a carried rule in
 spec-mode.md fails there until the brief is reviewed. Ad hoc workers and team members alike;
 remote workers and `useWorktreeConfig` workers (which load the spec mode itself) do not get it.
 
-pi workers, which run with `--no-extensions`, also load `../mode/spec-worker.ts` by `-e` (the
-mode extension's census hook alone: a census digest after a tool call that changes `git status`),
-under the same condition as the brief; it is plumbing, so the spawn summary does not list it.
+pi workers (a Claude Code worker included), which run with `--no-extensions`, also load
+`../mode/spec-worker.ts` by `-e` (the mode extension's census hook alone: a census digest after a
+tool call that changes `git status`), under the same condition as the brief; it is plumbing, so
+the spawn summary does not list it. No worker is given a spec ledger.
 
-Claude Code workers also get the spec hooks (`../claude-code/spec-hooks.ts`) in their `--settings`:
-a census digest after any tool call that changes `git status`; nothing runs when its turn ends.
-State and a log of what the hooks said live in `<agentDir>/spec-hooks/<claude session id>.json` /
-`.log.jsonl`. A confined worker cannot write there, so it gets its own writable state dir
-`<agentDir>/spec-hooks/workers/<key>/`. No worker, pi or Claude Code, is given a spec ledger.
-
-When such a worker (pi or Claude Code) settles, its summary (the completion message, `agent_wait`'s
+When such a worker settles, its summary (the completion message, `agent_wait`'s
 result, a coordinator's copy) carries one line after its answer (after the preview when the answer is
 cut, before the cut notice) naming the § its own changes landed in:
 "Spec: this worker's changes landed in §a, §b (+N more); unclaimed: x". It is read from the
-worker's census state (`readLandedLine`): a Claude worker's hook state file, by its session id; a
-pi worker's `<agentDir>/spec-hooks/landed/<key>.json`, which its census writes to the path
+worker's census state (`readLandedLine`): the worker's `<agentDir>/spec-hooks/landed/<key>.json`, which its census writes to the path
 `SOVA_SPEC_LANDED_FILE` names. What other processes changed between the worker's calls is not in it;
 no line when nothing it changed is in the boundary or mapped.
 
@@ -360,7 +360,9 @@ explicitly, taken from an agentType definition, or inherited from the parent
 session's model. The reason says whether the model is off everywhere or only for
 subagents, because those take different switches to undo. For non-pi backends the
 backend id doubles as the provider (`claude-code` above), and a model-less spec on
-a disabled backend is rejected too, since its default model is that provider's.
+a disabled backend is rejected too, since its default model is that provider's. A
+`claude-code` spawn is checked under `claude-code` first and then, as the pi worker it runs
+as, under the `claude-code-cli` provider.
 Sova's Settings → Models tab edits this file live; manual edits apply on the
 next spawn or discovery, no reload needed. A missing or corrupt file disables
 nothing.
@@ -496,24 +498,10 @@ the backend:
   that identity and never imports the manager, so a child still cannot spawn,
   list, steer by ID outside its team, or kill anything. The parent keeps
   refusing this package under the user-facing `extensions` option.
-- **Claude Code members** cannot load Pi extensions, so the same tools are served
-  by `member-mcp.ts`, a dependency-free stdio MCP server (hand-rolled JSON-RPC:
-  `initialize`, `ping`, `tools/list`, `tools/call`) run under the parent's own
-  runtime (`process.execPath member-mcp.ts`; Node runs the `.ts` file directly).
-  The Claude runner writes a per-worker `mcp.json` (mode 0600, beside the
-  system-prompt file, removed when the process closes) and passes it with
-  `--mcp-config` under the existing `--strict-mcp-config`; the identity travels
-  in that server entry's `env`, so the CLI process itself never sees it. The
-  server name is `team`, so Claude calls `mcp__team__team_msg`,
-  `mcp__team__team_inbox`, `mcp__team__team_ask` (and for orchestrators
-  `mcp__team__team_roster`, `mcp__team__team_steer`); the header spells these
-  names out. Outside the default `bypassPermissions` mode the runner appends an
-  `mcp__team` rule to `--allowedTools` so the member's own tools never prompt
-  (or get denied under `dontAsk`); the operator's own `allowedTools` rules are
-  kept first. `member-mcp.ts` exits without serving anything if the identity is
-  missing or malformed, and it never imports the manager.
+- **Claude Code members** are pi workers on the Claude Code provider, so they load
+  `member.ts` the same way; the provider serves its tools to the model.
 
-Member tools (same names and semantics on both backends):
+Member tools:
 
 | Tool           | Who          | Behavior                                                                                         |
 | -------------- | ------------ | ------------------------------------------------------------------------------------------------ |
@@ -533,10 +521,8 @@ itself through the same `steerWorker` path the tools and workspaces use:
 
 - A message becomes a steer to the recipient prefixed
   `[Team message from <role> (<id>), team_NN]` with a reply hint that names the
-  recipient's real tool (`team_msg` for Pi, `mcp__team__team_msg` for Claude).
-  Pi recipients get the backend's normal steering (seen at their next step, or
-  a fresh task if idle, which is the wake-up); Claude recipients get
-  `mode: "followUp"` (a redirect on Claude would interrupt their current task).
+  recipient's real tool (`team_msg`). Recipients get the backend's normal
+  steering (seen at their next step, or a fresh task if idle, which is the wake-up).
   `all` reaches every live sibling, never the sender; partial failures are
   reported per recipient. Every recipient also gets a copy in its inbox file.
 - `team_steer` is accepted only from an orchestrator, only for one sibling of
@@ -558,7 +544,7 @@ itself through the same `steerWorker` path the tools and workspaces use:
 `orchestrator: true` is a per-member flag on `team_create` / `team_add`. It is
 sibling-scoped coordination only: the orchestrator can see its team and steer
 its siblings, and it must ask the operator (`team_ask`) to add or stop members.
-It is accepted on the Pi and Claude Code backends (the only ones that can load
+It is accepted on the Pi and Claude Code backends (the only ones that load
 the member tools) and rejected on any other. Depth stays capped: no member of
 any kind can create workers.
 
@@ -650,9 +636,9 @@ for that call with a warning line in the result; the extension never writes the 
   `session_start`, and a paused team's monitor that rejoins (re-adopted, or `agent_resume`) is
   sent the resume check at once, since its nudges are gone.
 - **Context column.** `team_roster` and `team_list` show `context 123k/200k (61%)` per live
-  member: the runner's `contextTokens` over the spawned model's window (claude-code: the
-  extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M model, else 200k; pi: the
-  registry), rounded down.
+  member: the runner's `contextTokens` over the spawned model's window (a Claude model: the
+  catalog's, through the extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M
+  model, else 200k; any other: the registry), rounded down.
 - **Handovers.** Notes live in `<agent dir>/sova/teams/<parent session id>/<team_id>/handoffs/<role>.md`
   (team IDs restart in every session, so the session id keeps two sessions' `team_01` apart; a
   session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
@@ -716,8 +702,8 @@ their source is listed in `extensions`. Inheriting a tool name does not copy an
 extension's implementation. Use only providers available to a standalone Pi child.
 A forked child (`fork: true`) inherits the conversation, not the extensions.
 Pi team members are the one exception with tools: they load `member.ts` from this package,
-which registers only the mailbox-backed team tools described above. Claude team
-members get the same tools from `member-mcp.ts` through their own `mcp.json`.
+which registers only the mailbox-backed team tools described above (Claude Code members
+included).
 
 Every pi worker (plain, team member or remote, inline or hosted) also loads
 `worker-mark.ts` first, which registers nothing and writes one
@@ -726,7 +712,7 @@ Every pi worker (plain, team member or remote, inline or hosted) also loads
 `{ v: 1 }`, plus `workerId`, `teamId` and `role` when the child has a team
 identity. The entry's name and shape are a contract with Sova, which reads it to
 keep worker sessions out of its session list (`server/worker-sessions.ts`,
-`SessionSummary.workerSession`). Claude Code workers do not load it.
+`SessionSummary.workerSession`). Claude Code workers, being pi workers, load it too.
 
 ### Restored workers and `agent_resume`
 
@@ -739,7 +725,8 @@ session identity (`ref`), each task start (`running`), each settle (`waiting`,
 outcome and a usage snapshot), the ending, and each resume. The record type and
 its one fold, `readWorkerManifests`, are the backend-neutral worker transcript
 protocol in `worker-transcript.ts`, which Sova's server reads too; each backend's
-own transcript is read through an adapter (`adapters/`, pi and claude-code).
+own transcript is read through an adapter (`adapters/`, pi and claude-code; the claude-code
+adapter reads the native Claude Code workers recorded before they became pi workers).
 
 At `session_start` every recorded worker that is not live comes back as a
 **restored** entry (`restored.ts`): no process, never counted as working or
@@ -753,8 +740,13 @@ the live record Sova reads).
 
 `agent_resume { id }` (and `/agent-resume ag_NN`, which Sova's Resume Worker
 button calls) starts it again **idle** in its own backend session: pi with
-`--session <its session file>`, Claude Code with `--resume <session id>` (never
-`--session-id`) and the same system prompt, MCP servers and permission mode.
+`--session <its session file>`, a Claude Code worker included. A native Claude Code worker
+recorded before Claude Code workers became pi workers can't reopen its session: it continues on
+Sova's tools under the same id, seat, cwd, model and effort, in a new pi session the parent seeds
+with one message (`claude-workers.ts` `continuationMessage`: its old transcript's path, its task,
+the last 2,000 characters of its last answer). Its Claude tool names map to Sova's (others are
+dropped), only `permissionMode: plan` of its options is kept, and its record keeps the old session
+as `continuedFrom`.
 Nothing is sent to it and no completion is reported; `agent_steer` gives it its
 next task. The session's current sandbox and remote state apply, exactly as at
 spawn. A team member rejoins its team, which becomes live again, with a fresh
@@ -777,7 +769,7 @@ The runner bounds its retained transcript and individual items. Older or oversiz
 content is marked as omitted; the child's `sessionFile` is the canonical history.
 Tool text is capped at 47,000 bytes/2000 lines plus a truncation notice, under
 the 50,000 characters above which the Claude Code CLI replaces an MCP tool result
-with a 2 KB preview. Oversized tool results include a private
+with a 2 KB preview (a Claude Code worker's tools reach its CLI over MCP). Oversized tool results include a private
 `/tmp/pi-subagents-output-*/output.txt` snapshot that the `read` tool can open.
 This applies to all subagent tools. Snapshots remain until removed or system
 temporary-file cleanup.
@@ -862,6 +854,6 @@ installation. No second Pi installation or local dependency tree is required.
 Source ownership: `index.ts` owns tools and session integration; `runner.ts` owns
 RPC workers and lifecycle; `modal.ts` owns rendering and keyboard behavior;
 `teams.ts` owns team state and prompt headers; `mailbox.ts` owns the file
-transport shared by the parent and the child-side member tools (`member.ts` for
-Pi children, `member-mcp.ts` for Claude children). Each has adjacent regression
+transport shared by the parent and the child-side member tools (`member.ts`);
+`claude-workers.ts` maps a `claude-code` spawn onto a pi worker. Each has adjacent regression
 tests.

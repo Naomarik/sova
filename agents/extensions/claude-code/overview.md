@@ -4,18 +4,19 @@ alsoUpdate: ["pi-config/extensions/claude-code/README.md"]
 ---
 # claude-code
 
-The `claude-code` worker backend and the Claude Code model provider. It drives the installed `claude` CLI,
-owns the Claude logins and the pool's marks, and holds Sova's Claude model catalog.
+The Claude Code model provider (`claude-code-cli`), which a Claude Code chat and a Claude Code worker (a pi
+worker on it, `subagents/claude-workers.ts`) both run on. It drives the installed `claude` CLI, owns the Claude
+logins and the pool's marks, and holds Sova's Claude model catalog.
 
 ## What lives here
 
-- [`README.md`](../../../pi-config/extensions/claude-code/README.md) (logins, Delegate, the sandbox, spec
-  hooks, the provider and its limitations, tests),
+- [`README.md`](../../../pi-config/extensions/claude-code/README.md) (logins, Claude Code workers, the
+  provider and its limitations, tests),
   [`provider/DESIGN-bridge.md`](../../../pi-config/extensions/claude-code/provider/DESIGN-bridge.md) and
   [`protocol-probes.md`](../../../pi-config/extensions/claude-code/docs/protocol-probes.md).
 - Requirements: §app/claude-code-provider. Before planning anything that changes what a Claude Code chat's model
   sees or which tools it has, read it: Sova owns the conversation and the tools; the CLI is only the model.
-- Tests: `cd pi-config/extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs`.
+- Tests: `cd pi-config/extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs`.
 
 ## What Sova relies on
 
@@ -110,9 +111,8 @@ watcher doesn't watch this directory either.
 
 ## When you change it, also update
 
-- Any contract above: the README section that documents it (Logins, Spec hooks, the provider), and its Sova
+- Any contract above: the README section that documents it (Logins, the provider), and its Sova
   reader in the same branch.
 - `catalog.ts`: run `pnpm run claude:catalog`; models are named only by catalog ids.
-- `spec-hooks.ts`: the merge round runs the spec replay suite (see [modes/spec](../../modes/spec/overview.md)).
 - A new import from the server: this guide, and keep it builtins-only and pi-runtime-free.
 - After landing a provider or `accounts.ts` change: the live server needs a restart.

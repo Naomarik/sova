@@ -1,3 +1,4 @@
+import { awaitFrame, connectLink, type ConnectLinkOptions, type Link } from "./link";
 import type { ChatRecord } from "./supervisor";
 
 /**
@@ -89,6 +90,8 @@ export class Rollout<L = unknown> {
       return "refused";
     }
     await sup.awaitExit(chatId);
+    // The replacement takes the writer lock at open: the old process must have let go of it.
+    await sup.waitUnlocked(rep.sessionPath);
     sup.repoint(chatId, rep);
     try {
       await this.deps.open(chatId, rep, ready.link);
@@ -118,4 +121,30 @@ export class Rollout<L = unknown> {
     this.deps.setCode(chatId, "failed", reason);
     return "failed";
   }
+}
+
+/**
+ * The `waitReady` rollout needs, over the link: dial the replacement as this server's controller (no
+ * replay: it opened nothing yet) and wait for its hello saying `ready`. The runtime sends hello again
+ * at each change of its state, and a process that dies booting ends the link. The link is kept for
+ * the open; on failure it is closed.
+ */
+export function linkWaitReady(
+  opts: Pick<ConnectLinkOptions, "epoch" | "build" | "settings"> & Partial<ConnectLinkOptions>,
+  dial: typeof connectLink = connectLink,
+  next: typeof awaitFrame = awaitFrame,
+): RolloutDeps<Link>["waitReady"] {
+  return async (rep, timeoutMs) => {
+    const until = Date.now() + timeoutMs;
+    let link: Link | undefined;
+    try {
+      const c = await dial(rep.sock, { ...opts, since: null, retryForMs: timeoutMs });
+      link = c.link;
+      if (c.hello.state !== "ready") await next(link, "hello", Math.max(1, until - Date.now()), (h) => h.state === "ready");
+      return { ok: true, link };
+    } catch (err) {
+      link?.close();
+      return { ok: false, error: (err as Error).message };
+    }
+  };
 }

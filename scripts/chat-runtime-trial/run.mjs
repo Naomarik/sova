@@ -1407,6 +1407,11 @@ async function t17(claude = false) {
   if (claude) {
     const answers = entries(w.path).filter((e) => e.type === "message" && e.message?.role === "assistant" && /Fake answer from login/.test(textOfMsg(e.message)));
     R.check(answers.length === 1, `${label}: the worker's reply is in its file once (${answers.length})`);
+    // Its usage lands under the parent, as that worker (the Claude Code provider's records).
+    const psid = entries(path)[0]?.id;
+    await sleep(2000);
+    const mine = usageRecords().filter((r) => r.parent === psid && r.worker === w.parent?.workerId);
+    R.check(mine.length >= 1, `${label}: the claude worker's usage is recorded under the parent as ${w.parent?.workerId} (${mine.map((r) => `${r.src}/${r.model} out ${r.output}`).join(", ") || "none"})`);
   } else {
     const log = mockLog(mock.log);
     R.check(log.filter((e) => e.event === "done" && e.tag === "t17w").length === 1 && !log.some((e) => e.event === "cut-off" && e.tag === "t17w"), `${label}: the worker's reply streamed to its end once`);

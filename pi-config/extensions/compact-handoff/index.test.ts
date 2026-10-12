@@ -8,7 +8,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { BackgroundForkHandlers, BackgroundForkResult, BackgroundForkSpec } from "../subagents/fork/background.ts";
+import type { BackgroundForkHandle, BackgroundForkHandlers, BackgroundForkResult, BackgroundForkSpec } from "../subagents/fork/background.ts";
+import type { WorkerHost } from "../subagents/worker-host.ts";
 import compactHandoff from "./index.ts";
 import { type BranchEntry, HANDOFF_ENTRY, NOTE_MESSAGE, NOTHING_NOTE } from "./handoff.ts";
 import { RUN_ENTRY } from "./run.ts";
@@ -16,7 +17,7 @@ import { RUN_ENTRY } from "./run.ts";
 type Handler = (event: any, ctx: any) => unknown;
 interface Sent { message: { customType: string; display?: boolean; content: unknown; details?: any }; options?: { triggerTurn?: boolean } }
 interface CompactCall { customInstructions?: string; onComplete?: (r: unknown) => void; onError?: (e: Error) => void }
-interface Fork { spec: BackgroundForkSpec; handlers: BackgroundForkHandlers; stopped: number; settle(result: Partial<BackgroundForkResult>): void }
+interface Fork { spec: BackgroundForkSpec; handlers: BackgroundForkHandlers; stopped: number; detached: number; settle(result: Partial<BackgroundForkResult>): void }
 
 const temps: string[] = [];
 const temp = (): string => {
@@ -44,7 +45,8 @@ function sessionFile(dir: string): string {
 	return file;
 }
 
-function harness(options: { agentDir?: string; now?: () => number; file?: string | null; model?: { provider: string; id: string }; startThrows?: boolean; branch?: BranchEntry[] } = {}) {
+/** `live`: the fork chats the worker host still runs for this session (a reopened session reattaches them). */
+function harness(options: { agentDir?: string; now?: () => number; file?: string | null; model?: { provider: string; id: string }; startThrows?: boolean; branch?: BranchEntry[]; live?: string[] } = {}) {
 	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();
 	const branch: BranchEntry[] = options.branch ?? [{ type: "message", id: "u0", message: { role: "user", content: "earlier work" } }];
@@ -65,6 +67,7 @@ function harness(options: { agentDir?: string; now?: () => number; file?: string
 			branch.push({ type: "custom_message", id: nextId(), customType: message.customType, details: message.details });
 		},
 		appendEntry(customType: string, data: unknown) { branch.push({ type: "custom", id: nextId(), customType, data }); },
+		events: { on: () => () => {}, emit() {} },
 	} as unknown as ExtensionAPI;
 	const ctx = {
 		cwd,
@@ -85,23 +88,39 @@ function harness(options: { agentDir?: string; now?: () => number; file?: string
 		agentDir: options.agentDir ? () => options.agentDir! : undefined,
 		now: options.now ?? (() => NOW),
 		claudeForkPoint: () => undefined,
+		workerHost: () => ({}) as WorkerHost,
 		start: (spec, h) => {
-			if (options.startThrows) throw new Error("spawn pi ENOENT");
-			let settled = false;
-			const fork: Fork = {
-				spec,
-				handlers: h,
-				stopped: 0,
-				settle(result) {
-					if (settled) return;
-					settled = true;
-					h.onSettled({ outcome: "success", finalOutput: "", ...result });
-				},
-			};
-			forks.push(fork);
-			return { stop: async () => { fork.stopped++; fork.settle({ outcome: "aborted" }); } };
+			if (options.startThrows) throw new Error("a background fork needs Sova's chat runtime");
+			return handleOf(newFork(spec, h));
+		},
+		reattach: async (_host, kind, _name, handlersFor) => {
+			const handles = new Map<string, BackgroundForkHandle>();
+			for (const id of options.live ?? []) {
+				const h = handlersFor(id);
+				if (kind === "handoff" && h) handles.set(id, handleOf(newFork({ id } as BackgroundForkSpec, h)));
+			}
+			return handles;
 		},
 	});
+	function newFork(spec: BackgroundForkSpec, h: BackgroundForkHandlers): Fork {
+		let settled = false;
+		const fork: Fork = {
+			spec,
+			handlers: h,
+			stopped: 0,
+			detached: 0,
+			settle(result) {
+				if (settled) return;
+				settled = true;
+				h.onSettled({ outcome: "success", finalOutput: "", ...result });
+			},
+		};
+		forks.push(fork);
+		return fork;
+	}
+	function handleOf(fork: Fork): BackgroundForkHandle {
+		return { stop: async () => { fork.stopped++; fork.settle({ outcome: "aborted" }); }, detach: () => { fork.detached++; } };
+	}
 
 	const fire = (event: { type: string } & Record<string, unknown>): unknown => {
 		let result: unknown;
@@ -279,7 +298,7 @@ test("the fork cannot start: refused with a notification, no row, no turn, no ru
 	await h.run();
 	assert.equal(h.branch.length, before);
 	assert.equal(h.sent.length, 0);
-	assert.match(h.notes.at(-1)!.message, /could not start its fork \(spawn pi ENOENT\); nothing was done/);
+	assert.match(h.notes.at(-1)!.message, /could not start its fork \(a background fork needs Sova's chat runtime\); nothing was done/);
 	assert.equal(h.notes.at(-1)!.level, "error");
 	assert.deepEqual(fs.readdirSync(path.join(agent, "compact-handoffs", ".runs")), []);
 });
@@ -381,23 +400,45 @@ test("a failed compaction says so and keeps the note; the user's Stop says nothi
 	assert.ok(fs.existsSync(path.join(agent, "compact-handoffs", "sess-1.md")));
 });
 
-test("shutdown stops the fork and writes nothing; the next prompt settles the row as interrupted", async () => {
+test("shutdown leaves the fork running and writes nothing; the reopened session reattaches it and the run lands once", async () => {
 	const agent = temp();
 	const h = harness({ agentDir: agent });
 	await h.run("why");
 	const fork = h.forks[0]!;
 	const before = h.branch.length;
 	await h.fire({ type: "session_shutdown" });
-	assert.ok(fork.stopped >= 1);
+	assert.equal(fork.stopped, 0, "the fork outlives the session");
+	assert.equal(fork.detached, 1);
 	assert.equal(h.branch.length, before);
-	// The session reopens in a fresh process (same branch) and is prompted.
-	const again = harness({ agentDir: agent, branch: h.branch });
-	again.fire({ type: "before_agent_start" });
+	// The session reopens in a fresh process (same branch); the host still runs the fork.
+	const again = harness({ agentDir: agent, branch: h.branch, live: [fork.spec.id] });
+	again.fire({ type: "session_start" });
+	await tick();
+	await again.fire({ type: "before_agent_start" });
+	assert.deepEqual(again.rows().map((r) => r.status), ["running"], "a reattached run is not interrupted");
+	const reattached = again.forks[0]!;
+	assert.equal(reattached.spec.id, fork.spec.id);
+	reattached.settle({ finalOutput: `<handoff>${NOTE}</handoff>` });
+	assert.deepEqual(again.rows().map((r) => r.status), ["running", "saved"]);
+	assert.equal(again.rows()[1].focus, "why");
+	assert.equal(reattached.stopped, 1, "its chat is stopped once the run is recorded");
+	assert.equal(again.compacts.length, 1);
+});
+
+test("a run whose fork is gone when the session reopens settles as interrupted at the next prompt, once", async () => {
+	const agent = temp();
+	const h = harness({ agentDir: agent });
+	await h.run("why");
+	const fork = h.forks[0]!;
+	await h.fire({ type: "session_shutdown" });
+	const again = harness({ agentDir: agent, branch: h.branch, live: [] });
+	again.fire({ type: "session_start" });
+	await again.fire({ type: "before_agent_start" });
 	assert.deepEqual(again.rows().map((r) => r.status), ["running", "interrupted"]);
 	assert.equal(again.rows()[1].id, fork.spec.id);
 	assert.equal(again.rows()[1].focus, "why");
 	// Once per session: a second prompt adds nothing.
-	again.fire({ type: "before_agent_start" });
+	await again.fire({ type: "before_agent_start" });
 	assert.equal(again.rows().length, 2);
 });
 

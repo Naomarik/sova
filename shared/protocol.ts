@@ -598,7 +598,7 @@ export interface ExplanationInfo {
       run's final entry (same `id`) replaces it; never in SessionInsight.explanations or
       GET /api/explanations, which carry openable pages only. A finished entry has no status at
       all — there is no "done" value.
-      "interrupted": the run's parent stopped (a restart or /reload) before the run settled, and the
+      "interrupted": the run's worker stopped (the server stopped it, or it died) before the run settled, and the
       extension settled it at the session's next prompt. Always with `note` (a complete page was on
       disk anyway: it links) or `error` (no page). Rows, and SessionInsight.explanations when it has
       a page. */

@@ -20,6 +20,8 @@
 //   [bash N]   first a bash call `sleep N; echo BASH-DONE`, then a text quoting its output
 //   [served]   first a call to the test-only server-hosted tool trial_served_sleep (a server test hook
 //              registers it; it sleeps 10 s), then a text quoting its result
+//   [served-late]  10 text parts first, then a call to trial_served_sleep {ms:1000}: a call the chat makes
+//              while the trial holds the server down
 //   [compact]  (pi's compaction request, by its prompt's shape) a summary streamed
 //              over 15 steps, ending "COMPACT-SUMMARY"
 //   [big N]    N thousand characters of text at once (history enough for a compaction to cut)
@@ -70,7 +72,7 @@ const server = createServer(async (req, res) => {
   const long = /process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText);
   const bash = /\[bash (\d+)\]/.exec(userText);
   const big = /\[big (\d+)\]/.exec(userText);
-  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
+  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : /\[served-late\]/.test(userText) ? "served-late" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
   const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, toolText: toolText.slice(0, 300), anyResume, userText: userText.slice(0, 300), messages: msgs.length };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
@@ -129,6 +131,15 @@ const server = createServer(async (req, res) => {
     usage(500, Math.round(words.length / 4));
   } else if (scenario === "bash" && !afterTool) {
     call("bash", { command: `sleep ${bash[1]}; echo BASH-DONE` });
+  } else if (scenario === "served-late" && !afterTool) {
+    chunk({ role: "assistant", content: "" });
+    for (let i = 1; i <= 10 && !closed; i++) {
+      chunk({ content: `part ${i}/10. ` });
+      await sleep(step);
+    }
+    chunk({ tool_calls: [{ index: 0, id: `call_${id}`, type: "function", function: { name: "trial_served_sleep", arguments: JSON.stringify({ ms: 1000 }) } }] });
+    chunk({}, { finish_reason: "tool_calls" });
+    usage(500, 40);
   } else if (scenario === "served" && !afterTool) {
     call("trial_served_sleep", { ms: 10000 });
   } else if (scenario === "spawn" && !afterTool) {

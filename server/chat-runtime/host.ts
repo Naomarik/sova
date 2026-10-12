@@ -25,7 +25,7 @@ import {
   type ServerToolCtxWire,
 } from "../../shared/chat-runtime-wire";
 import type { ToolResult } from "../../shared/harness";
-import type { ChatServerMessage, WorkerInfo } from "../../shared/protocol";
+import type { ChatServerMessage } from "../../shared/protocol";
 import { claudeChildState, releaseIdleClaudeChildren } from "../../pi-config/extensions/claude-code/provider/children";
 import {
   acquireChat,
@@ -51,9 +51,9 @@ import {
   type ServerToolLocal,
   titleOf,
 } from "../chat-manager";
-import { decodeWorkers } from "../insights";
 import { listGeneration } from "../list-generation";
 import { readOwnLiveRecords, workerCountsOf } from "../live";
+import { hostedFacts } from "../resource-monitor";
 import { InflightRecorder } from "./inflight";
 import type { ControlFrame, HelloFrame, Link } from "./link";
 import { type CallCtx, failureReply, runMethod } from "./methods";
@@ -132,7 +132,6 @@ export class ChatRuntimeHost {
   private quietSince: number;
   private wasQuiet = true;
   private workersWorking = 0;
-  private monitorWorkers: WorkerInfo[] = [];
   private poke: NodeJS.Timeout | null = null;
   private readonly ticker: NodeJS.Timeout;
   private closing = false;
@@ -487,7 +486,6 @@ export class ChatRuntimeHost {
     try {
       const rec = readOwnLiveRecords().get(this.o.path);
       this.workersWorking = workerCountsOf(rec?.rec)?.working ?? 0;
-      this.monitorWorkers = decodeWorkers(rec?.rec?.presence, true);
     } catch {
       // the live dir mid-write: next tick
     }
@@ -538,7 +536,8 @@ export class ChatRuntimeHost {
       code: this.code(),
       quiet: { quiet, since: this.quietSince, clients: this.clientCount(), workersWorking: this.workersWorking, serverCalls: this.tools.size },
       claude: claudeChildState(),
-      monitor: { title: titleOf(chat.harness.branch()), workers: this.monitorWorkers, toolsRunning: base.running ? 1 : 0, lastToolEnd: 0 },
+      // What the monitor extension in this process says of the chat; before its first session_start, the title alone.
+      monitor: hostedFacts(this.o.path) ?? { title: titleOf(chat.harness.branch()), workers: [], toolsRunning: 0, lastToolEnd: 0 },
     };
   }
 

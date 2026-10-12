@@ -138,6 +138,28 @@ test("an exit the chat logged (no server linked to hear its frame), or systemd's
   assert.deepEqual(deaths.map((x) => x.chatId), ["c3"]);
 });
 
+test("a log that lags the process's end is read again before the chat is called lost", async () => {
+  const d = new FakeDriver();
+  let reads = 0;
+  const logs = d.logs.bind(d);
+  d.logs = async (unit: string, lines: number) => (++reads < 3 ? [] : logs(unit, lines));
+  const { sup, deaths } = make(d);
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  d.die(rec.unit, ["sova-chat-test01-c1.service: Deactivated successfully."]);
+  assert.equal(await sup.check("c1"), "ended");
+  assert.equal(reads, 3);
+  assert.equal(deaths.length, 0);
+  // Never a word: lost, after a bounded number of reads.
+  reads = -100;
+  const r2 = await sup.start({ ...chat, chatId: "c2" });
+  sup.noteConnected("c2");
+  d.die(r2.unit, []);
+  assert.equal(await sup.check("c2"), "died");
+  assert.equal(reads, -100 + 5, "the first read and 4 more");
+  assert.equal(deaths[0]!.cause, "lost");
+});
+
 test("a chat that ends before its first hello did not start: logged and handed to the router, never a death", async () => {
   const d = new FakeDriver();
   const failed: string[] = [];

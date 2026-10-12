@@ -30,6 +30,9 @@ const EXIT_WAIT_MS = 30_000;
 const PREDECESSOR_WAIT_MS = 10_000;
 /** A Claude child asked to go that the mirror still shows idle after this counts again. */
 const REAP_WAIT_MS = 30_000;
+/** How often, and how far apart, a unit's log is read again when it does not yet say how the unit ended. */
+const JOURNAL_RETRIES = 4;
+const JOURNAL_RETRY_MS = 750;
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 
 export const chatsRoot = () => join(stateRoot(), "chats");
@@ -445,7 +448,14 @@ export class ChatSupervisor {
   private async deathOf(rec: ChatRecord, st: UnitStatus): Promise<ChatDeath | null> {
     // This run's lines only (the journal keeps earlier runs of the same unit name).
     const since = Date.parse(rec.startedAt);
-    const logs = (await this.deps.driver.logs(rec.unit, LOG_TAIL * 3, Number.isFinite(since) ? since : undefined).catch(() => [])).map((l) => l.text);
+    const read = async () => (await this.deps.driver.logs(rec.unit, LOG_TAIL * 3, Number.isFinite(since) ? since : undefined).catch(() => [])).map((l) => l.text);
+    // The journal can lag the process's end by a moment: with no account of how it ended yet, read again
+    // a few times before calling it lost.
+    let logs = await read();
+    for (let i = 0; i < JOURNAL_RETRIES && st.exit == null && !announcedExit(logs, rec.pid) && !exitOfLog(logs); i++) {
+      await this.sleep(JOURNAL_RETRY_MS);
+      logs = await read();
+    }
     // It said why it exits, with no server linked to hear it: no death.
     if (announcedExit(logs, rec.pid)) return null;
     // A collected unit is gone at once: its journal still says how its main process ended.

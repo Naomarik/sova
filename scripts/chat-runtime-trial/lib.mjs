@@ -120,7 +120,8 @@ export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").
     "detached" or "systemd" (then `slice` is the stand-in slice); `idleMs`, `build`, `failBoot`. */
 export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, claude, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
-  Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off" });
+  // No network: no price fetch, no usage poll (it would ask Claude with whatever login it finds).
+  Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off", SOVA_USAGE_POLL: "off" });
   // `claude`: fakeClaude()'s dirs: the fake first on PATH, its login as the default one.
   if (claude) Object.assign(env, { PATH: `${claude.claudeBin}:${env.PATH ?? ""}`, CLAUDE_CONFIG_DIR: claude.claudeLogin });
   if (on) env[KNOBS.switch] = "out";

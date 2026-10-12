@@ -158,9 +158,9 @@ const readLines = (f) => {
 };
 const baseName = (p) => String(p ?? "").split("/").pop();
 /** The supervisors' records of every chat process: chats/registry (the chats' own supervisor) and,
-    from stage 4, chats/children (workers in child placement). */
+    from stage 4, chats/children/registry (workers in child placement). */
 const allRecords = (agentDir = agent) =>
-  ["registry", "children"].flatMap((d) => {
+  ["registry", join("children", "registry")].flatMap((d) => {
     const dir = join(agentDir, "sova", "chats", d);
     try {
       return readdirSync(dir).map((f) => readJson(join(dir, f))).filter((r) => r && typeof r === "object" && r.sessionPath);

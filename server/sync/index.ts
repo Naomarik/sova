@@ -160,6 +160,8 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       stateDir: paths.stateDir(),
       sidecarPath: join(paths.stateDir(), "doc-sync.json"),
       peers: () => docPeers().map((p) => httpDocPeer(mesh, p.id)),
+      // A kept copy names the device whose copy replaced it as this host's Mesh page does.
+      deviceName: (id) => mesh.peers().find((p) => p.id === id)?.label ?? (id === mesh.self().id ? mesh.self().label : undefined),
       categoryEnabled: categoryOn,
       shares: (peerId, c) => sharesWith(mesh, peerId, c === "settings" ? "sync.settings" : "sync.themes"),
       allows: (peerId, cap) => sharesWith(mesh, peerId, cap),

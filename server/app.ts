@@ -74,7 +74,7 @@ import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { singletonRunningText } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
-import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
+import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
 import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
@@ -871,6 +871,13 @@ export function buildApp(deps: AppDeps) {
   app.put("/api/settings/subagents", async (c) => {
     const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
     return c.json(result, "error" in result && !('settings' in result) ? 400 : 200);
+  });
+  // Restore Previous Library: the kept copy another device's copy replaced, back as a new edit (§chat.subagent-profiles/replaced).
+  app.post("/api/settings/subagents/restore", async (c) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    const file = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).file : undefined;
+    const result = restoreReplacedProfiles(file);
+    return c.json(result, "error" in result ? 400 : 200);
   });
   // This device's default (Make Default in Settings → Subagents): writes subagent-profiles-default.json only.
   app.put("/api/settings/subagents/default", async (c) => {

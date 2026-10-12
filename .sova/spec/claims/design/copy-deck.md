@@ -501,6 +501,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
 | Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents needs unique, single-line names of at most 48 characters (never "Off"). · Subagents: {name}: {threshold issue}. · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
+| Changed by another device (banner-info, list only, §chat.subagent-profiles/replaced) | **Replaced by {device}'s copy at {stamp}.** or **{device}'s copy added {names} at {stamp}.** {Added {names}; changed {names}; removed {names}.} Your previous library is kept on this device. [Restore Previous Library] (Restoring… while it runs) |
+| Restore failed (banner-error) | **Couldn't restore your previous library.** {reason}. Your library is unchanged. |
 | Footnote | Stored in `<agent dir>/subagent-profiles.json`, shared with pi in the terminal. |
 
 ## §design.copy-deck/settings-decisions — Settings · Decisions (§app.settings-dialog/decisions)

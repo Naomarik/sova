@@ -51,8 +51,8 @@ import {
   serverToolSpec,
   setServerToolPort,
 } from "./chat-manager";
-import { stateKindOf } from "./harness/state-kinds";
-import { mergeMode } from "./mode-state";
+import { type CallCtx, failureReply, refusalOf, runMethod } from "./chat-runtime/methods";
+import { LiveMirror } from "./chat-runtime/mirror";
 import type { LoadoutEntryData } from "./session-loadout";
 
 export { BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
@@ -78,13 +78,7 @@ export {
 /** The controller epoch of this server's calls. One process: one controller, always current. */
 const EPOCH = 1;
 
-/** A typed refusal for an error the chat threw, or null for any other error. */
-export function refusalOf(err: unknown): ChatRefusal | null {
-  if (err instanceof BusyError) return { kind: "busy", code: err.code, message: err.message };
-  if (err instanceof RefusedError) return { kind: "refused", mode: err instanceof ModeRefusedError, message: err.message };
-  if (err instanceof ConfigError) return { kind: "config", cwd: err.cwd, message: err.message };
-  return null;
-}
+export { failureReply, refusalOf };
 
 /** The error a refusal is thrown as on this side, so `instanceof` reads it as the chat meant it. */
 export function errorOfRefusal(r: ChatRefusal): Error {
@@ -94,257 +88,6 @@ export function errorOfRefusal(r: ChatRefusal): Error {
 }
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
-
-const kindOf = (type: string): StateKind<unknown> => {
-  const kind = stateKindOf(type);
-  if (!kind) throw new Error(`Unknown state kind: ${type}`);
-  return kind;
-};
-
-/** What one chat's commands share: its tracked turns, until each is asked for once. */
-interface CallCtx {
-  turns: Map<string, Promise<ChatTurnEnd>>;
-}
-
-type Impl = { [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"], ctx: CallCtx) => ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]> };
-
-/** Each command, run on the chat. A method that throws a refusal answers with that refusal. */
-const METHODS: Impl = {
-  send(chat, a, ctx) {
-    if (a.checkModel) chat.assertModelAllowed();
-    // The next run names the tag, unless the chat refuses this message.
-    const tagWas = chat.runTag.next;
-    if (a.runTag !== undefined) chat.runTag.next = a.runTag;
-    let accepted: ReturnType<ChatSession["acceptPrompt"]>;
-    try {
-      accepted = chat.acceptPrompt(a.text, a.images, a.origin ?? "server", a.clientId, {
-        ...(a.replay ? { replay: true } : {}),
-        ...(a.sentByOverseer ? { sentByOverseer: a.sentByOverseer } : {}),
-        ...(a.sentByBaton ? { sentByBaton: a.sentByBaton } : {}),
-        ...(a.sentBySession ? { sentBySession: a.sentBySession } : {}),
-        ...(a.delivery ? { delivery: a.delivery } : {}),
-        ...(a.confirm ? { confirm: a.confirm } : {}),
-        ...(a.byPerson ? { byPerson: true as const } : {}),
-      });
-    } catch (err) {
-      if (a.runTag !== undefined) chat.runTag.next = tagWas;
-      throw err;
-    }
-    const { queued, turn } = accepted;
-    const report = a.report !== false;
-    const ended = turn.then(
-      (): ChatTurnEnd => ({ ok: true }),
-      (err): ChatTurnEnd => {
-        if (report) chat.reportTurnFailure(err);
-        return { ok: false, error: errorText(err) };
-      },
-    );
-    if (!a.track || queued) return { queued, turnId: null };
-    const turnId = randomUUID();
-    ctx.turns.set(turnId, ended);
-    return { queued, turnId };
-  },
-  turnEnd(_chat, { turnId }, ctx) {
-    const ended = ctx.turns.get(turnId);
-    if (!ended) throw new Error("That turn is not tracked.");
-    ctx.turns.delete(turnId);
-    return ended;
-  },
-  assertModelAllowed: (chat) => (chat.assertModelAllowed(), null),
-  deliverTopicBatch: (chat, batch) =>
-    chat.deliverTopicBatch({
-      ...batch,
-      entered: () => emitChatEvent(chat.path, "topicEntered", batch.batch),
-      gone: () => emitChatEvent(chat.path, "topicGone", batch.batch),
-    }),
-  deliverToAgent: (chat, { text }) => chat.deliverToAgent(text),
-  setModel: async (chat, { ref, save }) => (await chat.setModelRef(ref, save === undefined ? {} : { save }), null),
-  setThinking: (chat, { level, save }) => chat.setThinking(level, save === undefined ? {} : { save }),
-  findModel: async (chat, { ref }) => {
-    const found = await chat.harness.findModel(ref);
-    return found.ok ? { ok: true } : { ok: false, error: found.error };
-  },
-  switchMode: (chat, { patch }) => chat.switchMode(patch),
-  applyMode: (chat, { patch }) => chat.applyMode(mergeMode(chat.modeState, patch)),
-  pinMode: (chat) => chat.pinMode(),
-  saveModeDefault: (chat) => chat.saveModeDefault(),
-  subagentProfileInfo: (chat) => chat.subagentProfileInfo(),
-  subagentSwitchRefusal: (chat) => chat.subagentSwitchRefusal(),
-  switchSubagentProfile: (chat, { id }) => chat.switchSubagentProfile(id),
-  appendStateRow: (chat, { kind, data }) => chat.appendStateRow(kindOf(kind), data),
-  appendState: (chat, { kind: type, data }) => {
-    // The kind the registry has under that type: SessionState refuses any other (server/harness/pi/state.ts).
-    const kind = kindOf(type);
-    return chat.harness.state.append(kind, data);
-  },
-  appendNote: (chat, { noteType, text }) => chat.appendNote(noteType, text),
-  writeProfile: (chat, { data }) => (chat.writeProfile(data), null),
-  writeLoadout: (chat, { data }) => (chat.writeLoadout(data), null),
-  flushDeferredAppends: (chat) => (chat.flushDeferredAppends(), null),
-  checkWrites: (chat) => chat.hasForeignWrites(),
-  assertNoForeignWrites: (chat) => (chat.assertNoForeignWrites(), null),
-  answerDialog: (chat, { id, value, answer, overseerId }) => (chat.answerDialog(id, value, answer, overseerId), null),
-  drainAndAbort: async (chat) => (await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue), null),
-  abort: async (chat) => (await chat.harness.abort(), null),
-  interruptKeepingQueued: (chat) => chat.interruptKeepingQueued(),
-  branch: (chat) => [...chat.harness.branch()],
-  entries: (chat) => [...chat.harness.entries()],
-  fileState: (chat, { kinds }) => {
-    const file = chat.state.file();
-    return kinds.flatMap((kind) => file.written(kindOf(kind)).map((r) => r.data));
-  },
-  activeTools: (chat) => chat.harness.activeTools(),
-  setActiveTools: (chat, { names }) => (chat.harness.setActiveTools(names), null),
-  declaredTools: (chat) => chat.harness.declaredTools(),
-  resources: (chat) => {
-    const loadout = chat.harness.resources();
-    const base = chat.loadoutState;
-    return {
-      ...loadout,
-      ...(base?.baseContext ? { context: base.baseContext.map((path) => ({ path })) } : {}),
-      ...(base?.baseSkills ? { skills: base.baseSkills } : {}),
-    };
-  },
-  memoryOutline: (chat) => (chat.memoryAvailable() ? chat.memory.outline() : null),
-  memoryOpen: (chat, { id, n }) => {
-    if (!chat.memoryAvailable()) return { state: "unavailable" };
-    let engine;
-    try {
-      engine = chat.memory.engine();
-    } catch {
-      return { state: "no-engine" };
-    }
-    try {
-      return { state: "ok", open: engine.open(id, n) };
-    } catch (err) {
-      return { state: "refused", error: errorText(err) };
-    }
-  },
-  memoryStatus: (chat) => chat.memory.status(),
-  memorySettingsChanged: (chat, { turnedOn }) => {
-    if (turnedOn) chat.memory.turnedOn();
-    else chat.memory.changed();
-    chat.memorySwitched();
-    return null;
-  },
-  sandboxInfo: (chat) => chat.sandboxInfo(),
-  applySandbox: (chat, { state }) => chat.applySandbox(state),
-  resumeWorker: (chat, { id }) => chat.resumeWorker(id),
-  workerInfo: (chat, { id }) => chat.workerInfo(id),
-};
-
-/** The reply a call that threw answers with: its typed refusal, or an error with its message. A
-    caller on the other side of a socket throws it again as `errorOfRefusal(refusal)`, or an Error. */
-export function failureReply(id: string, err: unknown): ChatReply {
-  const refusal = refusalOf(err);
-  return refusal ? { id, ok: false, refusal } : { id, ok: false, error: { message: errorText(err) } };
-}
-
-/** Run one call on the chat. */
-function run<M extends ChatMethod>(chat: ChatSession, call: ChatCall<M>, ctx: CallCtx): ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]> {
-  return (METHODS[call.method] as (c: ChatSession, a: ChatMethods[M]["args"], x: CallCtx) => ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]>)(chat, call.args, ctx);
-}
-
-/** The mirror of a chat in this process: every field read from the chat as it is now. */
-class LiveMirror implements ChatStateMirror {
-  constructor(private readonly chat: ChatSession) {}
-  get chatId() {
-    return this.chat.path;
-  }
-  get sessionId() {
-    return this.chat.harness.id;
-  }
-  get cwd() {
-    return this.chat.harness.cwd;
-  }
-  get closed() {
-    return this.chat.disposed;
-  }
-  get special() {
-    return this.chat.special;
-  }
-  get running() {
-    return this.chat.harness.isRunning();
-  }
-  get compacting() {
-    return this.chat.isCompacting();
-  }
-  get starting() {
-    return this.chat.turnStarting;
-  }
-  get model() {
-    const m = this.chat.harness.model();
-    return m ? { ref: m.ref, provider: m.provider, images: m.images } : null;
-  }
-  get thinking() {
-    return this.chat.harness.thinking();
-  }
-  get leafId() {
-    return this.chat.leafId();
-  }
-  get lastStop() {
-    const branch = this.chat.harness.branch();
-    for (let i = branch.length - 1; i >= 0; i--) {
-      const e = branch[i]!;
-      if (e.kind === "assistant") return e.stop ?? null;
-    }
-    return null;
-  }
-  get queue() {
-    return { web: this.chat.queue.size, agent: this.chat.harness.queue.hasQueued() };
-  }
-  get dialogs() {
-    return this.chat.pendingDialogs();
-  }
-  get mode() {
-    const s = this.chat.modeState;
-    return { mode: s.mode, minorModes: [...s.minorModes], strict: s.strict };
-  }
-  get held(): HeldChatState {
-    const chat = this.chat;
-    const s = chat.modeState;
-    return {
-      model: chat.harness.model()?.ref ?? null,
-      thinking: chat.harness.thinking(),
-      mode: s.mode,
-      minorModes: [...s.minorModes],
-      strict: s.strict,
-      applies: chat.modeApplies,
-      ...chat.saidState(),
-    };
-  }
-  get memory() {
-    return this.chat.memoryOffered() ? this.chat.memory.choiceNow() : null;
-  }
-  get streamTrip() {
-    return this.chat.lastStreamTrip;
-  }
-  get foreignWrite() {
-    return !!this.chat.foreignWrite;
-  }
-  get pendingSends() {
-    return this.chat.hasPendingSends();
-  }
-  get pristine() {
-    return this.chat.pristine;
-  }
-  get subagentPick() {
-    return this.chat.subagentPick;
-  }
-  get profile() {
-    return this.chat.profileState?.data ?? null;
-  }
-  get loadout() {
-    const chat = this.chat;
-    return chat.loadoutState ? { off: chat.loadoutState.data, toggleable: chat.loadoutToggleable } : null;
-  }
-  get attended() {
-    return this.chat.userTurns?.attended() ?? false;
-  }
-  get confirmedCard() {
-    return this.chat.userTurns?.confirmedCard() ?? null;
-  }
-}
 
 /** One held chat, as the server talks to it. */
 export class ChatHandle {
@@ -379,7 +122,7 @@ export class ChatHandle {
   call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
     const call: ChatCall<M> = { id: `c${++this.calls}`, epoch: EPOCH, chatId: this.chat.path, method, args };
     try {
-      const out = run(this.chat, call, this.ctx);
+      const out = runMethod(this.chat, call, this.ctx);
       return out instanceof Promise ? out : Promise.resolve(out);
     } catch (err) {
       return Promise.reject(err);

@@ -185,8 +185,9 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
 
 test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  // The chat's host: the handle itself and the pi adapter the chat runs on.
-  const allowed = new Set(["server/chat-handle.ts"]);
+  // The chat's host: the handle itself, the commands and mirror it shares with a chat process's host
+  // (server/chat-runtime/), and the pi adapter the chat runs on.
+  const allowed = new Set(["server/chat-handle.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
   const importers = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
     .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && f !== "server/chat-manager.ts")
@@ -194,6 +195,9 @@ test("server code reaches a chat only through its handle: nothing outside the ch
   assert.deepEqual(importers.filter((f) => !allowed.has(f)), []);
   assert.deepEqual([...allowed].filter((f) => !importers.includes(f)), [], "an allowed file that no longer imports it leaves the list");
 });
+
+/** The chat's host: what runs the chat itself, in the server's process or a chat process. */
+const CHAT_HOST = new Set(["server/chat-handle.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
 
 test("nothing outside the chat's host is handed a chat or its driving session", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -204,7 +208,7 @@ test("nothing outside the chat's host is handed a chat or its driving session", 
       .replace(/\/\/.*$/gm, "");
   const files = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
-    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && !f.startsWith("shared/harness") && f !== "server/chat-manager.ts" && f !== "server/chat-handle.ts");
+    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && !f.startsWith("shared/harness") && f !== "server/chat-manager.ts" && !CHAT_HOST.has(f));
   // The handle hands out no chat: no ChatSession, no hook that gets one, no way back to one.
   const handle = code("server/chat-handle.ts");
   assert.doesNotMatch(handle, /export (type )?\{[^}]*\bChatSession\b/, "chat-handle re-exports no ChatSession");

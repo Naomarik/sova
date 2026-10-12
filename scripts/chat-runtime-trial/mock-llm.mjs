@@ -30,8 +30,8 @@
 //              prompt in agent_spawn's, say); tags nested in a call's arguments are not calls of
 //              their own
 //   [spawn N L #tag]  (stage 4; N, L and #tag optional) agent_spawn with N pi workers on trial/m1:
-//              one is "[long L #tag] worker" named trial-worker (L 60, tag worker, as [spawn]); more
-//              are "[long L #tag-i] worker i" named trial-worker-i
+//              one is "[long L #tag] worker" named trial-<tag> (L 60; tag worker, named trial-worker,
+//              as [spawn]); more are "[long L #tag-i] worker i" named trial-<tag>-i
 //   [spawn-claude S #tag]  agent_spawn with one claude-code worker (scripts/fake-claude.mjs answers
 //              it), named trial-claude, its prompt "[fake-slow S] claude worker #tag" (S ms, default 20000)
 //   [explain S]  (in /explain's topic) the child, whose prompt names the store: S text parts first (default 0), then the page written to the
@@ -173,12 +173,22 @@ const server = createServer(async (req, res) => {
   const bash = /\[bash (\d+)\]/.exec(tags);
   const big = /\[big (\d+)\]/.exec(tags);
   const calls = /\[call [\w-]+ \{/.test(tags) ? parseCalls(tags) : [];
+  // A [call …] sequence still running: the newest user message holding [call …] tags, after which
+  // every assistant message made tool calls (none closed the turn with text). A message that arrives
+  // meanwhile with no tag of its own (a steer, a teammate's message) does not end it: the next call
+  // is made all the same, as a model would carry on with its task.
+  const seqAt = msgs.findLastIndex((m) => m.role === "user" && /\[call [\w-]+ \{/.test(textOf(m.content)));
+  const seqTail = seqAt >= 0 ? msgs.slice(seqAt + 1) : [];
+  const seqOpen = seqAt >= 0 && seqAt < lastUser && seqTail.some((m) => m.role === "assistant") && seqTail.every((m) => m.role !== "assistant" || m.tool_calls?.length > 0);
+  const seqCalls = seqOpen ? parseCalls(textOf(msgs[seqAt].content)) : [];
+  const seqStep = seqTail.filter((m) => m.role === "tool").length;
+  const carryOn = seqOpen && !TAGGED.test(src) && seqStep < seqCalls.length;
   const spawnN = /\[spawn(?: (\d+))?(?: (\d+))?(?: #([\w-]+))?\]/.exec(tags);
   const spawnClaude = /\[spawn-claude(?: (\d+))?(?: #([\w-]+))?\]/.exec(tags);
   const explain = /Where the page goes/.test(tags) ? /\[explain(?: (\d+))?\]/.exec(tags) : null;
   const handoff = /\[handoff(?: (\d+))?\]/.exec(tags) ?? (/End your reply with the note inside <handoff>/.test(tags) ? [null, null] : null);
   const btw = /\[btw(?: #([\w-]+))?\]/.exec(tags);
-  const scenario = compact ? "compact" : resume ? "long" : firstTag === "call" ? "call" : big ? "big" : long ? "long" : bash ? "bash" : calls.length ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : spawnClaude ? "spawn-claude" : spawnN ? "spawn" : /\[ask\]/.test(tags) ? "ask" : explain ? "explain" : handoff ? "handoff" : btw ? "btw" : "plain";
+  const scenario = compact ? "compact" : resume ? "long" : carryOn || firstTag === "call" ? "call" : big ? "big" : long ? "long" : bash ? "bash" : calls.length ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : spawnClaude ? "spawn-claude" : spawnN ? "spawn" : /\[ask\]/.test(tags) ? "ask" : explain ? "explain" : handoff ? "handoff" : btw ? "btw" : "plain";
   let pid = 0;
   try {
     pid = callerPid(req.socket.remotePort);
@@ -263,6 +273,8 @@ const server = createServer(async (req, res) => {
     chunk({ tool_calls: [{ index: 0, id: `call_${id}`, type: "function", function: { name: "trial_served_sleep", arguments: JSON.stringify({ ms: 1000 }) } }] });
     chunk({}, { finish_reason: "tool_calls" });
     usage(500, 40);
+  } else if (scenario === "call" && carryOn) {
+    call(seqCalls[seqStep].name, seqCalls[seqStep].args);
   } else if (scenario === "call" && stepNo < calls.length) {
     call(calls[stepNo].name, calls[stepNo].args);
   } else if (scenario === "served-quick" && !afterTool) {
@@ -271,8 +283,9 @@ const server = createServer(async (req, res) => {
     call("trial_served_sleep", { ms: 10000 });
   } else if (scenario === "spawn" && !afterTool) {
     const [count, parts, tag] = [Number(spawnN[1] ?? 1), Number(spawnN[2] ?? 60), spawnN[3] ?? "worker"];
-    if (count === 1) call("agent_spawn", { prompt: `[long ${parts} #${tag}] worker`, model: "trial/m1", name: "trial-worker" });
-    else call("agent_spawn", { agents: Array.from({ length: count }, (_, i) => ({ prompt: `[long ${parts} #${tag}-${i + 1}] worker ${i + 1}`, model: "trial/m1", name: `trial-worker-${i + 1}` })) });
+    const name = tag === "worker" ? "trial-worker" : `trial-${tag}`;
+    if (count === 1) call("agent_spawn", { prompt: `[long ${parts} #${tag}] worker`, model: "trial/m1", name });
+    else call("agent_spawn", { agents: Array.from({ length: count }, (_, i) => ({ prompt: `[long ${parts} #${tag}-${i + 1}] worker ${i + 1}`, model: "trial/m1", name: `${name}-${i + 1}` })) });
   } else if (scenario === "spawn-claude" && !afterTool) {
     call("agent_spawn", { prompt: `[fake-slow ${spawnClaude[1] ?? 20000}] claude worker #${spawnClaude[2] ?? "claude"}`, backend: "claude-code", name: "trial-claude" });
   } else if (scenario === "explain" && stepNo < 2) {

@@ -231,7 +231,9 @@ export function userBus() {
 }
 
 /** Waits for GET /api/health to answer. */
-export async function healthy(base, ms = 60000) {
+// 150 s: under `test:int` several trial files boot servers at once, and a boot (bun, the take-back of
+// the chats an earlier check left) has taken more than 60 s there.
+export async function healthy(base, ms = 150000) {
   const end = Date.now() + ms;
   for (;;) {
     try {

@@ -265,9 +265,13 @@ test("workerHostOf takes the host Sova announces on the session's events, and as
 			if (channel === WORKER_HOST_DISCOVER_EVENT) handlers.get(WORKER_HOST_EVENT)?.({ version: 1, host });
 		},
 	};
-	const found = workerHostOf(events);
+	const heard: unknown[] = [];
+	const found = workerHostOf(events, (announced) => heard.push(announced));
 	assert.deepEqual(emitted, [WORKER_HOST_DISCOVER_EVENT]);
 	assert.equal(found.current(), host);
+	// Sova announces again at its own session_start, which may run after the caller's: the caller hears it.
+	handlers.get(WORKER_HOST_EVENT)?.({ version: 1, host });
+	assert.deepEqual(heard, [host, host]);
 	handlers.get(WORKER_HOST_EVENT)?.({ version: 2, host: {} });
 	assert.equal(found.current(), host, "an announcement of another version is ignored");
 	found.dispose();

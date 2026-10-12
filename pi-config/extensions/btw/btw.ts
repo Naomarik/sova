@@ -1291,7 +1291,16 @@ export default function (pi: ExtensionAPI) {
 }
 
 export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
-  const announced = deps.workerHost ? undefined : workerHostOf(pi.events);
+  /** The session whose thread's chat waits to be reattached, until Sova announces its host. */
+  let attachCtx: ExtensionContext | undefined;
+  // Sova announces the host at its own session_start, which may come after ours.
+  const announced = deps.workerHost
+    ? undefined
+    : workerHostOf(pi.events, () => {
+        const ctx = attachCtx;
+        attachCtx = undefined;
+        if (ctx) void reattachThread(ctx).catch(() => {});
+      });
   const hostOf = deps.workerHost ?? (() => announced?.current());
   const rootOf = deps.root ?? (() => join(getAgentDir(), "btw"));
   let pendingThread: BtwDetails[] = [];
@@ -2169,11 +2178,12 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
   async function reattachThread(ctx: ExtensionContext): Promise<void> {
     const host = hostOf();
     if (!host) {
+      attachCtx = ctx;
       return;
     }
 
     for (const ref of await host.list()) {
-      if (ref.kind !== "btw" || ref.state === "ended") {
+      if (ref.kind !== "btw" || ref.state === "ended" || activeBtwSession?.chat.ref.chatId === ref.chatId) {
         continue;
       }
       if (activeBtwSession || btwChatMode(ref.workerId) !== pendingMode) {

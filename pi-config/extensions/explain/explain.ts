@@ -352,8 +352,9 @@ export class ExplainRuns {
 	 * Watch again the children the worker host still runs for this session, from `entries` (the
 	 * branch's `explain-doc` data, oldest first): each id whose newest entry is running and whose
 	 * chat is listed is a live run again, and records its end when it settles (at once, when it
-	 * settled meanwhile). A listed chat no running entry claims is stopped. A running entry with no
-	 * chat behind it is left to `reconcile`. Returns how many runs are live again.
+	 * settled meanwhile). A listed chat no running entry claims is stopped; one this session already
+	 * watches is left alone, so a second call is harmless. A running entry with no chat behind it is
+	 * left to `reconcile`. Returns how many runs are live again.
 	 */
 	async reattach(entries: readonly ExplainEntryData[]): Promise<number> {
 		const host = this.host.workerHost?.();
@@ -364,8 +365,9 @@ export class ExplainRuns {
 		const forks = join(explanationsRoot(env), FORK_DIR);
 		const claimed = new Set<string>();
 		const handles = await (this.host.reattach ?? reattachBackgroundForks)(host, "explain", WORKER_NAME, (id) => {
+			if (this.runs.has(id)) return null; // Already watched by this session.
 			const entry = latest.get(id);
-			if (!entry || entry.status !== "running" || this.runs.has(id) || !isExplanationId(id)) return undefined;
+			if (!entry || entry.status !== "running" || !isExplanationId(id)) return undefined;
 			const forkCopy = join(forks, `${id}.jsonl`);
 			this.runs.set(id, { known: knownOf(entry, env), dir: storeDir(id, env), sessionDir: join(forks, id), ...(existsSync(forkCopy) ? { forkCopy } : {}) });
 			claimed.add(id);

@@ -122,13 +122,20 @@ interface EventBusLike {
 
 /**
  * Sova's worker host for this session, as announced on its `pi.events` (either load order: asks for
- * an announcement once). `current()` is undefined where nothing hosts the session (the pi TUI).
+ * an announcement once). `current()` is undefined where nothing hosts the session. Sova announces
+ * the host at its own session_start, which may run after the caller's: `onAnnounce` hears each
+ * announcement, so a caller that found no host at its session_start can act when it arrives.
  */
-export function workerHostOf(events: EventBusLike): { current(): WorkerHost | undefined; dispose(): void } {
+export function workerHostOf(
+	events: EventBusLike,
+	onAnnounce?: (host: WorkerHost) => void,
+): { current(): WorkerHost | undefined; dispose(): void } {
 	let host: WorkerHost | undefined;
 	const off = events.on(WORKER_HOST_EVENT, (data) => {
 		const announced = data as Partial<WorkerHostAnnouncement> | undefined;
-		if (announced?.version === 1 && announced.host) host = announced.host;
+		if (announced?.version !== 1 || !announced.host) return;
+		host = announced.host;
+		onAnnounce?.(host);
 	});
 	try {
 		events.emit(WORKER_HOST_DISCOVER_EVENT, {});
@@ -370,20 +377,22 @@ export function startBackgroundFork(spec: BackgroundForkSpec, handlers: Backgrou
 
 /**
  * The parent's forks of `kind` the host still runs (a reload, a crash or new code since they
- * started), each watched again: `handlersFor(workerId)` returns the run's handlers, or undefined for
- * a run the parent no longer knows (that chat is stopped). Returns the reattached handles by worker
+ * started), each watched again: `handlersFor(workerId)` returns the run's handlers, undefined for
+ * a run the parent no longer knows (that chat is stopped), or null for one it already watches (left
+ * alone). Returns the reattached handles by worker
  * id. A fork that settled meanwhile settles at once, from its file.
  */
 export async function reattachBackgroundForks(
 	host: WorkerHost,
 	kind: BackgroundForkKind,
 	name: string,
-	handlersFor: (workerId: string) => BackgroundForkHandlers | undefined,
+	handlersFor: (workerId: string) => BackgroundForkHandlers | undefined | null,
 ): Promise<Map<string, BackgroundForkHandle>> {
 	const handles = new Map<string, BackgroundForkHandle>();
 	for (const ref of await host.list()) {
 		if (ref.kind !== kind || ref.state === "ended") continue;
 		const handlers = handlersFor(ref.workerId);
+		if (handlers === null) continue;
 		if (!handlers) {
 			await host.stop(ref.chatId, `no ${name} run records it`).catch(() => {});
 			continue;

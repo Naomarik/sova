@@ -46,7 +46,12 @@ const USAGE = "Usage: /explain <topic>";
 export default function explainExtension(pi: ExtensionAPI): void {
 	/** The most recent context, for notifications from a child's settle callback. */
 	let activeCtx: ExtensionContext | undefined;
-	const workerHost = workerHostOf(pi.events);
+	/** The session whose closed predecessor's runs wait to be reattached, until Sova announces its host. */
+	let attachCtx: ExtensionContext | undefined;
+	// Sova announces the host at its own session_start, which may come after ours.
+	const workerHost = workerHostOf(pi.events, () => {
+		if (attachCtx) reattach(attachCtx);
+	});
 
 	const host: ExplainHost = {
 		workerHost: () => workerHost.current(),
@@ -79,6 +84,18 @@ export default function explainExtension(pi: ExtensionAPI): void {
 
 	/** The session's runs a closed session left running, watched again (explain.ts `reattach`). */
 	let reattached: Promise<unknown> = Promise.resolve();
+	const reattach = (ctx: ExtensionContext): void => {
+		if (!workerHost.current()) {
+			attachCtx = ctx;
+			return;
+		}
+		attachCtx = undefined;
+		try {
+			reattached = runs.reattach(explainEntries(ctx)).catch(() => 0);
+		} catch {
+			/* No branch to read: nothing to reattach. */
+		}
+	};
 
 	/**
 	 * Settle running entries whose child is gone (explain.ts `reconcile`), once per session, after
@@ -87,6 +104,7 @@ export default function explainExtension(pi: ExtensionAPI): void {
 	 */
 	let reconciledFor: string | undefined;
 	const reconcile = async (ctx: ExtensionContext): Promise<void> => {
+		if (attachCtx) reattach(attachCtx);
 		await reattached;
 		try {
 			const sessionId = ctx.sessionManager.getSessionId();
@@ -103,11 +121,7 @@ export default function explainExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx;
-		try {
-			reattached = runs.reattach(explainEntries(ctx)).catch(() => 0);
-		} catch {
-			/* No branch to read: nothing to reattach. */
-		}
+		reattach(ctx);
 	});
 	pi.on("turn_start", async (_event, ctx) => {
 		activeCtx = ctx;

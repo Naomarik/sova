@@ -2941,13 +2941,11 @@ test("a pi worker on a claude-code-cli model gets the claude-code extension and 
 const SANDBOX_DIR = fs.realpathSync(path.resolve(fileURLToPath(new URL("../sandbox", import.meta.url))));
 const SANDBOX_OFF: SandboxStateEvent = { version: 1, on: false, extensionPath: SANDBOX_DIR, enforcement: "none" };
 const WORKER_FLAGS = { sandbox: "on", "sandbox-parent": '{"version":1}' };
-/** The sandbox's launch module as workerLaunch names it (the fake backend never loads it). */
-const LAUNCH_MODULE = path.join(SANDBOX_DIR, "launch.ts");
 /** The one call, faked: pi gets flags (narrowed ones for a root), any other backend a confinement named by its owner and root. */
 const workerLaunchOf = (flagsIn: (root: string) => Record<string, string> = (root) => ({ sandbox: "on", "sandbox-parent": root }), top = WORKER_FLAGS) =>
 	(req: { cwd: string; root?: string; backend: string; owner: string }): WorkerLaunch => req.backend === "pi"
 		? { kind: "pi", extensionPath: SANDBOX_DIR, flags: req.root ? flagsIn(req.root) : top }
-		: { kind: "confine", scope: JSON.stringify({ owner: req.owner, root: req.root ?? null }), module: LAUNCH_MODULE };
+		: { kind: "confine", scope: JSON.stringify({ owner: req.owner, root: req.root ?? null }) };
 const SANDBOX_ON: SandboxStateEvent = { version: 1, on: true, extensionPath: SANDBOX_DIR, enforcement: "full", workerLaunch: workerLaunchOf() };
 /** A worker's launch options without the per-worker identity or the fake worker's own closures. */
 const launchShape = ({ id, groupId, name, ...rest }: any) => Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== "function"));
@@ -3092,7 +3090,7 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker launch/);
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "none" }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker launch/);
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "confine", scope: "s", module: LAUNCH_MODULE }) });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "confine", scope: "s" }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave a pi worker no extension flags/);
 		assert.equal(h.workers.length + created.length, 2);
 

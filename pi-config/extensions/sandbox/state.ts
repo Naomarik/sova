@@ -67,15 +67,15 @@ export interface WorkerLaunchRequest {
  * How a worker must start, from the one sandbox call both kinds of worker go through.
  * - `pi`: load `extensionPath` with `flags` (`--sandbox on`, `--sandbox-parent <scope>`); the worker's
  *   own extension confines its tools.
- * - `confine`: run the worker's process inside the sandbox. `scope` is opaque, serializable data (it
- *   may cross into a hosting process); pass it to `confineLaunch(scope, needs, launch)` exported by
- *   `module` (the sandbox's `launch.ts`, pi-runtime-free) at every launch of that process.
+ * - `confine`: the worker's whole process would have to run inside the sandbox, under `scope`
+ *   (opaque, serializable: launch.ts). Nothing launches one: the subagents extension refuses any
+ *   backend but pi when the answer is not `none`.
  * - `refused`: the worker must not start; the spawner throws `reason` as is.
  * - `none`: nothing to apply (the sandbox is off and the worker is not in a tracked worktree).
  */
 export type WorkerLaunch =
 	| { kind: "pi"; extensionPath: string; flags: Record<string, string> }
-	| { kind: "confine"; scope: string; module: string }
+	| { kind: "confine"; scope: string }
 	| { kind: "refused"; reason: string }
 	| { kind: "none" };
 

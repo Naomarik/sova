@@ -543,9 +543,9 @@ test("hasScript: a package.json script by name; none, or unreadable, is no", () 
   assert.equal(hasScript(dir, "test:all"), false);
 });
 
-test("touchesSpecReplay: the spec core, its replay tests, spec-guard and spec-hooks only", () => {
-  for (const f of ["pi-config/extensions/spec/core/sova-spec.mjs", "pi-config/extensions/spec/tests/replay/replay.test.mjs", "pi-config/extensions/mode/spec-guard.ts", "pi-config/extensions/claude-code/spec-hooks.ts"]) assert.ok(touchesSpecReplay(f), f);
-  for (const f of ["pi-config/extensions/spec/tests/core.test.mjs", "pi-config/extensions/spec/README.md", "pi-config/extensions/mode/spec.ts", "server/spec-settings.ts", "x/pi-config/extensions/spec/core/a.mjs"]) assert.ok(!touchesSpecReplay(f), f);
+test("touchesSpecReplay: the spec core, its replay tests and spec-guard only", () => {
+  for (const f of ["pi-config/extensions/spec/core/sova-spec.mjs", "pi-config/extensions/spec/tests/replay/replay.test.mjs", "pi-config/extensions/mode/spec-guard.ts"]) assert.ok(touchesSpecReplay(f), f);
+  for (const f of ["pi-config/extensions/spec/tests/core.test.mjs", "pi-config/extensions/spec/README.md", "pi-config/extensions/mode/spec.ts", "server/spec-settings.ts", "pi-config/extensions/claude-code/spec-hooks.ts", "x/pi-config/extensions/spec/core/a.mjs"]) assert.ok(!touchesSpecReplay(f), f);
 });
 
 test("acquireLock: a fresh lock is waited for whatever its pid, a stale one taken over, the holder's beat keeps it fresh", async () => {

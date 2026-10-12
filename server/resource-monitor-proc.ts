@@ -156,7 +156,7 @@ export function parseSelfCgroup(text: string): { path: string; unit?: string } |
 export interface ProcEnv {
   /** PI_SESSION_FILE, set by pi's bash tool for its child. */
   sessionFile?: string;
-  /** PI_SUBAGENTS_TEAM_MEMBER's team and worker id (member-mcp helpers, team workers). */
+  /** PI_SUBAGENTS_TEAM_MEMBER's team and worker id (a team member and what it starts). */
   team?: { teamId: string; workerId: string };
   /** CLAUDE_CODE_SESSION_ID, set by Claude Code for its tool children: its session uuid. */
   claudeSession?: string;
@@ -250,7 +250,6 @@ export function classifyArgv(argv: string[], comm = ""): ArgvInfo {
   if (/^(node|nodejs|bun|deno|tsx)$/.test(exe)) {
     const i = scriptIndex(argv, NODE_VALUED);
     const script = i >= 0 ? argv[i]! : "";
-    if (/subagents\/member-mcp\.ts$/.test(script)) return { kind: "member-mcp", cmd: "node member-mcp.ts" };
     // tsx: node …/tsx/dist/cli.mjs server/index.ts → node tsx server/index.ts
     const shown = /\/tsx\/dist\/cli\.m?js$/.test(script) ? "tsx" : script ? shortArg(script) : "";
     const tail = i >= 0 ? argv.slice(i + 1).map(shortArg) : [];

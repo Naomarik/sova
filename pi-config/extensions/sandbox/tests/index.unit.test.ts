@@ -218,7 +218,6 @@ test("workerLaunch off: none outside a tracked worktree; inside one, a write-onl
 	const cc = wl({ cwd: a, root: a, backend: "claude-code", owner: "w1" });
 	assert.equal(cc.kind, "confine");
 	if (cc.kind !== "confine") return;
-	assert.ok(cc.module.endsWith("/launch.ts") && existsSync(cc.module));
 	const d = decodeLaunchScope(cc.scope);
 	assert.ok(d.ok);
 	assert.deepEqual(d.value.parent, JSON.parse(pi.flags["sandbox-parent"]!), "the confined worker gets the pi worker's scope");

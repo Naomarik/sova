@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -107,12 +108,15 @@ export function chatDriver(config: Pick<SupervisorConfig, "slice" | "driver"> = 
 // ---- socket path and epoch ----------------------------------------------------------------------
 
 /**
- * Where chat `chatId`'s socket lives (design §2.1): `<state root>/chats/s/<id12><suffix>.sock` when
+ * Where chat `chatId`'s socket lives (design §2.1): `<state root>/chats/s/<hash16><suffix>.sock` when
  * that path fits in 100 bytes, else `<XDG_RUNTIME_DIR or the temp dir>/sova-chats-<state hash>/…`
  * (a sockaddr holds 108; a deep hermetic worktree path would not fit).
  */
 export function chatSocketPath(chatId: string, o: { suffix?: string; root?: string; runtimeDir?: string | undefined; tmp?: string; hash?: string } = {}): string {
-  const name = `${idPart(chatId, 12)}${o.suffix ?? ""}.sock`;
+  // A short hash of the whole id: a session id's first characters are its creation time (UUIDv7),
+  // so two chats made in the same millisecond would share a prefix. A chat already running keeps
+  // the path its record names (adoption connects to `rec.sock`, never to this).
+  const name = `${createHash("sha256").update(chatId).digest("hex").slice(0, 16)}${o.suffix ?? ""}.sock`;
   const primary = join(o.root ?? chatsRoot(), "s", name);
   if (Buffer.byteLength(primary) <= 100) return primary;
   const base = "runtimeDir" in o ? o.runtimeDir : process.env.XDG_RUNTIME_DIR;

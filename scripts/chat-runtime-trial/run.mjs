@@ -1003,16 +1003,17 @@ async function t12b() {
   R.check(refused.length === 0, `t12b: the boot sweep ended nothing for it (${refused.length} refused reply/ended)`);
   // The served test tool, cut by a restart.
   const before = toolResults(path).length;
+  const servedFrom = servedLog().length;
   const sent = await participantSays(b.link, "[served] run it");
   R.check(sent.status < 300, `t12b: the participant's second message was taken (${sent.status} ${sent.body.slice(0, 100)})`);
-  await waitFor(() => servedLog().some((e) => e.event === "start"), 30000, 250);
+  await waitFor(() => servedLog().slice(servedFrom).some((e) => e.event === "start"), 30000, 250);
   await sleep(1500);
   await restart();
   await waitFor(() => toolResults(path).length > before, 60000);
   await sleep(2000);
   const cut = toolResults(path).slice(before);
   R.check(cut.length === 1 && /outcome is unknown/.test(JSON.stringify(cut[0])), `t12b: the baton's cut served call reports outcome unknown (${resultText(cut[0])})`);
-  const starts = servedLog().filter((e) => e.event === "start").length;
+  const starts = servedLog().slice(servedFrom).filter((e) => e.event === "start").length;
   R.check(starts === 1, `t12b: the served call ran once (${starts} starts)`);
   await teardown();
   await boot();
@@ -1084,14 +1085,16 @@ async function t14() {
     const ov = await openOn(await overseer());
     await turn(ov, "say ok");
     ov.s.close();
+    await restart({ [KNOBS.build]: "trial-b" });
+    const pidA = chatPid(ov.path);
+    // A server's first check only takes the blockers standing then as told (briefDecision): one now,
+    // so the blocker below is new.
+    R.note(`t14: first tick ${JSON.stringify(await post("/api/test/overseer/tick", {}).catch((e) => ({ error: String(e.message ?? e) })))}`);
     // The blocker: a chat waiting on a dialog (its pane stays attached, so the dialog stays open).
     const blocker = await newChat();
     prompt(blocker.s, "[ask] ask me");
     await blocker.s.until(isConfirm, 60000, "the dialog");
-    await restart({ [KNOBS.build]: "trial-b" });
-    const pidA = chatPid(ov.path);
     const ov2 = await chat(c, ov.path);
-    const blocker2 = await chat(c, blocker.path);
     ov2.send({ type: "reload_code" });
     // Tick inside the swap: until a tick briefs, at most 20 tries.
     const ticks = [];
@@ -1112,7 +1115,7 @@ async function t14() {
     R.check(mockLog(mock.log).filter((e) => /\[overseer-brief\]/.test(e.userText ?? "") && !e.afterTool).length === 1, "t14: the model was asked for the brief once");
     ov2.close();
     blocker.s.close();
-    blocker2.close();
+
   } finally {
     writeFileSync(ovFile, JSON.stringify(ovSettings));
     await teardown();
@@ -1149,10 +1152,11 @@ async function slowAct(label, at, who) {
   await turn(target, "say ok");
   R.check(whereOf(target.path) === "process", `${label}: the ${who === "overseer" ? "Overseer" : "project overseer"} runs in a process of its own (pid ${chatPid(target.path) || "none"})`);
   const note = `TRIAL-SLOW-${at}`;
+  const servedFrom = servedLog().length;
   prompt(target.s, `[call sova_note {"op":"append","text":"${note}"}]`);
-  await waitFor(() => servedLog().some((e) => e.event === "act-wait"), 30000, 250);
+  await waitFor(() => servedLog().slice(servedFrom).some((e) => e.event === "act-wait"), 30000, 250);
   await sleep(1000);
-  const wait = servedLog().find((e) => e.event === "act-wait");
+  const wait = servedLog().slice(servedFrom).find((e) => e.event === "act-wait");
   target.s.close();
   const logFile = join(scratch, `server-${n}.log`);
   const logFrom = readFileSync(logFile).length;

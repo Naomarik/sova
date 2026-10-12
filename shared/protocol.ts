@@ -1773,9 +1773,6 @@ export interface HeldChatState {
   /** As the chat's last `claude_login` message said it, `pending` included; null: not a device with
       several logins, or the registry can't name one. Absent until one was built, and from older servers. */
   login?: ChatClaudeLogin | null;
-  /** A chat process on older code than its server ("older"), or whose reload failed to start
-      ("failed"), from its `code` state; absent when current, hosted in the server, and from older servers. */
-  code?: "older" | "failed";
 }
 
 /** POST /api/mode?path=…: the chat's mode after the switch, plus how it took (ModeApplies).

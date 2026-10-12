@@ -18,6 +18,10 @@ export interface RolloutSupervisor {
   unexpectExit(chatId: string): void;
   awaitExit(chatId: string): Promise<void>;
   repoint(chatId: string, rep: ChatRecord): void;
+  /** Stop the chat's current process as an expected end, and forget it. */
+  stop(chatId: string, cause: "reload"): Promise<void>;
+  /** Wait (bounded) until no process holds the session's writer lock; whether it is free. */
+  waitUnlocked(sessionPath: string): Promise<boolean>;
 }
 
 export interface RolloutDeps<L = unknown> {
@@ -32,6 +36,9 @@ export interface RolloutDeps<L = unknown> {
   setCode(chatId: string, state: "reloading" | "failed" | "older", detail?: string): void;
   /** The last lines of the replacement's log, for a failed boot's reason. */
   logTail?(unit: string): Promise<string[]>;
+  /** The chat could not open in its replacement, and its old process is gone: the router keeps it in
+      the server's process from now on (inprocOnly) and lets go of its remote handle. Never a death. */
+  onReloadOpenFailed?(chatId: string, sessionPath: string, reason: string): void;
   readyTimeoutMs?: number;
   log?: (line: string) => void;
 }
@@ -86,9 +93,14 @@ export class Rollout<L = unknown> {
     try {
       await this.deps.open(chatId, rep, ready.link);
     } catch (err) {
-      // The replacement goes as an expected end; the chat opens afresh (in the server) on its next acquire.
-      sup.expectExit(chatId, "reload");
-      return this.fail(chatId, rep, `the chat did not open on the new code: ${(err as Error).message}`);
+      // The old process is gone: the replacement goes too, as an expected end (no death, no resume),
+      // its record and own pid only once its unit is stopped, and the chat opens in the server next,
+      // once the replacement's writer lock is free.
+      const reason = `the chat did not open on the new code: ${(err as Error).message}`;
+      await sup.stop(chatId, "reload");
+      if (!(await sup.waitUnlocked(rep.sessionPath))) this.log(`${chatId}: the replacement's writer lock is still held`);
+      this.deps.onReloadOpenFailed?.(chatId, rep.sessionPath, reason);
+      return this.fail(chatId, null, reason);
     }
     this.log(`${chatId}: reloaded into ${rep.unit}`);
     return "reloaded";

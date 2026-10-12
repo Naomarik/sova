@@ -83,7 +83,21 @@ export function buildAgentDir(scratch, { mockPort, auth } = {}) {
   mkdirSync(join(agent, "extensions"), { recursive: true });
   copyFileSync(join(HERE, "trial-dialog.ts"), join(agent, "extensions", "trial-dialog.ts"));
   if (auth) copyFileSync(auth, join(agent, "auth.json"));
-  return { agent, proj };
+  return { agent, proj, ...fakeClaude(scratch) };
+}
+
+/** scripts/fake-claude.mjs as `claude` (a shim dir to put first on the server's PATH) and a login
+    dir it accepts (CLAUDE_CONFIG_DIR): a claude-code worker runs on it with no Anthropic and no real
+    login, and no real `claude` on the PATH is ever reached. */
+export function fakeClaude(scratch) {
+  const bin = join(scratch, "fake-claude-bin");
+  const login = join(scratch, "claude-login");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(login, { recursive: true });
+  writeFileSync(join(bin, "claude"), `#!/bin/sh\nexec node ${join(ROOT, "scripts", "fake-claude.mjs")} "$@"\n`, { mode: 0o755 });
+  writeFileSync(join(login, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "fake", refreshToken: "fake", expiresAt: Date.now() + 8 * 3600_000 } }), { mode: 0o600 });
+  writeFileSync(join(login, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "trial@example.invalid" } }));
+  return { claudeBin: bin, claudeLogin: login };
 }
 
 /** The mock LLM as its own process: it outlives every server restart. */
@@ -104,9 +118,11 @@ export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").
 /** The server's environment: the scratch agent dir, the knobs, and nothing that names a real login
     or key (only the mock, or an auth.json copied in, may answer). `on`: the switch; `driver`:
     "detached" or "systemd" (then `slice` is the stand-in slice); `idleMs`, `build`, `failBoot`. */
-export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, extra = {} }) {
+export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, claude, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
   Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off" });
+  // `claude`: fakeClaude()'s dirs: the fake first on PATH, its login as the default one.
+  if (claude) Object.assign(env, { PATH: `${claude.claudeBin}:${env.PATH ?? ""}`, CLAUDE_CONFIG_DIR: claude.claudeLogin });
   if (on) env[KNOBS.switch] = "out";
   if (on && driver === "detached") env[KNOBS.driver] = "detached";
   if (on && slice) env[KNOBS.slice] = slice;
@@ -139,7 +155,7 @@ export function server({ tag, env, mode = "unit", log }) {
   let child = null;
   const up = () => {
     if (mode === "unit") {
-      const sets = Object.entries(env).filter(([k]) => /^(PATH|HOME|PORT|PI_CODING_AGENT_DIR|SOVA_\w+|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|TMPDIR|LANG)$/.test(k));
+      const sets = Object.entries(env).filter(([k]) => /^(PATH|HOME|PORT|PI_CODING_AGENT_DIR|CLAUDE_CONFIG_DIR|SOVA_\w+|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|TMPDIR|LANG)$/.test(k));
       execFileSync("systemd-run", ["--user", `--unit=${unit}`, "--property=KillMode=control-group", "--property=TimeoutStopSec=30", `--working-directory=${ROOT}`, `--property=StandardOutput=append:${log}`, `--property=StandardError=append:${log}`, ...sets.map(([k, v]) => `--setenv=${k}=${v}`), start], { stdio: "pipe" });
     } else {
       child = spawn(start, [], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });

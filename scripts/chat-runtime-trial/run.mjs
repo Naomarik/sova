@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// chat-runtime-trial: al_3 stage 2 end to end (.agent/sova-runtime/stage2-design.md §8.2, §8.3), on a
+// chat-runtime-trial: al_3 stages 2–4 end to end (.agent/sova-runtime/stage2-design.md §8.2, §8.3), on a
 // hermetic server whose ordinary chats run in their own processes. Never sova-runtime.service, never
 // sova-chats.slice, never ~/.pi. It builds a scratch agent dir like dev:hermetic's, starts the mock
 // LLM (mock-llm.mjs, its own process, so it outlives every server restart) and drives the server over
@@ -15,7 +15,6 @@
 //     t1c       a dialog open across the restart is re-sent and its answer reaches the tool
 //     t1d       a steer queued before the restart is delivered once
 //     t1e       a restart mid-compaction: the compaction completes and is written once
-//     t1f       a worker runs across the restart: same worker pid, its completion delivered once
 //     t2        kill -9 of the chat mid-reply: the pane's error, a new process, the crash "continue"
 //               once; a second kill during that resume is not resumed again
 //     t3        idle stop (SOVA_CHAT_IDLE_MIN=0.05): not while a client is attached or a run is in
@@ -25,7 +24,8 @@
 //     t4fail    a replacement that fails to boot: the rollout halts, the old process stays, "failed"
 //     t5        the switch off: today's behaviour (the restart cuts the reply off; one "continue")
 //     t6        (T6', stage 3) with the switch on, the Overseer, a project overseer, a baton and a
-//               powers chat each run in a process (a unit) of their own; a worker's session does not
+//               powers chat each run in a process (a unit) of their own; a worker's session is a worker
+//               chat (stage 4), never opened as an ordinary chat
 //     t7        q5: a server-hosted action cut by a restart reports "outcome unknown" and ran once
 //     t8        two servers on different agent dirs never adopt or stop each other's chats
 //     t9        an outside SIGTERM to a chat process with a pane attached: the pane gets a quiet
@@ -48,6 +48,27 @@
 //     t15       kill -9 of a baton mid-reply: the pane's error, reply/ended once, no "continue"
 //     t16       a powers chat's session_send to another process (hop header); a restart mid-send
 //               delivers at most once
+//     stage 4 (stage4-design.md §8; t17 replaces stage 2's t1f):
+//     t17       a worker across a server restart: a chat process of its own (a unit in systemd mode),
+//               not the parent's descendant; same pid; its reply streamed once; its completion
+//               delivered once; no `pi --mode rpc` anywhere
+//     t17c      the same for a claude-code worker (scripts/fake-claude.mjs on the server's PATH)
+//     t18       the parent reloads (Reload now, build a → b) mid worker run: the worker keeps its pid,
+//               agent_list shows it running, a steer after the reload reaches it once, one completion
+//     t18b      kill -9 of the parent mid-run: its crash resume; the worker keeps its process; one
+//               completion
+//     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
+//               team_ask reaches the parent once; after a parent reload alpha's inbox keeps beta's message
+//     t19n      a monitor's wake_nudge set before a parent reload fires once after it (team-defaults.json)
+//     t20       kill -9 of a worker mid-run: the continue once, the run finishes, one completion; a
+//               second kill during that resume is final ("stopped unexpectedly", last output)
+//     t21       /explain, /compact-handoff, /btw each in a process of its own, no model call from the
+//               parent, counted in the usage ledger; an /explain across a parent reload settles once
+//     t22       the switch off: workers are lowered children of the server; a mode switch keeps them; a
+//               restart ends them (restored, interrupted); agent_resume reopens one, which takes a steer
+//     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
+//     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
+//               it ends
 //     real      (only with --model) t1 on a real model
 //     plumbing  (only when asked) the trial's stage-3 steps work: an Overseer tool call, an org with a
 //               baton, a project overseer and a look now
@@ -97,7 +118,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t22", "t23", "t24"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -116,7 +137,7 @@ const R = recorder(join(scratch, "results.json"));
 console.log(`chat-runtime-trial: server as ${mode}, chats on the ${driver} driver${driver === "systemd" ? ` in ${slice}` : ""}; scratch ${scratch}`);
 
 const mock = await startMock({ port: await freePort(), log: join(scratch, "mock.jsonl"), step: 400 });
-const { agent, proj } = buildAgentDir(scratch, { mockPort: mock.port, auth: opt("auth") });
+const { agent, proj, claudeBin, claudeLogin } = buildAgentDir(scratch, { mockPort: mock.port, auth: opt("auth") });
 const sova = join(agent, "sova");
 
 // ── state the trial reads (the server's and the chat processes' own records) ────────────────────
@@ -136,23 +157,19 @@ const readLines = (f) => {
   }
 };
 const baseName = (p) => String(p ?? "").split("/").pop();
+/** The supervisors' records of every chat process: chats/registry (the chats' own supervisor) and,
+    from stage 4, chats/children (workers in child placement). */
+const allRecords = (agentDir = agent) =>
+  ["registry", "children"].flatMap((d) => {
+    const dir = join(agentDir, "sova", "chats", d);
+    try {
+      return readdirSync(dir).map((f) => readJson(join(dir, f))).filter((r) => r && typeof r === "object" && r.sessionPath);
+    } catch {
+      return [];
+    }
+  });
 /** The supervisor's record of this chat: {chatId, sessionPath, unit, pid, startedAt, build, sock, epoch}. */
-function record(path, agentDir = agent) {
-  const dir = join(agentDir, "sova", "chats", "registry");
-  let files = [];
-  try {
-    files = readdirSync(dir);
-  } catch {}
-  return files.map((f) => readJson(join(dir, f))).find((r) => r && baseName(r.sessionPath) === baseName(path)) ?? null;
-}
-const allRecords = (agentDir = agent) => {
-  const dir = join(agentDir, "sova", "chats", "registry");
-  try {
-    return readdirSync(dir).map((f) => readJson(join(dir, f))).filter(Boolean);
-  } catch {
-    return [];
-  }
-};
+const record = (path, agentDir = agent) => allRecords(agentDir).find((r) => baseName(r.sessionPath) === baseName(path)) ?? null;
 const alive = (pid) => !!pid && existsSync(`/proc/${pid}`) && !readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.startsWith("Z");
 /** The chat's process now: its record's pid when that process lives. */
 const chatPid = (path, agentDir) => {
@@ -220,7 +237,7 @@ async function boot(o = {}) {
   // A share listener of its own on loopback, so a trial can post as a baton's participant.
   const sharePort = await freePort();
   const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
-  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build ?? "trial-fixed", failBoot: o.failBoot, extra });
+  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build ?? "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
   const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`) });
   s.up();
   await healthy(url);
@@ -447,35 +464,6 @@ async function t1e() {
   R.check(comps.length === 1 && JSON.stringify(comps[0]).includes("COMPACT-SUMMARY"), `t1e: the compaction completed and was written once (${comps.length})`);
   R.check(mockLog(mock.log).filter((e) => e.event === "cut-off" && e.scenario === "compact").length === 0, "t1e: the summary request was never cut off");
   noResume(path, "t1e");
-  s2.close();
-}
-
-async function t1f() {
-  const { path, s } = await newChat();
-  prompt(s, "[spawn] start a worker");
-  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
-  for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.tag === "worker"); i++) await sleep(500);
-  await sleep(2000);
-  const pid1 = chatPid(path);
-  const workers1 = tree(pid1).filter((p) => p.pid !== pid1 && /--mode rpc/.test(p.cmd));
-  R.check(workers1.length === 1, `t1f: one worker process under the chat (${workers1.map((w) => w.pid).join(", ") || "none"})`);
-  s.close();
-  await restart();
-  sameProcess(path, pid1, "t1f");
-  const wpid = workers1[0]?.pid;
-  R.check(wpid && alive(wpid), `t1f: the worker process survived (pid ${wpid})`);
-  const s2 = await chat(c, path);
-  const w = await s2.until((m) => m.type === "workers" && m.workers?.some((x) => x.outcome), 120000, "the worker ends").catch(() => null);
-  const worker = w?.workers?.find((x) => x.name === "trial-worker") ?? w?.workers?.[0];
-  R.check(worker?.outcome === "success", `t1f: the worker finished on its own (outcome ${worker?.outcome})`);
-  const log = mockLog(mock.log);
-  R.check(log.filter((e) => e.event === "done" && e.tag === "worker").length === 1 && !log.some((e) => e.event === "cut-off" && e.tag === "worker"), "t1f: the worker's reply streamed to its end once");
-  // Its completion wakes the parent once: one user entry carrying the worker's result.
-  await sleep(5000);
-  const wakes = entries(path).filter((e) => e.type === "message" && e.message?.role === "user" && /REPLY-DONE worker/.test(JSON.stringify(e.message.content))).length;
-  const custom = entries(path).filter((e) => e.type !== "message" && /REPLY-DONE worker/.test(JSON.stringify(e))).length;
-  R.check(wakes + custom === 1, `t1f: the worker's completion was delivered to the chat once (${wakes} user, ${custom} other)`);
-  noResume(path, "t1f");
   s2.close();
 }
 
@@ -864,10 +852,17 @@ async function t6() {
       R.check(cg.includes(`/${slice}/`), `t6: ${label}'s cgroup is under the stand-in slice (${cg})`);
     }
   }
-  // The worker's own session file: no chat process of its own (stage 4).
+  // Stage 4: any other chat process is a worker chat (the worker's own session), never an ordinary
+  // chat: the server records it as a worker, and a browser asking to open its file is refused.
   const known = new Set(kinds.map(([, p]) => baseName(p)));
+  const workers = new Set(workerRecords().map((r) => baseName(r.path)));
   const others = allRecords().filter((r) => !known.has(baseName(r.sessionPath)) && alive(r.pid));
-  R.check(others.length === 0, `t6: no other chat process (a worker's session stays in the server) (${others.map((r) => baseName(r.sessionPath)).join(", ") || "none"})`);
+  R.check(others.every((r) => workers.has(baseName(r.sessionPath))), `t6: every other chat process is a worker chat (${others.map((r) => `${baseName(r.sessionPath)}${workers.has(baseName(r.sessionPath)) ? "" : " (not a worker)"}`).join(", ") || "none"})`);
+  const wr = workerRecords(w.path)[0];
+  if (wr) {
+    const opened = await chat(c, wr.path, 10000).then((x) => (x.close(), "opened"), (e) => String(e.message ?? e));
+    R.check(opened !== "opened", `t6: the worker's own session never opens as an ordinary chat (${opened.slice(0, 160)})`);
+  } else R.check(false, "t6: the worker is recorded by the server (chats/workers)");
   for (const x of [ov, poc, pw, w]) x.s.close();
   bc.close();
 }
@@ -1289,9 +1284,517 @@ async function plumbing() {
   R.note(`plumbing: a look now: ${look}`);
 }
 
+// ── stage 4: workers, team members and hidden chats as chat processes (stage4-design.md §8) ─────
+
+/** The server's worker records (<stateRoot>/chats/workers/*.json, design §2.4), of one parent chat
+    when `parentPath` is given: {chatId, path, kind, parent: {sessionId, path, workerId}, placement, state, ended}. */
+function workerRecords(parentPath) {
+  const dir = join(sova, "chats", "workers");
+  let files = [];
+  try {
+    files = readdirSync(dir);
+  } catch {}
+  return files.map((f) => readJson(join(dir, f))).filter((r) => r && (!parentPath || baseName(r.parent?.path) === baseName(parentPath)));
+}
+/** The first worker record of the parent that `pred` accepts, waited for. */
+async function workerOf(parentPath, pred = () => true, ms = 60000) {
+  let hit = null;
+  await waitFor(() => (hit = workerRecords(parentPath).find(pred) ?? null), ms);
+  return hit;
+}
+/** A worker record whose session file holds `marker` (its task's tag). */
+const workerWith = (parentPath, marker, ms) => workerOf(parentPath, (r) => existsSync(r.path) && readFileSync(r.path, "utf8").includes(marker), ms);
+/** Every `pi --mode rpc` process of this trial (its environment names the scratch agent dir): stage 4 has none. */
+function rpcProcs() {
+  const out = [];
+  for (const d of readdirSync("/proc")) {
+    if (!/^\d+$/.test(d)) continue;
+    try {
+      const cmd = readFileSync(`/proc/${d}/cmdline`, "utf8").replace(/\0/g, " ");
+      if (!/--mode rpc/.test(cmd)) continue;
+      if (readFileSync(`/proc/${d}/environ`, "utf8").split("\0").includes(`PI_CODING_AGENT_DIR=${agent}`)) out.push(Number(d));
+    } catch {}
+  }
+  return out;
+}
+const noRpc = (label) => R.check(rpcProcs().length === 0, `${label}: no \`pi --mode rpc\` process of this trial exists (${rpcProcs().join(", ") || "none"})`);
+/** The mock's requests made by process `pid` (the mock names each caller). */
+const askedBy = (pid) => mockLog(mock.log).filter((e) => e.scenario && e.pid === pid);
+/** The process's nice value (/proc/<pid>/stat field 19). */
+const niceOf = (pid) => {
+  try {
+    const s = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return Number(s.slice(s.lastIndexOf(")") + 2).split(" ")[16]);
+  } catch {
+    return null;
+  }
+};
+/** Entries of the parent's file that hold `marker` and are not the parent's own words (its prompt,
+    its tool calls, their results): a completion, a wake, a delivered question. */
+const deliveredTo = (path, marker) =>
+  entries(path).filter((e) => {
+    const s = JSON.stringify(e);
+    if (!s.includes(marker) || s.includes("[call ") || s.includes("[spawn")) return false;
+    return !(e.type === "message" && (e.message?.role === "assistant" || e.message?.role === "toolResult"));
+  }).length;
+/** The parent's agent_list, through the model: its details' agents [{id, name, status, restored, …}]. */
+async function agentList(o) {
+  const r = await turn(o, "[call agent_list {}]");
+  return r.at(-1)?.message?.details?.agents ?? [];
+}
+/** The parent's worker pane frames (`workers`) since `from`. */
+const workerFrames = (s, from = 0) => s.got.slice(from).filter((m) => m.type === "workers");
+const workerDone = (s, name, ms = 180000) => s.until((m) => m.type === "workers" && m.workers?.some((x) => x.name === name && x.outcome), ms, `${name} ends`).then((m) => m.workers.find((x) => x.name === name), () => null);
+/** The usage ledger's records (<agent>/usage/v1/<day>/<producer>.jsonl). */
+function usageRecords() {
+  const root = join(agent, "usage", "v1");
+  const out = [];
+  let days = [];
+  try {
+    days = readdirSync(root);
+  } catch {}
+  for (const d of days) {
+    let files = [];
+    try {
+      files = readdirSync(join(root, d));
+    } catch {}
+    for (const f of files) out.push(...readLines(join(root, d, f)));
+  }
+  return out;
+}
+
+// T17: a worker survives a server restart (switch on): a chat process of its own, never the parent's
+// descendant, same pid, its reply streamed once, its completion delivered once, no `--mode rpc`.
+// `claude`: the same for a claude-code worker (scripts/fake-claude.mjs answers it).
+async function t17(claude = false) {
+  const label = claude ? "t17c" : "t17";
+  const marker = claude ? "#t17c" : "#t17w";
+  const { path, s } = await newChat();
+  prompt(s, claude ? "[spawn-claude 30000 #t17c] start a claude worker" : "[spawn 1 60 #t17w] start a worker");
+  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  const w = await workerWith(path, marker);
+  if (!R.check(w, `${label}: the server records the worker (chats/workers: ${JSON.stringify(workerRecords(path)).slice(0, 200)})`)) return;
+  R.note(`${label}: worker ${w.parent?.workerId} kind ${w.kind}, placement ${w.placement}, state ${w.state}`);
+  if (!claude) await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t17w"), 60000);
+  await sleep(claude ? 4000 : 2000);
+  const ppid = chatPid(path);
+  const wpid = chatPid(w.path);
+  R.check(wpid && wpid !== ppid && wpid !== srv.pid(), `${label}: the worker runs in a chat process of its own (worker ${wpid || "none"}, parent ${ppid}, server ${srv.pid()})`);
+  R.check(wpid && !tree(ppid).some((p) => p.pid === wpid), `${label}: the worker's process is not a descendant of the parent's`);
+  if (driver === "systemd") {
+    const unit = record(w.path)?.unit;
+    R.check(unit && unit !== record(path)?.unit, `${label}: the worker is a unit of its own (${unit})`);
+    let cg = "";
+    try {
+      cg = readFileSync(`/proc/${wpid}/cgroup`, "utf8").trim();
+    } catch {}
+    R.check(cg.includes(`/${slice}/`), `${label}: the worker's cgroup is under the stand-in slice (${cg})`);
+  }
+  if (!claude) R.check(askedBy(wpid).some((e) => e.tag === "t17w"), `${label}: the worker's model call comes from the worker's own process (${wpid})`);
+  noRpc(label);
+  s.close();
+  await restart();
+  R.check(wpid && chatPid(w.path) === wpid && alive(wpid), `${label}: the worker's process survived the restart (pid ${wpid} → ${chatPid(w.path) || "none"})`);
+  const s2 = await chat(c, path);
+  const done = await workerDone(s2, claude ? "trial-claude" : "trial-worker");
+  R.check(done?.outcome === "success", `${label}: the worker finished on its own (outcome ${done?.outcome}${done?.error ? `: ${done.error}` : ""})`);
+  if (claude) {
+    const answers = entries(w.path).filter((e) => e.type === "message" && e.message?.role === "assistant" && /Fake answer from login/.test(textOfMsg(e.message)));
+    R.check(answers.length === 1, `${label}: the worker's reply is in its file once (${answers.length})`);
+  } else {
+    const log = mockLog(mock.log);
+    R.check(log.filter((e) => e.event === "done" && e.tag === "t17w").length === 1 && !log.some((e) => e.event === "cut-off" && e.tag === "t17w"), `${label}: the worker's reply streamed to its end once`);
+    R.check(log.filter((e) => e.tag === "t17w" && e.scenario && !e.afterTool).length === 1, `${label}: the model was asked for the worker's reply once`);
+  }
+  await sleep(5000);
+  const got = deliveredTo(path, claude ? "Fake answer from login" : "REPLY-DONE t17w");
+  R.check(got === 1, `${label}: the worker's completion was delivered to the parent once (${got})`);
+  noResume(path, label);
+  R.check(deaths(w.path).length === 0, `${label}: no death recorded for the worker`);
+  noRpc(label);
+  s2.close();
+}
+
+// T18: the parent reloads (Reload now on new code a → b) while its worker runs: the worker's pid is
+// unchanged; the parent's new process reattaches (agent_list: running), the completion arrives once,
+// and a steer after the reload reaches the worker once.
+async function t18() {
+  await teardown();
+  await boot({ build: "trial-a" });
+  const { path, s } = await newChat();
+  prompt(s, "[spawn 1 100 #t18w] start a worker");
+  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  const w = await workerWith(path, "#t18w");
+  if (!R.check(w, "t18: the server records the worker")) return;
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t18w"), 60000);
+  const wpid = chatPid(w.path);
+  const ppid = chatPid(path);
+  s.close();
+  await restart({ [KNOBS.build]: "trial-b" });
+  const p2 = await chat(c, path);
+  const from = p2.got.length;
+  p2.send({ type: "reload_code" });
+  const reloaded = await p2.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
+  R.check(reloaded, "t18: Reload now reloaded the parent");
+  await waitReloaded(path, ppid);
+  R.check(chatPid(path) && chatPid(path) !== ppid, `t18: the parent runs a new process (pid ${ppid} → ${chatPid(path) || "none"})`);
+  R.check(chatPid(w.path) === wpid && alive(wpid), `t18: the worker's process is unchanged by the parent's reload (pid ${wpid} → ${chatPid(w.path) || "none"})`);
+  const p3 = { path, s: await chat(c, path) };
+  const list = await agentList(p3);
+  const me = list.find((a) => a.name === "trial-worker");
+  R.check(me && me.status === "running" && !me.restored, `t18: after the reload agent_list shows the worker running, not restored (${JSON.stringify(me)?.slice(0, 200)})`);
+  if (me) await turn(p3, `[call agent_steer ${JSON.stringify({ id: me.id, message: "STEER-T18 please note" })}]`);
+  const done = await workerDone(p3.s, "trial-worker");
+  R.check(done?.outcome === "success", `t18: the worker finished (outcome ${done?.outcome})`);
+  await waitFor(() => askedBy(chatPid(w.path) || wpid).some((e) => /STEER-T18/.test(e.userText ?? "")), 30000);
+  await sleep(5000);
+  R.check(userEntriesWith(w.path, "STEER-T18") === 1, `t18: the steer after the reload is in the worker's file once (${userEntriesWith(w.path, "STEER-T18")})`);
+  R.check(mockLog(mock.log).filter((e) => e.scenario && /STEER-T18/.test(e.userText ?? "")).length === 1, "t18: the worker's model got the steer once");
+  R.check(deliveredTo(path, "REPLY-DONE t18w") === 1, `t18: the worker's completion reached the parent once (${deliveredTo(path, "REPLY-DONE t18w")})`);
+  noRpc("t18");
+  p2.close();
+  p3.s.close();
+  await teardown();
+  await boot();
+}
+
+// T18b: kill -9 of the parent mid-run while its worker runs: the parent's crash resume reopens it;
+// the worker keeps its process; its completion arrives and is announced once.
+async function t18b() {
+  const { path, s } = await newChat();
+  prompt(s, "[spawn 1 90 #t18k] start a worker");
+  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  await settled(s, 0, 60000);
+  const w = await workerWith(path, "#t18k");
+  if (!R.check(w, "t18b: the server records the worker")) return;
+  const wpid = chatPid(w.path);
+  const from = s.got.length;
+  prompt(s, "[long 40 #t18p] the parent's own long reply");
+  await s.until(delta(/part 3\//), 60000, "the parent streams", from);
+  const ppid = chatPid(path);
+  process.kill(ppid, "SIGKILL");
+  R.note(`t18b: killed the parent's process ${ppid}`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "resume" && e.pid && e.pid !== ppid && e.pid !== wpid), 60000);
+  R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1, `t18b: the parent's crash "continue" was sent once (${userEntriesWith(path, CRASH_RESUME_TEXT)})`);
+  R.check(chatPid(w.path) === wpid && alive(wpid), `t18b: the worker kept its process through the parent's crash (pid ${wpid} → ${chatPid(w.path) || "none"})`);
+  R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 0, "t18b: the worker was sent no continue");
+  const s2 = await chat(c, path);
+  const done = await workerDone(s2, "trial-worker");
+  R.check(done?.outcome === "success", `t18b: the worker finished (outcome ${done?.outcome})`);
+  await sleep(6000);
+  R.check(deliveredTo(path, "REPLY-DONE t18k") === 1, `t18b: the worker's completion was announced to the parent once (${deliveredTo(path, "REPLY-DONE t18k")})`);
+  noRpc("t18b");
+  s2.close();
+}
+
+// T19: a team across a restart: alpha's team_msg to beta, made just before the restart, arrives once;
+// alpha's team_ask reaches the parent once; after a parent reload alpha's inbox still lists beta's
+// earlier message.
+async function t19() {
+  const team = {
+    name: "t19",
+    objective: "trial team",
+    defaults: { coordinator: false },
+    members: [
+      { role: "alpha", model: "trial/m1", prompt: '[call bash {"command":"sleep 8; echo ALPHA-READY"}] [call team_msg {"to":"beta","message":"MSG-T19 from alpha"}] [call team_ask {"question":"ASK-T19 from alpha"}]' },
+      { role: "beta", model: "trial/m1", prompt: '[call team_msg {"to":"alpha","message":"HELLO-T19 from beta"}] [call bash {"command":"sleep 40; echo BETA-DONE"}]' },
+    ],
+  };
+  const { path, s } = await newChat();
+  const p = { path, s };
+  const r = await turn(p, `[call team_create ${JSON.stringify(team)}]`);
+  R.check(r.length === 1 && !r[0].message.isError, `t19: team_create answered (${resultText(r[0])})`);
+  const alpha = await workerWith(path, "ALPHA-READY");
+  const beta = await workerWith(path, "BETA-DONE");
+  if (!R.check(alpha && beta, `t19: both members are worker chats (${workerRecords(path).map((x) => x.parent?.workerId).join(", ")})`)) return;
+  const apid = chatPid(alpha.path);
+  const bpid = chatPid(beta.path);
+  R.check(apid && bpid && apid !== bpid && apid !== chatPid(path), `t19: each member in a process of its own (alpha ${apid}, beta ${bpid}, parent ${chatPid(path)})`);
+  // The model's answer to alpha's bash result is its team_msg call: restart the server right then.
+  await waitFor(() => mockLog(mock.log).some((e) => e.afterTool && /ALPHA-READY/.test(e.toolText ?? "")), 60000);
+  s.close();
+  await restart();
+  R.check(chatPid(alpha.path) === apid && chatPid(beta.path) === bpid, "t19: both members kept their processes");
+  await waitFor(() => userEntriesWith(beta.path, "MSG-T19") > 0, 90000);
+  await sleep(8000);
+  R.check(userEntriesWith(beta.path, "MSG-T19") === 1, `t19: alpha's message reached beta once (${userEntriesWith(beta.path, "MSG-T19")})`);
+  R.check(askedBy(bpid).filter((e) => /MSG-T19/.test(e.userText ?? "")).length === 1, "t19: beta's model got the message once");
+  await waitFor(() => deliveredTo(path, "ASK-T19") > 0, 60000);
+  await sleep(3000);
+  R.check(deliveredTo(path, "ASK-T19") === 1, `t19: alpha's team_ask reached the parent once (${deliveredTo(path, "ASK-T19")})`);
+  // The parent reloads (an outside SIGTERM: a quiet reload): alpha's inbox still lists beta's message.
+  const s2 = await chat(c, path);
+  const ppid = chatPid(path);
+  process.kill(ppid, "SIGTERM");
+  await waitFor(() => chatPid(path) && chatPid(path) !== ppid, 30000);
+  s2.close();
+  const p3 = { path, s: await chat(c, path) };
+  const list = await agentList(p3);
+  const a = list.find((x) => x.name === "alpha");
+  R.check(a && !a.restored, `t19: after the parent's reload alpha is live again, not restored (${JSON.stringify(a)?.slice(0, 160)})`);
+  if (a) await turn(p3, `[call agent_steer ${JSON.stringify({ id: a.id, message: "[call team_inbox {}] read your inbox" })}]`);
+  await waitFor(() => askedBy(chatPid(alpha.path)).some((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? "")), 60000);
+  R.check(askedBy(chatPid(alpha.path)).some((e) => e.afterTool && /HELLO-T19/.test(e.toolText ?? "")), "t19: after the parent's reload alpha's team_inbox still lists beta's earlier message");
+  noRpc("t19");
+  p3.s.close();
+}
+
+// T19n: a monitor's wake_nudge set before the parent's reload fires after it (once). The team gets
+// a coordinator and a monitor from team-defaults.json; the monitor's standing instruction is the
+// nudge; a member keeps working so the nudge is not held.
+async function t19n() {
+  const file = join(agent, "team-defaults.json");
+  writeFileSync(file, JSON.stringify({
+    version: 1,
+    coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
+    monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
+  }, null, 2));
+  try {
+    const team = { name: "t19n", objective: "trial team", members: [{ role: "worker", model: "trial/m1", prompt: '[call bash {"command":"sleep 75; echo WORKER-T19N"}]' }] };
+    const { path, s } = await newChat();
+    const r = await turn({ path, s }, `[call team_create ${JSON.stringify(team)}]`);
+    R.check(r.length === 1 && !r[0].message.isError, `t19n: team_create answered (${resultText(r[0])})`);
+    const mon = await workerWith(path, "NUDGE-T19");
+    if (!R.check(mon, "t19n: the monitor is a worker chat")) return;
+    await waitFor(() => readFileSync(mon.path, "utf8").includes('"wake_nudge"') && toolResults(mon.path).length > 0, 60000);
+    const set = toolResults(mon.path).find((e) => e.message?.toolName === "wake_nudge");
+    R.check(set && !set.message.isError, `t19n: the monitor scheduled its nudge (${resultText(set)})`);
+    const ppid = chatPid(path);
+    process.kill(ppid, "SIGTERM");
+    await waitFor(() => chatPid(path) && chatPid(path) !== ppid, 30000);
+    s.close();
+    const s2 = await chat(c, path);
+    await waitFor(() => userEntriesWith(mon.path, "Scheduled wakeup fired") > 0, 60000);
+    await sleep(3000);
+    R.check(userEntriesWith(mon.path, "Scheduled wakeup fired") === 1, `t19n: the nudge set before the parent's reload fired once after it (${userEntriesWith(mon.path, "Scheduled wakeup fired")})`);
+    s2.close();
+  } finally {
+    rmSync(file, { force: true });
+  }
+}
+
+// T20: kill -9 of a worker's chat mid-run: the continue goes to it once, its run finishes, the parent
+// gets one completion; a second kill during that resume is final ("stopped unexpectedly", the last
+// output), never a second continue.
+async function t20() {
+  const { path, s } = await newChat();
+  prompt(s, "[spawn 1 40 #t20a] start a worker");
+  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  const w = await workerWith(path, "#t20a");
+  if (!R.check(w, "t20: the server records the worker")) return;
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t20a"), 60000);
+  await sleep(3000);
+  const pid1 = chatPid(w.path);
+  process.kill(pid1, "SIGKILL");
+  R.note(`t20: killed the worker's process ${pid1}`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "resume" && e.pid && e.pid !== pid1 && e.pid === chatPid(w.path)), 60000);
+  const pid2 = chatPid(w.path);
+  R.check(pid2 && pid2 !== pid1, `t20: the worker reopened in a new process (pid ${pid1} → ${pid2 || "none"})`);
+  R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 1, `t20: the crash "continue" went to the worker once (${userEntriesWith(w.path, CRASH_RESUME_TEXT)})`);
+  const done = await workerDone(s, "trial-worker");
+  R.check(done?.outcome === "success", `t20: the resumed run finished (outcome ${done?.outcome}${done?.error ? `: ${done.error}` : ""})`);
+  await sleep(5000);
+  R.check(deliveredTo(path, "REPLY-DONE resume") === 1, `t20: the parent got one completion (${deliveredTo(path, "REPLY-DONE resume")})`);
+  R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 0, "t20: the parent was sent no continue");
+  // A second worker, killed twice: the second death (during the resume) is final.
+  const from = s.got.length;
+  prompt(s, "[spawn 1 40 #t20b] start another");
+  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a second working worker", from);
+  const w2 = await workerWith(path, "#t20b");
+  if (!R.check(w2, "t20: the second worker is recorded")) return;
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t20b"), 60000);
+  await sleep(3000);
+  const k1 = chatPid(w2.path);
+  process.kill(k1, "SIGKILL");
+  await waitFor(() => chatPid(w2.path) && chatPid(w2.path) !== k1 && askedBy(chatPid(w2.path)).some((e) => e.tag === "resume"), 60000);
+  await sleep(2000);
+  const k2 = chatPid(w2.path);
+  if (k2) process.kill(k2, "SIGKILL");
+  R.note(`t20: killed the second worker twice (${k1}, then its resume ${k2})`);
+  const end = await s.until((m) => m.type === "workers" && m.workers?.some((x) => x.name === "trial-worker" && x.outcome === "error"), 60000, "the second worker errors", from).catch(() => null);
+  const failed = end?.workers?.find((x) => x.name === "trial-worker" && x.outcome === "error");
+  R.check(/stopped unexpectedly/.test(failed?.error ?? ""), `t20: the second death is an error saying the process stopped unexpectedly (${failed?.error?.slice(0, 200)})`);
+  R.check(/Last output/.test(failed?.error ?? ""), "t20: the error carries the last output");
+  await sleep(8000);
+  R.check(userEntriesWith(w2.path, CRASH_RESUME_TEXT) === 1, `t20: no second continue (${userEntriesWith(w2.path, CRASH_RESUME_TEXT)})`);
+  noRpc("t20");
+}
+
+// T21: /explain, /compact-handoff and /btw each run in a chat process of their own; their model calls
+// come from that process (none from the parent's), are counted in the usage ledger, and an /explain
+// running across a parent reload settles once, never "interrupted".
+async function t21() {
+  const { path, s } = await newChat();
+  const o = { path, s };
+  await turn(o, "say ok");
+  const sid = entries(path)[0]?.id;
+  const ppid = chatPid(path);
+  const usage0 = usageRecords().length;
+  // /explain, still running when the parent reloads.
+  prompt(s, "/explain [explain 30] the trial topic");
+  const ex = await workerOf(path, (r) => r.kind === "explain");
+  R.check(ex, `t21: /explain started a hidden worker chat (${JSON.stringify(workerRecords(path).map((r) => r.kind))})`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.scenario === "explain"), 60000);
+  const expid = ex && chatPid(ex.path);
+  R.check(expid && expid !== ppid && expid !== srv.pid(), `t21: /explain's fork runs in a process of its own (${expid}, parent ${ppid})`);
+  process.kill(ppid, "SIGTERM");
+  await waitFor(() => chatPid(path) && chatPid(path) !== ppid, 30000);
+  s.close();
+  const s2 = await chat(c, path);
+  const store = join(agent, "explanations");
+  const metaOk = () => {
+    try {
+      return readdirSync(store).some((d) => existsSync(join(store, d, "index.html")) && /EXPLAIN-SUMMARY/.test(readFileSync(join(store, d, "meta.json"), "utf8")));
+    } catch {
+      return false;
+    }
+  };
+  await waitFor(metaOk, 90000);
+  R.check(metaOk(), "t21: /explain wrote its page and meta.json to the store");
+  await sleep(5000);
+  const raw = readFileSync(path, "utf8");
+  R.check(!/interrupted/i.test(raw.split("\n").filter((l) => /explain/i.test(l)).join("\n")), "t21: the /explain run is never marked interrupted across the parent's reload");
+  const docs = entries(path).filter((e) => JSON.stringify(e).includes("explain-doc"));
+  R.check(docs.length === 1, `t21: the /explain row settled once (explain-doc entries ${docs.length})`);
+  // /compact-handoff.
+  const p2 = chatPid(path);
+  prompt(s2, "/compact-handoff [handoff 5]");
+  const ho = await workerOf(path, (r) => r.kind === "handoff");
+  R.check(ho && chatPid(ho.path) !== p2, `t21: /compact-handoff's fork is a hidden worker chat in a process of its own (${ho && chatPid(ho.path)})`);
+  const note = join(agent, "compact-handoffs", `${sid}.md`);
+  await waitFor(() => existsSync(note) && readFileSync(note, "utf8").includes("HANDOFF-NOTE"), 90000);
+  R.check(existsSync(note) && readFileSync(note, "utf8").includes("HANDOFF-NOTE"), "t21: /compact-handoff saved the note");
+  await waitFor(() => entries(path).some((e) => e.type === "compaction"), 60000);
+  // /btw, saved as a visible note.
+  prompt(s2, "/btw --save [btw #t21] a side question");
+  const bt = await workerOf(path, (r) => r.kind === "btw");
+  R.check(bt && chatPid(bt.path) !== chatPid(path), `t21: /btw's side thread is a hidden worker chat in a process of its own (${bt && chatPid(bt.path)})`);
+  await waitFor(() => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t21")), 60000);
+  R.check(entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t21")), "t21: /btw's answer is persisted as a btw-note");
+  // Who asked the model, and what was counted.
+  const parents = new Set([ppid, p2, chatPid(path), srv.pid()]);
+  const hidden = mockLog(mock.log).filter((e) => ["explain", "handoff", "btw"].includes(e.scenario));
+  R.check(hidden.length >= 3 && hidden.every((e) => e.pid && !parents.has(e.pid)), `t21: every hidden chat's model call came from a process other than the parent's and the server's (${hidden.map((e) => `${e.scenario}@${e.pid}`).join(", ")})`);
+  await sleep(2000);
+  const counted = usageRecords().slice(usage0).filter((r) => r.parent === sid || r.owner === sid);
+  R.check(counted.length >= hidden.length, `t21: the hidden chats' calls are in the usage ledger, attributed to the parent (${counted.length} records for ${hidden.length} calls)`);
+  noRpc("t21");
+  s2.close();
+}
+
+// T22: the switch off: workers are detached children of the server (child placement), lowered; a
+// parent mode switch keeps them; a server restart ends them, the parent lists them restored
+// (interrupted mid-run); agent_resume reopens one, idle, and it takes a steer; ordinary chats stay in
+// the server.
+async function t22() {
+  await teardown();
+  await boot({ on: false });
+  const { path, s } = await newChat();
+  R.check(!record(path), "t22: the ordinary chat runs in the server (no chat process)");
+  prompt(s, "[spawn 1 100 #t22w] start a worker");
+  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  const w = await workerWith(path, "#t22w");
+  if (!R.check(w, "t22: the server records the worker")) return;
+  R.check(w.placement === "child", `t22: the worker has child placement (${w.placement})`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t22w"), 60000);
+  const wpid = chatPid(w.path);
+  R.check(wpid && wpid !== srv.pid(), `t22: the worker is a process of its own (${wpid}, server ${srv.pid()})`);
+  R.check(wpid && niceOf(wpid) > niceOf(srv.pid()), `t22: the worker is lowered below the server (nice ${niceOf(wpid)} vs ${niceOf(srv.pid())})`);
+  noRpc("t22");
+  // A parent mode switch (applied at the next message: session.reload in the server) keeps the worker.
+  await settled(s, 0, 60000);
+  const switched = await post(`/api/mode?path=${encodeURIComponent(path)}`, { mode: "delegate" }).then(() => "ok", (e) => String(e.message ?? e));
+  await turn({ path, s }, "say ok after the switch");
+  await sleep(2000);
+  R.check(alive(wpid) && chatPid(w.path) === wpid, `t22: a parent mode switch (${switched}) kept the worker (${wpid})`);
+  await post(`/api/mode?path=${encodeURIComponent(path)}`, { mode: "normal" }).catch(() => {});
+  s.close();
+  await restart();
+  await waitFor(() => !alive(wpid), 20000);
+  R.check(!alive(wpid), `t22: the server's restart ended the worker (${wpid})`);
+  const p = { path, s: await chat(c, path) };
+  const list = await agentList(p);
+  const me = list.find((a) => a.name === "trial-worker");
+  R.check(me?.restored && me.interruptedAt, `t22: the parent lists the worker restored, interrupted (${JSON.stringify(me)?.slice(0, 200)})`);
+  if (me) {
+    const r = await turn(p, `[call agent_resume ${JSON.stringify({ id: me.id })}]`);
+    R.check(r.length === 1 && !r[0].message.isError, `t22: agent_resume answered (${resultText(r[0])})`);
+    await sleep(3000);
+    const again = (await agentList(p)).find((a) => a.id === me.id);
+    R.check(again && !again.restored && again.status === "waiting", `t22: the resumed worker is live and idle (${again?.status})`);
+    await turn(p, `[call agent_steer ${JSON.stringify({ id: me.id, message: "STEER-T22 say ok" })}]`);
+    await waitFor(() => mockLog(mock.log).some((e) => /STEER-T22/.test(e.userText ?? "")), 60000);
+    await sleep(4000);
+    R.check(mockLog(mock.log).filter((e) => e.scenario && /STEER-T22/.test(e.userText ?? "")).length === 1, "t22: the resumed worker took the steer once");
+  }
+  p.s.close();
+  await teardown();
+  await boot();
+}
+
+// T23: idle stop of a waiting worker: its process exits (no death), agent_list still says waiting,
+// a steer reopens it and is answered once.
+async function t23() {
+  await teardown();
+  await boot({ idleMs: 4000 });
+  const { path, s } = await newChat();
+  const o = { path, s };
+  prompt(s, "[spawn 1 3 #t23w] start a short worker");
+  const done = await workerDone(s, "trial-worker", 60000);
+  R.check(done?.outcome === "success", `t23: the worker finished its task (outcome ${done?.outcome})`);
+  const w = await workerWith(path, "#t23w");
+  if (!R.check(w, "t23: the server records the worker")) return;
+  const pid1 = record(w.path)?.pid;
+  await waitFor(() => !alive(pid1), 30000);
+  R.check(pid1 && !alive(pid1), `t23: the waiting worker's process stopped when idle (${pid1})`);
+  R.check(deaths(w.path).length === 0, "t23: an idle stop is no death");
+  const me = (await agentList(o)).find((a) => a.name === "trial-worker");
+  R.check(me?.status === "waiting" && !me.restored, `t23: agent_list still says waiting (${me?.status}${me?.restored ? ", restored" : ""})`);
+  if (me) await turn(o, `[call agent_steer ${JSON.stringify({ id: me.id, message: "STEER-T23 say ok" })}]`);
+  await waitFor(() => mockLog(mock.log).some((e) => /STEER-T23/.test(e.userText ?? "")), 60000);
+  await sleep(4000);
+  const pid2 = mockLog(mock.log).find((e) => /STEER-T23/.test(e.userText ?? ""))?.pid;
+  R.check(pid2 && pid2 !== pid1, `t23: the steer reopened the worker in a new process (${pid1} → ${pid2})`);
+  R.check(mockLog(mock.log).filter((e) => e.scenario && /STEER-T23/.test(e.userText ?? "")).length === 1 && userEntriesWith(w.path, "STEER-T23") === 1, "t23: the steer was answered once");
+  s.close();
+  await teardown();
+  await boot();
+}
+
+// T24: llm-inflight: during a worker's model call (its parent idle), /ws/watch?feed=llm counts it
+// once, never twice through a live record; after the worker ends its tokens stay in the ring.
+async function t24() {
+  const feed = c.socket("/ws/watch?feed=llm");
+  await feed.opened;
+  const { path, s } = await newChat();
+  prompt(s, "[spawn 1 30 #t24w] start a worker");
+  await settled(s, 0, 60000);
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t24w"), 60000);
+  const from = feed.got.length;
+  await sleep(6000);
+  const counts = feed.got.slice(from).filter((m) => m.type === "llm_local").map((m) => m.local?.count);
+  const last = feed.got.filter((m) => m.type === "llm_local").at(-1)?.local?.count;
+  R.note(`t24: counts while the worker's call runs: ${counts.join(", ") || "(no change)"}; latest ${last}`);
+  R.check(last === 1 && counts.every((n) => n <= 1), `t24: the worker's one call is counted once (latest ${last}, max ${Math.max(0, ...counts)})`);
+  const done = await workerDone(s, "trial-worker");
+  R.check(done?.outcome === "success", `t24: the worker finished (outcome ${done?.outcome})`);
+  const sum = (m) => (m?.local?.tokens?.out ?? []).reduce((a, b) => a + b, 0);
+  await sleep(3000);
+  const after = sum(feed.got.filter((m) => m.type === "llm_local").at(-1));
+  const w = await workerWith(path, "#t24w");
+  const wid = (await agentList({ path, s })).find((a) => a.name === "trial-worker")?.id;
+  if (wid) await turn({ path, s }, `[call agent_kill ${JSON.stringify({ id: wid })}]`);
+  await waitFor(() => w && !chatPid(w.path), 20000);
+  await sleep(4000);
+  const kept = sum(feed.got.filter((m) => m.type === "llm_local").at(-1));
+  R.check(after > 0 && kept >= after, `t24: the worker's tokens stay in the ring after its process ended (${after} → ${kept})`);
+  feed.close();
+  s.close();
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t22, t23, t24, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 try {
   await boot();

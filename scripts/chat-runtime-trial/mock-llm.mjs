@@ -24,7 +24,24 @@
 //              while the trial holds the server down
 //   [served-quick]  a call to trial_served_sleep {ms:500}
 //   [call NAME {json}]  a call to the tool NAME with those arguments, then the closing text: any tool
-//              the chat has, such as an Overseer's server-state tools
+//              the chat has, such as an Overseer's server-state tools. Several [call …] tags are made
+//              one after another, the next once the previous one's result came back. When a [call …]
+//              is the message's first tag it wins over any tag inside its arguments (a worker's
+//              prompt in agent_spawn's, say); tags nested in a call's arguments are not calls of
+//              their own
+//   [spawn N L #tag]  (stage 4; N, L and #tag optional) agent_spawn with N pi workers on trial/m1:
+//              one is "[long L #tag] worker" named trial-worker (L 60, tag worker, as [spawn]); more
+//              are "[long L #tag-i] worker i" named trial-worker-i
+//   [spawn-claude S #tag]  agent_spawn with one claude-code worker (scripts/fake-claude.mjs answers
+//              it), named trial-claude, its prompt "[fake-slow S] claude worker #tag" (S ms, default 20000)
+//   [explain S]  /explain's child: S text parts first (default 0), then the page written to the
+//              index.html its prompt names, then its meta.json (summary "EXPLAIN-SUMMARY"), then
+//              "EXPLAIN-DONE"
+//   [handoff S]  /compact-handoff's child (or any prompt asking for a <handoff> block): S parts
+//              (default 5), then "<handoff>HANDOFF-NOTE</handoff>"
+//   [btw #tag]  "BTW-ANSWER tag"
+// Every log line names the caller's pid (`pid`, from /proc: the process whose socket made the
+// request; 0 when it can't be found), so a trial can tell which chat process asked.
 //   [compact]  (pi's compaction request, by its prompt's shape) a summary streamed
 //              over 15 steps, ending "COMPACT-SUMMARY"
 //   [big N]    N thousand characters of text at once (history enough for a compaction to cut)
@@ -33,7 +50,7 @@
 //              so a message the server writes (a look, a brief, an explorer's seed) can be scripted
 //   anything else: "ok"
 // A request whose newest message is a tool result gets the scenario's closing text.
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { createServer } from "node:http";
 
 const argv = process.argv.slice(2);
@@ -49,7 +66,60 @@ const textOf = (content) =>
   typeof content === "string" ? content : Array.isArray(content) ? content.map((p) => p?.text ?? "").join("") : "";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let n = 0;
-const TAGGED = /\[(long|bash|big|call|served|served-late|served-quick|spawn|ask)\b/;
+const TAGGED = /\[(long|bash|big|call|served|served-late|served-quick|spawn|spawn-claude|ask|explain|handoff|btw)\b/;
+
+/** The pid whose TCP socket has local port `port` and talks to this mock (Linux /proc; 0 if unknown). */
+function callerPid(port) {
+  const hex = (p) => p.toString(16).toUpperCase().padStart(4, "0");
+  let inode = "";
+  for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    try {
+      for (const line of readFileSync(table, "utf8").split("\n").slice(1)) {
+        const f = line.trim().split(/\s+/);
+        if (f.length > 9 && f[1].endsWith(`:${hex(port)}`) && f[2].endsWith(`:${hex(server.address().port)}`)) inode = f[9];
+      }
+    } catch {}
+    if (inode) break;
+  }
+  if (!inode) return 0;
+  const want = `socket:[${inode}]`;
+  for (const d of readdirSync("/proc")) {
+    if (!/^\d+$/.test(d)) continue;
+    let fds = [];
+    try {
+      fds = readdirSync(`/proc/${d}/fd`);
+    } catch {
+      continue;
+    }
+    for (const fd of fds) {
+      try {
+        if (readlinkSync(`/proc/${d}/fd/${fd}`) === want) return Number(d);
+      } catch {}
+    }
+  }
+  return 0;
+}
+
+/** Every [call NAME {json}] in text, in order; a call's arguments may hold further tags (skipped). */
+function parseCalls(text) {
+  const out = [];
+  const re = /\[call ([\w-]+) \{/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const start = m.index + m[0].length - 1;
+    let done = false;
+    for (let end = text.indexOf("}]", start); end >= 0; end = text.indexOf("}]", end + 1)) {
+      try {
+        out.push({ name: m[1], args: JSON.parse(text.slice(start, end + 1)) });
+        re.lastIndex = end + 2;
+        done = true;
+        break;
+      } catch {}
+    }
+    if (!done) out.push({ name: m[1], args: {} });
+  }
+  return out;
+}
 /** The tags an untagged message gets ("" none): set with POST /trial/plain {text}. */
 let plainAs = "";
 
@@ -76,6 +146,14 @@ const server = createServer(async (req, res) => {
   const last = msgs[msgs.length - 1];
   const afterTool = last?.role === "tool";
   const toolText = afterTool ? textOf(last.content) : "";
+  // The turn's own user messages (the last user message and those right before it) and how many
+  // tool results came back since: what a multi-step scenario ([call …] [call …], [explain]) reads
+  // once a tool answered, when no user message trails.
+  const lastUser = msgs.findLastIndex((m) => m.role === "user");
+  let firstUser = lastUser;
+  while (firstUser > 0 && msgs[firstUser - 1].role === "user") firstUser--;
+  const turnText = lastUser >= 0 ? msgs.slice(firstUser, lastUser + 1).map((m) => textOf(m.content)).join("\n") : "";
+  const stepNo = lastUser >= 0 ? msgs.slice(lastUser + 1).filter((m) => m.role === "tool").length : 0;
   const anyResume = msgs.some((m) => m.role === "user" && /server restarted|process stopped unexpectedly/i.test(textOf(m.content)));
   const id = ++n;
   // pi's summarization request: its older prompt names a "context checkpoint summary"; the current
@@ -87,13 +165,25 @@ const server = createServer(async (req, res) => {
   // the trailing user messages.
   // A message the server writes (a look, a brief, an explorer's seed) carries no tag: it gets the
   // tags the trial set with POST /trial/plain, if any.
-  const tags = TAGGED.test(userText) || !plainAs ? userText : `${userText}\n${plainAs}`;
-  const long = /process stopped unexpectedly and cut off/.test(tags) ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(tags);
+  const src = afterTool ? turnText : userText;
+  const tags = TAGGED.test(src) || !plainAs ? src : `${src}\n${plainAs}`;
+  const resume = /process stopped unexpectedly and cut off/.test(tags);
+  const firstTag = TAGGED.exec(tags)?.[1];
+  const long = resume ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(tags);
   const bash = /\[bash (\d+)\]/.exec(tags);
   const big = /\[big (\d+)\]/.exec(tags);
-  const anyCall = /\[call ([\w-]+) (\{.*\})\]/.exec(tags);
-  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : anyCall ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : /\[spawn\]/.test(tags) ? "spawn" : /\[ask\]/.test(tags) ? "ask" : "plain";
-  const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, toolText: toolText.slice(0, 300), anyResume, userText: userText.slice(0, 300), messages: msgs.length };
+  const calls = /\[call [\w-]+ \{/.test(tags) ? parseCalls(tags) : [];
+  const spawnN = /\[spawn(?: (\d+))?(?: (\d+))?(?: #([\w-]+))?\]/.exec(tags);
+  const spawnClaude = /\[spawn-claude(?: (\d+))?(?: #([\w-]+))?\]/.exec(tags);
+  const explain = /\[explain(?: (\d+))?\]/.exec(tags);
+  const handoff = /\[handoff(?: (\d+))?\]/.exec(tags) ?? (/End your reply with the note inside <handoff>/.test(tags) ? [null, null] : null);
+  const btw = /\[btw(?: #([\w-]+))?\]/.exec(tags);
+  const scenario = compact ? "compact" : resume ? "long" : firstTag === "call" ? "call" : big ? "big" : long ? "long" : bash ? "bash" : calls.length ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : spawnClaude ? "spawn-claude" : spawnN ? "spawn" : /\[ask\]/.test(tags) ? "ask" : explain ? "explain" : handoff ? "handoff" : btw ? "btw" : "plain";
+  let pid = 0;
+  try {
+    pid = callerPid(req.socket.remotePort);
+  } catch {}
+  const entry = { n: id, at: new Date().toISOString(), pid, scenario, tag: scenario === "long" ? (long?.[2] ?? null) : null, afterTool, step: stepNo, toolText: toolText.slice(0, 1000), anyResume, userText: userText.slice(0, 300), ...(afterTool ? { turnText: turnText.slice(0, 300) } : {}), messages: msgs.length };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
@@ -106,12 +196,25 @@ const server = createServer(async (req, res) => {
     chunk({}, { finish_reason: "stop" });
     usage(500, 10);
   };
+  let started = false;
   const call = (name, args) => {
-    chunk({ role: "assistant", content: "" });
+    if (!started) chunk({ role: "assistant", content: "" });
     chunk({ tool_calls: [{ index: 0, id: `call_${id}`, type: "function", function: { name, arguments: "" } }] });
     chunk({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify(args) } }] });
     chunk({}, { finish_reason: "tool_calls" });
     usage(500, 20);
+  };
+  /** k text parts, one every step ms, opening the reply; false (logged cut-off) when the caller left. */
+  const parts = async (k) => {
+    if (k <= 0) return true;
+    chunk({ role: "assistant", content: "" });
+    started = true;
+    for (let i = 1; i <= k && !closed; i++) {
+      chunk({ content: `part ${i}/${k}. ` });
+      await sleep(step);
+    }
+    if (closed && log) appendFileSync(log, JSON.stringify({ n: id, at: new Date().toISOString(), event: "cut-off", scenario }) + "\n");
+    return !closed;
   };
 
   if (scenario === "long" && !afterTool) {
@@ -160,18 +263,41 @@ const server = createServer(async (req, res) => {
     chunk({ tool_calls: [{ index: 0, id: `call_${id}`, type: "function", function: { name: "trial_served_sleep", arguments: JSON.stringify({ ms: 1000 }) } }] });
     chunk({}, { finish_reason: "tool_calls" });
     usage(500, 40);
-  } else if (scenario === "call" && !afterTool) {
-    let args = {};
-    try {
-      args = JSON.parse(anyCall[2]);
-    } catch {}
-    call(anyCall[1], args);
+  } else if (scenario === "call" && stepNo < calls.length) {
+    call(calls[stepNo].name, calls[stepNo].args);
   } else if (scenario === "served-quick" && !afterTool) {
     call("trial_served_sleep", { ms: 500 });
   } else if (scenario === "served" && !afterTool) {
     call("trial_served_sleep", { ms: 10000 });
   } else if (scenario === "spawn" && !afterTool) {
-    call("agent_spawn", { prompt: "[long 60 #worker] worker", model: "trial/m1", name: "trial-worker" });
+    const [count, parts, tag] = [Number(spawnN[1] ?? 1), Number(spawnN[2] ?? 60), spawnN[3] ?? "worker"];
+    if (count === 1) call("agent_spawn", { prompt: `[long ${parts} #${tag}] worker`, model: "trial/m1", name: "trial-worker" });
+    else call("agent_spawn", { agents: Array.from({ length: count }, (_, i) => ({ prompt: `[long ${parts} #${tag}-${i + 1}] worker ${i + 1}`, model: "trial/m1", name: `trial-worker-${i + 1}` })) });
+  } else if (scenario === "spawn-claude" && !afterTool) {
+    call("agent_spawn", { prompt: `[fake-slow ${spawnClaude[1] ?? 20000}] claude worker #${spawnClaude[2] ?? "claude"}`, backend: "claude-code", name: "trial-claude" });
+  } else if (scenario === "explain" && stepNo < 2) {
+    if (stepNo === 0 && !(await parts(Number(explain[1] ?? 0)))) return;
+    const index = /`([^`\s]+\/index\.html)`/.exec(tags)?.[1];
+    const metaPath = /`([^`\s]+\/meta\.json)`/.exec(tags)?.[1];
+    if (stepNo === 0) {
+      call("write", { path: index ?? "index.html", content: '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><title>Trial</title></head><body><h1>Trial</h1><p>EXPLAIN-PAGE</p></body></html>\n' });
+    } else {
+      let meta = {};
+      try {
+        meta = JSON.parse(/```json\n(\{[\s\S]*?\})\n```/.exec(tags)?.[1] ?? "{}");
+      } catch {}
+      call("write", { path: metaPath ?? "meta.json", content: JSON.stringify({ ...meta, summary: "EXPLAIN-SUMMARY" }, null, 2) });
+    }
+  } else if (scenario === "explain") {
+    text("EXPLAIN-DONE");
+  } else if (scenario === "handoff" && !afterTool) {
+    if (!(await parts(Number(handoff[1] ?? 5)))) return;
+    chunk({ content: "<handoff>HANDOFF-NOTE</handoff>" });
+    chunk({}, { finish_reason: "stop" });
+    usage(500, 40);
+    if (log) appendFileSync(log, JSON.stringify({ n: id, at: new Date().toISOString(), event: "done", scenario }) + "\n");
+  } else if (scenario === "btw" && !afterTool) {
+    text(`BTW-ANSWER ${btw[1] ?? ""}`.trim());
   } else if (scenario === "ask" && !afterTool) {
     call("trial_ask", { question: "Keep going?" });
   } else if (afterTool) {

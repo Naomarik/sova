@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
+	CURRENT_SESSION_VERSION,
 	type ExtensionAPI,
 	type ExtensionContext,
 	getAgentDir,
@@ -17,7 +18,7 @@ import { TeamModal } from "./team-modal.ts";
 import { attachTeamWidget, type TeamWidgetHandle, type TeamWidgetUi } from "./team-widget.ts";
 import { piModels, matchingModels, type CatalogModel } from "./models.ts";
 import { backendDenial, policyDenial, readPolicy } from "./policy.ts";
-import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, SubagentRunner } from "./runner.ts";
+import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, rpcScopedModel, SubagentRunner } from "./runner.ts";
 import { BACKEND_DIALOG_EVENT, BACKEND_DISCOVER_EVENT, BACKEND_REGISTER_EVENT, type BackendDialogEvent, type BackendRegistration, type SteerMode, type SteerResult, type Worker, type WorkerFactory } from "./contracts.ts";
 import {
 	MAX_LABEL_CHARS,
@@ -79,31 +80,20 @@ import {
 	type UsageProvider,
 	type UsageWindow,
 } from "./coordination.ts";
-import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
 import { RestoredWorker, isRestored } from "./restored.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
-import {
-	REMOTE_DISCOVER_EVENT,
-	REMOTE_MCP_ENV,
-	REMOTE_MCP_SERVER_NAME,
-	REMOTE_SESSION_EVENT,
-	encodeRemoteMcpIdentity,
-	remoteWorkerInstructions,
-	type RemoteSessionEvent,
-} from "../remote/workers.ts";
+import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
-import { sweepPrivateConfigDirs, type ClaudeConfine } from "../claude-code/confined-launch.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
-import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
-import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
-import { canonicalClaudeId, unverifiedClaudeNote } from "../claude-code/catalog.ts";
+import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
+import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
 import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
@@ -133,8 +123,8 @@ const AgentSpec = Type.Object(
 	{
 		prompt: Type.String({ minLength: 1, description: "Self-contained task; parent conversation is not copied." }),
 		name: Type.Optional(Nonempty),
-		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default pi. claude-code requires its extension." })),
-		backendOptions: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Backend-specific options, validated by that backend." })),
+		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default pi. claude-code runs a Claude model (Sova's Claude catalog) on Sova's tools, as a pi worker on the Claude Code provider." })),
+		backendOptions: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Backend-specific options. claude-code: permissionMode bypassPermissions/dontAsk (no change) or plan (read-only tools); nothing else." })),
 		count: Type.Optional(Count),
 		model: Type.Optional(
 			Type.String({ description: "Backend model ID. Pi: exact provider/model, defaults to parent. Other backends use their own defaults." }),
@@ -143,7 +133,7 @@ const AgentSpec = Type.Object(
 		tools: Type.Optional(
 			Type.Array(Nonempty, {
 				description:
-					"Backend-native tool allowlist. [] disables all tools. Pi uses lowercase built-ins and inherits active parent built-ins when omitted. Claude uses native names (Read, Bash, Edit, etc.) and defaults to its own tools.",
+					"Backend-native tool allowlist. [] disables all tools. Pi uses lowercase built-ins and inherits active parent built-ins when omitted. claude-code takes the same names or Claude's (Read, Bash, Edit, Write, Grep, Glob, LS) and defaults to all seven.",
 			}),
 		),
 		systemPrompt: Type.Optional(Type.String()),
@@ -308,36 +298,22 @@ const listedExtensions = (worker: Worker): string[] =>
 			source !== MODEL_LEVELS_EXTENSION &&
 			source !== SPEC_WORKER_EXTENSION,
 	);
-/**
- * The same member tools as a stdio MCP server for claude-code members (the CLI
- * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
- * run under the current runtime, which executes .ts files directly.
- */
-export const MEMBER_MCP = path.join(SELF_DIR, "member-mcp.ts");
 /** The trusted spec tools (pi-config/extensions/spec/core/) a spec-on worker's brief and hooks name. */
 export const SPEC_CORE_DIR = realpathOr(path.join(SELF_DIR, "..", "spec", "core"));
-/** Under the agent dir: the claude-code spec hooks' per-session state and event log. */
+/** Under the agent dir: a spec-on worker's census state (`landed/<worker key>.json`). */
 export const SPEC_HOOK_STATE = "spec-hooks";
 /**
  * The remote extension (a sibling directory, never under SELF_DIR). A pi worker of a remote
- * session loads it with `-e` and `--target <name>`, so its bash/read/write/edit/ls/find/grep run
- * on the target exactly as the parent's do; a claude-code worker gets the same through the
- * `remote` stdio MCP server (mcp-server.ts, tools mcp__remote__remote_*) and no local tools.
+ * session (a Claude Code worker included) loads it with `-e` and `--target <name>`, so its
+ * bash/read/write/edit/ls/find/grep run on the target exactly as the parent's do.
  */
 const REMOTE_DIR = realpathOr(path.join(SELF_DIR, "..", "remote"));
 export const REMOTE_EXTENSION = path.join(REMOTE_DIR, "index.ts");
-export const REMOTE_MCP = path.join(REMOTE_DIR, "mcp-server.ts");
 /**
  * The claude-code extension (runner.ts claudeCodeProviderLoad): a pi worker on a
  * `claude-code-cli/<id>` model loads it with `-e` and `--claude-code-provider`.
  */
 export { CLAUDE_CODE_EXTENSION } from "./runner.ts";
-/**
- * claude bounds every MCP tool call with MCP_TOOL_TIMEOUT (ms) read from ITS OWN process env
- * (a per-server env in mcp.json is ignored; default 60 s, too short for a remote build).
- * remote_bash's 600 s maximum plus margin; the server enforces its own per-tool deadlines below it.
- */
-export const REMOTE_MCP_TOOL_TIMEOUT_MS = 630_000;
 
 /** Whether an `-e` source is the extension directory `dir` (the directory or its index.ts). */
 function sameExtension(source: string, dir: string): boolean {
@@ -617,7 +593,8 @@ export function registerSubagents(
 	const backends = new Map<string, BackendRegistration>();
 	const unregisterBackendListener = pi.events?.on(BACKEND_REGISTER_EVENT, (data: unknown) => {
 		const backend = data as BackendRegistration | undefined;
-		if (!backend || backend.version !== 1 || typeof backend.id !== "string" || !backend.id.trim() || backend.id === "pi") return;
+		// claude-code is built in (claude-workers.ts): an older claude-code extension's registration is ignored.
+		if (!backend || backend.version !== 1 || typeof backend.id !== "string" || !backend.id.trim() || backend.id === "pi" || backend.id === CLAUDE_CODE_BACKEND) return;
 		if (typeof backend.validate !== "function" || typeof backend.create !== "function" || (backend.prepare !== undefined && typeof backend.prepare !== "function")) return;
 		// Repeated discovery is idempotent; never let a second provider hijack an ID.
 		if (!backends.has(backend.id)) backends.set(backend.id, backend);
@@ -1212,15 +1189,18 @@ export function registerSubagents(
 
 	const modelCatalog = async (ctx: ExtensionContext, backendId?: string, signal?: AbortSignal) => {
 		signal?.throwIfAborted();
-		const ids = backendId ? [backendId] : ["pi", ...backends.keys()];
+		const ids = backendId ? [backendId] : ["pi", CLAUDE_CODE_BACKEND, ...backends.keys()];
 		const models: CatalogModel[] = [];
 		const errors: { backend: string; error: string }[] = [];
 		await Promise.all(ids.map(async (id) => {
 			try {
-				if (id !== "pi" && !backends.has(id)) throw new Error(`Backend ${id} is not loaded.`);
+				if (id !== "pi" && id !== CLAUDE_CODE_BACKEND && !backends.has(id)) throw new Error(`Backend ${id} is not loaded.`);
 				const backend = backends.get(id);
-				if (id !== "pi" && !backend?.listModels) throw new Error("This backend does not expose model discovery.");
-				const choices = id === "pi" ? piModels(ctx) : await backend!.listModels!(ctx, signal);
+				if (id !== "pi" && id !== CLAUDE_CODE_BACKEND && !backend?.listModels) throw new Error("This backend does not expose model discovery.");
+				// claude-code: Sova's Claude catalog (§app.claude-code-provider/catalog), no CLI process.
+				const choices = id === "pi" ? piModels(ctx)
+					: id === CLAUDE_CODE_BACKEND ? claudeOffer().map((m) => ({ id: m.id, name: m.name, description: `Claude ${m.name}`, ...(m.efforts.length ? { efforts: [...m.efforts] } : {}) }))
+					: await backend!.listModels!(ctx, signal);
 				// User policy (policy.ts): disabled providers and models never surface as choices.
 				for (const choice of choices) {
 					if (policyDenial(readPolicy(options.policyFile), id, choice.id)) continue;
@@ -1232,7 +1212,7 @@ export function registerSubagents(
 			}
 		}));
 		signal?.throwIfAborted();
-		return { models, errors, backends: ["pi", ...backends.keys()] };
+		return { models, errors, backends: ["pi", CLAUDE_CODE_BACKEND, ...backends.keys()] };
 	};
 	/**
 	 * The one worker-creation path (agent_spawn and team tools). Validates the whole
@@ -1243,36 +1223,17 @@ export function registerSubagents(
 	const spawnBatch = async (ctx: ExtensionContext, request: BatchRequest, signal?: AbortSignal): Promise<AgentGroup> => {
 		// An old Claude id (opus[1m], sonnet, claude-opus-5-5[1m], …) is resolved through the catalog's
 		// read-only legacy table, quietly: the catalog id is what runs and what is recorded.
-		const specs = request.specs.map(withCatalogClaudeModel);
-		/** A worker's session-qualified id: the sandbox's owner of its scope and the name of its Claude state dir. */
+		// A claude-code spec runs as a pi worker on the Claude Code provider (claude-workers.ts): the
+		// user's policy for the claude-code backend is asked first, then it goes the pi worker's way.
+		const specs = request.specs.map(withCatalogClaudeModel).map((spec) => {
+			if (spec.backend !== CLAUDE_CODE_BACKEND) return spec;
+			const policy = readPolicy(options.policyFile);
+			const denied = spec.model !== undefined ? policyDenial(policy, CLAUDE_CODE_BACKEND, claudeBareId(spec.model)) : backendDenial(policy, CLAUDE_CODE_BACKEND);
+			if (denied) throw new Error(denied);
+			return claudeOnPi(spec);
+		});
+		/** A worker's session-qualified id: the sandbox's owner of its scope. */
 		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112)}-${id}`;
-		/**
-		 * A confined Claude worker's confinement (claude-code/confined-launch.ts): the sandbox's scope for
-		 * it, and what its own state needs writable — its team mailbox, and with spec on its own hook state
-		 * dir, which its hooks are pointed at.
-		 */
-		const confineClaude = (o: { id: string; cwd: string; backend: string; root?: string; specHooks: boolean; prepared: { settingsJson?: string }; mailbox?: string; hostedTmp?: string }): { confine: ClaudeConfine; settingsJson?: string } => {
-			const owner = workerKey(o.id);
-			const answer = sandboxState?.workerLaunch?.({ cwd: o.cwd, ...(o.root ? { root: o.root } : {}), backend: o.backend, owner });
-			if (answer?.kind !== "confine") throw new Error(answer?.kind === "refused" ? answer.reason : "This session's sandbox gave no confinement for this worker; it cannot start sandboxed.");
-			const writable = o.mailbox ? [o.mailbox] : [];
-			let settingsJson = o.prepared.settingsJson;
-			if (o.specHooks) {
-				const stateDir = path.join(agentDir(), SPEC_HOOK_STATE, "workers", owner);
-				fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-				writable.push(stateDir);
-				settingsJson = withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir }));
-			}
-			const hostedTmpDir = o.hostedTmp ? path.join(o.hostedTmp, "tmp") : undefined;
-			if (hostedTmpDir) fs.mkdirSync(hostedTmpDir, { recursive: true, mode: 0o700 });
-			return {
-				confine: {
-					scope: answer.scope, module: answer.module, key: owner, agentDir: agentDir(), writable, ...(hostedTmpDir ? { hostedTmpDir } : {}),
-					describe: sandboxState?.on ? `the session's sandbox${o.root ? `, narrowed to ${o.root}` : ""}` : `write-only to ${o.root}`,
-				},
-				...(settingsJson === undefined ? {} : { settingsJson }),
-			};
-		};
 		const total = specs.reduce((sum, s) => sum + (s.count ?? 1), 0);
 		if (
 			!Number.isInteger(total) ||
@@ -1354,18 +1315,8 @@ export function registerSubagents(
 				const outside = worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd, set: worktreeSet });
 				if (outside) throw new Error(outside);
 			}
-			// What a remote session's worker carries: pi loads the remote extension with the flag;
-			// claude launches the `remote` MCP server, loses every built-in tool (`--tools ""`) and is
-			// told so in its system prompt.
+			// What a remote session's pi worker carries: the remote extension with the flag.
 			const flags = remote ? { target: remote.target, ...(remote.channelOff ? { "no-channel": true as const } : {}) } : undefined;
-			const remoteMcp = remote
-				? {
-					command: process.execPath,
-					args: [REMOTE_MCP],
-					env: { [REMOTE_MCP_ENV]: encodeRemoteMcpIdentity({ version: 1, target: remote.target, farCwd: farCwd!, agentDir: getAgentDir(), ...(remote.label ? { label: remote.label } : {}), ...(remote.channelOff ? { channel: false } : {}) }) },
-				}
-				: undefined;
-			const remoteInstructions = remote ? remoteWorkerInstructions({ target: remote.target, farCwd: farCwd!, ...(remote.label ? { label: remote.label } : {}) }) : undefined;
 			if (backendId !== "pi") {
 				const backend = backends.get(backendId);
 				if (!backend) throw new Error(`Unknown or unavailable backend ${backendId}; load its extension first.`);
@@ -1377,40 +1328,18 @@ export function registerSubagents(
 				if (denied) throw new Error(denied);
 				backend.validate(spec, ctx);
 				let prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
-				// Confined (the sandbox on, or a worktree): the whole claude process runs inside the sandbox,
-				// every launch of it (claude-code/confined-launch.ts). Only Claude Code can be confined.
-				const confined = launch.kind === "confine" ? { module: launch.module } : undefined;
-				if (confined && backendId !== "claude-code") {
+				// Only pi workers can be confined or run a remote session's tools.
+				if (launch.kind !== "none") {
 					throw new Error(sandbox
 						? `Backend ${backendId} cannot run workers while this session's sandbox is on.`
-						: `Backend ${backendId} cannot run workers in a tracked worktree (only pi and claude-code workers can be confined to it).`);
+						: `Backend ${backendId} cannot run workers in a tracked worktree (only pi workers can be confined to it).`);
 				}
-				if (remote) {
-					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi and claude-code have remote tooling).`);
-					prepared = {
-						...prepared,
-						tools: [],
-						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, remoteInstructions].filter(Boolean).join("\n\n"),
-						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
-					};
-				}
-				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call
-				// (claude-code/spec-hooks.ts), and the brief unless its mode prompt carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
-				const specHooks = specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS);
-				if (specHooks) {
-					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
-					prepared = {
-						...prepared,
-						...(specInPrompt ? {} : { systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n") }),
-						// A confined worker gets its own hook state, set per worker when it is created.
-						...(confined ? {} : { settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE) })) }),
-					} as typeof prepared;
-				}
-				// Last, after the brief and any remote instructions: the prompt the runner uses is this one.
+				if (remote) throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi workers have remote tooling).`);
+				// Last: the prompt the runner uses is this one.
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
-				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp,
-					givenModes: modePrompt ? [...modes!.minorModes] : [], confined: confined ? { root: tree?.path, specHooks } : undefined, landed: specHooks };
+				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined,
+					givenModes: modePrompt ? [...modes!.minorModes] : [], landed: false };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1421,8 +1350,10 @@ export function registerSubagents(
 				// it is stale (no longer in the registry), and the inherited parent model too.
 				const denied = policyDenial(readPolicy(options.policyFile), "pi", model);
 				if (denied) throw new Error(denied);
+				// A claude-code-cli model is registered by the child itself (claudeCodeProviderLoad), whatever this
+				// session's registry holds; the runner refuses it there if the provider can't take it.
 				const slash = model.indexOf("/");
-				if (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1))) {
+				if (!rpcScopedModel(model) && (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1)))) {
 					throw new Error(`Unknown model ${model}; use agent_models to discover exact provider/model IDs from this session's registry.`);
 				}
 			}
@@ -1471,11 +1402,9 @@ export function registerSubagents(
 				forkSession,
 				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker && !specInPrompt ? workerSpecBrief(SPEC_CORE_DIR) : undefined, modePrompt].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
-				remoteMcp: undefined,
 				treeConfig,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
 				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
-				confined: undefined,
 				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
 				landed: specOn && !remote && writesCode(tools),
 			};
@@ -1493,21 +1422,18 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, givenModes, confined, landed }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
 					const teamMember = request.team?.members[index];
 					// A member's identity and private mailbox exist before its process
-					// does. Pi children read the identity from their environment
-					// (member.ts); claude-code children get it through the member MCP
-					// server's own environment, never the CLI's.
+					// does. Pi children read the identity from their environment (member.ts).
 					const memberVars = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					// The usage ledger's parent (llm-inflight attribution.ts): a pi worker reads it itself, a
-					// Claude Code worker's runner reads it from its options here.
+					// The usage ledger's parent (llm-inflight attribution.ts): a pi worker reads it itself.
 					const parentSid = ctx.sessionManager.getSessionId?.();
 					const usageEnv = parentSid ? { [USAGE_PARENT_ENV]: `${parentSid}:${id}` } : undefined;
 					const specEnv = specOn && !remote ? {
@@ -1516,10 +1442,9 @@ export function registerSubagents(
 						[ASSESSMENT_WORKER_ENV]: id,
 						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
 					} : baseEnv;
-					// A code-writing worker's census state, where its settle's landed line is read: a Claude worker's hook
-					// state (by its session id, in its hook state dir), a pi worker's own file (named in its env).
+					// A code-writing worker's census state, where its settle's landed line is read: its own file (named in its env).
 					const landedFile = landed && !backend ? path.join(agentDir(), SPEC_HOOK_STATE, "landed", `${workerKey(id)}.json`) : undefined;
-					if (landed) landedSources.set(id, landedFile ? { file: landedFile } : { stateDir: confined ? path.join(agentDir(), SPEC_HOOK_STATE, "workers", workerKey(id)) : path.join(agentDir(), SPEC_HOOK_STATE) });
+					if (landedFile) landedSources.set(id, { file: landedFile });
 					else landedSources.delete(id);
 					if (landedFile && !resuming) fs.rmSync(landedFile, { force: true });
 					const env = usageEnv || landedFile ? { ...specEnv, ...usageEnv, ...(landedFile ? { [LANDED_FILE_ENV]: landedFile } : {}) } : specEnv;
@@ -1541,19 +1466,6 @@ export function registerSubagents(
 							...(teamMember ? { team: { teamId: request.team!.teamId, role: teamMember.role, ...(teamMember.orchestrator ? { orchestrator: true } : {}) } } : {}),
 						})
 						: {};
-					// A claude worker's servers: the session's `remote` server (remote sessions), and the
-					// member's `team` server (team members) — a member of a remote session gets both.
-					const mcpServers = {
-						...(remoteMcp ? { [REMOTE_MCP_SERVER_NAME]: remoteMcp } : {}),
-						...(memberVars && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env: memberVars } } : {}),
-					};
-					// A confined claude worker: its own scope (named by its session-qualified id), its own state
-					// writable (the mailbox, and its own spec-hook state), and, hosted, the host's tmp.
-					const confinement = confined
-						? confineClaude({ id, cwd, backend: spec.backend ?? "pi", root: confined.root, specHooks: confined.specHooks, prepared: backendPrepared as { settingsJson?: string },
-							mailbox: teamMember && tooling === "mcp" ? memberDir(request.team!.teamId, id) : undefined,
-							hostedTmp: (hosted as { tmpDir?: string }).tmpDir })
-						: undefined;
 					const runner = (backend?.create ?? createRunner)(
 						{
 							model,
@@ -1565,11 +1477,9 @@ export function registerSubagents(
 							backendOptions: spec.backendOptions,
 							...(flags ? { flags } : {}),
 							...backendPrepared,
-							...confinement,
 							backend: spec.backend ?? "pi",
 							...(env ? { env } : {}),
 							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
-							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
 							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}), ...(resuming.startedAt ? { startedAt: resuming.startedAt } : {}) } } : {}),
 							id,
@@ -1805,10 +1715,12 @@ export function registerSubagents(
 			appendTeamEvent(teamId, "wrap-up", target, contextShare(tokens, window));
 		}
 	};
-	/** The window of the model a worker was spawned with (claude-code: claudeContextWindow, `[1m]` or natively 1M; pi: the registry). */
+	/** The window of the model a worker was spawned with (a Claude model: claudeContextWindow, `[1m]` or natively 1M; pi: the registry). */
 	const contextWindowOf = (a: Worker | undefined, member: { backend: string; model?: string }): number | undefined => {
 		const model = (a && launches.get(a)?.model) ?? member.model ?? a?.model;
-		if (member.backend === "claude-code") return claudeContextWindow(model ?? "");
+		// A claude-code member: a native one (recorded before claude-code workers became pi workers) or a
+		// pi worker on the Claude Code provider, which the parent's registry may not list.
+		if (member.backend === "claude-code" || model?.startsWith("claude-code-cli/")) return claudeContextWindow(model ?? "");
 		if (member.backend !== "pi" || !model) return undefined;
 		const slash = model.indexOf("/");
 		if (slash < 1) return undefined;
@@ -1860,6 +1772,16 @@ export function registerSubagents(
 	/** Why a team-defaults tuple cannot start here, by the checks spawnBatch applies; undefined when it can. */
 	const tupleDenial = (ctx: ExtensionContext, t: WorkerTuple): string | undefined => {
 		const policy = readPolicy(options.policyFile);
+		if (t.backend === CLAUDE_CODE_BACKEND) {
+			const denied = policyDenial(policy, CLAUDE_CODE_BACKEND, claudeBareId(t.model));
+			if (denied) return denied;
+			try {
+				const asPi = claudeOnPi({ backend: t.backend, model: t.model, ...(t.effort ? { effort: t.effort } : {}) });
+				return policyDenial(policy, "pi", asPi.model!) ?? undefined;
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		}
 		if (t.backend !== "pi") {
 			const backend = backends.get(t.backend);
 			if (!backend) return `backend ${t.backend} is not loaded`;
@@ -2138,7 +2060,7 @@ export function registerSubagents(
 	};
 
 	// ── Team member mailbox ─────────────────────────────────────────────────
-	// Members (member.ts in Pi children, member-mcp.ts beside Claude children)
+	// Members (member.ts in every member child)
 	// write requests into their own directory under a private root;
 	// the parent polls, derives the sender from the path, validates scope
 	// against the team store and performs the delivery itself through the same
@@ -2237,11 +2159,10 @@ export function registerSubagents(
 			"States are observations; accepted-or-queued never means executed. Context is the last reply's size over the spawned model's window.",
 		].join("\n");
 	};
-	/** How a recipient can answer, by what it really has; MCP tools carry the server prefix. */
+	/** How a recipient can answer, by what it really has. */
 	const replyHint = (target: PersistedMember, role: string): string => {
 		switch (memberTooling(target.backend)) {
 			case "pi": return `(Reply with team_msg to "${role}" if needed; team_inbox lists delivered messages.)`;
-			case "mcp": return `(Reply with the mcp__${MCP_SERVER_NAME}__team_msg tool to "${role}" if needed; mcp__${MCP_SERVER_NAME}__team_inbox lists delivered messages.)`;
 			default: return "(You cannot reply to teammates directly; put anything meant for them in your final answer.)";
 		}
 	};
@@ -2466,9 +2387,12 @@ export function registerSubagents(
 	// ends it), but its durable record (registry.ts) and its own backend session do. At
 	// session_start every recorded worker that is not live comes back as a RestoredWorker:
 	// listed, counted, read-only. agent_resume starts it again ON DEMAND, idle, in its own
-	// backend session; nothing is ever resumed or continued automatically.
+	// backend session; nothing is ever resumed or continued automatically. An older Claude Code
+	// worker (it ran the CLI's own tools) can't reopen its session: it continues on Sova's tools in
+	// a new one (claude-workers.ts).
 	/** Why a recorded worker cannot be resumed, or undefined. */
 	const resumeRefusal = (m: FoldedWorkerManifest): string | undefined => {
+		if (m.backend === CLAUDE_CODE_BACKEND) return undefined;
 		if (adapters.get(m.backend).capabilities().resume !== "native") return `backend ${m.backend} cannot resume workers (its transcript adapter declares resume: none)`;
 		if (!m.ref) return "no backend session was recorded for it (it never got that far)";
 		if (m.backend !== "pi" && !backends.has(m.backend)) return `backend ${m.backend} is not loaded`;
@@ -2528,6 +2452,8 @@ export function registerSubagents(
 	/** How long a resumed worker may take to come up idle (pi startup, Claude initialize). */
 	const RESUME_READY_MS = 180_000;
 	const resumingIds = new Set<string>();
+	/** A continued older Claude Code worker's earlier transcript, for the resume's answer. */
+	const continuedFiles = new Map<string, string | undefined>();
 	/**
 	 * agent_resume and /agent-resume: start a recorded worker again in its own backend session,
 	 * IDLE — no prompt is sent and no completion is announced; the next steer is its next task.
@@ -2549,6 +2475,8 @@ export function registerSubagents(
 		if (refusal) throw new Error(`Cannot resume ${id}: ${refusal}.`);
 		const launch = (manifest.launch ?? {}) as Partial<WorkerLaunchSpec>;
 		const pick = <T,>(value: T | undefined, key: string) => (value === undefined ? {} : { [key]: value });
+		// An older Claude Code worker continues as today's: Sova's tools, what still means something of its options.
+		const continuing = manifest.backend === CLAUDE_CODE_BACKEND;
 		const spec = {
 			// The worker's own session holds its history; the task is only its label here.
 			prompt: manifest.spec?.taskPreview?.trim() || `(resumed ${id})`,
@@ -2556,19 +2484,15 @@ export function registerSubagents(
 			...(manifest.backend === "pi" ? {} : { backend: manifest.backend }),
 			...pick(launch.model ?? manifest.spec?.model, "model"),
 			...pick(launch.effort ?? manifest.spec?.effort, "effort"),
-			...pick(launch.tools ?? manifest.spec?.tools, "tools"),
+			...pick(continuing ? continuationTools(launch.tools ?? manifest.spec?.tools) : launch.tools ?? manifest.spec?.tools, "tools"),
 			...pick(launch.systemPrompt, "systemPrompt"),
 			...pick(launch.agentType, "agentType"),
 			...pick(launch.cwd ?? manifest.spec?.cwd, "cwd"),
 			wake: manifest.spec?.wake ?? true,
 			...pick(launch.extensions, "extensions"),
-			...pick(launch.backendOptions, "backendOptions"),
+			...pick(continuing ? continuationOptions(launch.backendOptions) : launch.backendOptions, "backendOptions"),
 			...(launch.useWorktreeConfig === true ? { useWorktreeConfig: true } : {}),
 		} as Spec;
-		const ref = manifest.ref!;
-		const identity = ref.kind === "pi-session-file"
-			? { sessionFile: ref.locator, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
-			: { sessionId: ref.locator };
 		// Team membership: its history team becomes live again (as when a hosted member is re-adopted).
 		let team: BatchRequest["team"];
 		if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
@@ -2595,6 +2519,33 @@ export function registerSubagents(
 		// start, else the first record's time.
 		const startedAt = current?.startedAt ?? view?.view.summary?.startedAt ?? manifest.firstAt;
 		const groupLabel = current ? (groups.find((g) => g.id === current.groupId)?.label ?? `${current.groupId} · resumed`) : `${manifest.groupId ?? "run_restored"} · resumed`;
+		// Its own session, or for a continuation a new one, seeded with the handoff before the worker opens it.
+		let identity: { sessionFile?: string; sessionId?: string };
+		let seeded: string | undefined;
+		let earlier: string | undefined;
+		if (continuing) {
+			const old = view?.view ?? (manifest.ref ? await viewWorker(manifest, adapters, { items: "none" }) : undefined);
+			earlier = old?.summary?.found ? old.summary.file : undefined;
+			const local = resolvePath(launch.cwd ?? manifest.spec?.cwd ?? ctx.cwd, ctx.cwd);
+			const dir = fs.existsSync(local) ? local : ctx.cwd;
+			const text = continuationMessage({
+				id, name: spec.name ?? id, ...(manifest.team?.role ? { role: manifest.team.role } : {}),
+				...(earlier ? { transcript: earlier } : {}),
+				...(manifest.spec?.taskPreview ? { task: manifest.spec.taskPreview } : {}),
+				lastOutput: current?.finalOutput() || old?.summary?.lastAssistantText || "",
+			});
+			try {
+				seeded = seedContinuationSession(path.join(agentDir(), "sessions", sessionDirName(dir)), dir, text, CURRENT_SESSION_VERSION);
+			} catch (error) {
+				throw new Error(`Cannot resume ${id}: could not write its new session (${error instanceof Error ? error.message : String(error)}).`);
+			}
+			identity = { sessionFile: seeded };
+		} else {
+			const ref = manifest.ref!;
+			identity = ref.kind === "pi-session-file"
+				? { sessionFile: ref.locator, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
+				: { sessionId: ref.locator };
+		}
 		resumingIds.add(id);
 		// Never two entries with one ID (the live record refuses duplicate IDs): the earlier one
 		// steps aside while the new process starts, and comes back if it fails.
@@ -2607,10 +2558,10 @@ export function registerSubagents(
 			}, signal);
 			worker = group.agents[0];
 			if (base) usageBase.set(worker, base);
-			// The label it ran under (e.g. claude-haiku-4-5-…, not the spawn alias "haiku") until the
-			// runner reports its own model: a Claude worker's first init comes with its next turn.
-			// A listed entry already carries it (resolved at restore, or reported by its last runner).
-			const model = current?.model ?? resolvedModel(manifest, view?.view);
+			// The label it ran under until the runner reports its own model. A listed entry already
+			// carries it (resolved at restore, or reported by its last runner). A continuation runs on
+			// its new provider ref, which it keeps.
+			const model = continuing ? undefined : current?.model ?? resolvedModel(manifest, view?.view);
 			if (model) worker.model = model;
 			const deadline = Date.now() + RESUME_READY_MS;
 			while (worker.status !== "waiting" && !worker.isFinished() && Date.now() < deadline) {
@@ -2625,12 +2576,18 @@ export function registerSubagents(
 				if (!failed.isFinished()) void failed.kill("resume did not come up");
 				throw new Error(`Could not resume ${id}: ${reason}`);
 			}
-			registry.resumed(worker, workerModes.get(worker));
+			// A continuation's session is the one seeded for it, whether or not its runner has said so yet.
+			if (continuing && !worker.sessionFile) worker.sessionFile = seeded;
+			registry.resumed(worker, workerModes.get(worker), continuing
+				? { launch: launches.get(worker), from: { backend: manifest.backend, ...(manifest.ref ? { ref: manifest.ref } : {}) } }
+				: undefined);
+			if (continuing) continuedFiles.set(id, earlier);
 			restoredViews.delete(id);
 			wakeRejoinedMonitor(worker);
 			return worker;
 		} catch (error) {
 			if (!worker && current && !agents.some((a) => a.id === id)) insertWorker(current, groupLabel);
+			if (!worker && seeded) fs.rmSync(seeded, { force: true });
 			throw error;
 		} finally {
 			resumingIds.delete(id);
@@ -2639,6 +2596,11 @@ export function registerSubagents(
 	};
 	const resumedText = (a: Worker) => {
 		const paused = pausedMonitorTeam(a.id);
+		if (continuedFiles.has(a.id)) {
+			const earlier = continuedFiles.get(a.id);
+			continuedFiles.delete(a.id);
+			return `Resumed ${a.id} (${a.name}) on Sova's tools in a new session ${a.sessionFile ?? ""}, continuing its Claude Code session ${earlier ?? "(no transcript found)"}; nothing was sent to it. Give it work with agent_steer.${paused ? ` It is the monitor of ${paused}, which is paused: it was sent its resume check.` : ""}`;
+		}
 		return paused
 			? `Resumed ${a.id} (${a.name}) in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}. It is the monitor of ${paused}, which is paused: it was sent its resume check, since its wake_nudges ended with the earlier parent.`
 			: `Resumed ${a.id} (${a.name}) idle in its own ${a.backend ?? "pi"} session ${a.sessionFile ?? a.sessionId ?? ""}; nothing was sent to it. Give it work with agent_steer.`;
@@ -2647,7 +2609,7 @@ export function registerSubagents(
 		name: "agent_resume",
 		label: "Resume Subagent",
 		description:
-			"Bring back a worker listed as restored (its process ended with an earlier server, reload or session) by starting it again in its OWN backend session: pi reopens its session file, Claude resumes its session. It comes back idle (waiting) with its history; nothing is sent to it and no completion is reported, so use agent_steer to give it work. The session's current sandbox and remote state apply, as at spawn; a team member rejoins its team. Refused for a live worker, an unknown ID, or a backend that cannot resume.",
+			"Bring back a worker listed as restored (its process ended with an earlier server, reload or session) by starting it again in its OWN backend session: pi reopens its session file. An older Claude Code worker (it ran the Claude Code CLI's own tools) continues on Sova's tools in a new session whose first message hands its work over. It comes back idle (waiting) with its history; nothing is sent to it and no completion is reported, so use agent_steer to give it work. The session's current sandbox and remote state apply, as at spawn; a team member rejoins its team. Refused for a live worker, an unknown ID, or a backend that cannot resume.",
 		promptSnippet: "Resume a restored subagent idle in its own session",
 		parameters: Type.Object({ id: Type.String({ pattern: "^ag_\\d+$", description: "Exact worker ID (ag_NN)." }) }, { additionalProperties: false }),
 		async execute(_id, params, signal, _update, ctx) {
@@ -2695,18 +2657,18 @@ export function registerSubagents(
 		// a codemode script's call has none.
 		exposure: "model-only",
 		description:
-			"Start independent background agents (backend defaults to pi; claude-code uses the installed Claude extension); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. Pi-only: fork=true copies conversation history; extensions loads listed Pi extensions. Claude starts fresh and uses backendOptions for permission/settings policy.",
+			"Start independent background agents (backend defaults to pi; claude-code runs a Claude model on Sova's tools); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. fork=true copies conversation history; extensions loads listed Pi extensions.",
 		promptSnippet: "Spawn background subagents (non-blocking) and manage them by id",
 		promptGuidelines: [
 			"Use agent_spawn to parallelise independent work; it returns immediately and does not block you.",
 			"Use agent_models to find requested worker models by name before spawning when the exact ID is unknown; it uses this session's registry, not a separate CLI search.",
 			"Use agent_wait only when you genuinely need a subagent's result before continuing; by default a finished subagent wakes you with its result when you are idle.",
 			"Tell a worker whose report may run past about 3,500 characters to write it to a file and end with that file's path plus a short summary; the completion message quotes only the first 4,000 characters.",
-			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
+			"Pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history.",
 			"A worker starts only in this session's cwd or inside an active worktree the session tracks (the worktree tool); a pi worker started inside a worktree can write only there. useWorktreeConfig: true runs a pi worker on that worktree's own .agent.",
 			"While this session's spec minor mode is on, every worker you start (a team's monitor excepted) gets the spec block and a worker note in its system prompt: brief it with the relevant passages, not the discipline.",
-			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
-			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
+			"Use agent_spawn with backend: \"claude-code\" to run a Claude model: it uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5; Sonnet when omitted), effort low..max (medium when omitted) and Sova's tools (Claude's names Read, Bash, Edit, Write, Grep, Glob, LS are accepted; all seven when omitted). It does not inherit the parent's model, effort or tools. backendOptions.permissionMode plan keeps it read-only.",
+			"Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
 		],
 		parameters: Type.Object(
 			{
@@ -2767,7 +2729,7 @@ export function registerSubagents(
 
 	/** A Claude Code worker started on an id Sova's Claude catalog doesn't know: still used, and said so. */
 	const unverifiedClaudeModels = (started: readonly Worker[]): string[] => [
-		...new Set(started.filter((a) => a.backend === "claude-code" && a.model).map((a) => unverifiedClaudeNote(a.model!)).filter((n): n is string => !!n)),
+		...new Set(started.filter((a) => a.model?.startsWith("claude-code-cli/")).map((a) => unverifiedClaudeNote(claudeBareId(a.model!))).filter((n): n is string => !!n)),
 	];
 	const listUsage = (a: Worker) => {
 		if (isRestored(a) && a.usageSource === "none") return "usage unavailable";
@@ -2867,7 +2829,7 @@ export function registerSubagents(
 		name: "agent_steer",
 		label: "Steer Subagent",
 		description:
-			"Send instructions to a live worker. mode=redirect changes the current task (Pi's normal steering; Claude interrupts then resumes). mode=followUp queues work after the current task. Omitted mode preserves backend default steering. Idle workers start a fresh task. Acknowledgment means accepted or queued, not executed or completed; Claude follow-ups may only be queued locally. Cancelling acceptance waiting does not stop the worker and may leave delivery unknown; inspect status/transcript before retrying.",
+			"Send instructions to a live worker. mode=redirect changes the current task (Pi's normal steering). mode=followUp queues work after the current task. Omitted mode preserves backend default steering. Idle workers start a fresh task. Acknowledgment means accepted or queued, not executed or completed. Cancelling acceptance waiting does not stop the worker and may leave delivery unknown; inspect status/transcript before retrying.",
 		parameters: Type.Object({ id: Nonempty, message: Nonempty, mode: Type.Optional(StringEnum(["redirect", "followUp"] as const)) }),
 		async execute(_id, params, signal, _update, ctx) {
 			context(ctx);
@@ -2982,10 +2944,10 @@ export function registerSubagents(
 	});
 
 	const MEMBER_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team. Claude members get the same tools from an MCP server (mcp__team__<tool>).";
+		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team.";
 	/** In a coordinated team the generic question paragraph is wrong: members ask the coordinator. */
 	const COORDINATED_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge. Claude members get the same tools from an MCP server (mcp__team__<tool>).";
+		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge.";
 	/** Q6: the main thread cut a team short by stopping its coordinator and monitor while a member still worked. */
 	const KEEP_DUTIES_NOTE =
 		"Do not stop (agent_kill) the coordinator or the monitor while any member is still working: the coordinator routes the team's reports and successions and the monitor watches context and usage. Once no member is working, stopping them is fine.";
@@ -3264,7 +3226,7 @@ export function registerSubagents(
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; delivered by this extension), team_inbox, team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. pi members load them as a Pi extension, Claude members as MCP tools (mcp__team__<tool>). Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another.",
+			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; delivered by this extension), team_inbox, team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Members (pi or claude-code) load them as a Pi extension. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another.",
 		promptSnippet: "Create a team of role-based background workers with declared ownership",
 		promptGuidelines: [
 			"Use team_create when the user wants a coordinated team with distinct roles and ownership; use agent_spawn for ad hoc independent workers.",
@@ -3556,8 +3518,7 @@ export function registerSubagents(
 					composing = true;
 					try {
 						const a = findAgent(id);
-						// A redirect interrupts the current task (on Claude: interrupt,
-						// settle, then replacement) — the title must say so; it is not
+						// A redirect interrupts the current task — the title must say so; it is not
 						// a chat box. Preserve workspace state, but never cover the
 						// temporary editor.
 						const title =
@@ -3598,7 +3559,7 @@ export function registerSubagents(
 			"Plan and create a team for this objective with the team tools, then coordinate it:",
 			"- Use team_create with a short unique name, this objective, and members that each have one explicit unique role, a self-contained prompt and declared ownedPaths (advisory coordination, not a lock). Extend later with team_add; inspect with team_list; steer or stop members with agent_steer/agent_kill by exact worker ID.",
 			"- Obey the team tool descriptions, schemas and limits. All members share one filesystem; ownership does not protect files.",
-			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID); Claude members have the same tools through an MCP server. Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
+			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID). Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
 			"- When you present the plan, report the defaults and their cost: members default to the pi backend inheriting the parent model/effort (agent_models resolves exact IDs, including Claude's), and every member with wake=true (the default) starts a parent turn — which costs tokens on the parent model — when it settles. State how many wakes this team will cause, or propose wake: false to batch results into your next turn.",
 			...teamDefaultsPlanLines(),
 			"Do not start the objective's work yourself before the team exists; the /team workspace and team_list show the roster.",
@@ -3783,20 +3744,6 @@ export function registerSubagents(
 		pausedTeams.clear();
 		for (const teamId of pausedTeamsFrom(ctx.sessionManager.getBranch?.() ?? [])) pausedTeams.add(teamId);
 		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
-		// Confined Claude workers' own state dirs (§chat.sandbox/claude-state): kept across resumes, removed
-		// once the worker's record is gone with its owner session. Never one a live worker of this process uses.
-		try {
-			const key = sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112);
-			const file = ctx.sessionManager.getSessionFile?.();
-			const { manifests } = readWorkerManifests(ctx.sessionManager.getEntries());
-			const live = new Set(agents.filter((a) => !a.isFinished()).map((a) => `${key}-${a.id}`));
-			sweepPrivateConfigDirs({
-				agentDir: agentDir(),
-				sessionDirs: [...new Set([path.join(agentDir(), "sessions"), ...(file ? [path.dirname(path.dirname(file))] : [])])],
-				current: { key, recorded: (id) => manifests.has(id) || agents.some((a) => a.id === id) },
-				keep: (dir) => live.has(dir),
-			});
-		} catch { /* best effort: the next start sweeps again */ }
 		// Asynchronous (transcript reads): earlier processes' workers appear once read.
 		void restoreWorkers(ctx).catch(() => { /* Best effort: the records stay for the next start. */ });
 		if (hosting.active()) {

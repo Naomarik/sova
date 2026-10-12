@@ -15,7 +15,7 @@
  * it down: a killed command's late output would otherwise be attributed to the next request.
  *
  * Node builtins + argv.ts only (and exec.ts's RunResult type). It must also stay loadable by
- * `node <file>.ts` (strip-only type stripping, how workers' MCP servers are launched): no
+ * `node <file>.ts` (strip-only type stripping): no
  * parameter properties, enums or namespaces here, or in anything it imports.
  */
 import { type ChildProcessWithoutNullStreams, spawn as nodeSpawn } from "node:child_process";

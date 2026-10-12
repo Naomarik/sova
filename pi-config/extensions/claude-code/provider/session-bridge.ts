@@ -1399,7 +1399,6 @@ class CliSession {
 			// internal calls nothing sees, are reported from here. Their spend is recorded from here
 			// only (per Anthropic message, plus what the CLI's totals show beyond them), for this chat.
 			requestObserver: createClaudeRequestObserver({
-				countRequests: false,
 				usage: { bridge: true, model: claudeCliId(request.model), fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId), launch: () => launch.value },
 			}),
 			hooks: {

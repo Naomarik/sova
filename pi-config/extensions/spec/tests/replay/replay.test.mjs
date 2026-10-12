@@ -95,7 +95,7 @@ test("guards catch the do-nothing fixes: the draft always wins, the census goes 
     "a.diff-h2.no-prose-lost", "a.same-h2.conflict-stops", "a.same-h2.no-prose-lost",
     "b.edit.goes-stale",
     "a.same-spot.same-id-stops", "a.same-spot.no-prose-lost", "a.manifest-merge.same-record-stops", "e.setup",
-    "c.pi.drift-flagged", "c.pi.unclaimed-flagged", "c.claude.drift-flagged", "c.claude.unclaimed-flagged",
+    "c.pi.drift-flagged", "c.pi.unclaimed-flagged",
     "d.packet-text-exact", "f.spans-exact", "f.frame-cap", "f.true-consumer-kept", "g.packet.text-exact", "g.frame-cap",
   ]) assert.ok(names.includes(name), `${name} fails on the sabotaged tree (failed: ${names.join(", ")})`);
   // …while the rows themselves look better, which is why the guards exist.
@@ -751,7 +751,7 @@ test("make-tree: a ref's pi-config/extensions, with its commit recorded for the 
   const dest = mkdtempSync(join(tmpdir(), "spec-replay-tree-"));
   temps.push(dest);
   const tree = makeTree("HEAD", join(dest, "t"), TREE);
-  for (const need of ["spec/core/sova-spec.mjs", "mode/spec-guard.ts", "claude-code/spec-hooks.ts"]) assert.ok(existsSync(join(tree, need)), need);
+  for (const need of ["spec/core/sova-spec.mjs", "mode/spec-guard.ts"]) assert.ok(existsSync(join(tree, need)), need);
   const source = JSON.parse(readFileSync(join(dest, "t/replay-source.json"), "utf8"));
   assert.equal(source.ref, "HEAD");
   assert.equal(source.commit, spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim());

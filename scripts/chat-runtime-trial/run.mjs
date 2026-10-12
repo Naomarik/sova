@@ -580,6 +580,18 @@ async function t6() {
   const s = await chat(c, path);
   await sleep(2000);
   R.check(!record(path), "t6: the Overseer's chat has no chat process (it stays in the server)");
+  // Its live record (<agent>/sessions/live/*.json) names the server's own pid.
+  const liveDir = join(agent, "sessions", "live");
+  const lives = (() => {
+    try {
+      return readdirSync(liveDir).map((f) => readJson(join(liveDir, f))).filter((r) => r && baseName(r.sessionFile) === baseName(path));
+    } catch {
+      return [];
+    }
+  })();
+  // (An open chat with no turn yet may have none.)
+  if (lives.length) R.check(lives.every((r) => r.pid === srv.pid()), `t6: the Overseer's live record has the server's pid (${lives.map((r) => r.pid).join(", ")} vs ${srv.pid()})`);
+  else R.note("t6: the Overseer's chat has no live record yet");
   s.close();
   // The control: an ordinary chat on the same server does get one.
   const o = await newChat();

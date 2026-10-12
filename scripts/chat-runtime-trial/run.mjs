@@ -1060,7 +1060,11 @@ async function t13() {
   await restart();
   R.check(pid1 && chatPid(po.path) === pid1, `t13: the project overseer's process survived (${pid1} → ${chatPid(po.path)})`);
   await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === "look"), 60000);
-  const finished = () => orgLog(o).filter((r) => (r.event === "look/finished" || r.event === "look/stopped") && r.at >= t0);
+  // How the look ended: reported (look/finished, look/stopped) or recorded cut off by the resume (a
+  // look/cut-off row, or sova/resumed naming the sova/look run in its cutOff). Which one is right waits
+  // on the claim (the engine cuts off running invocations at resume): either, once, passes for now.
+  const isCut = (r) => r.event === "look/cut-off" || (r.event === "sova/resumed" && JSON.stringify(r.envelope?.cutOff ?? []).includes("sova/look"));
+  const finished = () => orgLog(o).filter((r) => (r.event === "look/finished" || r.event === "look/stopped" || isCut(r)) && r.at >= t0);
   await waitFor(() => finished().length > 0, 30000);
   await sleep(5000);
   await mock.plain("");
@@ -1068,7 +1072,9 @@ async function t13() {
   R.check(users.length === 1, `t13: one look message in the file (${users.length})`);
   R.check(mockLog(mock.log).filter((e) => e.tag === "look" && e.scenario).length === 1, "t13: the model was asked for the look once (no second sova/look turn)");
   const f = finished();
-  R.check(f.length === 1 && f[0].event === "look/finished", `t13: the look was reported once, finished (${f.map((r) => r.event).join(", ") || "none"})`);
+  const ends = f.filter((r) => !isCut(r));
+  const cuts = f.filter(isCut);
+  R.check((ends.length === 1 && ends[0].event === "look/finished" && !cuts.length) || (!ends.length && cuts.length >= 1), `t13: the look ended once: reported finished, or recorded cut off by the resume (${f.map((r) => r.event).join(", ") || "none"})`);
   const answers = users[0] ? entries(po.path).filter((e) => e.type === "message" && e.message?.role === "assistant").length : 0;
   R.check(answers === 1, `t13: one assistant turn answered it (${answers})`);
 }

@@ -21,8 +21,7 @@ At that same end each call also appends one usage record, its token counts only 
   to the code below it (the provider-limits gate marks that very call waiting in a cooldown; a call
   begun inside is a new call, never suppressed). `setChildCounts` holds a child process's reported counts
   (replaced, never added; Sova's server keeps one per chat process), their rings summed with the process's own; a child forgotten while
-  summed leaves its ring in a retired ring until it ages out (`{retire: false}`, a child that
-  goes on reporting it itself elsewhere, drops it). A child that reported no ring makes
+  summed leaves its ring in a retired ring until it ages out. A child that reported no ring makes
   `tokens.partial`. `markDegraded` and `beginClaudeTurn` report what can't be seen.
 - `runtime.ts` (builtins only; Sova imports it): `instrumentModelRuntime(runtime)` wraps
   `stream`, `streamSimple`, `streamDeferred` and `cancelDeferred` on one pi `ModelRuntime`

@@ -1,12 +1,8 @@
-/** Assessment transport and spawn attribution names. Node builtins only. Nothing here runs by itself: no session, worker or hook captures or observes. */
+/** Assessment transport. Node builtins only. Nothing here runs by itself: no session, worker or hook captures or observes. */
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
-/** Set on a spawned worker so an explicit companion CLI call can pass them as `--attribution-json`. */
-export const ASSESSMENT_OWNER_ENV = "SOVA_SPEC_OWNER_SESSION";
-export const ASSESSMENT_WORKER_ENV = "SOVA_SPEC_WORKER_ID";
-export const ASSESSMENT_TEAM_ENV = "SOVA_SPEC_TEAM_ID";
 export type AssessmentReply = Record<string, unknown>;
 export type AssessmentCall = (core: string, cwd: string, args: string[], signal?: AbortSignal) => Promise<AssessmentReply>;
 

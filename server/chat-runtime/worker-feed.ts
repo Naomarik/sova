@@ -31,7 +31,11 @@ export class WorkerFeed {
   private readonly ring: { f: FeedFrame; bytes: number }[] = [];
   private bytes = 0;
   /** Frames waiting behind a message_end whose entry id is read one microtask later. */
-  private held: Record<string, unknown>[] | null = null;
+  private held: (Record<string, unknown> | (() => void))[] | null = null;
+  /** The entry id of the last assistant message (once read): a settle names its run's final one. */
+  private lastAssistantEntry: string | null = null;
+  /** Held message_ends whose entry ids are read with the hold's release. */
+  private readonly unread: { event: Record<string, unknown>; handle: unknown; assistant: boolean }[] = [];
   /** The key of the last send delivered, and how many runs settled. */
   private lastKey: string | null = null;
   private settles = 0;
@@ -62,27 +66,44 @@ export class WorkerFeed {
   private onEvent(session: FeedSource, e: HarnessEvent): void {
     const event = (e.frame() as { event?: unknown }).event as Record<string, unknown> & { type?: string; message?: { role?: unknown; stopReason?: unknown; errorMessage?: unknown } };
     if (!event?.type || !FED.has(event.type)) return;
-    if (event.type === "message_end" && event.message?.role === "assistant") this.lastAssistant = event.message;
-    if (event.type === "agent_settled") this.settle();
+    const assistant = event.type === "message_end" && event.message?.role === "assistant";
+    if (assistant) {
+      this.lastAssistant = event.message!;
+      this.lastAssistantEntry = null;
+    }
+    if (event.type === "agent_settled") {
+      // After the final message's entry id is read: the settle names it.
+      return this.out(() => {
+        this.settle();
+        // The parent's record keeps this key with the settle's announcement (picked back up, it announces a settle once).
+        this.emit({ ...event, settleKey: this.settled!.key });
+      });
+    }
     if (event.type !== "message_end" || !("handle" in e)) return this.out(event);
-    const handle = (e as { handle?: unknown }).handle;
+    this.unread.push({ event, handle: (e as { handle?: unknown }).handle, assistant });
     if (this.held) return void this.held.push(event);
     this.held = [event];
     queueMicrotask(() => {
-      try {
-        const id = session.persistedId(handle);
-        if (id !== null) event.entryId = id;
-      } catch {
-        // untagged: the parent's fold drops nothing on reattach
+      for (const u of this.unread.splice(0)) {
+        try {
+          const id = session.persistedId(u.handle);
+          if (id !== null) {
+            u.event.entryId = id;
+            if (u.assistant) this.lastAssistantEntry = id;
+          }
+        } catch {
+          // untagged: the parent's fold drops nothing on reattach
+        }
       }
       const out = this.held ?? [];
       this.held = null;
-      for (const f of out) this.emit(f);
+      for (const f of out) typeof f === "function" ? f() : this.emit(f);
     });
   }
 
-  private out(event: Record<string, unknown>): void {
+  private out(event: Record<string, unknown> | (() => void)): void {
     if (this.held) this.held.push(event);
+    else if (typeof event === "function") event();
     else this.emit(event);
   }
 
@@ -93,6 +114,7 @@ export class WorkerFeed {
     this.settled = {
       key: `${this.lastKey ?? this.proc}#${this.settles}`,
       outcome,
+      ...(this.lastAssistantEntry ? { entryId: this.lastAssistantEntry } : {}),
       ...(outcome === "error" ? { error: String(a?.errorMessage ?? "assistant turn failed (stopReason: error)") } : {}),
     };
     this.lastAssistant = null;

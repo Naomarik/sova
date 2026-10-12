@@ -677,7 +677,7 @@ function workerBuild(w: WorkerSpec): PiBuild {
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
-    // Its project's local files are trusted (`--approve`): the SDK's services trust them for every chat.
+    // A worker trusts its project's local files as every Sova chat does.
     opening: () => ({
       ...(w.model ? { model: w.model } : {}),
       ...(w.thinking ? { thinking: w.thinking } : {}),

@@ -15,7 +15,7 @@ import type { RemoteChatHandle } from "./chat-handle-remote";
 import type { ChatDeath } from "./chat-runtime/supervisor";
 import type { InflightMarker } from "./chat-runtime/inflight";
 import { createWorkerSession } from "./harness/pi/worker-session";
-import { readOverseerSettings } from "./overseer-store";
+import { logAutoResume, readOverseerSettings } from "./overseer-store";
 import { stateRoot } from "./state-root";
 
 /** Frames kept per worker for its watchers (a re-watch from a cursor replays from here). */
@@ -29,6 +29,8 @@ const DEATH_BYTES = 2048;
 export const workersDir = () => join(stateRoot(), "chats", "workers");
 
 export type Placement = WorkerRef["placement"];
+/** A parent chat, as its link or its binding names it. */
+type Parent = { sessionId: string; path: string };
 type EndCause = Extract<WorkerFeedFrame, { t: "ended" }>["cause"];
 
 export interface WorkerRecord {
@@ -43,6 +45,9 @@ export interface WorkerRecord {
   state: WorkerRef["state"];
   ended?: { cause: EndCause; detail?: string; logTail?: string[]; at: string };
   startedAt: string;
+  /** The last settle key a watcher was told of or its parent was opened for: a server that takes the
+      worker back announces only a settle after it. */
+  seenSettleKey?: string;
 }
 
 /** Where a worker's chat process runs: the router (server/chat-host.ts) does the processes. */
@@ -97,16 +102,24 @@ export class WorkerRegistry {
 
   constructor(
     private readonly procs: WorkerProcesses,
-    o: { dir?: () => string; now?: () => number; autoResume?: () => boolean; openParent?: (path: string) => Promise<unknown> } = {},
+    o: {
+      dir?: () => string;
+      now?: () => number;
+      autoResume?: () => boolean;
+      openParent?: (path: string) => Promise<unknown>;
+      logResume?: (args: { path: string; parent: string; workerId: string }, why?: string) => void;
+    } = {},
   ) {
     this.dir = o.dir ?? workersDir;
     this.now = o.now ?? Date.now;
     this.autoResume = o.autoResume ?? (() => readOverseerSettings().autoResume !== false);
     this.openParent = o.openParent ?? ((path) => acquireChatHandle(path));
+    this.logResume = o.logResume ?? logAutoResume;
     for (const rec of this.readAll()) this.track(rec);
   }
   private readonly autoResume: () => boolean;
   private readonly openParent: (path: string) => Promise<unknown>;
+  private readonly logResume: (args: { path: string; parent: string; workerId: string }, why?: string) => void;
 
   // ---- records ------------------------------------------------------------------------------------
 
@@ -146,7 +159,7 @@ export class WorkerRegistry {
       watchers: new Set(),
       queue: { steering: [], followUp: [] },
       lastState: "",
-      lastSettledKey: null,
+      lastSettledKey: rec.seenSettleKey ?? null,
       opened: new Set(),
       settleTimer: null,
       opening: null,
@@ -229,7 +242,15 @@ export class WorkerRegistry {
       this.end(l, "died", { detail });
       throw err instanceof Error ? err : new Error(detail);
     }
-    if (req.task !== null) await this.deliver(l, { text: req.task, key: `${req.key}:task` });
+    if (req.task !== null) {
+      try {
+        await this.deliver(l, { text: req.task, key: `${req.key}:task` });
+      } catch (err) {
+        // Nobody holds it yet: a worker whose task was refused is stopped, never left running unowned.
+        await this.stop(l.rec.chatId, "its task was not accepted");
+        throw err;
+      }
+    }
     return this.ref(l);
   }
 
@@ -302,6 +323,7 @@ export class WorkerRegistry {
       clearTimeout(l.settleTimer);
       l.settleTimer = null;
     }
+    if (l.lastSettledKey) this.seen(l, l.lastSettledKey);
     const emit = (f: WorkerFeedFrame) => {
       if (l.watchers.has(w)) safe(w.fn, f);
     };
@@ -376,8 +398,13 @@ export class WorkerRegistry {
     const key = state.lastSettled?.key ?? null;
     if (key && key !== l.lastSettledKey) {
       l.lastSettledKey = key;
-      this.unwatchedSettle(l, key);
+      if (l.watchers.size) this.seen(l, key);
+      else this.unwatchedSettle(l, key);
     }
+  }
+
+  private seen(l: Live, key: string): void {
+    if (l.rec.seenSettleKey !== key) this.set(l, { seenSettleKey: key });
   }
 
   /** A run settled and nobody watches: after a while, the parent chat is opened (once per settle)
@@ -389,6 +416,7 @@ export class WorkerRegistry {
       l.settleTimer = null;
       if (l.watchers.size || l.opened.has(key)) return;
       l.opened.add(key);
+      this.seen(l, key);
       log(`${l.rec.chatId} (${l.rec.parent.workerId}) settled with nobody watching: opening its parent`);
       void this.openParent(l.rec.parent.path).catch((err) => log(`its parent ${l.rec.parent.path} did not open: ${err instanceof Error ? err.message : String(err)}`));
     }, UNWATCHED_SETTLE_MS);
@@ -474,19 +502,27 @@ export class WorkerRegistry {
     l.handle = null;
     const detail = deathText(d);
     const logTail = d.logTail.slice(-DEATH_LINES);
-    if (marker && !marker.auto && this.autoResume()) {
+    const args = { path: l.rec.path, parent: l.rec.parent.path, workerId: l.rec.parent.workerId };
+    const why = !marker ? "no run in flight" : marker.auto ? "already a resume" : !this.autoResume() ? "setting off" : null;
+    if (!why) {
       log(`${d.chatId} (${l.rec.parent.workerId}) died mid-run: reopening it once to continue`);
       this.broadcast(l, { t: "ended", cause: "died", detail, logTail, resuming: true });
       void (async () => {
         const h = await this.open(l);
         await h.call("markResuming", {});
         await h.call("send", { text: CRASH_RESUME_TEXT, key: `${l.rec.key}:crash:${d.at}`, origin: "server", report: false });
-      })().catch((err) => {
-        log(`${d.chatId}: the crash resume failed: ${err instanceof Error ? err.message : String(err)}`);
-        this.end(l, "died", { detail, logTail });
-      });
+      })().then(
+        () => this.logResume(args),
+        (err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          log(`${d.chatId}: the crash resume failed: ${msg}`);
+          this.logResume(args, `reopen failed: ${msg}`);
+          this.end(l, "died", { detail, logTail });
+        },
+      );
       return;
     }
+    this.logResume(args, why);
     this.end(l, "died", { detail, logTail });
   }
 
@@ -502,7 +538,7 @@ export class WorkerRegistry {
       a child's (child placement) ended with the server that ran it. */
   settleBoot(): void {
     for (const l of this.live.values()) {
-      if (l.rec.state === "ended" || (l.handle && !l.handle.closed)) continue;
+      if (l.rec.state === "ended" || l.opening || (l.handle && !l.handle.closed)) continue;
       if (l.rec.placement === "child") this.end(l, "server-stopped", {});
       else if (l.rec.state === "open") this.set(l, { state: "idle" });
     }
@@ -525,14 +561,29 @@ export class WorkerRegistry {
 
   // ---- hosts --------------------------------------------------------------------------------------
 
+  /** A parent reaches its own workers only: worker ids repeat in every session. The parent is the
+      one its link or its binding names, never what a request says. */
+  private mine(parent: Parent, chatId: string): string {
+    const l = this.live.get(chatId);
+    if (!l || l.rec.parent.sessionId !== parent.sessionId) throw new Error(`No worker chat ${chatId} for this session.`);
+    return chatId;
+  }
+  private async startFor(parent: Parent, req: WorkerStart): Promise<WorkerRef> {
+    const p = req?.spec?.parent;
+    if (!p || p.sessionId !== parent.sessionId || p.path !== parent.path) throw new Error("A worker chat is started by its own parent session only.");
+    const known = this.keys.get(req.key);
+    if (known) this.mine(parent, known);
+    return this.start(req);
+  }
+
   /** The worker host of a parent chat in this process. */
-  bind(parent: { sessionId: string; path: string }): WorkerHost {
+  bind(parent: Parent): WorkerHost {
     return {
-      start: (req) => this.start(req),
-      send: (chatId, input) => this.send(chatId, input),
-      abort: (chatId) => this.abort(chatId),
-      stop: (chatId, reason) => this.stop(chatId, reason),
-      watch: (chatId, cursor, fn) => this.watch(chatId, cursor, fn),
+      start: (req) => this.startFor(parent, req),
+      send: async (chatId, input) => this.send(this.mine(parent, chatId), input),
+      abort: async (chatId) => this.abort(this.mine(parent, chatId)),
+      stop: async (chatId, reason) => this.stop(this.mine(parent, chatId), reason),
+      watch: (chatId, cursor, fn) => this.watch(this.mine(parent, chatId), cursor, fn),
       list: async () => this.list(parent.sessionId),
     };
   }
@@ -542,12 +593,13 @@ export class WorkerRegistry {
 
   /** A `wk` frame of a parent chat in a process of its own: run, then answered on its link. */
   serve(parent: RemoteChatHandle, f: FrameOf<"wk"> | FrameOf<"wk.watch"> | FrameOf<"wk.unwatch">): void {
+    const who: Parent = { sessionId: parent.mirror.sessionId, path: parent.path };
     if (f.t === "wk.watch") {
       let mine = this.parentWatches.get(parent);
       if (!mine) this.parentWatches.set(parent, (mine = new Map()));
       mine.get(f.chatId)?.();
       try {
-        mine.set(f.chatId, this.watch(f.chatId, f.cursor, (frame) => parent.sendWorker({ t: "wk.feed", chatId: f.chatId, frame })));
+        mine.set(f.chatId, this.watch(this.mine(who, f.chatId), f.cursor, (frame) => parent.sendWorker({ t: "wk.feed", chatId: f.chatId, frame })));
       } catch (err) {
         parent.sendWorker({ t: "wk.feed", chatId: f.chatId, frame: { t: "ended", cause: "died", detail: err instanceof Error ? err.message : String(err) } });
       }
@@ -560,18 +612,18 @@ export class WorkerRegistry {
       return;
     }
     const a = (f.args ?? {}) as Record<string, unknown>;
-    const run = (): Promise<unknown> => {
+    const run = async (): Promise<unknown> => {
       switch (f.op) {
         case "start":
-          return this.start(a as unknown as WorkerStart);
+          return this.startFor(who, a as unknown as WorkerStart);
         case "send":
-          return this.send(String(a.chatId), a.input as Parameters<WorkerRegistry["send"]>[1]);
+          return this.send(this.mine(who, String(a.chatId)), a.input as Parameters<WorkerRegistry["send"]>[1]);
         case "abort":
-          return this.abort(String(a.chatId));
+          return this.abort(this.mine(who, String(a.chatId)));
         case "stop":
-          return this.stop(String(a.chatId), String(a.reason ?? "stopped"));
+          return this.stop(this.mine(who, String(a.chatId)), String(a.reason ?? "stopped"));
         case "list":
-          return Promise.resolve(this.list(String(a.parentSessionId)));
+          return this.list(who.sessionId);
       }
     };
     void run().then(

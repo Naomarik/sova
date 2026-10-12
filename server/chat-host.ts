@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
+import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type FrameOf } from "../shared/chat-runtime-wire";
 import { sovaToken } from "./auth";
 import {
@@ -268,6 +269,8 @@ export class ChatHostRouter {
     if (h) {
       this.paths.delete(h.mirror.sessionId);
       this.workers.parentUnlinked(h);
+      // Its model calls are no longer counted here; its tokens stay in this server's ring until they age out.
+      setChildCounts(llmKey(h.mirror.sessionId), undefined);
     }
     this.remotes.delete(path);
     setRemoteHosted(path, null);
@@ -296,6 +299,10 @@ export class ChatHostRouter {
         ...(w ? { worker: { parentPath: w.parent.path, parentSessionId: w.parent.sessionId, workerId: w.parent.workerId } } : {}),
       });
       if (w) this.workers.onState(h);
+      // Every chat process's model calls, counted once here (§6 of the stage-4 design): its producer is
+      // then folded, so its live record (an ordinary chat's) is never summed again. Never this
+      // process's own counts (a chat host in this process, as in tests): they would count themselves.
+      if (m.llm && m.llm.producer !== producerId()) setChildCounts(llmKey(m.sessionId), m.llm);
     },
     exit: (h, cause) => {
       const id = h.mirror.sessionId;
@@ -601,7 +608,9 @@ export class ChatHostRouter {
       throw new NoProcess(err instanceof Error ? err.message : String(err));
     }
     try {
-      const mirror = await this.openOn(link, w.path, w.chatId, false, null, undefined, w.spec);
+      // The registry wrote its file and is its only opener: no foreign-write guard (the seed or the
+      // last run reads as "recent" to it).
+      const mirror = await this.openOn(link, w.path, w.chatId, true, null, undefined, w.spec);
       return this.adoptHandle(rec, link, mirror);
     } catch (err) {
       // The open itself failed (a model that can't be set, a refusal): the start fails with its reason.
@@ -689,6 +698,9 @@ export class ChatHostRouter {
   }
 }
 
+/** The key a chat process's model-call counts are kept under in this server's tracker. */
+const llmKey = (sessionId: string) => `chat:${sessionId}`;
+
 /** A worker's unit (or child) did not start or never answered: its start may fall back to a child. */
 class NoProcess extends Error {}
 
@@ -730,16 +742,16 @@ export function startChatHost(): void {
         return fn(router);
       });
     return {
-      start: (req) => later((r) => r.workers.start(req)),
-      send: (chatId, input) => later((r) => r.workers.send(chatId, input)),
-      abort: (chatId) => later((r) => r.workers.abort(chatId)),
-      stop: (chatId, reason) => later((r) => r.workers.stop(chatId, reason)),
-      list: () => later(async (r) => r.workers.list(parent.sessionId)),
+      start: (req) => later((r) => r.workers.bind(parent).start(req)),
+      send: (chatId, input) => later((r) => r.workers.bind(parent).send(chatId, input)),
+      abort: (chatId) => later((r) => r.workers.bind(parent).abort(chatId)),
+      stop: (chatId, reason) => later((r) => r.workers.bind(parent).stop(chatId, reason)),
+      list: () => later((r) => r.workers.bind(parent).list()),
       watch: (chatId, cursor, fn) => {
         let off: (() => void) | null = null;
         let gone = false;
         void later(async (r) => {
-          if (!gone) off = r.workers.watch(chatId, cursor, fn);
+          if (!gone) off = r.workers.bind(parent).watch(chatId, cursor, fn);
         }).catch((err) => fn({ t: "ended", cause: "died", detail: err instanceof Error ? err.message : String(err) }));
         return () => {
           gone = true;

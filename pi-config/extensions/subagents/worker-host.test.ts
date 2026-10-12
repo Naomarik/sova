@@ -18,7 +18,6 @@ const start = (over: Partial<WorkerStart> = {}): WorkerStart => ({
 		appendSystemPrompt: null,
 		env: {},
 		agentDir: null,
-		approve: false,
 		lowered: true,
 	},
 	session: { new: { dir: "/s/workers" } },

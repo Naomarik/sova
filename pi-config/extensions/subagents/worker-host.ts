@@ -35,8 +35,6 @@ export interface WorkerSpec {
 	env: Record<string, string>;
 	/** useWorktreeConfig: pi's agent dir for this chat (its process's PI_CODING_AGENT_DIR). */
 	agentDir: string | null;
-	/** Trust the project's local files (`--approve`). */
-	approve: boolean;
 	/** Lower the process to the worker niceness (every kind but none today). */
 	lowered: true;
 }
@@ -95,7 +93,8 @@ export interface WorkerCursor {
 
 export type WorkerFeedFrame =
 	| { t: "state"; cursor: WorkerCursor; state: WorkerState }
-	/** A wire-1 pi event (pi's rpc toJsonEvent shape), one of WORKER_FEED_EVENTS. */
+	/** A wire-1 pi event (pi's rpc toJsonEvent shape), one of WORKER_FEED_EVENTS; an `agent_settled`
+	    carries `settleKey`, the key its WorkerState.lastSettled will have. */
 	| { t: "event"; cursor: WorkerCursor; event: unknown }
 	/** Resync: read the file, then wait for `state`. */
 	| { t: "gap" }
@@ -114,8 +113,9 @@ export interface WorkerState {
 	pid: number | null;
 	model: string | null;
 	thinking: string | null;
-	/** The last settled run: the entry id of its final assistant message, its outcome, error. */
-	lastSettled: { key: string; outcome: "success" | "error" | "aborted"; error?: string } | null;
+	/** The last settled run: its key (`<send key>#<n>`, n counting this process's settles), the entry
+	    id of its final assistant message when known, its outcome, error. */
+	lastSettled: { key: string; entryId?: string; outcome: "success" | "error" | "aborted"; error?: string } | null;
 	queue: { steering: string[]; followUp: string[] };
 }
 

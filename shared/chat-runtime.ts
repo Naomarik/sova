@@ -92,7 +92,10 @@ export interface ChatStateMirror {
   /** Sova's web queue length, and whether the agent itself still holds queued messages. */
   queue: { web: number; agent: boolean };
   dialogs: ChatDialogInfo[];
-  /** The chat's mode and when its last switch applies, its sandbox and Claude login as last said. */
+  /** The chat's own mode (never another chat's, never simply the file). */
+  mode: { mode: ModeState["mode"]; minorModes: ModeState["minorModes"]; strict: boolean };
+  /** The chat's model, thinking and mode and when its last switch applies, its sandbox and Claude
+      login as last said (SessionSummary.chat). */
   held: HeldChatState;
   /** The memory choice, where the chat can run memory; null where it can't. */
   memory: ChatMemoryChoice | null;

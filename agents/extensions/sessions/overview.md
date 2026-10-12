@@ -11,7 +11,7 @@ and busy state.
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/sessions/README.md) and the record schema
-  [`public/SCHEMA.md`](../../../pi-config/extensions/sessions/public/SCHEMA.md) (with the JSON schemas beside it).
+  [`SCHEMA.md`](../../../pi-config/extensions/sessions/public/SCHEMA.md) (with the JSON schemas beside it).
 - Tests: `cd pi-config/extensions/sessions && node --test test.mjs`.
 
 ## What Sova relies on
@@ -25,4 +25,5 @@ and busy state.
 
 ## When you change it, also update
 
-- A record field: `public/SCHEMA.md`, its JSON schema, the README, and Sova's readers in the same branch.
+- A record field: `pi-config/extensions/sessions/public/SCHEMA.md`, its JSON schema, the README, and Sova's
+  readers in the same branch.

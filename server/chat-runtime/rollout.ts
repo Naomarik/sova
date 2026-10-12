@@ -20,14 +20,14 @@ export interface RolloutSupervisor {
   repoint(chatId: string, rep: ChatRecord): void;
 }
 
-export interface RolloutDeps {
+export interface RolloutDeps<L = unknown> {
   supervisor: RolloutSupervisor;
   /** Connect to `rep` and wait for its `hello{state:"ready"}` (no `open`); the error text when it did not boot. */
-  waitReady(rep: ChatRecord, timeoutMs: number): Promise<{ ok: true } | { ok: false; error: string }>;
+  waitReady(rep: ChatRecord, timeoutMs: number): Promise<{ ok: true; link?: L } | { ok: false; error: string }>;
   /** `drain{reason:"reload"}` to the chat's current process: it refuses unless quiet. */
   drain(chatId: string): Promise<{ ok: boolean }>;
   /** Open the chat in `rep` and re-point the server's handle at it; throws when the open fails. */
-  open(chatId: string, rep: ChatRecord): Promise<void>;
+  open(chatId: string, rep: ChatRecord, link: L | undefined): Promise<void>;
   /** The chat's code state, for its panes and the list (`failed` with the reason). */
   setCode(chatId: string, state: "reloading" | "failed" | "older", detail?: string): void;
   /** The last lines of the replacement's log, for a failed boot's reason. */
@@ -38,13 +38,13 @@ export interface RolloutDeps {
 
 export type ReloadOutcome = "reloaded" | "refused" | "failed" | "halted" | "gone";
 
-export class Rollout {
+export class Rollout<L = unknown> {
   private chain: Promise<unknown> = Promise.resolve();
   private queued = new Map<string, Promise<ReloadOutcome>>();
   /** Why automatic reloads stopped for this server's life, once one failed. */
   halted: string | null = null;
   private readonly log: (line: string) => void;
-  constructor(private readonly deps: RolloutDeps) {
+  constructor(private readonly deps: RolloutDeps<L>) {
     this.log = deps.log ?? ((l) => console.log(`[chat-rollout] ${l}`));
   }
 
@@ -84,7 +84,7 @@ export class Rollout {
     await sup.awaitExit(chatId);
     sup.repoint(chatId, rep);
     try {
-      await this.deps.open(chatId, rep);
+      await this.deps.open(chatId, rep, ready.link);
     } catch (err) {
       // The replacement goes as an expected end; the chat opens afresh (in the server) on its next acquire.
       sup.expectExit(chatId, "reload");

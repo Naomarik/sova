@@ -505,11 +505,13 @@ async function t4() {
   await sleep(2000);
   R.check(chatPid(A.path) !== pidA && record(A.path)?.build === "trial-b", `t4: A runs a new process on build b (pid ${pidA} → ${chatPid(A.path)})`);
   R.check(codeMsgs(a3).every((m) => m.state !== "older"), "t4: the reloaded chat shows no badge");
-  // Reload now on a current chat is refused.
+  // Reload now on a current chat answers "current", never an error, and reloads nothing.
   const f2 = a3.got.length;
+  const pidA2 = chatPid(A.path);
   a3.send({ type: "reload_code" });
-  const refusal = await a3.until((m) => m.type === "error", 10000, "the refusal", f2).catch(() => null);
-  R.check(/already runs the current code/.test(refusal?.message ?? ""), `t4: Reload now on a current chat is refused ("${refusal?.message}")`);
+  const answer = await a3.until((m) => m.type === "code" || m.type === "error", 10000, "the answer", f2).catch(() => null);
+  await sleep(2000);
+  R.check(answer?.type === "code" && answer.state === "current" && chatPid(A.path) === pidA2, `t4: Reload now on a current chat answers {code: current} and reloads nothing (${JSON.stringify(answer)})`);
   a2.close();
   a3.close();
   await teardown();

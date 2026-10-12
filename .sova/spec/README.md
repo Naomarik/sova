@@ -29,7 +29,6 @@ and labels. [USAGE.md](USAGE.md) has the commands.
 | `claims/<ns>/<name>.md` | One document. The H1 `# §ns/name — Title` is its lede, and each H2 `## §ns.name/slug — Title` is a child. Plain H3 and deeper are prose inside that child. |
 | `drafts/` | Proposed changes, one full copy per draft. Local only. |
 | `reviews/` | Review packets and records. Local only. |
-| `tools/` | Vendored copies of the tools. Check their hashes first ([USAGE.md](USAGE.md)). |
 
 ## Reading a claim
 
@@ -51,7 +50,7 @@ instructions that point at them go in together, so no link lands dangling:
 
 ```sh
 git add .sova/spec/.gitignore .sova/spec/README.md .sova/spec/USAGE.md .sova/spec/manifest.json \
-  .sova/spec/claims .sova/spec/tools pi-config/extensions/spec
+  .sova/spec/claims pi-config/extensions/spec
 git add -p AGENTS.md agents CONTRIBUTING.md pi-config/README.md pi-config/extensions/mode \
   .claude/skills/fold-ai-dev-design/SKILL.md .claude/skills/fold-ai-dev-design/.build/audit.mjs
 git diff --cached --stat

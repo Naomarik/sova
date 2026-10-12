@@ -917,6 +917,7 @@ async function t10() {
 async function t11() {
   await teardown();
   await boot({ extra: { SOVA_CHAT_TEST_SERVED: "1" } });
+  const servedFrom = readLines(join(sova, "chats", "test-served.jsonl")).length;
   const ov = await openOn(await overseer());
   await turn(ov, "say ok");
   prompt(ov.s, "[served] run it");
@@ -938,7 +939,7 @@ async function t11() {
   await sleep(1500);
   const results = toolResults(ov.path).filter((e) => /trial_served_sleep|outcome is unknown|SERVED-DONE/.test(JSON.stringify(e)));
   R.check(results.length === 1 && /outcome is unknown/.test(JSON.stringify(results[0])), `t11: the tool result is the unknown-outcome text (${resultText(results[0])})`);
-  const starts = readLines(join(sova, "chats", "test-served.jsonl")).filter((e) => e.event === "start").length;
+  const starts = readLines(join(sova, "chats", "test-served.jsonl")).slice(servedFrom).filter((e) => e.event === "start").length;
   R.check(starts === 1, `t11: the action ran once (${starts} starts)`);
   R.check(mockLog(mock.log).filter((e) => /TRIAL-B/.test(e.userText ?? "") && !e.afterTool).length === 1, "t11: the queued message ran once");
   R.check(userEntriesWith(ov.path, "TRIAL-B") === 1, `t11: the queued message is in the file once (${userEntriesWith(ov.path, "TRIAL-B")})`);

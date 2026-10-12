@@ -9,7 +9,16 @@ import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { after, test } from "node:test";
 import type { ServerToolDecl } from "../../shared/chat-runtime";
-import { type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf, NOT_RUN_NO_SERVER, OUTCOME_UNKNOWN } from "../../shared/chat-runtime-wire";
+import {
+  CHAT_WIRE_PROTO,
+  type ChatRuntimeSettings,
+  type ChatWireType,
+  DEFAULT_RUNTIME_SETTINGS,
+  type ExitCause,
+  type FrameOf,
+  NOT_RUN_NO_SERVER,
+  OUTCOME_UNKNOWN,
+} from "../../shared/chat-runtime-wire";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chat-host-test-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -20,9 +29,9 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { ChatRuntimeHost } = await import("./host");
+const { ChatRuntimeHost, GONE_CALL } = await import("./host");
 const { Link, awaitFrame } = await import("./link");
-const { disposeAllChats, serverToolSpec } = await import("../chat-manager");
+const { disposeAllChats, serverToolSpec, setSpecialSpec, specialSpecOf } = await import("../chat-manager");
 const { canonicalPath } = await import("../paths");
 const { readInflight } = await import("./inflight");
 
@@ -68,23 +77,24 @@ const quiet = () => {};
 let epoch = 100;
 
 /** A host for a fresh session, and a "server" linked to it as controller. */
-async function setup(o: { build?: string; serverBuild?: string; settings?: Partial<ChatRuntimeSettings>; open?: boolean } = {}) {
+async function setup(o: { build?: string; serverBuild?: string; settings?: Partial<ChatRuntimeSettings>; open?: boolean; proto?: number; served?: ServerToolDecl[] } = {}) {
   const s = session();
   const exits: ExitCause[] = [];
   const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: o.build ?? "b1", startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000 });
   const settings = { ...DEFAULT_RUNTIME_SETTINGS, ...o.settings };
-  const connect = (since: number | null = null, build = o.serverBuild ?? o.build ?? "b1") => {
+  const connect = (since: number | null = null, build = o.serverBuild ?? o.build ?? "b1", proto = o.proto ?? CHAT_WIRE_PROTO) => {
     const [a, b] = pair();
     const runtimeEnd = new Link(a as never, { log: quiet });
     const server = new Link(b as never, { log: quiet });
     const e = ++epoch;
-    host.onControl(runtimeEnd, { t: "control", proto: 1, epoch: e, serverPid: 1, serverStartedAt: 1, build, since, settings });
+    runtimeEnd.peerProto = proto; // as serveLink sets it from the control
+    host.onControl(runtimeEnd, { t: "control", proto, epoch: e, serverPid: 1, serverStartedAt: 1, build, since, settings });
     return { server, runtimeEnd, epoch: e, drop: () => (a.destroy(), b.destroy()) };
   };
   const ctl = connect();
   if (o.open !== false) {
     const opened = awaitFrame(ctl.server, "opened", 5_000);
-    ctl.server.send({ t: "open", id: "o1", path: s.path, force: true, link: null, served: [] });
+    ctl.server.send({ t: "open", id: "o1", path: s.path, force: true, link: null, served: o.served ?? [] });
     const f = await opened;
     assert.equal(f.ok, true, JSON.stringify(f));
   }
@@ -99,7 +109,7 @@ async function setup(o: { build?: string; serverBuild?: string; settings?: Parti
 }
 
 /** Collect a link's frames of one type. */
-function collect<T extends FrameOf<"client.send">["t"] | "state" | "event" | "events.gap" | "reload.request" | "tool.call" | "exit" | "drained">(link: InstanceType<typeof Link>, t: T) {
+function collect<T extends ChatWireType>(link: InstanceType<typeof Link>, t: T) {
   const got: FrameOf<T>[] = [];
   link.on(t, (f) => got.push(f as FrameOf<T>));
   return got;
@@ -311,4 +321,237 @@ test("code: a current chat answers Reload now with current, to that pane only", 
   t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
   await settle();
   assert.deepEqual(sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code"), [{ type: "code", state: "current" }]);
+});
+
+// ---- stage 3: the transport a special loadout's chat rides ---------------------------------------
+
+test("wait-asks: queued with no server, written to the next controller, answered; not quiet meanwhile", async () => {
+  const t = await setup({ settings: { serverToolWaitMs: 400 } });
+  t.ctl.drop();
+  await settle();
+  const asked = t.host.waitAsk("special.runStart", { leafId: "a1", images: false });
+  await settle(30);
+  const next = t.connect();
+  const asks = collect(next.server, "ask");
+  const states = collect(next.server, "state");
+  await settle();
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0]!.method, "special.runStart");
+  assert.deepEqual(asks[0]!.args, { leafId: "a1", images: false });
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a wait-ask in flight is not quiet");
+  assert.equal(states.at(-1)?.mirror.quiet.hooks, 1);
+  const answer = { prompt: { appendSystemPrompt: "p" } };
+  next.server.send({ t: "answer", id: asks[0]!.id, ok: true, result: answer });
+  assert.deepEqual(await asked, answer);
+  await settle();
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, true);
+  assert.equal(states.at(-1)?.mirror.quiet.hooks, 0);
+
+  // Written, then the server went: written again to the next one.
+  const again = t.host.waitAsk("special.compact", { leafId: null });
+  await settle();
+  next.drop();
+  await settle();
+  const third = t.connect();
+  const asks3 = collect(third.server, "ask");
+  await settle();
+  assert.equal(asks3.length, 1);
+  third.server.send({ t: "answer", id: asks3[0]!.id, ok: false, error: { message: "nope" } });
+  await assert.rejects(again, /nope/);
+
+  // No server in time: fails with the not-run text.
+  third.drop();
+  await settle();
+  await assert.rejects(t.host.waitAsk("powers.sessions", {}), (e: Error) => e.message === NOT_RUN_NO_SERVER);
+});
+
+test("run events: facts kept until acked and written again first at the next control; ticks dropped without a server", async () => {
+  const t = await setup({ settings: { serverToolWaitMs: 2_000 } });
+  const runs = collect(t.ctl.server, "run");
+  t.host.runEvent({ type: "run.start", tag: "look:1" });
+  t.host.runEvent({ type: "entry.appended" });
+  t.host.runEvent({ type: "user.entered", card: null });
+  await settle();
+  assert.deepEqual(runs.map((f) => [f.n, f.event.type]), [[1, "run.start"], [2, "entry.appended"], [3, "user.entered"]]);
+  t.ctl.server.send({ t: "run.ack", n: 1 });
+  await settle();
+  t.ctl.drop();
+  await settle();
+  // Without a server: facts wait, ticks go nowhere.
+  t.host.runEvent({ type: "message.end" });
+  t.host.runEvent({ type: "run.settled" });
+  // A served call and a wait-ask made meanwhile go after the facts.
+  const tool = serverToolSpec(t.path, { name: "trial_tool", label: "Trial", description: "d", parameters: { type: "object" } });
+  const ran = tool.execute("tc-r", {}, undefined, undefined, undefined);
+  const asked = t.host.waitAsk("special.agentEnd", { text: "x" });
+  const next = t.connect();
+  const order: string[] = [];
+  for (const type of ["state", "run", "ask", "tool.call"] as const) next.server.on(type, (f) => order.push(type === "run" ? `run ${(f as FrameOf<"run">).n}` : type));
+  const states = collect(next.server, "state");
+  await settle();
+  assert.deepEqual(order, ["state", "run 3", "run 4", "ask", "tool.call"], "state, unacked facts in order, asks, then calls");
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, false);
+  next.server.send({ t: "run.ack", n: 4 });
+  await settle();
+  assert.equal(states.at(-1)?.mirror.quiet.outbox, 0);
+  next.drop();
+  await Promise.all([assert.rejects(ran), assert.rejects(asked)]);
+});
+
+test("the reply's text is coalesced, and what waits goes before the next event", async () => {
+  const t = await setup();
+  const runs = collect(t.ctl.server, "run");
+  for (const text of ["a", "ab", "abc"]) t.host.runEvent({ type: "reply.text", text });
+  t.host.runEvent({ type: "message.end" });
+  await settle(10);
+  assert.deepEqual(runs.map((f) => f.event), [{ type: "reply.text", text: "abc" }, { type: "message.end" }]);
+  t.host.runEvent({ type: "reply.text", text: "abcd" });
+  await settle(10);
+  assert.equal(runs.length, 2, "not yet: at most one every 100 ms");
+  await settle(150);
+  assert.deepEqual(runs.at(-1)?.event, { type: "reply.text", text: "abcd" });
+  assert.deepEqual(runs.map((f) => f.n), [1, 2, 3]);
+});
+
+test("a stage-2 server gets no run events, wait-asks or actions; a special open is refused", async () => {
+  const t = await setup({ proto: 1, settings: { serverToolWaitMs: 200 } });
+  const runs = collect(t.ctl.server, "run");
+  const asks = collect(t.ctl.server, "ask");
+  const calls = collect(t.ctl.server, "tool.call");
+  t.host.runEvent({ type: "run.start" });
+  const asked = t.host.waitAsk("special.runStart", { leafId: null, images: false });
+  const acted = t.host.action("@saveChoice", { model: "x" });
+  await settle();
+  assert.equal(runs.length + asks.length + calls.length, 0);
+  await assert.rejects(asked, (e: Error) => e.message === NOT_RUN_NO_SERVER);
+  assert.deepEqual(await acted, { ok: false, error: { message: NOT_RUN_NO_SERVER } });
+  const t2 = await setup({ proto: 1, open: false });
+  const opened = awaitFrame(t2.ctl.server, "opened", 2_000);
+  t2.ctl.server.send({ t: "open", id: "o9", path: t2.path, force: true, link: null, served: [], special: { kind: "baton" } as never });
+  const f = await opened;
+  assert.equal(f.ok, false);
+});
+
+test("actions: a call under an effect id of their own; unknown after a drop, never sent again", async () => {
+  const t = await setup({ settings: { serverToolWaitMs: 2_000 } });
+  const calls = collect(t.ctl.server, "tool.call");
+  const sent = t.host.action("@clientSend", { images: 0, text: "hi" });
+  await settle();
+  assert.equal(calls.length, 1);
+  const c = calls[0]!.call;
+  assert.equal(c.name, "@clientSend");
+  assert.equal(c.toolCallId, "@clientSend");
+  assert.deepEqual(c.params, { images: 0, text: "hi" });
+  assert.match(c.effectId, /#@clientSend#/);
+  t.ctl.server.send({ t: "tool.result", effectId: c.effectId, outcome: { ok: true, result: { by: "op" } } });
+  assert.deepEqual(await sent, { ok: true, result: { by: "op" } });
+
+  const lost = t.host.action("@saveChoice", { thinking: "high" });
+  await settle();
+  t.ctl.drop();
+  await settle();
+  const next = t.connect();
+  const nextCalls = collect(next.server, "tool.call");
+  assert.deepEqual(await lost, { ok: false, unknown: true, error: { message: OUTCOME_UNKNOWN } });
+  await settle();
+  assert.equal(nextCalls.length, 0);
+});
+
+test("call-backs: an append within a served call answers its entry and moves the leaf; a nested tool runs inside the call; a call-back for a settled call is refused", async () => {
+  const decl: ServerToolDecl = { name: "trial_nested", label: "Nested", description: "d", parameters: { type: "object" } };
+  const t = await setup({ served: [decl] });
+  const calls = collect(t.ctl.server, "tool.call");
+  const backs = collect(t.ctl.server, "tool.backResult");
+  const parent = serverToolSpec(t.path, { name: "trial_parent", label: "Parent", description: "d", parameters: { type: "object" } });
+  const ran = parent.execute("tc-p", {}, undefined, undefined, undefined);
+  await settle();
+  const effectId = calls[0]!.call.effectId;
+
+  t.ctl.server.send({ t: "tool.back", effectId, id: "b1", op: "append", kind: "sova-fanout-member", data: { who: "x" }, announce: false });
+  await settle();
+  const b1 = backs.find((b) => b.id === "b1")!;
+  assert.ok(b1.ok, JSON.stringify(b1));
+  if (b1.ok) {
+    const r = b1.result as { entryId: string; entry: { id: string } };
+    assert.equal(r.entry.id, r.entryId);
+    assert.equal(t.host.heldChat()!.leafId(), r.entryId);
+  }
+  t.ctl.server.send({ t: "tool.back", effectId, id: "b2", op: "append", kind: "no-such-kind", data: {}, announce: false });
+  t.ctl.server.send({ t: "tool.back", effectId, id: "b3", op: "append", kind: "sova-fanout-member", data: {}, announce: true });
+  t.ctl.server.send({ t: "tool.back", effectId, id: "b4", op: "tool", name: "no_such_tool", toolCallId: "n1", params: {} });
+  await settle();
+  assert.deepEqual(backs.find((b) => b.id === "b2"), { t: "tool.backResult", id: "b2", ok: false, error: { message: "Unknown state kind: no-such-kind" } });
+  assert.equal(backs.find((b) => b.id === "b3")?.ok, false, "an ordinary chat has no special writer");
+  assert.deepEqual(backs.find((b) => b.id === "b4"), { t: "tool.backResult", id: "b4", ok: false, error: { message: "No such tool in this chat: no_such_tool" } });
+
+  // The chat's own registered tool (a served one here): run inside the parent call; its own call goes to the server.
+  t.ctl.server.send({ t: "tool.back", effectId, id: "b5", op: "tool", name: "trial_nested", toolCallId: "n2", params: { q: 1 } });
+  await settle();
+  const nested = calls.find((c) => c.call.name === "trial_nested");
+  assert.ok(nested, "the nested tool's call reached the server");
+  t.ctl.server.send({ t: "tool.result", effectId: nested!.call.effectId, outcome: { ok: true, result: { content: [{ type: "text", text: "inner" }], details: null } } });
+  await settle();
+  assert.deepEqual(backs.find((b) => b.id === "b5"), { t: "tool.backResult", id: "b5", ok: true, result: { content: [{ type: "text", text: "inner" }], details: null } });
+
+  t.ctl.server.send({ t: "tool.result", effectId, outcome: { ok: true, result: { content: [], details: null } } });
+  await ran;
+  t.ctl.server.send({ t: "tool.back", effectId, id: "b6", op: "append", kind: "sova-fanout-member", data: {}, announce: false });
+  await settle();
+  assert.deepEqual(backs.find((b) => b.id === "b6"), { t: "tool.backResult", id: "b6", ok: false, error: { message: GONE_CALL } });
+});
+
+test("session powers in a chat process: reads wait for the server; a send is an action whose unknown outcome keeps the spend", async () => {
+  const t = await setup({ settings: { serverToolWaitMs: 2_000 } });
+  const { sessionPowersTools, SessionLimits, RunState } = await import("../session-powers");
+  const { DEFAULT_LIMITS } = await import("../../shared/profiles");
+  const profile = { id: "p", label: "P", icon: "branch", description: "", remove: [], grant: ["sessions.read", "sessions.message", "sessions.all"], singleton: false, limits: DEFAULT_LIMITS, overseerMayStart: false } as never;
+  const limits = new SessionLimits("me", DEFAULT_LIMITS, null);
+  const tools = sessionPowersTools({ sessionId: "me", cwd, title: () => "me", profile, run: new RunState(limits), limits }, () => join(agentDir, "actions.jsonl"));
+  const asks = collect(t.ctl.server, "ask");
+  const calls = collect(t.ctl.server, "tool.call");
+  const other = { id: "s2", path: "/s/s2", cwd, title: "Other", lastActiveAt: "2026-10-12T00:00:00.000Z", archived: false, busy: false };
+  const answer = (method: string, result: unknown) => {
+    const a = asks.find((x) => x.method === method && !(x as { done?: true }).done)!;
+    (a as { done?: true }).done = true;
+    t.ctl.server.send({ t: "answer", id: a.id, ok: true, result });
+  };
+
+  // session_list: the sessions and what this server hosts, asked of the server.
+  const listed = tools.find((x) => x.name === "session_list")!.execute("l1", {}, undefined, undefined, undefined as never);
+  await settle();
+  answer("powers.sessions", [other]);
+  await settle();
+  answer("powers.held", { streaming: true, queued: 0 });
+  const out = ((await listed).content[0] as { text: string }).text;
+  assert.match(out, /^1 session\.\n- s2 · "Other" · .* · hosted here$/);
+
+  // session_send: resolved through the server, sent as @powers.send; the server stops mid-send.
+  const sending = tools.find((x) => x.name === "session_send")!.execute("s1", { session: "s2", text: "hello" }, undefined, undefined, undefined as never);
+  await settle();
+  answer("powers.session", other);
+  await settle();
+  const send = calls.find((c) => c.call.name === "@powers.send")!;
+  assert.ok(send, "the send is an action");
+  const p = send.call.params as { path: string; text: string; from: { sessionId: string; hop: number }; invite: { target: string; text: string } };
+  assert.equal(p.path, "/s/s2");
+  assert.match(p.text, /\nhello$/);
+  assert.deepEqual(p.invite, { target: "s2", text: "hello" });
+  assert.equal(limits.counts().own, 1, "spent before the hand-off");
+  t.ctl.drop();
+  await settle();
+  t.connect();
+  await assert.rejects(sending, (e: Error) => e.message === OUTCOME_UNKNOWN);
+  assert.equal(limits.counts().own, 1, "an unknown outcome keeps the spend");
+});
+
+test("push special: the server's word on a special chat's composer reaches the chat's spec", async () => {
+  const t = await setup();
+  setSpecialSpec(t.path, { kind: "project-overseer", composerClosed: null } as never);
+  t.ctl.server.send({ t: "push", kind: "special", composerClosed: "This project is archived." });
+  await settle();
+  assert.equal(specialSpecOf(t.path)?.composerClosed, "This project is archived.");
+  t.ctl.server.send({ t: "push", kind: "special", composerClosed: null });
+  await settle();
+  assert.equal(specialSpecOf(t.path)?.composerClosed, null);
+  setSpecialSpec(t.path, null);
 });

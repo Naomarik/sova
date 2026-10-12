@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { DetachedDriver, realExec, SystemdDriver, type Driver, type Exec, type UnitStatus } from "../project-services/drivers";
+import { DetachedDriver, envFileKeeps, realExec, SystemdDriver, type Driver, type Exec, type UnitStatus } from "../project-services/drivers";
 import { stateHash } from "../project-services/store";
 import { stateRoot } from "../state-root";
 
@@ -268,6 +268,7 @@ export function exitOfLog(lines: readonly string[]): { exit: number | null; sign
 export class ChatSupervisor {
   private chats = new Map<string, Tracked>();
   private ticking = false;
+  private skippedEnv = new Set<string>();
   private readonly regDir: () => string;
   private readonly deaths: () => string;
   private readonly sockOf: (chatId: string, suffix?: string) => string;
@@ -337,6 +338,12 @@ export class ChatSupervisor {
   /** Start `unit` for `chat` and wait for its main process; the record is the caller's to write. */
   private async spawn(chat: ChatLaunch, unit: string, sock: string): Promise<ChatRecord> {
     const { argv, env, build } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
+    // What a unit's env file can't carry is dropped there: said once per name, so a missing variable is visible.
+    for (const [k, v] of Object.entries(env))
+      if (!envFileKeeps(k, v) && !this.skippedEnv.has(k)) {
+        this.skippedEnv.add(k);
+        this.log(`env ${k} is not passed to chat processes (${/[\n\r]/.test(v) ? "a value on more than one line" : "not a variable name"})`);
+      }
     const rec: ChatRecord = { ...chat, unit, pid: null, sock, epoch: this.deps.epoch, ...(build ? { build } : {}), startedAt: new Date(this.now()).toISOString() };
     await this.deps.driver.start({ unit, argv, cwd: this.deps.workdir ?? REPO_ROOT, env });
     const until = this.now() + (this.deps.startWaitMs ?? 10_000);

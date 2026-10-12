@@ -68,6 +68,15 @@ test("a chat starts as its own unit, is recorded with its pid, socket and epoch,
   assert.equal(d.started.length, 1);
 });
 
+test("a variable the env file can't carry is said once per name", async () => {
+  const d = new FakeDriver();
+  const lines: string[] = [];
+  const { sup } = make(d, { launch: () => ({ argv: ["b"], env: { OK: "1", "BASH_FUNC_x%%": "() { :; }", ML: "a\nb" } }), log: (l) => void lines.push(l) });
+  await sup.start(chat);
+  await sup.start({ ...chat, chatId: "c2" });
+  assert.deepEqual(lines.filter((l) => l.startsWith("env ")), ["env BASH_FUNC_x%% is not passed to chat processes (not a variable name)", "env ML is not passed to chat processes (a value on more than one line)"]);
+});
+
 test("a systemd-run failure leaves no record", async () => {
   const d = new FakeDriver();
   d.failNextStart = "systemd-run failed: boom";

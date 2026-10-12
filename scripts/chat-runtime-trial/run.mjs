@@ -27,6 +27,8 @@
 //     t6        with the switch on, the Overseer's chat stays in the server
 //     t7        q5: a server-hosted action cut by a restart reports "outcome unknown" and ran once
 //     t8        two servers on different agent dirs never adopt or stop each other's chats
+//     t9        an outside SIGTERM to a chat process with a pane attached: the pane gets a quiet
+//               reloaded (no crash text), reconnects within seconds and gets a fresh hello
 //     real      (only with --model) t1 on a real model
 //
 //   --driver <d>      detached (default with --mode child) or systemd (default with --mode unit)
@@ -36,7 +38,7 @@
 //                     Default: unit when the user manager answers, else child
 //   --port <n>        the server's port (default: a free one)
 //   --scratch <dir>   scratch root (default $TMPDIR/chat-runtime-trial-<tag>); never under ~/.pi
-//   --slice <name>    stand-in slice for chat units (default sova-chats-test-<tag>.slice)
+//   --slice <name>    stand-in slice for chat units (default sovatrial<tag>.slice, top-level)
 //   --model <ref>     add the `real` check on this model (e.g. zai/glm-5.3; needs --auth)
 //   --auth <file>     an auth.json copied into the scratch agent dir
 //   --keep            leave the scratch agent dir even when everything passed
@@ -74,7 +76,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -85,7 +87,9 @@ const driver = opt("driver", mode === "unit" ? "systemd" : "detached");
 if (driver === "systemd" && !userBus()) (console.error("--driver systemd needs the systemd user manager (none answers here)"), process.exit(2));
 const fixedPort = opt("port") ? Number(opt("port")) : null;
 const scratch = opt("scratch", join(process.env.TMPDIR || tmpdir(), `chat-runtime-trial-${tag}`));
-const slice = opt("slice", `sova-chats-test-${tag}.slice`);
+// No dash before the tag: a dash nests a slice under its prefix (sova-chats-test-1.slice sits inside
+// sova-chats.slice); this one is a top-level slice of its own.
+const slice = opt("slice", `sovatrial${tag}.slice`);
 mkdirSync(scratch, { recursive: true });
 const R = recorder(join(scratch, "results.json"));
 console.log(`chat-runtime-trial: server as ${mode}, chats on the ${driver} driver${driver === "systemd" ? ` in ${slice}` : ""}; scratch ${scratch}`);
@@ -700,9 +704,33 @@ async function t8() {
   R.check(chatPid(a.path) === pidA, "t8: stopping B left A's chat running");
 }
 
+async function t9() {
+  const { path, s } = await newChat();
+  prompt(s, "say ok");
+  await settled(s, 0, 60000);
+  const pid1 = chatPid(path);
+  if (!R.check(pid1, "t9: the chat's process is found")) return;
+  const from = s.got.length;
+  const closed = new Promise((r) => s.ws.once("close", (code) => r(code)));
+  process.kill(pid1, "SIGTERM");
+  R.note(`t9: SIGTERM to chat process ${pid1}`);
+  const bye = await s.until((m) => m.type === "error", 10000, "the pane's notice", from).catch(() => null);
+  R.check(bye?.code === "reloaded" && !/stopped unexpectedly/.test(bye?.message ?? ""), `t9: the pane got a quiet reloaded, no crash text (${JSON.stringify(bye)})`);
+  const code = await Promise.race([closed, sleep(10000).then(() => "still open")]);
+  R.check(code !== "still open", `t9: the pane's socket was closed so the browser reconnects (${code})`);
+  const t0 = Date.now();
+  const s2 = await chat(c, path, 10000).catch((e) => (R.note(String(e)), null));
+  R.check(s2?.hello && Date.now() - t0 < 10000, `t9: the reconnect got a fresh hello within seconds (${Date.now() - t0} ms)`);
+  R.check(s2 && JSON.stringify(s2.hello.items).includes("ok"), "t9: the hello shows the chat's history");
+  const pid2 = chatPid(path);
+  R.check(pid2 && pid2 !== pid1, `t9: a new process hosts the chat (pid ${pid1} → ${pid2 || "none"})`);
+  R.check(deaths(path).length === 0, "t9: an outside SIGTERM is no death");
+  s2?.close();
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, real: () => t1(opt("model")) };
 let code = 0;
 try {
   await boot();

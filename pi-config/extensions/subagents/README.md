@@ -121,10 +121,9 @@ Agent options work both inside `agents` and in the single-worker shorthand:
   package manifest, ignoring any per-extension filter in `settings.json`. Local
   paths must exist. This extension's own directory is refused, so children still
   cannot spawn children. With `extensions` set, the `tools` allowlist restricts
-  only built-in tools (Pi's `--tools` would also strip the extension's tools);
-  every tool the listed extensions register stays enabled.
+  only built-in tools; every tool the listed extensions register stays enabled.
 - `fork`: default `false`. `true` starts the child from a copy of the parent's
-  session file (`pi --fork`), so it sees this conversation's full history. The
+  session file, so it sees this conversation's full history. The
   parent's file is never written by the child; the copy records it as
   `parentSession`. The parent's in-flight `agent_spawn` call has no result yet
   in the copy; Pi inserts a synthetic empty result for it. Requires a persisted
@@ -153,7 +152,7 @@ Omitting mode preserves existing Pi steering. A queued acknowledgment is not tas
 completion.
 
 Pi itself continues queued messages after a failed run (its own queue, not
-this extension's). The runner cannot reliably prevent that, so it reports it: the
+this extension's). The manager cannot reliably prevent that, so it reports it: the
 failed run is recorded in the transcript, and the task that finally settles is
 reported with outcome `error` and an error naming the earlier failure, even if
 the queued continuation succeeded. Automatic retries and overflow-compaction
@@ -162,7 +161,7 @@ retries are not treated as failures.
 A Pi steer's task (and its `finalOutput`) begins at Pi's next run start, or at
 the steer's user message when Pi delivers it inside the running run. Pi expands
 `/skill:` commands and prompt templates, and input extensions may transform text,
-before queueing, so the runner follows Pi's `queue_update` events: the entry Pi
+before queueing, so the manager follows Pi's `queue_update` events: the entry Pi
 appends while a steer awaits acceptance is taken as that steer, and its removal
 marks the next user message with that text as the delivery. If an earlier steer
 starts while a later one awaits acceptance and the later one is rejected, the
@@ -180,36 +179,23 @@ this correlation is best-effort:
   text marks in-run delivery; an expanded steer then starts its task at the next
   run start.
 
-A new Pi worker must answer its first `get_state` within 120 seconds (startup
-and extension loading); the task prompt is sent only after that, so slow startup
-does not use up the prompt's acceptance deadline. Pi command acceptance has a
-15-second response deadline. Pi accepts a prompt only after its preflight, which
-can compact the session (for example a large `fork`) before accepting. While
-compaction events show progress and Pi still answers `get_state`, the wait is
-extended one 15-second window at a time, up to 10 minutes in total. Without
-that progress, or if Pi stops answering, the normal deadline applies. The prompt
-is never resent, and an acknowledgment that arrives after the runner gave up is
-ignored (the worker has already been stopped as delivery unknown). Compaction
-events are not tied to a particular prompt: a running task's own compaction can
-also extend a queued steer's wait, still within the 10-minute cap. While a steer
-awaits acceptance, its `queue_update` and even its delivery may arrive before the
-acknowledgment; the task boundary moves at delivery either way. A longer wait
-also widens the window in which another client's or an extension's queue entry
-can be mistaken for the steer (see above). Replacement instructions are not silently
-assumed to have run. Strict protocol parsing and fail-closed handling are intentional
-safeguards.
+A worker starts when its chat process has opened its session; the task is then sent
+as a keyed message, never twice. A steer, follow-up or team message is accepted when the
+worker's chat takes it (Sova's server answers for it). A worker that refuses it reports why,
+and nothing changes. If Sova's server doesn't answer within a minute (an outage), the
+delivery is **unknown**: the steer is undone as for a refusal, the transcript gets one
+error line naming the message, `agent_steer`, `team_msg` and the team action report
+delivery unknown, the worker is **never stopped**, and nothing is sent again. Should
+the message land after all, its run shows as the worker's next task. While a steer
+awaits acceptance, its `queue_update` and even its delivery may arrive first; the task
+boundary moves at delivery either way. Replacement instructions are not silently assumed
+to have run.
 
 Cancelling `agent_steer` **only cancels the acceptance wait, not the worker**.
 Instructions already sent may still execute: the cancellation reports delivery
-unknown rather than claiming rejection or task completion. For Pi, late
-acknowledgments and task events continue updating the worker; cancelling does
-not cause a delayed acceptance-timeout kill. If the acknowledgment never arrives,
-the runner asks Pi for its state (`get_state`): when two consecutive readings show
-no active or queued run, the worker returns to `waiting` with outcome `error`
-("acceptance unknown"), not success; if Pi does not answer, the worker stays
-`running` with an error diagnostic and must be stopped explicitly. Inspect `agent_list` /
-`agent_transcript` before retrying to avoid duplicate work. Use `agent_kill`
-explicitly to stop a worker.
+unknown rather than claiming rejection or task completion, and the worker's
+events keep updating it. Inspect `agent_list` / `agent_transcript` before
+retrying to avoid duplicate work. Use `agent_kill` explicitly to stop a worker.
 
 Wait for selected workers or a whole run:
 
@@ -248,9 +234,10 @@ registered by another extension is refused while the sandbox is on or the start 
 worktree-confined, since nothing confines it.
 
 `useWorktreeConfig: true` (agent_spawn, pi or claude-code, cwd inside an active tracked worktree with a
-`.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, `--session-dir`
-the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
-tree's `extensions/mode` loaded by path with `--major normal --minor spec`, and `--approve`.
+`.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, its session
+in the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
+tree's `extensions/mode` loaded by path with the flags `major normal` and `minor spec`, and the
+project's files trusted as for every chat.
 Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
 `agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
 through `extensions`. The tree's mode extension learns it runs in a worker from the worker marker
@@ -277,8 +264,8 @@ When the parent runs on a remote target (pi-config's `remote` extension, `--targ
 such sessions in an empty local placeholder directory), every worker runs on the target as well —
 no backend ever gets local tools against the placeholder:
 
-- pi workers, a Claude Code worker included, load the remote extension (`-e …/remote/index.ts
-  --target <name>`; the runner's `flags` option), so their built-in tools are the remote ones
+- pi workers, a Claude Code worker included, load the remote extension (`remote/index.ts` with the flag
+  `target <name>`), so their built-in tools are the remote ones
   under the same names. Tool allowlists keep working by name.
 - other backends are refused in a remote session, as is any spawn while the session's target
   failed to load.
@@ -291,8 +278,8 @@ extension's README ("Workers").
 
 `backend: "claude-code"` (agent_spawn, a team member, a coordinator or monitor, Delegate) is
 mapped onto a pi worker by `claude-workers.ts` (`claudeOnPi`, inside `spawnBatch`) and recorded
-with backend `pi`. The runner then loads the claude-code provider into the child
-(`claudeCodeProviderLoad`) and passes the model id with `--claude-code-model`, so a Claude id the
+with backend `pi`. Its loadout then includes the claude-code provider
+(`claudeCodeProviderLoad`) with the model id in the `claude-code-model` flag, so a Claude id the
 catalog doesn't list still runs (the result says "Not verified").
 
 - `model`: a Claude catalog id (an old alias read as its catalog model), default the current
@@ -642,7 +629,7 @@ for that call with a warning line in the result; the extension never writes the 
   back from the `pause`/`resume` events on the branch at `session_start`, and a paused team's
   monitor that rejoins (reattached, or `agent_resume`) is sent the resume check at once.
 - **Context column.** `team_roster` and `team_list` show `context 123k/200k (61%)` per live
-  member: the runner's `contextTokens` over the spawned model's window (a Claude model: the
+  member: the worker's `contextTokens` over the spawned model's window (a Claude model: the
   catalog's, through the extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M
   model, else 200k; any other: the registry), rounded down.
 - **Handovers.** Notes live in `<agent dir>/sova/teams/<parent session id>/<team_id>/handoffs/<role>.md`
@@ -701,7 +688,7 @@ Children open with extension discovery off and only their listed extensions, so 
 do not receive the `agent_*` tools for recursive delegation. Parent extension-provided tools, providers,
 safety hooks, or overridden tool implementations are **not inherited** unless
 their source is listed in `extensions`. Inheriting a tool name does not copy an
-extension's implementation. Use only providers available to a standalone Pi child.
+extension's implementation. Use only providers a worker's own process can load.
 A forked child (`fork: true`) inherits the conversation, not the extensions.
 Pi team members are the one exception with tools: they load `member.ts` from this package,
 which registers only the mailbox-backed team tools described above (Claude Code members
@@ -768,7 +755,7 @@ the monitor and tool listings; `agent_list` reports cumulative eviction counts.
 An evicted worker ID is never reassigned. Native session history on disk is not
 deleted; retain its path/ID if you need to inspect it later.
 
-The runner bounds its retained transcript and individual items. Older or oversized
+The manager bounds each worker's retained transcript and individual items. Older or oversized
 content is marked as omitted; the child's `sessionFile` is the canonical history.
 Tool text is capped at 47,000 bytes/2000 lines plus a truncation notice, under
 the 50,000 characters above which the Claude Code CLI replaces an MCP tool result
@@ -796,7 +783,7 @@ isolation.
 ## The shared fork core (`fork/`)
 
 One owner of every fork's prompt-cache logic, used by Sova's "Fork from here" (a new
-visible session, built by the server) and by background forks (a hidden pi child that
+visible session, built by the server) and by background forks (a hidden worker chat that
 works in a copy of the conversation and reports back: /explain's worker today). It is a
 library, not an extension: pi loads nothing from `fork/` by itself.
 

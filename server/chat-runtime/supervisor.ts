@@ -476,8 +476,10 @@ export class ChatSupervisor {
     if (announcedExit(logs, rec.pid)) return null;
     // A collected unit is gone at once: its journal still says how its main process ended.
     const said = exitOfLog(logs);
-    const exit = st.exit ?? said?.exit ?? null;
-    const signal = said?.signal ?? null;
+    // A signal the driver saw itself (the detached driver: `SIGKILL`) reads as the journal's (`KILL`).
+    const seen = st.signal?.replace(/^SIG/, "") ?? null;
+    const exit = seen ? null : (st.exit ?? said?.exit ?? null);
+    const signal = seen ?? said?.signal ?? null;
     if (exit === 0 && signal === null) return null;
     const tail = logs.filter((l) => !/(Main process exited|Failed with result|Consumed .* CPU time|^Stopped |^Started |^Stopping |Deactivated successfully)/.test(l)).slice(-LOG_TAIL);
     // When systemd wrote down the end: its "Main process exited" line, else the unit's failing or stopping.

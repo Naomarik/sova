@@ -24,6 +24,8 @@ export interface UnitStatus {
   pid: number | null;
   /** The main process's exit status, when it ended. */
   exit?: number | null;
+  /** The signal that ended the main process (`SIGKILL`), when the driver saw it. */
+  signal?: string;
   detail?: string;
 }
 
@@ -473,6 +475,7 @@ const RESTART_WINDOW_MS = 10_000;
 export class DetachedDriver implements Driver {
   readonly id = "detached" as const;
   private exits = new Map<string, number | null>();
+  private signals = new Map<string, string>();
   private readonly table: ProcTable;
   private readonly restartMs: number;
   private watch: NodeJS.Timeout | null = null;
@@ -537,7 +540,11 @@ export class DetachedDriver implements Driver {
         const pid = child.pid!;
         const rec: ProcRecord = { pid, start: this.table.startOf(pid) ?? "", clock: this.table.kind, argv: spec.argv, cwd: spec.cwd, env: spec.env, at: new Date().toISOString() };
         this.exits.delete(spec.unit);
-        child.once("exit", (code, sig) => this.exits.set(spec.unit, code ?? (sig ? 128 : null)));
+        this.signals.delete(spec.unit);
+        child.once("exit", (code, sig) => {
+          this.exits.set(spec.unit, code ?? (sig ? 128 : null));
+          if (sig) this.signals.set(spec.unit, sig);
+        });
         child.unref();
         ok(rec);
       });
@@ -650,10 +657,12 @@ export class DetachedDriver implements Driver {
     const exit = this.exits.get(unit);
     // Waiting to be started again, as systemd's auto-restart.
     if (this.opts.restart && this.watch && r.env && exit !== 0 && !this.gaveUp.has(unit)) return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart" };
+    const signal = this.signals.get(unit);
     return {
       state: exit === 0 ? "inactive" : "failed",
       pid: null,
       ...(exit !== undefined ? { exit } : {}),
+      ...(signal ? { signal } : {}),
       detail: this.gaveUp.has(unit) ? "start limit hit" : exit === undefined ? "exited" : `exited with ${exit}`,
     };
   }

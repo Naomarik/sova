@@ -59,7 +59,7 @@ export {
   setLinksSource,
   setOpeningChoice,
   setSingletonCheck,
-  warmClaudeCodeProvider,
+  warmChatRuntime,
 } from "./chat-manager";
 
 /** The controller epoch of this server's calls. One process: one controller, always current. */

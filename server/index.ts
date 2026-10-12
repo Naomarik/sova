@@ -23,11 +23,11 @@ import { startOutreach } from "./outreach/core";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
-import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, getModelRuntime, onAgentSettled, onChatEvent, onReceiverIdle, warmClaudeCodeProvider } from "./chat-handle";
+import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onReceiverIdle, warmChatRuntime } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { LIVE_DIR } from "./paths";
-import { agentRoot, stateRoot } from "./state-root";
+import { stateRoot } from "./state-root";
 import { cappedWebSocket } from "./runtime-quirks";
 import { decodeWorkers, teamDuties, invalidateUsageMemo, recordUsage, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
@@ -249,14 +249,8 @@ configureReadiness({
 
 // Register the Claude Code provider now rather than when the user first opens a session, so its
 // models are in GET /api/models for the picker straight away (§app.claude-code-provider/always-on).
-// Never fatal, with or without a `claude` CLI: see warmClaudeCodeProvider.
-void (async () => {
-  try {
-    await warmClaudeCodeProvider(await getModelRuntime(), agentRoot());
-  } catch (err) {
-    console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
-  }
-})();
+// Never fatal, with or without a `claude` CLI: the chat runtime's own start (warmChatRuntime).
+void warmChatRuntime();
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
 const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo, onCache: recordUsage });

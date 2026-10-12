@@ -72,6 +72,7 @@ import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
+import { agentRoot } from "./state-root";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -170,6 +171,21 @@ const DEFAULT_EXTENSION_FACTORIES = [
     Best-effort; never throws. */
 export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string): Promise<void> {
   return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES);
+}
+
+let runtimeWarm: Promise<void> | null = null;
+/**
+ * The chat runtime's own start, once per process: its instrumented model runtime (getModelRuntime
+ * counts every call it makes) with the Claude Code provider registered in it. A loadout that loads
+ * no extension (a project overseer, a baton) never registers the provider itself, so its open waits
+ * for this rather than for whoever else started the process. Best-effort; never throws.
+ */
+export function warmChatRuntime(): Promise<void> {
+  runtimeWarm ??= getModelRuntime().then(
+    (runtime) => warmClaudeCodeProvider(runtime, agentRoot()),
+    (err) => console.warn("[chat] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err)),
+  );
+  return runtimeWarm;
 }
 
 /** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
@@ -3332,6 +3348,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
     const kind = specialFor(read, path);
     const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
+    if (special?.resourceLoaderOptions.noExtensions) await warmChatRuntime();
     // An ordinary chat gets the default extensions plus the vis feedback extension
     // (server/vis-check.ts); the special loadouts keep exactly their own.
     const data = special ? null : (read.state.branch().latest(PROFILE)?.data ?? null);

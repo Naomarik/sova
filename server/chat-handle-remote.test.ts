@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatRunEvent, ServerToolCall } from "../shared/chat-runtime";
-import type { ChatRuntimeMirror, ChatWireFrame, ChatWireType, FrameOf, LinkEnd } from "../shared/chat-runtime-wire";
+import type { ChatRuntimeMirror, ChatWireFrame, ChatWireType, FrameOf } from "../shared/chat-runtime-wire";
+import type { LinkEnd } from "./chat-runtime/link";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chat-handle-remote-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;

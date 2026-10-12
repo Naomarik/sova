@@ -42,7 +42,7 @@ import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
 import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { piPrepare, toPiTool } from "./harness/pi/tools";
-import { specialLoadout, specialWriter } from "./chat-special";
+import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -2862,7 +2862,9 @@ class ChatSession {
           // In a baton session a participant's queued message is theirs, not the composer's to
           // take back: it enters the transcript instead (§app.baton/hand-off, nothing dropped).
           if (this.special === "baton") {
-            this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR).catch(fail);
+            // After the composer messages its kind is still attributing (@clientSend): a Stop pressed
+            // right after a message stops that message's turn, as it always did.
+            this.clientSends = this.clientSends.then(async () => void (await this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR))).catch(fail);
             return;
           }
           drainQueueThenAbort(this.harness, (m) => this.broadcast(m), this.queue).catch(fail);
@@ -3872,6 +3874,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     let unregisterUsage: (() => void) | undefined;
     const chat = new ChatSession(path, host, () => {
       unregisterUsage?.();
+      forgetSpecial(path);
       onDisposed();
     });
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).

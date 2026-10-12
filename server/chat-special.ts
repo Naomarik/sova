@@ -6,6 +6,7 @@
 // own. Imports only shared types, the adapter's tool and extension types, and pure helpers
 // (chat-special.test.ts holds the list).
 import type { RunStartAnswer, ServerToolDecl, SpecialSpec } from "../shared/chat-runtime";
+import { NOT_RUN_NO_SERVER } from "../shared/chat-runtime-wire";
 import type { HEntry, HookCtx, SessionStateWriter } from "../shared/harness";
 import type { SpecialPort } from "./chat-manager";
 import { authorNotes, batonContextPhrases, labelAuthors, redactContext } from "./author-context";
@@ -75,7 +76,9 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
       lastAnswer.set(chatId, a);
       return a;
     } catch (err) {
-      deps.log?.(`run start not answered (${err instanceof Error ? err.message : String(err)}); the last prompt runs, with no run note`);
+      // Only when no server answered in time: anything else (the kind's own refusal) is the run's error.
+      if (!(err instanceof Error && err.message === NOT_RUN_NO_SERVER)) throw err;
+      deps.log?.(`run start not answered (${err.message}); the last prompt runs, with no run note`);
       const last = lastAnswer.get(chatId) ?? spec.start;
       const { message: _m, ...rest } = last;
       return rest;

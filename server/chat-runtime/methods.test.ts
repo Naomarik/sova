@@ -1,7 +1,6 @@
 // Run: pnpm test -- server/chat-runtime/methods.test.ts. Keyed sends (al_3 stage 3 §5.1): a send
 // delivered again under its key gets the first receipt back and starts no second turn; a keyed,
-// tracked turn's end answers two asks (a retry after a lost reply), and both are forgotten after an
-// hour. The table is the one both handles run (chat-handle.ts in the server, host.ts in a chat process).
+// tracked turn's end answers every ask until an hour after it ended; keys are forgotten after an hour. The table is the one both handles run (chat-handle.ts in the server, host.ts in a chat process).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ChatSession } from "../chat-manager";
@@ -27,6 +26,7 @@ function fakeChat(opts: { queued?: boolean } = {}) {
   return { chat: chat as unknown as ChatSession, accepted, ends };
 }
 
+const settle = () => new Promise((r) => setTimeout(r, 0));
 const clock = (start = 1_000) => {
   const c = { t: start, now: () => c.t };
   return c;
@@ -51,7 +51,7 @@ test("a repeated key returns the first receipt and runs one turn", async () => {
   ends.forEach((e) => e());
 });
 
-test("a keyed tracked turn answers two asks; an unkeyed one, one", async () => {
+test("a keyed tracked turn answers every ask; an unkeyed one, one", async () => {
   const { chat, ends } = fakeChat();
   const ctx: CallCtx = { turns: new Map(), now: clock().now };
   const keyed = send(chat, { text: "a", key: "k", track: true }, ctx);
@@ -59,12 +59,12 @@ test("a keyed tracked turn answers two asks; an unkeyed one, one", async () => {
   ends.forEach((e) => e());
   assert.deepEqual(await METHODS.turnEnd(chat, { turnId: keyed.turnId! }, ctx), { ok: true });
   assert.deepEqual(await METHODS.turnEnd(chat, { turnId: keyed.turnId! }, ctx), { ok: true });
-  assert.throws(() => METHODS.turnEnd(chat, { turnId: keyed.turnId! }, ctx), /not tracked/);
+  assert.deepEqual(await METHODS.turnEnd(chat, { turnId: keyed.turnId! }, ctx), { ok: true });
   assert.deepEqual(await METHODS.turnEnd(chat, { turnId: plain.turnId! }, ctx), { ok: true });
   assert.throws(() => METHODS.turnEnd(chat, { turnId: plain.turnId! }, ctx), /not tracked/);
 });
 
-test("keys and kept turns are forgotten after an hour", async () => {
+test("a key is forgotten an hour after its send; a kept turn an hour after it ended, never while it runs", async () => {
   const { chat, accepted, ends } = fakeChat();
   const c = clock();
   const ctx: CallCtx = { turns: new Map(), now: c.now };
@@ -73,10 +73,16 @@ test("keys and kept turns are forgotten after an hour", async () => {
   assert.deepEqual(send(chat, { text: "a", key: "k", track: true }, ctx), r);
   assert.equal(accepted.length, 1);
   c.t += 1;
-  assert.throws(() => METHODS.turnEnd(chat, { turnId: r.turnId! }, ctx), /not tracked/);
+  // The key is gone; the turn still runs, so its end is still kept.
   const r2 = send(chat, { text: "a", key: "k", track: true }, ctx);
   assert.notEqual(r2.turnId, r.turnId);
   assert.equal(accepted.length, 2);
+  ends[0]!();
+  await settle();
+  c.t += KEPT_MS - 1;
+  assert.deepEqual(await METHODS.turnEnd(chat, { turnId: r.turnId! }, ctx), { ok: true });
+  c.t += 1;
+  assert.throws(() => METHODS.turnEnd(chat, { turnId: r.turnId! }, ctx), /not tracked/);
   ends.forEach((e) => e());
 });
 

@@ -25,13 +25,14 @@ const kindOf = (type: string): StateKind<unknown> => {
 };
 
 /** What one chat's commands share: its tracked turns, until each is asked for once (a keyed one:
-    twice, or for KEPT_MS), and the receipts of its keyed sends (KEYS_MAX, each for KEPT_MS). */
+    until KEPT_MS after it ended, however often it is asked), and the receipts of its keyed sends
+    (KEYS_MAX, each for KEPT_MS). */
 export interface CallCtx {
   turns: Map<string, Promise<ChatTurnEnd>>;
   /** A keyed send's key → its first receipt, oldest first. */
   keys?: Map<string, { receipt: ChatSendReceipt; at: number }>;
-  /** A keyed, tracked turn → how many more asks it answers, and since when it is kept. */
-  kept?: Map<string, { left: number; at: number }>;
+  /** A keyed, tracked turn → when it ended (null: still running). */
+  kept?: Map<string, { endedAt: number | null }>;
   now?: () => number;
 }
 
@@ -39,14 +40,12 @@ export interface CallCtx {
 export const KEPT_MS = 60 * 60_000;
 /** Keyed sends remembered per chat. */
 export const KEYS_MAX = 256;
-/** Asks a keyed turn's end answers: the first, and one retry after a lost reply. */
-const KEPT_ASKS = 2;
 
 /** Forget keys and kept turns older than KEPT_MS. */
 function prune(ctx: CallCtx, now: number): void {
   for (const [key, k] of ctx.keys ?? []) if (now - k.at >= KEPT_MS) ctx.keys!.delete(key);
   for (const [turnId, k] of ctx.kept ?? [])
-    if (now - k.at >= KEPT_MS) {
+    if (k.endedAt !== null && now - k.endedAt >= KEPT_MS) {
       ctx.kept!.delete(turnId);
       ctx.turns.delete(turnId);
     }
@@ -95,7 +94,11 @@ export const METHODS: Impl = {
     if (a.track && !queued) {
       const turnId = randomUUID();
       ctx.turns.set(turnId, ended);
-      if (a.key !== undefined) (ctx.kept ??= new Map()).set(turnId, { left: KEPT_ASKS, at: now });
+      if (a.key !== undefined) {
+        const kept = { endedAt: null as number | null };
+        (ctx.kept ??= new Map()).set(turnId, kept);
+        void ended.then(() => (kept.endedAt = (ctx.now ?? Date.now)()));
+      }
       receipt = { queued, turnId };
     }
     if (a.key !== undefined) {
@@ -109,10 +112,9 @@ export const METHODS: Impl = {
     prune(ctx, (ctx.now ?? Date.now)());
     const ended = ctx.turns.get(turnId);
     if (!ended) throw new Error("That turn is not tracked.");
-    const kept = ctx.kept?.get(turnId);
-    if (kept && --kept.left > 0) return ended;
-    ctx.kept?.delete(turnId);
-    ctx.turns.delete(turnId);
+    // A keyed turn's end answers every ask (a retry after a lost reply, a resumed invocation)
+    // until it is pruned; any other turn's, the first.
+    if (!ctx.kept?.has(turnId)) ctx.turns.delete(turnId);
     return ended;
   },
   assertModelAllowed: (chat) => (chat.assertModelAllowed(), null),

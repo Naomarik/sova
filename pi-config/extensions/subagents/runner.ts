@@ -158,6 +158,8 @@ export interface SpawnOptions {
 export interface SteerResult {
 	ok: boolean;
 	reason?: string;
+	/** Not ok, but the message may have been delivered all the same (no answer came). */
+	unknown?: true;
 }
 
 export function summarizeToolCall(name: string, args: Record<string, any>): string {

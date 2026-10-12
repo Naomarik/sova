@@ -458,8 +458,8 @@ test("waitUnlocked: free at once, free after a while, or still held after 10 s",
 
 test("knobs: slice, test driver, idle minutes and the Claude cap from the server's env", () => {
   assert.deepEqual(supervisorConfig({}), { slice: "sova-chats.slice", driver: "systemd", idleMs: 30 * 60_000, claudeIdleMax: 4 });
-  assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sova-chats-test.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MIN: "0.05", SOVA_CHAT_CLAUDE_IDLE_MAX: "1" }), {
-    slice: "sova-chats-test.slice",
+  assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sovatest.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MIN: "0.05", SOVA_CHAT_CLAUDE_IDLE_MAX: "1" }), {
+    slice: "sovatest.slice",
     driver: "detached",
     idleMs: 3_000,
     claudeIdleMax: 1,
@@ -532,7 +532,7 @@ test("chat units: the chats' slice, a 30 s stop, no Restart=, and the env in a 0
   const envFile = run.find((a) => a.startsWith("--property=EnvironmentFile="))!.split("=").slice(2).join("=");
   assert.equal(statSync(envFile).mode & 0o777, 0o600);
   assert.equal(readFileSync(envFile, "utf8"), `A='x y'\nSECRET_API_KEY="s3cr'et"\n`);
-  assert.ok(chatDriver({ slice: "sova-chats-test.slice", driver: "systemd" }, exec) && systemdRunArgv({ unit: "u", argv: ["x"], cwd: "/", env: {} }, undefined, { slice: "sova-chats-test.slice" }).includes("--slice=sova-chats-test.slice"));
+  assert.ok(chatDriver({ slice: "sovatest.slice", driver: "systemd" }, exec) && systemdRunArgv({ unit: "u", argv: ["x"], cwd: "/", env: {} }, undefined, { slice: "sovatest.slice" }).includes("--slice=sovatest.slice"));
   // Project services keep their units as they were.
   const svc = systemdRunArgv({ unit: "u", argv: ["x"], cwd: "/", env: { A: "1" } });
   assert.ok(svc.includes("--slice=sova-services.slice") && svc.includes("--property=Restart=on-failure") && svc.includes("--setenv=A=1") && svc.includes("--property=TimeoutStopSec=15"));

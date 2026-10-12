@@ -619,6 +619,15 @@ export class ChatSupervisor {
     if (!t) return;
     if (!(await this.waitGone(t.rec.unit, this.deps.exitWaitMs ?? EXIT_WAIT_MS))) await this.deps.driver.stop(t.rec.unit);
   }
+  /** Wait up to 10 s until no process holds `sessionPath`'s writer lock (a stale one, of a dead pid, counts as free). */
+  async waitUnlocked(sessionPath: string): Promise<boolean> {
+    const until = this.now() + (this.deps.predecessorWaitMs ?? PREDECESSOR_WAIT_MS);
+    for (;;) {
+      if (!this.deps.lockHeld?.(sessionPath)) return true;
+      if (this.now() >= until) return false;
+      await this.sleep(this.deps.pollMs ?? 100);
+    }
+  }
   /** Chat `chatId` now runs in `rep` (its old process gone): the record and the own pid follow. */
   repoint(chatId: string, rep: ChatRecord): void {
     this.write(rep);

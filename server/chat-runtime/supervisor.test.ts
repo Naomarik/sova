@@ -302,6 +302,18 @@ test("a reload replacement runs beside the chat under its own unit and socket, t
   assert.deepEqual([...owned], [rep.pid]);
 });
 
+test("waitUnlocked: free at once, free after a while, or still held after 10 s", async () => {
+  let held = 0;
+  const { sup } = make(new FakeDriver(), { lockHeld: () => held-- > 0 });
+  assert.equal(await sup.waitUnlocked("/s/c1.jsonl"), true);
+  held = 3;
+  assert.equal(await sup.waitUnlocked("/s/c1.jsonl"), true);
+  held = Number.POSITIVE_INFINITY;
+  const t0 = clock;
+  assert.equal(await sup.waitUnlocked("/s/c1.jsonl"), false);
+  assert.ok(clock - t0 >= 10_000);
+});
+
 test("knobs: slice, test driver, idle minutes and the Claude cap from the server's env", () => {
   assert.deepEqual(supervisorConfig({}), { slice: "sova-chats.slice", driver: "systemd", idleMs: 30 * 60_000, claudeIdleMax: 4 });
   assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sova-chats-test.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MIN: "0.05", SOVA_CHAT_CLAUDE_IDLE_MAX: "1" }), {

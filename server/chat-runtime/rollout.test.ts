@@ -27,6 +27,14 @@ function fakeSup() {
       calls.push(`repoint ${id} ${rep.unit}`);
       recs.set(id, rep);
     },
+    stop: async (id, cause) => {
+      calls.push(`stop-chat ${id} ${cause}`);
+      recs.delete(id);
+    },
+    waitUnlocked: async (path) => {
+      calls.push(`unlocked ${path}`);
+      return true;
+    },
   };
   return { sup, calls, recs };
 }
@@ -77,10 +85,16 @@ test("a replacement that fails to boot halts the automatic rollout; Reload Now s
   assert.equal(await r.request("b", { auto: false }), "reloaded", "an explicit one still runs");
 });
 
-test("an open that fails on the replacement halts too, and the replacement goes as an expected end", async () => {
-  const { r, calls } = make({ open: async () => Promise.reject(new Error("refused: config")) });
+test("an open that fails on the replacement: it goes as an expected end, the lock is waited for, the router keeps the chat in the server, and the rollout halts", async () => {
+  const failed: string[] = [];
+  const { r, calls, codes } = make({
+    open: async () => Promise.reject(new Error("refused: config")),
+    onReloadOpenFailed: (id, path, reason) => void failed.push(`${id} ${path} ${reason}`),
+  });
   assert.equal(await r.request("a", { auto: true }), "failed");
-  assert.deepEqual(calls.slice(-3), ["repoint a u-a-r1", "expect a reload", "stop u-a-r1"]);
+  assert.deepEqual(calls.slice(-3), ["repoint a u-a-r1", "stop-chat a reload", "unlocked /s/a.jsonl"]);
+  assert.deepEqual(failed, ["a /s/a.jsonl the chat did not open on the new code: refused: config"]);
+  assert.equal(codes.at(-1), "a:failed:the chat did not open on the new code: refused: config");
   assert.ok(r.halted);
 });
 

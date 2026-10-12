@@ -4,7 +4,8 @@
 import { randomUUID } from "node:crypto";
 import type { ChatCall, ChatMethod, ChatMethods, ChatRefusal, ChatReply, ChatTurnEnd } from "../../shared/chat-runtime";
 import type { StateKind } from "../../shared/harness";
-import { BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, ModeRefusedError, RefusedError } from "../chat-manager";
+import { runLedger } from "../auto-resume";
+import { acquireChat, assertNotLive, BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, ModeRefusedError, RefusedError } from "../chat-manager";
 import { stateKindOf } from "../harness/state-kinds";
 import { mergeMode } from "../mode-state";
 
@@ -154,6 +155,18 @@ export const METHODS: Impl = {
   applySandbox: (chat, { state }) => chat.applySandbox(state),
   resumeWorker: (chat, { id }) => chat.resumeWorker(id),
   workerInfo: (chat, { id }) => chat.workerInfo(id),
+  // In the server's process the provider bounds its own idle children: nothing to let go here.
+  releaseIdleModelChild: () => "none",
+  // acquireChat's own path for a chat it holds: the same guards, the same reload.
+  reacquire: async (chat, { force }) => {
+    assertNotLive(chat.path);
+    if (!chat.hasForeignWrites()) return "ok";
+    if (!force) throw new BusyError(chat.busyMessage(), "recent");
+    await acquireChat(chat.path, true);
+    return "reloaded";
+  },
+  // The server's run ledger records this chat's runs; a chat process records its own (its host).
+  markResuming: (chat) => (runLedger.markResuming(chat.path), null),
 };
 
 /** The reply a call that threw answers with: its typed refusal, or an error with its message. A

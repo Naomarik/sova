@@ -313,6 +313,13 @@ export interface ChatMethods {
   memorySettingsChanged: { args: { turnedOn: boolean }; result: null };
   resumeWorker: { args: { id: string }; result: { ok: true } | { ok: false; status: 404 | 409; error: string } };
   workerInfo: { args: { id: string }; result: WorkerInfo | null };
+  /** Let the chat's idle model child go (a Claude CLI kept for its next turn); a busy one never. */
+  releaseIdleModelChild: { args: Record<string, never>; result: "released" | "busy" | "none" };
+  /** The chat is opened again while held: refused while a TUI owns the file, and on another writer's
+      lines unless `force`; with `force` it is reopened from the file (every pane told to reconnect). */
+  reacquire: { args: { force: boolean }; result: "ok" | "reloaded" };
+  /** The chat's next run is an automatic resume (§app.overseer/auto-resume): never resumed again. */
+  markResuming: { args: Record<string, never>; result: null };
 }
 
 export type ChatMethod = keyof ChatMethods;

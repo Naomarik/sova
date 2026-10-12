@@ -134,3 +134,41 @@ test("systemd: a chat unit survives a restart of the stand-in server unit, outsi
     sh("stop", slice);
   }
 });
+
+test("systemd: with no server running, a chat killed is one death (KILL, from the journal); a chat stopped cleanly is none", { skip: systemd ? false : "set SOVA_TEST_SYSTEMD=1 with a user manager (run by the coordinator from a plain shell)" }, async () => {
+  const { agent, out } = scratch();
+  const slice = `sova-chats-test-${process.pid}-d.slice`;
+  const env = { ...process.env, PI_CODING_AGENT_DIR: agent, SOVA_CHAT_SLICE: slice };
+  const sh = (...a: string[]) => spawnSync("systemctl", ["--user", ...a], { encoding: "utf8" });
+  const unitFile = () => JSON.parse(readFileSync(join(agent, "sova", "chats", "registry", "standin-chat-1.json"), "utf8")).unit as string;
+  /** A stand-in server starts the chat, then is killed outright. */
+  async function startThenLoseServer(): Promise<{ pid: number; unit: string }> {
+    rmSync(join(out, "chat.txt"), { force: true });
+    const server = spawn(BUN, [FIXTURE, "start", out], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let said = "";
+    server.stdout.on("data", (d) => (said += d));
+    await waitFor("the chat's record", () => said.includes("\n"), 30_000);
+    await waitFor("the chat's heartbeat", () => existsSync(join(out, "chat.txt")) && beats(out) > 0, 30_000);
+    server.kill("SIGKILL");
+    await new Promise((r) => server.once("exit", r));
+    return { pid: chatPid(out), unit: unitFile() };
+  }
+  try {
+    const killed = await startThenLoseServer();
+    assert.equal(sh("kill", "--signal=SIGKILL", `${killed.unit}.service`).status, 0);
+    await waitFor("the killed chat's end", () => !alive(killed.pid));
+    await sleep(500);
+    const a1 = JSON.parse(runFixture("adopt", env, out));
+    assert.deepEqual(a1.died.map((d: { cause: string; signal: string | null }) => [d.cause, d.signal]), [["crashed", "KILL"]], "the journal says how it ended");
+    const stopped = await startThenLoseServer();
+    assert.equal(sh("stop", `${stopped.unit}.service`).status, 0);
+    await waitFor("the stopped chat's end", () => !alive(stopped.pid));
+    assert.match(readFileSync(join(out, "chat.txt"), "utf8"), /^disposed$/m);
+    const a2 = JSON.parse(runFixture("adopt", env, out));
+    assert.deepEqual(a2, { adopted: [], died: [] }, "a clean stop (exit 0, deactivated) is no death");
+  } finally {
+    for (const u of sh("list-units", "--all", "--plain", "--no-legend", "sova-chat-*").stdout.split("\n"))
+      if (u.includes(".service") && spawnSync("systemctl", ["--user", "show", u.split(/\s+/)[0]!, "--property=Slice"], { encoding: "utf8" }).stdout.includes(slice)) sh("stop", u.split(/\s+/)[0]!);
+    sh("stop", slice);
+  }
+});

@@ -22,6 +22,7 @@ import {
 	readSubagentProfiles,
 	resolveSubagents,
 	restorePick,
+	SEEDED_MTIME_MS,
 	SEEDED_PROFILE_ID,
 	shortModel,
 	subagentProfileDefaultPath,
@@ -128,6 +129,7 @@ test("seed: an absent library and default file are written once from the legacy 
 	assert.equal(seeded.profiles[0]!.teams?.coordinator.role, "coordinator");
 	assert.equal(seeded.profiles[0]!.members, null);
 	assert.equal(readSubagentProfiles(dir).state, "ok", "the library seed is on disk");
+	assert.equal(fs.statSync(subagentProfilesPath(dir)).mtimeMs, SEEDED_MTIME_MS, "the seed is dated as old, so any library edited elsewhere wins over it on the mesh");
 	const def = readProfilesDefault(dir);
 	assert.equal(def.state === "ok" && def.value.default, SEEDED_PROFILE_ID, "the seeded default names the seeded profile");
 	// A second read never re-seeds over what is there now.

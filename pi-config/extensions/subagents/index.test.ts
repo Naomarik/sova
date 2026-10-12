@@ -7,7 +7,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { claudeOffer } from "../claude-code/catalog.ts";
 import { placeholderDir } from "../remote/argv.ts";
@@ -1845,11 +1845,17 @@ test("fork needs a persisted parent session and passes its file to the child", a
 	}
 });
 
-test("child extensions: remote sources pass, missing paths fail, this extension is refused", async () => {
+test("child extensions: uninstalled remote sources and missing paths fail, this extension is refused", async () => {
 	const h = harness();
 	try {
-		await h.call("agent_spawn", { prompt: "task", extensions: ["npm:definitely-not-installed-xyz", "git:github.com/x/y"] });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz", "git:github.com/x/y"]);
+		for (const source of ["npm:definitely-not-installed-xyz", "git:github.com/x/definitely-not-installed"]) {
+			await assert.rejects(
+				h.call("agent_spawn", { prompt: "task", extensions: [source] }),
+				(err: Error) => err.message.includes(`${source} isn't installed: install it first (\`pi install ${source}\`)`),
+			);
+		}
+		assert.equal(h.workers.length, 0);
+		await h.call("agent_spawn", { prompt: "task" });
 		await assert.rejects(
 			h.call("agent_spawn", { prompt: "task", extensions: ["./definitely-missing-extension.ts"] }),
 			/not found/,
@@ -1872,7 +1878,7 @@ test("child extensions: remote sources pass, missing paths fail, this extension 
 	}
 });
 
-test("installed npm and git sources map to Pi's user-scope directories; others pass through", () => {
+test("installed npm and git sources map to Pi's user-scope directories; others refuse the spawn", () => {
 	const dir = fs.mkdtempSync(path.join(process.cwd(), ".pkg-test-"));
 	try {
 		fs.mkdirSync(path.join(dir, "npm", "node_modules", "@scope", "name"), { recursive: true });
@@ -1905,6 +1911,14 @@ test("installed npm and git sources map to Pi's user-scope directories; others p
 		assert.equal(installedPackageDir("git:github.com/owner/other", dir), undefined);
 		assert.equal(installedPackageDir("npm:../escape", dir), undefined);
 		assert.equal(installedPackageDir("git:github.com/../x", dir), undefined);
+		// At spawn validation: an installed exact pin and a checkout resolve to their directories;
+		// an uninstalled package, a range pin and a git ref pin refuse the spawn.
+		fs.writeFileSync(path.join(dir, "npm", "node_modules", "plain", "package.json"), JSON.stringify({ name: "plain", version: "1.2.3" }));
+		assert.equal(resolveExtensionSource("npm:plain@1.2.3", dir, dir), path.join(dir, "npm", "node_modules", "plain"));
+		assert.equal(resolveExtensionSource("git:github.com/owner/repo", dir, dir), path.join(dir, "git", "github.com", "owner", "repo"));
+		for (const source of ["npm:missing", "npm:plain@^1", "git:github.com/owner/repo@v1"]) {
+			assert.throws(() => resolveExtensionSource(source, dir, dir), { message: `${source} isn't installed: install it first (\`pi install ${source}\`)` }, source);
+		}
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
@@ -2820,9 +2834,10 @@ test("worker session marker: every pi worker loads worker-mark.ts first; another
 		const plain = await h.call("agent_spawn", { prompt: "plain", tools: ["read"] });
 		assert.equal(h.workers[0].extensions[0], MARKER_EXTENSION, "a plain worker");
 		assert.doesNotMatch(plain.content[0].text, /extensions=/, "the spawn summary does not list the marker");
-		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["npm:definitely-not-installed-xyz"] });
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz"], "a worker with its own extensions");
-		assert.match(given.content[0].text, /  extensions=npm:definitely-not-installed-xyz(  |$)/m, "only the user's extensions are listed");
+		const btw = path.resolve(fileURLToPath(new URL("../btw", import.meta.url)));
+		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["extensions/btw"] });
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, btw], "a worker with its own extensions");
+		assert.ok(given.content[0].text.split("\n").some((line: string) => line.includes(`  extensions=${btw}`) && !line.includes("worker-mark")), "only the user's extensions are listed");
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "native-cli" }] });
 		const member = h.workers.at(-1);
 		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");

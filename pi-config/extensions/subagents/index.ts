@@ -92,7 +92,6 @@ import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } 
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
-import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
 import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
@@ -149,7 +148,7 @@ const AgentSpec = Type.Object(
 		extensions: Type.Optional(
 			Type.Array(Nonempty, {
 				description:
-					"Extension sources the child loads (path, npm:name, git:host/repo), e.g. [\"npm:pi-web-access\"] for web tools. Children load no extensions otherwise; this extension itself is refused.",
+					"Extension sources the child loads (path, or an installed npm:name or git:host/repo; nothing is installed at spawn), e.g. [\"npm:pi-web-access\"] for web tools. Children load no extensions otherwise; this extension itself is refused.",
 			}),
 		),
 		fork: Type.Optional(
@@ -363,9 +362,17 @@ export function installedPackageDir(source: string, agentDir: string): string | 
 	return candidate && fs.existsSync(candidate) ? candidate : undefined;
 }
 
-/** Validate one child extension source: remote sources pass through (installed copy preferred); local paths must exist and must not be this extension. */
-function resolveExtensionSource(source: string, cwd: string): string {
-	if (/^(npm|git):/.test(source)) return installedPackageDir(source, getAgentDir()) ?? source;
+/**
+ * Validate one child extension source: a remote source loads from Pi's installed copy and is
+ * refused when there is none (nothing is installed at spawn); local paths must exist and must
+ * not be this extension.
+ */
+export function resolveExtensionSource(source: string, cwd: string, agentDir = getAgentDir()): string {
+	if (/^(npm|git):/.test(source)) {
+		const installed = installedPackageDir(source, agentDir);
+		if (!installed) throw new Error(`${source} isn't installed: install it first (\`pi install ${source}\`)`);
+		return installed;
+	}
 	const resolved = resolvePath(source, cwd);
 	if (!fs.existsSync(resolved)) throw new Error(`Extension source not found: ${resolved}`);
 	const real = realpathOr(resolved);
@@ -1448,12 +1455,7 @@ export function registerSubagents(
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					const specEnv = specOn && !remote ? {
-						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
-						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
-						[ASSESSMENT_WORKER_ENV]: id,
-						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
-					} : baseEnv;
+					const specEnv = specOn && !remote ? { ...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv } : baseEnv;
 					// A code-writing worker's census state, where its settle's landed line is read: its own file (named in its env).
 					const landedFile = landed && !backend ? path.join(agentDir(), SPEC_HOOK_STATE, "landed", `${workerKey(id)}.json`) : undefined;
 					if (landedFile) landedSources.set(id, { file: landedFile });

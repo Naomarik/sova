@@ -205,6 +205,36 @@ function readRecord(file: string): ChatRecord | null {
 
 // ---- the supervisor -----------------------------------------------------------------------------
 
+/** A recorded chat's pid counted as this server's own before its supervisor takes it over. */
+interface Claim {
+  pid: number;
+  release: () => void;
+}
+/** Claims made at start (claimRecordedChats), by chat id, until a supervisor takes them over. */
+const preclaimed = new Map<string, Claim>();
+
+/**
+ * Count every chat process a previous server recorded under this state root as this server's own, at
+ * once and synchronously, before anything reads the live records: from the server's start until its
+ * supervisor has adopted them (which waits on the build and on systemd), a chat process's live record
+ * must never read as a terminal owning its file (session_send, auto-resume, attention). The
+ * supervisor takes the claims over, and lets go of each whose process turns out gone.
+ */
+export function claimRecordedChats(ownPid: (pid: number) => () => void, dir: () => string = registryDir): void {
+  let names: string[];
+  try {
+    names = readdirSync(dir());
+  } catch {
+    return;
+  }
+  for (const n of names) {
+    if (!n.endsWith(".json")) continue;
+    const rec = readRecord(join(dir(), n));
+    if (!rec?.pid || rec.death || preclaimed.has(rec.chatId)) continue;
+    preclaimed.set(rec.chatId, { pid: rec.pid, release: ownPid(rec.pid) });
+  }
+}
+
 export interface ChatLaunch {
   chatId: string;
   sessionPath: string;
@@ -304,6 +334,10 @@ export function exitOfLog(lines: readonly string[]): { exit: number | null; sign
 
 export class ChatSupervisor {
   private chats = new Map<string, Tracked>();
+  /** Recorded chats' pids counted as own before they are tracked (claimRecordedChats), by chat id. */
+  private claims = new Map<string, Claim>();
+  /** Replacement processes' pids counted as own from their start until repoint or stopUnit, by unit. */
+  private replacementClaims = new Map<string, Claim>();
   private ticking = false;
   private skippedEnv = new Set<string>();
   private readonly regDir: () => string;
@@ -325,6 +359,22 @@ export class ChatSupervisor {
     this.now = deps.now ?? Date.now;
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.log = deps.log ?? ((l) => console.log(`[chat-supervisor] ${l}`));
+    for (const [id, c] of preclaimed) this.claims.set(id, c);
+    preclaimed.clear();
+  }
+
+  /** Count `pid` as own; the call that lets go of it. */
+  private own(pid: number | null): () => void {
+    return pid && this.deps.ownPid ? this.deps.ownPid(pid) : () => {};
+  }
+  /** A claim made before tracking ends: kept if `pid` is still the chat's, else let go. */
+  private takeClaim(chatId: string, pid: number | null): (() => void) | null {
+    const c = this.claims.get(chatId);
+    if (!c) return null;
+    this.claims.delete(chatId);
+    if (c.pid === pid) return c.release;
+    c.release();
+    return null;
   }
 
   /** The unit of chat `chatId` (with `suffix`, a reload's replacement). */
@@ -347,9 +397,20 @@ export class ChatSupervisor {
     }
     return names.filter((n) => n.endsWith(".json")).flatMap((n) => readRecord(join(this.regDir(), n)) ?? []);
   }
-  private track(rec: ChatRecord, connected = true): Tracked {
-    this.chats.get(rec.chatId)?.releasePid();
-    const t: Tracked = { rec, releasePid: rec.pid && this.deps.ownPid ? this.deps.ownPid(rec.pid) : () => {}, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null, connected };
+  private track(rec: ChatRecord, connected = true, claimed: (() => void) | null = null): Tracked {
+    const before = this.chats.get(rec.chatId);
+    const kept = claimed ?? this.takeClaim(rec.chatId, rec.pid);
+    // The same process tracked again keeps its count (a release, then an add, would drop it between).
+    let releasePid: () => void;
+    if (kept) {
+      before?.releasePid();
+      releasePid = kept;
+    } else if (before && before.rec.pid === rec.pid) releasePid = before.releasePid;
+    else {
+      before?.releasePid();
+      releasePid = this.own(rec.pid);
+    }
+    const t: Tracked = { rec, releasePid, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null, connected };
     this.chats.set(rec.chatId, t);
     return t;
   }
@@ -602,6 +663,12 @@ export class ChatSupervisor {
       died.push(death);
       await this.report(rec, death);
     }
+    // Claims of chats not adopted (gone, dead, no longer recorded): no process of ours.
+    for (const [id, c] of this.claims)
+      if (!this.chats.has(id)) {
+        c.release();
+        this.claims.delete(id);
+      }
     for (const unit of await this.deps.driver.units(this.prefix).catch(() => [] as string[])) {
       if (named.has(unit)) continue;
       this.log(`${unit}: no chat records it; stopping it`);
@@ -706,11 +773,16 @@ export class ChatSupervisor {
     const t = this.chats.get(chatId);
     if (!t) throw new Error(`chat ${chatId} has no process`);
     const n = ++this.replacements;
-    return await this.spawn({ chatId, sessionPath: t.rec.sessionPath, cwd: t.rec.cwd }, this.unitOf(chatId, `-r${n}`), this.sockOf(chatId, `-r${n}`));
+    const rep = await this.spawn({ chatId, sessionPath: t.rec.sessionPath, cwd: t.rec.cwd }, this.unitOf(chatId, `-r${n}`), this.sockOf(chatId, `-r${n}`));
+    // Its own from its start: it opens the chat (and writes its live record) before the repoint.
+    if (rep.pid) this.replacementClaims.set(rep.unit, { pid: rep.pid, release: this.own(rep.pid) });
+    return rep;
   }
   /** Stop a replacement that is not used. */
   async stopUnit(unit: string): Promise<void> {
     await this.deps.driver.stop(unit).catch(() => {});
+    this.replacementClaims.get(unit)?.release();
+    this.replacementClaims.delete(unit);
   }
   /** Wait for chat `chatId`'s current process to exit (30 s), then stop what is left of it. */
   async awaitExit(chatId: string): Promise<void> {
@@ -730,7 +802,10 @@ export class ChatSupervisor {
   /** Chat `chatId` now runs in `rep` (its old process gone): the record and the own pid follow. */
   repoint(chatId: string, rep: ChatRecord): void {
     this.write(rep);
-    this.track(rep);
+    const c = this.replacementClaims.get(rep.unit);
+    this.replacementClaims.delete(rep.unit);
+    if (c && c.pid !== rep.pid) c.release();
+    this.track(rep, true, c && c.pid === rep.pid ? c.release : null);
   }
 
   private timer: NodeJS.Timeout | null = null;
@@ -745,10 +820,11 @@ export class ChatSupervisor {
     this.timer = null;
   }
 
-  /** At server shutdown: stop watching and let go of the chats, which keep running. */
+  /** At server shutdown: stop watching and let go of the chats, which keep running. Their pids stay
+      this server's own until it exits: a server-hosted call still running in the stop (a session
+      message) must never take a chat process for a terminal holding its file. */
   detach(): void {
     this.unwatch();
-    for (const t of this.chats.values()) t.releasePid();
     this.chats.clear();
   }
 }

@@ -444,6 +444,53 @@ test("a reload replacement runs beside the chat under its own unit and socket, t
   assert.deepEqual([...owned], [rep.pid]);
 });
 
+test("a replacement counts as the server's own from its start (it opens the chat before the repoint); one not used is let go", async () => {
+  const d = new FakeDriver();
+  const { sup, owned } = make(d);
+  const old = await sup.start(chat);
+  const rep = await sup.startReplacement("c1");
+  assert.deepEqual([...owned].sort(), [old.pid, rep.pid].sort());
+  await sup.stopUnit(rep.unit);
+  assert.deepEqual([...owned], [old.pid]);
+  const rep2 = await sup.startReplacement("c1");
+  sup.expectExit("c1", "reload");
+  d.die(old.unit);
+  sup.repoint("c1", rep2);
+  assert.deepEqual([...owned], [rep2.pid]);
+});
+
+test("a stopping server keeps its chat processes' pids as its own; the next counts the recorded ones before it adopts them", async () => {
+  const { claimRecordedChats } = await import("./supervisor");
+  const d = new FakeDriver();
+  const first = make(d);
+  const a = await first.sup.start(chat);
+  const gone = await first.sup.start({ ...chat, chatId: "c2" });
+  first.sup.detach();
+  assert.ok(first.owned.has(a.pid!), "still its own while the server finishes stopping");
+  d.die(gone.unit, []);
+  // The next server, before its supervisor exists (the build and systemd are awaited first).
+  const early = new Set<number>();
+  claimRecordedChats(
+    (pid) => {
+      early.add(pid);
+      return () => early.delete(pid);
+    },
+    () => reg,
+  );
+  assert.deepEqual([...early].sort(), [a.pid, gone.pid].sort());
+  // Its supervisor takes the claims over; the process that is gone is let go at adoption.
+  const second = make(d, {
+    ownPid: (pid) => {
+      early.add(pid);
+      return () => early.delete(pid);
+    },
+  });
+  const { adopted } = await second.sup.adopt();
+  assert.deepEqual(adopted.map((r) => r.chatId), ["c1"]);
+  assert.deepEqual([...early], [a.pid]);
+  second.sup.detach();
+});
+
 test("waitUnlocked: free at once, free after a while, or still held after 10 s", async () => {
   let held = 0;
   const { sup } = make(new FakeDriver(), { lockHeld: () => held-- > 0 });

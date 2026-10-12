@@ -312,6 +312,57 @@ test("code: older than the server's build shows the badge and asks for a reload 
   assert.deepEqual(sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code").at(-1), { type: "code", state: "failed", detail: "boom" });
 });
 
+test("code: workers in processes of their own never hold a reload (they're reattached); another backend's working worker does; idle stop waits for both", async () => {
+  /** This process's live record for the chat, with one worker of `backend` working. */
+  const liveRecord = (t: { path: string; id: string }, backend: string) =>
+    writeFileSync(
+      join(agentDir, "sessions", "live", `test-${t.id}.json`),
+      JSON.stringify({
+        session: { pid: process.pid, sessionFile: t.path, sessionId: t.id },
+        heartbeat: Date.now() + 60_000,
+        presence: { workerCounts: { total: 1, working: 1 }, workers: [{ id: "ag_01", name: "w", status: "running", backend }] },
+      }),
+    );
+  const tick = (t: { host: unknown }) => (t.host as { tick(): void }).tick();
+
+  const a = await setup({ build: "a", serverBuild: "b" });
+  liveRecord(a, "pi");
+  const aReloads = collect(a.ctl.server, "reload.request");
+  const aStates = collect(a.ctl.server, "state");
+  a.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  tick(a);
+  await settle();
+  assert.equal(aStates.at(-1)?.mirror.quiet.quiet, false, "a working worker still keeps the chat from an idle stop");
+  assert.equal(aStates.at(-1)?.mirror.quiet.workersWorking, 0, "nothing holds the reload");
+  const busy = awaitFrame(a.ctl.server, "drained", 2_000);
+  a.ctl.server.send({ t: "drain", id: "d1", reason: "idle", force: false });
+  assert.deepEqual(await busy, { t: "drained", id: "d1", ok: false, why: "busy" });
+  a.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
+  await settle();
+  assert.deepEqual(aReloads, [{ t: "reload.request", auto: false }], "Reload now: at once, mid worker run");
+
+  const b = await setup({ build: "a", serverBuild: "b" });
+  liveRecord(b, "native-cli");
+  const bReloads = collect(b.ctl.server, "reload.request");
+  const bStates = collect(b.ctl.server, "state");
+  const bSends = collect(b.ctl.server, "client.send");
+  b.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  tick(b);
+  await settle();
+  assert.equal(bStates.at(-1)?.mirror.quiet.workersWorking, 1, "Reloads when its worker finishes");
+  b.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
+  await settle();
+  assert.equal(bReloads.length, 0, "a worker inside this process would end with it");
+  assert.deepEqual(bSends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code").at(-1), { type: "code", state: "older", pending: true });
+  const refused = awaitFrame(b.ctl.server, "drained", 2_000);
+  b.ctl.server.send({ t: "drain", id: "d2", reason: "reload", force: false });
+  assert.deepEqual(await refused, { t: "drained", id: "d2", ok: false, why: "busy" });
+  rmSync(join(agentDir, "sessions", "live", `test-${a.id}.json`), { force: true });
+  rmSync(join(agentDir, "sessions", "live", `test-${b.id}.json`), { force: true });
+});
+
 test("code: a current chat answers Reload now with current, to that pane only", async () => {
   const t = await setup();
   const sends = collect(t.ctl.server, "client.send");

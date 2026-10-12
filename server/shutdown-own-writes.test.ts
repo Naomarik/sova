@@ -7,7 +7,7 @@
 // the record, the next server read the file as changed by a process it can't identify, and refused
 // to auto-resume the chat (§app.overseer/auto-resume) for 120 s.
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -18,7 +18,6 @@ process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
-const { SessionManager } = await import("@earendil-works/pi-coding-agent");
 const { canonicalPath } = await import("./paths");
 const { markOwned, recentForeignWriteAgeSec } = await import("./write-guard");
 
@@ -41,9 +40,10 @@ async function until(cond: () => boolean, ms = 30_000): Promise<void> {
 }
 
 test("a reply the stop's abort ended is recorded as ours before the runtime's dispose returns", async () => {
-  const sm = SessionManager.create(agentDir);
-  writeFileSync(sm.getSessionFile()!, `${JSON.stringify(sm.getHeader())}\n`, { flag: "wx" });
-  const path = canonicalPath(sm.getSessionFile()!);
+  const dir = join(agentDir, "sessions", "--tmp-shutdown-own-writes--");
+  mkdirSync(dir, { recursive: true });
+  const path = canonicalPath(join(dir, "2026-10-12T00-00-00-000Z_s1.jsonl"));
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "s1", timestamp: new Date().toISOString(), cwd: agentDir })}\n`, { flag: "wx" });
   markOwned(path);
   const chat = await acquireChat(path);
   const session = piSession(chat) as unknown as {

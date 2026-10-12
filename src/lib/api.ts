@@ -251,6 +251,8 @@ export const getProviderWaiting = () => request<ProviderWaiting>("/api/provider-
     host-scoped like any session request: a peer's chat reads and writes ITS library. */
 export const getSubagentProfiles = (path?: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/settings/subagents${path ? `?path=${encodeURIComponent(path)}` : ""}`));
 export const putSubagentProfiles = (settings: SubagentProfilesFile, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents"), { method: "PUT", body: JSON.stringify(settings) });
+/** Restore Previous Library: put the kept copy back as a new edit (§chat.subagent-profiles/replaced). */
+export const restoreSubagentProfiles = (file: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents/restore"), { method: "POST", body: JSON.stringify({ file }) });
 /** This device's default (never synced): Make Default in Settings → Subagents writes it alone, always locally. */
 export const putSubagentProfileDefault = (id: string) => request<SubagentProfilesInfo>("/api/settings/subagents/default", { method: "PUT", body: JSON.stringify({ default: id }) });
 export const pickSubagentProfile = (path: string, profile: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/subagents?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });

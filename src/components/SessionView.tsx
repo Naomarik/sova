@@ -20,6 +20,8 @@ import { createSessionSpend } from "./SessionUsage";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, contextDescribedBy } from "./ContextGauge";
 import { ProfileChip } from "./ProfileChip";
+import { CodeState } from "./CodeState";
+import type { CodeControl } from "../lib/code-state";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
@@ -165,6 +167,8 @@ export function SessionView(props: {
   const [chatModel, setChatModel] = createSignal<string | null>(null);
   /** The chat socket's profile message, for the head chip (§chat.profiles/after-first-message). */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** The chat's code state and its Reload Now, from its chat view (§app.chat-processes/code-pickup). */
+  const [codeControl, setCodeControl] = createSignal<CodeControl | null>(null);
 
   /**
    * Default for a freshly opened session: TUI-owned → read-only; else try chat without force.
@@ -287,6 +291,7 @@ export function SessionView(props: {
       </div>
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />
+      <CodeState control={codeControl()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />
       <RemoteHeadChip path={path} onOpen={() => props.openPane(path, "session")} />
@@ -348,6 +353,7 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>{(h) => <HostStateMark host={h()} class="workspace-pane-host" />}</Show>
           <ContextGauge path={path} />
           <ProfileChip summary={s()} info={profileInfo()} />
+          <CodeState control={codeControl()} />
           {/* Mid-turn, said at workspace level: split mode has N panes and
               no single place that says who is still working — the tab strip's dot covers tabs
               mode only. The pulse is the sanctioned one: work in flight. */}
@@ -483,6 +489,7 @@ export function SessionView(props: {
                       onWorkers={(w) => props.onWorkers(path, w)}
                       onClaudeLogin={props.onClaudeLogin ? (login) => props.onClaudeLogin!(path, login) : undefined}
                       onProfile={setProfileInfo}
+                      onCode={(c) => setCodeControl(() => c)}
                       onTurnError={props.onTurnError ? (m) => props.onTurnError!(path, m) : undefined}
                       onShowWorkers={() => props.toggleSubagents(path)}
                       workersOpen={props.paneOn(path, "agents")}

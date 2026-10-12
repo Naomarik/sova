@@ -309,6 +309,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* A peer member's host: after its name, which gives way first; the host keeps up to 40% of the row. */
 .workspace-pane-host { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); }
 .workspace-pane-tools { flex: none; display: flex; align-items: center; gap: var(--space-1); }
+/* A chat process on older code (CodeState): its chip and Reload Now, kept together and whole. */
+.code-state { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.code-state .button[aria-disabled="true"] { cursor: default; color: var(--color-ink-muted); }
 /* A pane is never a 720px head: the context readout keeps its short step
    (ring and "222k", no window) at every width, as under 720px in base.css. */
 .workspace-pane-head .context-of { display: none; }

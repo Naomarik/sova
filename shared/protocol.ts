@@ -10,7 +10,7 @@ import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
-import type { RowFacts, SovaEvent } from "./harness-wire";
+import type { RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -1773,6 +1773,9 @@ export interface HeldChatState {
   /** As the chat's last `claude_login` message said it, `pending` included; null: not a device with
       several logins, or the registry can't name one. Absent until one was built, and from older servers. */
   login?: ChatClaudeLogin | null;
+  /** A chat process on older code than its server ("older"), or whose reload failed to start
+      ("failed"), from its `code` state; absent when current, hosted in the server, and from older servers. */
+  code?: "older" | "failed";
 }
 
 /** POST /api/mode?path=…: the chat's mode after the switch, plus how it took (ModeApplies).
@@ -2018,7 +2021,11 @@ export type ChatClientMessage =
   /** Remove ONE still-unsent message from this chat's outgoing queue, by its `QueueItem.id` —
       any position, including the middle, duplicates of the same text, and image-only sends.
       `id` is the client's request id, echoed in the reply. */
-  | { type: "queue_remove"; id: string; itemId: string };
+  | { type: "queue_remove"; id: string; itemId: string }
+  /** Reload this chat on its server's current code (§app.chat-processes/code-pickup, "Reload Now"):
+      at once when it is quiet, else at its next quiet moment (`code.pending`). A chat already on the
+      current code, or hosted in the server itself, answers the sender with `code{state:"current"}`. */
+  | { type: "reload_code" };
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the
@@ -2199,6 +2206,23 @@ export interface V2EventFrame {
   event: SovaEvent;
 }
 
+/** `hello.live`: the part of the run in flight that is not yet a row. Earlier messages of the same
+    run are rows already, never here. */
+export interface HelloLive {
+  /** The assistant message still streaming (not yet written): its parts so far, by index. */
+  message?: { model?: string; parts: SovaPart[] };
+  /** Tool calls of this run started and not ended, each with its latest output. */
+  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+}
+
+/**
+ * A chat process's code against its server's (the `code` message): "current" = the server's build;
+ * "older" = an older build, reloaded at its next quiet moment (`pending`: a Reload Now waits for
+ * the reply to finish); "reloading" = a replacement on the current code is starting; "failed" =
+ * the replacement didn't start, so the chat keeps running on older code (`detail`: why).
+ */
+export type ChatCodeState = "current" | "older" | "reloading" | "failed";
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -2213,7 +2237,14 @@ export type ChatServerMessage =
   /** `alignReview`: whether THIS chat's runtime runs with adversarial review (its `sova-align-launch`
       record, §chat.alignment-review/flag) — the card's review lines and buttons follow it, never the
       live setting. Absent from older servers: the web falls back to the saved setting. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean }
+  /** `live` (wire 2 only; absent when nothing streams and from older servers): what of the run in
+      flight is not yet a row, as of this hello, so a client that joins mid-reply shows it
+      (HelloLive). The first live event after the hello is the first one not folded into it. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive }
+  /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
+      hello when not current, and to every client on each change; none received = current. A chat
+      hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
+  | { type: "code"; state: ChatCodeState; pending?: boolean; detail?: string }
   /** The older rows of a `hello` with `older` (see HistoryMessage). After attach they come after
       `links`; after a rewind, regenerate or compaction, after the requester's `rewound`,
       `regenerated` or `compacted` (and a compaction's `queue`). */

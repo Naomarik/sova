@@ -255,9 +255,10 @@ the diff and the spec. A rank is a literal match, never proof that a § is or is
 
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
-The spec minor mode's guide teaches the pull path. The agent finds its roots with `map` and `where`,
-looks at a root's neighbours with `toc` (`--dir out`, or `--dir down` for an area) before reading
-them, and runs `impact --near` on any claim it will change. It then reads each root, and each passage it
+The spec minor mode's guide teaches the pull path. The agent finds its roots with `where`: 3–5 of the
+task's own words as a topic (§tools.spec/where-topic), or a path or name; when no hit fits it tries
+other words once, then `map`, which also orients a task spanning a whole area. It looks at a root's
+neighbours with `toc` (`--dir out`, or `--dir down` for an area) before reading them, and runs `impact --near` on any claim it will change. It then reads each root, and each passage it
 needs, with `read`: every `requires` line whose "what" doesn't rule it out, and any other line
 touching the task. The first `read` brings the frame; later reads add `--no-frame`. A link it didn't read is
 unread, never absent, and "uninvestigated" is unknown, not none. A foreign § its change touched is

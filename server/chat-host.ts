@@ -279,8 +279,10 @@ export class ChatHostRouter {
     const until = Date.now() + 60_000;
     for (let first = true; Date.now() < until; first = false) {
       if (!first) await new Promise((r) => setTimeout(r, 5_000));
+      let tried: Link | null = null;
       try {
         const { link } = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: first ? 5_000 : 0 });
+        tried = link;
         // The calls it queued while no server was there come at once, before its state: kept for the handle.
         const held = holdRequests(link);
         const state = await awaitFrame(link, "state", 5_000);
@@ -290,7 +292,9 @@ export class ChatHostRouter {
         this.adoptHandle(rec, link, state.mirror, held);
         return;
       } catch {
-        // its unit is up but it did not answer yet: again in 5 s, for a minute
+        // its unit is up but it did not answer yet: again in 5 s, for a minute. A link left open would
+        // stay its controller and make every retry a busy one.
+        tried?.close();
       }
     }
     await this.sup.lost(rec.chatId, "it did not answer this server").catch(() => {});
@@ -310,7 +314,8 @@ export class ChatHostRouter {
   async acquire(path: string, force: boolean): Promise<ChatHandle | null> {
     const open = this.remotes.get(path);
     if (open && !open.closed) {
-      await open.call("reacquire", { force });
+      // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
+      if ((await open.call("reacquire", { force })) === "reloaded") servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "");
       return open;
     }
     if (!this.out() || this.inprocOnly.has(path)) return null;

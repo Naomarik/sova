@@ -29,7 +29,7 @@ import {
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
+import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
 import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
@@ -39,7 +39,7 @@ import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefa
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
-import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
@@ -1084,6 +1084,9 @@ function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
     },
   ).map((def) => fromPiToolDefinition(def, def.prepareArguments ? "pi-edit" : undefined));
 }
+
+// An org's change may archive or unarchive a project: its overseer's composer, in a process of its own, is told.
+onOrgChange(() => specialComposersChanged());
 
 registerSpecialHost({
   kind: "project-overseer",

@@ -818,6 +818,10 @@ registerSpecialHost({
       if (!wrapupActive(sessionId) && !stopped) void replyFact(sessionId, "reply/ended");
     }
   },
+  // Its chat's process is linked again: the entries that waited for it are written.
+  relinked(path) {
+    void flushEntries(path).catch(() => {});
+  },
   // Its chat's process died mid-reply: the reply ended for the statechart, once, unless a stop reports it.
   died(path) {
     const sessionId = batonOfPath(path)?.row.sessionId;

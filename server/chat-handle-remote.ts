@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import type { ChatCall, ChatId, ChatMethod, ChatMethods, ChatReply, ServerToolCall } from "../shared/chat-runtime";
 import type { ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
-import type { ToolResult } from "../shared/harness";
+import type { EntryId, HEntry, ToolResult } from "../shared/harness";
 import type { ChatClientMessage } from "../shared/protocol";
 import {
   answerChatAsk,
@@ -17,13 +17,18 @@ import {
   deliverServerToolCall,
   emitChatEvent,
   errorOfRefusal,
-  fileHookCtx,
+  fileSnapshot,
+  specialHostOf,
 } from "./chat-handle";
 import { awaitFrame, type Link, type LinkEnd } from "./chat-runtime/link";
 import { sessionsChanged } from "./list-generation";
 
 /** The text a call gets when the chat's process can't be reached (design §2.5). */
 export const UNREACHABLE = "The chat's process is not reachable right now.";
+/** How long a command waits for a chat whose link is down to be linked again (a reconnect, a reload). */
+export const RELINK_WAIT_MS = 15_000;
+/** How often the run events handled are acknowledged, at most. */
+const RUN_ACK_MS = 200;
 
 /** What the server does with what a chat process tells it, beyond the handle itself. */
 export interface RemoteHooks {
@@ -72,7 +77,15 @@ export class RemoteChatHandle extends ChatHandle {
   mirror: ChatRuntimeMirror;
   private link!: Link;
   private calls = 0;
-  private readonly pending = new Map<string, { resolve(v: unknown): void; reject(e: unknown): void }>();
+  private readonly pending = new Map<string, { call: ChatCall; resend: boolean; resolve(v: unknown): void; reject(e: unknown): void }>();
+  /** Waiting for the link to come back: resolved by repoint, rejected when the handle ends. */
+  private relinked: { promise: Promise<void>; resolve(): void; reject(e: unknown): void } | null = null;
+  /** Call-backs within a served call, answered by the chat (`tool.backResult`). */
+  private readonly backs = new Map<string, { resolve(v: unknown): void; reject(e: unknown): void }>();
+  private backN = 0;
+  /** The last run event handled (the chat numbers them; one told again is not handled twice). */
+  private runN = 0;
+  private ackTimer: NodeJS.Timeout | null = null;
   private readonly clients = new Map<string, ChatClient>();
   private readonly ids = new Map<ChatClient, string>();
   private readonly running = new Map<string, AbortController>();
@@ -108,7 +121,22 @@ export class RemoteChatHandle extends ChatHandle {
   repoint(link: Link, at: RemoteWhere = this.at, mirror?: ChatRuntimeMirror): void {
     this.at = at;
     this.ended = false;
+    // A replacement process numbers its run events afresh.
+    if (mirror) this.runN = 0;
     this.bind(link);
+    // Commands that waited for the link go now; a keyed send or a turn's end whose answer was lost, once more.
+    for (const [id, p] of this.pending) {
+      if (!p.resend) continue;
+      p.resend = false;
+      if (!link.send({ t: "call", call: p.call })) {
+        this.pending.delete(id);
+        p.reject(new Error(UNREACHABLE));
+      }
+    }
+    this.relinked?.resolve();
+    this.relinked = null;
+    const kind = this.mirror.special;
+    if (kind) specialHostOf(kind)?.relinked?.(this.path);
     if (mirror) {
       // A reload's replacement: the old process told every pane to reconnect, and each comes back.
       this.mirror = mirror;
@@ -143,13 +171,22 @@ export class RemoteChatHandle extends ChatHandle {
     });
     for (const t of REQUEST_FRAMES) on(t, (f) => this.request(link, f));
     on("reload.request", (f) => this.hooks.reload?.(this, f.auto));
+    on("run", (f) => this.runEvent(link, f));
+    on("tool.backResult", (f) => {
+      const b = this.backs.get(f.id);
+      if (!b) return;
+      this.backs.delete(f.id);
+      if (f.ok) b.resolve(f.result);
+      else b.reject(new Error(f.error.message));
+    });
     on("exit", (f) => {
       this.ended = true;
       this.hooks.exit?.(this, f.cause);
     });
     void link.closed.then((end) => {
       if (this.link !== link) return; // repointed since
-      this.failPending();
+      this.flushAck(link);
+      this.linkDropped();
       this.hooks.linkEnd?.(this, end);
     });
     this.pushLinkLive();
@@ -169,6 +206,78 @@ export class RemoteChatHandle extends ChatHandle {
   private failPending(): void {
     for (const p of this.pending.values()) p.reject(new Error(UNREACHABLE));
     this.pending.clear();
+    for (const b of this.backs.values()) b.reject(new Error(UNREACHABLE));
+    this.backs.clear();
+    this.relinked?.reject(new Error(UNREACHABLE));
+    this.relinked = null;
+  }
+
+  /** The link dropped while the handle lives on (it may be linked again): a keyed send or a turn's
+      end waits to be sent once more; every other command in flight fails, its outcome unknown. */
+  private linkDropped(): void {
+    for (const [id, p] of this.pending) {
+      if (p.resend || this.resendable(p.call)) {
+        p.resend = true;
+        continue;
+      }
+      this.pending.delete(id);
+      p.reject(new Error(UNREACHABLE));
+    }
+    for (const b of this.backs.values()) b.reject(new Error(UNREACHABLE));
+    this.backs.clear();
+    // Those kept for a resend fail too unless the link is back in time.
+    if ([...this.pending.values()].some((p) => p.resend)) void this.waitRelink().catch(() => this.failPending());
+  }
+
+  /** A command safe to send again: a keyed send (answered with its first receipt) or a turn's end. */
+  private resendable(call: ChatCall): boolean {
+    if (call.method === "turnEnd") return true;
+    return call.method === "send" && !!(call.args as { key?: string }).key;
+  }
+
+  /** Resolves when the link is back (repoint), or rejects after RELINK_WAIT_MS or when the handle ends. */
+  private waitRelink(): Promise<void> {
+    if (!this.relinked) {
+      let resolve!: () => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<void>((res, rej) => ((resolve = res), (reject = rej)));
+      const timer = setTimeout(() => {
+        if (this.relinked?.promise === promise) this.relinked = null;
+        reject(new Error(UNREACHABLE));
+      }, RELINK_WAIT_MS);
+      timer.unref?.();
+      void promise.then(
+        () => clearTimeout(timer),
+        () => clearTimeout(timer),
+      );
+      this.relinked = { promise, resolve, reject };
+    }
+    return this.relinked.promise;
+  }
+
+  // ---- run events (a special loadout's, §app.chat-processes/special-kinds) -----------------------------
+
+  /** A run event: its kind hears it once, in arrival order; acknowledged in batches. */
+  private runEvent(link: Link, f: FrameOf<"run">): void {
+    if (f.n <= this.runN) return this.scheduleAck(link);
+    this.runN = f.n;
+    const kind = this.mirror.special;
+    try {
+      if (kind) specialHostOf(kind)?.runEvent?.(this.path, f.event, f.n);
+    } catch (err) {
+      console.error("[chat] run event listener failed", err);
+    }
+    this.scheduleAck(link);
+  }
+  private scheduleAck(link: Link): void {
+    if (this.ackTimer) return;
+    this.ackTimer = setTimeout(() => this.flushAck(link), RUN_ACK_MS);
+    this.ackTimer.unref?.();
+  }
+  private flushAck(link: Link): void {
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = null;
+    if (this.runN > 0 && link.isOpen) link.send({ t: "run.ack", n: this.runN });
   }
 
   private replied(reply: ChatReply): void {
@@ -179,11 +288,13 @@ export class RemoteChatHandle extends ChatHandle {
     else p.reject("refusal" in reply ? errorOfRefusal(reply.refusal) : new Error(reply.error.message));
   }
 
-  call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
-    if (!this.link.isOpen) return Promise.reject(new Error(UNREACHABLE));
+  async call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
+    // A chat whose link is down while its handle lives (reconnecting, a reload's swap) is waited for.
+    if (!this.link.isOpen && !this.ended) await this.waitRelink();
+    if (!this.link.isOpen) throw new Error(UNREACHABLE);
     const call: ChatCall<M> = { id: `${this.epoch}:${++this.calls}`, epoch: this.epoch, chatId: this.chatId, method, args };
     return new Promise((resolve, reject) => {
-      this.pending.set(call.id, { resolve: resolve as (v: unknown) => void, reject });
+      this.pending.set(call.id, { call: call as ChatCall, resend: false, resolve: resolve as (v: unknown) => void, reject });
       if (!this.link.send({ t: "call", call: call as ChatCall })) {
         this.pending.delete(call.id);
         reject(new Error(UNREACHABLE));
@@ -250,6 +361,7 @@ export class RemoteChatHandle extends ChatHandle {
 
   /** The server is stopping: say so and let go. The chat runs on. */
   bye(): void {
+    this.flushAck(this.link);
     this.link.send({ t: "bye", reason: "server-stopping" });
     this.link.close();
   }
@@ -261,6 +373,10 @@ export class RemoteChatHandle extends ChatHandle {
   pushLinksChanged(sessionIds: readonly string[]): void {
     this.link.send({ t: "push", kind: "links-changed", sessionIds: [...sessionIds] });
     this.pushLinkLive();
+  }
+  /** A special chat's composer, as its kind says it is now (closed: why; open: null). */
+  pushComposerClosed(text: string | null): void {
+    this.link.send({ t: "push", kind: "special", composerClosed: text });
   }
   pushCode(state: FrameOf<"push"> extends infer P ? (P extends { kind: "code"; state: infer S } ? S : never) : never, detail?: string): void {
     this.link.send({ t: "push", kind: "code", state, ...(detail ? { detail } : {}) });
@@ -278,18 +394,34 @@ export class RemoteChatHandle extends ChatHandle {
     const abort = new AbortController();
     this.running.set(call.effectId, abort);
     try {
-      const ctx = await fileHookCtx(this.path, f.ctx);
+      const snap = await fileSnapshot(this.path, f.ctx);
+      const ctx = snap.ctx;
+      // What the call reads of the chat is its file as it stood, plus what it wrote since; its writes
+      // and nested tools are calls back to the chat, within this call (§app.harness/session-special).
+      const back = (frame: { op: "append"; kind: string; data: unknown; announce: boolean } | { op: "tool"; name: string; toolCallId: string; params: unknown }): Promise<unknown> =>
+        new Promise((resolve, reject) => {
+          const id = `b${++this.backN}`;
+          this.backs.set(id, { resolve, reject });
+          if (!link.send({ t: "tool.back", id, effectId: call.effectId, ...frame } as FrameOf<"tool.back">)) {
+            this.backs.delete(id);
+            reject(new Error(UNREACHABLE));
+          }
+        });
       const outcome = await deliverServerToolCall(call, {
         signal: abort.signal,
         onUpdate: (update: ToolResult) => link.send({ t: "tool.update", effectId: call.effectId, update }),
         ctx,
         chat: {
           branch: () => ctx.branch(),
-          entries: () => ctx.branch(),
-          append: () => {
-            throw new Error("This chat runs in a process of its own: a server-hosted tool can't write its file.");
+          entries: () => snap.entries(),
+          append: async (kind, data, o): Promise<EntryId> => {
+            const r = (await back({ op: "append", kind: kind.type, data, announce: !!o?.announce })) as { entryId: string; entry: HEntry };
+            snap.add(r.entry);
+            return r.entryId;
           },
-          tool: () => undefined,
+          tool: (name) => ({
+            execute: async (toolCallId: string, params: unknown) => (await back({ op: "tool", name, toolCallId, params })) as ToolResult,
+          }),
         },
       });
       link.send({ t: "tool.result", effectId: call.effectId, outcome });

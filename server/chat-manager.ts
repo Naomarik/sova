@@ -74,7 +74,7 @@ import { servedToolsExtension } from "./served-tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
-import { queuePushExtension, topicStore } from "./topics";
+import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -3814,7 +3814,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs"))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               ...powers,
             ],

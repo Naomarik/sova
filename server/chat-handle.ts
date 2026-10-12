@@ -7,6 +7,7 @@
 // as a direct call did) and its answer comes back as a reply.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -32,7 +33,7 @@ import type {
   SpecialSpec,
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
-import type { HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
+import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
 import {
   acquireChat,
@@ -72,7 +73,10 @@ import { playbookHost } from "./playbook-host";
 import { projectEngine } from "./project-services/routes";
 import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools";
 import { stateRoot } from "./state-root";
-import { queuePushTool } from "./topics";
+import { queueOpenTool, queuePushTool } from "./topics";
+import type { PowersSend } from "./session-powers";
+/** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
+const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
 export { BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
 export type { ChatClient };
@@ -369,6 +373,8 @@ export interface SpecialHost {
   composerClosed?(path: string): string | null;
   /** Its chat's process died: the kind cleans up what the run left in its own state. */
   died?(path: string): void;
+  /** Its chat's process is linked again (a reconnect, a reload): what waited for it goes now. */
+  relinked?(path: string): void;
 }
 const specialHosts: SpecialHost[] = [];
 /** Each chat's kind, as its spec was last built or its process taken back. */
@@ -532,11 +538,16 @@ export interface ChatRouter {
   acquire(path: string, force: boolean): Promise<ChatHandle | null>;
   /** Close it for good (archive): its panes are told to reconnect. False: none open there. */
   close(path: string, message: string): Promise<boolean>;
+  /** A special chat's composer may have changed: each in a process of its own is told. */
+  composersChanged?(): void;
 }
 let router: ChatRouter | null = null;
 export function setChatRouter(r: ChatRouter | null): void {
   router = r;
 }
+
+/** A special chat's composer may have changed (a project archived or not): each chat in a process of its own is told. */
+export const specialComposersChanged = (): void => router?.composersChanged?.();
 
 /** Resolves once the chats a previous server left running are taken back (bounded): at once with no router. */
 export const chatsReady = (): Promise<void> => router?.ready() ?? Promise.resolve();
@@ -660,27 +671,77 @@ const port: ServerToolPort = {
 
 /** The ToolCtx of a call a chat process made: its session file read up to the leaf it named. */
 export async function fileHookCtx(path: string, w: Partial<ServerToolCtxWire> & { sessionId: string }): Promise<HookCtx> {
+  return (await fileSnapshot(path, w)).ctx;
+}
+
+/** Each session file as last parsed, by its size and mtime (a special chat's run start reads its file
+    once per run; the Overseer's runs to megabytes). */
+const parsed = new Map<string, { size: number; mtimeMs: number; file: Awaited<ReturnType<typeof readPi>> }>();
+async function readPiCached(path: string): Promise<Awaited<ReturnType<typeof readPi>>> {
+  const st = await stat(path).catch(() => null);
+  const have = parsed.get(path);
+  if (st && have && have.size === st.size && have.mtimeMs === st.mtimeMs) return have.file;
   const file = await readPi(path);
-  const branch = strictBranchTo(file, w.leafId ?? null) ?? branchOf(file.entries);
-  const state = stateView(branch);
+  if (st) parsed.set(path, { size: st.size, mtimeMs: st.mtimeMs, file });
+  return file;
+}
+
+/**
+ * A chat process's call, read from its session file up to the leaf it named: the ToolCtx, and the
+ * whole file. `add`: an entry the call appended since (a call-back), which becomes the leaf.
+ */
+export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> & { sessionId: string }): Promise<{ ctx: HookCtx; entries: () => HEntry[]; add(entry: HEntry): void }> {
+  const file = await readPiCached(path);
+  const branch = [...(strictBranchTo(file, w.leafId ?? null) ?? branchOf(file.entries))];
+  const all = [...file.entries];
+  let leaf = w.leafId ?? null;
+  let state = stateView(branch);
   return {
-    sessionId: w.sessionId,
-    cwd: w.cwd ?? file.header?.cwd ?? "",
-    leafId: () => w.leafId ?? null,
-    branch: () => branch,
-    state: () => state,
-    key: path,
-    title: () => w.title ?? undefined,
+    ctx: {
+      sessionId: w.sessionId,
+      cwd: w.cwd ?? file.header?.cwd ?? "",
+      leafId: () => leaf,
+      branch: () => branch,
+      state: () => state,
+      key: path,
+      title: () => w.title ?? undefined,
+    },
+    entries: () => all,
+    add(entry) {
+      branch.push(entry);
+      all.push(entry);
+      leaf = entry.id;
+      state = stateView(branch);
+    },
   };
 }
 
 /** The server-hosted tools of an ordinary chat in a process of its own, hosted here: their
     declarations go to the chat in its `open`, in loadout order. `title`: the chat's name now. */
-export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => string): ServerToolDecl[] {
+export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => string, powers = false): ServerToolDecl[] {
   const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title })];
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
+  // A powers profile's queue_open (its own extension registers it, from this declaration) and its
+  // sends, a server action (§app.chat-processes/server-actions).
+  if (powers) {
+    specs.push(queueOpenTool({ sessionId, path: () => chatId, project: async () => (await (await powersHost()).projectRoot?.(chatHandle(chatId)?.mirror.cwd ?? "")) ?? null }));
+    serveTools(chatId, [powersSendAction()]);
+  }
   serveTools(chatId, specs);
   return specs.map(declOfTool);
+}
+
+/** `@powers.send`: a powers chat's session_send, run here with its invitations (PowersHost.send). */
+function powersSendAction(): ToolSpec {
+  return {
+    name: "@powers.send",
+    label: "@powers.send",
+    description: "A server action (never declared to a model).",
+    parameters: { type: "object" },
+    async execute(_id, params) {
+      return { content: [], details: await (await powersHost()).send(params as PowersSend) };
+    },
+  };
 }
 
 /** Test only (SOVA_CHAT_TEST_SERVED=1, the chat-runtime trial): a served tool that sleeps `ms` and logs
@@ -722,6 +783,18 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return linksFor(a.sessionId, a.path ?? path);
     case "singleton":
       return singletonFor(a.key, a.path ?? path);
+    case "powers.sessions":
+      return (await powersHost()).sessions();
+    case "powers.session":
+      return (await powersHost()).session(String(a.id ?? ""));
+    case "powers.transcript":
+      return (await powersHost()).transcript(String(a.path ?? ""));
+    case "powers.insight":
+      return (await powersHost()).insight(String(a.path ?? ""));
+    case "powers.held":
+      return await (await powersHost()).held(String(a.path ?? ""));
+    case "powers.projectRoot":
+      return (await (await powersHost()).projectRoot?.(String(a.cwd ?? ""))) ?? null;
     case "special.runStart":
     case "special.compact":
     case "special.agentEnd": {

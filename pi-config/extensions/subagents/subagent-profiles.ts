@@ -346,17 +346,28 @@ export function loadSubagentProfiles(agentDir: string): ProfilesState {
 	// would hide that. Leave the file absent (resolution uses the legacy files) until it is fixed.
 	if (readTeamDefaults(agentDir).state === "malformed") return state;
 	const value = seededFile(agentDir);
-	seedNew(state.file, `${JSON.stringify(value, null, 2)}\n`);
+	seedNew(state.file, `${JSON.stringify(value, null, 2)}\n`, SEEDED_MTIME_MS);
 	seedNew(subagentProfileDefaultPath(agentDir), `${JSON.stringify(seededDefault(), null, 2)}\n`);
 	return { state: "ok", file: state.file, value, seeded: true };
 }
 
-/** Write `text` at `file` only if `file` still doesn't exist (a hard link, which fails if it does). */
-function seedNew(file: string, text: string): void {
+/**
+ * The seeded library's modification time: the Unix epoch, so it reads as older than any edit. The
+ * mesh dates a file that first appears by its mtime, so a library edited on any other device wins
+ * over a starter seeded here, while a device alone keeps its starter.
+ */
+export const SEEDED_MTIME_MS = 0;
+
+/**
+ * Write `text` at `file` only if `file` still doesn't exist (a hard link, which fails if it does),
+ * with its modification time set to `mtimeMs` when given (on the temp file, before it is linked).
+ */
+function seedNew(file: string, text: string, mtimeMs?: number): void {
 	const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.seed`;
 	try {
 		fs.mkdirSync(path.dirname(file), { recursive: true });
 		fs.writeFileSync(tmp, text, { encoding: "utf8", mode: 0o644 });
+		if (mtimeMs !== undefined) fs.utimesSync(tmp, new Date(), new Date(mtimeMs));
 		fs.linkSync(tmp, file);
 	} catch {
 		/* EEXIST (another process made it first) or an unwritable dir: the in-memory seed stands. */

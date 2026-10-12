@@ -1253,7 +1253,9 @@ async function t16() {
   const last = toolResults(pw.path).at(-1);
   R.note(`t16: the cut send's result: ${resultText(last)}; HOP-TWO in the target ${two}×`);
   R.check(two <= 1, `t16: one message at most in the target (${two})`);
-  R.check(two === 1 || /outcome is unknown/.test(JSON.stringify(last)), "t16: when nothing arrived, the result says the outcome is unknown");
+  // Nothing arrived: the result says so, as an unknown outcome (the send was cut) or as the send's
+  // own refusal (it never left the server: "can't take messages now").
+  R.check(two === 1 || /outcome is unknown|can't take messages now/.test(JSON.stringify(last)), `t16: when nothing arrived, the result says the outcome is unknown or that it was not sent (${resultText(last)})`);
 }
 
 /** The stage-3 steps work on this server, wherever these chats run: an Overseer turn calling one of

@@ -65,7 +65,9 @@ const server = createServer(async (req, res) => {
   const compact = msgs.some((m) => /context checkpoint summary/i.test(textOf(m.content))) || /^# Conversation\n[\s\S]*\n# Instructions\n/.test(userText);
   // A crash resume ("This chat's process stopped unexpectedly…") gets a 20-part reply tagged resume,
   // so a trial can kill the process again while the resume runs.
-  const long = /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText) ?? (/process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : null);
+  // It comes first: a process killed mid-reply wrote no reply, so the cut-off prompt is still among
+  // the trailing user messages.
+  const long = /process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText);
   const bash = /\[bash (\d+)\]/.exec(userText);
   const big = /\[big (\d+)\]/.exec(userText);
   const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";

@@ -157,8 +157,8 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
   that passes the spawn checks (primary, then fallback); if neither passes, the team is not
   created. An uncoordinated team gets no monitor, and the result says why.
 - **Tools.** `team_msg` (with an optional `notice`: `wrap-up`, `pause` or `resume`), `team_inbox`,
-  `team_roster` (read-only) and **`wake_nudge`** — for a pi monitor through the member extension,
-  for a claude-code monitor through the member MCP server. No other member has `wake_nudge`; the
+  `team_roster` (read-only) and **`wake_nudge`**, through the member extension (a claude-code monitor is a pi worker on
+  the Claude Code provider, so the same). No other member has `wake_nudge`; the
   monitor has no `team_ask`, `team_steer`, `team_report` or built-in tools, and it can never reach
   the parent.
 - **Standing instruction** (its header, with the effective thresholds at spawn; subsequent

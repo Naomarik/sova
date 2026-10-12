@@ -467,10 +467,15 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "pi-config/extensions/claude-code/runner.ts",
         "server/claude-transcript.test.ts",
-        "server/claude-transcript.ts"
-      ]
+        "server/claude-transcript.ts",
+        "pi-config/extensions/subagents/claude-workers.ts",
+        "pi-config/extensions/subagents/claude-workers.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T13:59Z"
+      }
     },
     "§app.subagents-pane/head": {
       "kind": "behavior",
@@ -2388,8 +2393,7 @@
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts"
       ],
       "about": [
-        "§chat.sandbox/what-on-enforces",
-        "§chat.sandbox/claude-state"
+        "§chat.sandbox/what-on-enforces"
       ]
     },
     "§chat.sandbox/off-is-today": {
@@ -2465,7 +2469,6 @@
       "code": [
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/claude-code/transport.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/sandbox/index.ts",
         "pi-config/extensions/sandbox/state.ts",
         "pi-config/extensions/sandbox/policy.ts",
@@ -2474,12 +2477,15 @@
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
         "pi-config/extensions/sandbox/launch.ts",
-        "pi-config/extensions/claude-code/confined-launch.ts",
         "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
         "pi-config/extensions/subagents/host.ts",
         "pi-config/extensions/sandbox/tests/claude-confine.mjs",
         "pi-config/extensions/sandbox/tests/claude-worker.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T13:59Z"
+      }
     },
     "§chat/sandbox": {
       "kind": "surface",
@@ -2617,7 +2623,6 @@
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
         "pi-config/extensions/subagents/runner.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/claude-code/transport.ts",
         "server/chat-manager.ts",
         "server/worker-resume.ts",
@@ -2630,8 +2635,16 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/restore.test.ts",
         "server/worker-restore.ts",
-        "shared/protocol.ts"
-      ]
+        "shared/protocol.ts",
+        "pi-config/extensions/subagents/claude-workers.ts",
+        "pi-config/extensions/subagents/claude-workers.test.ts",
+        "pi-config/extensions/subagents/hosting.ts",
+        "pi-config/extensions/subagents/hosting.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T13:59Z"
+      }
     },
     "§app.worker-restore/transcript-protocol": {
       "kind": "behavior",
@@ -2643,7 +2656,11 @@
         "pi-config/extensions/subagents/adapters/index.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/claude-code/transcript-adapter.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T13:59Z"
+      }
     },
     "§app.worker-restore/usage-from-transcripts": {
       "kind": "behavior",
@@ -4252,7 +4269,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4268,7 +4284,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4284,7 +4299,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md",
@@ -4301,7 +4315,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4317,7 +4330,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4333,7 +4345,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md",
@@ -4350,7 +4361,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4366,7 +4376,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4382,7 +4391,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -4397,7 +4405,6 @@
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/mailbox.ts",
         "pi-config/extensions/subagents/member.ts",
-        "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
@@ -5856,7 +5863,6 @@
         "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
         "pi-config/extensions/sandbox/launch.ts",
         "pi-config/extensions/sandbox/tools.ts",
-        "pi-config/extensions/claude-code/confined-launch.ts",
         "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
         "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
         "pi-config/extensions/sandbox/README.md"
@@ -8445,17 +8451,18 @@
         "pi-config/extensions/claude-code/transport.ts",
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "server/transcript.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
-        "pi-config/extensions/claude-code/runner-failover.test.ts",
         "server/claude-accounts.test.ts",
         "server/claude-accounts.integration.test.ts",
         "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
-        "server/claude-pool/agent.ts",
-        "pi-config/extensions/claude-code/confined-launch.test.ts"
-      ]
+        "server/claude-pool/agent.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T13:59Z"
+      }
     },
     "§app.claude-logins/registry": {
       "kind": "behavior",
@@ -8489,7 +8496,6 @@
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/index.ts",
         "pi-config/extensions/claude-code/provider/types.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/claude-code/index.ts",
         "pi-config/extensions/claude-code/models.ts",
         "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
@@ -8596,7 +8602,6 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/models.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
         "server/claude-pool/agent.test.ts",
         "server/claude-pool/pool-test-fixtures.ts",
@@ -9742,30 +9747,6 @@
       ],
       "about": [
         "§app/session-share"
-      ]
-    },
-    "§chat.sandbox/claude-state": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.sandbox/workers",
-        "§app.claude-logins/spawn-selection",
-        "§app.claude-logins/failover"
-      ],
-      "authority": "accepted",
-      "evidence": "unreviewed",
-      "code": [
-        "pi-config/extensions/claude-code/accounts.ts",
-        "pi-config/extensions/claude-code/confined-launch.ts",
-        "pi-config/extensions/claude-code/runner.ts",
-        "pi-config/extensions/claude-code/transport.ts",
-        "pi-config/extensions/subagents/host.ts",
-        "pi-config/extensions/subagents/host-transport.ts",
-        "pi-config/extensions/subagents/index.ts",
-        "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/sandbox/launch.ts",
-        "pi-config/extensions/claude-code/confined-launch.test.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
       ]
     },
     "§app.settings-dialog/voice-clip-check": {
@@ -11850,10 +11831,8 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/mode/spec-guard.test.ts",
         "pi-config/extensions/mode/tests/spec-worker.mjs",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/claude-code/README.md",
         "pi-config/extensions/mode/spec-worker.ts",
@@ -11868,7 +11847,6 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/mode/spec-mode.md",
@@ -12800,6 +12778,23 @@
         "at": "2026-10-10T10:06Z"
       }
     },
+    "§app.claude-code-provider/death-reason": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/continuity"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/README.md"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T14:06Z"
+      }
+    },
     "§app.claude-code-provider/invalid-tool-input": {
       "kind": "behavior",
       "requires": [],
@@ -12823,7 +12818,11 @@
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/mcp-host.ts",
         "pi-config/extensions/claude-code/provider/DESIGN-bridge.md"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T13:59Z"
+      }
     },
     "§tools.spec/context-packets": {
       "kind": "behavior",
@@ -13205,7 +13204,6 @@
         "pi-config/extensions/mode/tests/assessment-absence.mjs",
         "pi-config/extensions/mode/spec-worker.ts",
         "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/mode/tests/smoke.mjs"
       ]
@@ -13549,9 +13547,6 @@
         "pi-config/extensions/subagents/runner.ts",
         "pi-config/extensions/subagents/runner.test.ts",
         "pi-config/extensions/claude-code/transport.ts",
-        "pi-config/extensions/claude-code/runner.ts",
-        "pi-config/extensions/claude-code/runner.test.ts",
-        "pi-config/extensions/claude-code/adopt.test.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "pi-config/extensions/provider-limits/stream.ts",
@@ -14260,7 +14255,6 @@
         "pi-config/extensions/subagents/runner.ts",
         "pi-config/extensions/subagents/runner.test.ts",
         "pi-config/extensions/subagents/host-transport.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/sandbox/index.ts",
         "server/process-priority.ts",
         "server/process-priority.test.ts",
@@ -14510,7 +14504,6 @@
         "§app.insights/usage-refresh",
         "§app.claude-logins/accounts-tab",
         "§app.insights/usage-cards",
-        "§chat.sandbox/claude-state",
         "§app.claude-logins/add-remove",
         "§app.claude-logins/pool"
       ],
@@ -15176,7 +15169,6 @@
         "pi-config/extensions/llm-inflight/index.ts",
         "pi-config/extensions/llm-inflight/README.md",
         "pi-config/extensions/subagents/index.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/topic-outline/index.ts",
         "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
@@ -15904,7 +15896,6 @@
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
         "pi-config/extensions/mode/spec-guard.test.ts",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/mode/spec-mode.md",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/spec/docs/MODE.md",
@@ -16218,9 +16209,6 @@
         "pi-config/extensions/claude-code/provider/index.ts",
         "pi-config/extensions/claude-code/provider/registration.test.ts",
         "pi-config/extensions/claude-code/index.ts",
-        "pi-config/extensions/claude-code/index.test.ts",
-        "pi-config/extensions/claude-code/policy.ts",
-        "pi-config/extensions/claude-code/policy.test.ts",
         "pi-config/extensions/claude-code/README.md",
         "pi-config/extensions/mode/delegate.ts",
         "pi-config/extensions/mode/routing.ts",
@@ -16282,7 +16270,6 @@
         "pi-config/extensions/claude-code/catalog.ts",
         "pi-config/extensions/claude-code/catalog.test.ts",
         "pi-config/extensions/claude-code/index.ts",
-        "pi-config/extensions/claude-code/policy.ts",
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/mode/delegate.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
@@ -16298,9 +16285,9 @@
         "server/models.ts",
         "server/models.test.ts",
         "server/overseer-store.ts",
-        "pi-config/extensions/claude-code/index.test.ts",
         "pi-config/extensions/subagents/restore.test.ts",
-        "pi-config/extensions/subagents/index.test.ts"
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/claude-workers.ts"
       ]
     },
     "§app.claude-code-provider/model-identity": {
@@ -16370,15 +16357,35 @@
         "server/claude-models.ts",
         "server/claude-models.test.ts",
         "pi-config/extensions/topic-outline/claude-cli.test.ts",
-        "pi-config/extensions/claude-code/launch-pin.test.ts",
-        "pi-config/extensions/claude-code/runner.test.ts",
-        "pi-config/extensions/claude-code/confined-launch.test.ts",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/decide-llm.test.ts",
         "server/session-autotitle.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "pi-config/extensions/topic-outline/test.mjs"
       ]
+    },
+    "§app.claude-code-provider/one-program": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/claude-executable.ts",
+        "pi-config/extensions/claude-code/claude-executable.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/README.md",
+        "server/decide-llm.ts",
+        "server/claude-models.ts",
+        "server/claude-models.test.ts",
+        "server/claude-status.ts",
+        "server/claude-accounts.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T14:06Z"
+      }
     },
     "§app.claude-code-provider/oneshot-uncached": {
       "kind": "behavior",
@@ -16407,10 +16414,8 @@
       "code": [
         "pi-config/extensions/claude-code/transport.ts",
         "pi-config/extensions/claude-code/transport.test.ts",
-        "pi-config/extensions/claude-code/launch-pin.test.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
-        "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
         "server/decide-llm.ts",
         "server/session-autotitle.ts"
@@ -16477,7 +16482,6 @@
         "pi-config/extensions/mode/spec-worker.ts",
         "pi-config/extensions/mode/spec-mode.md",
         "pi-config/extensions/mode/prompt.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/subagents/spec-brief.ts",
         "pi-config/extensions/subagents/index.ts",
         "server/transcript.ts",
@@ -17741,9 +17745,7 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/mode/spec-guard.test.ts",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/draft.test.mjs"
       ]

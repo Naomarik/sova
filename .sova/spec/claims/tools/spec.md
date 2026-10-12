@@ -58,7 +58,7 @@ assessments even when candidate identities and reasons stay unchanged.
 
 ## §tools.spec/assessment-observations — Assessments run only when asked
 
-No session, pi worker, worktree-configured worker or Claude Code worker hook runs an assessment
+No session, pi worker (a Claude Code worker included) or worktree-configured worker runs an assessment
 capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
 after any tool call, when a turn ends or when a session reopens, with spec on or off. Sessions and
 workers have no assessment tool. An assessment is an explicit companion CLI operation that an
@@ -69,9 +69,9 @@ or commits: with a known base and no declared snapshot, every committed and work
 that base is included. Attribution is only what the caller passes; absent attribution stays null.
 
 Receipts and session task and error entries left by earlier automatic observation stay as they are:
-readable, immutable, and never migrated, rewritten or deleted. A native hook's state from then keeps
-its assessment fields unchanged and ignored: it loads without an error, a failure note or a new
-capture, while its ordinary census and turn fields go on updating. Session-list and
+readable, immutable, and never migrated, rewritten or deleted. The state a native
+Claude Code worker hook left from then stays on disk as it was: those hooks no longer run
+(§tools.spec/no-turn-end-check). Session-list and
 merge-readiness refreshes do not consume assessment receipts or query their status. Explicit assessments never change continuations, ordinary
 readiness checks, footer rules or release gates. Successful preparations and records remain normal
 operations even with outstanding claims or failed verification declarations, and stale or unknown
@@ -119,13 +119,11 @@ while one of the session's own tool calls runs is the session's: a file changed,
 between its calls (another process sharing the work tree, a worker, the user's editor) is taken in
 silently before the next call and left out of every count and line, so a session that changes
 nothing itself never gets a note or `No draft yet`. Such a file the session then changes itself is
-its own from that call on. A call that fails (a shell command that exits non-zero; in Claude Code,
-a call that ends in `PostToolUseFailure` instead of `PostToolUse`) is closed exactly like one that
+its own from that call on. A call that fails (a shell command that exits non-zero) is closed exactly like one that
 succeeds: what changed while it ran is its own and gets the same note, and no later change between
 calls counts as the session's because of it. A call that never ran is closed without a census
-where the host says so (in pi, a call blocked or aborted before it started; in Claude Code, a
-denied call, `PermissionDenied`); any other call left open stops counting as running when the
-next prompt starts a run (in Claude Code, also after 15 minutes). A worker's changes reach the worker's own census note, never
+where the host says so (a call blocked or aborted before it started); any other call left open
+stops counting as running when the next prompt starts a run. A worker's changes reach the worker's own census note, never
 its parent's; when the worker settles, its parent gets one line naming where they landed
 (§tools.spec/worker-landed).
 
@@ -158,10 +156,8 @@ itself runs on, by absolute path, so a version manager's `node` shim on PATH tha
 untrusted directory never stops it (under bun: the first `node` on PATH outside a shims directory).
 
 The census is skipped after a tool that cannot write the repository, by an explicit list of tool
-names: in pi, read, grep, find, ls, align, agent_list, agent_models, agent_transcript, agent_wait,
-team_list, team_inbox, team_roster, link_inbox, link_members and link_offers; in Claude Code, its
-own read-only tools and the team tools team_inbox, team_msg, team_ask, team_roster, team_report and
-wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline; what changed
+names: read, grep, find, ls, align, agent_list, agent_models, agent_transcript, agent_wait,
+team_list, team_inbox, team_roster, link_inbox, link_members and link_offers. A skipped call neither looks at the tree nor moves the census's baseline; what changed
 while it ran is taken in before the next call that can write, like any change between calls. Shell
 commands are never skipped.
 
@@ -287,9 +283,8 @@ with spec off does: nothing re-prompts it, and no warning, toast, hidden note, s
 card about the turn's spec changes is added, in a pi session, a pi worker or a Claude Code worker.
 A worker writes no spec ledger, and its parent reads none; the one line a finished worker's
 summary carries naming where its changes landed (§tools.spec/worker-landed) is read from the
-worker's census state, checks nothing and asks for nothing. A Claude Code worker started before
-this change that still calls the hook's `stop` step or passes `--ledger` gets nothing: the hook
-prints nothing and exits 0. A foreign § (one that existed before the task
+worker's census state, checks nothing and asks for nothing. A Claude Code worker is a pi worker and gets the pi
+worker's census, never a hook of its own. A foreign § (one that existed before the task
 started) whose text the task's change contradicts, or where it changes what a user sees beyond
 that text, is updated in the task's draft without asking, the task's go-ahead covering it, and
 listed in the reply or report as "Also updates §X: <what>"; it is never asked about. Spec mode stands alone: its guide, notes and

@@ -171,8 +171,6 @@ export interface ProfilesListing {
   hidden: string[];
   /** Keys of One at a time profiles with a live session, each with that session. */
   running: Record<string, { id: string; path: string; title: string }>;
-  /** Keys of One at a time profiles that have been run at least once (their shelf slot). */
-  everRun: string[];
   /** Keys of profiles that can't be used on this host now, each with the sentence why (a model the
       policy turns off or with no credentials here, a subagent profile not in this device's library). */
   unusable?: Record<string, string>;
@@ -388,8 +386,8 @@ export const isDefaultShape = (p: Pick<Profile, "remove" | "grant">) => p.remove
 
 /**
  * Capability-neutral: changes no capability or grant, isn't One at a time and
- * has no first message, so it sets only model, effort, subagents, mode or minor modes. The shelf
- * leaves these out. A stored snapshot missing a list reads as not changing it.
+ * has no first message, so it sets only model, effort, subagents, mode or minor modes.
+ * A stored snapshot missing a list reads as not changing it.
  */
 export const isCapabilityNeutral = (p: Partial<Pick<Profile, "remove" | "grant" | "singleton" | "firstMessage">>) =>
   !p.remove?.length && !p.grant?.length && !p.singleton && !p.firstMessage;

@@ -5,7 +5,7 @@ import { automationGroups, liveKey } from "../lib/automations-shelf";
 import { Icon } from "./ui";
 
 /**
- * The Automations region (§app.session-list/automations): a shortcut under Profiles to the sessions
+ * The Automations region (§app.session-list/automations): a shortcut under Groups to the sessions
  * Sova's schedules run, one sub-group per schedule. Re-read from GET /api/schedules whenever the
  * list's live sessions change. `row` draws a session row the way the rest of the list does.
  */

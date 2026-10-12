@@ -81,9 +81,7 @@ export const recentCountValid = (raw: unknown): boolean => {
  * only in the Organizations region, as the Overseer's file lives only behind its door. The rule is
  * here, not in the sidebar, so the spine's tiles and the overview's "Last active" get it too.
  *
- * A profile session (`profile` set, custom picks included) never is either: the Profiles region
- * lists exactly those (components/ProfileShelf), so Recent would only repeat it. A capability-neutral
- * profile's session (`profile.neutral`) is the exception: the shelf leaves it out, so it is eligible.
+ * A session's profile plays no part: a profile session is eligible like any other.
  *
  * Of the sessions a project owns, one kind is eligible: a coding session the operator started
  * (`project.operator`: New Session in the project's folder, New Coding Session). It is the user's own
@@ -93,8 +91,8 @@ export const recentCountValid = (raw: unknown): boolean => {
  * A server that predates `archived`, `workerSession`, `org` or `project.operator` sends none, which counts as not
  * archived, an ordinary main thread, and a build the overseer started (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "project" | "profile">): boolean =>
-  s.archived !== true && (isOrdinarySession(s) || isOperatorBuild(s)) && (!s.profile || s.profile.neutral === true);
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "project">): boolean =>
+  s.archived !== true && (isOrdinarySession(s) || isOperatorBuild(s));
 
 /**
  * Recent's order: most recently ACTIVE first.

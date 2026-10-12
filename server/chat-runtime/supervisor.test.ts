@@ -286,6 +286,39 @@ test("beyond the cap, the Claude children idle longest are let go; busy ones nev
   assert.deepEqual(reaped, ["b", "c"]);
 });
 
+test("a release that fails, or finds no child, counts the chat again; one unanswered for 30 s too", async () => {
+  const d = new FakeDriver();
+  const reaped: string[] = [];
+  let answer: () => Promise<"released" | "none" | "busy"> = () => Promise.reject(new Error("The chat's process is not reachable right now."));
+  const { sup } = make(d, { claudeIdleMax: 1, reapClaude: (id) => (reaped.push(id), answer()) });
+  const flush = () => new Promise((r) => setImmediate(r));
+  for (const id of ["a", "b", "c"]) await sup.start({ ...chat, chatId: id });
+  sup.noteClaude("a", "idle");
+  clock += 1;
+  sup.noteClaude("b", "idle");
+  assert.deepEqual(reaped, ["a"]);
+  await flush();
+  // The release failed: a is idle and counted again, so the next pass asks a again, never b instead.
+  answer = async () => "none";
+  sup.noteClaude("c", "busy");
+  assert.deepEqual(reaped, ["a", "a"]);
+  await flush();
+  // "none": a had no child after all; with only b idle the cap holds.
+  sup.noteClaude("c", "busy");
+  assert.deepEqual(reaped, ["a", "a"]);
+  // Unanswered: b counts as let go until 30 s pass.
+  answer = () => new Promise(() => {});
+  clock += 1;
+  sup.noteClaude("c", "idle");
+  assert.deepEqual(reaped, ["a", "a", "b"]);
+  clock += 29_000;
+  await sup.tick();
+  assert.deepEqual(reaped, ["a", "a", "b"]);
+  clock += 1_000;
+  await sup.tick();
+  assert.deepEqual(reaped, ["a", "a", "b", "b"]);
+});
+
 test("a reload replacement runs beside the chat under its own unit and socket, then takes its record", async () => {
   const d = new FakeDriver();
   const { sup, owned } = make(d);

@@ -32,6 +32,8 @@ interface P {
   start?: number;
   rssPages?: number;
   swapKb?: number;
+  /** A cgroup of its own (a chat's unit), relative to the cgroup root; written with its cgroup.procs. */
+  cgroup?: string;
 }
 
 /** Write a fake /proc (and, for `unit`, a cgroup) holding `procs`. Rewrites stat on each call. */
@@ -63,17 +65,21 @@ function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: n
     // systemd's SYSTEMD_EXEC_PID names the unit's main process; every child inherits it.
     const env = { ...(opts.unit ? { SYSTEMD_EXEC_PID: String(opts.execPid ?? SERVER) } : {}), ...p.env };
     writeFileSync(join(d, "environ"), Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\0") + "\0");
-    writeFileSync(join(d, "cgroup"), `0::${selfPath}\n`);
+    writeFileSync(join(d, "cgroup"), `0::${p.cgroup ?? selfPath}\n`);
     if (p.cwd) try { symlinkSync(p.cwd, join(d, "cwd")); } catch { /* exists */ }
     const kids = procs.filter((c) => c.ppid === p.pid).map((c) => c.pid).join(" ");
     writeFileSync(join(d, "task", String(p.pid), "children"), kids ? kids + " " : "");
+  }
+  for (const path of new Set(procs.flatMap((p) => (p.cgroup ? [p.cgroup] : [])))) {
+    mkdirSync(join(cg, path), { recursive: true });
+    writeFileSync(join(cg, path, "cgroup.procs"), procs.filter((p) => p.cgroup === path).map((p) => p.pid).join("\n") + "\n");
   }
   // Processes no longer listed are gone.
   for (const name of readdirSync(proc)) if (/^\d+$/.test(name) && name !== "1" && !procs.some((p) => String(p.pid) === name)) rmSync(join(proc, name), { recursive: true });
   if (opts.unit) {
     const u = join(cg, UNIT);
     mkdirSync(u, { recursive: true });
-    writeFileSync(join(u, "cgroup.procs"), procs.map((p) => p.pid).join("\n") + "\n");
+    writeFileSync(join(u, "cgroup.procs"), procs.filter((p) => !p.cgroup).map((p) => p.pid).join("\n") + "\n");
     writeFileSync(join(u, "cpu.stat"), `usage_usec ${opts.cgroupUsec ?? 0}\nuser_usec 0\nsystem_usec 0\n`);
     writeFileSync(join(u, "memory.current"), "17500000000\n");
     writeFileSync(join(u, "memory.peak"), "20000000000\n");
@@ -287,6 +293,40 @@ describe("sampler over a fixture /proc", () => {
       assert.deepEqual(s.sessions.map((x) => x.sessionPath), ["/s/a.jsonl"]);
       const w = s.sessions[0]!.workers[0]!;
       assert.deepEqual([w.id, w.name, w.pid, w.via, w.procCount], ["ag_09", "tester", 500, "worker-pid", 2]);
+    } finally {
+      setRemoteHosted("/s/a.jsonl", null);
+      setRemoteHosted("/s/w.jsonl", null);
+    }
+  });
+
+  test("chats in units of their own are measured with their whole unit, charged to their session or parent's worker, never escaped", async () => {
+    const CHATS = "/user.slice/user-1000.slice/user@1000.service/sova-chats.slice";
+    const procs = (): P[] => [
+      { pid: SERVER, ppid: 1, argv: ["node"] },
+      { pid: 450, ppid: 1, argv: ["bun", "server/chat-runtime/main.ts"], cgroup: `${CHATS}/sova-chat-a.service` },
+      { pid: 451, ppid: 450, argv: ["zsh", "-c", "make"], cgroup: `${CHATS}/sova-chat-a.service` },
+      { pid: 452, ppid: 1, sid: 452, argv: ["node", "vite"], cgroup: `${CHATS}/sova-chat-a.service` }, // setsid'd, reparented
+      { pid: 500, ppid: 1, argv: ["bun", "server/chat-runtime/main.ts"], cgroup: `${CHATS}/sova-chat-w.service` },
+      { pid: 501, ppid: 500, argv: ["zsh", "-c", "make"], cgroup: `${CHATS}/sova-chat-w.service` },
+    ];
+    const facts = { workers: [], toolsRunning: 0, lastToolEnd: 0 };
+    setRemoteHosted("/s/a.jsonl", { sessionId: "sess-a", ...facts, workers: [{ id: "ag_09", name: "tester", status: "running" }], pid: 450 });
+    setRemoteHosted("/s/w.jsonl", { sessionId: "sess-w", ...facts, pid: 500, worker: { parentPath: "/s/a.jsonl", parentSessionId: "sess-a", workerId: "ag_09" } });
+    try {
+      for (const unit of [true, false]) {
+        const fx = fixture(unit ? "chat-units" : "chat-units-tree", procs(), { unit });
+        const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, `chat-units-${unit}-log`), serverPid: SERVER,
+          eventLoop: false, platform: "linux", clkTck: HZ });
+        assert.equal(m.scope, unit ? "unit" : "tree");
+        await m.tick();
+        const s = m.snapshot()!;
+        assert.deepEqual(s.sessions.map((x) => x.sessionPath), ["/s/a.jsonl"]);
+        const a = s.sessions[0]!;
+        assert.deepEqual(a.own.map((p) => p.pid).sort(), [450, 451, 452]);
+        assert.deepEqual([a.workers[0]!.id, a.workers[0]!.pid, a.workers[0]!.procCount], ["ag_09", 500, 2]);
+        assert.equal(s.escaped.procs.length, 0, "a chat's unit is not the server's: nothing escaped it");
+        assert.equal(s.totals.procCount, 6);
+      }
     } finally {
       setRemoteHosted("/s/a.jsonl", null);
       setRemoteHosted("/s/w.jsonl", null);

@@ -29,7 +29,7 @@ import {
 import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
+import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
@@ -314,8 +314,7 @@ async function codingWorktrees(projectId: string, root: string): Promise<CodingW
       // listing's own (the first message, which ends with Sova's commit paragraph); none before the
       // first message (New Coding Session), and the page says "Untitled coding session".
       title: readSessionTitles()[r.sessionId] || r.title || (path ? listedTitle((await getSessionSummary(path).catch(() => null))?.title) : ""),
-      // A Project verbs run is listed by who really started it (its statechart's kind is neither of the two).
-      startedBy: r.onboard ? r.onboard.startedBy : r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
+      startedBy: buildStartedBy(r),
       ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
       ...(r.onboard ? { playbook: true as const } : {}),
       running: path ? isSessionBusy(path) : false,

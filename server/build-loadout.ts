@@ -101,6 +101,11 @@ export function seedBuildEffectsForTest(sessionId: string, s: Seeded & { path?: 
   if (s.path) fresh.set(sessionId, s.path);
 }
 
+/** Who started a build: a Project verbs run by who really did (its statechart's kind is neither of the two), else
+    `coding` the project's overseer and `operator-coding` the operator. The project page and the session list read this one rule. */
+export const buildStartedBy = (r: Pick<BuildRow, "kind" | "onboard">): "overseer" | "operator" =>
+  r.onboard ? r.onboard.startedBy : r.kind === "coding" ? "overseer" : "operator";
+
 /** A build's session file on this host, or null (another host's, or gone). */
 export function buildSessionPath(sessionId: string): string | null {
   const p = indexedSessionPaths().get(sessionId) ?? fresh.get(sessionId);

@@ -1527,7 +1527,7 @@ export function Sidebar(props: {
   const topGroups = createMemo(() => groupByCreation(topHits()));
   /**
    * Recent: the handful of sessions that moved last, said once more at the very top.
-   * Purely additive, like a group — every row here is still in Live & web or the Archive below —
+   * Purely additive, like a group — every row here is still in Live & web or the Archive below, or in its project's block —
    * and built from `hits()`, so it narrows with the search and can never carry a row the rest of
    * the sidebar is hiding. How many rows is `recentCount()`, and the settings dialog spec's General tab is the only
    * place that writes it: this region has no controls of its own.

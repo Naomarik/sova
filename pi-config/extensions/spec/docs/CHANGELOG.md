@@ -509,7 +509,7 @@ would list master's changes instead.
     bundled copy", branch `feat/spec-single-source`; not on master yet: the merge round folds it in.
   - Changed:
     - bundled copies are no longer supported: agents run the tools only from the installed extension
-      (`$core`), and a copy inside a project is that project's code, read and asked about, never run;
+      (`$core`), and a copy inside a project is that project's code, read and never run without asking;
       `README.md`, `docs/MODE.md` and the UPGRADING steps say so;
     - Sova removed its own copy, `.sova/spec/tools/` (it lagged `core/`), with its hash check in
       `.sova/spec/USAGE.md` and the playbook's T-VENDOR and CAN-1 rows.

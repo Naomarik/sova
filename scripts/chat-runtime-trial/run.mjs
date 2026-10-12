@@ -35,12 +35,16 @@
 //               child of its process); the run note in the file
 //     t11       a restart mid an Overseer's served tool: unknown, ran once; a message queued before the
 //               restart reaches the next server's limits (reset)
+//     t11b      a restart while an Overseer's sova_note waits after acting (SOVA_CHAT_TEST_ACT_DELAY_AT
+//               after): unknown, one act-wait, the note once, never re-sent
+//     t11c      the same for a project overseer, waiting before acting: unknown, no note
 //     t12a      a baton: a participant's message through the share hub; record_decision's owner area in
 //               the roster's spelling, its quote checked
 //     t12b      a restart mid baton reply: it finishes; one reply/writing, one reply/ended
 //     t12c      take-back mid reply: "(taken back)" in the file when the route answers; one reply/ended
+//     t12d      the model hands off (hand_to): one hand-to row, one hand-off entry, one reply/ended
 //     t13       a project overseer's look across a restart: one look message, reported once
-//     t14       a brief while the Overseer reloads: one brief turn (needs SOVA_OVERSEER_TICK_MS)
+//     t14       a brief while the Overseer reloads (the test tick route): one brief turn
 //     t15       kill -9 of a baton mid-reply: the pane's error, reply/ended once, no "continue"
 //     t16       a powers chat's session_send to another process (hop header); a restart mid-send
 //               delivers at most once
@@ -93,7 +97,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12a", "t12b", "t12c", "t13", "t14", "t15", "t16"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1001,6 +1005,12 @@ async function t12c() {
   await sleep(6000);
   const ended = batonRows(o, sid, "reply/ended", t0);
   R.check(ended.length === 1, `t12c: one reply/ended (${ended.length})`);
+  const takes = orgLog(o).filter((r) => /take-back/.test(r.event) && String(r.session ?? "").includes(sid) && r.at >= t0 && !r.refused);
+  R.check(takes.length === 1, `t12c: one take-back row in the org log (${takes.map((r) => r.event).join(", ")})`);
+  const all = entries(path).filter((e) => JSON.stringify(e).includes('"question":"(taken back)"')).length;
+  R.check(all === 1, `t12c: exactly one "(taken back)" entry (${all})`);
+  const stopped = turnAssistants(path, "[long 40 #b12c]");
+  R.check(stopped.length === 1 && stopped[0].stopReason === "aborted", `t12c: the reply stays whole as a stopped reply (${stopped.map((m) => m.stopReason).join(", ")})`);
 }
 
 // T13: a project overseer's look across a server restart: one look message, reported once, no second
@@ -1027,41 +1037,136 @@ async function t13() {
   R.check(mockLog(mock.log).filter((e) => e.tag === "look" && e.scenario).length === 1, "t13: the model was asked for the look once (no second sova/look turn)");
   const f = finished();
   R.check(f.length === 1 && f[0].event === "look/finished", `t13: the look was reported once, finished (${f.map((r) => r.event).join(", ") || "none"})`);
+  const answers = users[0] ? entries(po.path).filter((e) => e.type === "message" && e.message?.role === "assistant").length : 0;
+  R.check(answers === 1, `t13: one assistant turn answered it (${answers})`);
 }
 
-// T14: a brief while the Overseer's process reloads (Reload now just before the tick): one brief turn.
-// Needs the brief tick short (SOVA_OVERSEER_TICK_MS) and proactivity "brief".
+// T14: a brief while the Overseer's process reloads (design §10.4): Reload now on an older Overseer,
+// then the test tick route inside the swap: one brief in the file, a second tick briefs nothing.
 async function t14() {
   await teardown();
   const ovFile = join(sova, "overseer.json");
   const ovSettings = readJson(ovFile);
   writeFileSync(ovFile, JSON.stringify({ ...ovSettings, proactivity: "brief" }));
   try {
-    await boot({ build: "trial-a", extra: { SOVA_OVERSEER_TICK_MS: "500" } });
+    await boot({ build: "trial-a", extra: { SOVA_CHAT_TEST_SERVED: "1" } });
     const ov = await openOn(await overseer());
     await turn(ov, "say ok");
     ov.s.close();
-    await restart({ [KNOBS.build]: "trial-b" });
-    const ov2 = await chat(c, ov.path);
-    const pidA = chatPid(ov.path);
-    // The blocker (a chat waiting on a dialog) and the reload at the same moment.
+    // The blocker: a chat waiting on a dialog (its pane stays attached, so the dialog stays open).
     const blocker = await newChat();
     prompt(blocker.s, "[ask] ask me");
     await blocker.s.until(isConfirm, 60000, "the dialog");
+    await restart({ [KNOBS.build]: "trial-b" });
+    const pidA = chatPid(ov.path);
+    const ov2 = await chat(c, ov.path);
+    const blocker2 = await chat(c, blocker.path);
     ov2.send({ type: "reload_code" });
+    // Tick inside the swap: until a tick briefs, at most 20 tries.
+    const ticks = [];
+    for (let i = 0; i < 20; i++) {
+      const r = await post("/api/test/overseer/tick", {}).catch((e) => ({ error: String(e.message ?? e) }));
+      ticks.push(r);
+      if (r?.briefed?.length) break;
+      await sleep(250);
+    }
+    R.note(`t14: ticks ${JSON.stringify(ticks).slice(0, 300)}`);
     await waitFor(() => userEntriesWith(ov.path, "[overseer-brief]") > 0, 60000);
-    await sleep(8000);
+    await sleep(5000);
     R.check(chatPid(ov.path) && chatPid(ov.path) !== pidA, `t14: the Overseer reloaded (pid ${pidA} → ${chatPid(ov.path)})`);
     const briefs = userEntriesWith(ov.path, "[overseer-brief]");
-    R.check(briefs === 1, `t14: one brief turn (${briefs})`);
+    R.check(briefs === 1, `t14: one brief in the Overseer's file (${briefs})`);
+    const again = await post("/api/test/overseer/tick", {}).catch((e) => ({ error: String(e.message ?? e) }));
+    R.check(Array.isArray(again?.briefed) && again.briefed.length === 0, `t14: a second tick briefs nothing (${JSON.stringify(again)})`);
     R.check(mockLog(mock.log).filter((e) => /\[overseer-brief\]/.test(e.userText ?? "") && !e.afterTool).length === 1, "t14: the model was asked for the brief once");
     ov2.close();
     blocker.s.close();
+    blocker2.close();
   } finally {
     writeFileSync(ovFile, JSON.stringify(ovSettings));
     await teardown();
     await boot();
   }
+}
+
+/** The test hook's lines (<stateRoot>/chats/test-served.jsonl). */
+const servedLog = () => readLines(join(sova, "chats", "test-served.jsonl"));
+/**
+ * T11b/T11c (design §10.3 B): a restart while a real act waits (SOVA_CHAT_TEST_ACT_DELAY_MS), `at`
+ * after (the act happened, its result never reached the chat) or before (it never ran). `who`: the
+ * Overseer, or a project overseer. The act is sova_note in an attended run.
+ */
+async function slowAct(label, at, who) {
+  await teardown();
+  await boot({ extra: { SOVA_CHAT_TEST_SERVED: "1", SOVA_CHAT_TEST_ACT_DELAY_MS: "10000", SOVA_CHAT_TEST_ACT_DELAY_AT: at } });
+  let o = null;
+  let target;
+  if (who === "overseer") target = await openOn(await overseer());
+  else {
+    o = await orgSetup();
+    const po = await projectOverseer(o.projectId);
+    target = await openOn(po.path);
+  }
+  const notesNow = async () => (who === "overseer" ? ((await c.api("/api/overseer/notes"))?.text ?? "") : (() => {
+    try {
+      return readFileSync(join(o.ws, "projects", o.projectId, "overseer", "notes.md"), "utf8");
+    } catch {
+      return "";
+    }
+  })());
+  const actionsFile = who === "overseer" ? join(sova, "overseer-actions.jsonl") : join(o.ws, "projects", o.projectId, "overseer", "actions.jsonl");
+  await turn(target, "say ok");
+  R.check(whereOf(target.path) === "process", `${label}: the ${who === "overseer" ? "Overseer" : "project overseer"} runs in a process of its own (pid ${chatPid(target.path) || "none"})`);
+  const note = `TRIAL-SLOW-${at}`;
+  prompt(target.s, `[call sova_note {"op":"append","text":"${note}"}]`);
+  await waitFor(() => servedLog().some((e) => e.event === "act-wait"), 30000, 250);
+  await sleep(1000);
+  const wait = servedLog().find((e) => e.event === "act-wait");
+  target.s.close();
+  const logFile = join(scratch, `server-${n}.log`);
+  const logFrom = readFileSync(logFile).length;
+  await restart();
+  await waitFor(() => toolResults(target.path).length > 0, 60000);
+  await sleep(3000);
+  const results = toolResults(target.path).filter((e) => e.message?.toolCallId === wait?.toolCallId || JSON.stringify(e).includes(wait?.toolCallId ?? "\u0000"));
+  R.check(results.length === 1 && /outcome is unknown/.test(JSON.stringify(results[0])), `${label}: one tool result for the call, the unknown-outcome text (${results.length}: ${resultText(results[0])})`);
+  const lines = servedLog().filter((e) => e.effectId === wait?.effectId);
+  R.check(lines.filter((e) => e.event === "act-wait").length === 1 && !lines.some((e) => e.event === "act-done"), `${label}: one act-wait and no act-done for the effect (${lines.map((e) => e.event).join(", ")})`);
+  const notes = await notesNow();
+  const times = notes.split(note).length - 1;
+  const logged = readLines(actionsFile).filter((a) => a.toolCallId === wait?.toolCallId && a.outcome === "ok").length;
+  const want = at === "after" ? 1 : 0;
+  R.check(times === want, `${label}: the note is in the notes ${want}× (${times})`);
+  R.check(logged === want, `${label}: the action log has ${want} ok line(s) for the call (${logged})`);
+  const resent = readFileSync(logFile).subarray(logFrom).toString("utf8").split("\n").filter((l) => wait?.effectId && l.includes(wait.effectId)).length;
+  R.check(resent === 0, `${label}: the next server never saw the effect id (${resent} log lines)`);
+  await teardown();
+  await boot();
+}
+const t11b = () => slowAct("t11b", "after", "overseer");
+const t11c = () => slowAct("t11c", "before", "po");
+
+// T12d (design §4.8 A): the model hands off (hand_to) from the baton's process: one hand-to row, one
+// hand-off entry, one reply/writing and one reply/ended.
+async function t12d() {
+  const { o, b, sid, path } = await batonSetup();
+  const bob = await post(`/api/orgs/${o.orgId}/people`, { name: "Bob", role: "Staff" });
+  const bobId = bob.roster.find((x) => x.name === "Bob").id;
+  const t0 = Date.now();
+  const args = { person: bobId, question: "Can you confirm the budget?", briefing: "Dana asked for a budget check." };
+  await participantSays(b.link, `Please ask Bob.\n[call hand_to ${JSON.stringify(args)}]`);
+  await waitFor(() => toolResults(path).length > 0, 60000);
+  await waitFor(() => batonRows(o, sid, "reply/ended", t0).length > 0, 20000);
+  await sleep(3000);
+  R.check(whereOf(path) === "process", `t12d: the baton runs in a process of its own (pid ${chatPid(path) || "none"})`);
+  const res = toolResults(path);
+  R.check(res.length === 1 && /Handed to Bob/.test(JSON.stringify(res[0])), `t12d: one hand_to result, handed to Bob (${resultText(res[0])})`);
+  const moves = orgLog(o).filter((r) => /hand-to/.test(r.event) && String(r.session ?? "").includes(sid) && r.at >= t0 && !r.refused);
+  R.check(moves.length === 1, `t12d: one hand-to row in the org log (${moves.map((r) => r.event).join(", ")})`);
+  const handoffs = entries(path).filter((e) => e.customType === "sova-baton-handoff");
+  R.check(handoffs.length === 1, `t12d: one hand-off entry (${handoffs.length})`);
+  R.check(batonRows(o, sid, "reply/writing", t0).length === 1, `t12d: one reply/writing (${batonRows(o, sid, "reply/writing", t0).length})`);
+  R.check(batonRows(o, sid, "reply/ended", t0).length === 1, `t12d: one reply/ended (${batonRows(o, sid, "reply/ended", t0).length})`);
 }
 
 // T15: kill -9 of the baton's process mid-reply: the pane's error, reply/ended once, no "continue";
@@ -1141,7 +1246,7 @@ async function plumbing() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t12a, t12b, t12c, t13, t14, t15, t16, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 try {
   await boot();

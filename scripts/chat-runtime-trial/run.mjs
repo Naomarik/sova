@@ -490,6 +490,13 @@ async function t4() {
   const a2 = await chat(c, A.path);
   const older = await a2.until((m) => m.type === "code", 15000, "A's code state").catch(() => null);
   R.check(older?.state === "older", `t4: an attached chat on the old build shows "older" (${JSON.stringify(older)})`);
+  // Reload now on B while its reply runs: pending, never a cut.
+  const b2 = await chat(c, B.path);
+  const bf = b2.got.length;
+  b2.send({ type: "reload_code" });
+  const pend = await b2.until((m) => m.type === "code" && m.pending, 10000, "pending", bf).catch(() => null);
+  R.check(pend?.state === "older" && pend.pending === true, `t4: Reload now during a reply answers {older, pending} (${JSON.stringify(pend)})`);
+  b2.close();
   // B must not reload while its reply runs.
   for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.event === "done" && e.tag === "t4b"); i++) {
     if (chatPid(B.path) !== pidB) break;

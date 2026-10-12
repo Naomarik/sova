@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DetachedDriver, realExec, SystemdDriver, type Driver, type Exec, type UnitStatus } from "../project-services/drivers";
 import { stateHash } from "../project-services/store";
 import { stateRoot } from "../state-root";
@@ -27,6 +27,7 @@ const LOG_TAIL = 20;
 /** How long an accepted drain, or a predecessor still exiting, is waited for. */
 const EXIT_WAIT_MS = 30_000;
 const PREDECESSOR_WAIT_MS = 10_000;
+const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 
 export const chatsRoot = () => join(stateRoot(), "chats");
 export const registryDir = () => join(chatsRoot(), "registry");
@@ -232,6 +233,8 @@ export interface SupervisorDeps {
   exitWaitMs?: number;
   predecessorWaitMs?: number;
   pollMs?: number;
+  /** The chat process's working directory (default the repository root, as for the server: never the chat's own cwd, whose mise config must not pick the runtime). */
+  workdir?: string;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
@@ -335,7 +338,7 @@ export class ChatSupervisor {
   private async spawn(chat: ChatLaunch, unit: string, sock: string): Promise<ChatRecord> {
     const { argv, env, build } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
     const rec: ChatRecord = { ...chat, unit, pid: null, sock, epoch: this.deps.epoch, ...(build ? { build } : {}), startedAt: new Date(this.now()).toISOString() };
-    await this.deps.driver.start({ unit, argv, cwd: chat.cwd, env });
+    await this.deps.driver.start({ unit, argv, cwd: this.deps.workdir ?? REPO_ROOT, env });
     const until = this.now() + (this.deps.startWaitMs ?? 10_000);
     let st = await this.deps.driver.status(unit);
     while (st.pid === null && st.state === "activating" && this.now() < until) {

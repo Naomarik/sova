@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DetachedDriver, envFileKeeps, realExec, SystemdDriver, type Driver, type Exec, type UnitStatus } from "../project-services/drivers";
 import { stateHash } from "../project-services/store";
+import type { ExitCause } from "../../shared/chat-runtime-wire";
 import { stateRoot } from "../state-root";
 
 /**
@@ -153,7 +154,7 @@ export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?:
 // ---- records ------------------------------------------------------------------------------------
 
 /** Why a chat process exits when it says so first (its `exit{cause}`), or the supervisor stopped it. */
-export type ExitCause = "idle" | "reload" | "archived" | "closed" | "refused" | "operator" | "incompatible";
+export type { ExitCause };
 
 export interface ChatDeath {
   chatId: string;

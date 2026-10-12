@@ -3870,9 +3870,12 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
       loader: built
-        ? // A special chat starts workers too (the Overseer's explorer, a baton's or project overseer's
-          // agent_spawn): its host as an ordinary chat's (§app.chat-processes/workers).
-          { ...built.loader, extensionFactories: [...(built.loader.extensionFactories ?? []), { name: "sova-worker-host", factory: workerHostExtension }] }
+        ? // A special chat that loads extensions (the Overseer, whose subagents start its explorers) has
+          // the worker host an ordinary chat has (§app.chat-processes/workers); one that loads none of
+          // the operator's (a baton, a project overseer) starts no worker and keeps its own alone.
+          special!.spec.loader.noExtensions
+          ? built.loader
+          : { ...built.loader, extensionFactories: [...(built.loader.extensionFactories ?? []), { name: "sova-worker-host", factory: workerHostExtension }] }
         : {
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,

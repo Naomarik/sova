@@ -27,10 +27,14 @@ import {
   onLinksNotified,
   openKindOf,
   recordConfigFailure,
+  adoptSpecial,
   servedToolsFor,
   setChatRouter,
+  specialHostOf,
+  specialSpecFor,
   takeOpeningChoice,
 } from "./chat-handle";
+import type { ChatSpecialKind, SpecialSpec } from "../shared/chat-runtime";
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { takeInflight } from "./chat-runtime/inflight";
@@ -169,7 +173,8 @@ export class ChatHostRouter {
       drain: (id) => this.handleOf(id)?.drain("reload") ?? Promise.resolve({ ok: false }),
       open: async (id, rep, link) => {
         if (!link) throw new Error("no link to the replacement");
-        const mirror = await this.openOn(link, rep.sessionPath, id, false);
+        const before = this.remotes.get(rep.sessionPath);
+        const mirror = await this.openOn(link, rep.sessionPath, id, false, before ? kindOfMirror(before.mirror) : null);
         const h = this.remotes.get(rep.sessionPath);
         if (h) h.repoint(link, { unit: rep.unit, pid: rep.pid ?? 0 }, mirror);
         else this.adoptHandle(rep, link, mirror);
@@ -245,13 +250,15 @@ export class ChatHostRouter {
   }
 
   /** Send `open` on `link` and wait for its answer: the mirror, or its refusal thrown. */
-  private async openOn(link: Link, path: string, sessionId: string, force: boolean): Promise<ChatRuntimeMirror> {
+  private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null): Promise<ChatRuntimeMirror> {
+    // A special chat's loadout is the server's word on it at each open (its refusal: no open).
+    const special: SpecialSpec | undefined = kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined;
     const id = randomUUID();
     const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
-    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title ?? "");
-    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served });
+    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title ?? "", kind === "powers");
+    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
     if (f.refusal) throw errorOfRefusal(f.refusal);
@@ -264,6 +271,18 @@ export class ChatHostRouter {
     this.paths.set(rec.chatId, rec.sessionPath);
     this.hooks.state?.(h);
     return h;
+  }
+
+  /** A special chat's composer as its kind says it is now (`push special`). */
+  private pushSpecial(h: RemoteChatHandle): void {
+    const kind = kindOfMirror(h.mirror);
+    if (!kind || kind === "powers") return;
+    h.pushComposerClosed(specialHostOf(kind)?.composerClosed?.(h.path) ?? null);
+  }
+
+  /** Every special chat this server runs in a process: its composer as its kind says it is now. */
+  composersChanged(): void {
+    for (const h of this.remotes.values()) if (!h.closed) this.pushSpecial(h);
   }
 
   /** Take back what a previous server left running (before any chat socket is served). */
@@ -288,8 +307,11 @@ export class ChatHostRouter {
         const state = await awaitFrame(link, "state", 5_000);
         // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
         // chat declared them at its open).
-        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title ?? "");
-        this.adoptHandle(rec, link, state.mirror, held);
+        const kind = kindOfMirror(state.mirror);
+        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title ?? "", kind === "powers");
+        if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
+        const h = this.adoptHandle(rec, link, state.mirror, held);
+        this.pushSpecial(h);
         return;
       } catch {
         // its unit is up but it did not answer yet: again in 5 s, for a minute. A link left open would
@@ -315,7 +337,11 @@ export class ChatHostRouter {
     const open = this.remotes.get(path);
     if (open && !open.closed) {
       // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
-      if ((await open.call("reacquire", { force })) === "reloaded") servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "");
+      if ((await open.call("reacquire", { force })) === "reloaded") {
+        const kind = kindOfMirror(open.mirror);
+        servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "", kind === "powers");
+        if (kind && kind !== "powers") await adoptSpecial(kind, path);
+      }
       return open;
     }
     if (!this.out() || this.inprocOnly.has(path)) return null;
@@ -329,15 +355,17 @@ export class ChatHostRouter {
 
   /** Start the chat in a process of its own, or null: it runs here (not ordinary, or its start failed). */
   private async startChat(path: string, force: boolean): Promise<ChatHandle | null> {
-    let kind: Awaited<ReturnType<typeof openKindOf>>;
+    let kind: OpenKind;
     try {
       kind = await openKindOf(path);
     } catch {
       return null; // unreadable: the in-process open says why
     }
-    if (kind) return null;
+    // Every chat goes out but a worker's own file (§app/chat-processes): the special kinds and powers too.
     const summary = await getSessionSummary(path).catch(() => null);
     if (!summary || summary.workerSession) return null;
+    // A special kind's refusal (a previous conversation is read-only) comes before any process starts.
+    if (kind && kind !== "powers") await specialHostOf(kind)?.spec(path);
     // The cheap refusals first, as the in-process open makes them: no process for a doomed open.
     assertNotLive(path);
     assertOpenConfig(path);
@@ -358,6 +386,8 @@ export class ChatHostRouter {
       const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
       link = c.link;
       this.sup.noteConnected(rec.chatId);
+      // A special or powers chat needs a chat process that speaks proto 2 (an older one opens it as ordinary).
+      if (kind && c.hello.proto < 2) throw new Error(`its process speaks protocol ${c.hello.proto}, below 2`);
       if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
     } catch (err) {
       await this.sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
@@ -365,8 +395,13 @@ export class ChatHostRouter {
       return null;
     }
     try {
-      const mirror = await this.openOn(link, path, rec.chatId, force);
-      return this.adoptHandle(rec, link, mirror);
+      const mirror = await this.openOn(link, path, rec.chatId, force, kind);
+      const h = this.adoptHandle(rec, link, mirror);
+      // Its kind's every-open hook (the Overseer's mode, a baton's abilities), before anyone has it.
+      const special = kindOfMirror(mirror);
+      if (special && special !== "powers") await specialHostOf(special)?.opened?.(h);
+      this.pushSpecial(h);
+      return h;
     } catch (err) {
       // A refusal (busy, recent, config) is the caller's, as in-process; the process exits by itself.
       this.sup.expectExit(rec.chatId, "refused");
@@ -397,6 +432,7 @@ export class ChatHostRouter {
   private died(d: ChatDeath): void {
     const path = d.sessionPath;
     const h = this.remotes.get(path);
+    const special = h ? kindOfMirror(h.mirror) : null;
     const pid = h?.at.pid ?? this.sup.record(d.chatId)?.pid ?? null;
     const how = d.exit !== null ? `exit ${d.exit}` : d.signal ? `signal ${d.signal}` : "it stopped answering";
     const tail = d.logTail.slice(-3).join("\n").slice(-300);
@@ -412,6 +448,7 @@ export class ChatHostRouter {
       }
       releaseLockOf(path, lock);
     }
+    if (special && special !== "powers") specialHostOf(special)?.died?.(path);
     const marker = takeInflight(d.chatId);
     if (marker && !marker.auto)
       resumeCrashedChat(path, marker.since, async (p) => {
@@ -424,6 +461,14 @@ export class ChatHostRouter {
     for (const h of this.remotes.values()) h.bye();
     this.sup.detach();
   }
+}
+
+/** What a chat opens as, for where it runs: a special kind, a powers profile, or null (ordinary). */
+type OpenKind = Awaited<ReturnType<typeof openKindOf>>;
+
+/** A chat process's kind, from its mirror: a special kind's, "powers" for a powers profile, else null. */
+function kindOfMirror(m: ChatRuntimeMirror): ChatSpecialKind | "powers" | null {
+  return m.special ?? (m.profile?.profile?.grant.length ? "powers" : null);
 }
 
 function claudePath(): string | null {
@@ -454,6 +499,7 @@ export function startChatHost(): void {
     all: () => router?.all() ?? [],
     acquire: (path, force) => (router ? router.acquire(path, force) : Promise.resolve(null)),
     close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
+    composersChanged: () => router?.composersChanged(),
   });
 }
 

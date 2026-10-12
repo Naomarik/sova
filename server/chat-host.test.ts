@@ -131,11 +131,13 @@ test("an ordinary chat runs in a process of its own; a link member is ordinary",
   t.router.detach();
 });
 
-test("a chat whose profile grants powers stays in the server; so does every chat with the switch off", async () => {
+test("a chat whose profile grants powers runs in a process of its own too; every chat with the switch off stays in", async () => {
   const t = setup();
-  const powers = session({ extra: [{ type: "custom", id: "p1", parentId: "a1", timestamp: "2026-10-12T00:00:03.000Z", customType: PROFILE_ENTRY, data: { v: 1, profile: { id: "ops", name: "Ops", grant: ["shell"] } } }] });
-  assert.equal(await t.router.acquire(powers.path, false), null);
-  assert.equal(t.driver.started.length, 0, "no unit for a chat that stays in");
+  const powers = session({ extra: [{ type: "custom", id: "p1", parentId: "a1", timestamp: "2026-10-12T00:00:03.000Z", customType: PROFILE_ENTRY, data: { v: 1, profile: { id: "ops", name: "Ops", grant: ["shell"], remove: [] } } }] });
+  const p = await t.router.acquire(powers.path, false);
+  assert.equal(p?.where, "process");
+  assert.equal(t.driver.started.length, 1);
+  t.router.detach();
 
   const off = setup({ out: false });
   assert.equal(await off.router.acquire(session().path, false), null);

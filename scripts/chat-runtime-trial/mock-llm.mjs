@@ -20,8 +20,9 @@
 //   [bash N]   first a bash call `sleep N; echo BASH-DONE`, then a text quoting its output
 //   [served]   first a call to the test-only server-hosted tool trial_served_sleep (a server test hook
 //              registers it; it sleeps 10 s), then a text quoting its result
-//   [compact]  (pi's compaction request: "context checkpoint summary" in the prompt) a summary streamed
+//   [compact]  (pi's compaction request, by its prompt's shape) a summary streamed
 //              over 15 steps, ending "COMPACT-SUMMARY"
+//   [big N]    N thousand characters of text at once (history enough for a compaction to cut)
 //   the crash-resume text: as [long 20 #resume]
 //   anything else: "ok"
 // A request whose newest message is a tool result gets the scenario's closing text.
@@ -59,12 +60,15 @@ const server = createServer(async (req, res) => {
   const toolText = afterTool ? textOf(last.content) : "";
   const anyResume = msgs.some((m) => m.role === "user" && /server restarted|process stopped unexpectedly/i.test(textOf(m.content)));
   const id = ++n;
-  const compact = msgs.some((m) => /context checkpoint summary/i.test(textOf(m.content)));
+  // pi's summarization request: its older prompt names a "context checkpoint summary"; the current
+  // one sends the conversation serialized under "# Conversation" with "# Instructions" after it.
+  const compact = msgs.some((m) => /context checkpoint summary/i.test(textOf(m.content))) || /^# Conversation\n[\s\S]*\n# Instructions\n/.test(userText);
   // A crash resume ("This chat's process stopped unexpectedly…") gets a 20-part reply tagged resume,
   // so a trial can kill the process again while the resume runs.
   const long = /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText) ?? (/process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : null);
   const bash = /\[bash (\d+)\]/.exec(userText);
-  const scenario = compact ? "compact" : long ? "long" : bash ? "bash" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
+  const big = /\[big (\d+)\]/.exec(userText);
+  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
   const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, toolText: toolText.slice(0, 300), anyResume, userText: userText.slice(0, 300), messages: msgs.length };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
@@ -115,6 +119,12 @@ const server = createServer(async (req, res) => {
     chunk({}, { finish_reason: "stop" });
     usage(500, 60);
     if (log) appendFileSync(log, JSON.stringify({ n: id, at: new Date().toISOString(), event: "done", scenario }) + "\n");
+  } else if (scenario === "big" && !afterTool) {
+    const words = "history ".repeat(Math.ceil((Number(big[1]) * 1000) / 8));
+    chunk({ role: "assistant", content: "" });
+    for (let i = 0; i < words.length; i += 8000) chunk({ content: words.slice(i, i + 8000) });
+    chunk({}, { finish_reason: "stop" });
+    usage(500, Math.round(words.length / 4));
   } else if (scenario === "bash" && !afterTool) {
     call("bash", { command: `sleep ${bash[1]}; echo BASH-DONE` });
   } else if (scenario === "served" && !afterTool) {

@@ -99,6 +99,25 @@ describe("org host", () => {
     await host.close();
   });
 
+  test("a settled act answers once its session is quiet: an effect that acts again, and that act's own effect, both ran", async () => {
+    const host = await open(place());
+    const order: string[] = [];
+    host.effects.register("write", async () => {
+      order.push("write");
+      await host.act("p/1", "again", {}, operator);
+      return null;
+    });
+    host.effects.register("write2", async () => {
+      await tick(30);
+      order.push("write2");
+      return null;
+    });
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.act("p/1", "go", {}, operator, { settle: true });
+    assert.deepEqual(order, ["write", "write2"]);
+    await host.close();
+  });
+
   test("a big org opens in chunks: loading and resume each give the event loop a turn every `chunk` sessions (C09; timed in bench.integration)", async () => {
     const at = place();
     const host = await open(at);

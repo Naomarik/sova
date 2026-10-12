@@ -102,7 +102,7 @@ export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failB
   return { ...env, ...extra };
 }
 
-const sc = (...a) => execFileSync("systemctl", ["--user", ...a], { encoding: "utf8" }).trim();
+const sc = (...a) => execFileSync("systemctl", ["--user", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const show = (unit, prop) => {
   try {
     return sc("show", "-p", prop, "--value", unit);

@@ -1233,7 +1233,8 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   try {
     const overseer = await acquireChatHandle(path);
     // Keyed by what it briefs (§app.chat-processes/server-messages): sent again after a lost answer, one turn.
-    await overseer.send({ text, origin: "server", checkModel: true, key: `brief:${briefKey(d.brief.map((k) => `${k}=${counts.get(k) ?? ""}`))}` });
+    await overseer.send({ text, origin: "server", checkModel: true, key: tickBriefKey(briefDigest(d.brief.map((k) => `${k}=${counts.get(k) ?? ""}`))) });
+    pendingBrief = null;
     lastBriefAt = Date.now();
     unattended++;
     return { briefed: d.brief };
@@ -1246,8 +1247,19 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   }
 }
 
-/** A brief's key: a digest of what it says. */
-const briefKey = (parts: readonly string[]): string => createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 32);
+/** A digest of what a brief says. */
+const briefDigest = (parts: readonly string[]): string => createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 32);
+
+/** The check's brief not yet known sent: its digest and key, kept so a retry of it (a lost answer, the
+    next check after a failed send) is the same message, and a later brief of the same blockers (after
+    BRIEF_REPEAT_MS) a new one, whatever the chat's key memory keeps. */
+let pendingBrief: { digest: string; key: string } | null = null;
+function tickBriefKey(digest: string, now = Date.now()): string {
+  if (pendingBrief?.digest !== digest) pendingBrief = { digest, key: `brief:${digest}:${now}` };
+  return pendingBrief.key;
+}
+/** For the tests: the key a check's brief of `digest` gets now, and marking it sent. */
+export const briefKeyForTest = { key: (digest: string, now?: number) => tickBriefKey(digest, now), sent: () => void (pendingBrief = null) };
 
 /** One brief to the Overseer under Brief Me (the auto-resume report); nothing under any other proactivity. */
 async function sendBrief(body: string): Promise<void> {
@@ -1257,7 +1269,8 @@ async function sendBrief(body: string): Promise<void> {
   if (!path) return;
   const overseer = await acquireChatHandle(path);
   const text = serverRedactor().redact(`${OVERSEER_BRIEF_PREFIX} ${body}`);
-  await overseer.send({ text, origin: "server", checkModel: true, key: `brief:${briefKey([text])}` });
+  // One send, one key: a lost answer's retry within the handle is the same message.
+  await overseer.send({ text, origin: "server", checkModel: true, key: `brief:${briefDigest([text])}:${Date.now()}` });
   lastBriefAt = Date.now();
 }
 

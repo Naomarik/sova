@@ -695,6 +695,14 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
   text (`button "Terms" link`) is still ignored with a warning, as are a line's words for `tabs`,
   `tabbar` and `table`. A wireframe `chart` also reads `parts`, `doughnut` as pie, `stacked`,
   `grouped`, `columns` as bar, and `lines`, `trend` as line.
+- **Wireframe placement words.** In `vis wireframe`, after a block's texts, `end` and `trailing`
+  are `right`, and `fill`, `expand`, `stretch` and `flex` are `grow` (§chat.markdown/vis-wireframe,
+  Rows); a line of only such words, tones, `on`, `wide`, `middle` or `bottom`, indented under a
+  block, applies them to that block (`middle` and `bottom` only to a row; on another block they are
+  ignored with a warning). A `spacer` line among a row's blocks draws nothing: the block
+  after it starts the row's right group, as if it said `right`, and a `spacer` with no block after it
+  is dropped; outside a row a `spacer` is still a divider. `left` and `center` are still ignored
+  without a warning.
 - **Arrows written backwards.** In `vis flow`, `vis state` and `vis sequence`, `<-` and `<--`
   outside quotes are `->` and `-->` pointing the other way: `w <- q "dequeue"` is the message `q ->
   w "dequeue"`. In a flow chain the ids and strings around the arrow keep their roles, only the
@@ -719,12 +727,15 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
   (with no tone after its label) takes that tone, where it drew a step "done | ok"; a steps chain
   joined by a wide arrow (`→`, `=>`, …) is that many steps, where it drew one chip; a labelled start
   or end dot is drawn as above, where the label was never shown; a row with a `|` inside a
-  quoted field, split there before; and a timeline label ending in a tone word or a quoted string,
-  drawn as written before. These drew before with a warning that part of them was dropped,
+  quoted field, split there before; a timeline label ending in a tone word or a quoted string,
+  drawn as written before; a wireframe block's `right`, ignored before; and a `spacer` among a
+  wireframe row's blocks, a divider before. These drew before with a warning that part of them was dropped,
   and now draw it: a decision's branch string (the node's second label), a mark naming a step, a
   layer's item or number or a tree item without its slash, a mark on a line inside a range, a
   timeline mark without its row's `(…)`, a wireframe block written after another's texts, a
-  wireframe chart's type word, and a tree mark with an extension glued after its quotes.
+  wireframe chart's type word, a wireframe block's `grow`, `end`, `trailing`, `fill`, `expand`,
+  `stretch` or `flex`, a wireframe row's `middle`, `bottom` or shares, and a tree mark with an
+  extension glued after its quotes.
 
 ## §chat.markdown/vis-matrix-tones — `vis matrix` cell tones
 
@@ -779,7 +790,8 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   inside the nearest less-indented line, so any indent width works. `screen "Name" [phone|desktop]`
   starts a screen (optional for one screen); `== Name ==` does too, and a `screen` line right after
   it names the same screen. The strings fill the block's slots left to right; the words after them,
-  in any order, are a tone, `on` (checked, selected), `wide`, and for `chart` `bar|line|pie` (a
+  in any order, are a tone, `on` (checked, selected), `wide`, `right`, `grow`, for a `row` also
+  `middle`, `bottom` and its shares (`1:3:2`, see Rows), and for `chart` `bar|line|pie` (a
   block word with its own text there starts another block: §chat.markdown/vis-lenience-content). No ids:
   an arrow names a screen; `mark` names a block by its first text (first in the screen it is
   written under, then anywhere), a screen by its name, or a block word. A block word written
@@ -800,6 +812,34 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   when its text would keep less than about 12 characters' width beside them, the chip and the
   controls wrap onto a line under the text. The rest of what it holds is its section, below it. `tabbar` and
   `footer` sit at the bottom.
+- **Rows.** A `row` with none of the words below draws as it did before them.
+  - In a row, `right` on a block starts the row's right group: that block and every block after it
+    sit at the row's right end (only the first `right` in a row counts). `grow` on a block makes it
+    take the room the others leave, at least about 12 characters wide, several sharing it equally;
+    `wide` counts as `grow` in such a row, and `wide` with `grow` is `grow`. A row with either word,
+    or a `row right`, lays out by content: each other block at its own width (a button, badge or
+    link its label's, a field about 160px, an image a 96px thumbnail, text, a heading, a card or a
+    column about as wide as its title or text and no narrower than about 12 characters), never more
+    than half the row (a control or a row inside it, up to its whole width); blocks that don't fit
+    on the line wrap onto another line.
+  - `row right` is a compact group of blocks at the row's right end (a dialog's or a form's
+    actions), with no block marked; inside another row it also starts that row's right group.
+  - Outside a row, on the page or in a `card`, `col`, `modal`, `sheet`, `sidebar` or plain box,
+    `right` puts the block at the right edge at its own width, and `grow` is ignored. Among the
+    blocks of a `header`, `heading`, `list`, `item` (and a row among them), `grid`, `table`,
+    `footer` or `empty`, which place their blocks themselves, and on a header, tab bar, footer,
+    sidebar, modal, sheet or toast at the page's top level, these words are ignored.
+  - `row middle` lines its blocks up on their centres and `row bottom` on their bottom edges (a
+    field's hint is part of its block), neither stretching them; without them a row stretches its
+    blocks to its height, as before. Of the two, the later on the line wins. They work in any row.
+  - `row 1:3:2` gives each block, in order, that share of the row's width: whole numbers from 1 to
+    6, one per block, written once on the row's line; an avatar or an icon keeps its own size, the
+    others sharing the rest. Such a row stays on one line, and `wide` in it is ignored. Shares that
+    don't match the number of its blocks, or one outside 1–6, draw the row as if it had none, with
+    a warning. Shares win over `right` and `grow`: those words on its blocks, and a `right` on the
+    row itself, are ignored with a warning; a `row right` among its blocks still keeps its own blocks
+    at its own right end.
+  - Row words combine: `row 1:3 middle`, `row right bottom`.
 - **Screens.** Up to 6, each in a phone frame (240–300px) or a desktop frame (560–760px), both
   fluid with the figure, side by side in a strip. A frame never pans inside itself:
   - When the strip fits at those widths, it draws as is.
@@ -861,7 +901,9 @@ same: at its right edge while its text keeps that width, else on a line under th
 (§chat.markdown/vis-wireframe). On that line of its own a chip is never wider than its block, and a
 long screen name in it is cut short with an ellipsis. A `row`'s chip sits beside its blocks while
 each of up to 4 of them keeps about 12 characters' width with the chip at its widest, and otherwise
-goes on a line of its own under them. The reserved height counts the chip's own line.
+goes on a line of its own under them; in a row that lays out by content (§chat.markdown/vis-wireframe,
+Rows) the chip is one more block after its last, on the same line while it fits, else wrapping onto
+the next. The reserved height counts the chip's own line.
 
 ## §chat.markdown/accessibility — Accessibility
 

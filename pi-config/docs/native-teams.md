@@ -43,8 +43,8 @@ Milestone 1 is **landed and verified** through batches 1, 2, 3a and 3b:
 - **Declared ownership** (`ownedPaths`): advisory coordination metadata,
   prepended into the member's own prompt and shown in `team_list`. It is **not
   a filesystem lock** — every member shares the same working tree.
-- **Session scope**: teams and their workers live and die with the extension
-  instance (details in "Session lifetime" below).
+- **Session scope**: teams belong to their parent session; their members are
+  chat processes that outlive a reload of it (details in "Session lifetime" below).
 
 ## Quick start
 
@@ -225,8 +225,8 @@ sources `member` / `orchestrator` and kinds `message` / `question` / `steer` /
 
 Every member gets an identity in `PI_SUBAGENTS_TEAM_MEMBER` (team, worker ID,
 role, orchestrator flag, private mailbox directory) and a mailbox directory.
-Pi members are launched with `--no-extensions -e extensions/subagents/member.ts`
-and the identity in their environment. Claude members get the same tools from
+Pi members load `extensions/subagents/member.ts` among their listed extensions
+and get the identity in their environment. Claude members get the same tools from
 `extensions/subagents/member-mcp.ts`, a dependency-free stdio MCP server the
 Claude CLI launches from a per-worker `mcp.json` (`--mcp-config`, under
 `--strict-mcp-config`); the identity is in that server entry's `env`, and the
@@ -241,8 +241,8 @@ without a valid identity, never import the manager, and expose only:
 | `team_roster {}` | orchestrator | live roster of its own team, states, ownership, recent actions |
 | `team_steer { to, message, mode? }` | orchestrator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from orchestrator …]` prefix |
 
-Transport: request files in the member's own directory under a private
-temporary root; the parent polls (250ms), takes the sender's identity from the
+Transport: request files in the member's own directory under the parent
+session's mailbox root (kept across reloads); the parent polls (250ms), takes the sender's identity from the
 directory, validates scope (same team, not itself, orchestrator-only powers)
 and answers with a response file the tool waits for (45s cap; a timeout reports
 "may still be handled", never success). Orchestrators cannot add or stop
@@ -301,10 +301,13 @@ Guarantees, enforced by `team-widget.test.ts`:
 
 ## Session lifetime, persistence and retention
 
-- **Teams are session-scoped.** `/reload`, session replacement, switching
-  sessions, or quitting Pi **stops all workers**, team members included. Live
-  reattachment after reload is not claimed anywhere; worker Pi session files
-  remain on disk for inspection.
+- **Teams are session-scoped; their members are not tied to the parent's
+  process.** A reload, a session switch or the parent's crash leaves every
+  member running in its own chat process; the next manager of that session
+  reattaches to it, and its team becomes live again. A server restart ends them
+  only when they are the server's children (the chat switch off); they are then
+  listed restored, ready for `agent_resume`. The mailbox and pending nudges are
+  kept beside the team's handover notes.
 - **History is per branch.** On session start, team entries
   (`subagents-team-v1`, versioned create/add operations) restore from the
   **active branch only**; a `/tree` jump re-restores. History teams are
@@ -320,9 +323,9 @@ Guarantees, enforced by `team-widget.test.ts`:
   snapshot of the last known status/outcome and renders as
   `unavailable (pruned, last …)`; the member explicitly stays
   unavailable-by-ID rather than being dropped.
-- Create-time `defaults` live in memory only — which is always safe, because
-  after a reload every team is read-only history and `team_add` can never
-  observe them.
+- Create-time `defaults` live in memory only: after a reload a team made live
+  again by a reattached or resumed member has none, so a later `team_add`
+  applies none.
 
 ## Limits (all enforced, all explicit)
 

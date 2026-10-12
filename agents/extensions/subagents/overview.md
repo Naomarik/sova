@@ -1,5 +1,5 @@
 ---
-watches: ["pi-config/extensions/subagents/**", "server/subagent-profiles.ts", "server/team-defaults.ts", "server/process-priority.ts", "server/worker-adapters.ts", "server/worker-restore.ts", "server/session-fork-routes.ts", "server/harness/pi/fork.ts", "shared/subagent-profiles.ts"]
+watches: ["pi-config/extensions/subagents/**", "server/subagent-profiles.ts", "server/team-defaults.ts", "server/process-priority.ts", "server/worker-adapters.ts", "server/worker-restore.ts", "server/chat-workers.ts", "server/session-fork-routes.ts", "server/harness/pi/fork.ts", "shared/subagent-profiles.ts"]
 alsoUpdate: ["pi-config/extensions/subagents/README.md"]
 ---
 # subagents
@@ -9,8 +9,7 @@ profiles, team defaults, the worker-transcript protocol, the fork core's server 
 
 ## What lives here
 
-- [`README.md`](../../../pi-config/extensions/subagents/README.md),
-  [`SERVER-HUNKS.md`](../../../pi-config/extensions/subagents/SERVER-HUNKS.md) (detachable workers' server side) and
+- [`README.md`](../../../pi-config/extensions/subagents/README.md) and
   [`pi-config/docs/native-teams.md`](../../../pi-config/docs/native-teams.md).
 - Settings → Subagents and the Delegate side: [modes/delegate](../../modes/delegate/overview.md).
 - Tests: `cd pi-config/extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs`.
@@ -50,8 +49,9 @@ default reads as Off; an unusable library falls to the legacy files.
 server sets the niceness its hosted sessions' workers and tool commands start at, and the lowering this extension
 does (§app.load-priority/workers). `server/process-priority.ts` imports it. Unset, as in the TUI, nothing changes.
 
-**Usage parent.** Every worker's spawn env gets `PI_USAGE_PARENT=<parent sid>:<worker id>`; the worker's usage
-records name their parent from it (see [llm-inflight](../llm-inflight/overview.md)).
+**Usage parent.** A worker's loadout names its parent session and worker id (`WorkerSpec.parent`); Sova's chat
+manager registers the worker's session with them, so its usage records name their parent (see
+[llm-inflight](../llm-inflight/overview.md)).
 
 **The worker-transcript protocol.** `worker-transcript.ts` (types, the one manifest fold `readWorkerManifests`,
 usage helpers), `adapters/index.ts` and `adapters/pi.ts`, with claude-code's `transcript-adapter.ts` and
@@ -69,9 +69,13 @@ background forks `/explain` runs. Its server half:
 - The rest of `fork/` (copy, mirror, child extension, background runner) needs the pi runtime and stays out of the
   server.
 
-**Restart.** Workers are child processes of the server: a restart kills them mid-task and zeroes the in-memory
-registry (AGENTS.md's restart rules). The dev watcher doesn't watch this directory, so an edit to any file above
-reaches a running server only at its restart.
+**Where workers run.** Every worker, team member and hidden chat (/explain, /compact-handoff, /btw) is a chat
+process of its own, started through the server's `WorkerRegistry` (`server/chat-workers.ts`) from the `WorkerSpec`
+this extension computes (`worker-host.ts`, `chat-worker.ts`). With the chat switch off they are the server's
+detached children and a restart ends them (their records keep them, restored); with it on they are units of their
+own and survive it. A parent's reload never ends them: its next manager reattaches. The dev watcher doesn't watch
+this directory, so an edit to any file above reaches the server at its restart, and a running chat process at its
+next code reload.
 
 ## When you change it, also update
 
@@ -80,4 +84,3 @@ reaches a running server only at its restart.
 - The worker-transcript protocol: both backends' readers (here and in claude-code) in the same branch.
 - `spec-brief.ts` quotes `mode/spec-mode.md` by anchor: when the guide moves, run its test
   (`spec-brief.test.ts`; see [modes/spec](../../modes/spec/overview.md)).
-- The detachable-worker server side: `SERVER-HUNKS.md`.

@@ -64,6 +64,7 @@
 //               second kill during that resume is final ("stopped unexpectedly", last output)
 //     t21       /explain, /compact-handoff, /btw each in a process of its own, no model call from the
 //               parent, counted in the usage ledger; an /explain across a parent reload settles once
+//     t21c      /btw and /explain on a claude-code-cli model (the fake claude): usage under the parent
 //     t22       the switch off: workers are lowered children of the server; a mode switch keeps them; a
 //               restart ends them (restored, interrupted); agent_resume reopens one, which takes a steer
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
@@ -118,7 +119,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t22", "t23", "t24"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t22", "t23", "t24"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1745,6 +1746,35 @@ async function t21() {
   s2.close();
 }
 
+// T21c: hidden chats on a Claude Code model (the fake claude): /btw and /explain on the parent's
+// claude-code-cli model record their usage through the Claude Code bridge, under the parent, as that
+// hidden chat.
+async function t21c() {
+  const { path, s } = await newChat("claude-code-cli/claude-sonnet-5-5");
+  const o = { path, s };
+  await turn(o, "say ok");
+  const sid = entries(path)[0]?.id;
+  const before = new Set(usageRecords().map((r) => r.key));
+  R.check(usageRecords().some((r) => r.owner === sid && /^claude/.test(r.src)), `t21c: the parent's own turn ran on the fake claude and was recorded (${usageRecords().filter((r) => r.owner === sid).map((r) => `${r.src}/${r.model}`).join(", ") || "none"})`);
+  prompt(s, "/btw a side question on claude");
+  const bt = await workerOf(path, (r) => r.kind === "btw");
+  await waitFor(() => entries(path).some((e) => e.customType === "btw-note"), 90000);
+  const note = entries(path).find((e) => e.customType === "btw-note");
+  R.check(bt && /Fake answer/.test(JSON.stringify(note ?? "")), `t21c: /btw ran as a hidden chat on the fake claude and its answer is a btw-note (${JSON.stringify(note?.details?.answer ?? note?.content ?? null)?.slice(0, 100)})`);
+  prompt(s, "/explain a claude topic");
+  const ex = await workerOf(path, (r) => r.kind === "explain");
+  R.check(ex, `t21c: /explain started a hidden chat (${ex?.spec?.model ?? "none"})`);
+  await waitFor(() => usageRecords().some((r) => !before.has(r.key) && r.parent === sid && String(r.worker ?? "").startsWith("explain")), 90000);
+  await sleep(3000);
+  const fresh = usageRecords().filter((r) => !before.has(r.key) && r.parent === sid);
+  const by = (prefix) => fresh.filter((r) => String(r.worker ?? "").startsWith(prefix) && /^claude/.test(r.src));
+  R.note(`t21c: new usage under the parent: ${fresh.map((r) => `${r.worker}:${r.src}/${r.model} out ${r.output}`).join(", ") || "none"}`);
+  R.check(by("btw").length >= 1, `t21c: /btw's Claude Code usage is recorded under the parent as its hidden chat (${by("btw").length})`);
+  R.check(by("explain").length >= 1, `t21c: /explain's Claude Code usage is recorded under the parent as its hidden chat (${by("explain").length})`);
+  noRpc("t21c");
+  s.close();
+}
+
 // T22: the switch off: workers are detached children of the server (child placement), lowered; a
 // parent mode switch keeps them; a server restart ends them, the parent lists them restored
 // (interrupted mid-run); agent_resume reopens one, idle, and it takes a steer; ordinary chats stay in
@@ -1901,7 +1931,7 @@ async function t24() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t22, t23, t24, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 try {
   await boot();

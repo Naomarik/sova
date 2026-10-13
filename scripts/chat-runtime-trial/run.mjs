@@ -1894,9 +1894,12 @@ async function t21l() {
   }
 }
 
-// T21r (F14, a rollout reload): a pane attached to an idle chat on older code; Reload now, and at once a
-// prompt, which lands in the old process's closing window. It is never lost in silence: it runs once
-// (in the new process), or the pane gets it back (refused, naming it).
+// T21r (F14, F15, a rollout reload): a pane attached to an idle chat on older code; Reload now, and at once
+// a prompt, which lands in the reload's window. F14: it is never lost in silence: it runs once, or the pane
+// gets it back (refused, naming it). F15: the reload completes either way. If the drain won the race (the
+// prompt refused back), at once; if the prompt was taken first, the drain is refused ("not quiet any more"
+// in the server log) and the Reload now stays pending: the chat reloads as that reply ends, within seconds,
+// never after the attached pane's 5-min dwell.
 async function t21r() {
   await teardown();
   await boot({ build: "trial-a" });
@@ -1907,17 +1910,35 @@ async function t21r() {
   await restart({ [KNOBS.build]: "trial-b" });
   const p = await chat(c, path);
   const from = p.got.length;
+  const logFile = join(scratch, `server-${n}.log`);
+  const logFrom = existsSync(logFile) ? readFileSync(logFile, "utf8").length : 0;
+  const sid = entries(path)[0]?.id ?? "";
+  const chatLog = () => (existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "").split("\n").filter((l) => sid && l.includes(sid));
   p.send({ type: "reload_code" });
   const cid = prompt(p, "say hi DURING-RELOAD t21r");
-  await p.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
-  await waitFor(() => chatPid(path) && chatPid(path) !== pid1, 60000);
+  // When the prompt's reply ended (if it ran) and when the chat moved to a new process.
+  let tEnd = 0;
+  let tRel = 0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 90000 && !(tRel && (tEnd || refusedFor(p.got.slice(from), cid)))) {
+    if (!tEnd && turnAssistants(path, "DURING-RELOAD t21r").length) tEnd = Date.now();
+    if (!tRel && chatPid(path) && chatPid(path) !== pid1) tRel = Date.now();
+    await sleep(250);
+  }
   const p2 = await chat(c, path, 60000);
-  await sleep(8000);
+  await sleep(5000);
   const refusal = refusedFor([...p.got.slice(from), ...p2.got], cid);
   const ran = userEntriesWith(path, "DURING-RELOAD t21r");
   const asked = mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes("DURING-RELOAD t21r")).length;
-  R.check(chatPid(path) !== pid1, `t21r: the chat reloaded (pid ${pid1} → ${chatPid(path)})`);
+  const lines = chatLog();
+  R.note(`t21r: the chat's rollout lines: ${lines.map((l) => l.slice(0, 160)).join(" | ") || "none"}`);
+  R.check(chatPid(path) && chatPid(path) !== pid1 && lines.some((l) => /reloaded into/.test(l)), `t21r (F15): the chat reloaded (pid ${pid1} → ${chatPid(path)}; 'reloaded into' in the log: ${lines.some((l) => /reloaded into/.test(l))})`);
   R.check((ran === 1 && asked === 1 && !refusal) || (ran === 0 && asked === 0 && refusal), `t21r (F14): a prompt sent as the reload began ran once or was refused back to the pane, never lost (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${ran}×, the model asked ${asked}×`})`);
+  if (ran === 1 && !refusal) {
+    const notQuiet = lines.some((l) => /not quiet any more/.test(l));
+    R.check(notQuiet, `t21r (F15): the prompt was taken first: the drain was refused and logged ('not quiet any more': ${notQuiet})`);
+    R.check(tEnd && tRel && tRel - tEnd <= 15000, `t21r (F15): the pending Reload now reloaded as the reply ended, no 5-min dwell (${tEnd && tRel ? `${Math.round((tRel - tEnd) / 1000)} s after the reply's end` : `reply end ${tEnd ? "seen" : "not seen"}, reload ${tRel ? "seen" : "not seen"} within 90 s`})`);
+  } else R.note("t21r: the drain won the race: the prompt came back refused and the reload completed");
   p.close();
   p2.close();
   await teardown();

@@ -5,10 +5,10 @@
  * that reloads or crashes lets go of its workers (dispose detaches) and the next one picks them back
  * up (`attach`); only a kill stops one.
  */
-import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SteerMode, Worker } from "./contracts.ts";
 import { type Delivery, type FoldHandlers, WorkerFold } from "./fold.ts";
+import { fileMessages } from "./run-watch.ts";
 import type { SpawnOptions } from "./runner.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
 import { isNoAnswer, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSession, type WorkerStart, type WorkerState } from "./worker-host.ts";
@@ -355,36 +355,12 @@ const TAIL_BYTES = 512 * 1024;
  * stop to call a tool), its entry id and time. Undefined when none is in the file's tail or it can't be read.
  */
 export function lastSettledRun(file: string): { entryId: string; at: number; error?: string } | undefined {
-	let text: string;
-	try {
-		const fd = fs.openSync(file, "r");
-		try {
-			const size = fs.fstatSync(fd).size;
-			const start = Math.max(0, size - TAIL_BYTES);
-			const buf = Buffer.alloc(size - start);
-			fs.readSync(fd, buf, 0, buf.length, start);
-			text = buf.toString("utf8");
-			if (start > 0) text = text.slice(text.indexOf("\n") + 1);
-		} finally {
-			fs.closeSync(fd);
-		}
-	} catch {
-		return undefined;
-	}
-	const lines = text.split("\n");
-	for (let i = lines.length - 1; i >= 0; i--) {
-		const line = lines[i]!.trim();
-		if (!line) continue;
-		let entry: { type?: unknown; id?: unknown; timestamp?: unknown; message?: { role?: unknown; stopReason?: unknown; errorMessage?: unknown } };
-		try {
-			entry = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		const m = entry.message;
-		if (entry.type !== "message" || m?.role !== "assistant" || m.stopReason === "toolUse" || typeof entry.id !== "string") continue;
-		const at = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;
-		return { entryId: entry.id, at: Number.isFinite(at) ? at : 0, ...(m.stopReason === "error" && typeof m.errorMessage === "string" ? { error: m.errorMessage } : {}) };
+	const entries = fileMessages(file, TAIL_BYTES);
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const { id, timestamp, message: m } = entries[i]!;
+		if (m.role !== "assistant" || m.stopReason === "toolUse" || !id) continue;
+		const at = timestamp ? Date.parse(timestamp) : NaN;
+		return { entryId: id, at: Number.isFinite(at) ? at : 0, ...(m.stopReason === "error" && typeof m.errorMessage === "string" ? { error: m.errorMessage } : {}) };
 	}
 	return undefined;
 }

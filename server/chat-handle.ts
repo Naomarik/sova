@@ -507,14 +507,9 @@ export type { SessionMarks, SpecialKind } from "./chat-manager";
  * `force`, when another process may be writing it; ConfigError when it can't be opened at all.
  */
 export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
-  if (router) {
-    // The router waits for this chat's own take-back, if a previous server left it running, before it
-    // decides where it runs.
-    if (!heldChat(path)) {
-      const remote = await router.acquire(path, force);
-      if (remote) return remote;
-    }
-  }
+  // The server's router: every chat in a process of its own (it waits for the chat's own take-back,
+  // if a previous server left it running). With none (a chat process, a test), the chat opens here.
+  if (router) return router.acquire(path, force);
   return handleOf(await acquireChat(path, force));
 }
 
@@ -528,8 +523,8 @@ export const chatHandle = (path: string): ChatHandle | undefined => {
 export const chatHandles = (): ChatHandle[] => [...heldChats().map(handleOf), ...(router?.all() ?? [])];
 
 /**
- * Where chats run besides this process (server/chat-host.ts, §app/chat-processes): installed at start
- * when ordinary chats run in processes of their own. Unset, every chat runs here.
+ * Where the server's chats run (server/chat-host.ts, §app/chat-processes): installed at the server's
+ * start, every chat in a process of its own. Unset (a chat process, a test), a chat runs here.
  */
 export interface ChatRouter {
   /** Resolves once the chats a previous server left running are taken back (bounded). */
@@ -537,8 +532,8 @@ export interface ChatRouter {
   /** The chat of this path in a process of its own, if one is open. */
   get(path: string): ChatHandle | undefined;
   all(): ChatHandle[];
-  /** The chat in a process of its own (taken back, or started), or null: open it in this process. */
-  acquire(path: string, force: boolean): Promise<ChatHandle | null>;
+  /** The chat in a process of its own (taken back, or started); a chat that can't start is refused. */
+  acquire(path: string, force: boolean): Promise<ChatHandle>;
   /** Close it for good (archive): its panes are told to reconnect. False: none open there. */
   close(path: string, message: string): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */

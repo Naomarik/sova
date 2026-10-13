@@ -279,13 +279,9 @@ async function shutdown() {
   }, 20_000).unref();
   claudeAccounts.dispose();
   meshResync.dispose();
-  // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
-  // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();
-  // Only chats in this process: a chat in a process of its own runs on, its reply included
-  // (§app.chat-processes/survives-restart).
-  const aborts = chatHandles().filter((chat) => chat.where === "server" && chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
-  // Each chat process is told goodbye and let go of, never stopped.
+  // Every chat runs in a process of its own and runs on, its reply included
+  // (§app.chat-processes/survives-restart). Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();
   usagePoller.stop();
   // A plateau's held-back last reading is written, so the next start knows how long it lasted.
@@ -301,10 +297,6 @@ async function shutdown() {
   stopMesh();
   stopShareRuntime();
   await stopVoice();
-  // Each cut-off reply is written by its abort: settled first, so each chat's close records it as
-  // the server's own write (§chat.transcript/own-writes-across-restart) and the next start can resume it.
-  await Promise.race([Promise.all(aborts), new Promise((r) => setTimeout(r, 3000))]);
-  await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {
     flushOpenVisits();

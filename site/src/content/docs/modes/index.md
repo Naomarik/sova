@@ -21,6 +21,7 @@ The **major mode** is one of two:
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
 | [codemode](/docs/modes/codemode/) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
+| memory | A cheap model folds the chat's messages into short summaries, and the model opens any of them back to the original message, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
 
 Both kinds are **per chat**. Each chat keeps its own modes, saved in that chat's session file, so
 they survive a reload or a server restart. Switching one chat never moves another chat or a
@@ -34,12 +35,14 @@ chat's mode it reads just **Mode**.
 
 Press it to open the menu. It has three groups:
 
-- **Major mode**: normal and delegate, each with its one-line description. Picking one closes the
-  menu. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Subagents without
+- **Major mode**: normal and delegate, each with its one-line description. Picking one switches
+  the chat and keeps the menu open. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Subagents without
   switching anything, so you can set Delegate up before you turn it on.
-- **Minor modes**: align, spec, vis and codemode, each with its description. Toggling one keeps
-  the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that opens
-  its spec writer settings.
+- **Minor modes**: align, spec, vis, codemode and memory, each with its description. Toggling one
+  keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
+  opens its spec writer settings. Memory is listed only in a chat whose runtime can run it; its
+  row has a chevron, **Memory type**, that opens a panel to choose the chat's memory type and
+  summary size.
 - **Subagents**: one row, **Subagents · {profile}**, that opens the picker for this chat's
   [subagent profile](/docs/subagent-profiles/).
 

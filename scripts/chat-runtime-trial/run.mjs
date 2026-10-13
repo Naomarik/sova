@@ -70,6 +70,10 @@
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
 //     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
 //               it ends
+//     stage 5 (stage5-design.md):
+//     t25       hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
+//               claude-code-cli and a restart open nothing in its ~/.pi/agent, ~/.claude, ~/.codex and never
+//               run its ~/.local/bin/claude; every claude call reaches the trial's fake
 //     real      (only with --model) t1 on a real model
 //     plumbing  (only when asked) the trial's stage-3 steps work: an Overseer tool call, an org with a
 //               baton, a project overseer and a look now
@@ -120,7 +124,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t22", "t23", "t24"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t22", "t23", "t24", "t25"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1951,9 +1955,128 @@ async function t24() {
   s.close();
 }
 
+// ── stage 5 (stage5-design.md) ──────────────────────────────────────────────────────────────────
+
+// T25: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
+// ~/.claude.json and ~/.codex hold decoy files, and its ~/.local/bin/claude (also last on PATH) is a
+// decoy claude that logs each call. Through ordinary chats, a pi worker, a claude-code worker, /btw, a
+// parent on claude-code-cli and a server restart, nothing opens anything there (inotify open/access;
+// a bare stat makes no event) and the decoy claude never runs; the fake claude did (each path that
+// needs a claude reached the trial's own).
+const T25_GETS = [
+  "/api/auth/status", "/api/claude/accounts", "/api/extensions", "/api/explanations", "/api/insights/agents", "/api/insights/usage",
+  "/api/mode", "/api/models", "/api/monitor", "/api/overseer", "/api/overseer/attention", "/api/profiles", "/api/projects", "/api/provider-limits/waiting", "/api/schedules",
+  "/api/sessions", "/api/settings", "/api/settings/align", "/api/settings/claude-status", "/api/settings/decisions", "/api/settings/delegate", "/api/settings/delegate/options", "/api/settings/memory",
+  "/api/settings/models", "/api/settings/overseer", "/api/settings/provider-limits", "/api/settings/session-titles", "/api/settings/spec", "/api/settings/subagents", "/api/settings/summarizer",
+  "/api/settings/team", "/api/settings/team/options", "/api/targets", "/api/themes", "/api/usage/costs", "/api/usage/prices", "/api/usage/today", "/api/voice",
+];
+async function t25() {
+  const home = join(scratch, "tripwire-home");
+  const decoys = [".pi/agent", ".claude", ".codex", ".local/bin"];
+  for (const d of decoys) mkdirSync(join(home, d), { recursive: true });
+  const decoy = (rel, text) => writeFileSync(join(home, rel), text);
+  for (const f of ["settings.json", "models.json", "auth.json", "topic-outline.json", "extension-toggle.json", "vision-delegate.json", "usage-status.json", "team-defaults.json", "subagent-profiles.json"]) decoy(join(".pi/agent", f), JSON.stringify({ tripwire: true }));
+  mkdirSync(join(home, ".pi/agent/extensions"), { recursive: true });
+  mkdirSync(join(home, ".pi/agent/cache"), { recursive: true });
+  decoy(".claude/.credentials.json", JSON.stringify({ claudeAiOauth: { accessToken: "tripwire", refreshToken: "tripwire", expiresAt: Date.now() + 3600_000 } }));
+  decoy(".claude.json", JSON.stringify({ tripwire: true }));
+  decoy(".codex/auth.json", JSON.stringify({ tripwire: true }));
+  const decoyCalls = join(scratch, "decoy-claude-calls.log");
+  writeFileSync(join(home, ".local/bin/claude"), `#!/bin/sh\necho "$$ $*" >> ${decoyCalls}\nexit 1\n`, { mode: 0o755 });
+  // The watch: every open or read of a decoy (a directory listing is an open too).
+  const { spawn } = await import("node:child_process");
+  const watched = [...decoys.map((d) => join(home, d)), join(home, ".claude.json")];
+  const ino = spawn("inotifywait", ["-m", "-r", "-e", "open,access", "--timefmt", "%T", "--format", "%T %w%f|%e", ...watched], { stdio: ["ignore", "pipe", "pipe"] });
+  const hits = [];
+  ino.stdout.on("data", (d) => hits.push(...String(d).split("\n").filter(Boolean)));
+  const ready = await new Promise((ok) => {
+    let err = "";
+    ino.stderr.on("data", (d) => ((err += String(d)), /Watches established/.test(err) && ok(true)));
+    ino.once("exit", () => ok(false));
+    setTimeout(() => ok(false), 10000);
+  });
+  if (!R.check(ready, "t25: the inotify watch on the tripwire home is up")) return;
+  // Mise's shims find their tools through HOME: name the installs directly.
+  const bins = [process.execPath, (() => {
+    try {
+      return execFileSync("mise", ["which", "bun"], { encoding: "utf8" }).trim();
+    } catch {
+      return "";
+    }
+  })()].filter(Boolean).map((b) => b.replace(/\/[^/]+$/, ""));
+  const fakeCalls = () => {
+    try {
+      return readFileSync(join(scratch, "fake-claude-calls.log"), "utf8").split("\n").filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+  const fake0 = fakeCalls();
+  await teardown();
+  // PI_CLAUDE_CODE_DEBUG: the Claude Code bridge writes its debug log (to the agent dir, never ~/.pi/agent).
+  const env = { HOME: home, PATH: `${claudeBin}:${bins.join(":")}:${process.env.PATH}:${join(home, ".local/bin")}`, PI_CLAUDE_CODE_DEBUG: "1" };
+  // A 1x1 png for look_at_image (the mock model sees no images; the tool reads the usage cache first).
+  writeFileSync(join(proj, "t25.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+  try {
+    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} boot`);
+    await boot({ extra: env });
+    const { path, s } = await newChat();
+    const o = { path, s };
+    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} booted; first turn`);
+    await turn(o, "say ok");
+    prompt(s, "[spawn 1 10 #t25w] start a worker");
+    R.check((await workerDone(s, "trial-t25w"))?.outcome === "success", "t25: a pi worker ran to its end");
+    prompt(s, "[spawn-claude 2000 #t25c] start a claude worker");
+    R.check((await workerDone(s, "trial-claude"))?.outcome === "success", "t25: a claude-code worker ran to its end");
+    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} /btw`);
+    prompt(s, "/btw [btw #t25b] a side question");
+    R.check(await waitFor(() => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t25b")), 60000), "t25: /btw answered");
+    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} a parent on claude-code-cli`);
+    const cc = await newChat("claude-code-cli/claude-sonnet-5-5");
+    await turn(cc, "say ok", 90000);
+    await turn(o, `[call look_at_image ${JSON.stringify({ path: "t25.png", question: "what colour" })}]`);
+    s.close();
+    cc.s.close();
+    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} restart`);
+    await restart();
+    const s2 = await chat(c, path);
+    await turn({ path, s: s2 }, "say ok again");
+    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} GETs`);
+    // Every page's data, as the browser asks for it (no mesh, peer, outreach or editor routes: those reach out).
+    const got = [];
+    for (const r of T25_GETS) {
+      const before = hits.length;
+      const answer = await c.api(r).then(() => "ok", (e) => String(e.message ?? e).slice(0, 40));
+      await sleep(300);
+      const opened = [...new Set(hits.slice(before).map((h) => h.slice(9).replace(`${home}/`, "~/").replace(/\|.*/, "")))];
+      got.push(`${r} ${answer}${opened.length ? ` OPENED ${opened.join(", ")}` : ""}`);
+    }
+    R.note(`t25: GET ${got.join("; ")}`);
+    s2.close();
+    await sleep(5000);
+  } finally {
+    ino.kill("SIGTERM");
+  }
+  // When each decoy was first opened, against when each step began (inotify gives no pid).
+  const first = new Map();
+  for (const h of hits) {
+    const [at, what] = [h.slice(0, 8), h.slice(9).replace(`${home}/`, "~/")];
+    if (!first.has(what)) first.set(what, at);
+  }
+  R.note(`t25: first opens: ${[...first].map(([w, at]) => `${at} ${w}`).join("; ") || "none"}`);
+  const seen = [...first.keys()];
+  R.check(seen.length === 0, `t25: nothing opened anything in the tripwire home (~/.pi/agent, ~/.claude, ~/.claude.json, ~/.codex, ~/.local/bin): ${seen.slice(0, 12).join("; ") || "none"}${seen.length > 12 ? ` (+${seen.length - 12})` : ""}`);
+  const decoyRan = existsSync(decoyCalls) ? readFileSync(decoyCalls, "utf8").trim() : "";
+  R.check(!decoyRan, `t25: the decoy ~/.local/bin/claude never ran (${decoyRan.slice(0, 160) || "no call"})`);
+  R.check(fakeCalls() > fake0, `t25: the claude paths ran on the trial's fake claude (${fakeCalls() - fake0} calls)`);
+  // The next check gets a server with the trial's usual HOME.
+  await teardown();
+  await boot();
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, t25, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

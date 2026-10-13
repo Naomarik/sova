@@ -24,6 +24,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { baseDelayMs: 1 } }));
 
+await import("../../testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats } = await import("../../chat-manager");
 const overseer = await import("../../overseer");
 const po = await import("../../project-overseer");

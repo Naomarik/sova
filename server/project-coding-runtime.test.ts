@@ -24,6 +24,7 @@ writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [res
 const writeDefault = (mode: string, minorModes: string[]) => writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode, strict: false, minorModes }));
 writeDefault("delegate", ["align", "spec"]);
 process.env.PI_CODING_AGENT_DIR = agentDir;
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 // Wired as server/index.ts wires them: the Overseer's tools call the routes in-process, the link

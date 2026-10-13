@@ -599,10 +599,10 @@ export interface LocalSpecials {
   cwd(path: string): string | undefined;
   /** The loadout of one build, the kind's tools served for this chat; throws the kind's refusal. */
   spec(kind: SpecialKind, path: string): Promise<SpecialSpec>;
-  /** The loopback to the kind. */
-  port(kind: SpecialKind, path: string): SpecialPort;
-  /** Every open, once bound (the kind's `opened`, with the chat's handle). */
-  opened(kind: SpecialKind, chat: ChatSession): Promise<void>;
+  /** The loopback to the kind, for a chat in the caller's process (tests only: the server opens none). */
+  port?(kind: SpecialKind, path: string): SpecialPort;
+  /** Every open of such a chat, once bound (the kind's `opened`, with the chat's handle). */
+  opened?(kind: SpecialKind, chat: ChatSession): Promise<void>;
 }
 let localSpecials: LocalSpecials | null = null;
 export function setLocalSpecials(s: LocalSpecials): void {
@@ -714,7 +714,7 @@ async function specialOf(kind: SpecialKind, path: string): Promise<{ spec: Speci
   const spec = presetSpecs.get(path);
   const port = presetPorts.get(path);
   if (spec && port) return { spec, port };
-  if (!localSpecials) throw new Error(kind === "overseer" ? "The Overseer is not available on this server." : "This chat's kind is not available here.");
+  if (!localSpecials?.port) throw new Error(kind === "overseer" ? "The Overseer is not available on this server." : "This chat's kind is not available here.");
   return { spec: await localSpecials.spec(kind, path), port: localSpecials.port(kind, path) };
 }
 
@@ -4047,7 +4047,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     }
     // A chat process's kind is opened by its server, once the open is answered (server/chat-host.ts).
     const local = !presetSpecs.has(path);
-    if (kind && kind !== "overseer" && local) await localSpecials?.opened(kind, chat);
+    if (kind && kind !== "overseer" && local) await localSpecials?.opened?.(kind, chat);
     if (kind === "overseer" && last.special) {
       // A conversation that already has messages keeps the model its file records (the SDK restores
       // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
@@ -4056,7 +4056,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       await syncOverseerModel(chat, last.special.spec).catch((err) =>
         console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
       );
-      if (local) await localSpecials?.opened(kind, chat);
+      if (local) await localSpecials?.opened?.(kind, chat);
     }
     held.set(path, chat);
     sessionsChanged(); // its row now carries `chat` (heldChatState)

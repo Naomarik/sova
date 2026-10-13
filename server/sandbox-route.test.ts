@@ -24,6 +24,7 @@ process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
 mkdirSync(join(dir, "extensions"), { recursive: true });
 if (!absent) symlinkSync(resolve(here, "../pi-config/extensions/sandbox"), join(dir, "extensions", "sandbox"));
 process.env.PI_CODING_AGENT_DIR = dir;
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");

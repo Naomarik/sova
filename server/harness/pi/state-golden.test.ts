@@ -61,6 +61,7 @@ writeFileSync(
   JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { baseDelayMs: 1 }, extensions: [join(REPO, "pi-config/extensions/mode")] }),
 );
 
+await import("../../testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("../../app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 // The Overseer's tools call the routes in-process, wired as server/index.ts wires them.

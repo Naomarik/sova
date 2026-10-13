@@ -23,6 +23,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, disposeHeldChat, onReceiverIdle, resolveRegenerate, TOPIC_DELIVERED_ENTRY } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { archiveSession, getSessionSummary, onSessionArchived } = await import("./sessions-index");

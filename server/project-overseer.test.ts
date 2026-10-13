@@ -18,6 +18,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
 // The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).

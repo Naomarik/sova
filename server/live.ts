@@ -205,7 +205,7 @@ export function readLive(): Map<string, LiveRecord> {
 
 /** How recent a heartbeat must be for the archive guard to believe a record's worker count.
     Looser than OWN_FRESH_MS on purpose: a false "working" costs the user a wait, a false "idle"
-    kills their subagents. The dev-server restart gate uses the same 30s. */
+    kills their subagents. */
 export const WORKING_FRESH_MS = 30_000;
 /** SCHEMA.md: a heartbeat this far in the future is garbage, not fresh. */
 const FUTURE_SKEW_MS = 5 * 60_000;

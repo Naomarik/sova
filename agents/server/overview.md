@@ -46,12 +46,10 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
 
 ### Dev watcher (`pnpm run dev:server`, not the live unit)
 
-`scripts/dev-server.mjs` is a gated watcher over the server's import graph (non-test `server/**`,
-`shared/**`, and the whole `pi-config/extensions/mode/` directory). It restarts within ~100 ms of an
-edit, but holds the restart while any live record shows working subagents or an in-flight turn (`r`
-key or SIGUSR2 forces). `dev:server:tsx` is the old plain watch, with no gate. While a watch server
-hosts your session, apply server-graph edits from the orchestrator itself, batched, as the last step
-of a turn. Which `pi-config/` files the watcher does not watch (so an edit reaches the server only at
+`scripts/dev-server.mjs` is the dev watcher over the server's import graph (non-test `server/**`,
+`shared/**`, and the whole `pi-config/extensions/mode/` directory). It restarts the server 300 ms after
+the last edit, whatever the sessions are doing: chats and workers run in processes of their own and
+keep running through it. The `r` key restarts at once. `dev:server:tsx` is the plain `tsx watch`. Which `pi-config/` files the watcher does not watch (so an edit reaches the server only at
 its restart): [agents/extensions/overview.md](../extensions/overview.md).
 
 ### Runtime: Bun; Node on request

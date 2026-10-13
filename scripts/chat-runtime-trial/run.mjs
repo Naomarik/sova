@@ -1559,19 +1559,33 @@ async function t19() {
 // a coordinator and a monitor from team-defaults.json; the monitor's standing instruction is the
 // nudge; a member keeps working so the nudge is not held.
 async function t19n() {
-  // The default subagent profile (seeded from the legacy files at the first boot) gets a coordinator
-  // and a monitor, both pi on the mock; it is put back after.
-  const file = join(agent, "subagent-profiles.json");
-  const before = readFileSync(file, "utf8");
-  const lib = JSON.parse(before);
-  const def = readJson(join(agent, "subagent-profiles-default.json"))?.default;
-  const profile = lib.profiles.find((x) => x.id === def) ?? lib.profiles[0];
-  profile.teams = {
+  // A coordinator and a monitor, both pi on the mock. The subagent profile library is seeded from
+  // the legacy files the first time a chat reads it: when it exists (an earlier check made it), its
+  // default profile gets the teams setting; when not (t19n alone), the legacy team-defaults.json
+  // does, and the seed copies it. Both are put back after.
+  const teams = {
     coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
     monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
     handover: { retireTimeoutMinutes: 10 },
   };
-  writeFileSync(file, JSON.stringify(lib, null, 2));
+  const file = join(agent, "subagent-profiles.json");
+  const legacy = join(agent, "team-defaults.json");
+  const before = existsSync(file) ? readFileSync(file, "utf8") : null;
+  const defaultProfile = (lib) => lib.profiles.find((x) => x.id === readJson(join(agent, "subagent-profiles-default.json"))?.default) ?? lib.profiles[0];
+  if (before !== null) {
+    const lib = JSON.parse(before);
+    defaultProfile(lib).teams = teams;
+    writeFileSync(file, JSON.stringify(lib, null, 2));
+  } else writeFileSync(legacy, JSON.stringify({ version: 1, ...teams }, null, 2));
+  const restore = () => {
+    if (before !== null) return writeFileSync(file, before);
+    rmSync(legacy, { force: true });
+    const lib = readJson(file);
+    if (lib?.profiles?.length) {
+      defaultProfile(lib).teams = null;
+      writeFileSync(file, JSON.stringify(lib, null, 2));
+    }
+  };
   try {
     const team = { name: "t19n", objective: "trial team", members: [{ role: "worker", model: "trial/m1", prompt: '[call bash {"command":"sleep 75; echo WORKER-T19N"}]' }] };
     const { path, s } = await newChat();
@@ -1592,7 +1606,7 @@ async function t19n() {
     R.check(userEntriesWith(mon.path, "Scheduled wakeup fired") === 1, `t19n: the nudge set before the parent's reload fired once after it (${userEntriesWith(mon.path, "Scheduled wakeup fired")})`);
     s2.close();
   } finally {
-    writeFileSync(file, before);
+    restore();
   }
 }
 

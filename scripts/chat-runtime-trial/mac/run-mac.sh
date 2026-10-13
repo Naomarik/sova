@@ -27,7 +27,9 @@
 # What it does:
 # - raises the open-file limit (an ssh shell has 256);
 # - trusts the checkout's mise.toml (bun 1.4.2) and installs dependencies once;
-# - runs run.mjs with a short scratch dir under /private/tmp;
+# - runs run.mjs with a short scratch dir under /private/tmp, in a process group of its own (perl setpgrp:
+#   darwin has no setsid or GNU timeout), stopped whole after RUN_MAC_LIMIT_S (default 2700) per run or when
+#   this script is stopped: INT first (run.mjs then stops what it started), KILL after 30 s;
 # - copies results.json and the logs to ./mac-results/<rev>-<tag>/;
 # - checks that nothing is left: no test.sova-s5- launchd label, no process whose PI_CODING_AGENT_DIR is
 #   the scratch. Anything left is listed by pid and stopped by that pid only;
@@ -46,6 +48,15 @@ command -v pi >/dev/null || print -u2 "run-mac: warning: no global pi on PATH (p
 
 rev=$(git rev-parse --short HEAD)
 
+# Stops process group $1 whole: INT (run.mjs's own teardown), KILL after 30 s.
+stop_group() {
+  /bin/kill -s INT -- -$1 2>/dev/null || return 0
+  for _ in {1..30}; do /bin/kill -0 -- -$1 2>/dev/null || return 0; sleep 1; done
+  /bin/kill -s KILL -- -$1 2>/dev/null || true
+}
+# A stop of this script stops the run in progress first.
+trap '[[ -n ${pg:-} ]] && stop_group $pg; exit 130' INT TERM HUP
+
 # One run: run.mjs on its own scratch, its results kept, leftovers listed and stopped. Returns run.mjs's
 # code, or 3 when something was left.
 run_one() {
@@ -54,8 +65,16 @@ scratch=/private/tmp/sova-t-$tag
 results=$here/mac-results/$rev-$tag
 mkdir -p $results
 print "run-mac: $rev, checks: $*, scratch $scratch"
-node scripts/chat-runtime-trial/run.mjs "$@" --scratch $scratch --keep > $results/run.log 2>&1
+perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' -- node scripts/chat-runtime-trial/run.mjs "$@" --scratch $scratch --keep > $results/run.log 2>&1 &
+pg=$!
+( i=0; while (( i < ${RUN_MAC_LIMIT_S:-2700} )); do sleep 1; i=$((i + 1)); /bin/kill -0 -- -$pg 2>/dev/null || exit 0; done
+  print -u2 "run-mac: still running after ${RUN_MAC_LIMIT_S:-2700} s; stopping the run"; stop_group $pg ) &
+dog=$!
+wait $pg
 code=$?
+kill $dog 2>/dev/null
+stop_group $pg
+unset pg
 cp $scratch/results.json $scratch/*.log $scratch/mock.jsonl $results/ 2>/dev/null
 print "run-mac: run.mjs exit $code; $(grep -c '^PASS' $results/run.log) PASS, $(grep -c '^FAIL' $results/run.log) FAIL"
 grep '^FAIL' $results/run.log

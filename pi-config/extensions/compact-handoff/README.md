@@ -5,7 +5,9 @@ summary would lose, and puts that note back right after the summary. `/compact-h
 stops a run.
 
 1. The command refuses while a turn, a compaction, queued messages or an earlier run are in
-   flight, or when the session has no conversation on disk yet. Otherwise it starts a background
+   flight, when the session has no conversation on disk yet, or when pi would have nothing to
+   compact yet (everything since the last compaction fits in `compaction.keepRecentTokens`, 20,000
+   tokens by default; `nothingToCompact` uses pi's own `findCutPoint`). Otherwise it starts a background
    fork through the shared fork core (`../subagents/fork/`, the same one /explain uses): the fork
    works in a copy of the session, on its warm prompt cache, under a read-only policy (read,
    search, a read-only shell line; no writes, no web), and is told to end its reply with the note
@@ -43,4 +45,6 @@ The extension writes the note itself on the machine running pi, never through th
 so a sandboxed session (agent dir read-only to tools) and a remote one (tools on the far host)
 save the same way.
 
-Tests: `node tests/run.mjs` (no pi session, no model, no child).
+Tests: `node tests/run.mjs` (no pi session, no model, no child) and `node tests/compact-turn.mjs`
+(a real pi session on a scripted provider and a fake fork: a short session is refused before any
+fork; a long one saves the note, compacts and brings the note back).

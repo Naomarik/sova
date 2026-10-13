@@ -10,7 +10,7 @@ import { afterEach, test } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BackgroundForkHandle, BackgroundForkHandlers, BackgroundForkResult, BackgroundForkSpec } from "../subagents/fork/background.ts";
 import type { WorkerHost } from "../subagents/worker-host.ts";
-import compactHandoff from "./index.ts";
+import compactHandoff, { nothingToCompact } from "./index.ts";
 import { type BranchEntry, HANDOFF_ENTRY, NOTE_MESSAGE, NOTHING_NOTE } from "./handoff.ts";
 import { RUN_ENTRY } from "./run.ts";
 
@@ -46,12 +46,15 @@ function sessionFile(dir: string): string {
 }
 
 /** `live`: the fork chats the worker host still runs for this session (a reopened session reattaches them). */
-function harness(options: { agentDir?: string; now?: () => number; file?: string | null; model?: { provider: string; id: string }; startThrows?: boolean; branch?: BranchEntry[]; live?: string[]; lateHost?: boolean } = {}) {
+function harness(options: { agentDir?: string; now?: () => number; file?: string | null; model?: { provider: string; id: string }; startThrows?: boolean; branch?: BranchEntry[]; live?: string[]; lateHost?: boolean; keepRecentTokens?: number } = {}) {
 	/** `lateHost`: the host comes on pi.events, announced only when the test calls `announce` (after session_start). */
 	const bus = new Map<string, ((data: unknown) => void)[]>();
 	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();
-	const branch: BranchEntry[] = options.branch ?? [{ type: "message", id: "u0", message: { role: "user", content: "earlier work" } }];
+	const branch: BranchEntry[] = options.branch ?? [
+		{ type: "message", id: "u0", message: { role: "user", content: "earlier work" } },
+		{ type: "message", id: "a0", message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
+	];
 	const sent: Sent[] = [];
 	const compacts: CompactCall[] = [];
 	const notes: { message: string; level?: string }[] = [];
@@ -98,6 +101,8 @@ function harness(options: { agentDir?: string; now?: () => number; file?: string
 		agentDir: options.agentDir ? () => options.agentDir! : undefined,
 		now: options.now ?? (() => NOW),
 		claudeForkPoint: () => undefined,
+		// A one-token budget: any exchange has something before the cut (pi's own default is 20,000).
+		keepRecentTokens: () => options.keepRecentTokens ?? 1,
 		...(options.lateHost ? {} : { workerHost: () => ({}) as WorkerHost }),
 		start: (spec, h) => {
 			if (options.startThrows) throw new Error("a background fork needs Sova's chat runtime");
@@ -177,6 +182,44 @@ test("a session with no conversation on disk is refused, no fork", async () => {
 	assert.equal(h.rows().length, 0);
 });
 
+test("a session with nothing to compact yet (it fits in pi's kept recent part, 20,000 tokens by default) is refused before any fork: no row, no note, no compaction", async () => {
+	const agent = temp();
+	const h = harness({ agentDir: agent, keepRecentTokens: 20_000 });
+	await h.run("focus");
+	assert.equal(h.forks.length, 0, "no fork is started for a compaction pi would refuse");
+	assert.equal(h.notes.length, 1);
+	assert.match(h.notes[0]!.message, /nothing can be compacted yet/);
+	assert.equal(h.notes[0]!.level, "warning");
+	assert.equal(h.rows().length, 0);
+	assert.equal(fs.existsSync(path.join(agent, "compact-handoffs")), false);
+	assert.equal(h.compacts.length, 0);
+	// Right after a compaction there is nothing to compact either, whatever the budget.
+	const after = harness({ agentDir: agent });
+	after.compaction("a0");
+	await after.run();
+	assert.equal(after.forks.length, 0);
+	assert.match(after.notes[0]!.message, /nothing can be compacted yet/);
+});
+
+test("nothingToCompact follows pi's cut: the conversation since the last compaction (its kept tail and after) against the budget, system messages left out", () => {
+	const words = (n: number) => "word ".repeat(n);
+	const user = (id: string, text: string): BranchEntry => ({ type: "message", id, message: { role: "user", content: text } });
+	const assistant = (id: string, text: string): BranchEntry => ({ type: "message", id, message: { role: "assistant", content: [{ type: "text", text }] } });
+	const small = [user("u0", "hi"), assistant("a0", "hello")];
+	assert.equal(nothingToCompact(small, 20_000), true, "a short exchange fits in the budget");
+	assert.equal(nothingToCompact(small, 1), false);
+	const long = [user("u0", words(20_000)), assistant("a0", words(20_000)), user("u1", "and now?"), assistant("a1", "ok")];
+	assert.equal(nothingToCompact(long, 20_000), false, "about 25k tokens: the first exchange is summarized");
+	// A huge system head is prompt state: it never makes a short session compactable.
+	const head: BranchEntry = { type: "message", id: "s0", message: { role: "system", content: words(100_000) } };
+	assert.equal(nothingToCompact([head, ...small], 20_000), true);
+	// After a compaction: its kept tail plus what came after, never what it summarized.
+	const compaction = { type: "compaction", id: "c1", firstKeptEntryId: "u1" } as BranchEntry;
+	assert.equal(nothingToCompact([...long, compaction], 1), true, "just compacted");
+	assert.equal(nothingToCompact([...long, compaction, user("u2", "next"), assistant("a2", "fine")], 20_000), true, "the long summarized part no longer counts");
+	assert.equal(nothingToCompact([...long, compaction, user("u2", words(20_000)), assistant("a2", words(20_000))], 20_000), false);
+});
+
 test("the fork: a run-private copy and session dir, read-only policy, the parent's model, the focus in its task; only the running row enters the session", async () => {
 	const agent = temp();
 	const h = harness({ agentDir: agent });
@@ -240,7 +283,7 @@ test("the fork lands: note saved under the agent dir, entry and saved row append
 	assert.equal(restore.message.display, false);
 	assert.ok(String(restore.message.content).includes(NOTE));
 	// The main session never held the handoff turn.
-	assert.equal(h.branch.some((e) => e.type === "message" && e.message?.role === "assistant"), false);
+	assert.equal(h.branch.some((e) => e.type === "message" && e.message?.role === "assistant" && e.id !== "a0"), false);
 	assert.equal(h.branch.some((e) => e.type === "message" && e.message?.role === "toolResult"), false);
 });
 

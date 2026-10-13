@@ -23,7 +23,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, findCutPoint, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
 import {
@@ -81,6 +81,8 @@ export interface CompactHandoffOptions {
 	workerHost?(): WorkerHost | undefined;
 	/** Test seam; defaults to the shared reattach. */
 	reattach?: typeof reattachBackgroundForks;
+	/** Test seam; defaults to pi's `compaction.keepRecentTokens` for the session's model, read from its settings files. */
+	keepRecentTokens?(ctx: ExtensionContext): number;
 }
 
 interface Run {
@@ -108,6 +110,27 @@ function oneLine(text: string): string {
 	return line.length > MAX_ERROR ? `${line.slice(0, MAX_ERROR - 1)}…` : line;
 }
 
+/**
+ * Whether pi's compact() would find nothing to summarize: everything since the branch's last
+ * compaction (that compaction's kept tail and what came after) fits in `keepRecentTokens`. pi's
+ * prepareCompaction cuts the same entries with the same budget (its exported findCutPoint), and
+ * refuses with "Nothing to compact" when no conversation lies before the cut; system messages are
+ * prompt state, never summarized, so they are left out. Should the two ever disagree, compact()'s
+ * own refusal still reaches the user as a failed compaction.
+ */
+export function nothingToCompact(branch: readonly BranchEntry[], keepRecentTokens: number): boolean {
+	if (branch.at(-1)?.type === "compaction") return true;
+	const last = branch.findLastIndex((e) => e.type === "compaction");
+	let entries = branch;
+	if (last >= 0) {
+		const kept = branch.findIndex((e) => e.id === (branch[last] as { firstKeptEntryId?: string }).firstKeptEntryId);
+		entries = [...(kept >= 0 && kept < last ? branch.slice(kept, last) : []), ...branch.slice(last + 1)];
+	}
+	entries = entries.filter((e) => !(e.type === "message" && e.message?.role === "system"));
+	const cut = findCutPoint(entries as never, 0, entries.length, keepRecentTokens);
+	return !entries.slice(0, cut.firstKeptEntryIndex).some((e) => e.type === "message" || e.type === "custom_message" || e.type === "branch_summary");
+}
+
 export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoffOptions = {}): void {
 	const dirOf = options.agentDir ?? (() => defaultAgentDir());
 	const now = options.now ?? Date.now;
@@ -123,6 +146,8 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 			});
 	const hostOf = options.workerHost ?? (() => announced?.current());
 	const reattachForks = options.reattach ?? reattachBackgroundForks;
+	/** pi's keep-recent budget for this session, as its compact() reads it; undefined when the settings can't be read. */
+	const keepRecentOf = options.keepRecentTokens ?? ((ctx: ExtensionContext) => SettingsManager.create(ctx.cwd, dirOf(), { projectTrusted: ctx.isProjectTrusted() }).getCompactionKeepRecentTokens(ctx.model ?? undefined));
 	/** The fork under way, per pi session: from the command until it settles. */
 	const runs = new Map<string, Run>();
 	/** Saved notes waiting to compact, per pi session. */
@@ -311,6 +336,12 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			if (!forkable(sessionFile)) {
 				notify(ctx, "/compact-handoff: this session has no conversation on disk yet, so there is nothing to hand off.", "warning");
+				return;
+			}
+			let keep: number | undefined;
+			try { keep = keepRecentOf(ctx); } catch { /* unreadable settings: let compact() decide, as before */ }
+			if (keep !== undefined && nothingToCompact(ctx.sessionManager.getBranch() as BranchEntry[], keep)) {
+				notify(ctx, "/compact-handoff: nothing can be compacted yet. Everything since the last compaction still fits in the recent part a compaction keeps, so no note was written.", "warning");
 				return;
 			}
 			const id = randomUUID();

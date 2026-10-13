@@ -426,6 +426,41 @@
         "server/sync/docs.test.ts"
       ]
     },
+    "§app.insights/performance-tab": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PerformanceTab.tsx",
+        "src/performance-tab.css",
+        "src/lib/perf.ts",
+        "src/components/AgentsView.tsx",
+        "src/App.tsx",
+        "src/lib/api.ts",
+        "server/usage-routes.ts",
+        "server/usage-helper/perf.ts",
+        "server/usage-helper/perf.test.ts",
+        "server/usage-helper/perf-store.ts",
+        "server/usage-helper/main.ts",
+        "server/usage-helper/service.ts",
+        "shared/usage/perf.ts",
+        "src/lib/perf.test.ts",
+        "src/components/CostsTab.tsx",
+        "src/lib/insights.ts",
+        "shared/usage/wire.ts",
+        "server/usage-helper/perf-store.test.ts",
+        "server/app.ts"
+      ],
+      "requires": [
+        "§app.insights/reply-timing",
+        "§app.insights/cost-history",
+        "§app.insights/usage-page-and-agents-page"
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
+      }
+    },
     "§app.insights/placement": {
       "kind": "behavior",
       "authority": "accepted",
@@ -433,6 +468,72 @@
       "code": [
         "src/lib/insights.ts"
       ]
+    },
+    "§app.insights/reply-timing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-session.ts",
+        "server/harness/pi/session.ts",
+        "server/harness/pi/session.test.ts",
+        "server/reply-timing.ts",
+        "server/reply-timing.test.ts",
+        "server/perf-record.ts",
+        "server/perf-record.test.ts",
+        "server/chat-manager.ts",
+        "server/stream-guard.ts",
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/reply-timing-chat.test.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts"
+      ],
+      "requires": [
+        "§app.insights/usage-ledger",
+        "§app.harness/session"
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
+      }
+    },
+    "§app.insights/reply-timing-hover": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ReplyTiming.tsx",
+        "src/reply-timing.css",
+        "src/components/Thread.tsx",
+        "src/lib/perf.ts",
+        "src/lib/perf.test.ts",
+        "shared/usage/perf.ts",
+        "shared/harness-wire.ts",
+        "shared/wire-v1.ts",
+        "server/reply-facts.ts",
+        "server/wire-rows.ts",
+        "server/transcript-rows.ts",
+        "server/usage-helper/perf-store.ts",
+        "src/lib/live.ts",
+        "server/reply-facts.test.ts",
+        "shared/protocol.ts",
+        "shared/chat-runtime-wire.ts",
+        "server/chat-handle.ts",
+        "server/chat-runtime/host.ts",
+        "server/app.ts",
+        "server/chat-manager.ts",
+        "server/usage-helper/perf-store.test.ts"
+      ],
+      "requires": [
+        "§app.insights/reply-timing",
+        "§app.harness/wire"
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
+      }
     },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
@@ -523,7 +624,11 @@
         "src/lib/api.ts",
         "shared/usage/wire.ts",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
+      }
     },
     "§app.session-list/accessibility": {
       "kind": "behavior",
@@ -2117,8 +2222,8 @@
         "pi-config/extensions/explain/store.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T03:59Z"
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
       }
     },
     "§chat/composer": {
@@ -13331,7 +13436,7 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
@@ -13339,7 +13444,11 @@
         "pi-config/extensions/claude-code/provider/stream.test.ts",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "pi-config/extensions/claude-code/provider/fixtures/invalid-tool-input-turn.ndjson"
-      ]
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:18Z"
+      }
     },
     "§app/claude-code-provider": {
       "kind": "surface",
@@ -15717,7 +15826,11 @@
       "requires": [
         "§app.insights/usage-ledger",
         "§app.insights/team-cards"
-      ]
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
+      }
     },
     "§app.insights/usage-ledger": {
       "kind": "behavior",
@@ -15980,8 +16093,8 @@
         "§app.harness/reader"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T03:06Z"
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:18Z"
       }
     },
     "§app.harness/session-history": {
@@ -16083,8 +16196,8 @@
         "§app.harness/state"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T18:54Z"
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:19Z"
       }
     },
     "§app.harness/state": {
@@ -16242,7 +16355,11 @@
       ],
       "requires": [
         "§chat.transcript/slim-rows"
-      ]
+      ],
+      "agreed": {
+        "by": "Omar (al_1 go-ahead)",
+        "at": "2026-10-13T16:46Z"
+      }
     },
     "§app/harness": {
       "kind": "note",

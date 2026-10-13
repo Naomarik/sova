@@ -102,6 +102,9 @@ in order, the text and thinking of the rejected attempt and then everything the 
   later CLI message's usage replaces that of an attempt whose calls were all rejected, the
   attempt's token counts go on its diagnostic (`usage`), never into the message's usage. A
   project's cost therefore does not price that API call.
+- **No timing.** When the retry continues the pi message, the message also carries a
+  `measurement-invalid` diagnostic (reason `invalid-tool-retry`), so reply timing
+  (§app.insights/reply-timing) records nothing for it: its time includes the rejected attempt.
 
 ## §app.claude-code-provider/always-on — The provider is always on
 

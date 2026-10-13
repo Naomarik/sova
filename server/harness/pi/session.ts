@@ -172,30 +172,38 @@ const REQUESTS = Symbol.for("sova.harness.request-start");
  */
 export function hearRequests(agent: { streamFunction: PiStreamFn }, fn: RequestListener): () => void {
   let wrapped = agent.streamFunction;
-  if (!wrapped[REQUESTS]) {
-    const orig = wrapped;
-    const listeners = new Set<RequestListener>();
-    wrapped = ((model, context, options) => {
-      const own = options?.onPayload;
-      const onPayload = (...args: any[]) => {
-        const at = Date.now();
-        for (const l of [...listeners]) {
-          try {
-            l(at);
-          } catch {
-            // a listener's failure never touches the request
-          }
-        }
-        return own?.(...args);
-      };
-      return orig(model, context, { ...options, onPayload });
-    }) as PiStreamFn;
-    wrapped[REQUESTS] = listeners;
-    agent.streamFunction = wrapped;
-  }
+  if (!wrapped[REQUESTS]) agent.streamFunction = wrapped = heardStream(wrapped, new Set());
   const set = wrapped[REQUESTS]!;
   set.add(fn);
   return () => set.delete(fn);
+}
+
+/** `orig` with an `onPayload` in its options that tells `listeners`, then runs the caller's own. */
+function heardStream(orig: PiStreamFn, listeners: Set<RequestListener>): PiStreamFn {
+  const wrapped = ((model, context, options) => {
+    const own = options?.onPayload;
+    const onPayload = (...args: any[]) => {
+      const at = Date.now();
+      for (const l of [...listeners]) {
+        try {
+          l(at);
+        } catch {
+          // a listener's failure never touches the request
+        }
+      }
+      return own?.(...args);
+    };
+    return orig(model, context, { ...options, onPayload });
+  }) as PiStreamFn;
+  wrapped[REQUESTS] = listeners;
+  return wrapped;
+}
+
+/** After something replaced the agent's stream function (a test double), keep telling the listeners the
+    one it replaced told. */
+export function keepHearingRequests(agent: { streamFunction: PiStreamFn }, replaced: unknown): void {
+  const listeners = (replaced as PiStreamFn | undefined)?.[REQUESTS];
+  if (listeners && !agent.streamFunction[REQUESTS]) agent.streamFunction = heardStream(agent.streamFunction, listeners);
 }
 
 /** One pi event as the HarnessEvent it is (exactly one per event). */

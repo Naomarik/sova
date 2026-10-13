@@ -381,6 +381,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     pi: ["Agent.streamFunction", "StreamOptions.onPayload", "createAgentSession"],
     where: [
       { file: "server/harness/pi/session.ts", symbol: "hearRequests" },
+      { file: "server/harness/pi/session.ts", symbol: "keepHearingRequests" },
       { file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.subscribe" },
     ],
     canary: "P25 request-start: the agent hands its stream function options whose onPayload the provider calls once per request, before the reply starts; a wrapped one hears it",

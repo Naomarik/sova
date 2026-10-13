@@ -8,6 +8,7 @@ import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 
 /** What a worker start answers on a server that has no Bun to run the chat runtime. */
 export const NO_BUN = "Workers need Bun to run Sova's chat runtime";
+export const NO_BUN_CHATS = "Chats need Bun to run Sova's chat runtime";
 
 const REPO = resolve(import.meta.dirname, "..", "..");
 

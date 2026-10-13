@@ -1,7 +1,6 @@
-// Where an ordinary chat runs (§app/chat-processes): with SOVA_CHAT_HOST=out on a host where it can
-// apply, each ordinary chat runs in a process of its own, started and taken back by the supervisor
-// (server/chat-runtime/supervisor.ts) and talked to through a RemoteChatHandle; everything else, and
-// everything when the switch is off, runs in this process as before. Installed into chat-handle.ts as
+// Where a chat runs (§app/chat-processes): each chat runs in a process of its own (a systemd user
+// unit, else a detached session), started and taken back by the supervisor
+// (server/chat-runtime/supervisor.ts) and talked to through a RemoteChatHandle. Installed into chat-handle.ts as
 // its router (setChatRouter), so ws.ts and every caller of acquireChatHandle/chatHandle/chatHandles
 // reach a chat the same way wherever it runs.
 import { randomUUID } from "node:crypto";
@@ -58,7 +57,7 @@ import {
   supervisorConfig,
 } from "./chat-runtime/supervisor";
 import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock";
-import { chatBun, NO_BUN } from "./chat-runtime/bun";
+import { chatBun, NO_BUN, NO_BUN_CHATS } from "./chat-runtime/bun";
 import { WORKER_PROTO } from "./chat-runtime/worker-port";
 import { type Placement, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 import { readWorkerNice } from "./process-priority";
@@ -79,19 +78,14 @@ const READY_WAIT_MS = 10_000;
     process survived is never started a second time. */
 const TAKE_BACK_MAX_MS = 120_000;
 
-let host: ChatHost = { mode: "in", why: "the server has not started its chats yet" };
-/** Where ordinary chats run on this server, and why (logged in full at start). */
-export const chatHostStatus = (): ChatHost => host;
+/** How this server runs chat processes, once decided at start (logged in full). */
+let host: ChatHost | null = null;
 
-/** The same for GET /api/health, which answers without sign-in: the mode and a fixed short reason,
-    never a value from the environment or a probe's own text. */
-export function chatHostHealth(): { mode: "in" | "out"; why: string; code?: "copy" | "live"; codeWhy?: string } {
-  const w = host.why;
-  if (host.mode === "out") return { mode: "out", why: /detached/.test(w) ? "test driver" : "systemd user units", ...generationHealth() };
-  if (!w.startsWith("SOVA_CHAT_HOST=out")) return { mode: "in", why: /not started/.test(w) ? "starting" : "switch off" };
-  if (/Linux-only/.test(w)) return { mode: "in", why: "not Linux" };
-  if (/Bun/.test(w)) return { mode: "in", why: "server not on Bun" };
-  return { mode: "in", why: "no systemd user manager" };
+/** The same for GET /api/health, which answers without sign-in: the driver, never a value from the
+    environment or a probe's own text. */
+export function chatHostHealth(): { driver: ChatHost["driver"] | "starting"; bun?: false; code?: "copy" | "live"; codeWhy?: string } {
+  if (!host) return { driver: "starting" };
+  return { driver: host.driver, ...(chatBun() ? {} : { bun: false as const }), ...generationHealth() };
 }
 
 const log = (line: string) => console.log(`[chat-host] ${line}`);
@@ -100,8 +94,10 @@ const log = (line: string) => console.log(`[chat-host] ${line}`);
 export interface RouterDeps {
   driver?: Driver;
   connect?: typeof connectLink;
-  /** Whether ordinary chats move out now (the server: the chosen host's mode). */
+  /** Whether ordinary chats move out now (tests of the in-process path; the server: always). */
   out?: () => boolean;
+  /** The Bun chat processes run on, null when none was found (the server: chatBun). */
+  bun?: () => string | null;
   /** Where the supervisor keeps its records and sockets, and its units' prefix. */
   supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix">;
   /** The same for workers placed as the server's children (their driver, records and prefix). */
@@ -136,6 +132,7 @@ export class ChatHostRouter {
   private takingBack: Promise<Map<string, Promise<void>>> = Promise.resolve(new Map());
   private readonly connect: typeof connectLink;
   private readonly out: () => boolean;
+  private readonly bun: () => string | null;
   private readonly gen: Generation | undefined;
   /** Unused code generations collected (after the take-back, hourly, after a run of reloads). */
   private gc: { collect: () => Promise<void>; stop: () => void } | null = null;
@@ -147,7 +144,8 @@ export class ChatHostRouter {
   ) {
     const cfg = supervisorConfig();
     this.connect = deps.connect ?? connectLink;
-    this.out = deps.out ?? (() => host.mode === "out");
+    this.out = deps.out ?? (() => true);
+    this.bun = deps.bun ?? chatBun;
     this.gen = deps.gen;
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
@@ -157,7 +155,7 @@ export class ChatHostRouter {
     // for its bookkeeping, Bun however the server runs, and the worker niceness.
     const launch: SupervisorDeps["launch"] = (c) => {
       const w = this.workers?.record(c.chatId);
-      const bun = w ? (chatBun() ?? process.execPath) : process.execPath;
+      const bun = this.bun() ?? process.execPath;
       return {
         argv: [bun, join(code, "server", "chat-runtime", "main.ts")],
         workdir: code,
@@ -211,7 +209,7 @@ export class ChatHostRouter {
       ownPid: addOwnPid,
     } satisfies Omit<SupervisorDeps, "driver">;
     // The units' supervisor first: it takes over the pids claimed at start (claimRecordedChats).
-    this.sup = new ChatSupervisor({ ...common, driver: deps.driver ?? chatDriver(cfg), ...deps.supervisor });
+    this.sup = new ChatSupervisor({ ...common, driver: deps.driver ?? chatDriver({ ...cfg, driver: host?.driver ?? cfg.driver }), ...deps.supervisor });
     const { driver: childDrv, ...childDeps } = deps.children ?? {};
     this.childSup = new ChatSupervisor({
       ...common,
@@ -528,6 +526,7 @@ export class ChatHostRouter {
       }
     }
     if (!this.out() || this.inprocOnly.has(path)) return null;
+    if (!this.bun()) throw new Error(NO_BUN_CHATS);
     let p = this.starting.get(path);
     if (!p) {
       p = this.startChat(path, force).finally(() => this.starting.delete(path));
@@ -641,7 +640,7 @@ export class ChatHostRouter {
   /** Start worker chat `rec` in a process of its own (a unit, else a child of this server) and open it
       as its loadout; a unit that does not start or answer falls back to a child, logged. */
   private async startWorker(rec: WorkerRecord, prefer: Placement): Promise<{ handle: RemoteChatHandle; placement: Placement }> {
-    if (!chatBun()) throw new Error(NO_BUN);
+    if (!this.bun()) throw new Error(NO_BUN);
     await this.takenBack();
     let placement: Placement = prefer === "unit" && this.out() ? "unit" : "child";
     for (;;) {
@@ -768,8 +767,7 @@ let router: ChatHostRouter | null = null;
 export function startChatHost(): void {
   const boot = (async () => {
     host = await chooseChatHost();
-    log(`ordinary chats run ${host.mode === "out" ? "in processes of their own" : "in the server"}: ${host.why}`);
-    // Chats a previous server started are taken back even with the switch off now: never orphaned.
+    log(`chats run in processes of their own, as ${host.why}${chatBun() ? "" : `; no Bun was found, so every chat open is refused`}`);
     // Chats start on this server's own copy of its code (made now, or reused).
     const gen = await currentGeneration({ log });
     router = new ChatHostRouter(nextEpoch(), gen.id, { gen });

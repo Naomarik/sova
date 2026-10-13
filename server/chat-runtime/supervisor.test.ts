@@ -562,22 +562,18 @@ test("knobs: slice, test driver, idle minutes and the Claude cap from the server
   assert.equal(chatDriver({ slice: "x", driver: "detached" }).id, "detached");
 });
 
-test("chats run out of the server only with the switch on, on Linux, on Bun, with systemd answering", async () => {
+test("chats run as systemd units where the user manager answers, else as detached sessions; no switch moves them into the server", async () => {
   const up = { available: async () => ({ ok: true, detail: "systemd user manager (v)" }) };
   const down = { available: async () => ({ ok: false, detail: "no systemd user manager reachable" }) };
-  const on = { SOVA_CHAT_HOST: "out" };
-  assert.equal((await chooseChatHost({ env: {}, platform: "linux", bun: "1.4", driver: up })).mode, "in");
-  assert.equal((await chooseChatHost({ env: on, platform: "linux", bun: "1.4", driver: up })).mode, "out");
-  const mac = await chooseChatHost({ env: on, platform: "darwin", bun: "1.4", driver: up });
-  assert.equal(mac.mode, "in");
+  assert.equal((await chooseChatHost({ env: {}, platform: "linux", driver: up })).driver, "systemd");
+  assert.equal((await chooseChatHost({ env: { SOVA_CHAT_HOST: "off" }, platform: "linux", driver: up })).driver, "systemd", "the old switch means nothing");
+  const mac = await chooseChatHost({ env: {}, platform: "darwin", driver: up });
+  assert.equal(mac.driver, "detached");
   assert.match(mac.why, /darwin/);
-  const node = await chooseChatHost({ env: on, platform: "linux", bun: undefined, driver: up });
-  assert.equal(node.mode, "in");
-  assert.match(node.why, /need the server on Bun/);
-  const nosd = await chooseChatHost({ env: on, platform: "linux", bun: "1.4", driver: down });
-  assert.equal(nosd.mode, "in");
+  const nosd = await chooseChatHost({ env: {}, platform: "linux", driver: down });
+  assert.equal(nosd.driver, "detached");
   assert.match(nosd.why, /no systemd/);
-  assert.equal((await chooseChatHost({ env: { ...on, SOVA_CHAT_DRIVER: "detached" }, platform: "linux", bun: "1.4", driver: down })).mode, "out", "the test driver needs no user bus");
+  assert.equal((await chooseChatHost({ env: { SOVA_CHAT_DRIVER: "detached" }, platform: "linux", driver: up })).driver, "detached", "the test override");
 });
 
 test("the chat env: the server's minus the deny list, Sova's bun and the resolved claude first on PATH", () => {
@@ -599,9 +595,9 @@ test("a chat process's own variables: never inherited from its server, and delet
   const env = chatEnv({ serverEnv: { ...leaked, SOVA_CHAT_CODE_ROOT: "/scratch", LANG: "C" }, bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a", extra: { SOVA_CHAT_ID: "c1" } });
   for (const k of CHAT_PROCESS_ENV) assert.equal(env[k], k === "SOVA_CHAT_ID" ? "c1" : undefined, k);
   assert.equal(env.SOVA_CHAT_CODE_ROOT, undefined, "the server's own code root");
-  const server: NodeJS.ProcessEnv = { ...leaked, SOVA_CHAT_HOST: "out", LANG: "C" };
+  const server: NodeJS.ProcessEnv = { ...leaked, SOVA_CHAT_SLICE: "x.slice", LANG: "C" };
   assert.deepEqual(scrubChatProcessEnv(server).sort(), Object.keys(leaked).sort());
-  assert.deepEqual(server, { SOVA_CHAT_HOST: "out", LANG: "C" });
+  assert.deepEqual(server, { SOVA_CHAT_SLICE: "x.slice", LANG: "C" });
 });
 
 test("the socket lives under the state root, or in the runtime dir when that path would not fit", () => {

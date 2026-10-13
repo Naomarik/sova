@@ -667,6 +667,7 @@ export class ChatRuntimeHost {
       ...(f.client.wire ? { wire: f.client.wire } : {}),
       ...(f.client.tail ? { tail: f.client.tail } : {}),
       ...(f.client.pull ? { pull: f.client.pull } : {}),
+      ...(f.client.pull && typeof f.client.have === "string" ? { have: f.client.have } : {}),
     };
     this.clients.set(f.clientId, client);
     // A pane is back: the orphans go, their dialogs stay (attach sends them again).

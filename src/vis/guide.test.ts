@@ -241,6 +241,6 @@ for (const html of [false, true]) {
 // round's rule fixes then changed it). A deliberate edit to shared.md or a share kind's file changes
 // it: check the new text reads right for a gathering session, then put its hash here.
 test("the gathering guide is the text last reviewed", () => {
-  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "010b137f57e9284700d1022a020b19c71a6d603eaa17c35e43f67f03bcd377eb");
-  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "efe2c73178eb893a4e00fb103ab569b2436e5f322dbfc74826e0d4b7f99fdf58");
+  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "41e360002f44a2a1e9f8ca17d61e1f0eda4259a67bb2d9b6f4b15df932f774bc");
+  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "c4d31cc65f110c23a758ac2111b03bb68485d8c3af2ade92eecf4f87b5a90f3b");
 });

@@ -337,13 +337,21 @@ export class RemoteChatHandle extends ChatHandle {
     this.ids.set(client, clientId);
     // With the link down this sends nothing: the pane is attached when the chat is linked again
     // (repoint), or told it stopped (endPanes).
-    this.sendAttach(clientId, client);
+    this.sendAttach(clientId, client, true);
   }
-  private sendAttach(clientId: string, client: ChatClient): void {
+  /** `first`: the pane's own attach, the only one that says which rows it holds (a relink's hello
+      is the usual one). */
+  private sendAttach(clientId: string, client: ChatClient, first = false): void {
     this.link.send({
       t: "client.attach",
       clientId,
-      client: { clientId, ...(client.wire ? { wire: client.wire } : {}), ...(client.tail ? { tail: true } : {}), ...(client.pull ? { pull: client.pull } : {}) },
+      client: {
+        clientId,
+        ...(client.wire ? { wire: client.wire } : {}),
+        ...(client.tail ? { tail: true } : {}),
+        ...(client.pull ? { pull: client.pull } : {}),
+        ...(first && client.pull && client.have ? { have: client.have } : {}),
+      },
     });
   }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {

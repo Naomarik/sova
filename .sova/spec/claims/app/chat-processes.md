@@ -181,8 +181,10 @@ open dialog, working worker or server action) is asked to close after 30 minutes
 (`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never). The chat checks again that it is
 still quiet with nobody attached, and refuses otherwise, which restarts the clock. A chat that
 accepts but has not exited 30 s later is stopped. An idle stop is not a death and never gets a
-"continue". The chat stays closed until someone opens it, which starts a new process in under a
-second. Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
+"continue". The chat stays closed until someone opens it, which starts a new process: its `hello`
+comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
+(median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
+(§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
 
 With no server at all (Sova stopped for good, its chats left running), a chat's process that has
 no server linked and nothing in flight, for the same idle time (as the last server set it), exits

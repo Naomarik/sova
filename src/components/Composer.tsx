@@ -101,6 +101,9 @@ export interface ComposerReason {
   text: string;
   /** Fades in after a short delay, so a quick connect never flashes it (§chat.composer/disabled-states). */
   soft?: boolean;
+  /** Said elsewhere for the eye (the note over the transcript's end while a chat connects or starts,
+      §chat.transcript/instant-open): here for assistive technology only, visually hidden. */
+  quiet?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -1378,13 +1381,13 @@ export function Composer(props: {
               </button>
             )}
           </Show>
-          <span class="composer-reason" id={paneId("composer-reason")} data-soft={shownReason()?.soft ? "" : undefined}>
+          <span class="composer-reason" id={paneId("composer-reason")} data-soft={shownReason()?.soft && !shownReason()?.quiet ? "" : undefined}>
             <Show when={shownReason()}>
               {(r) => (
-                <>
+                <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
                   <Icon name={r().icon} small />
                   {r().text}
-                </>
+                </Show>
               )}
             </Show>
           </span>

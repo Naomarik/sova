@@ -28,7 +28,7 @@ Sova draws it with its own code instead of showing the block's text.
 | `vis chart` | Bars (grouped or stacked), lines or scatter, on a linear or log axis |
 | `vis timeline` | Dated events in order |
 | `vis steps` | Scenario chains, with a status per row |
-| `vis wireframe` | Low-fidelity phone or desktop screens, with arrows between them |
+| `vis wireframe` | Low-fidelity phone or desktop screens, with arrows between them; a row can pin blocks to its end, let one block fill the room, share its width in set proportions and line its blocks up |
 | `vis matrix` | A comparison grid with yes, no, partial or text cells |
 | `vis code` | An annotated snippet: highlighted, numbered lines with notes |
 | `vis html`, `vis svg` | Free-form, when no other kind fits (see below) |

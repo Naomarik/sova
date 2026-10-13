@@ -392,7 +392,7 @@ describe("M9 chat runtime: a fresh deploy in a container", { concurrency: false 
     if (code0 === "copy") {
       // The copy holds the code alone: no agent dir (auth.json, sessions), no page builds.
       assert.equal(sh(N, `test ! -e ${copyOfA}/.agent && test ! -e ${copyOfA}/dist && test ! -e ${copyOfA}/dist-share && echo ok`).out, "ok", "no .agent, dist or dist-share in A's copy");
-      assert.equal(sh(N, `find ${copyOfA}/ -name auth.json | head -1`).out, "", "no auth.json anywhere in A's copy");
+      assert.equal(sh(N, `find ${CHATS}/code/ -name auth.json | head -1`).out, "", "no auth.json anywhere under the copies root");
     }
     // B over /sova, as a pull on a live checkout: the files B removed go first, then B's files, both page
     // builds, and its stamp last. Chats keep running meanwhile.

@@ -324,3 +324,22 @@ test("a chat whose folder is gone is refused before any process, and remembered 
   assert.equal(h?.where, "process");
   t.router.detach();
 });
+
+test("a take-back that fails starts no collection of unused code (a chat it missed may run from one), yet opens go on", async () => {
+  const t = setup();
+  const next = new ChatHostRouter(++epoch, "g1", { driver: t.driver, connect: t.connect, out: () => true, supervisor: t.supervisor, gen: { id: "g1", dir: "/copies/g1", live: false } });
+  const priv = next as unknown as { sup: { adopt: () => Promise<unknown> }; gc: unknown };
+  priv.sup.adopt = async () => {
+    throw new Error("registry unreadable");
+  };
+  try {
+    next.start();
+    await next.ready();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(priv.gc, null, "no collection this server life");
+    const h = await next.acquire(session().path, false);
+    assert.equal(h?.where, "process", "an open does not wait on the failed take-back");
+  } finally {
+    next.detach();
+  }
+});

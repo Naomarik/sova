@@ -437,6 +437,7 @@ export class ChatHostRouter {
         this.sup.watch(2_000);
         this.childSup.watch(2_000);
         if (this.gen && tookBack) this.gc = startGenerationGc(() => this.buildsInUse());
+        else if (this.gen) log("unused code is not collected this server life: the take-back failed");
       });
   }
 

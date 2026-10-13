@@ -76,6 +76,18 @@ with a leading `~` expanded, else `~/.pi/agent`) and reads it on every call, so 
 that moves `PI_CODING_AGENT_DIR` moves every such path at once. Sova's own state root is
 `<agentRoot()>/sova`. Only the pi adapter (`server/harness/pi/agent-dir.ts`) asks pi for it.
 
+## §app.harness/extension-agent-dir — pi-config extensions use the active agent directory
+
+Sova's pi-config extensions find pi's files in the agent directory pi itself runs with
+(`$PI_CODING_AGENT_DIR`, a leading `~` expanded, else `~/.pi/agent`), never a hard-coded
+`~/.pi/agent`, so a pi on a hermetic agent dir neither reads nor writes the live one:
+`/extensions` lists and toggles the extensions and settings of that dir; the usage footer and the
+server's usage fetch read API keys and pi's OpenAI sign-in from that dir's `auth.json`;
+`look_at_image` judges a fallback's subscription usage from that dir's
+`cache/usage-status.json`; and the Claude Code bridge's opt-in diagnostics
+(`PI_CLAUDE_CODE_DEBUG=1`) append to that dir's `claude-code-debug.log`. With no
+`PI_CODING_AGENT_DIR` all of these are `~/.pi/agent`, as before.
+
 ## §app.harness/tools — Sova's tools are harness-neutral
 
 Sova's own tools are written as the contract's `ToolSpec`: plain JSON-schema parameters, a Sova
@@ -191,15 +203,16 @@ driving session or pi's agent session. The handle is what a chat in a process of
 like to the server (`shared/chat-runtime.ts`): commands that are calls with ids, answered with a
 result or a typed refusal (busy, refused, config) that is thrown again as the error class the chat
 threw; a state mirror read without asking; lifecycle events numbered for a reader that missed some;
-and browser frames passed through. The handle has two forms. A chat in the server's process (every chat with `SOVA_CHAT_HOST` off but workers and hidden chats, which are always chat processes of their own) runs a command as the chat's own method
-at once, and the mirror reads the chat as it is. A chat in a process of its own (§app/chat-processes)
+and browser frames passed through. The handle has two forms. In the server every chat is in a process of its own. The other form, a
+chat in the caller's own process (only where nothing routes chats: a chat process's own chat, a
+test), runs a command as the chat's own method at once, and the mirror reads the chat as it is. A chat in a process of its own (§app/chat-processes)
 gets each command over its socket and answers it there, a refusal as the same typed refusal; the
 mirror is the copy the chat last sent, which it sends before answering a command that changed it;
-and its lifecycle events reach the server's listeners as an in-server chat's do. Either way the
+and its lifecycle events reach the server's listeners. Either way the
 driving session answers as before: whether a reply is running, whether the agent still holds queued messages, the model
 (and whether it takes images) and the thinking level, the session's id, folder and active branch,
-what its runtime loaded for its prompt (context files, skills, the system prompt's sources), and
-stopping a reply at shutdown, which only an in-server chat's reply does. Whose live record belongs
+and what its runtime loaded for its prompt (context files, skills, the system prompt's sources). A
+server's shutdown stops no reply. Whose live record belongs
 to one of this server's chats is decided by a set of processes, this one and each chat process it
 hosts, never by comparing with the server's own pid. A folder no runtime holds is read with pi's own
 loader, without extensions, by the adapter (`server/harness/pi/resources.ts`). The Overseer's

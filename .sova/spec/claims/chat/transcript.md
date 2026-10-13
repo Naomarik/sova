@@ -352,7 +352,7 @@ closed, and the markdown on the left when open.
   `status`. Per id, only the newest entry renders (as with an older session's align-doc entries), so a settled run is one
   row, and a live append replaces the running row in place. A running row is not a link — there
   is no page yet — and reads "Explaining {topic}" with the live pulse where the chevron sits.
-- **Explain rows: interrupted.** A run whose fork's chat is gone before it settled (the server stopped it, with chats not in processes of their own, or its process died for good) leaves its running entry as the newest. A `/reload` of the parent or a server restart with chats in processes of their own doesn't interrupt it: the parent watches the fork again and the row settles when the page is written. Opening the session writes nothing, so the
+- **Explain rows: interrupted.** A run whose fork's chat is gone before it settled (its process died for good, or was stopped) leaves its running entry as the newest. A `/reload` of the parent or a server restart doesn't interrupt it: the parent watches the fork again and the row settles when the page is written. Opening the session writes nothing, so the
   row still reads Explaining then; the session's next prompt (or its next `/explain`) appends the
   final entry under the same id with `status: "interrupted"`, which replaces the row. It carries
   a `.chip-warn` "Interrupted" chip where a failed run has "Failed", and the reason under the row

@@ -59,7 +59,7 @@ per call by the run's policy, so neither the policy nor the gate changes the req
 A Claude Code parent with a live, idle CLI session is resumed and forked there instead of
 replayed.
 
-The fork is a chat process of its own, started by Sova's worker factory like any worker (§app.chat-processes/workers), and never a child of the parent's process. The parent watches it through the server. A parent that reloads, crashes or picks up new code finds its forks still running, watches them again, and records each result once, when the fork finishes; a fork that finished while the parent was away is recorded when the parent next opens. A fork whose chat is gone (the server stopped it, with chats not in processes of their own, or its process died for good) settles as interrupted.
+The fork is a chat process of its own, started by Sova's worker factory like any worker (§app.chat-processes/workers), and never a child of the parent's process. The parent watches it through the server. A parent that reloads, crashes or picks up new code finds its forks still running, watches them again, and records each result once, when the fork finishes; a fork that finished while the parent was away is recorded when the parent next opens. A fork whose chat is gone (its process died for good, or was stopped) settles as interrupted.
 
 Its first request is expected to read the parent's warm prefix from cache on Zai, Codex,
 Ollama Cloud and Claude Code alike, verified against the parent's last request; provider

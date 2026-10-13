@@ -8,6 +8,35 @@
     ]
   },
   "claims": {
+    "§app.chat-processes/code-generations": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/generations.ts",
+        "server/chat-runtime/generations.test.ts",
+        "server/harness/pi/own-code.ts",
+        "server/harness/pi/own-code.test.ts",
+        "server/harness/pi/open.ts",
+        "server/chat-host.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/chat-runtime/rollout.ts",
+        "server/chat-runtime/rollout.test.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/contract.test.ts",
+        "server/chat-runtime/supervisor.test.ts",
+        "server/chat-runtime/trial-s5-generations.integration.test.ts",
+        "server/chat-host.test.ts"
+      ],
+      "requires": [
+        "§app.chat-processes/supervision",
+        "§app.chat-processes/code-pickup"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T00:46Z"
+      }
+    },
     "§app.chat-processes/code-pickup": {
       "kind": "behavior",
       "authority": "accepted",
@@ -24,7 +53,11 @@
         "shared/protocol.ts",
         "src/app.css",
         "server/chat-host.ts",
-        "server/chat-handle-remote.ts"
+        "server/chat-handle-remote.ts",
+        "server/chat-runtime/generations.ts",
+        "server/chat-handle-remote.test.ts",
+        "src/lib/unacked-sends.ts",
+        "src/lib/unacked-sends.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -32,7 +65,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T04:27Z"
       },
       "evidence": "verified"
     },
@@ -46,13 +79,18 @@
         "server/overseer.ts",
         "server/ws.ts",
         "server/chat-manager.ts",
-        "server/chat-runtime/inflight.ts"
+        "server/chat-runtime/inflight.ts",
+        "server/chat-runtime/crash.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§app.overseer/auto-resume",
         "§chat.transcript/own-writes-across-restart"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T05:04Z"
+      }
     },
     "§app.chat-processes/idle-stop": {
       "kind": "behavior",
@@ -60,7 +98,9 @@
       "code": [
         "server/chat-runtime/supervisor.ts",
         "server/chat-runtime/supervisor.test.ts",
-        "server/chat-runtime/host.ts"
+        "server/chat-runtime/host.ts",
+        "scripts/stop-chats.ts",
+        "server/chat-runtime/host.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -69,9 +109,24 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T05:09Z"
       },
       "evidence": "verified"
+    },
+    "§app.chat-processes/one-writer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/writer-lock.ts",
+        "server/chat-runtime/writer-lock.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T05:11Z"
+      }
     },
     "§app.chat-processes/server-actions": {
       "kind": "behavior",
@@ -98,7 +153,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-12T18:54Z"
+        "at": "2026-10-13T03:59Z"
       }
     },
     "§app.chat-processes/server-messages": {
@@ -174,12 +229,18 @@
         "server/chat-runtime/supervisor.integration.test.ts",
         "server/project-services/drivers.ts",
         "server/chat-host.ts",
-        "pi-config/extensions/claude-code/provider/children.ts"
+        "pi-config/extensions/claude-code/provider/children.ts",
+        "server/chat-runtime/generations.ts",
+        "server/index.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§app.claude-code-provider/continuity"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T00:46Z"
+      }
     },
     "§app.chat-processes/survives-restart": {
       "kind": "behavior",
@@ -202,7 +263,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T00:54Z"
       },
       "evidence": "verified"
     },
@@ -213,8 +274,9 @@
         "shared/chat-runtime-wire.ts",
         "server/chat-runtime/link.ts",
         "server/chat-runtime/main.ts",
-        "server/chat-runtime/writer-lock.ts",
-        "shared/chat-runtime-wire.test.ts"
+        "shared/chat-runtime-wire.test.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/chat-runtime/supervisor.test.ts"
       ],
       "requires": [
         "§app/chat-processes"
@@ -228,7 +290,8 @@
         "server/chat-host.ts",
         "pi-config/extensions/subagents/chat-worker.ts",
         "server/chat-workers.test.ts",
-        "server/chat-runtime/trial-s4-crash.integration.test.ts"
+        "server/chat-runtime/trial-s4-crash.integration.test.ts",
+        "server/chat-runtime/crash.ts"
       ],
       "requires": [
         "§app.chat-processes/workers",
@@ -238,7 +301,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T00:43Z"
       },
       "evidence": "verified"
     },
@@ -278,7 +341,8 @@
         "server/chat-runtime/trial-s4-teams.integration.test.ts",
         "server/chat-runtime/trial-s4-crash.integration.test.ts",
         "server/chat-runtime/trial-s4-hidden.integration.test.ts",
-        "server/chat-runtime/trial-s4-off.integration.test.ts"
+        "server/chat-runtime/trial-s4-off.integration.test.ts",
+        "server/chat-runtime/trial-s5-handoff.integration.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -288,7 +352,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-12T22:32Z"
+        "at": "2026-10-13T05:15Z"
       },
       "evidence": "verified"
     },
@@ -933,7 +997,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T02:21Z"
       },
       "evidence": "verified"
     },
@@ -948,7 +1012,11 @@
       "evidence": "reviewed",
       "code": [
         "server/insights.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T02:51Z"
+      }
     },
     "§app/new-session-dialog": {
       "kind": "surface",
@@ -1682,7 +1750,9 @@
         "pi-config/extensions/btw/btw.ts",
         "pi-config/extensions/btw/btw.test.ts",
         "pi-config/extensions/btw/README.md",
-        "pi-config/README.md"
+        "pi-config/README.md",
+        "server/chat-manager.ts",
+        "server/chat-idle-note.test.ts"
       ],
       "requires": [
         "§chat.slash-commands/btw-chat",
@@ -2046,7 +2116,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T03:59Z"
       }
     },
     "§chat/composer": {
@@ -2973,7 +3043,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T02:54Z"
       }
     },
     "§app.worker-restore/resume": {
@@ -3083,7 +3153,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T02:54Z"
       }
     },
     "§chat.context-window/last-reply": {
@@ -3755,8 +3825,6 @@
         "server/attention.test.ts",
         "shared/protocol.ts",
         "server/align-state.ts",
-        "server/server-stop.ts",
-        "server/server-stop.test.ts",
         "server/index.ts",
         "server/app.ts",
         "server/outreach/log.ts",
@@ -3771,7 +3839,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T02:42Z"
       }
     },
     "§app.overseer/caps": {
@@ -4901,8 +4969,15 @@
         "shared/protocol.ts",
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
-        "pi-config/extensions/usage-status/fetch.ts"
-      ]
+        "pi-config/extensions/usage-status/fetch.ts",
+        "server/auth-status.ts",
+        "server/auth-status.test.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T00:40Z"
+      }
     },
     "§app.settings-dialog/toggle-target": {
       "kind": "behavior",
@@ -8660,7 +8735,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T02:39Z"
       }
     },
     "§app.resource-monitor/entry-button": {
@@ -10709,7 +10784,11 @@
         "§app.overseer/proactivity",
         "§app.overseer/sent-marker",
         "§app.settings-dialog/overseer"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T02:54Z"
+      }
     },
     "§app.overseer/session-names": {
       "kind": "behavior",
@@ -12346,7 +12425,11 @@
         "server/project-services/removed-services.integration.test.ts",
         "server/project-services/adopt.test.ts",
         "server/project-services/adopt.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T02:19Z"
+      }
     },
     "§app.project-services/callers": {
       "kind": "behavior",
@@ -12633,7 +12716,7 @@
         "server/project-services/share.integration.test.ts",
         "server/project-services/adopt.test.ts",
         "server/project-services/adopt.integration.test.ts",
-        "server/project-services/restart-gate.test.ts"
+        "server/project-services/restart.test.ts"
       ]
     },
     "§app.project-services/supervisor": {
@@ -12656,10 +12739,14 @@
         "server/project-services/routes.ts",
         "server/project-previews.ts",
         "server/preview-sweep.integration.test.ts",
-        "server/project-services/restart-gate.test.ts",
         "server/project-services/drivers.integration.test.ts",
-        "server/project-services/engine.integration.test.ts"
-      ]
+        "server/project-services/engine.integration.test.ts",
+        "server/project-services/restart.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T04:53Z"
+      }
     },
     "§app.project-services/teardown": {
       "kind": "behavior",
@@ -12741,7 +12828,8 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        ".sova/playbooks/merge-round/PLAYBOOK.md"
+        ".sova/playbooks/merge-round/PLAYBOOK.md",
+        ".sova/playbooks/merge-round/references/push-restart.md"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -12750,8 +12838,8 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "by": "naomarik",
+        "at": "2026-10-13T03:48Z"
       }
     },
     "§chat/merge-round": {
@@ -12781,8 +12869,8 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "by": "naomarik",
+        "at": "2026-10-13T03:48Z"
       }
     },
     "§app.access/callers": {
@@ -13717,7 +13805,11 @@
         "server/project-services/self-host.test.ts",
         "server/project-services/adopt.test.ts",
         "server/project-services/adopt.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T02:18Z"
+      }
     },
     "§app.project-services/test": {
       "kind": "behavior",
@@ -13986,7 +14078,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T02:51Z"
       }
     },
     "§app.project-runtime/onboard": {
@@ -14150,14 +14242,15 @@
         "pi-config/extensions/compact-handoff/tests/run.mjs",
         "pi-config/extensions/compact-handoff/tests/runtime.mjs",
         "pi-config/extensions/compact-handoff/README.md",
-        "pi-config/README.md"
+        "pi-config/README.md",
+        "pi-config/extensions/compact-handoff/tests/compact-turn.mjs"
       ],
       "requires": [
         "§chat.slash-commands/in-the-thread"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T01:48Z"
       }
     },
     "§app.claude-code-provider/always-on": {
@@ -14460,12 +14553,15 @@
         "server/project-services/engine.ts",
         "server/project-services/drivers.ts",
         "server/project-services/self-host.ts",
-        "scripts/sova-restart-gate.mjs",
         "server/project-services/adopt.test.ts",
         "server/project-services/adopt.integration.test.ts",
-        "server/project-services/restart-gate.test.ts",
-        "AGENTS.md"
-      ]
+        "AGENTS.md",
+        "server/project-services/restart.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T02:19Z"
+      }
     },
     "§app.project-services/on-merge": {
       "kind": "behavior",
@@ -14516,7 +14612,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T03:59Z"
       }
     },
     "§chat.session-fork/claude-resume": {
@@ -14554,7 +14650,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T03:59Z"
       }
     },
     "§app.server-runtime/choice": {
@@ -14574,9 +14670,14 @@
         "AGENTS.md",
         "agents/server/overview.md",
         "agents/testing/overview.md",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "scripts/dev-server.integration.test.ts"
       ],
-      "requires": []
+      "requires": [],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T03:55Z"
+      }
     },
     "§app.server-runtime/fallback": {
       "kind": "behavior",
@@ -14604,12 +14705,17 @@
         "server/runtime-choice.test.ts",
         "server/runtime-choice.integration.test.ts",
         "server/app.ts",
-        "server/chat-host.ts"
+        "server/chat-host.ts",
+        "server/chat-runtime/generations.ts"
       ],
       "requires": [
         "§chat.profiles/live-commit",
         "§app.server-runtime/choice"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T00:46Z"
+      }
     },
     "§app/server-runtime": {
       "kind": "surface",
@@ -14692,7 +14798,7 @@
       "requires": [],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T02:26Z"
       }
     },
     "§app/load-priority": {
@@ -15464,7 +15570,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T02:51Z"
       }
     },
     "§app.session-list/working-now": {
@@ -15704,6 +15810,35 @@
       ],
       "requires": []
     },
+    "§app.harness/extension-agent-dir": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/extension-toggle/index.ts",
+        "pi-config/extensions/extension-toggle/logic.ts",
+        "pi-config/extensions/extension-toggle/index.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts",
+        "pi-config/extensions/vision-delegate/picker.ts",
+        "pi-config/extensions/vision-delegate/index.ts",
+        "pi-config/extensions/vision-delegate/index.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/auth-status.ts",
+        "server/auth-status.test.ts",
+        "pi-config/extensions/extension-toggle/command.test.ts",
+        "pi-config/extensions/usage-status/index.ts",
+        "server/chat-runtime/trial-s5-hermetic.integration.test.ts"
+      ],
+      "requires": [
+        "§app.harness/agent-root",
+        "§app.insights/usage-refresh"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-13T00:40Z"
+      }
+    },
     "§app.harness/new-work": {
       "kind": "note",
       "authority": "accepted",
@@ -15807,7 +15942,8 @@
         "server/chat-handle-remote.ts",
         "server/chat-host.ts",
         "server/chat-runtime/methods.ts",
-        "server/chat-runtime/mirror.ts"
+        "server/chat-runtime/mirror.ts",
+        "server/testing/in-process-chats.ts"
       ],
       "requires": [
         "§app.harness/boundary",
@@ -15816,7 +15952,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:16Z"
+        "at": "2026-10-13T03:06Z"
       }
     },
     "§app.harness/session-history": {
@@ -18391,7 +18527,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T00:43Z"
       }
     }
   },

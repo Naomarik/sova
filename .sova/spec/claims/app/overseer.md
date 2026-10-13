@@ -768,31 +768,24 @@ time. Both kinds of approval come only from the user's click on a card option th
   current conversation with its state and uses; `POST /api/overseer/autonomy/revoke {id}` revokes
   one (404 for an id the conversation doesn't hold, 409 for one already ended).
 
-## §app.overseer/auto-resume — Resuming runs a restart cut off
+## §app.overseer/auto-resume — Resuming runs a crash cut off
 
-- **What counts.** The server keeps a small ledger of the runs its hosted chats have in flight
-  (`<stateRoot>/runs-in-flight.json`: a session is added when a run starts and removed when it
-  settles). A server stop freezes the ledger first, so the aborts of the stop itself remove nothing;
-  a crash leaves it as it was. At the next start, every session still in it was cut off by that
-  stop. Sessions stopped any other way (a usage limit, an error, the user's Stop) settle, so they are
-  never resumed.
-- **Resume.** A few seconds after start, with Settings → Overseer → Advanced → **Resume interrupted sessions**
-  on (the default), each such session gets one message: "The Sova server restarted and cut off your
-  last turn. Continue where you left off." marked as sent by the Overseer (§app.overseer/sent-marker)
+- **What counts.** A server stop or restart cuts no run off: every chat runs in a process of its own
+  (§app.chat-processes/survives-restart), so nothing is resumed for it and no "The Sova server
+  restarted…" message is ever sent. Each chat records its own run in flight
+  (`<stateRoot>/chats/inflight/<session id>.json`), and only when its process dies with a run in
+  flight is it resumed (§app.chat-processes/crash). Runs stopped any other way (a usage limit, an
+  error, the user's Stop) settle, so they are never resumed.
+- **Resume.** With Settings → Overseer → Advanced → **Resume interrupted sessions** on (the default),
+  such a chat gets one message: "This chat's process stopped unexpectedly and cut off your last
+  turn. Continue where you left off." marked as sent by the Overseer (§app.overseer/sent-marker)
   and counted as Overseer-started for the running-at-once cap (§app.overseer/caps). Never the
   Overseer, a project overseer, a baton session, an archived session, a session open in a terminal,
-  or a session that is gone. Past the cap the rest are not resumed.
-- **Once per stop.** The ledger is read and emptied at start, before any resume. A run the resume
-  itself started that is cut off again is recorded as such and never resumed a second time.
-- **Told once.** Under Brief Me (§app.overseer/proactivity) the Overseer gets one brief listing each
-  session resumed and each one not resumed with why, as in-app links. Every resume is also a line in
-  `overseer-actions.jsonl` (tool `auto_resume`).
-- **Chats in their own process** (§app/chat-processes) are never in the ledger: a server stop
-  doesn't cut their runs off. Each such chat records its own run in flight
-  (`<stateRoot>/chats/inflight/<session id>.json`), and only when its process dies with a run in
-  flight is it resumed (§app.chat-processes/crash), once, with "This chat's process stopped
-  unexpectedly and cut off your last turn. Continue where you left off.", under the same setting,
-  exclusions, cap, log line and brief (which then says a chat process stopped).
+  or a session that is gone. Past the cap it is not resumed.
+- **Once.** A run the resume itself started that is cut off again is never resumed a second time.
+- **Told once.** Under Brief Me (§app.overseer/proactivity) the Overseer gets one brief saying a chat
+  process stopped, listing the session resumed or not resumed with why, as in-app links. Every
+  resume is also a line in `overseer-actions.jsonl` (tool `auto_resume`).
 
 ## §app.overseer/session-names — How the Overseer names sessions
 
@@ -926,16 +919,9 @@ itself.
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
   while a live record is up; one item either way, dated by the reply, its detail the error message
   — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
-  killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
-  own restart ended: a worker this server restored (§app.worker-restore/restore) in a runtime of
-  the server's own process (never one in a chat process of its own, §app/chat-processes, whose
-  workers outlive the restart, so an error of theirs is real), whose recorded ending is an error at a time between the previous server's stop and this
-  server's start, on any backend (a worker the stop ended now reads restored, never an error, §app.chat-processes/worker-crash; what this still hides is such an error recorded before workers became chat processes, a pi worker's "pi exited with code 143" say). The stop is the moment the previous
-  server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
-  at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack
-  (the workers die on the same signal). Without that file (a crash, or a stop by a server that
-  predates it) the stop is taken as 30 s before this start. A worker error while the server keeps
-  running is never one of these, and still shows. A worker error counts as
+  killed worker is left out: a kill is usually the user's own gesture. A server restart ends no
+  worker (each runs in a process of its own, §app.chat-processes/workers), so a worker's error is
+  always real. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
   latest error; it is also dealt with once the session finished a turn after the latest error (its
   last finished reply is later than the error: the session had the failure in front of it). A new

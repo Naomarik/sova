@@ -85,6 +85,7 @@ export class Rollout<L = unknown> {
     if (auto && this.halted) return "halted";
     if (!sup.record(chatId)) return "gone";
     this.deps.setCode(chatId, "reloading");
+    this.log(`${chatId}: reloading${this.deps.codeId ? ` onto ${this.deps.codeId()}` : ""}`);
     let rep: ChatRecord;
     try {
       rep = await sup.startReplacement(chatId);

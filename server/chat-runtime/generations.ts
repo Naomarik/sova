@@ -347,6 +347,13 @@ export async function collectGenerations(keep: Set<string>, o: { root?: string; 
   return removed;
 }
 
+/** The grace before an unused copy goes: `SOVA_CHAT_CODE_GRACE_MIN` (fractional minutes; tests and trials), else 10 min. */
+function graceOf(env: NodeJS.ProcessEnv): number {
+  const v = env.SOVA_CHAT_CODE_GRACE_MIN?.trim();
+  const n = v ? Number(v) : Number.NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 60_000) : GC_GRACE_MS;
+}
+
 /**
  * Collect now and every hour (the server: once its chats are taken back). `inUse` names every build a
  * chat or worker process still runs; the current generation is always kept. A live fallback has no
@@ -366,7 +373,7 @@ export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: str
     try {
       const keep = new Set(inUse());
       if (current) keep.add(current.id);
-      const gone = await collectGenerations(keep, { root: o.root });
+      const gone = await collectGenerations(keep, { root: o.root, graceMs: graceOf(o.env ?? process.env) });
       if (gone.length) log(`removed unused code: ${gone.join(", ")}`);
     } catch (err) {
       log(`collecting unused code failed: ${(err as Error).message}`);

@@ -4,7 +4,7 @@ Step 3. Every check runs on the release commit, `"${sha}"` (the release branch's
 
 The unit and integration tiers, the build and the typecheck are what the Merge round runs at every landing; a release adds the rest, and runs all of it unconditionally.
 
-1. **Typecheck and build.** `pnpm run typecheck`, `pnpm run build`.
+1. **Typecheck and build.** `pnpm run typecheck`, `pnpm run build`. Also the release notes: `! grep -q RELEASE-DATE CHANGELOG.md && [ "$(grep -c '^## vX\.Y\.Z ' CHANGELOG.md)" -eq 1 ]` (the date is set and the entry appears once).
 2. **Both test tiers.** `pnpm test`, then the whole `pnpm test:int` (never `--changed` here). A failing file: run it alone twice (`pnpm exec node scripts/run-tests.mjs <file>`); one that passes both times is flaky: name it in the report. One that fails the same way on master is master's: name it, and ask the user whether it holds the release.
 3. **pi-config's extension tests**: every line of `pi-config/README.md`'s "Tests" block, from `pi-config/`, one at a time.
 4. **The spec replay suite**, unconditionally (a release runs it whatever changed): from `pi-config/extensions/spec`, `SOVA_SPEC_REPLAY=1 node ../../../scripts/nice.mjs node --test tests/replay/*.test.mjs`. One replay at a time per machine: if a Merge round check may be running one, wait for it (`<state root>/locks/spec-replay.lock`).

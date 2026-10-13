@@ -2,18 +2,20 @@
 // server for a chat in its own process) holds a lock file for it while the chat is open, so a chat
 // is never hosted twice: a spawn for a path the server holds fails safe, and so does the reverse.
 // The lock is `<state root>/chats/locks/<sha256(path)[0..16]>.lock`, created O_EXCL, holding
-// `{pid, start, at, unit, path}`; `start` is the process's start time (field 22 of /proc/<pid>/stat)
-// where there is a /proc, so a reused pid never reads as the holder. A lock whose process is gone is
+// `{pid, start, at, unit, path}`; `start` is the process's start time (field 22 of /proc/<pid>/stat
+// on Linux, `ps -o lstart=` elsewhere: the clock the detached driver records), so a reused pid never
+// reads as the holder. A lock whose process is gone is
 // stale: it is taken over.
 import { createHash } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
+import { psTable, realSyncExec, type SyncExec } from "../project-services/proctable";
 import { chatStateRoot } from "../state-root";
 
 export interface WriterLockInfo {
   pid: number;
-  /** The holder's start time in clock ticks since boot; null where there is no /proc. */
-  start: number | null;
+  /** The holder's start time: clock ticks since boot (Linux), `ps`'s lstart text (macOS); null when unknown. */
+  start: number | string | null;
   at: number;
   unit: string | null;
   path: string;
@@ -29,8 +31,9 @@ export class WriterLockHeld extends Error {
 export const locksDir = () => join(chatStateRoot(), "chats", "locks");
 export const lockFileOf = (path: string, dir = locksDir()) => join(dir, `${createHash("sha256").update(path).digest("hex").slice(0, 16)}.lock`);
 
-/** A process's start time (clock ticks since boot), or null: no /proc, or no such process. */
-export function procStart(pid: number): number | null {
+/** A process's start time (clock ticks since boot on Linux, `ps`'s lstart elsewhere), or null: no such process. */
+export function procStart(pid: number, platform: NodeJS.Platform = process.platform, exec: SyncExec = realSyncExec): number | string | null {
+  if (platform !== "linux") return psTable(exec).startOf(pid);
   try {
     const s = readFileSync(`/proc/${pid}/stat`, "utf8");
     const f = s.slice(s.lastIndexOf(")") + 2).split(" ");
@@ -51,10 +54,10 @@ function alive(pid: number): boolean {
 }
 
 /** Whether the process a lock names still runs (the same process, not a reused pid). */
-export function holderAlive(info: Pick<WriterLockInfo, "pid" | "start">): boolean {
+export function holderAlive(info: Pick<WriterLockInfo, "pid" | "start">, startOf: (pid: number) => number | string | null = procStart): boolean {
   if (!alive(info.pid)) return false;
   if (info.start === null) return true;
-  const now = procStart(info.pid);
+  const now = startOf(info.pid);
   return now === null || now === info.start;
 }
 
@@ -63,7 +66,7 @@ export function readLock(path: string, dir = locksDir()): WriterLockInfo | null 
   try {
     const v = JSON.parse(readFileSync(lockFileOf(path, dir), "utf8")) as Partial<WriterLockInfo>;
     if (typeof v.pid !== "number") return null;
-    return { pid: v.pid, start: typeof v.start === "number" ? v.start : null, at: Number(v.at) || 0, unit: typeof v.unit === "string" ? v.unit : null, path: typeof v.path === "string" ? v.path : path };
+    return { pid: v.pid, start: typeof v.start === "number" || typeof v.start === "string" ? v.start : null, at: Number(v.at) || 0, unit: typeof v.unit === "string" ? v.unit : null, path: typeof v.path === "string" ? v.path : path };
   } catch {
     return null;
   }

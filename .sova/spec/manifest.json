@@ -108,8 +108,8 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T05:09Z"
+        "by": "user",
+        "at": "2026-10-13T15:33Z"
       },
       "evidence": "verified"
     },
@@ -1148,7 +1148,11 @@
         "src/components/SessionView.tsx",
         "src/components/VoiceInput.tsx",
         "src/design/base.css"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-13T15:33Z"
+      }
     },
     "§chat.composer/memory-status": {
       "kind": "behavior",
@@ -1988,6 +1992,47 @@
         "by": "naomarik",
         "at": "2026-10-11T08:41Z"
       }
+    },
+    "§chat.transcript/instant-open": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/rendering",
+        "§chat.transcript/recent-preload",
+        "§app.chat-processes/idle-stop",
+        "§chat.transcript/live-watch",
+        "§app.shell/the-open-failure-banner"
+      ],
+      "authority": "accepted",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/lib/older-rows.ts",
+        "src/lib/older-rows-view.ts",
+        "src/lib/socket.ts",
+        "src/components/Thread.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ModeMenu.tsx",
+        "src/app.css",
+        "server/ws.ts",
+        "server/chat-manager.ts",
+        "server/chat-handle-remote.ts",
+        "server/chat-runtime/host.ts",
+        "server/tail-hello.ts",
+        "shared/protocol.ts",
+        "shared/chat-runtime.ts",
+        "src/lib/chat-wait.ts",
+        "src/lib/chat-wait.test.ts",
+        "src/lib/socket.browser.test.ts",
+        "src/lib/older-rows.test.ts",
+        "src/lib/older-rows-view.browser.test.ts",
+        "server/ws.test.ts",
+        "server/tail-hello.test.ts",
+        "server/tail-hello.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-13T15:33Z"
+      },
+      "evidence": "verified"
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",

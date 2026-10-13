@@ -145,8 +145,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | State | Surface | Copy |
 |---|---|---|
-| Connecting (first time) | composer reason (`clock`) | Connecting… |
-| Lost, retrying | chat: composer reason (`clock`) · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
+| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`), also the composer reason for assistive technology only (§chat.transcript/instant-open) | Connecting to chat… |
+| Lost, retrying (a chat's start that failed for now too) | chat: the same floating note (`clock`), and the composer reason for assistive technology only · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
 | Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · button: `Reconnect` |
 | Reconnected | nothing. The banner or reason simply disappears; no toast | — |
 

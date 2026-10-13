@@ -109,6 +109,8 @@ export interface RouterDeps {
 export class ChatHostRouter {
   private readonly resumeCrashed: NonNullable<RouterDeps["resumeCrashed"]>;
   private readonly remotes = new Map<string, RemoteChatHandle>();
+  /** When each handle's link was last dialed again: one that ends within a second waits a second. */
+  private readonly relinkedAt = new WeakMap<RemoteChatHandle, number>();
   /** Worker chats' session files: their handles are the registry's, never a browser's chat. */
   private readonly workerPaths = new Set<string>();
   /** Every worker, team member and hidden chat (§app.chat-processes/workers). */
@@ -330,6 +332,8 @@ export class ChatHostRouter {
     }
     const id = h.mirror.sessionId;
     const sup = this.sup;
+    // A link that keeps ending at once never spins connect → repoint → end.
+    if (Date.now() - (this.relinkedAt.get(h) ?? 0) < 1_000) await new Promise((r) => setTimeout(r, 1_000));
     const until = Date.now() + 30_000;
     while (Date.now() < until && this.remotes.get(h.path) === h) {
       const state = await sup.check(id).catch(() => "unknown" as const);
@@ -339,6 +343,7 @@ export class ChatHostRouter {
       try {
         const { link } = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: h.lastSeq });
         h.repoint(link, { unit: rec.unit, pid: rec.pid ?? h.at.pid });
+        this.relinkedAt.set(h, Date.now());
         return;
       } catch {
         await new Promise((r) => setTimeout(r, 1_000));

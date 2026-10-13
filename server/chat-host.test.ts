@@ -92,7 +92,9 @@ afterEach(async () => {
   await Promise.all(made.hosts.splice(0).map((h) => h.close("operator", { dispose: true }).catch(() => {})));
 });
 
-function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[] } = {}) {
+type Connect = typeof import("./chat-runtime/link").connectLink;
+/** `wrap`: the router's connect seen through it (a link that misbehaves). */
+function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -142,7 +144,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   // every test: the real one would act on the shared in-flight markers.
   const resumes = o.resumes ?? [];
   const resumeCrashed = (path: string, since: number, _before: unknown, done?: () => void) => void resumes.push({ path, since, ...(done ? { done } : {}) });
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
   made.routers.push(router);
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
@@ -184,6 +186,33 @@ test("with no Bun anywhere every chat open is refused, and no process starts", a
   const t = setup({ bun: null });
   await assert.rejects(t.router.acquire(session().path, false), /Chats need Bun to run Sova's chat runtime/);
   assert.equal(t.driver.started.length, 0);
+  t.router.detach();
+});
+
+test("a link that ends at once each time it is dialed again is dialed about once a second, never in a spin", async () => {
+  let flapping = false;
+  let last: { close(end?: unknown): void } | null = null;
+  const t = setup({
+    wrap: (c) =>
+      (async (sock: string, opts: never) => {
+        const r = await (c as (s: string, o: never) => Promise<{ link: { close(end?: unknown): void } }>)(sock, opts);
+        last = r.link;
+        if (flapping) setTimeout(() => r.link.close({ reason: "closed" }), 5);
+        return r;
+      }) as never,
+  });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  assert.equal(h?.where, "process");
+  const before = t.connects();
+  flapping = true;
+  last!.close({ reason: "closed" });
+  await new Promise((r) => setTimeout(r, 2_500));
+  flapping = false;
+  const dials = t.connects() - before;
+  assert.ok(dials >= 2 && dials <= 4, `dialed ${dials} times in 2.5 s`);
+  await new Promise((r) => setTimeout(r, 1_200));
+  assert.equal(t.router.get(s.path), h, "the chat is still this server's");
   t.router.detach();
 });
 

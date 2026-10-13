@@ -19,7 +19,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { ChatHostRouter } = await import("./chat-host");
+const { ChatHostRouter, chatCode } = await import("./chat-host");
 const { ChatRuntimeHost } = await import("./chat-runtime/host");
 const { Link, awaitFrame } = await import("./chat-runtime/link");
 const { FakeDriver } = await import("./chat-runtime/fake-driver");
@@ -323,4 +323,14 @@ test("a chat whose folder is gone is refused before any process, and remembered 
   const h = await t.router.acquire(s.path, false);
   assert.equal(h?.where, "process");
   t.router.detach();
+});
+
+test("chats copy the code only when they run out of the server: with the switch off nothing is copied, the checkout's build is used", async () => {
+  const made: string[] = [];
+  const make = (async () => (made.push("copy"), { id: "c1+gen", dir: "/copies/c1", live: false })) as never;
+  const build = async () => "c1";
+  assert.deepEqual(await chatCode("in", { make, build }), { build: "c1" });
+  assert.deepEqual(made, [], "no copy with chats in the server");
+  assert.deepEqual(await chatCode("out", { make, build }), { build: "c1+gen", gen: { id: "c1+gen", dir: "/copies/c1", live: false } });
+  assert.deepEqual(made, ["copy"]);
 });

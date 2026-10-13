@@ -40,7 +40,7 @@ import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } f
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
 import { takeInflight } from "./chat-runtime/inflight";
-import { codeRoot, currentGeneration, type Generation, generationHealth, noteGood, startGenerationGc } from "./chat-runtime/generations";
+import { buildId, codeRoot, currentGeneration, type Generation, generationHealth, noteGood, startGenerationGc } from "./chat-runtime/generations";
 import { linkWaitReady, Rollout } from "./chat-runtime/rollout";
 import {
   type ChatDeath,
@@ -739,6 +739,18 @@ function claudePath(): string | null {
   }
 }
 
+/** The code this server's chat processes start on (§app.chat-processes/code-generations): its own copy,
+    made now or reused, when chats run out of the server; else the checkout, with nothing copied or
+    collected, as a server with the switch off always ran. */
+export async function chatCode(
+  mode: ChatHost["mode"],
+  o: { make?: typeof currentGeneration; build?: () => Promise<string> } = {},
+): Promise<{ build: string; gen?: Generation }> {
+  if (mode !== "out") return { build: await (o.build ?? buildId)() };
+  const gen = await (o.make ?? currentGeneration)({ log });
+  return { build: gen.id, gen };
+}
+
 let router: ChatHostRouter | null = null;
 
 /** Decide where ordinary chats run, and with the switch on take back the chats a previous server
@@ -749,9 +761,8 @@ export function startChatHost(): void {
     host = await chooseChatHost();
     log(`ordinary chats run ${host.mode === "out" ? "in processes of their own" : "in the server"}: ${host.why}`);
     // Chats a previous server started are taken back even with the switch off now: never orphaned.
-    // Chats start on this server's own copy of its code (made now, or reused).
-    const gen = await currentGeneration({ log });
-    router = new ChatHostRouter(nextEpoch(), gen.id, { gen });
+    const { build, gen } = await chatCode(host.mode);
+    router = new ChatHostRouter(nextEpoch(), build, gen ? { gen } : {});
     router.start();
   })().catch((err) => log(`start failed: ${err instanceof Error ? err.message : String(err)}`));
   // Every parent chat in this process starts its workers here, once the router is up.

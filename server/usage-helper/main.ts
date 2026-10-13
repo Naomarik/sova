@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { defaultAgentDir, readDeviceId, usageRoot as usageRootOf, validUsageDay } from "../../pi-config/extensions/llm-inflight/usage-record";
+import { perfRoot } from "../perf-record";
 import { BadRequest, createService } from "./service";
 
 const SAVE_MS = 3_000;
@@ -32,7 +33,7 @@ const svc = createService({
   usageRoot,
   stateDir: path.join(stateRoot, "usage-ledger"),
   pricesPath: path.join(stateRoot, "model-prices.json"),
-  perfRoot: path.join(agentDir, "usage", "perf", "v1"),
+  perfRoot: perfRoot(agentDir),
   device: () => readDeviceId(agentDir),
   log,
 });

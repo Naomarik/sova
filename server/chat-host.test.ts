@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
-import { after, test } from "node:test";
+import { after, afterEach, test } from "node:test";
 import { CHAT_WIRE_PROTO, CHAT_WIRE_MIN_PROTO, DEFAULT_RUNTIME_SETTINGS, type ExitCause } from "../shared/chat-runtime-wire";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chat-host-router-"));
@@ -82,6 +82,16 @@ let epoch = 1_000;
 
 /** A router over a fake driver whose started units answer as chat-runtime hosts in this process. */
 type ResumeCall = { path: string; since: number; done?: () => void };
+
+/** What each test made, ended after it: no router, chat host, link or interval outlives its test. */
+const made = { routers: [] as { detach(): void }[], hosts: [] as InstanceType<typeof ChatRuntimeHost>[], links: [] as { close(): void }[] };
+afterEach(async () => {
+  for (const r of made.routers.splice(0)) r.detach();
+  for (const l of made.links.splice(0)) l.close();
+  await new Promise((r) => setImmediate(r));
+  await Promise.all(made.hosts.splice(0).map((h) => h.close("operator", { dispose: true }).catch(() => {})));
+});
+
 function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[] } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
@@ -89,38 +99,63 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   // The fake driver's pids are no real process's (and a unit test runs no ps).
   const supervisor = { registryDir: () => join(dir, "registry"), deathsFile: () => join(dir, "deaths.jsonl"), socketPath: (id: string, suffix?: string) => join(dir, `${id}${suffix ?? ""}.sock`), isChatProcess: () => false };
   const hosts = new Map<string, InstanceType<typeof ChatRuntimeHost>>();
+  /** Per chat, as serveLink keeps them: the highest controller epoch seen, and the link in control. */
+  const control = new Map<string, { epoch: number; link: InstanceType<typeof Link> | null }>();
+  const startOf = new Map<string, unknown>();
   const exits: ExitCause[] = [];
   let connects = 0;
   const connect = (async (sock: string, opts: { epoch: number; build: string; since: number | null; settings: never }) => {
     connects++;
-    const spec = driver.started.find((s) => s.env.SOVA_CHAT_SOCK === sock);
+    // The latest start on this socket: a new start is a new process (its own controller epoch).
+    const spec = [...driver.started].reverse().find((s) => s.env.SOVA_CHAT_SOCK === sock);
     if (!spec || !driver.table.has(spec.unit)) throw new Error(`nothing listens on ${sock}`);
     let host = hosts.get(sock);
-    if (!host) {
+    if (!host || startOf.get(sock) !== spec) {
+      startOf.set(sock, spec);
+      control.delete(sock);
       host = new ChatRuntimeHost({ path: spec.env.SOVA_CHAT_PATH!, sessionId: spec.env.SOVA_CHAT_ID!, unit: spec.unit, build: opts.build, startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000 });
       hosts.set(sock, host);
+      made.hosts.push(host);
     }
     const [a, b] = pair();
     const runtimeEnd = new Link(a as never, { log: quiet });
     const link = new Link(b as never, { log: quiet });
+    made.links.push(runtimeEnd, link);
     const hello = { t: "hello" as const, proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: 0, ...host.hello() };
     // The control reaches the chat later, as over a socket: after the caller is listening.
     const h = host;
-    setImmediate(() => h.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings }));
+    setImmediate(() => {
+      // serveLink's rule: a stale epoch, or an equal one while its controller is linked, is refused.
+      const c = control.get(sock) ?? { epoch: 0, link: null };
+      control.set(sock, c);
+      if (opts.epoch < c.epoch) return runtimeEnd.close({ reason: "closed" }, { t: "refuse", reason: "stale-epoch", message: `epoch ${opts.epoch} is below ${c.epoch}` });
+      if (opts.epoch === c.epoch && c.link?.isOpen) return runtimeEnd.close({ reason: "closed" }, { t: "refuse", reason: "busy-controller", message: `epoch ${c.epoch} already controls this chat` });
+      c.epoch = opts.epoch;
+      const before = c.link;
+      c.link = runtimeEnd;
+      if (before?.isOpen) before.close({ reason: "replaced" });
+      h.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings });
+    });
     return { link, hello };
   }) as never;
-  // A crash resume, recorded (never sent: its 5 s wait is the test's to end, or a server stop's).
-  const resumeCrashed = o.resumes ? (path: string, since: number, _before: unknown, done?: () => void) => void o.resumes!.push({ path, since, ...(done ? { done } : {}) }) : undefined;
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}), ...(resumeCrashed ? { resumeCrashed } : {}) });
+  // A crash resume, recorded (never sent: its 5 s wait is the test's to end, or a server stop's), in
+  // every test: the real one would act on the shared in-flight markers.
+  const resumes = o.resumes ?? [];
+  const resumeCrashed = (path: string, since: number, _before: unknown, done?: () => void) => void resumes.push({ path, since, ...(done ? { done } : {}) });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
+  made.routers.push(router);
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
-  const again = (delayMs = 0) =>
-    new ChatHostRouter(++epoch, "b1", {
+  const again = (delayMs = 0) => {
+    const next = new ChatHostRouter(++epoch, "b1", {
       driver,
       connect: delayMs ? (((sock: string, opts: never) => new Promise((r) => setTimeout(r, delayMs)).then(() => (connect as (s: string, o: never) => Promise<unknown>)(sock, opts))) as never) : connect,
       supervisor,
-      ...(resumeCrashed ? { resumeCrashed } : {}),
+      resumeCrashed,
     });
+    made.routers.push(next);
+    return next;
+  };
   return { router, driver, hosts, exits, connects: () => connects, again, connect: connect as typeof import("./chat-runtime/link").connectLink, supervisor };
 }
 
@@ -427,6 +462,8 @@ test("an open that waited on a chat whose process went meanwhile (an operator st
   const priv = t.router as unknown as { forget: (path: string) => void };
   // The reacquire was waiting for the link when the process exited on the operator's word: forgotten, then failed.
   (first as unknown as { call: () => Promise<never> }).call = async () => {
+    // Its process is gone: its link to this server ends with it (the next process takes control anew).
+    (first as unknown as { link: { close(): void } }).link.close();
     priv.forget(s.path);
     throw noAnswer("The chat's process is not reachable right now.");
   };

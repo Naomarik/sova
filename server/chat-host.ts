@@ -39,6 +39,7 @@ import {
 import type { ChatSpecialKind, SpecialSpec, WorkerSpec } from "../shared/chat-runtime";
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
+import { crashSkip } from "./chat-runtime/crash";
 import { takeInflight } from "./chat-runtime/inflight";
 import { linkWaitReady, Rollout } from "./chat-runtime/rollout";
 import {
@@ -650,18 +651,22 @@ export class ChatHostRouter {
     this.childSup.detach();
   }
 
-  /** A chat process died (§app.chat-processes/crash): its panes are told, its last writes are the
-      server's while it still held the file's lock, and a run it had in flight is resumed once. */
+  /** A chat or worker process died (§app.chat-processes/crash, /worker-crash): a chat's panes are
+      told, its last writes are the server's while it still held the file's lock (let go first, so a
+      crash resume can open the file again), and one crash rule (crashSkip) decides on its run. */
   private died(d: ChatDeath): void {
-    if (this.workers.has(d.chatId)) return this.workerDied(d);
     const path = d.sessionPath;
     const h = this.remotes.get(path);
-    const special = h ? kindOfMirror(h.mirror) : null;
-    const pid = h?.at.pid ?? this.sup.record(d.chatId)?.pid ?? null;
-    const how = d.exit !== null ? `exit ${d.exit}` : d.signal ? `signal ${d.signal}` : "it stopped answering";
-    const tail = d.logTail.slice(-3).join("\n").slice(-300);
-    h?.endPanes(`This chat's process stopped unexpectedly (${how}). Your messages are saved; it reopens when you reconnect.${tail ? `\nLast output: ${tail}` : ""}`);
+    const worker = this.workers.has(d.chatId);
+    const special = h && !worker ? kindOfMirror(h.mirror) : null;
+    const pid = h?.at.pid ?? this.supOf(d.chatId).record(d.chatId)?.pid ?? null;
+    if (!worker) {
+      const how = d.exit !== null ? `exit ${d.exit}` : d.signal ? `signal ${d.signal}` : "it stopped answering";
+      const tail = d.logTail.slice(-3).join("\n").slice(-300);
+      h?.endPanes(`This chat's process stopped unexpectedly (${how}). Your messages are saved; it reopens when you reconnect.${tail ? `\nLast output: ${tail}` : ""}`);
+    }
     this.forget(path);
+    this.placed.delete(d.chatId);
     // Step 0 (design §4.5): the dead process held the lock and nobody wrote since it ended.
     const lock = readLock(path);
     if (lock && pid !== null && lock.pid === pid && !holderAlive(lock)) {
@@ -672,23 +677,13 @@ export class ChatHostRouter {
       }
       releaseLockOf(path, lock);
     }
-    if (special && special !== "powers") specialHostOf(special)?.died?.(path);
     const marker = takeInflight(d.chatId);
-    if (marker && !marker.auto)
+    if (worker) return this.workers.died(d, marker);
+    if (special && special !== "powers") specialHostOf(special)?.died?.(path);
+    if (marker && !crashSkip(marker))
       resumeCrashedChat(path, marker.since, async (p) => {
         await (await acquireChatHandle(p)).markResuming();
       });
-  }
-
-  /** A worker chat's process died: the registry's death rule (§app.chat-processes/worker-crash). Its
-      lock is let go first, so a crash resume can open the file again. */
-  private workerDied(d: ChatDeath): void {
-    const pid = this.remotes.get(d.sessionPath)?.at.pid ?? this.supOf(d.chatId).record(d.chatId)?.pid ?? null;
-    this.forget(d.sessionPath);
-    this.placed.delete(d.chatId);
-    const lock = readLock(d.sessionPath);
-    if (lock && pid !== null && lock.pid === pid && !holderAlive(lock)) releaseLockOf(d.sessionPath, lock);
-    this.workers.died(d, takeInflight(d.chatId));
   }
 
   /** The server is stopping: chats in their own process run on; each is told goodbye, never stopped. */

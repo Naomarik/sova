@@ -180,6 +180,22 @@ describe("WorkerRegistry", () => {
     assert.equal(r.list("sid")[0]!.state, "open");
   });
 
+  for (const autoResume of [true, false])
+    test(`a death with no run in flight keeps the worker waiting (setting ${autoResume ? "on" : "off"}), and its next send reopens it`, async () => {
+      const { procs, handles } = fakeProcs();
+      const r = reg(procs, { autoResume });
+      const ref = await r.start(start("k", null));
+      const ends: string[] = [];
+      r.watch(ref.chatId, null, (f) => f.t === "ended" && ends.push(f.cause));
+      r.died({ chatId: ref.chatId, sessionPath: ref.sessionFile, unit: "u", cause: "crashed", exit: null, signal: "KILL", logTail: ["x"], at: "t" }, null);
+      assert.deepEqual(ends, ["idle"]);
+      assert.equal(r.list("sid")[0]!.state, "idle");
+      assert.equal(handles.length, 1);
+      await r.send(ref.chatId, { text: "again", delivery: "prompt", key: "s" });
+      assert.equal(handles.length, 2);
+      assert.equal(r.list("sid")[0]!.state, "open");
+    });
+
   test("a death mid-run is resumed once (the continue text, under the setting); otherwise it ends with the death text", async () => {
     const { procs, handles } = fakeProcs();
     const r = reg(procs);

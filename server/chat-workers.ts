@@ -13,9 +13,10 @@ import { CRASH_RESUME_TEXT } from "./auto-resume";
 import { acquireChatHandle } from "./chat-handle";
 import type { RemoteChatHandle } from "./chat-handle-remote";
 import type { ChatDeath } from "./chat-runtime/supervisor";
+import { crashResumeOn, crashSkip } from "./chat-runtime/crash";
 import type { InflightMarker } from "./chat-runtime/inflight";
 import { createWorkerSession } from "./harness/pi/worker-session";
-import { logAutoResume, readOverseerSettings } from "./overseer-store";
+import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
 
 /** Frames kept per worker for its watchers (a re-watch from a cursor replays from here). */
@@ -112,7 +113,7 @@ export class WorkerRegistry {
   ) {
     this.dir = o.dir ?? workersDir;
     this.now = o.now ?? Date.now;
-    this.autoResume = o.autoResume ?? (() => readOverseerSettings().autoResume !== false);
+    this.autoResume = o.autoResume ?? crashResumeOn;
     this.openParent = o.openParent ?? ((path) => acquireChatHandle(path));
     this.logResume = o.logResume ?? logAutoResume;
     for (const rec of this.readAll()) this.track(rec);
@@ -500,14 +501,18 @@ export class WorkerRegistry {
     l.handle = null;
     if (cause === "archived") return; // a stop the registry asked for: stop() records it
     // An idle stop, an operator's, a close: the worker waits, and its next instruction reopens it.
+    this.waitIdle(l);
+  }
+
+  private waitIdle(l: Live): void {
     this.set(l, { state: "idle" });
     this.broadcast(l, { t: "ended", cause: "idle" });
     this.stateChanged(l);
   }
 
   /**
-   * Its process died (§app.chat-processes/worker-crash): with a run in flight that was no resume, and
-   * the setting on, it is reopened once and told to continue; otherwise it ends with the death text.
+   * Its process died (§app.chat-processes/worker-crash), under the one crash rule (crashSkip): a run
+   * in flight is continued once; with none it waits idle; otherwise it ends with the death text.
    */
   died(d: ChatDeath, marker: InflightMarker | null): void {
     const l = this.live.get(d.chatId);
@@ -519,7 +524,12 @@ export class WorkerRegistry {
     const detail = deathText(d);
     const logTail = d.logTail.slice(-DEATH_LINES);
     const args = { path: l.rec.path, parent: l.rec.parent.path, workerId: l.rec.parent.workerId };
-    const why = !marker ? "no run in flight" : marker.auto ? "already a resume" : !this.autoResume() ? "setting off" : null;
+    const why = crashSkip(marker, this.autoResume());
+    if (why === "no run in flight") {
+      log(`${d.chatId} (${l.rec.parent.workerId}) died idle (${detail.split("\n")[0]}): it waits for its next instruction`);
+      this.logResume(args, why);
+      return this.waitIdle(l);
+    }
     if (!why) {
       log(`${d.chatId} (${l.rec.parent.workerId}) died mid-run: reopening it once to continue`);
       this.broadcast(l, { t: "ended", cause: "died", detail, logTail, resuming: true });

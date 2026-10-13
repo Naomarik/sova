@@ -457,8 +457,8 @@ test("a reload replacement runs beside the chat under its own unit and socket, t
   const { sup, owned } = make(d);
   const old = await sup.start(chat);
   const rep = await sup.startReplacement("c1");
-  assert.equal(rep.unit, "sova-chat-test01-c1-r1");
-  assert.equal(rep.sock, "/s/c1-r1.sock");
+  assert.equal(rep.unit, "sova-chat-test01-c1-r7-1");
+  assert.equal(rep.sock, "/s/c1-r7-1.sock");
   assert.equal(sup.record("c1")!.unit, old.unit, "not recorded until re-pointed");
   sup.expectExit("c1", "reload");
   d.die(old.unit);
@@ -481,6 +481,27 @@ test("a replacement counts as the server's own from its start (it opens the chat
   d.die(old.unit);
   sup.repoint("c1", rep2);
   assert.deepEqual([...owned], [rep2.pid]);
+});
+
+test("a replacement's name is new in every server life: the next life's never names the unit or socket a chat was reloaded into before; a chat's own unit is never stopped as a replacement", async () => {
+  const d = new FakeDriver();
+  const first = make(d);
+  const old = await first.sup.start(chat);
+  const rep = await first.sup.startReplacement("c1");
+  first.sup.expectExit("c1", "reload");
+  d.die(old.unit);
+  first.sup.repoint("c1", rep);
+  first.sup.detach();
+  // The next server life (another epoch) adopts c1 in its replacement's unit, and reloads it again.
+  const next = make(d, { epoch: 8 }).sup;
+  await next.adopt();
+  assert.equal(next.record("c1")!.unit, rep.unit);
+  const again = await next.startReplacement("c1");
+  assert.notEqual(again.unit, rep.unit);
+  assert.notEqual(again.sock, rep.sock);
+  assert.equal(again.unit, "sova-chat-test01-c1-r8-1");
+  await next.stopUnit(rep.unit);
+  assert.equal((await d.status(rep.unit)).state, "active", "the chat's live unit is not stopped");
 });
 
 test("a stopping server keeps its chat processes' pids as its own; the next counts the recorded ones before it adopts them", async () => {

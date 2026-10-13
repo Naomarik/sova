@@ -876,18 +876,27 @@ export class ChatSupervisor {
   // ---- reload replacements (rollout.ts) ---------------------------------------------------------
 
   private replacements = 0;
-  /** Start a replacement process for chat `chatId` beside its current one (unit `…-r<n>`, its own socket): not recorded, never opened yet. */
+  /**
+   * Start a replacement process for chat `chatId` beside its current one (unit `…-r<epoch>-<n>`, its own
+   * socket): not recorded, never opened yet. The name carries this server's epoch: a chat reloaded in an
+   * earlier server life runs as that life's replacement, and a counter alone would name its live unit and
+   * socket again.
+   */
   async startReplacement(chatId: string): Promise<ChatRecord> {
     const t = this.chats.get(chatId);
     if (!t) throw new Error(`chat ${chatId} has no process`);
-    const n = ++this.replacements;
-    const rep = await this.spawn({ chatId, sessionPath: t.rec.sessionPath, cwd: t.rec.cwd }, this.unitOf(chatId, `-r${n}`), this.sockOf(chatId, `-r${n}`));
+    const suffix = `-r${this.deps.epoch.toString(36)}-${++this.replacements}`;
+    const rep = await this.spawn({ chatId, sessionPath: t.rec.sessionPath, cwd: t.rec.cwd }, this.unitOf(chatId, suffix), this.sockOf(chatId, suffix));
     // Its own from its start: it opens the chat (and writes its live record) before the repoint.
     if (rep.pid) this.replacementClaims.set(rep.unit, { pid: rep.pid, release: this.own(rep.pid) });
     return rep;
   }
-  /** Stop a replacement that is not used. */
+  /** Stop a replacement that is not used; never a unit a chat runs in now. */
   async stopUnit(unit: string): Promise<void> {
+    if ([...this.chats.values()].some((t) => t.rec.unit === unit)) {
+      this.log(`not stopping ${unit}: a chat runs in it`);
+      return;
+    }
     await this.deps.driver.stop(unit).catch(() => {});
     this.replacementClaims.get(unit)?.release();
     this.replacementClaims.delete(unit);

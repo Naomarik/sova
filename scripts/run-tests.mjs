@@ -348,24 +348,45 @@ const guardDir = fs.mkdtempSync(path.join(os.tmpdir(), "sova-test-guard-"));
 process.on("exit", () => removeTree(guardDir));
 const enforce = (process.env.SOVA_TEST_GUARD || "enforce") === "enforce";
 
+// Each file's bun runs in a process group of its own, killed whole: on FILE_LIMIT_MS, and when this
+// runner stops (a signal, its exit, or its parent gone: a wrapper's timeout killing only the runner left
+// a bun test running on, growing to ~100 GB). Its children (servers, workers a test starts) go with it.
+const fileGroups = new Set();
+const killGroup = (pid) => {
+  try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ }
+};
+let groupGuard = false;
+function guardGroups() {
+  if (groupGuard) return;
+  groupGuard = true;
+  const killAll = () => { for (const pid of fileGroups) killGroup(pid); };
+  process.on("exit", killAll);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(sig, () => { killAll(); process.exit(130); });
+  const parent = process.ppid;
+  setInterval(() => { if (process.ppid !== parent) { killAll(); process.exit(1); } }, 2000).unref();
+}
+
 function runFile(file, extra) {
+  guardGroups();
   const { root, env } = hermeticEnv();
   const target = file.startsWith("/") || file.startsWith("./") ? file : `./${file}`;
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(bun, ["test", "--preload", PRELOAD, "--preload", GUARD, ...extra, ...bunFlags, target], { cwd: ROOT, env: { ...env, SOVA_TEST_FILE: file, SOVA_TEST_GUARD_DIR: guardDir }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bun, ["test", "--preload", PRELOAD, "--preload", GUARD, ...extra, ...bunFlags, target], { cwd: ROOT, env: { ...env, SOVA_TEST_FILE: file, SOVA_TEST_GUARD_DIR: guardDir }, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    if (child.pid) fileGroups.add(child.pid);
     let out = "";
     // A file still running after FILE_LIMIT_MS is stuck (a hang, or tests done with a handle left
     // open): killed and reported as a failure, so one file never stalls the run.
     const limit = setTimeout(() => {
       out += `run-tests: ${file} still running after ${FILE_LIMIT_MS / 1000} s; killed\n`;
-      child.kill("SIGKILL");
+      killGroup(child.pid);
     }, FILE_LIMIT_MS);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
     child.on("error", (err) => (out += `run-tests: could not start ${bun}: ${err.message}\n`));
     child.on("close", (code) => {
       clearTimeout(limit);
+      fileGroups.delete(child.pid);
       const ms = Date.now() - started;
       removeTree(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);

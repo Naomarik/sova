@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ownCodeOf } from "../harness/pi/own-code";
-import { buildId, codeRoot, isGenerationComplete, collectGenerations, currentGeneration, generationDir, generationHealth, lastGood, noteGood, resetGenerations, startGenerationGc } from "./generations";
+import { buildId, codeRoot, isGenerationComplete, scanProcesses, collectGenerations, currentGeneration, generationDir, generationHealth, lastGood, noteGood, resetGenerations, startGenerationGc } from "./generations";
 import { chatsRoot, scrubChatProcessEnv } from "./supervisor";
 
 const quiet = () => {};
+/** No process runs from any copy (the process-table seam). */
+const none = async () => ({ commands: [] as string[], cwds: [] as string[] });
 const env = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
   const e = { ...process.env };
   delete e.SOVA_BUILD;
@@ -192,7 +194,7 @@ test("the collector: at once, keeping the current generation and what is in use;
     const cur = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
     for (const g of [old, used, cur]) age(g.dir, 60 * 60_000);
     const lines: string[] = [];
-    const gc = startGenerationGc(() => ["gen-used"], { root, log: (l) => lines.push(l) });
+    const gc = startGenerationGc(() => ["gen-used"], { scan: none, root, log: (l) => lines.push(l) });
     await gc.collect();
     gc.stop();
     assert.ok(!existsSync(old.dir) && existsSync(used.dir) && existsSync(cur.dir));
@@ -219,7 +221,7 @@ test("a copy's age is its marker's: a file a chat process writes in its working 
     for (const g of [old, used]) age(g.dir, 60 * 60_000);
     writeFileSync(join(old.dir, "stray.log"), "written by a chat process\n"); // the directory is new again
     const lines: string[] = [];
-    const gc = startGenerationGc(() => ["gen-used"], { root, log: (l) => lines.push(l) });
+    const gc = startGenerationGc(() => ["gen-used"], { scan: none, root, log: (l) => lines.push(l) });
     await gc.collect();
     gc.stop();
     assert.ok(!existsSync(old.dir), "its marker is old: collected");
@@ -237,11 +239,11 @@ test("SOVA_CHAT_CODE_GRACE_MIN shortens the grace (trials)", async () => {
     const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-old" }), log: quiet });
     await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
     age(old.dir, 2_000);
-    const keep = startGenerationGc(() => [], { root, env: { SOVA_CHAT_CODE_GRACE_MIN: "1" }, log: quiet });
+    const keep = startGenerationGc(() => [], { scan: none, root, env: { SOVA_CHAT_CODE_GRACE_MIN: "1" }, log: quiet });
     await keep.collect();
     keep.stop();
     assert.ok(existsSync(old.dir), "2 s old, under 1 min: kept");
-    const gc = startGenerationGc(() => [], { root, env: { SOVA_CHAT_CODE_GRACE_MIN: "0.01" }, log: quiet });
+    const gc = startGenerationGc(() => [], { scan: none, root, env: { SOVA_CHAT_CODE_GRACE_MIN: "0.01" }, log: quiet });
     await gc.collect();
     gc.stop();
     assert.ok(!existsSync(old.dir), "over 0.6 s: gone");
@@ -253,7 +255,7 @@ test("SOVA_CHAT_CODE_GRACE_MIN shortens the grace (trials)", async () => {
 
 test("no collection on a root set by SOVA_CHAT_CODE_ROOT, which other servers may share", async () => {
   const lines: string[] = [];
-  const gc = startGenerationGc(() => [], { env: { SOVA_CHAT_CODE_ROOT: "/shared" }, log: (l) => lines.push(l) });
+  const gc = startGenerationGc(() => [], { scan: none, env: { SOVA_CHAT_CODE_ROOT: "/shared" }, log: (l) => lines.push(l) });
   await gc.collect();
   gc.stop();
   assert.match(lines.join("\n"), /not collected under SOVA_CHAT_CODE_ROOT \(\/shared\)/);
@@ -265,7 +267,7 @@ test("SOVA_CHAT_CODE_GC=on: a root set by SOVA_CHAT_CODE_ROOT that is this serve
     const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-old" }), log: quiet });
     await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
     age(old.dir, 60 * 60_000);
-    const gc = startGenerationGc(() => [], { env: { SOVA_CHAT_CODE_ROOT: root, SOVA_CHAT_CODE_GC: "on" }, log: quiet });
+    const gc = startGenerationGc(() => [], { scan: none, env: { SOVA_CHAT_CODE_ROOT: root, SOVA_CHAT_CODE_GC: "on" }, log: quiet });
     await gc.collect();
     gc.stop();
     assert.ok(!existsSync(old.dir));
@@ -332,6 +334,90 @@ test("isGenerationComplete: a finished copy with its node_modules; not a half-ma
     rmSync(base, { recursive: true, force: true });
     resetGenerations();
   }
+});
+
+test("a copy a running process uses is kept, whatever the records say: by its command line (any path in the copy), or its working folder; another root's copies change nothing", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-a" }), log: quiet });
+    const helper = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-h" }), log: quiet });
+    const wd = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-w" }), log: quiet });
+    const free = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-f" }), log: quiet });
+    await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
+    for (const g of [old, helper, wd, free]) age(g.dir, 60 * 60_000);
+    const scan = async () => ({
+      // A chat the supervisor lost track of (a stop that failed), still running from gen-a; a helper of
+      // gen-h's; a process of another root whose copy is named like none of ours.
+      commands: [`/usr/bin/bun ${old.dir}/server/chat-runtime/main.ts`, `node ${helper.dir}/pi-config/extensions/spec/core/sova-spec.mjs map`, `bun /elsewhere/code/gen-z/server/chat-runtime/main.ts`],
+      // A process whose working folder alone is in gen-w.
+      cwds: [join(wd.dir, "server"), "/elsewhere/code/gen-y"],
+    });
+    const lines: string[] = [];
+    const gc = startGenerationGc(() => [], { root, scan, log: (l) => lines.push(l) });
+    await gc.collect();
+    gc.stop();
+    assert.ok(existsSync(old.dir) && existsSync(helper.dir) && existsSync(wd.dir), lines.join("\n"));
+    assert.ok(!existsSync(free.dir), "nothing runs from gen-f: it goes");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
+test("a process scan that fails (no /proc, ps or lsof failing): nothing is collected, and it says why", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-a" }), log: quiet });
+    await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
+    age(old.dir, 60 * 60_000);
+    const lines: string[] = [];
+    const gc = startGenerationGc(() => [], { root, scan: async () => { throw new Error("lsof timed out"); }, log: (l) => lines.push(l) });
+    await gc.collect();
+    gc.stop();
+    assert.ok(existsSync(old.dir));
+    assert.ok(lines.includes("unused code is not collected now: ownership uncertain (lsof timed out)"), lines.join("\n"));
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
+test("the Linux process scan: a pid that ended or can't be read is skipped; /proc that can't be listed fails the scan", async () => {
+  const gone = Object.assign(new Error("gone"), { code: "ENOENT" });
+  const denied = Object.assign(new Error("denied"), { code: "EACCES" });
+  const fake = {
+    list: async () => ["1", "42", "77", "self"],
+    cmdline: async (pid: string) => {
+      if (pid === "42") throw gone;
+      return `bun\0/code/gen-${pid}/server/chat-runtime/main.ts\0`;
+    },
+    cwd: async (pid: string) => {
+      if (pid === "1") throw denied;
+      return `/w/${pid}`;
+    },
+  };
+  assert.deepEqual(await scanProcesses("linux", fake), {
+    commands: ["bun /code/gen-1/server/chat-runtime/main.ts ", "bun /code/gen-77/server/chat-runtime/main.ts "],
+    cwds: ["/w/42", "/w/77"],
+  });
+  await assert.rejects(scanProcesses("linux", { ...fake, list: async () => Promise.reject(gone) }), /gone/);
+  await assert.rejects(scanProcesses("win32", fake), /no process scan on win32/);
+});
+
+test("the macOS process scan: ps and lsof's working folders; lsof's partial output is used; ps or lsof missing, or failing with nothing printed, fails the scan", async () => {
+  const noProc = { list: async () => [], cmdline: async () => "", cwd: async () => "" };
+  const ok = { code: 0, missing: false, timedOut: false };
+  const exec = (lsof: { code: number; stdout: string; missing?: boolean; timedOut?: boolean }) => async (file: string) =>
+    file === "ps" ? { ...ok, stdout: "/bin/bun /c/gen-a/server/chat-runtime/main.ts\nlogin -pf\n" } : { ...ok, missing: false, timedOut: false, ...lsof };
+  assert.deepEqual(await scanProcesses("darwin", noProc, exec({ code: 1, stdout: "p12\nfcwd\nn/c/gen-w/server\np13\n" })), {
+    commands: ["/bin/bun /c/gen-a/server/chat-runtime/main.ts", "login -pf"],
+    cwds: ["/c/gen-w/server"],
+  });
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 1, stdout: "", missing: true })), /lsof is missing/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 1, stdout: "", timedOut: true })), /lsof timed out/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 2, stdout: "" })), /lsof failed \(2\)/);
+  const psDown = async (file: string) => (file === "ps" ? { code: 1, stdout: "", missing: false, timedOut: false } : { ...ok, stdout: "" });
+  await assert.rejects(scanProcesses("darwin", noProc, psDown), /ps failed \(1\)/);
 });
 
 test("a build id that is no directory name is hashed", () => {

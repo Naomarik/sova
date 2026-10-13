@@ -460,6 +460,11 @@ describe("M9 chat runtime: a fresh deploy in a container", { concurrency: false 
       const aLink = sh(N, `readlink ${CHATS}/code/${from}/node_modules`).out;
       console.log(`# A's copy: ${aLink ? `kept, node_modules -> ${aLink}` : "collected (no chat runs it)"}`);
       if (aLink) assert.equal(aLink, `../deps/${deps[0]}/node_modules`, "A's copy uses it");
+      // The deps copy is whole: as many files and links as the image's node_modules, and as many file bytes.
+      const tally = (d) => sh(N, `cd '${d}' && echo $(find . -type f | wc -l) $(find . -type l | wc -l) $(find . -type f -printf '%s\\n' | awk '{s+=$1} END {print s}') $(du -sb --apparent-size . | cut -f1)`).out.split(" ");
+      const [img, dep] = [tally("/sova/node_modules"), tally(`${CHATS}/code/deps/${deps[0]}/node_modules`)];
+      console.log(`# node_modules files/links/file bytes/du: image ${img.join(" ")}, deps copy ${dep.join(" ")}`);
+      assert.deepEqual(dep.slice(0, 3), img.slice(0, 3), "the deps copy holds every file and link of the image's node_modules");
       const mb = sovaLog().filter((l) => /full node_modules copy, \d+ MB/.test(l));
       console.log(`# ${mb.join(" | ") || "no node_modules copy logged since the log began"}`);
       assert.ok(sovaLog().some((l) => l.includes(`chats run code ${next}`)), "the new server copied B");

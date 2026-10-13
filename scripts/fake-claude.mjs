@@ -19,6 +19,7 @@
 //                                  holding FAKE_AUTH with a failed sign-in. A message containing
 //                                  "[fake-slow <ms>]" streams its first words, then waits <ms>
 //                                  before it finishes (a turn still running).
+//                                  A message asking for a <handoff> note gets one.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -76,7 +77,9 @@ if (args[0] === "auth" && args[1] === "login") {
   out({ loggedIn, authMethod: loggedIn ? "claude.ai" : "none", ...(loggedIn ? { email: account.emailAddress, orgName: account.organizationName, subscriptionType: account.subscriptionType } : {}), configDirectory: dir });
   process.exit(loggedIn ? 0 : 1);
 } else if (args.includes("-p")) {
-  const sessionId = args[args.indexOf("--session-id") + 1] ?? args[args.indexOf("--resume") + 1] ?? randomUUID();
+  const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+  // A fork (--resume <id> --fork-session) is a new session; --session-id names it when given.
+  const sessionId = flag("--session-id") ?? (args.includes("--fork-session") ? randomUUID() : flag("--resume")) ?? randomUUID();
   const who = basename(dir);
   const rl = createInterface({ input: process.stdin });
   rl.on("line", (line) => {
@@ -105,8 +108,9 @@ if (args[0] === "auth" && args[1] === "login") {
       out({ type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login", num_turns: 1, session_id: sessionId, ...correlate });
       return;
     }
-    const text = `Fake answer from login ${who}.`;
     const said = JSON.stringify(frame.message?.content ?? "");
+    // Asked for a handoff note (/compact-handoff's fork), it writes one.
+    const text = said.includes("<handoff>") ? `<handoff>HANDOFF-NOTE fake claude, login ${who}</handoff>` : `Fake answer from login ${who}.`;
     const slow = Number(/\[fake-slow (\d+)\]/.exec(said)?.[1] ?? 0);
     out({ type: "stream_event", event: { type: "message_start", message: { model: "fake", usage: { input_tokens: 10, output_tokens: 0 } } }, session_id: sessionId });
     out({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }, session_id: sessionId });

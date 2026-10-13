@@ -609,7 +609,7 @@ follows the mode alone — never where the caret is or what a box holds.
 
 All three are writes to the group registry. None of them touches a session's JSONL. The workspace
 takes members out and dissolves the group; it never adds one. A session joins a group only from
-the sidebar (§app.session-list/groups: dragging a row onto the group, the selection toolbar),
+the sidebar (§app.session-list/groups: dragging a row onto the group),
 the session details' `Move into group` (§app.subagents-pane/tabs), or the Overseer
 (§workspace.groups/making-a-comparison).
 

@@ -115,6 +115,69 @@ const KNOWN_SLOW = [
   /^server\/mesh\/lan-[^/]+\.test\.ts$/,
 ];
 
+/**
+ * The chat processes a test's server left on the detached driver (no user manager: macOS) under `root`,
+ * stopped before `root` goes: each one its record (`…/sova/chats/procs/*.json`) names, only while it is
+ * still that process (its start time, as the driver's own stop checks) and still Sova's chat runtime.
+ * Its session gets SIGTERM, then SIGKILL after 5 s. By records, never by name.
+ */
+function sweepDetachedChats(root) {
+  let recs = [];
+  try {
+    recs = fs.globSync("**/sova/chats/procs/*.json", { cwd: root });
+  } catch {
+    return;
+  }
+  if (!recs.length) return;
+  // A process's start time as the driver recorded it (server/project-services/proctable.ts, read here
+  // because plain node can't load that module): /proc's starttime, else ps's lstart.
+  const procfs = process.platform === "linux" && fs.existsSync(`/proc/${process.pid}/stat`);
+  const ps = (args) => {
+    try {
+      return execFileSync("ps", args, { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C", TZ: "UTC" } });
+    } catch {
+      return "";
+    }
+  };
+  const startOf = (pid) => {
+    if (!procfs) return ps(["-o", "lstart=", "-p", String(pid)]).trim().replace(/\s+/g, " ") || null;
+    try {
+      const st = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      return st.slice(st.lastIndexOf(")") + 2).split(" ")[19] ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const command = (pid) => {
+    try {
+      return procfs ? fs.readFileSync(`/proc/${pid}/cmdline`, "utf8") : ps(["-o", "command=", "-p", String(pid)]);
+    } catch {
+      return "";
+    }
+  };
+  const ours = [];
+  for (const f of recs) {
+    let r;
+    try {
+      r = JSON.parse(fs.readFileSync(path.join(root, f), "utf8"));
+    } catch {
+      continue;
+    }
+    if (!Number.isInteger(r?.pid) || r.pid <= 1 || !r.start || (r.clock ?? "procfs") !== (procfs ? "procfs" : "ps") || startOf(r.pid) !== r.start) continue;
+    if (command(r.pid).includes("server/chat-runtime/main.ts")) ours.push(r.pid);
+  }
+  const signal = (pid, sig) => {
+    try { process.kill(-pid, sig); } catch { try { process.kill(pid, sig); } catch { /* gone */ } }
+  };
+  const alive = (pid) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  for (const pid of ours) signal(pid, "SIGTERM");
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (const end = Date.now() + 5000; ours.some(alive) && Date.now() < end; ) Atomics.wait(pause, 0, 0, 100);
+  for (const pid of ours.filter(alive)) signal(pid, "SIGKILL");
+}
+
 /** rm -rf that survives read-only dirs a test left behind, and never throws. */
 function removeTree(dir) {
   try {
@@ -240,7 +303,10 @@ if (runtime === "node") {
   refuseTmpInRepo("/tmp");
   const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
   process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
-  process.on("exit", () => removeTree(tmp));
+  process.on("exit", () => {
+    sweepDetachedChats(tmp);
+    removeTree(tmp);
+  });
   process.env.SOVA_TEST_GUARD_DIR = fs.mkdtempSync(path.join(tmp, "guard-"));
   const limitMs = Number(process.env.NODE_PASS_LIMIT_MS) || 15 * 60_000;
   let failed = false;
@@ -405,6 +471,7 @@ function runFile(file, extra) {
       clearTimeout(limit);
       fileGroups.delete(child.pid);
       const ms = Date.now() - started;
+      sweepDetachedChats(root);
       removeTree(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
       // Enforced, a unit file that did what its tier refuses fails, even when its test caught the refusal.

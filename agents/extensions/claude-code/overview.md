@@ -83,6 +83,8 @@ text?}`: `reason` is `limit`, `auth`, `manual` (the user's pick) or `moved` (its
 The provider writes it. Sova reads it and renders one with `from` as a note row. The web's login switch calls the
 provider's `/claude-login <login id>` command handler directly, so its argument is a contract too.
 
+**The `measurement-invalid` mark** (`MEASUREMENT_INVALID_DIAGNOSTIC` in `provider/stream.ts`): a message's `diagnostics` entry `{type: "measurement-invalid", timestamp, details: {reason: "invalid-tool-retry"}}` when the CLI retried after rejected tool input; read by `server/harness/pi/session.ts` (the reply summary's `invalid`) and `server/reply-timing.ts`, which records no speed sample for that reply.
+
 **Restart.** The bridge is a `globalThis` singleton (`getSessionBridge()`, a `Symbol.for` registry): a fresh
 session that reloads the extension still gets the bridge built from the code loaded first. Provider edits need a
 server restart. Before trusting a live test, compare the unit's start time with the edited files' mtimes. The dev

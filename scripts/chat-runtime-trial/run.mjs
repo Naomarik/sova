@@ -2418,8 +2418,8 @@ async function t27() {
     R.check(codeFrames(Y.s).includes("failed"), `t27(2): it shows the failure banner (code frames ${JSON.stringify(codeFrames(Y.s))})`);
     R.check(chatPid(X.path) === pidX, `t27(2): the chat already on A keeps its process (${pidX} → ${chatPid(X.path)})`);
     Y.s.close();
-    // (3) A reload whose open fails: new code C boots but refuses every open (SOVA_CHAT_TEST_FAIL_OPEN). The
-    // rollout moves the quiet chat X (on A) toward C; C's open fails, and X starts again on the code it ran
+    // (3) A reload whose open fails: new code C boots but refuses every open (SOVA_CHAT_TEST_FAIL_OPEN). Reload
+    // now on the quiet chat X (on A), its pane attached, moves it toward C; C's open fails, and X starts again on the code it ran
     // before, A, with the failure shown; no death, and it answers.
     const genC = next("C");
     const logFile = join(scratch, `server-${n}.log`);
@@ -2428,6 +2428,9 @@ async function t27() {
     await restart({ [KNOBS.failBoot]: "", [KNOBS.failOpen]: genC });
     const X3 = await chat(c, X.path, 60000);
     const pidX3 = chatPid(X.path);
+    // With a pane attached the automatic path waits the dwell (5 min): Reload now takes the same
+    // failed-open → restart-on-old-code path at once (core-2).
+    X3.send({ type: "reload_code" });
     const tried = () => {
       const log = existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "";
       return log.split("\n").filter((l) => xid && l.includes(xid) && /chat-rollout|reload/i.test(l));
@@ -2435,7 +2438,7 @@ async function t27() {
     await waitFor(() => codeFrames(X3).includes("failed") || tried().some((l) => /could not|fail|previous|last good/i.test(l)), 90000);
     await sleep(3000);
     R.note(`t27(3): X's rollout lines: ${tried().map((l) => l.slice(0, 200)).join(" | ") || "none"}`);
-    R.check(tried().length > 0 || codeFrames(X3).length > 0, `t27(3): the rollout tried to move the quiet chat to C (code frames ${JSON.stringify(codeFrames(X3))})`);
+    R.check(tried().length > 0 || codeFrames(X3).length > 0, `t27(3): Reload now tried to move the quiet chat to C (code frames ${JSON.stringify(codeFrames(X3))})`);
     const X4 = await chat(c, X.path, 60000).catch(() => null);
     const Xo = { path: X.path, s: X4 ?? X3 };
     await turn(Xo, "say ok after a failed open");

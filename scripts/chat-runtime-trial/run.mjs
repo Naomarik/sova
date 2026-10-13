@@ -510,8 +510,10 @@ async function t1e() {
     prompt(s, "[big 60] history");
     await settled(s, from, 60000);
   }
+  // This check's requests only: one mock log serves every check of the run.
+  const m0 = mockLog(mock.log).length;
   prompt(s, "/compact");
-  for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.scenario === "compact"); i++) await sleep(500);
+  for (let i = 0; i < 60 && !mockLog(mock.log).slice(m0).some((e) => e.scenario === "compact"); i++) await sleep(500);
   await sleep(2000);
   const pid1 = chatPid(path);
   s.close();
@@ -522,7 +524,7 @@ async function t1e() {
   await sleep(1500);
   const comps = entries(path).filter((e) => e.type === "compaction");
   R.check(comps.length === 1 && JSON.stringify(comps[0]).includes("COMPACT-SUMMARY"), `t1e: the compaction completed and was written once (${comps.length})`);
-  R.check(mockLog(mock.log).filter((e) => e.event === "cut-off" && e.scenario === "compact").length === 0, "t1e: the summary request was never cut off");
+  R.check(mockLog(mock.log).slice(m0).filter((e) => e.event === "cut-off" && e.scenario === "compact").length === 0, "t1e: the summary request was never cut off");
   noResume(path, "t1e");
   s2.close();
 }
@@ -535,6 +537,8 @@ async function t2() {
   if (!R.check(pid1, "t2: the chat's process is found")) return;
   const from = s.got.length;
   const closed = new Promise((r) => s.ws.once("close", (code) => r(code)));
+  // This check's requests only: one mock log serves every check of the run.
+  const m0 = mockLog(mock.log).length;
   process.kill(pid1, "SIGKILL");
   R.note(`t2: killed chat process ${pid1}`);
   const err = await s.until((m) => m.type === "error" && /stopped unexpectedly/.test(m.message ?? ""), 20000, "the pane's error", from).catch(() => null);
@@ -543,7 +547,7 @@ async function t2() {
   R.check(code === 4500, `t2: the socket closed with 4500 (${code})`);
   R.check(deaths(path).length === 1, `t2: one death recorded in chats/deaths.jsonl (${deaths(path).length})`);
   // The resume reopens the chat in a new process and sends the crash text once.
-  for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.tag === "resume"); i++) await sleep(500);
+  for (let i = 0; i < 60 && !mockLog(mock.log).slice(m0).some((e) => e.tag === "resume"); i++) await sleep(500);
   const pid2 = chatPid(path);
   R.check(pid2 && pid2 !== pid1, `t2: a new process hosts the chat (pid ${pid1} → ${pid2 || "none"})`);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1 && userEntriesWith(path, RESUME_TEXT) === 0, `t2: the crash "continue" was sent once (${userEntriesWith(path, CRASH_RESUME_TEXT)}), never the restart text`);
@@ -553,7 +557,7 @@ async function t2() {
   R.note(`t2: killed the resuming process ${pid2}`);
   await sleep(15000);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1, `t2: the cut-off resume was not resumed a second time (${userEntriesWith(path, CRASH_RESUME_TEXT)})`);
-  R.check(mockLog(mock.log).filter((e) => e.tag === "resume" && e.scenario).length === 1, "t2: the model was asked to continue once");
+  R.check(mockLog(mock.log).slice(m0).filter((e) => e.tag === "resume" && e.scenario).length === 1, "t2: the model was asked to continue once");
   R.check(!hasMarker(path), "t2: no in-flight marker is left after the deaths were handled");
   const s2 = await chat(c, path);
   R.check(chatPid(path) && chatPid(path) !== pid2, "t2: reconnecting spawns a new process");

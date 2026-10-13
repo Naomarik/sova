@@ -372,7 +372,7 @@ test("wireframe: a leaf block written after a line's texts is another block", ()
   ]);
   assert.equal(w.screens[0]!.blocks[5]!.chart, "pie");
   // A block word with no text of its own, or on a tabs line: as before.
-  assert.equal(drawn("wireframe", 'button "Terms" link').warnings[0]!.message, 'ignored "link" (after the texts: a tone, on, wide)');
+  assert.equal(drawn("wireframe", 'button "Terms" link').warnings[0]!.message, 'ignored "link" (after the texts: a tone, on, wide, right, grow)');
   assert.deepEqual(ok<WireframeSpec>("wireframe", 'tabs "A, B" button "C"').screens[0]!.blocks[0]!.items, ["A", "B", "button", "C"]);
 });
 

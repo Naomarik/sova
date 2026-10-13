@@ -202,8 +202,111 @@ function packed(bs: WBlock[], w: number, ctx: Ctx): number {
 /** Where a block's chip goes on a line of its own under its content: the gap before it. */
 const CHIP_UNDER: Record<string, number> = { stat: 0, chart: 4, progress: 4, input: 3, select: 3, search: 3, empty: 4, loading: 6, list: 0, table: 3 };
 
+/** Controls: in a row that lays out by content, at their own width up to the whole row, never held to 12ch at least. */
+const CONTROLS = new Set(["button", "badge", "link", "icon", "avatar", "checkbox", "radio", "toggle"]);
+
+/**
+ * A block's width at its content (CSS's max-content), as a row that lays out by content sizes it (wireframe.css's
+ * .vis-wf-pack): a control its own width, an image a 96px thumbnail, a field 160px (`direct`: a block of that row;
+ * deeper, its label's or value's), text, a heading, a stat or an alert its text's, a card or a col its widest
+ * part's; Infinity for blocks as wide as they may be (a list, a table, a chart, a grid).
+ */
+function natural(c: WBlock, ctx: Ctx, direct: boolean): number {
+  const { m } = ctx;
+  const t = c.texts;
+  switch (c.type) {
+    case "button":
+    case "badge":
+    case "toggle":
+    case "checkbox":
+    case "radio":
+    case "icon":
+    case "avatar":
+    case "link":
+      return ownWidth(c, ctx);
+    case "image":
+      return 96;
+    case "input":
+    case "select":
+      return direct ? 160 : Math.max(m.b(t[0] ?? "", SMALL_PX), 21 + m.r(t[1] ?? "", BODY_PX) + (c.type === "select" ? 22 : 0));
+    case "search":
+      return direct ? 160 : 21 + 22 + m.r(t[0] ?? "Search", BODY_PX);
+    case "text":
+      return m.r(t.join(" "), BODY_PX);
+    case "heading":
+      return m.b(t.join(" "), 14.5) + c.children.reduce((a, k) => a + 6 + natural(k, ctx, false), 0);
+    case "stat":
+      return 22 + Math.max(m.r(t[0] ?? "", SMALL_PX), m.b(t[1] ?? "—", 18), m.r(t.slice(2).join(" · "), SMALL_PX));
+    case "alert":
+    case "toast":
+      return 22 + m.r(t.join(" "), BODY_PX);
+    case "progress":
+      return m.r(t[0] ?? "", BODY_PX) + 8 + m.r(t[1] ?? "", SMALL_PX);
+    case "row":
+      return c.children.reduce((a, k) => a + natural(k, ctx, !!c.content), 0) + GAP * Math.max(0, c.children.length - 1) + (goWidth(c, ctx) ? goWidth(c, ctx) + 2 : 0);
+    case "card":
+    case "col":
+    case "box": {
+      const pad = c.type === "card" ? 22 : c.type === "box" ? 19 : 0;
+      return pad + Math.max(t[0] ? m.b(t[0], BODY_PX) + goWidth(c, ctx) : 0, m.r(t.slice(1).join(" · "), SMALL_PX), ...c.children.map((k) => natural(k, ctx, false)));
+    }
+    default:
+      return Infinity;
+  }
+}
+
+/**
+ * A row that lays out by content (wireframe.css's .vis-wf-pack): each block at its own width, half the row at most
+ * (a control or a row in it, all of it), no narrower than 12ch but for controls and images; a growing block 12ch at
+ * least. They fill lines
+ * `w` wide, 8px apart, wrapping, its chip one more block after the last; on a line the growing blocks share what
+ * the others leave. A line is as tall as its tallest block.
+ */
+function packRow(b: WBlock, w: number, ctx: Ctx): number {
+  const floor = Math.min(w, ctx.m.r("0".repeat(12), BODY_PX));
+  const items = b.children.map((c) => ({
+    c,
+    grow: !!c.grow,
+    base: c.grow ? floor : Math.min(c.type === "row" || CONTROLS.has(c.type) ? w : w / 2, Math.max(CONTROLS.has(c.type) || c.type === "image" ? 0 : floor, natural(c, ctx, true))),
+  }));
+  const go = goWidth(b, ctx);
+  const all: { c?: WBlock; grow: boolean; base: number }[] = go ? [...items, { grow: false, base: Math.min(w, go - 6) }] : items;
+  const lines: (typeof all)[] = [];
+  let x = Infinity;
+  for (const it of all) {
+    if (x + GAP + it.base > w) {
+      lines.push([it]);
+      x = it.base;
+    } else {
+      lines[lines.length - 1]!.push(it);
+      x += GAP + it.base;
+    }
+  }
+  return lines.reduce((h, line, i) => {
+    const growers = line.filter((it) => it.grow).length;
+    const left = w - line.reduce((a, it) => a + (it.grow ? 0 : it.base), 0) - GAP * (line.length - 1);
+    const each = growers ? Math.max(floor, left / growers) : 0;
+    const height = (it: (typeof all)[number]) => {
+      if (!it.c) return CHIP;
+      const cw = it.grow ? each : it.base;
+      return it.c.type === "button" ? button(it.c, cw, ctx, true) : block(it.c, cw, ctx);
+    };
+    return h + (i ? GAP : 0) + Math.max(...line.map(height));
+  }, 0);
+}
+
 /** A row's own blocks, `w` wide between them. */
 function rowOwn(b: WBlock, w: number, ctx: Ctx): number {
+  if (b.shares) {
+    // `row 1:3:2`: one line, each block its share of what an avatar or an icon (at its own size) leaves.
+    const fixed = (c: WBlock) => (c.type === "avatar" ? 32 : c.type === "icon" ? 16 : 0);
+    const total = b.children.reduce((a, c) => a + (fixed(c) ? 0 : (c.share ?? 1)), 0) || 1;
+    const room = w - GAP * (b.children.length - 1) - b.children.reduce((a, c) => a + fixed(c), 0);
+    return Math.max(...b.children.map((c) => {
+      const cw = fixed(c) || (room * (c.share ?? 1)) / total;
+      return c.type === "button" ? button(c, cw, ctx, true) : block(c, cw, ctx);
+    }));
+  }
   const per = Math.min(4, b.children.length);
   // Beside other blocks a button or a badge takes its label's width (up to half the row); the rest share what's left.
   const mixed = b.children.some((c) => c.type !== "button");
@@ -265,9 +368,10 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
       // nothing in it but its chip is as tall as the chip.
       const go = goWidth(b, ctx);
       if (!b.children.length) return go ? CHIP : 0;
+      if (b.content) return packRow(b, w, ctx);
       const under = go > 0 && rowGoUnder(b.children.length, w);
       // Past 4 blocks, the quarters fill their lines and the chip goes after the last one.
-      if (go && !under) return Math.max(CHIP, rowOwn(b, b.children.length > 4 ? w : w - go - 2, ctx));
+      if (go && !under) return Math.max(CHIP, rowOwn(b, b.children.length > 4 && !b.shares ? w : w - go - 2, ctx));
       return rowOwn(b, w, ctx) + (under ? GAP + CHIP : 0);
     }
     case "grid": {

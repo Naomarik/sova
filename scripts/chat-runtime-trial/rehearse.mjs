@@ -4,7 +4,7 @@
 // has said yes (al_6 q5).
 //
 //   node scripts/chat-runtime-trial/rehearse.mjs [--scratch <dir>] [--from <master ref>] [--to <F ref>]
-//        [--variant quiet|busy] [--repo <git dir>] [--no-build]
+//        [--variant quiet|busy] [--repo <git dir>] [--no-build] [--allow-lock-diff]
 //
 // --scratch (default ~/.cache/sova-rehearsal) is the runner's prepared dir: checkout/ (master unpacked by git
 // archive, node_modules installed, .rehearsal-rev naming the ref), agent/ (built by master's own
@@ -74,11 +74,24 @@ try {
   if (show(UNIT, "ActiveState") === "active") refuse(`${UNIT} is running already`);
 } catch {}
 const toRev = execFileSync("git", ["-C", REPO, "rev-parse", "--short", TO], { encoding: "utf8" }).trim();
+// node_modules is master's, carried across the switch: F must run on the same lockfile.
+const lockOf = (text) => text.replace(/\r\n/g, "\n");
+const lockFrom = existsSync(join(checkout, "pnpm-lock.yaml")) ? lockOf(readFileSync(join(checkout, "pnpm-lock.yaml"), "utf8")) : "";
+const lockTo = (() => {
+  try {
+    return lockOf(execFileSync("git", ["-C", REPO, "show", `${TO}:pnpm-lock.yaml`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+  } catch {
+    return "";
+  }
+})();
+const lockDiffers = lockFrom !== lockTo;
+if (lockDiffers && !argv.includes("--allow-lock-diff")) refuse(`pnpm-lock.yaml differs between ${FROM} (the checkout's node_modules) and ${TO}: F would run on master's dependencies. Install F's after the switch, or pass --allow-lock-diff to go on and note it`);
 writeFileSync(join(R, "rehearsal-used"), `${new Date().toISOString()} ${VARIANT} ${FROM} → ${toRev}\n`);
 
 const Rec = recorder(join(R, `rehearsal-${VARIANT}.json`));
 const RUN_START = Date.now();
 console.log(`rehearse: ${VARIANT}, ${FROM} → ${toRev}, scratch ${R}`);
+if (lockDiffers) Rec.note(`pnpm-lock.yaml differs between ${FROM} and ${toRev}: F runs on ${FROM}'s node_modules (--allow-lock-diff)`);
 
 // ── the session file, read as the trial does ─────────────────────────────────────────────────────────
 const lines = (f) => {
@@ -339,7 +352,7 @@ try {
   Rec.check(others.length === 0, `no other process of the agent dir runs (${others.map((p) => `${p.pid} ${p.cmd.slice(0, 60)}`).join("; ") || "none"})`);
   // runs-in-flight.json ignored, nothing resumed.
   const runsAfter = existsSync(runsFile) ? readFileSync(runsFile, "utf8") : null;
-  Rec.note(`runs-in-flight.json before the stop: ${runsBefore === null ? "none" : runsBefore.slice(0, 160)}`);
+  Rec.note(`runs-in-flight.json before the stop: ${runsBefore === null ? "none" : runsBefore.slice(0, 160)}. The checks below pin F's behaviour as having no reader of master's ledger: if one is added (a one-time legacy recovery), they change with it`);
   const resumed = [A.path, P.path].flatMap((p) => resumeDecisions(p));
   const continues = [A.path, P.path].reduce((n, p) => n + userEntriesWith(p, RESUME_TEXT) + userEntriesWith(p, CRASH_RESUME_TEXT), 0);
   if (VARIANT === "quiet") {

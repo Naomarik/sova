@@ -102,6 +102,27 @@ test("a Reload now that joins a chat's queued automatic reload makes it a Reload
   assert.ok(calls.includes("start-rep b"));
 });
 
+test("a Reload now joining a reload already under way doesn't make that chat's next automatic request a Reload now", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let boots = 0;
+  const { r } = make({
+    waitReady: async () => {
+      if (boots++ === 0) return { ok: false, error: "no hello in 30 s" }; // a: halts the automatic rollout
+      await gate; // b's Reload now is under way until released
+      return { ok: true };
+    },
+  });
+  assert.equal(await r.request("a", { auto: true }), "failed");
+  const running = r.request("b", { auto: false });
+  await new Promise((ok) => setTimeout(ok, 10));
+  const joined = r.request("b", { auto: false }); // joins the run already in reload()
+  release();
+  assert.equal(await running, "reloaded");
+  assert.equal(await joined, "reloaded");
+  assert.equal(await r.request("b", { auto: true }), "halted", "the next automatic request is still automatic");
+});
+
 test("a replacement that fails to boot halts the automatic rollout; Reload Now still tries", async () => {
   let boots = 0;
   const { r, calls, codes } = make({ waitReady: async () => (boots++ === 0 ? { ok: false, error: "no hello in 30 s" } : { ok: true }) });

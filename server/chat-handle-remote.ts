@@ -119,6 +119,12 @@ export class RemoteChatHandle extends ChatHandle {
   get closed(): boolean {
     return this.ended || this.mirror.closed;
   }
+  /** Its process said it exits for a reload: the replacement takes this handle over (repoint), so
+      a command meanwhile waits for it, as across a reconnect, never failing as unreachable. */
+  get reloading(): boolean {
+    return this.reloadingNow;
+  }
+  private reloadingNow = false;
   get linkOpen(): boolean {
     return this.link.isOpen;
   }
@@ -127,6 +133,7 @@ export class RemoteChatHandle extends ChatHandle {
   repoint(link: Link, at: RemoteWhere = this.at, mirror?: ChatRuntimeMirror): void {
     this.at = at;
     this.ended = false;
+    this.reloadingNow = false;
     // A replacement process numbers its run events afresh.
     if (mirror) this.runN = 0;
     this.bind(link);
@@ -190,7 +197,8 @@ export class RemoteChatHandle extends ChatHandle {
       else b.reject(new Error(f.error.message));
     });
     on("exit", (f) => {
-      this.ended = true;
+      if (f.cause === "reload") this.reloadingNow = true;
+      else this.ended = true;
       this.hooks.exit?.(this, f.cause);
     });
     void link.closed.then((end) => {
@@ -349,6 +357,7 @@ export class RemoteChatHandle extends ChatHandle {
       server can no longer talk to). The handle is done. */
   endPanes(message: string, code: "internal" | "reloaded" = "internal"): void {
     this.ended = true;
+    this.reloadingNow = false;
     this.failPending();
     for (const c of this.clients.values()) {
       c.send({ type: "error", code, message });

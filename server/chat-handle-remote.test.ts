@@ -108,6 +108,24 @@ test("a keyed send whose answer was lost goes once more after the relink; an unk
   assert.equal(next.calls().length, 1, "once, not again");
 });
 
+test("a command made while a reload swaps the process waits for the replacement, never failing as unreachable", async () => {
+  const { h, link } = handle();
+  link.deliver({ t: "exit", cause: "reload" } as never);
+  link.drop();
+  await tick();
+  assert.equal(h.closed, false, "the reload's replacement takes this handle over");
+  assert.equal(h.reloading, true);
+  const p = h.call("reacquire", { force: false });
+  const next = new FakeLink();
+  h.repoint(next as never, { unit: "u-r1", pid: 2 }, mirror());
+  await tick();
+  const [c] = next.calls();
+  assert.equal(c?.call.method, "reacquire");
+  next.deliver({ t: "reply", reply: { id: c!.call.id, ok: true, result: "attached" } });
+  assert.equal(await p, "attached");
+  assert.equal(h.reloading, false);
+});
+
 test("an ended handle refuses at once", async () => {
   const { h } = handle();
   h.endPanes("gone");

@@ -338,6 +338,27 @@ test("a lost chat whose status reads gone while its process still runs (the user
   assert.deepEqual(deaths.map((x) => [x.chatId, x.cause]), [["c1", "lost"]]);
 });
 
+test("a lost chat whose unit status can't be read is settled by its recorded process: still running, kept; ended, reported once", async () => {
+  const d = new FakeDriver();
+  let alive = true;
+  const { sup, deaths } = make(d, { isChatProcess: () => alive });
+  await sup.start(chat);
+  sup.noteConnected("c1");
+  d.stop = async () => {
+    throw new Error("Failed to connect to bus");
+  };
+  d.status = async () => {
+    throw new Error("Failed to connect to bus");
+  };
+  await sup.lost("c1", "it stopped answering");
+  await sup.tick();
+  assert.equal(deaths.length, 0);
+  alive = false;
+  await sup.tick();
+  await sup.tick();
+  assert.deepEqual(deaths.map((x) => [x.chatId, x.cause]), [["c1", "lost"]]);
+});
+
 test("start waits for the chat's previous process still exiting, and its writer lock", async () => {
   const d = new FakeDriver();
   let locked = true;

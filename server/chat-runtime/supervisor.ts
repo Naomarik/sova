@@ -732,7 +732,9 @@ export class ChatSupervisor {
     // A status that says gone may only mean the manager could not be asked (systemctl failing reads as
     // "missing"): the recorded process still running chat-runtime/main.ts is not gone either.
     const running = !!t.rec.pid && (this.deps.isChatProcess ?? chatProcessAlive)(t.rec.pid);
-    if (!after || !isGone(after) || running) {
+    // Its status unknown: the recorded process settles it (no pid recorded: can't tell, kept).
+    const gone = !running && (after ? isGone(after) : !!t.rec.pid);
+    if (!gone) {
       if (t.lostDetail === null) this.log(`${chatId}: ${detail}, but its unit ${t.rec.unit} is still there after a stop (${after ? `${after.state}${after.pid ? `, pid ${after.pid}` : ""}` : "its status unknown"}); kept, stopped again at the next check`);
       t.lostDetail = detail;
       return;

@@ -25,7 +25,6 @@
  */
 import { createHash } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { claudeProjectsRoot, claudeSessionId, nextFreeLaunch } from "./session-records.ts";
 import { BRIDGE_REGISTRY, CLAUDE_FORK_ENV, decodeForkPoint, type ClaudeForkPoint } from "./fork-point.ts";
@@ -278,10 +277,13 @@ interface SessionLoginHooks {
 	onChange?: (entry: ClaudeLoginEntry) => void;
 }
 
+/** Where the opt-in debug log goes: the active agent dir's claude-code-debug.log (never a hard-coded ~/.pi/agent). */
+export const debugLogFile = (env: NodeJS.ProcessEnv = process.env): string => join(defaultAgentDir(env), "claude-code-debug.log");
+
 /** Opt-in (PI_CLAUDE_CODE_DEBUG=1) bridge diagnostics; never includes message text. */
 function debugLog(entry: Record<string, unknown>): void {
 	if (process.env.PI_CLAUDE_CODE_DEBUG !== "1") return;
-	try { appendFileSync(join(homedir(), ".pi", "agent", "claude-code-debug.log"), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`); }
+	try { appendFileSync(debugLogFile(), `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`); }
 	catch { /* diagnostics are best-effort */ }
 }
 

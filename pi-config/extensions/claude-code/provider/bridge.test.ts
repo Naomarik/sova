@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { after, test } from "node:test";
@@ -332,6 +332,33 @@ test("the bridge sends a new session's first prompt unwrapped, and a later resta
 		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
 	});
 	await bridge.disposeAll();
+});
+
+test("PI_CLAUDE_CODE_DEBUG's log is the active agent dir's, never ~/.pi/agent's", { timeout: 8000 }, async () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "bridge-debug-agent-"));
+	const homeLog = join(homedir(), ".pi", "agent", "claude-code-debug.log");
+	const saved = { dir: process.env.PI_CODING_AGENT_DIR, debug: process.env.PI_CLAUDE_CODE_DEBUG };
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	process.env.PI_CLAUDE_CODE_DEBUG = "1";
+	try {
+		const { bridge, children } = harness();
+		await collectAfter(bridge.runTurn(request([user("hello")])), async () => {
+			const cli = await child(children, 1);
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+			await cli.waitFor((f) => f.type === "user");
+			cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+		});
+		await bridge.disposeAll();
+		assert.match(readFileSync(join(agentDir, "claude-code-debug.log"), "utf8"), /"event":"launch"/);
+		assert.equal(existsSync(homeLog), false, "nothing written under ~/.pi/agent");
+	} finally {
+		for (const [name, value] of [["PI_CODING_AGENT_DIR", saved.dir], ["PI_CLAUDE_CODE_DEBUG", saved.debug]] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+		rmSync(agentDir, { recursive: true, force: true });
+	}
 });
 
 test("the bridge frames a new session's multi-message history as joined", { timeout: 8000 }, async () => {

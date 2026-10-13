@@ -3,7 +3,9 @@
 # APFS, hardlinked node_modules), Sova's extensions mapped into a copy (realpaths: /var is
 # /private/var), the supervisor, the writer lock, the chat host, the project-services drivers (the detached
 # driver's process groups and its stop of a reused pid, the darwin ps table; its integration file runs real
-# processes, detached only, no systemd) and the chat workers, run on a Mac.
+# processes, detached only, no systemd) and the chat workers, run on a Mac; and from stage 6: the worker feed
+# and worker sessions after the legacy registry fold (D3), a stop's own writes (#5: the writer lock's start
+# time is ps's on darwin) and the test runner's cleanup when it is killed (#11b: process groups).
 #   zsh -lc 'cd <scratch checkout> && scripts/chat-runtime-trial/mac/unit.sh [more test files…]'
 # From a scratch checkout with its node_modules installed, never the Mac's live Sova. It runs the files
 # through the repo's runner (a throwaway home per file, the tier guard) on bun 1.4.2, with a short temp
@@ -28,6 +30,10 @@ files=(
   server/project-services/drivers.test.ts
   server/project-services/drivers.integration.test.ts
   server/chat-workers.test.ts
+  server/chat-runtime/worker-feed.test.ts
+  server/worker-sessions.test.ts
+  server/shutdown-own-writes.test.ts
+  scripts/run-tests.integration.test.ts
   "$@"
 )
 echo "mac/unit.sh: $(uname -sm), $(sw_vers -productVersion 2>/dev/null || echo '?'), commit $(git rev-parse --short HEAD 2>/dev/null || cat .trial-rev 2>/dev/null || echo '?'), TMPDIR $TMPDIR"

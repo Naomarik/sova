@@ -76,6 +76,7 @@ import { LinkWorkerHost, WORKER_PROTO } from "./worker-port";
 
 /** The provider and model runtime warm-up, once per process (main.ts awaits it before "ready"). */
 export { warmChatRuntime } from "../chat-manager";
+import { setReplyTimingsSource } from "../reply-facts";
 
 /** `globalThis[LINK_LIVE](sessionId)`: whether a session is in a live link (the link extension asks). */
 const LINK_LIVE = Symbol.for("sova:link-live");
@@ -134,13 +135,14 @@ export const REPLY_TEXT_EVERY_MS = 100;
 const SPECIAL_PROTO = 2;
 
 /** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
-type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton";
+type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings";
 const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   "project.note": null,
   "playbook.bundleFor": null,
   "playbook.reprime": null,
   links: [],
   singleton: null,
+  "reply.timings": null,
 };
 
 /** A call-back whose call is no longer pending (the link dropped, the call settled). */
@@ -461,6 +463,7 @@ export class ChatRuntimeHost {
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);
+    setReplyTimingsSource((sessionId) => this.ask("reply.timings", { sessionId }));
     setCodeReload((client) => this.reloadNow(client));
     (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (sessionId: string) => this.liveIds.has(sessionId);
   }

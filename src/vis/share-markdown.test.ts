@@ -52,16 +52,16 @@ test("code always, html without interactive drawings, and a block that doesn't p
     }
 });
 
-test("a baton conversation draws state and sequence as figures, svg as an image, and html as a frame only with interactive drawings", () => {
+test("a baton conversation draws state and sequence as figures, svg as a figure of an image, and html as a frame only with interactive drawings", () => {
   for (const html of [false, true]) {
     const k = batonKinds(html);
     assert.equal(renderShareMarkdown(fence("vis state", "idle -> busy"), false, k).visuals[0]?.kind, "state");
     assert.equal(renderShareMarkdown(fence("vis sequence", 'actor a "App"\nactor b "Bank"\na -> b "pay"'), false, k).visuals[0]?.kind, "sequence");
     const svg = renderShareMarkdown(fence("vis svg", "title: Sketch\n<svg viewBox=\"0 0 9 9\"><script>alert(1)</script><text>hi</text></svg>"), false, k);
-    assert.equal(svg.visuals.length, 0, "an image, never a mounted drawing");
-    assert.match(svg.html, /<figure class="share-vis-image"><figcaption class="share-vis-caption">Sketch<\/figcaption><img src="data:image\/svg\+xml;charset=utf-8,[^"]+" alt="Sketch"><\/figure>/);
-    assert.doesNotMatch(svg.html, /<script|<svg/, "the svg is only ever inside the image's data URL");
-    assert.match(decodeURIComponent(/src="data:image\/svg\+xml;charset=utf-8,([^"]+)"/.exec(svg.html)![1]!), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox=/, "an svg without its namespace gets it, or the image is broken");
+    assert.equal(svg.visuals[0]?.kind, "svg", "a figure whose drawing is the image (ImageView)");
+    assert.equal(svg.visuals[0]?.spec.title, "Sketch");
+    assert.match(svg.html, /<div class="md-vis" data-vis="0" data-vis-key="[0-9a-f]+"><\/div>/);
+    assert.doesNotMatch(svg.html, /<script|<svg|<img/, "the document reaches the image's data URL (svg-image.test.ts), never the page");
     const frame = renderShareMarkdown(fence("vis html", "title: Try it\n<button>Step</button><script>1</script>"), false, k);
     if (html) {
       assert.equal(frame.visuals[0]?.kind, "html");
@@ -94,7 +94,7 @@ test("the share page draws exactly the kinds the gathering guide teaches", () =>
 });
 
 // Session shares (§app.session-share/page): the business kinds plus sequence and state drawn, svg
-// as an image, code and html as escaped source.
+// as a figure of an image, code and html as escaped source.
 test("a session share draws sequence and state, and shows svg as an image and code and html as their source", async () => {
   const { SESSION_VIS_KINDS } = await import("../share/markdown");
   const seq = renderShareMarkdown(fence("vis sequence", 'actor a "A"\nactor b "B"\na -> b "hi"'), false, SESSION_VIS_KINDS);
@@ -102,8 +102,9 @@ test("a session share draws sequence and state, and shows svg as an image and co
   const state = renderShareMarkdown(fence("vis state", "idle -> busy"), false, SESSION_VIS_KINDS);
   assert.equal(state.visuals[0]?.kind, "state");
   const svg = renderShareMarkdown(fence("vis svg", 'title: Sketch\n<svg xmlns="http://www.w3.org/2000/svg"><text>hi & "q"</text></svg>'), false, SESSION_VIS_KINDS);
-  assert.equal(svg.visuals.length, 0);
-  assert.match(svg.html, /<figure class="share-vis-image"><figcaption class="share-vis-caption">Sketch<\/figcaption><img src="data:image\/svg\+xml;charset=utf-8,%3Csvg[^"]*" alt="Sketch"><\/figure>/);
+  assert.equal(svg.visuals[0]?.kind, "svg");
+  assert.equal(svg.visuals[0]?.spec.title, "Sketch");
+  assert.doesNotMatch(svg.html, /<svg|<img/);
   const html = renderShareMarkdown(fence("vis html", '<script>alert(1)</script><p onclick="x">hi</p>'), false, SESSION_VIS_KINDS);
   assert.doesNotMatch(html.html, /<script|<p onclick/);
   assert.match(html.html, /<pre><code>&#60;script&#62;alert\(1\)&#60;\/script&#62;/);

@@ -1,10 +1,7 @@
 # §app/worker-restore — Workers across a restart
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-A session's subagent workers are child processes of the runtime that hosts the session. When
-the Sova server restarts (a deploy, `systemctl restart`, a crash), those processes die (unless
-the session runs in a chat process of its own, whose workers keep running, §app.chat-processes/survives-restart), and until
-now the session forgot them: `agent_list` came back empty, the pane lost its rows and the
+A session's subagent workers are chat processes of their own (§app.chat-processes/workers). When the Sova server restarts (a deploy, `systemctl restart`, a crash) with chats out of its process, they keep running and their parent picks them back up; with chats in the server's process, the server stops them with it. Until this surface, a session forgot workers that ended so: `agent_list` came back empty, the pane lost its rows and the
 lifetime Σ restarted at zero. This surface makes a worker outlive its process **as a record**:
 what it was, where its transcript is, what it spent. It does not make the process outlive the
 restart. A restored worker is idle, and only an explicit resume starts it again.
@@ -16,12 +13,10 @@ is declared by that backend's adapter (§app.worker-restore/transcript-protocol)
 
 ## §app.worker-restore/worker-record — One durable record per worker
 
-The parent session keeps a durable record of **every worker it starts**, on every backend and
-under every worker transport (inline or hosted). It lives in the parent's own session file as
+The parent session keeps a durable record of **every worker it starts**, on every backend and wherever its chat process runs. It lives in the parent's own session file as
 `subagents-worker-manifest` custom entries (version `v: 1`), so it survives whatever the process
 does. One fold reads it for every consumer, newest-wins per field and one worker id at a time. The
-same fold also reads the older `subagents-worker-registry` entries, which were written only for
-hosted workers before this change.
+same fold also reads the older `subagents-worker-registry` entries, which were written only for hosted workers before this change (nothing writes them any more: the detached host that did is gone).
 
 - **What it holds**: the worker id, backend, group, name; the spawn spec (cwd, model, effort,
   task preview and length, wake, sandbox on/off, and the spec as given — including whether it ran
@@ -34,8 +29,7 @@ hosted workers before this change.
   end time and error.
 - **When it is written**: at spawn and at each new task (status running); when the backend
   first reports the transcript identity; at each settle (status waiting, with the usage snapshot
-  as of that settle and the task's outcome); at the end (done, error, killed, or lost when a hosted
-  worker's host died mid-turn); and at a resume, which clears the ended fields and records the status as waiting. Nothing else is
+  as of that settle, the task's outcome, and the key of the run that settled (`settleKey`) and its final message's entry (`settleEntryId`), written with the settle's announcement, so a parent that picks a worker back up announces each settle once); at the end (done, error or killed; `lost` appears only in records a detached host wrote before workers became chat processes, and reads as interrupted); and at a resume, which clears the ended fields and records the status as waiting. Nothing else is
   appended per turn, so a busy worker does not grow the parent's file per message.
 - **Readers ignore fields they don't know**, and refuse a record with a higher major version
   with a typed error rather than guessing at it.
@@ -44,13 +38,9 @@ hosted workers before this change.
   of a resume that continues an older Claude Code worker: the parent writes the new session's file
   with its header and first message before the worker opens it (§app.worker-restore/resume).
 
-## §app.worker-restore/failure-reason — A pi worker that dies says why
+## §app.worker-restore/failure-reason — A worker that dies says why
 
-When a pi worker's process exits with a nonzero code, or ends on a signal no one sent it, the error
-its record keeps (§app.worker-restore/worker-record) and `agent_list` shows is `pi exited with code
-N` (or `pi terminated by <signal>`) followed by the last lines that process wrote on stderr: at most
-20 lines and 2 KB, the newest kept. With nothing on stderr it is the bare message. A Claude Code
-worker is a pi worker (§app.subagents-pane/claude-code-workers), so the same holds for it.
+When a worker's process dies and is not continued (§app.chat-processes/worker-crash), the error its record keeps (§app.worker-restore/worker-record) and `agent_list` shows is "This worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by "Last output: …" with the last lines of its log: at most 20 lines and 2 KB, the newest kept. With no output it is the bare sentence. A Claude Code worker is a pi worker (§app.subagents-pane/claude-code-workers), so the same holds for it.
 
 ## §app.worker-restore/transcript-protocol — One transcript protocol, one adapter per backend
 
@@ -90,8 +80,7 @@ snapshot stays in the record for the TUI's own views.
 
 ## §app.worker-restore/restore — Restored as idle entries, never restarted
 
-When a session's runtime opens after a restart (or a reload, or a switch back to the session)
-and its record names workers that no process runs, each comes back as a **restored** entry:
+When a session's runtime opens after a restart (or a reload, or a switch back to the session), it first picks up again every worker of its that still runs (§app.chat-processes/workers), and a waiting worker whose process stopped while idle is still a live, waiting worker. Each other worker its record names that no process runs (its server stopped it, it died for good, it ran before workers became chat processes, or the server no longer knows it) comes back as a **restored** entry:
 listed by `agent_list`, shown in the pane and on `#/agents`, with no process behind it. Nothing
 is started, nothing is sent, and nothing is announced to the parent agent. A restored worker is
 settled: it takes no live slot, and a steer to it is refused with the way back (`agent_resume`,
@@ -137,18 +126,13 @@ session pane and the Agents board have none); `POST /api/workers/resume`, which 
 command, stays on the server with no caller in the app. There is **no automatic resume**, not at session open, not at the
 next prompt, and not for team members.
 
-- **Same worker.** It keeps its id, name, team membership and role, and continues its own
-  transcript: a pi worker reopens its session file, a Claude Code worker included. Its spawn
+- **Same worker.** It keeps its id, name, team membership and role, and continues its own transcript: its chat reopens its session file, a Claude Code worker included, through the same factory as a spawn (§app.chat-processes/workers). Its spawn
   spec is re-applied (cwd, model, effort, tools, system prompt, its worktree's agent dir), and the sandbox
   follows the **parent's current** state, exactly as at spawn (§chat.sandbox/workers), and so do the modes it is given: the parent's **current** worker
   modes, not the ones it first started with (§chat.mode-menu/workers). So does where it may start: its cwd must still be the session's
   cwd or inside an active tracked worktree of the current branch (§chat.worktrees/workers).
 - **A team member rejoins its team.** Its team, kept as history since the restart, becomes live
-  again, and its mailbox is re-created with a fresh identity: a member gets its team tools
-  back, and an orchestrator keeps its roster and
-  steer tools. What the restart destroyed stays gone: earlier inbox contents and pending requests
-  (the inline transport's mailbox was a temporary directory), and the team's create-time
-  defaults, so a later `team_add` to that team applies none. Its teammates are not told.
+  again, with a fresh identity in the team's kept mailbox: a member gets its team tools back and keeps its inbox, and an orchestrator keeps its roster and steer tools. Requests a member wrote while its parent was away are handled once the parent is back. What the restart destroyed stays gone: the team's create-time defaults, so a later `team_add` to that team applies none. Its teammates are not told.
 - **It comes back idle** (`waiting`, the Idle chip). Resume sends no prompt and never continues the interrupted turn on
   its own. It never re-emits a completion, so the parent is not woken by a stale report. The
   parent gives it work with `agent_steer` or a team message, like any idle worker.
@@ -165,10 +149,7 @@ next prompt, and not for team members.
   last 2,000 characters of its last answer. Its record then names the new session, and keeps the
   old Claude session as `continuedFrom`; the old transcript file is never changed or deleted. The
   tool answers "Resumed {id} ({name}) on Sova's tools in a new session {file}, continuing its
-  Claude Code session {old file}; nothing was sent to it. Give it work with agent_steer." Such a
-  worker still running under its detached host when its parent's session starts again is not
-  re-adopted (nothing can drive it any more): its host is stopped, and it is listed restored like any
-  worker its restart ended, ready for this resume.
+  Claude Code session {old file}; nothing was sent to it. Give it work with agent_steer."
 - **Refusals are said, not guessed.** Resume answers with the reason and changes nothing for:
   a worker that is live (give it work with `agent_steer`), one already being resumed, an ID this
   session file has no record of, a cwd outside the session's cwd and its active worktrees, a backend whose adapter declares no resume or that is not

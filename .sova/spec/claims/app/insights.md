@@ -291,16 +291,7 @@ decisions, topic outlines, compaction, cache warming.
     spawn to the process's exit — **approximate**: the process's start-up and exit count too, so
     for part of that time it may not be calling at all, and what it does inside can't be seen.
   - **Jev** (§app/decisions): from the request to its answer.
-- **How a host adds up.** Sova's server reads its own process directly. A subagent's calls reach
-  the host through the session that runs it: a worker reports its count to its parent over the
-  worker's own channel, so the parent's count includes its workers' (each worker's report replaces its last one, and goes when the worker
-  does; until a worker's first report, or after one that can't be read, it is unknown, never 0).
-  The parent also names every worker it counts this way, transitively, so a worker that publishes
-  a live record of its own as well is never counted twice; past 64 named workers it sums no more
-  of them (it can't name them), and its count is partial instead. A detached worker that no running
-  session has adopted (after a restart, before it is adopted again) is counted by the server from
-  its host's record of the worker's last report, or, with no such report, makes the count
-  partial; once adopted, only its parent counts it. Every other process on the host publishes its count in its live record (`presence.llm`,
+- **How a host adds up.** Sova's server reads its own process directly. A chat in a process of its own (a worker or a hidden chat included, §app.chat-processes/workers) counts its own calls, and the server counts them from what that process reports with its state, once, whether or not its parent is running (each report replaces its last one, and goes when the server lets go of the process; its tokens stay). The report names the process, so a live record of the same process is never summed again. Every other process on the host publishes its count in its live record (`presence.llm`,
   `pi-config/extensions/sessions/public/SCHEMA.md`), rewritten only when the count or its coverage
   changes, never per token. A call's output tokens land in that same rewrite, at the moment it ends. The server counts each process once (by its producer id, so a
   process with several live records is not counted twice, and the records its own hosted chats
@@ -357,13 +348,10 @@ host and every connected host.**
   the same boundary: a pi process reads the final message's output count of each call its model
   runtime makes. A chat on the `claude-code` provider, and a Claude Code worker (a pi worker on that
   provider), is counted once, as its pi call, never again by the CLI it drives. A one-shot `claude -p` and Jev add no tokens.
-- **How it adds up.** As the calls do. A pi worker carries its ring in the report it already sends
-  its parent, and the parent sums it with its own; a worker that ends leaves its tokens in its
-  parent's ring until they age out (a worker detached for another session to adopt takes its
-  tokens with it and goes on reporting them itself). Each process publishes its ring in its live
+- **How it adds up.** As the calls do. A chat process, a worker's included, carries its ring in the report it sends the server with its state, and the server sums it with its own; a process that ends leaves its tokens in the server's ring until they age out. Each process publishes its ring in its live
   record (`presence.llm.tokens`, `pi-config/extensions/sessions/public/SCHEMA.md`); the server
-  sums each counted process once, by the same producer rule (a folded worker's tokens are already
-  in its parent's), and adds each connected host's own ring once. While anyone listens, a process
+  sums each counted process once, by the same producer rule (a chat process's tokens, already in the server's own sum from its
+  report, are never added again from its live record), and adds each connected host's own ring once. While anyone listens, a process
   or host that goes (an exit, a dead pid, a stale record, a dropped peer) leaves its last ring in
   the sum until it ages out; tokens from before the server started, or ended while nobody
   listened by processes since gone, are not there.
@@ -468,7 +456,7 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   provider, a Claude Code worker's included) is recorded from its stream, once per Anthropic message id,
   plus what its cumulative per-model totals show beyond those messages (its own subagents, side
   queries, compaction), measured against the last total recorded for that Claude session so a
-  resume or re-adoption never counts history again; a `claude -p` one-shot and a Jev call are
+  resume or a reattach never counts history again; a `claude -p` one-shot and a Jev call are
   recorded from their answers. A `claude-code` chat's calls are recorded from the CLI's stream
   only, never again by the pi runtime.
 - **Whose call it is.** A call belongs to the session that registered with the process; a side call

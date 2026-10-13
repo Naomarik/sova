@@ -272,6 +272,49 @@ test("a chat that stops answering is stopped and reported lost", async () => {
   assert.deepEqual([deaths[0]!.cause, deaths[0]!.detail], ["lost", "no hello in 60 s"]);
 });
 
+test("a lost chat whose stop fails stays tracked, its record and code kept, no death; stopped again at each check, reported once its unit is gone (xreview #8)", async () => {
+  const d = new FakeDriver();
+  const lines: string[] = [];
+  const { sup, deaths } = make(d, { log: (l) => lines.push(l) });
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  const realStop = d.stop.bind(d);
+  let stops = 0;
+  // The user manager refuses: the unit and its process run on.
+  d.stop = async () => {
+    stops++;
+    throw new Error("Failed to connect to bus");
+  };
+  await sup.lost("c1", "it stopped answering");
+  assert.equal(deaths.length, 0, "no false death");
+  assert.equal(sup.record("c1")?.unit, rec.unit, "still tracked");
+  assert.ok(existsSync(join(reg, "c1.json")), "its record kept");
+  assert.deepEqual(sup.list().map((r) => r.build), ["abc"], "the code it runs is still in use");
+  assert.equal(lines.filter((l) => /still there after a stop/.test(l)).length, 1);
+  // A copy collection meanwhile keeps that code (old, not last good, no other record names it).
+  const { collectGenerations } = await import("./generations");
+  const root = join(dir, "code");
+  mkdirSync(join(root, "abc"), { recursive: true });
+  writeFileSync(join(root, "abc", ".complete"), "{}\n");
+  const old = (Date.now() - 3_600_000) / 1000;
+  const { utimesSync } = await import("node:fs");
+  utimesSync(join(root, "abc", ".complete"), old, old);
+  assert.deepEqual(await collectGenerations(new Set(sup.list().flatMap((r) => (r.build ? [r.build] : []))), { root }), []);
+  assert.ok(existsSync(join(root, "abc")));
+  // The watch stops it again; still refused: still no death, logged once.
+  await sup.tick();
+  assert.equal(stops, 2);
+  assert.equal(deaths.length, 0);
+  assert.equal(lines.filter((l) => /still there after a stop/.test(l)).length, 1);
+  // The stop goes through: one death, the record gone.
+  d.stop = realStop;
+  await sup.tick();
+  assert.deepEqual(deaths.map((x) => [x.chatId, x.cause, x.detail]), [["c1", "lost", "it stopped answering"]]);
+  assert.equal(sup.record("c1"), undefined);
+  await sup.tick();
+  assert.equal(deaths.length, 1, "once");
+});
+
 test("start waits for the chat's previous process still exiting, and its writer lock", async () => {
   const d = new FakeDriver();
   let locked = true;

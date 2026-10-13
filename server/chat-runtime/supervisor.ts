@@ -365,6 +365,9 @@ interface Tracked {
   reaping: number | null;
   /** It said hello on a link (an adopted chat did, to an earlier server): its end is a death, not a failed start. */
   connected: boolean;
+  /** Found lost, but its unit outlived the stop (a stop that failed): kept, record and build, and stopped
+      again at each watch tick until it is gone; why it was lost. */
+  lostDetail: string | null;
 }
 
 const isUp = (s: UnitStatus) => s.state === "active" || s.state === "activating";
@@ -482,7 +485,7 @@ export class ChatSupervisor {
       before?.releasePid();
       releasePid = this.own(rec.pid);
     }
-    const t: Tracked = { rec, releasePid, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null, connected };
+    const t: Tracked = { rec, releasePid, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null, connected, lostDetail: null };
     this.chats.set(rec.chatId, t);
     return t;
   }
@@ -719,8 +722,18 @@ export class ChatSupervisor {
     const t = this.chats.get(chatId);
     if (!t) return;
     await this.deps.driver.stop(t.rec.unit).catch(() => {});
-    const logs = (await this.deps.driver.logs(t.rec.unit, LOG_TAIL).catch(() => [])).map((l) => l.text);
+    // A stop can fail (the user manager, a process it can't end) and the driver may not say: the process
+    // is ended only once its unit is gone. Until then the chat stays tracked, its record and the code it
+    // runs kept, and is stopped again at the next watch tick; no death is reported.
+    const after = await this.deps.driver.status(t.rec.unit).catch(() => null);
     if (this.chats.get(chatId) !== t) return; // reported meanwhile, or a new process took the id
+    if (!after || !isGone(after)) {
+      if (t.lostDetail === null) this.log(`${chatId}: ${detail}, but its unit ${t.rec.unit} is still there after a stop (${after ? `${after.state}${after.pid ? `, pid ${after.pid}` : ""}` : "its status unknown"}); kept, stopped again at the next check`);
+      t.lostDetail = detail;
+      return;
+    }
+    const logs = (await this.deps.driver.logs(t.rec.unit, LOG_TAIL).catch(() => [])).map((l) => l.text);
+    if (this.chats.get(chatId) !== t) return;
     const death: ChatDeath = { chatId, sessionPath: t.rec.sessionPath, unit: t.rec.unit, cause: "lost", exit: null, signal: null, detail, logTail: logs, pid: t.rec.pid, at: new Date(this.now()).toISOString() };
     // One that never said hello did not start: a failed start, not a death.
     if (!t.connected) return this.bootFailed(t, death);
@@ -877,6 +890,10 @@ export class ChatSupervisor {
     this.ticking = true;
     try {
       for (const [id, t] of [...this.chats]) {
+        if (t.lostDetail !== null) {
+          await this.lost(id, t.lostDetail);
+          continue;
+        }
         if (t.draining || (await this.check(id)) !== "up") continue;
         if (t.reaping !== null && this.now() - t.reaping >= REAP_WAIT_MS) {
           t.reaping = null;

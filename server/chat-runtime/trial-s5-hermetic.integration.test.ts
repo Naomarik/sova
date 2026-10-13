@@ -4,5 +4,5 @@
 import { trialSuite } from "../../scripts/chat-runtime-trial/trial-test";
 
 trialSuite("chat runtime stage 5: hermeticity", [
-  ["t25", "T25: chats, workers, /btw, a claude-code-cli parent, a restart and every page's data open nothing in a tripwire home and never run its claude"],
+  ["hermetic", "Hermetic: chats, workers, /btw, a claude-code-cli parent, a restart and every page's data open nothing in a tripwire home and never run its claude"],
 ]);

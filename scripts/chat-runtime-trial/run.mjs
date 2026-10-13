@@ -71,9 +71,10 @@
 //     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
 //               it ends
 //     stage 5 (stage5-design.md):
-//     t25       hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
-//               claude-code-cli and a restart open nothing in its ~/.pi/agent, ~/.claude, ~/.codex and never
-//               run its ~/.local/bin/claude; every claude call reaches the trial's fake
+//     hermetic  hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
+//               claude-code-cli, a restart and every page's GET read or write nothing in its ~/.pi/agent,
+//               ~/.claude, ~/.codex (bar the Overseer redactor reading four home secrets to mask them) and
+//               never run its ~/.local/bin/claude; every claude call reaches the trial's fake
 //     real      (only with --model) t1 on a real model
 //     plumbing  (only when asked) the trial's stage-3 steps work: an Overseer tool call, an org with a
 //               baton, a project overseer and a look now
@@ -124,7 +125,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t22", "t23", "t24", "t25"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t22", "t23", "t24", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1957,7 +1958,7 @@ async function t24() {
 
 // ── stage 5 (stage5-design.md) ──────────────────────────────────────────────────────────────────
 
-// T25: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
+// hermetic: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
 // ~/.claude.json and ~/.codex hold decoy files, and its ~/.local/bin/claude (also last on PATH) is a
 // decoy claude that logs each call. Through ordinary chats, a pi worker, a claude-code worker, /btw, a
 // parent on claude-code-cli, look_at_image, the Claude Code bridge's debug log, a server restart and
@@ -1975,7 +1976,7 @@ const T25_GETS = [
 ];
 const REDACTOR_HOME = new Set(["~/.pi/agent/auth.json", "~/.pi/agent/models.json", "~/.claude/.credentials.json", "~/.claude.json"]);
 const REDACTOR_STEP = "GET /api/overseer";
-async function t25() {
+async function hermetic() {
   const home = join(scratch, "tripwire-home");
   const decoys = [".pi/agent", ".claude", ".codex", ".local/bin"];
   for (const d of decoys) mkdirSync(join(home, d), { recursive: true });
@@ -2007,7 +2008,7 @@ async function t25() {
     ino.once("exit", () => ok(false));
     setTimeout(() => ok(false), 10000);
   });
-  if (!R.check(ready, "t25: the inotify watch on the tripwire home is up")) return;
+  if (!R.check(ready, "hermetic: the inotify watch on the tripwire home is up")) return;
   // Mise's shims find their tools through HOME: name the installs directly.
   const bins = [process.execPath, (() => {
     try {
@@ -2038,13 +2039,13 @@ async function t25() {
     await turn(o, "say ok");
     step = "a pi worker";
     prompt(s, "[spawn 1 10 #t25w] start a worker");
-    R.check((await workerDone(s, "trial-t25w"))?.outcome === "success", "t25: a pi worker ran to its end");
+    R.check((await workerDone(s, "trial-t25w"))?.outcome === "success", "hermetic: a pi worker ran to its end");
     step = "a claude-code worker";
     prompt(s, "[spawn-claude 2000 #t25c] start a claude worker");
-    R.check((await workerDone(s, "trial-claude"))?.outcome === "success", "t25: a claude-code worker ran to its end");
+    R.check((await workerDone(s, "trial-claude"))?.outcome === "success", "hermetic: a claude-code worker ran to its end");
     step = "/btw";
     prompt(s, "/btw [btw #t25b] a side question");
-    R.check(await waitFor(() => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t25b")), 60000), "t25: /btw answered");
+    R.check(await waitFor(() => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t25b")), 60000), "hermetic: /btw answered");
     step = "a parent on claude-code-cli";
     const cc = await newChat("claude-code-cli/claude-sonnet-5-5");
     await turn(cc, "say ok", 90000);
@@ -2064,7 +2065,7 @@ async function t25() {
       answers.push(`${r} ${await c.api(r).then(() => "ok", (e) => String(e.message ?? e).slice(0, 40))}`);
       await sleep(300);
     }
-    R.note(`t25: GET ${answers.join("; ")}`);
+    R.note(`hermetic: GET ${answers.join("; ")}`);
     step = "after";
     await sleep(5000);
   } finally {
@@ -2074,12 +2075,12 @@ async function t25() {
   const allowed = (h) => !write(h) && REDACTOR_HOME.has(h.file) && h.step === REDACTOR_STEP;
   const fmt = (hs) => [...new Set(hs.map((h) => `${h.file} ${h.ev} (${h.step})`))];
   const ok = fmt(hits.filter(allowed));
-  for (const a of ok) R.note(`t25: allowed, the Overseer's redactor reading a home secret to mask it: ${a}`);
+  for (const a of ok) R.note(`hermetic: allowed, the Overseer's redactor reading a home secret to mask it: ${a}`);
   const bad = fmt(hits.filter((h) => !allowed(h)));
-  R.check(bad.length === 0, `t25: nothing else read or wrote anything in the tripwire home (~/.pi/agent, ~/.claude, ~/.claude.json, ~/.codex, ~/.local/bin): ${bad.slice(0, 12).join("; ") || "none"}${bad.length > 12 ? ` (+${bad.length - 12})` : ""}`);
+  R.check(bad.length === 0, `hermetic: nothing else read or wrote anything in the tripwire home (~/.pi/agent, ~/.claude, ~/.claude.json, ~/.codex, ~/.local/bin): ${bad.slice(0, 12).join("; ") || "none"}${bad.length > 12 ? ` (+${bad.length - 12})` : ""}`);
   const decoyRan = existsSync(decoyCalls) ? readFileSync(decoyCalls, "utf8").trim() : "";
-  R.check(!decoyRan, `t25: the decoy ~/.local/bin/claude never ran (${decoyRan.slice(0, 160) || "no call"})`);
-  R.check(fakeCalls() > fake0, `t25: the claude paths ran on the trial's fake claude (${fakeCalls() - fake0} calls)`);
+  R.check(!decoyRan, `hermetic: the decoy ~/.local/bin/claude never ran (${decoyRan.slice(0, 160) || "no call"})`);
+  R.check(fakeCalls() > fake0, `hermetic: the claude paths ran on the trial's fake claude (${fakeCalls() - fake0} calls)`);
   // The next check gets a server with the trial's usual HOME.
   await teardown();
   await boot();
@@ -2087,7 +2088,7 @@ async function t25() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, t25, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, hermetic, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

@@ -1282,12 +1282,12 @@ export const briefOverseer = (body: string): Promise<void> => sendBrief(body);
  * once, a few seconds later (§app.overseer/auto-resume). Its next run is marked a
  * resume in the chat's own process (`before`), which the send then opens.
  */
-export function resumeCrashedChat(path: string, since: number, before: (path: string) => Promise<void>): void {
+export function resumeCrashedChat(path: string, since: number, before: (path: string) => Promise<void>, done?: () => void): void {
   const timer = setTimeout(() => {
     const deps = resumeDeps();
-    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text, key) => (await before(p), deps.prompt(p, text, key)) }).catch((err) =>
-      console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)),
-    );
+    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text, key) => (await before(p), deps.prompt(p, text, key)) })
+      .catch((err) => console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)))
+      .finally(() => done?.());
   }, RESUME_DELAY_MS);
   timer.unref();
 }

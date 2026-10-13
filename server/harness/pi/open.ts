@@ -20,6 +20,7 @@ import { applyModelLevels, type ComposedModel, modelFetchEnabled, onLevelsUpdate
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
+import { installOwnCode, ownCodeLoader } from "./own-code";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -27,6 +28,10 @@ import { currentTheme } from "./ui-bridge";
 import { isLegacyClaudeId, resolveLegacyClaude } from "../../../pi-config/extensions/claude-code/catalog.ts";
 
 export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinition } from "./extension-types";
+
+// A chat process on a code generation discovers Sova's extensions in its own copy, for every services
+// build here, the warm-up's included (§app.chat-processes/code-generations). The server: nothing.
+installOwnCode();
 
 /**
  * The extension flags a runtime starts with, by meaning; Sova decides each value (server/chat-manager.ts
@@ -137,9 +142,11 @@ export function getModelRuntime(): Promise<ModelRuntime> {
  * no extension gets no flag at all (a flag nobody registered only logs "Unknown option"), and its
  * `flags` are never read.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, resourceLoaderOptions: PiLoaderOptions) {
+async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions) {
   // Its workers and tool commands start below the server (§app.load-priority/workers).
   installWorkerNice();
+  // A worker's listed extensions from this chat process's own code (§app.chat-processes/code-generations).
+  const resourceLoaderOptions = ownCodeLoader(loader);
   const services = await createAgentSessionServices({
     cwd,
     modelRuntime,

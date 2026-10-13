@@ -362,6 +362,17 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi offers a documented hook for changing the tool set before a run's next request",
   },
   {
+    id: "P24",
+    name: "own-code-discovery",
+    kind: "monkey-patch",
+    relies:
+      "DefaultResourceLoader takes the extensions it discovers only from its package manager's resolve() (reload and loadCurrentExtensionSet), so rewriting the paths resolve() answers on DefaultPackageManager.prototype loads the same extensions, with pi's own enabled flags, metadata and trust, from the rewritten paths; additionalExtensionPaths never pass through resolve().",
+    pi: ["DefaultPackageManager.resolve", "DefaultResourceLoader.reload", "DefaultResourceLoader.loadCurrentExtensionSet", "createAgentSessionServices"],
+    where: [{ file: "server/harness/pi/own-code.ts", symbol: "patchResolve" }, { file: "server/harness/pi/own-code.ts", symbol: "installOwnCode" }],
+    canary: "P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy",
+    retireWhen: "pi's loader takes a path-mapping hook for discovered extensions",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

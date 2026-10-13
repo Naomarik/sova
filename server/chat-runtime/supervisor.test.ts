@@ -40,6 +40,8 @@ function make(driver: FakeDriver, extra: Partial<SupervisorDeps> = {}) {
     deathsFile: () => join(dir, "deaths.jsonl"),
     socketPath: (id, suffix) => `/s/${id}${suffix ?? ""}.sock`,
     unitPrefix: "sova-chat-test01-",
+    // Fake pids: never a real process's (and no ps in a unit test).
+    isChatProcess: () => false,
     now: () => clock,
     // Waits pass on the fake clock.
     sleep: async (ms) => void (clock += ms),
@@ -313,6 +315,27 @@ test("a lost chat whose stop fails stays tracked, its record and code kept, no d
   assert.equal(sup.record("c1"), undefined);
   await sup.tick();
   assert.equal(deaths.length, 1, "once");
+});
+
+test("a lost chat whose status reads gone while its process still runs (the user manager unreachable reads as missing) is kept, no death; reported once the process has ended", async () => {
+  const d = new FakeDriver();
+  let alive = true;
+  const { sup, deaths } = make(d, { isChatProcess: () => alive });
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  // systemctl can't be reached: the stop fails, and status answers "missing" with no pid.
+  d.stop = async () => {
+    throw new Error("Failed to connect to bus");
+  };
+  d.status = async () => ({ state: "missing", pid: null });
+  await sup.lost("c1", "it stopped answering");
+  assert.equal(deaths.length, 0, "its process still runs chat-runtime/main.ts: not gone");
+  assert.equal(sup.record("c1")?.unit, rec.unit);
+  await sup.tick();
+  assert.equal(deaths.length, 0);
+  alive = false;
+  await sup.tick();
+  assert.deepEqual(deaths.map((x) => [x.chatId, x.cause]), [["c1", "lost"]]);
 });
 
 test("start waits for the chat's previous process still exiting, and its writer lock", async () => {

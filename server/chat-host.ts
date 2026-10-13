@@ -95,7 +95,7 @@ export interface RouterDeps {
   /** The Bun chat processes run on, null when none was found (the server: chatBun). */
   bun?: () => string | null;
   /** Where the supervisor keeps its records and sockets, and its units' prefix. */
-  supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix">;
+  supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix" | "isChatProcess">;
   /** Where the worker registry keeps its records. */
   workersDir?: () => string;
   /** The one-time sweep of an older server's worker children (the server: sweepOldChildren). */

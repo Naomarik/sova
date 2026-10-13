@@ -86,7 +86,8 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
-  const supervisor = { registryDir: () => join(dir, "registry"), deathsFile: () => join(dir, "deaths.jsonl"), socketPath: (id: string, suffix?: string) => join(dir, `${id}${suffix ?? ""}.sock`) };
+  // The fake driver's pids are no real process's (and a unit test runs no ps).
+  const supervisor = { registryDir: () => join(dir, "registry"), deathsFile: () => join(dir, "deaths.jsonl"), socketPath: (id: string, suffix?: string) => join(dir, `${id}${suffix ?? ""}.sock`), isChatProcess: () => false };
   const hosts = new Map<string, InstanceType<typeof ChatRuntimeHost>>();
   const exits: ExitCause[] = [];
   let connects = 0;

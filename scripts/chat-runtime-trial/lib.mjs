@@ -32,6 +32,12 @@ export const KNOBS = {
   build: "SOVA_BUILD",
   /** A chat process whose build equals this exits 3 before hello (the rollout failure case). */
   failBoot: "SOVA_CHAT_TEST_FAIL_BOOT",
+  /** "live": chats run from the checkout, no copy of the code (every check but t25). */
+  code: "SOVA_CHAT_CODE",
+  /** Where a server copies its code; set, it turns the copy on for that check. */
+  codeRoot: "SOVA_CHAT_CODE_ROOT",
+  /** "on": the code root is this server's alone, and unused copies there are collected. */
+  codeGc: "SOVA_CHAT_CODE_GC",
   /** Chat units are named sova-chat-<stateHash>-<session id>. */
   unitPrefix: "sova-chat-",
 };
@@ -143,6 +149,9 @@ export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failB
   if (idleMs !== undefined) env[KNOBS.idle] = String(idleMs / 60_000);
   if (build) env[KNOBS.build] = build;
   if (failBoot) env[KNOBS.failBoot] = failBoot;
+  // No copy of the code per server (its state root sits in the scratch, on another filesystem than the
+  // checkout: ~350 MB each), unless the check is about the copies and names their root (t25).
+  if (!(KNOBS.codeRoot in extra)) env[KNOBS.code] = "live";
   return { ...env, ...extra };
 }
 

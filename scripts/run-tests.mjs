@@ -324,6 +324,9 @@ function hermeticEnv() {
     SOVA_TEST_HOME: root,
     PATH: [path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
+    // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
+    // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
+    SOVA_CHAT_CODE: "live",
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,

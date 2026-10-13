@@ -349,6 +349,53 @@ describe("WorkerRegistry", () => {
     assert.deepEqual(opened, ["/p/parent.jsonl"]);
   });
 
+  test("a parent that doesn't open for a settle is tried again; the report counts as taken only once it opened, across a restart too", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const settle = (r: WorkerRegistry, h: FakeHandle) => {
+      h.mirror = { ...h.mirror, worker: { proc: h.mirror.worker.proc, lastSettled: { key: "k:task#1", outcome: "success" } } };
+      r.onState(h as unknown as RemoteChatHandle);
+    };
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
+    // The first open fails, the retry opens it: one open that took, and no manual open.
+    {
+      const { procs, handles } = fakeProcs();
+      const tries: string[] = [];
+      let fail = 1;
+      const r = new WorkerRegistry(procs, { dir: () => join(dir, "workers"), autoResume: () => true, openParent: async (p) => (tries.push(p), fail-- > 0 ? Promise.reject(new Error("folder gone")) : undefined) });
+      await r.start(start("k", null));
+      settle(r, handles[0]!);
+      t.mock.timers.tick(10_000);
+      await flush();
+      assert.equal(tries.length, 1);
+      t.mock.timers.tick(10_000);
+      await flush();
+      assert.equal(tries.length, 2, "tried again");
+      t.mock.timers.tick(200_000);
+      await flush();
+      assert.equal(tries.length, 2, "once it opened, never again");
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+    // The server stops after a failed open: the next one, taking the worker back, opens the parent.
+    {
+      const { procs, handles } = fakeProcs();
+      const r = new WorkerRegistry(procs, { dir: () => join(dir, "workers"), autoResume: () => true, openParent: () => Promise.reject(new Error("folder gone")) });
+      await r.start(start("k", null));
+      settle(r, handles[0]!);
+      t.mock.timers.tick(10_000);
+      await flush();
+      const opened: string[] = [];
+      const next = reg(fakeProcs().procs, { opened });
+      const h = handles[0]!;
+      next.adopt(h as unknown as RemoteChatHandle);
+      settle(next, h);
+      t.mock.timers.tick(10_000);
+      await flush();
+      assert.deepEqual(opened, ["/p/parent.jsonl"], "not taken for seen by the failed open");
+    }
+  });
+
   test("a parent chat in a process of its own: ops answered on its link, watches fed there", async () => {
     const { procs } = fakeProcs();
     const r = reg(procs);

@@ -69,6 +69,8 @@
 //               session, the note is saved, it compacts, the fork's usage is under the parent
 //     t21l      browser-drive F10/F11: an idle parent's /btw row reaches the open pane live; an idle
 //               parent's process restart leaves the pane no "not reachable" alert (t21loff: switch off, F10)
+//     t21r      F14: a prompt sent as a rollout reload begins (pane attached) runs once or is refused back to
+//               the pane, never lost
 //     t22       the switch off: workers are lowered children of the server; a mode switch keeps them; a
 //               restart ends them (restored, interrupted); agent_resume reopens one, which takes a steer
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
@@ -142,7 +144,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t22", "t23", "t24", "t25", "t27", "tdefault", "tserverless", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t21r", "t22", "t23", "t24", "t25", "t27", "tdefault", "tserverless", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -341,7 +343,13 @@ const projectOverseer = (projectId, cl = c) => post(`/api/projects/${projectId}/
 const lookNow = (projectId, cl = c) => post(`/api/projects/${projectId}/overseer/run`, {}, cl);
 /** A baton handed to `to`: {path, sessionId, link}. */
 const startBaton = (o, cl = c) => post("/api/baton", { orgId: o.orgId, projectId: o.projectId, to: o.personId, publicTitle: "Trial", goal: "trial goal" }, cl);
-const prompt = (s, text) => s.send({ type: "prompt", text, clientId: `trial-${Date.now()}` });
+/** Sends a prompt; returns its clientId (a refusal names it). */
+let prompts = 0;
+const prompt = (s, text) => {
+  const clientId = `trial-${Date.now()}-${++prompts}`;
+  s.send({ type: "prompt", text, clientId });
+  return clientId;
+};
 const isEvent = (t) => (m) => m.type === "event" && m.event?.type === t;
 const settled = (s, from = 0, ms = 180000) => s.until(isEvent("run.settled"), ms, "run.settled", from);
 const delta = (re) => (m) => m.type === "event" && m.event?.type === "part.delta" && re.test(m.event.delta ?? "");
@@ -1815,6 +1823,9 @@ async function t21c() {
   s.close();
 }
 
+/** A refusal of the prompt `clientId` among `frames` (an error frame, code refused, naming it), or null. */
+const refusedFor = (frames, clientId) => frames.find((m) => m.type === "error" && m.code === "refused" && (m.clientId === clientId || JSON.stringify(m).includes(clientId))) ?? null;
+
 // T21l (browser drive F10, F11), on the chat-process path or (`on` false) the in-server one:
 //   F10: an idle parent's /btw answer reaches the open pane live, as an `append` of its row;
 //   F11 (the drive's step): the parent idle, /btw sent and at once an outside SIGTERM to the parent's
@@ -1842,7 +1853,7 @@ async function t21l(on = true) {
     const pid1 = chatPid(path);
     const alert = (m) => /not reachable|turn stopped with an error/i.test(JSON.stringify(m));
     const f1 = s.got.length;
-    prompt(s, `/btw [btw #${label}x] a side question across the exit`);
+    const cidX = prompt(s, `/btw [btw #${label}x] a side question across the exit`);
     process.kill(pid1, "SIGTERM");
     // The page's reconnect: at once, then its first commands, while the replacement may still be coming.
     await s.until((m) => m.type === "error" || m.type === "reloaded", 15000, "the pane hears of the reload", f0).catch(() => null);
@@ -1852,11 +1863,14 @@ async function t21l(on = true) {
     await waitFor(() => chatPid(path) && chatPid(path) !== pid1, 30000);
     await sleep(5000);
     const btwX = `BTW-ANSWER ${label}x`;
-    const live = await s2.until((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX), 60000, "the btw row after the exit").catch(() => null);
+    // F14: the question sent as the process stops is never lost in silence: either it is answered (once,
+    // shown live), or the pane gets it back (a refusal naming it, from which the page restores the draft).
+    const refusal = refusedFor([...s.got.slice(f1), ...s2.got], cidX);
+    const live = refusal ? null : await s2.until((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX), 60000, "the btw row after the exit").catch(() => null);
     await sleep(2000);
     const notes = entries(path).filter((e) => e.customType === "btw-note" && JSON.stringify(e).includes(btwX)).length;
     const shown = live || s.got.slice(f1).some((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX));
-    R.check(notes === 1 && shown, `${label} (F10 across the exit): the /btw answer is in the file once (${notes}) and reached the pane live (${shown ? "append" : "no append"})`);
+    R.check((notes === 1 && shown) || (notes === 0 && refusal), `${label} (F10/F14 across the exit): the /btw sent as the process stopped is answered once and shown live, or refused back to the pane (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${notes}�, ${shown ? "shown live" : "not shown"}`})`);
     const bad = [...s.got.slice(f1), ...s2.got].filter(alert);
     R.check(chatPid(path) !== pid1 && bad.length === 0, `${label} (F11): after /btw and an exit of the idle parent's process the pane reconnects with no turn-error alert (pid ${pid1} → ${chatPid(path)}; ${bad.map((m) => JSON.stringify(m).slice(0, 160)).join(" | ") || "none"})`);
     await turn({ path, s: s2 }, "say ok after");
@@ -1867,6 +1881,36 @@ async function t21l(on = true) {
     await teardown();
     await boot();
   }
+}
+
+// T21r (F14, a rollout reload): a pane attached to an idle chat on older code; Reload now, and at once a
+// prompt, which lands in the old process's closing window. It is never lost in silence: it runs once
+// (in the new process), or the pane gets it back (refused, naming it).
+async function t21r() {
+  await teardown();
+  await boot({ build: "trial-a" });
+  const { path, s } = await newChat();
+  await turn({ path, s }, "say ok");
+  const pid1 = chatPid(path);
+  s.close();
+  await restart({ [KNOBS.build]: "trial-b" });
+  const p = await chat(c, path);
+  const from = p.got.length;
+  p.send({ type: "reload_code" });
+  const cid = prompt(p, "say hi DURING-RELOAD t21r");
+  await p.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
+  await waitFor(() => chatPid(path) && chatPid(path) !== pid1, 60000);
+  const p2 = await chat(c, path, 60000);
+  await sleep(8000);
+  const refusal = refusedFor([...p.got.slice(from), ...p2.got], cid);
+  const ran = userEntriesWith(path, "DURING-RELOAD t21r");
+  const asked = mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes("DURING-RELOAD t21r")).length;
+  R.check(chatPid(path) !== pid1, `t21r: the chat reloaded (pid ${pid1} → ${chatPid(path)})`);
+  R.check((ran === 1 && asked === 1 && !refusal) || (ran === 0 && asked === 0 && refusal), `t21r (F14): a prompt sent as the reload began ran once or was refused back to the pane, never lost (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${ran}×, the model asked ${asked}×`})`);
+  p.close();
+  p2.close();
+  await teardown();
+  await boot();
 }
 
 /** Three long turns: more than pi's keepRecentTokens (20k), so a compaction has something to summarize. */
@@ -2660,7 +2704,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t22, t23, t24, t25, t27, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t21r, t22, t23, t24, t25, t27, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

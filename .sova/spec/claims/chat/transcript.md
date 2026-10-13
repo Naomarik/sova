@@ -934,7 +934,9 @@ unchanged.
   reads its newest rows with the read-only `GET /api/transcript` (the rows a `hello` carries,
   §chat.transcript/rendering), paints them, then opens its socket. Rows kept in the tab paint at
   once instead; the file is read first only when it changed after they were kept (its
-  `lastActiveAt`). A file read that fails opens the socket as before.
+  `lastActiveAt`). A file read that fails opens the socket as before, and so does one that hasn't
+  answered within about 1.5 s: the socket then names no row, and rows the read brings after the
+  chat's `hello` are not shown.
 - **Nothing downloaded twice.** The socket names the last row the view holds
   (`/ws/chat?…&have=<row id>`), and the chat's `hello` carries its state and only the rows after
   that one (its `after` names it). Rows after it (a reply streaming, entries written between the
@@ -951,10 +953,11 @@ unchanged.
   of the transcript, between its last row and the composer, taking no height: "Connecting to
   chat…", after about 300 ms (so a chat already running never flashes it), or "Reconnecting. Your
   draft is kept." at once while the connection retries. It goes when the chat is ready.
-- **Nothing typed or sent is lost.** A message sent on a connection whose chat then fails to open
-  comes back to the composer: the server refuses each message it held for the chat (`refused`), and
-  the view hands back any it never had acknowledged when the connection ends or reports an internal
-  error before its `hello`.
+- **Nothing typed or sent is lost, nor sent twice.** A message sent on a connection whose chat then
+  fails to open comes back to the composer: the server refuses each message it held for the chat
+  (`refused`), and the view hands back any sent on that connection it never had acknowledged when
+  the connection ends or reports an internal error before its `hello`. A message sent on an earlier
+  connection, after its `hello`, never comes back this way: that chat may have taken it.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)

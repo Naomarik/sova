@@ -30,12 +30,19 @@
 // Busy variant: no wait at (c); what the switch cuts (A's reply, W) is recorded as notes, not failures.
 // Results: <scratch>/rehearsal-<variant>.json and the lines printed. A real browser on master's bundle is
 // the coordinator's (tmp/browser-drive.md); O is its socket-level stand-in.
+//
+// darwin (macOS): the server is the launchd agent test.sova-s5-rehearsal in the user's GUI domain (lib.mjs
+// launchdStandIn, ExitTimeOut 60 as the installer writes it), never the live install's agent; the stop is a
+// bootout (launchd signals the job's process group, the counterpart of KillMode=control-group), the start a
+// bootstrap. On F the chats run on the detached driver (no slice). A chat process counts as apart from the
+// server when it is outside the server's process group (it stays the server's child by ppid). Prepare and
+// run it with scripts/chat-runtime-trial/mac/rehearse-mac.sh.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { CRASH_RESUME_TEXT, RESUME_TEXT, ROOT, chat, client, fakeClaude, freePort, healthy, mockLog, modelsJson, recorder, sc, show, sleep, startMock, strays, sweep, tokenOf, userBus } from "./lib.mjs";
-import { alive, tree } from "./procs.mjs";
+import { CRASH_RESUME_TEXT, RESUME_TEXT, ROOT, chat, client, fakeClaude, freePort, healthy, launchdStandIn, mockLog, modelsJson, recorder, sc, show, sleep, startMock, strays, sweep, tokenOf, userBus } from "./lib.mjs";
+import { alive, darwin, info, tree } from "./procs.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -49,6 +56,8 @@ const TO = opt("to", "HEAD");
 const VARIANT = opt("variant", "quiet");
 const BUILD = !argv.includes("--no-build");
 const UNIT = "sova-trial-server-rehearsal.service";
+// darwin's stand-in agent: the trial's label prefix (run-mac.sh's leftover sweep knows it).
+const LABEL = "test.sova-s5-rehearsal";
 const SLICE = "sovatrialrehearsal.slice";
 const checkout = join(R, "checkout");
 const agent = join(R, "agent");
@@ -69,10 +78,19 @@ for (const d of [checkout, agent, home, proj]) if (!existsSync(d)) refuse(`${d} 
 const rev = existsSync(join(checkout, ".rehearsal-rev")) ? readFileSync(join(checkout, ".rehearsal-rev"), "utf8").trim().split("\n")[0] : "";
 if (rev !== FROM) refuse(`${checkout}/.rehearsal-rev says '${rev}', not --from '${FROM}': this scratch dir was used already, or prepared from another ref`);
 if (existsSync(join(R, "rehearsal-used"))) refuse(`${R} was used by an earlier rehearsal (${readFileSync(join(R, "rehearsal-used"), "utf8").trim()}): prepare it again`);
-if (!userBus()) refuse("no systemd user manager answers: the stand-in unit needs one");
-try {
-  if (show(UNIT, "ActiveState") === "active") refuse(`${UNIT} is running already`);
-} catch {}
+if (darwin) {
+  let loaded = false;
+  try {
+    execFileSync("launchctl", ["print", `gui/${process.getuid()}/${LABEL}`], { stdio: "pipe" });
+    loaded = true;
+  } catch {}
+  if (loaded) refuse(`the launchd agent ${LABEL} is loaded already`);
+} else {
+  if (!userBus()) refuse("no systemd user manager answers: the stand-in unit needs one");
+  try {
+    if (show(UNIT, "ActiveState") === "active") refuse(`${UNIT} is running already`);
+  } catch {}
+}
 const toRev = execFileSync("git", ["-C", REPO, "rev-parse", "--short", TO], { encoding: "utf8" }).trim();
 // node_modules is master's, carried across the switch: F must run on the same lockfile.
 const lockOf = (text) => text.replace(/\r\n/g, "\n");
@@ -106,7 +124,7 @@ writeFileSync(join(R, "rehearsal-used"), `${new Date().toISOString()} ${VARIANT}
 
 const Rec = recorder(join(R, `rehearsal-${VARIANT}.json`));
 const RUN_START = Date.now();
-console.log(`rehearse: ${VARIANT}, ${FROM} → ${toRev}, scratch ${R}`);
+console.log(`rehearse: ${VARIANT}, ${FROM} → ${toRev}, scratch ${R}, server as ${darwin ? `the launchd agent ${LABEL}` : UNIT}`);
 if (lockDiffers) Rec.note(`the lockfile or package.json's dependencies differ between ${FROM} and ${toRev}: F runs on ${FROM}'s node_modules (--allow-lock-diff)`);
 
 // ── the session file, read as the trial does ─────────────────────────────────────────────────────────
@@ -183,26 +201,41 @@ const unitEnv = (onF) => ({
   PORT: String(port),
   PI_CODING_AGENT_DIR: agent,
   HOME: home,
-  PATH: [fake.claudeBin, dirname(process.execPath), ...(bunBin ? [dirname(bunBin)] : []), "/usr/local/bin", "/usr/bin", "/bin", join(home, ".local", "bin")].join(":"),
+  PATH: [fake.claudeBin, dirname(process.execPath), ...(bunBin ? [dirname(bunBin)] : []), "/usr/local/bin", "/usr/bin", "/bin", ...(darwin ? ["/usr/sbin", "/sbin"] : []), join(home, ".local", "bin")].join(":"),
   CLAUDE_CONFIG_DIR: fake.claudeLogin,
   ...(bunBin ? { SOVA_BUN: bunBin } : {}),
   SOVA_PRICES_FETCH: "off",
   SOVA_USAGE_POLL: "off",
-  LANG: process.env.LANG ?? "C.UTF-8",
+  LANG: process.env.LANG ?? (darwin ? "en_US.UTF-8" : "C.UTF-8"),
   ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}),
   ...(process.env.DBUS_SESSION_BUS_ADDRESS ? { DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : {}),
-  ...(onF ? { SOVA_CHAT_SLICE: SLICE, SOVA_CHAT_CODE: "live" } : {}),
+  ...(onF ? { ...(darwin ? {} : { SOVA_CHAT_SLICE: SLICE }), SOVA_CHAT_CODE: "live" } : {}),
 });
+let agentJob = null;
 function unitUp(onF) {
   const env = unitEnv(onF);
+  if (darwin) {
+    agentJob = launchdStandIn({ label: LABEL, env, log: serverLog, root: checkout, exitTimeOut: 60 });
+    agentJob.up();
+    return;
+  }
   execFileSync("systemd-run", ["--user", `--unit=${UNIT}`, "--property=KillMode=control-group", "--property=TimeoutStopSec=90", `--working-directory=${checkout}`, `--property=StandardOutput=append:${serverLog}`, `--property=StandardError=append:${serverLog}`, ...Object.entries(env).map(([k, v]) => `--setenv=${k}=${v}`), join(checkout, "scripts", "start-server.sh")], { stdio: "pipe" });
 }
-const unitDown = () => {
+const unitDown = async () => {
+  if (darwin) return agentJob?.down();
   try {
     sc("stop", UNIT);
   } catch {}
 };
-const mainPid = () => Number(show(UNIT, "MainPID")) || 0;
+const mainPid = () => (darwin ? agentJob?.pid() ?? 0 : Number(show(UNIT, "MainPID")) || 0);
+/** `pid` runs apart from F's server: outside its process tree under systemd (a unit of its own), outside its
+    process group on darwin (a detached chat is a setsid child of the server). */
+const apart = (pid, server) => {
+  if (!darwin) return !tree(server).some((p) => p.pid === pid);
+  const me = info(pid);
+  const sv = info(server);
+  return !!me && !!sv && me.pgid !== sv.pgid;
+};
 /** The trial's mock provider and defaults in the agent dir: replaced, never written through a link.
     `onMaster`: also master's summarizer onto the fake claude (below). */
 function putMock(mockPort, { onMaster = false } = {}) {
@@ -230,15 +263,17 @@ function putMock(mockPort, { onMaster = false } = {}) {
 
 let mock = null;
 const cleanup = async () => {
-  unitDown();
-  try {
-    sc("stop", SLICE);
-  } catch {}
+  await unitDown();
+  if (!darwin)
+    try {
+      sc("stop", SLICE);
+    } catch {}
   mock?.stop();
-  // F's chat processes may outlive the server's stop: TERM, a grace for their own shutdown, then KILL.
+  // F's chat processes outlive the server's stop by design (on darwin nothing else stops them): TERM, a
+  // grace for their own shutdown, then KILL.
   const left = await sweep(agent, { mock: false, graceMs: 10000 });
   if (left.length) Rec.note(`cleanup: stopped ${left.length} process(es) of the agent dir: ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 60)}`).join("; ")}`);
-  console.log(`\nresults: ${Rec.save({ variant: VARIANT, from: FROM, to: toRev, scratch: R })}`);
+  console.log(`\nresults: ${Rec.save({ variant: VARIANT, from: FROM, to: toRev, scratch: R, platform: process.platform, standIn: darwin ? LABEL : UNIT })}`);
 };
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"])
   process.once(sig, () => {
@@ -306,7 +341,7 @@ try {
 
   // (d)
   const t0 = Date.now();
-  unitDown();
+  await unitDown();
   const tStopped = Date.now();
   const fTree = join(R, "f-tree");
   rmSync(fTree, { recursive: true, force: true });
@@ -327,7 +362,7 @@ try {
   Rec.note(`switch: stopped in ${Math.round((tStopped - t0) / 1000)} s, files and links in ${Math.round((tSwitched - tStopped) / 1000)} s, down ${Math.round((Date.now() - t0) / 1000)} s in all`);
 
   // (e)
-  Rec.check(h1?.chatHost && "driver" in h1.chatHost, `the new server is F (health chatHost ${JSON.stringify(h1?.chatHost)?.slice(0, 120)})`);
+  Rec.check(h1?.chatHost && "driver" in h1.chatHost && (!darwin || h1.chatHost.driver === "detached"), `the new server is F${darwin ? ", chats on the detached driver" : ""} (health chatHost ${JSON.stringify(h1?.chatHost)?.slice(0, 120)})`);
   const pidF = mainPid();
   const oClosed = await waitFor(() => O.closed(), 5000, 200);
   Rec.check(oClosed, "the socket left open on master (O) was closed by the stop, as a page's is");
@@ -354,7 +389,7 @@ try {
   for (const [label, X, held, marker] of [["A", A, aHeld, "[long 60 #rhA]"], ["P", P, pHeld, "[spawn 1 120 #rhW]"]]) {
     const r = await reopen(X.path, label);
     const rec = recordOf(X.path);
-    Rec.check(r.settled && rec && alive(rec.pid) && rec.pid !== pidF && !tree(pidF).some((p) => p.pid === rec.pid), `${label} reopens on F in a chat process of its own and answers (pid ${rec?.pid ?? "none"}, unit ${rec?.unit ?? "none"}, server ${pidF})`);
+    Rec.check(r.settled && rec && alive(rec.pid) && rec.pid !== pidF && apart(rec.pid, pidF), `${label} reopens on F in a chat process of its own and answers (pid ${rec?.pid ?? "none"}${darwin ? ` pgid ${info(rec?.pid)?.pgid ?? "?"}` : `, unit ${rec?.unit ?? "none"}`}, server ${pidF}${darwin ? ` pgid ${info(pidF)?.pgid ?? "?"}` : ""})`);
     Rec.check(entries(X.path).filter((e) => e.type === "message").length >= held && userEntriesWith(X.path, marker) === 1, `${label} keeps its history (${held} messages before the stop, ${entries(X.path).filter((e) => e.type === "message").length} now; its first prompt once)`);
     r.s.close();
   }
@@ -399,7 +434,12 @@ try {
   const decoyAfter = existsSync(decoyLog) ? readFileSync(decoyLog, "utf8").length : 0;
   Rec.check(decoyAfter === decoyBefore, `the decoy claude never ran (${decoyLog})`);
   const homeAfter = listing(home);
-  const changed = Object.keys({ ...homeBefore, ...homeAfter }).filter((f) => homeBefore[f] !== homeAfter[f]);
+  // darwin: bun keeps its transpiler cache in ~/Library/Caches/bun (the live agent's too): bun's own, not a
+  // read or write of the user's files by Sova. Counted, not failed.
+  const bunCache = join(home, "Library", "Caches", "bun") + "/";
+  const all = Object.keys({ ...homeBefore, ...homeAfter }).filter((f) => homeBefore[f] !== homeAfter[f]);
+  const changed = all.filter((f) => !f.startsWith(bunCache));
+  if (all.length > changed.length) Rec.note(`bun wrote ${all.length - changed.length} file(s) of its transpiler cache under the tripwire HOME's Library/Caches/bun (allowed)`);
   Rec.check(changed.length === 0, `nothing was written under the tripwire HOME (${changed.slice(0, 5).join(", ") || "none"})`);
   Rec.note(`run took ${Math.round((Date.now() - RUN_START) / 1000)} s; server log ${serverLog}`);
 } catch (e) {

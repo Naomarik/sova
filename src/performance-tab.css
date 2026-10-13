@@ -1,0 +1,84 @@
+/* The Agents page's Performance tab (#/agents/performance, PerformanceTab.tsx). It rides the Costs
+   tab's card, table and stacking rules (costs-tab.css, projects.css: tables stack under 560px of
+   the insights pane) and adds the open control, the figure cells and the spread charts. Token
+   values only; figures are mono with tabular digits (.cost-figure). */
+
+/* A figure: the median, then a muted line under it (what it rests on, or why it's a dash). */
+.perf-fig { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 0; }
+.perf-fig-detail { color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); font-family: var(--font-body); white-space: nowrap; }
+/* A dash's reason is a sentence: it may wrap, within a readable width. */
+.perf-fig-reason { white-space: normal; max-width: 18ch; }
+.perf-fig > .perf-fig-reason { text-align: right; }
+.perf-open-name > .text-mono, .perf-effort-table th[scope="row"] { white-space: nowrap; }
+.perf-table td, .perf-effort-table td { vertical-align: top; }
+/* Eight figure columns: a narrower gutter than the Costs tables, so the row fits an unfolded pane. */
+.md .perf-table > * > tr > :is(th, td), .md .perf-effort-table > * > tr > :is(th, td) { padding-left: var(--space-2); padding-right: var(--space-2); }
+
+/* The row's open control: the whole name is the 44px target, the chevron turns when open. */
+.perf-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  margin: calc(var(--space-2) * -1) 0;
+  padding: 0 var(--space-1) 0 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.perf-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.perf-open > .icon { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.perf-open[aria-expanded="true"] > .icon { transform: rotate(90deg); }
+.perf-open-name { display: inline-flex; flex-direction: column; min-width: 0; }
+.perf-open:hover .perf-open-name > .text-mono { text-decoration: underline; }
+
+/* The opened row: its effort lines on the sunken fill, so they read as inside the model's row. */
+.md .perf-detail-row > td { padding: var(--space-3); background: var(--color-sunken); }
+.perf-detail-row[hidden] { display: none !important; }
+.perf-efforts { display: flex; flex-direction: column; gap: var(--space-3); }
+.perf-effort-table { width: 100%; }
+.perf-h3 { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); }
+
+/* The spreads: a short bar chart per figure, lowest bin first, the fullest bin at full height. */
+.perf-spread-cell { min-width: 96px; }
+.perf-spread-figure { display: flex; flex-direction: column; gap: 2px; margin: 0; width: 100%; min-width: 80px; }
+.perf-spread {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: 1px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: var(--stroke-thin) solid var(--color-border-strong);
+}
+.perf-spread-slot { position: relative; height: 100%; display: flex; align-items: flex-end; }
+.perf-spread-slot:hover { background: var(--color-border); }
+.perf-spread-fill { display: block; width: 100%; min-height: 0; background: var(--color-ink-muted); border-radius: 1px 1px 0 0; }
+.perf-spread-axis { white-space: nowrap; display: flex; justify-content: space-between; gap: var(--space-2); color: var(--color-ink-muted); font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); font-variant-numeric: tabular-nums; }
+
+.perf-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+@container insights (min-width: 768px) {
+  .perf-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.perf-chart-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.perf-chart-list { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; }
+.perf-chart-line { display: grid; grid-template-columns: 7ch minmax(0, 1fr); align-items: start; gap: var(--space-3); }
+.perf-chart-line dt { margin: 0; color: var(--color-ink-2); font-size: var(--fs-mono); }
+.perf-chart-line dd { margin: 0; min-width: 0; }
+
+/* Stacked (under 560px of pane): the open control spans the block; the spread takes the full line. */
+@container insights (max-width: 559px) {
+  .perf-open { margin: 0; width: 100%; }
+  .perf-fig { align-items: flex-end; text-align: right; }
+  .md .cost-table-stack td.perf-spread-cell { display: block; }
+  .perf-spread-cell::before { display: block; margin-bottom: var(--space-1); }
+  .md .perf-detail-row > td { padding: var(--space-2); }
+  .perf-detail-row { display: block; }
+}

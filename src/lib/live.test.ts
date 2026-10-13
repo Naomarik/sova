@@ -48,15 +48,15 @@ function feed(set: SetStoreFunction<LiveState>, ev: Record<string, unknown>): vo
     applyEvent(set, ev as LiveEvent);
     return;
   }
-  const { entryId, ...event } = ev;
-  // As the server sends it: the entry id on the frame, through JSON.
-  const v1: V1EventFrame = JSON.parse(JSON.stringify({ type: "event", event, ...(typeof entryId === "string" ? { entryId } : {}) }));
+  const { entryId, reply, ...event } = ev;
+  // As the server sends it: the entry id and a measured reply's timing on the frame, through JSON.
+  const v1: V1EventFrame = JSON.parse(JSON.stringify({ type: "event", event, ...(typeof entryId === "string" ? { entryId } : {}), ...(reply ? { reply } : {}) }));
   const events =
     path === "v1"
       ? liveEventsOf(v1)
       : path === "v2"
         ? fromV1(v1).flatMap((e) => liveEventsOf(JSON.parse(JSON.stringify({ type: "event", v: 2, event: e }))))
-        : fromV1({ event: ev });
+        : fromV1({ event: { ...event, ...(entryId !== undefined ? { entryId } : {}) }, ...(reply ? { reply: reply as V1EventFrame["reply"] } : {}) });
   for (const e of events) applyEvent(set, e);
 }
 
@@ -666,6 +666,20 @@ test("a message_end's entry id names the live row it becomes: the reply, and the
   feed(set, { type: "message_start", message: { role: "user", content: "second" } });
   feed(set, { type: "message_end", message: { role: "user", content: "second" } });
   assert.equal(s.entries[1]?.kind === "user" && s.entries[1].entryId, undefined);
+});
+
+test("a measured reply's end carries its timing to the live row, with the time it ended; an unmeasured one carries neither", () => {
+  const [s, set] = store();
+  const timing = { effort: "high", ttftMs: 900, thinkingMs: 0, replyMs: 2000, output: 300 };
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1", reply: timing });
+  const measured = s.entries.at(-1);
+  assert.deepEqual(measured?.kind === "assistant" && measured.reply, timing);
+  assert.ok(measured?.kind === "assistant" && measured.endedAt && !Number.isNaN(Date.parse(measured.endedAt)));
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "again" }], stopReason: "stop" }, entryId: "a2" });
+  const plain = s.entries.at(-1);
+  assert.equal(plain?.kind === "assistant" && (plain.reply ?? plain.endedAt), undefined);
 });
 
 test("a codemode script's own calls are no live tools; the script's updates carry its calls as details", () => {

@@ -1127,6 +1127,7 @@ export function App() {
                     onOpenDetails={openDetailsFor}
                     onOpenAgents={openAgentsFor}
                     costs={(insightsRoute() as { costs?: CostsQuery } | null)?.costs ?? null}
+                    performance={(insightsRoute() as { performance?: CostsQuery } | null)?.performance ?? null}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}

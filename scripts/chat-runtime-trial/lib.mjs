@@ -234,7 +234,8 @@ const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 /**
  * darwin's stand-in for the server unit: a launchd agent of our own label (test.sova-s5-<tag>, never the
  * live install's), set up as the live agent is (KeepAlive on a failed exit, ExitTimeOut 30, 8192 files,
- * Interactive). `restart()` is `launchctl kickstart -k`; `down()` boots it out. Its plist lives beside
+ * Interactive), but with ThrottleInterval 2: by default launchd waits 10 s before it restarts a job that just
+ * crashed. `restart()` is `launchctl kickstart -k`; `down()` boots it out. Its plist lives beside
  * its log, in the scratch dir.
  */
 export function launchdStandIn({ label, env, log, root = ROOT }) {
@@ -248,7 +249,7 @@ export function launchdStandIn({ label, env, log, root = ROOT }) {
       `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n` +
         `<key>Label</key><string>${xml(label)}</string>\n<key>ProgramArguments</key><array><string>${xml(start)}</string></array>\n` +
         `<key>WorkingDirectory</key><string>${xml(root)}</string>\n<key>EnvironmentVariables</key><dict>${Object.entries(env).map(([k, v]) => `<key>${xml(k)}</key><string>${xml(v)}</string>`).join("")}</dict>\n` +
-        `<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n<key>ExitTimeOut</key><integer>30</integer><key>ProcessType</key><string>Interactive</string>\n` +
+        `<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n<key>ExitTimeOut</key><integer>30</integer><key>ThrottleInterval</key><integer>2</integer><key>ProcessType</key><string>Interactive</string>\n` +
         `<key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>8192</integer></dict><key>HardResourceLimits</key><dict><key>NumberOfFiles</key><integer>8192</integer></dict>\n` +
         `<key>StandardOutPath</key><string>${xml(log)}</string><key>StandardErrorPath</key><string>${xml(log)}</string>\n</dict></plist>\n`,
     );

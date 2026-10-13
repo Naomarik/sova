@@ -151,7 +151,7 @@ const driver = opt("driver", mode === "unit" && !darwin ? "systemd" : "detached"
 if (driver === "systemd" && !userBus()) (console.error("--driver systemd needs the systemd user manager (none answers here)"), process.exit(2));
 const fixedPort = opt("port") ? Number(opt("port")) : null;
 // darwin: a short real path (/var is a link to /private/var, and deep /private/var/folders paths overrun the
-// 104-byte limit of a unix socket path).
+// 104-byte limit of a unix socket path, 104 included).
 const scratch = opt("scratch", darwin ? `/private/tmp/sova-t-${tag}` : join(process.env.TMPDIR || tmpdir(), `chat-runtime-trial-${tag}`));
 if (darwin) {
   // An ssh or Terminal shell has 256 open files; a server and its chats need more (raise it: ulimit -n 8192).
@@ -353,7 +353,7 @@ function sameProcess(path, pid1, label) {
   if (darwin && pid1) {
     apartFromServer(pid1, label);
     const sock = record(path)?.sock;
-    if (sock) R.check(Buffer.byteLength(sock) < 104, `${label}: the chat's socket path fits a unix socket (${Buffer.byteLength(sock)} bytes < 104: ${sock})`);
+    if (sock) R.check(Buffer.byteLength(sock) <= 104, `${label}: the chat's socket path fits a unix socket (${Buffer.byteLength(sock)} bytes, at most 104: ${sock})`);
   }
   if (driver === "systemd" && pid1) {
     const cg = (() => {

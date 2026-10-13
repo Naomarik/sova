@@ -25,7 +25,8 @@ cd $here || exit 2
 [[ -d .git ]] || { print -u2 "run-mac: $here is not a git checkout (t25 clones it)"; exit 2; }
 ulimit -n 8192 || { print -u2 "run-mac: cannot raise ulimit -n to 8192"; exit 2; }
 mise trust ./mise.toml >/dev/null 2>&1 || true
-command -v bun >/dev/null || { print -u2 "run-mac: no bun after mise trust (try: mise install)"; exit 2; }
+# The bun shim exists even when it resolves no version (outside a trusted checkout): ask it.
+bun --version >/dev/null 2>&1 || { print -u2 "run-mac: bun does not resolve after mise trust (try: mise install; mise which bun)"; exit 2; }
 command -v pi >/dev/null || print -u2 "run-mac: warning: no global pi on PATH (pi workers need it)"
 [[ -d node_modules ]] || pnpm install --frozen-lockfile || exit 2
 

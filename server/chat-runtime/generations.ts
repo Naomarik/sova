@@ -339,6 +339,16 @@ export function lastGood(root = codeRoot()): string | null {
   }
 }
 
+/** Whether copy `id` can start a chat process: finished (its `.complete` marker), with its shared
+    node_modules there too. A chat that can't start on the current copy starts on `lastGood()` only
+    when this holds and it is another copy (§app.chat-processes/code-generations). */
+export function isGenerationComplete(id: string, root = codeRoot()): boolean {
+  const dir = generationDir(id, root);
+  if (!isComplete(dir)) return false;
+  const lock = depsOf(dir);
+  return lock === null ? !existsSync(join(dir, "pnpm-lock.yaml")) : isComplete(join(root, DEPS, lock));
+}
+
 /**
  * Remove the copies nobody uses: not named in `keep` (the current generation, every build a chat or
  * worker process still runs), not `lastGood`, and older than `graceMs`; then the shared dependencies

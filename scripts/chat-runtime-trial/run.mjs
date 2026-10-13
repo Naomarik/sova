@@ -110,6 +110,7 @@ import {
   show,
   sleep,
   startMock,
+  sweep,
   tokenOf,
   userBus,
 } from "./lib.mjs";
@@ -278,6 +279,10 @@ async function teardown(s = srv, agentDir = agent) {
       try {
         process.kill(r.pid, "SIGKILL");
       } catch {}
+  // What no record names (a worker whose record went first, a tool or fake claude it started): every
+  // process of the agent dir. A failed check left such processes running before (report-s4 item 9).
+  const left = await sweep(agentDir, { mock: false });
+  if (left.length) R.note(`teardown: stopped ${left.length} process(es) no record named: ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 80)}`).join("; ")}`);
 }
 async function newChat(model = "trial/m1", cl = c, ms = 30000) {
   const { path } = await cl.api("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: proj }) });
@@ -1950,6 +1955,32 @@ async function t24() {
 
 const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, plumbing, real: () => t1(opt("model")) };
 let code = 0;
+let finished = null;
+/** Stops the server, every chat process and the mock, and writes results.json; once. */
+const finish = () =>
+  (finished ??= (async () => {
+    await teardown().catch(() => {});
+    if (driver === "systemd")
+      try {
+        execFileSync("systemctl", ["--user", "stop", slice]);
+      } catch {}
+    mock.stop();
+    await new Promise((ok) => (mock.child.exitCode !== null ? ok() : (mock.child.once("exit", ok), setTimeout(ok, 3000))));
+    // Anything of the scratch dir still running (another agent dir a check made, the mock).
+    const left = await sweep(scratch).catch(() => []);
+    if (left.length) R.note(`end: stopped ${left.length} process(es) left under the scratch dir: ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 80)}`).join("; ")}`);
+    const file = R.save({ asked: checks, mode, driver, slice: driver === "systemd" ? slice : null, knobs: KNOBS });
+    console.log(`\nresults: ${file}`);
+    if (!argv.includes("--keep") && code === 0 && R.checks.every((x) => x.ok !== false)) rmSync(join(scratch, "agent"), { recursive: true, force: true });
+  })());
+// A runner stopped from outside (the integration test's timeout, ^C) still stops what it started:
+// before, a check cut off this way left its chat and worker processes running (report-s4 item 9).
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"])
+  process.once(sig, () => {
+    R.check(false, `the runner ran to its end`, `stopped by ${sig}`);
+    console.log(`\nchat-runtime-trial: ${sig}, stopping what the trial started`);
+    finish().finally(() => process.exit(code || 1));
+  });
 try {
   await boot();
   for (const name of checks) {
@@ -1969,15 +2000,7 @@ try {
   console.error(`chat-runtime-trial: ${e instanceof Error ? e.stack : String(e)}`);
   code = 2;
 } finally {
-  await teardown().catch(() => {});
-  if (driver === "systemd")
-    try {
-      execFileSync("systemctl", ["--user", "stop", slice]);
-    } catch {}
-  mock.stop();
-  const file = R.save({ asked: checks, mode, driver, slice: driver === "systemd" ? slice : null, knobs: KNOBS });
-  console.log(`\nresults: ${file}`);
-  if (!argv.includes("--keep") && code === 0 && R.checks.every((x) => x.ok !== false)) rmSync(join(scratch, "agent"), { recursive: true, force: true });
+  await finish();
 }
 const failed = R.checks.filter((x) => x.ok === false).length;
 console.log(failed ? `\n${failed} check(s) failed` : "\nevery check passed");

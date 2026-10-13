@@ -4,7 +4,7 @@
 // ~/.pi or sova-runtime.service: every unit is named sova-trial-*, every chat unit lands in the
 // stand-in slice the caller names.
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -333,6 +333,50 @@ export function chatUnits(slice) {
     .map((l) => l.trim().split(/\s+/)[0])
     .filter((u) => show(u, "Slice") === slice)
     .map((u) => ({ unit: u, pid: Number(show(u, "MainPID")), state: show(u, "ActiveState"), cgroup: show(u, "ControlGroup") }));
+}
+
+/** Processes a trial under `root` (a scratch dir, or a root of several) left: every process whose
+    PI_CODING_AGENT_DIR lies under it (servers, chat processes, workers in either placement, their
+    tools and fake claudes) and, unless `mock` is false, the mock LLM logging there. Never this process or its ancestors. */
+export function strays(root, { mock: withMock = true } = {}) {
+  const under = (v) => v === root || v.startsWith(root.endsWith("/") ? root : `${root}/`);
+  const mine = new Set();
+  for (let p = process.pid; p > 1; ) {
+    mine.add(p);
+    try {
+      const st = readFileSync(`/proc/${p}/stat`, "utf8");
+      p = Number(st.slice(st.lastIndexOf(")") + 2).split(" ")[1]);
+    } catch {
+      break;
+    }
+  }
+  const out = [];
+  for (const d of readdirSync("/proc")) {
+    if (!/^\d+$/.test(d) || mine.has(Number(d))) continue;
+    try {
+      const env = readFileSync(`/proc/${d}/environ`, "utf8").split("\0");
+      const cmd = readFileSync(`/proc/${d}/cmdline`, "utf8").split("\0");
+      const agent = env.find((e) => e.startsWith("PI_CODING_AGENT_DIR="))?.slice("PI_CODING_AGENT_DIR=".length);
+      const mock = withMock && cmd.some((a) => a.endsWith("mock-llm.mjs")) && cmd.some(under);
+      if ((agent && under(agent)) || mock) out.push({ pid: Number(d), cmd: cmd.join(" ").trim() });
+    } catch {}
+  }
+  return out;
+}
+
+/** Stops every stray of `root`: SIGTERM, then SIGKILL after `graceMs`. Returns what it found. */
+export async function sweep(root, { graceMs = 2000, mock = true } = {}) {
+  const found = strays(root, { mock });
+  for (const p of found)
+    try {
+      process.kill(p.pid, "SIGTERM");
+    } catch {}
+  if (found.length) await sleep(graceMs);
+  for (const p of strays(root, { mock }))
+    try {
+      process.kill(p.pid, "SIGKILL");
+    } catch {}
+  return found;
 }
 
 /** Results and a log, written as the report's raw evidence. */

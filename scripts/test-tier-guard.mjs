@@ -33,6 +33,20 @@ function testFile() {
 }
 
 const file = testFile();
+// A file's process never outlives its runner: started by run-tests.mjs (SOVA_TEST_RUNNER_PID), it ends
+// its own process group, children included, once its parent is another (the runner killed by SIGKILL,
+// which can't stop the groups itself). Polled every 2 s; whatever the guard's mode.
+const runner = Number(process.env.SOVA_TEST_RUNNER_PID);
+if (runner > 0 && process.ppid === runner)
+  setInterval(() => {
+    if (process.ppid === runner) return;
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      // not a group leader: only this process goes
+    }
+    process.exit(1);
+  }, 2000).unref();
 // A unit file's project engine takes the detached driver rather than probing systemd (a
 // `systemctl` child); integration files keep the real probe. Set whatever the guard's mode.
 if (file && !isIntegration(file)) process.env.SOVA_PROJECT_NO_SYSTEMD ??= "1";

@@ -463,7 +463,8 @@ export class ChatRuntimeHost {
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);
-    setReplyTimingsSource((sessionId) => this.ask("reply.timings", { sessionId }));
+    // A stage-2 server (proto 1) knows no such ask: it gets none, and the rows go without timings.
+    setReplyTimingsSource((sessionId) => (this.speaksSpecial() ? this.ask("reply.timings", { sessionId }) : Promise.resolve(null)));
     setCodeReload((client) => this.reloadNow(client));
     (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (sessionId: string) => this.liveIds.has(sessionId);
   }

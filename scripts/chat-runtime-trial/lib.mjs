@@ -20,7 +20,8 @@ export { sleep };
 
 // What the stage-2 server reads (stage2-design.md §8, §10). One place, so a renamed knob is one edit.
 export const KNOBS = {
-  /** The per-server switch: "out" runs ordinary chats in their own process. */
+  /** The old per-server switch, gone with Part B (every chat runs in a process of its own); tdefault sets
+      a stale value to see it ignored. */
   switch: "SOVA_CHAT_HOST",
   /** "detached" (test-only): chats run as setsid children instead of systemd units, so a trial
       survives a server restart with no user bus. */
@@ -136,18 +137,16 @@ export async function startMock({ port, log, step }) {
 export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 /** The server's environment: the scratch agent dir, the knobs, and nothing that names a real login
-    or key (only the mock, or an auth.json copied in, may answer). `on`: the switch; `driver`:
+    or key (only the mock, or an auth.json copied in, may answer). `driver`:
     "detached" or "systemd" (then `slice` is the stand-in slice); `idleMs`, `build`, `failBoot`. */
-export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, claude, liveLike = false, extra = {} }) {
+export function serverEnv({ agent, port, driver, slice, idleMs, build, failBoot, claude, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
   // No network: no price fetch, no usage poll (it would ask Claude with whatever login it finds).
   Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off", SOVA_USAGE_POLL: "off" });
   // `claude`: fakeClaude()'s dirs: the fake first on PATH, its login as the default one.
   if (claude) Object.assign(env, { PATH: `${claude.claudeBin}:${env.PATH ?? ""}`, CLAUDE_CONFIG_DIR: claude.claudeLogin });
-  // `liveLike` (T26): no switch, as on the live server once chats run in their own processes by default.
-  if (on && !liveLike) env[KNOBS.switch] = "out";
-  if (on && driver === "detached") env[KNOBS.driver] = "detached";
-  if (on && slice) env[KNOBS.slice] = slice;
+  if (driver === "detached") env[KNOBS.driver] = "detached";
+  if (slice) env[KNOBS.slice] = slice;
   if (idleMs !== undefined) env[KNOBS.idle] = String(idleMs / 60_000);
   if (build) env[KNOBS.build] = build;
   if (failBoot) env[KNOBS.failBoot] = failBoot;
@@ -171,7 +170,7 @@ export { sc, show };
  * The hermetic server, supervised like sova-runtime.service but as a stand-in transient unit
  * (sova-trial-server-<tag>.service, KillMode=control-group, as the real unit has): `restart()` is
  * `systemctl --user restart`, so anything left in the server's cgroup dies as it would in a real
- * restart. mode "child" runs it as a plain child instead (no user bus: the switch-off check). `root`: the
+ * restart. mode "child" runs it as a plain child instead (no user bus needed; chats on the detached driver). `root`: the
  * tree it runs from (default ROOT; T25 runs a git clone it edits).
  */
 export function server({ tag, env, mode = "unit", log, root = ROOT, liveLike = false }) {

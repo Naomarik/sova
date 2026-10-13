@@ -22,8 +22,7 @@
 //     t4        new code (SOVA_BUILD a → b): "older" in the pane, Reload now, automatic reload at a
 //               quiet moment, never mid-reply; the new process reports b
 //     t4fail    a replacement that fails to boot: the rollout halts, the old process stays, "failed"
-//     t5        the switch off: today's behaviour (the restart cuts the reply off; one "continue")
-//     t6        (T6', stage 3) with the switch on, the Overseer, a project overseer, a baton and a
+//     t6        (T6', stage 3) the Overseer, a project overseer, a baton and a
 //               powers chat each run in a process (a unit) of their own; a worker's session is a worker
 //               chat (stage 4), never opened as an ordinary chat
 //     t7        q5: a server-hosted action cut by a restart reports "outcome unknown" and ran once
@@ -68,11 +67,9 @@
 //     t21h      /compact-handoff on a claude-code-cli parent (the fake claude): the fork resumes its CLI
 //               session, the note is saved, it compacts, the fork's usage is under the parent
 //     t21l      browser-drive F10/F11: an idle parent's /btw row reaches the open pane live; an idle
-//               parent's process restart leaves the pane no "not reachable" alert (t21loff: switch off, F10)
+//               parent's process restart leaves the pane no "not reachable" alert
 //     t21r      F14: a prompt sent as a rollout reload begins (pane attached) runs once or is refused back to
 //               the pane, never lost
-//     t22       the switch off: workers are lowered children of the server; a mode switch keeps them; a
-//               restart ends them (restored, interrupted); agent_resume reopens one, which takes a steer
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
 //     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
 //               it ends
@@ -85,7 +82,7 @@
 //     trestart  Part C C1 (--mode unit): with a reply and a worker running, the operator's confirmed Apply on
 //               a scratch project's slot 0 adopting the trial's stand-in unit is not refused as busy and
 //               restarts the server within seconds; chats and worker keep their processes, nothing resumed
-//     tdefault  Part B/C B4/B1: no switch, and SOVA_CHAT_HOST=off: chats and workers still run in processes
+//     tdefault  Part B/C B4/B1: no switch, and a stale SOVA_CHAT_HOST=off: chats and workers still run in processes
 //               of their own, never in the server or as its children
 //     tserverless  Part B 5e(a): with the server stopped for good, a quiet chat exits after the (shortened)
 //               idle time, one mid-reply runs on until its reply ends; the next server sees no death
@@ -147,7 +144,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t21r", "t22", "t23", "t24", "t25", "t27", "tdefault", "tserverless", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t23", "t24", "t25", "t27", "tdefault", "tserverless", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -258,13 +255,16 @@ async function boot(o = {}) {
   // A share listener of its own on loopback, so a trial can post as a baton's participant.
   const sharePort = await freePort();
   const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
-  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
+  const env = serverEnv({ agent: o.agent ?? agent, port, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
   const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`), root: o.root, liveLike });
   s.up();
   await healthy(url);
-  if (liveLike && !o.agent && (o.on ?? true)) {
+  if (liveLike && !o.agent) {
+    // No switch: chats run in processes of their own, on systemd user units where the user manager
+    // answers (the stand-in unit's), else detached (darwin).
     const h = await fetch(`${url}/api/health`).then((r) => r.json()).catch(() => null);
-    R.check(h?.chatHost?.mode === "out", `live-like: with no switch set, chats run out of the server (health chatHost ${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
+    const want = darwin ? "detached" : driver;
+    R.check(h?.chatHost?.driver === want && h?.chatHost?.bun !== false, `live-like: with no switch set, chats run in processes of their own on the ${want} driver (health chatHost ${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
   }
   const cl = client(url, tokenOf(o.agent ?? agent));
   if (!o.agent) {
@@ -688,31 +688,6 @@ async function t4fail() {
   await boot();
 }
 
-async function t5() {
-  await teardown();
-  await boot({ on: false });
-  const { path, s } = await newChat();
-  prompt(s, "[long 30 #off] a long reply");
-  await s.until(delta(/part 5\//), 60000, "streaming");
-  R.check(!record(path), "t5: no chat process was started");
-  s.close();
-  await restart();
-  for (let i = 0; i < 60 && !resumeDecisions(path).length; i++) await sleep(500);
-  const ds = resumeDecisions(path);
-  R.check(mockLog(mock.log).some((e) => e.event === "cut-off"), "t5: the restart cut the reply off (as today)");
-  R.check(ds.length === 1 && ds[0].outcome === "ok", `t5: auto-resume resumed the chat once (${fmtDecisions(ds)})`);
-  if (ds[0]?.outcome === "ok") {
-    const s2 = await chat(c, path);
-    await settled(s2, 0, 60000).catch(() => {});
-    await sleep(1500);
-    const asked = mockLog(mock.log).filter((e) => e.scenario && /server restarted/i.test(e.userText ?? "")).length;
-    R.check(asked === 1 && userEntriesWith(path, RESUME_TEXT) === 1, `t5: the "continue" message was delivered exactly once (model asked ${asked}×, session holds it ${userEntriesWith(path, RESUME_TEXT)}×)`);
-    s2.close();
-  }
-  await teardown();
-  await boot();
-}
-
 async function t7() {
   // Needs the server's test-only served tool (trial_served_sleep, on with SOVA_CHAT_TEST_SERVED=1).
   await teardown();
@@ -864,7 +839,7 @@ async function batonSetup() {
   return { o, b, sid: b.sessionId, path: b.path };
 }
 
-// T6': with the switch on, the Overseer, a project overseer, a baton and a powers chat each run in a
+// T6': the Overseer, a project overseer, a baton and a powers chat each run in a
 // process of their own; a worker's session file stays in the server.
 async function t6() {
   // Chats an earlier check left running on this server are not this check's.
@@ -1399,7 +1374,7 @@ function usageRecords() {
   return out;
 }
 
-// T17: a worker survives a server restart (switch on): a chat process of its own, never the parent's
+// T17: a worker survives a server restart: a chat process of its own, never the parent's
 // descendant, same pid, its reply streamed once, its completion delivered once, no `--mode rpc`.
 // `claude`: the same for a claude-code worker (scripts/fake-claude.mjs answers it).
 async function t17(claude = false) {
@@ -1829,18 +1804,13 @@ async function t21c() {
 /** A refusal of the prompt `clientId` among `frames` (an error frame, code refused, naming it), or null. */
 const refusedFor = (frames, clientId) => frames.find((m) => m.type === "error" && m.code === "refused" && (m.clientId === clientId || JSON.stringify(m).includes(clientId))) ?? null;
 
-// T21l (browser drive F10, F11), on the chat-process path or (`on` false) the in-server one:
+// T21l (browser drive F10, F11):
 //   F10: an idle parent's /btw answer reaches the open pane live, as an `append` of its row;
 //   F11 (the drive's step): the parent idle, /btw sent and at once an outside SIGTERM to the parent's
-//        process (chat-process path only: in the server there is no process to exit); the pane
-//        reconnects at once, as a page does, with no turn-error alert, and the answer is in the file
-//        once and reaches the pane live.
-async function t21l(on = true) {
-  const label = on ? "t21l" : "t21loff";
-  if (!on) {
-    await teardown();
-    await boot({ on: false });
-  }
+//        process; the pane reconnects at once, as a page does, with no turn-error alert, and the answer
+//        is in the file once and reaches the pane live.
+async function t21l() {
+  const label = "t21l";
   const { path, s } = await newChat();
   await turn({ path, s }, "say ok");
   const f0 = s.got.length;
@@ -1850,7 +1820,7 @@ async function t21l(on = true) {
     .catch(() => null);
   const saved = entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes(`BTW-ANSWER ${label}`));
   R.check(row && saved, `${label} (F10): the /btw answer reached the open pane live (${row ? "append" : "no append"}; in the file: ${saved})`);
-  if (on) {
+  {
     // The drive's step: the parent idle, /btw sent, and at once an outside SIGTERM to the parent's
     // process (an exit, not a reload).
     const pid1 = chatPid(path);
@@ -1878,11 +1848,6 @@ async function t21l(on = true) {
     R.check(chatPid(path) !== pid1 && bad.length === 0, `${label} (F11): after /btw and an exit of the idle parent's process the pane reconnects with no turn-error alert (pid ${pid1} → ${chatPid(path)}; ${bad.map((m) => JSON.stringify(m).slice(0, 160)).join(" | ") || "none"})`);
     await turn({ path, s: s2 }, "say ok after");
     s2.close();
-  } else {
-    R.note(`${label} (F11): not applicable with the switch off (the chat runs in the server: no process of its own to restart)`);
-    s.close();
-    await teardown();
-    await boot();
   }
 }
 
@@ -1982,59 +1947,6 @@ async function t21h() {
   R.check(fresh.some((r) => hoId && r.worker === hoId && /^claude/.test(r.src)), `t21h: the fork's Claude Code usage is recorded under the parent as its hidden chat ${hoId}`);
   noRpc("t21h");
   s.close();
-}
-
-// T22: the switch off: workers are detached children of the server (child placement), lowered; a
-// parent mode switch keeps them; a server restart ends them, the parent lists them restored
-// (interrupted mid-run); agent_resume reopens one, idle, and it takes a steer; ordinary chats stay in
-// the server.
-async function t22() {
-  await teardown();
-  await boot({ on: false, extra: { SOVA_WORKER_NICE: "15" } });
-  // The first open waits for the boot's take-back of what earlier checks left (bounded at 2 min).
-  const t0 = Date.now();
-  const { path, s } = await newChat("trial/m1", c, 130000);
-  R.note(`t22: the first chat opened ${Math.round((Date.now() - t0) / 1000)} s after boot`);
-  R.check(!record(path), "t22: the ordinary chat runs in the server (no chat process)");
-  prompt(s, "[spawn 1 100 #t22w] start a worker");
-  await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
-  const w = await workerWith(path, "#t22w");
-  if (!R.check(w, "t22: the server records the worker")) return;
-  R.check(w.placement === "child", `t22: the worker has child placement (${w.placement})`);
-  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t22w"), 60000);
-  const wpid = chatPid(w.path);
-  R.check(wpid && wpid !== srv.pid(), `t22: the worker is a process of its own (${wpid}, server ${srv.pid()})`);
-  R.check(wpid && niceOf(wpid) === 15 && niceOf(wpid) > niceOf(srv.pid()), `t22: the worker is lowered to the worker niceness (SOVA_WORKER_NICE=15), below the server (nice ${niceOf(wpid)} vs ${niceOf(srv.pid())})`);
-  noRpc("t22");
-  // A parent mode switch (applied at the next message: session.reload in the server) keeps the worker.
-  await settled(s, 0, 60000);
-  const switched = await post(`/api/mode?path=${encodeURIComponent(path)}`, { mode: "delegate" }).then(() => "ok", (e) => String(e.message ?? e));
-  await turn({ path, s }, "say ok after the switch");
-  await sleep(2000);
-  R.check(alive(wpid) && chatPid(w.path) === wpid, `t22: a parent mode switch (${switched}) kept the worker (${wpid})`);
-  await post(`/api/mode?path=${encodeURIComponent(path)}`, { mode: "normal" }).catch(() => {});
-  s.close();
-  await restart();
-  await waitFor(() => !alive(wpid), 20000);
-  R.check(!alive(wpid), `t22: the server's restart ended the worker (${wpid})`);
-  const p = { path, s: await chat(c, path) };
-  const list = await agentList(p);
-  const me = list.find((a) => a.name === "trial-t22w");
-  R.check(me?.restored && me.interruptedAt, `t22: the parent lists the worker restored, interrupted (${JSON.stringify(me)?.slice(0, 200)})`);
-  if (me) {
-    const r = await turn(p, `[call agent_resume ${JSON.stringify({ id: me.id })}]`);
-    R.check(r.length === 1 && !r[0].message.isError, `t22: agent_resume answered (${resultText(r[0])})`);
-    await sleep(3000);
-    const again = (await agentList(p)).find((a) => a.id === me.id);
-    R.check(again && !again.restored && again.status === "waiting", `t22: the resumed worker is live and idle (${again?.status})`);
-    await turn(p, `[call agent_steer ${JSON.stringify({ id: me.id, message: "STEER-T22 say ok" })}]`);
-    await waitFor(() => asksWith("STEER-T22").length > 0, 60000);
-    await sleep(4000);
-    R.check(asksWith("STEER-T22").length === 1, "t22: the resumed worker took the steer once");
-  }
-  p.s.close();
-  await teardown();
-  await boot();
 }
 
 // T23: idle stop of a waiting worker: its process exits (no death), agent_list still says waiting,
@@ -2573,14 +2485,14 @@ async function trestart() {
 }
 
 // Tdefault (Part B/C, B4 and B1): chats in processes of their own by default, with no in-server path:
-// no switch set, and then the old switch-off value set, the server reports chats out of process, an
+// no switch set, and then the old switch-off value set (now ignored), the server reports a chat driver, an
 // ordinary chat and its worker each run in a process of their own, and neither is the server's child.
 async function tdefault() {
   for (const [label, extra] of [["no switch", {}], ["SOVA_CHAT_HOST=off", { [KNOBS.switch]: "off" }]]) {
     await teardown();
-    await boot({ on: false, extra: { [KNOBS.driver]: "detached", ...extra } });
+    await boot({ extra: { [KNOBS.driver]: "detached", ...extra } });
     const h = await c.api("/api/health").catch(() => null);
-    R.check(h?.chatHost?.mode === "out", `tdefault (${label}): the server reports chats out of process (${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
+    R.check(h?.chatHost?.driver === "detached" && h?.chatHost?.bun !== false && !("mode" in (h?.chatHost ?? {})), `tdefault (${label}): health reports the chat driver, no in/out mode (${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
     const { path, s } = await newChat();
     prompt(s, "[spawn 1 6 #tdw] start a worker");
     const w = await workerWith(path, "#tdw");
@@ -2806,7 +2718,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t21r, t22, t23, t24, t25, t27, trestart, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r, t23, t24, t25, t27, trestart, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

@@ -392,6 +392,46 @@ test("F14: a request the server never answers holds the close only for the bound
   t.ctl.server.close();
 });
 
+test("5e: with no server linked, a quiet chat exits by itself after the idle-stop time, as an idle stop; a linked one never does", async () => {
+  const logs: string[] = [];
+  const t = await setup({ settings: { idleStopMin: 0.001 }, log: (l) => logs.push(l) });
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  tick();
+  await settle(120);
+  tick();
+  await settle();
+  assert.deepEqual(t.exits, [], "a server is linked: the server decides");
+  t.ctl.drop();
+  await settle();
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, ["idle"]);
+  assert.ok(logs.some((l) => /no server, and quiet for 0.001 min: closing/.test(l)), logs.join("\n"));
+});
+
+test("5e: with no server linked, a chat with something in flight keeps running", async () => {
+  const t = await setup({ settings: { idleStopMin: 0.001 } });
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  t.ctl.drop();
+  await settle();
+  // A run in flight (its turn starting stands in for a reply).
+  const chat = t.host.heldChat()!;
+  (chat as unknown as { starting: Promise<void> | null }).starting = new Promise(() => {});
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, []);
+  (chat as unknown as { starting: Promise<void> | null }).starting = null;
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, ["idle"], "once nothing is in flight");
+});
+
 test("code: older than the server's build shows the badge and asks for a reload once quiet and alone", async () => {
   const t = await setup({ build: "a", serverBuild: "b" });
   const reloads = collect(t.ctl.server, "reload.request");

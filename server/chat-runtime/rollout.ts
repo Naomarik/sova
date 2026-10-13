@@ -53,6 +53,8 @@ export type ReloadOutcome = "reloaded" | "refused" | "failed" | "halted" | "gone
 export class Rollout<L = unknown> {
   private chain: Promise<unknown> = Promise.resolve();
   private queued = new Map<string, Promise<ReloadOutcome>>();
+  /** Chats whose queued reload a Reload now asked for (or joined): run as one, whatever the first ask was. */
+  private readonly manual = new Set<string>();
   /** A chat moved onto new code since the last collection. */
   private moved = false;
   /** Why automatic reloads stopped for this server's life, once one failed. */
@@ -66,10 +68,16 @@ export class Rollout<L = unknown> {
   request(chatId: string, opts: { auto: boolean }): Promise<ReloadOutcome> {
     const held = this.queued.get(chatId);
     if (held) {
+      // A Reload now joining a queued automatic one makes it a Reload now (a halt never skips it).
+      if (!opts.auto) this.manual.add(chatId);
       this.log(`${chatId}: asked again while its reload is under way: that one answers`);
       return held;
     }
-    const run = this.chain.then(() => this.reload(chatId, opts.auto));
+    if (!opts.auto) this.manual.add(chatId);
+    const run = this.chain.then(() => {
+      const auto = !this.manual.delete(chatId);
+      return this.reload(chatId, auto);
+    });
     this.queued.set(chatId, run);
     this.chain = run.catch(() => undefined);
     const settled = (outcome: ReloadOutcome | null) => {
@@ -86,7 +94,10 @@ export class Rollout<L = unknown> {
 
   private async reload(chatId: string, auto: boolean): Promise<ReloadOutcome> {
     const { supervisor: sup } = this.deps;
-    if (auto && this.halted) return "halted";
+    if (auto && this.halted) {
+      this.log(`${chatId}: no automatic reload: automatic reloads stopped this server life`);
+      return "halted";
+    }
     if (!sup.record(chatId)) {
       this.log(`${chatId}: no reload: no process of it is recorded`);
       return "gone";

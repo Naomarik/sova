@@ -214,12 +214,14 @@ export class SessionLimits {
  */
 export class RunState {
   readonly turns = new UserTurns();
-  private hops = new Map<string, number>();
+  /** Hops of session messages handed in and not seen yet, per text, oldest first: several can be in pi
+      at once (steers land together), and they enter in the order they were handed in. */
+  private hops = new Map<string, number[]>();
   hop = 0;
   constructor(private readonly limits: SessionLimits) {}
   /** The chat runtime is about to hand in a message another session sent. */
   expectHop(text: string, hop: number): void {
-    this.hops.set(text, hop);
+    this.hops.set(text, [...(this.hops.get(text) ?? []), hop]);
   }
   observe(event: TurnEvent): void {
     if (event.type === "run.start") {
@@ -229,9 +231,10 @@ export class RunState {
     if (event.type === "message.start") {
       const t = userMessageText(event.handle);
       if (t !== null) {
-        const h = this.hops.get(t);
+        const waiting = this.hops.get(t);
+        const h = waiting?.shift();
+        if (waiting && !waiting.length) this.hops.delete(t);
         if (h !== undefined) {
-          this.hops.delete(t);
           this.hop = h;
         } else if (!parseWakeNudge(t.trim())) this.hop = 0;
       }

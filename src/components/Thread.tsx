@@ -4,7 +4,7 @@ import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared
 import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
-import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
+import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState, shownUserState } from "../lib/live";
 import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
@@ -1159,7 +1159,7 @@ export function LiveEntries(props: {
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
       the server has already taken (`delivered`) is never asked: nothing can be recalled then, and
       a disabled Remove under every message you ever sent is an affordance that lies. */
-  queueActions?: (row: { id?: string; state: LiveUserState; text: string }) => MessageActionItem[];
+  queueActions?: (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }) => MessageActionItem[];
 }) {
   const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
   const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide()) && (!compressWork() || b.type !== "text" || !!b.text);
@@ -1248,7 +1248,7 @@ export function LiveEntries(props: {
                     <div class="message-actions-host">
                       <UserTurn
                         text={e().attachments ? stripPastedPaths(e().text) : e().text}
-                        state={e().state}
+                        state={shownUserState(e())}
                         origin={e().origin}
                         overseer={e().overseer}
                         fromSession={e().fromSession}

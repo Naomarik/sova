@@ -172,12 +172,12 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "queue-one-bit",
     kind: "semantic",
     relies:
-      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups. peekQueuedMessages() exists and is unused.",
+      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P25) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
     pi: ["Agent.hasQueuedMessages", "Agent.continue", "Agent.peekQueuedMessages", "AgentSession.getSteeringMessages", "AgentSession.getFollowUpMessages", "AgentSession.clearQueue"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.queue" },
       { file: "server/queue.ts", symbol: "SdkQueueView" },
-      { file: "server/queue.ts", symbol: "WebQueue.sdkHolds" },
+      { file: "server/queue.ts", symbol: "WebQueue.sdkTookHanded" },
     ],
     canary: "P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first",
     retireWhen: "Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity",
@@ -374,6 +374,21 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [{ file: "server/harness/pi/own-code.ts", symbol: "patchResolve" }, { file: "server/harness/pi/own-code.ts", symbol: "installOwnCode" }],
     canary: "P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy",
     retireWhen: "pi's loader takes a path-mapping hook for discovered extensions",
+  },
+  {
+    id: "P25",
+    name: "steer-all",
+    kind: "monkey-patch",
+    relies:
+      "pi builds the agent's steering mode from settingsManager.getSteeringMode() (createAgentSession) and reads it again on AgentSession.reload() (syncQueueModesFromSettings, after settingsManager.reload()), so replacing that getter on a runtime's own settings object makes every queued steer land in one step (PendingMessageQueue in \"all\" mode), survives a reload, and writes nothing to settings.json; follow-ups keep pi's one-at-a-time.",
+    pi: ["SettingsManager.getSteeringMode", "AgentSession.reload", "AgentSession.syncQueueModesFromSettings", "createAgentSession", "PendingMessageQueue.peek"],
+    where: [
+      { file: "server/harness/pi/queue-modes.ts", symbol: "steerAllAtOnce" },
+      { file: OPEN, symbol: "servicesForCwd" },
+      { file: "server/queue.ts", symbol: "WebQueue.pumpOnce" },
+    ],
+    canary: "P25 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode",
+    retireWhen: "pi takes a steering mode per session that no settings reload resets",
   },
   {
     id: "T1",

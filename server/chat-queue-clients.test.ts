@@ -29,6 +29,7 @@ mkdirSync(cwd, { recursive: true });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { playbookTurnText } = await import("../src/lib/playbooks");
+const { HANDED_REFUSAL } = await import("./queue");
 
 after(async () => {
   await disposeAllChats();
@@ -157,11 +158,10 @@ describe("the queue, seen by two tabs on one chat", () => {
   });
 
   test("a SERVER-originated prompt mid-turn goes through Sova's queue, not straight to the SDK", async () => {
-    // The invariant clearQueue() depends on: AT MOST ONE Sova item inside the SDK, across BOTH
-    // kinds. `acceptPrompt` is the path a group batch prompt and a remote status probe take
-    // (server/group-prompt.ts), and it used to hand a follow-up straight to `session.prompt()`
-    // whenever the session was streaming — which would put a second item of ours in the SDK
-    // beside a queued steer and make a removal of either one unable to use clearQueue at all.
+    // Every mid-turn message goes through the queue, whatever its sender: `acceptPrompt` is the
+    // path a group batch prompt and a remote status probe take (server/group-prompt.ts), and it
+    // used to hand a follow-up straight to `session.prompt()` whenever the session was streaming,
+    // past the order the queue keeps (no follow-up of ours beside our steers, server/queue.ts).
     const { chat, mine } = await twoClients();
     Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
     mine.length = 0;
@@ -174,6 +174,30 @@ describe("the queue, seen by two tabs on one chat", () => {
     assert.equal(piSession(chat).pendingMessageCount, 0, "the SDK holds nothing of ours");
     const snap = mine.find((m) => m.type === "queue") as Extract<ChatServerMessage, { type: "queue" }>;
     assert.deepEqual(snap.items.map((i) => [i.kind, i.state, i.origin]), [["followUp", "queued", "server"]]);
+  });
+
+  test("the composer's mid-turn messages are steers that land together in pi, each its own; a follow-up waits behind them", async () => {
+    // What the SDK holds of ours is ONE KIND at a time, in the order sent: every waiting steer goes
+    // in behind the steers pi still holds (they reach the model at its next step together), and a
+    // follow-up is never handed in beside them.
+    const { chat, me, mine } = await twoClients();
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
+    mine.length = 0;
+    chat.handle(me, { type: "steer", text: "one more thing", clientId: "k1" });
+    chat.handle(me, { type: "steer", text: "and another", clientId: "k2" });
+    chat.acceptPrompt("a group batch prompt");
+    await until(() => piSession(chat).getSteeringMessages().length === 2);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual([...piSession(chat).getSteeringMessages()], ["one more thing", "and another"], "both steers are in pi, in order");
+    assert.deepEqual([...piSession(chat).getFollowUpMessages()], [], "the follow-up is still Sova's");
+    assert.deepEqual(chat.queue.snapshot().map((i) => [i.id.startsWith("k") ? i.id : "batch", i.kind, i.state]), [["k1", "steer", "sending"], ["k2", "steer", "sending"], ["batch", "followUp", "queued"]]);
+    // Handed over, a message is no longer removable on its own: Stop takes it back.
+    mine.length = 0;
+    chat.handle(me, { type: "queue_remove", id: "r1", itemId: "k2" });
+    await until(() => mine.some((m) => m.type === "queue_remove_refused"));
+    const refused = mine.find((m) => m.type === "queue_remove_refused") as Extract<ChatServerMessage, { type: "queue_remove_refused" }>;
+    assert.deepEqual([refused.reason, refused.message], ["internal", HANDED_REFUSAL]);
+    assert.deepEqual([...piSession(chat).getSteeringMessages()], ["one more thing", "and another"], "nothing was taken out of pi");
   });
 
   test("a playbook sent mid-turn is a FOLLOW-UP behind the turn, never a steer into it", async () => {
@@ -207,9 +231,9 @@ describe("the queue, seen by two tabs on one chat", () => {
     // snapshot alone cannot carry that difference, so the REASON is broadcast, not addressed.
     const { chat, them, mine, theirs } = await twoClients();
     Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
-    // Two items: the first is handed to the SDK, the second stays held and is the one B removes.
-    chat.queue.enqueue({ kind: "steer", text: "first", origin: "client", id: "x1" });
-    chat.queue.enqueue({ kind: "steer", text: "second", origin: "client", id: "x2" });
+    // Two follow-ups: the first is handed to the SDK, the second stays held and is the one B removes.
+    chat.queue.enqueue({ kind: "followUp", text: "first", origin: "client", id: "x1" });
+    chat.queue.enqueue({ kind: "followUp", text: "second", origin: "client", id: "x2" });
     await until(() => chat.queue.snapshot().some((i) => i.id === "x2"));
     mine.length = 0;
     theirs.length = 0;

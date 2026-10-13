@@ -22,6 +22,7 @@ import {
   queuedText,
   runDetail,
   seedLive,
+  shownUserState,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -180,6 +181,17 @@ test("a snapshot turns our sent rows into queued ones, by id", () => {
     { id: "c1", text: "one", state: "queued", handed: false },
     { id: "c2", text: "two", state: "queued", handed: true },
   ]);
+});
+
+test("a row the server has handed to the agent shows Sending again: no longer removable on its own", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "one", [], [], "c1");
+  addPendingPrompt(set, "two", [], [], "c2");
+  applyQueue(set, [queued("c1", "one", { state: "sending" }), queued("c2", "two")]);
+  const shown = s.entries.flatMap((e) => (e.kind === "user" ? [[e.id, shownUserState(e)]] : []));
+  assert.deepEqual(shown, [["c1", "sending"], ["c2", "queued"]], "handed: Sending (no Remove); held: Queued");
+  assert.equal(shownUserState({ state: "delivered", handed: true }), "delivered");
+  assert.equal(shownUserState({ state: "sending" }), "sending");
 });
 
 test("a row the server never acknowledged stays sending, and is never offered as removable", () => {

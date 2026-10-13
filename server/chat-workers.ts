@@ -23,6 +23,8 @@ import { stateRoot } from "./state-root";
 export const WORKER_RING_MAX = 2000;
 /** A run that settled with nobody watching: after this, the parent chat is opened once to take it. */
 export const UNWATCHED_SETTLE_MS = 10_000;
+/** A parent that did not open for a settle is tried again after these (then it is the next server's). */
+const SETTLE_RETRY_MS = [10_000, 30_000, 90_000];
 /** How much of a dead worker's log its error keeps (§app.chat-processes/worker-crash). */
 const DEATH_LINES = 20;
 const DEATH_BYTES = 2048;
@@ -458,17 +460,27 @@ export class WorkerRegistry {
 
   /** A run settled and nobody watches: after a while, the parent chat is opened (once per settle)
       so its manager reattaches and takes the report. */
-  private unwatchedSettle(l: Live, key: string): void {
+  private unwatchedSettle(l: Live, key: string, retry = 0): void {
     if (l.watchers.size || l.opened.has(key)) return;
     if (l.settleTimer) clearTimeout(l.settleTimer);
-    l.settleTimer = setTimeout(() => {
-      l.settleTimer = null;
-      if (l.watchers.size || l.opened.has(key)) return;
-      l.opened.add(key);
-      this.seen(l, key);
-      log(`${l.rec.chatId} (${l.rec.parent.workerId}) settled with nobody watching: opening its parent`);
-      void this.openParent(l.rec.parent.path).catch((err) => log(`its parent ${l.rec.parent.path} did not open: ${err instanceof Error ? err.message : String(err)}`));
-    }, UNWATCHED_SETTLE_MS);
+    l.settleTimer = setTimeout(
+      () => {
+        l.settleTimer = null;
+        if (l.watchers.size || l.opened.has(key) || l.lastSettledKey !== key) return;
+        // Seen only once the parent opened: a failed open is tried again, and after the last try left to the next server.
+        l.opened.add(key);
+        log(`${l.rec.chatId} (${l.rec.parent.workerId}) settled with nobody watching: opening its parent`);
+        this.openParent(l.rec.parent.path).then(
+          () => this.seen(l, key),
+          (err) => {
+            l.opened.delete(key);
+            log(`its parent ${l.rec.parent.path} did not open: ${err instanceof Error ? err.message : String(err)}`);
+            if (retry < SETTLE_RETRY_MS.length) this.unwatchedSettle(l, key, retry + 1);
+          },
+        );
+      },
+      retry ? SETTLE_RETRY_MS[retry - 1]! : UNWATCHED_SETTLE_MS,
+    );
     l.settleTimer.unref?.();
   }
 

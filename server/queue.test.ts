@@ -50,6 +50,10 @@ class FakeSdk {
   streaming = true;
   /** A compaction is running: `QueueDeps.paused`, which pi's prompt() refusal makes necessary. */
   paused = false;
+  /** pi is emitting agent_settled (quirk P5): `QueueDeps.settling`. */
+  settling = false;
+  /** The key each hand-off carried, in order. */
+  readonly keys: (string | undefined)[] = [];
   handlerDelay = 0;
   /** Applied at hand-off, like the real input handlers + template expansion. null = swallowed. */
   transform: ((text: string) => string | null) | null = null;
@@ -67,6 +71,7 @@ class FakeSdk {
     await tick(this.handlerDelay);
     if (this.guardError) throw this.guardError;
     this.handed.push({ kind: item.kind, text: item.text, images: item.images?.length ?? 0, streaming });
+    this.keys.push(item.key);
     const expanded = this.transform ? this.transform(item.text) : item.text;
     if (expanded === null) return; // an input handler swallowed it
     if (!streaming) {
@@ -184,6 +189,7 @@ function rig(sdk = new FakeSdk()) {
     },
     streaming: () => sdk.streaming,
     paused: () => sdk.paused,
+    settling: () => sdk.settling,
     clearSdkQueue: () => sdk.clearQueue(),
     guard: () => {
       if (sdk.guardError) throw sdk.guardError;
@@ -898,6 +904,47 @@ describe("a compaction pauses the queue", () => {
     await settle();
     const drained = await r.queue.drain();
     assert.deepEqual(drained.steering, ["held"]);
+    assert.deepEqual(r.sdk.handed, []);
+  });
+});
+
+describe("a keyed item and pi's settle window (§app.chat-processes/worker-instructions)", () => {
+  test("a keyed item keeps its key to the hand-off, and waits out the settle window before it goes in", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "followUp", text: "keyed", origin: "server", id: "k", key: "w:s1" });
+    await settle();
+    assert.deepEqual(r.sdk.handed, [], "not handed over inside the window: its prompt would run unlabelled");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["k:queued"]);
+    r.sdk.settling = false; // the emit is over; nothing else wakes the queue
+    await settle();
+    assert.deepEqual(r.sdk.started, ["keyed"], "handed over once the window has passed");
+    assert.deepEqual(r.sdk.keys, ["w:s1"], "with its key");
+    assert.deepEqual(r.gone(r.one), [["k", "delivered"]]);
+  });
+
+  test("an unkeyed item goes in inside the window as before", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "followUp", text: "plain", origin: "client", id: "p" });
+    await settle();
+    assert.deepEqual(r.sdk.started, ["plain"]);
+    assert.deepEqual(r.sdk.keys, [undefined]);
+  });
+
+  test("a keyed item held for the window is still removable, and a close stops the look again", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "followUp", text: "keyed", origin: "server", id: "k", key: "w:s1" });
+    await settle();
+    assert.deepEqual(await r.queue.remove("k"), { ok: true, item: { id: "k", kind: "followUp", text: "keyed", origin: "server", key: "w:s1" } });
+    r.queue.enqueue({ kind: "followUp", text: "later", origin: "server", id: "l", key: "w:s2" });
+    r.queue.close();
+    r.sdk.settling = false;
+    await settle();
     assert.deepEqual(r.sdk.handed, []);
   });
 });

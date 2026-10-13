@@ -16,6 +16,9 @@ import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
 import { patchResolve } from "./own-code.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
+import { PiHarnessSession } from "./session.ts";
+import { SendKeys } from "../../send-keys.ts";
+import { WebQueue } from "../../queue.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -374,6 +377,54 @@ describe("pi contract", () => {
     assert.deepEqual(order, ["agent_end", "resolved", "agent_end"], "fixed: the prompt is no longer deferred (or no longer resolves at once)");
     assert.equal(lastUser(model.calls[1]!), "deferred");
     session.dispose();
+
+    // What Sova builds on it (§app.chat-processes/worker-instructions): a deferred prompt runs outside the
+    // async context of the call that made it, so a keyed send labels nothing there (send-keys.ts); a keyed
+    // item handed off from the queue during agent_settled waits the window out (queue.ts `settling`) and
+    // its delivered user message carries exactly that key, once.
+    const two = await quirkSession();
+    const harness = new PiHarnessSession({ session: two.session } as never);
+    const keys = new SendKeys();
+    keys.watch(harness);
+    let fired = false;
+    const queue = new WebQueue({
+      sdk: { hasQueued: () => harness.queue.hasQueued(), mirrorTotal: () => harness.queue.mirrorTotal(), mirrorFor: (k) => harness.queue.mirrorFor(k), mirrorHas: (k, t) => harness.queue.mirrorHas(k, t) },
+      streaming: () => harness.isRunning(),
+      settling: () => harness.inSettleWindow(),
+      clearSdkQueue: () => harness.queue.clear(),
+      guard() {},
+      wake() {},
+      // As ChatSession.handOffQueued: the SDK call inside the key's send; an idle one starts a turn, not awaited.
+      handOff: async (item, streaming) => {
+        const turn = keys.run(item.key, () => harness.send(item.text, streaming ? { delivery: item.kind } : undefined));
+        if (streaming) await turn;
+        else void turn.catch(() => {});
+      },
+      onGone() {},
+      onChange() {},
+      onHandOffError() {},
+    });
+    let unkeyedTwin: Promise<void> | undefined;
+    two.session.subscribe((e: any) => {
+      if (e.type !== "agent_settled" || fired) return;
+      fired = true;
+      // The control: a keyed send made straight into the window (no queue) is deferred and labels nothing.
+      unkeyedTwin = keys.run("w:direct", () => harness.send("direct in the window"));
+      queue.enqueue({ kind: "followUp", text: "keyed in the window", origin: "server", id: "q1", key: "w:s1" });
+    });
+    await two.session.prompt("first");
+    await until(() => two.model.calls.length >= 3, "the deferred and the held turns");
+    await unkeyedTwin;
+    await two.session.waitForIdle?.();
+    const userStarts = two.events.filter((e) => e.type === "message_start" && e.message?.role === "user");
+    const keyedOnes = userStarts.filter((e) => keys.keyOf(e.message) === "w:s1");
+    assert.equal(keyedOnes.length, 1, "the keyed hand-off's message carries its key, once");
+    assert.equal(userText(keyedOnes[0].message), "keyed in the window");
+    const direct = userStarts.find((e) => userText(e.message) === "direct in the window");
+    assert.ok(direct, "the deferred prompt ran");
+    assert.equal(keys.keyOf(direct.message), undefined, "fixed: a prompt deferred past the settle window now runs inside its sender's context");
+    queue.close();
+    two.session.dispose();
   });
 
   test("P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()", async () => {

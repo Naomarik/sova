@@ -114,11 +114,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P5",
     name: "settle-window",
     kind: "private-read",
-    relies: "_isEmittingAgentSettled is true while agent_settled is emitted, and a prompt() made then is deferred: it resolves at once and its turn runs after the emit. Topic delivery stays out of that window.",
+    relies: "_isEmittingAgentSettled is true while agent_settled is emitted, and a prompt() made then is deferred: it resolves at once and its turn runs after the emit, outside the async context of the call that made it. Topic delivery stays out of that window, and so does a keyed send (its message would go unlabelled).",
     pi: ["AgentSession._isEmittingAgentSettled", "AgentSession.prompt", "AgentSession._emitAgentSettled"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.inSettleWindow" },
       { file: CM, symbol: "ChatSession.deliverTopicBatch" },
+      { file: CM, symbol: "ChatSession.acceptPrompt" },
+      { file: "server/queue.ts", symbol: "WebQueue.pumpOnce" },
     ],
     canary: "P5 settle-window: inside an agent_settled emit _isEmittingAgentSettled is true and a prompt resolves at once, its turn running after",
     retireWhen: "pi exposes the settle window, or stops deferring a prompt made inside it",
@@ -147,6 +149,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [
       { file: "server/harness/pi/turns.ts", symbol: "watchUserMessages" },
       { file: "server/user-turns.ts", symbol: "UserTurns.watch" },
+      { file: "server/send-keys.ts", symbol: "SendKeys.watch" },
     ],
     canary: "P7 user-turns-wrap: prompt, steer and followUp reach the agent by property lookup, and the object passed is the one message_start carries",
     retireWhen: "pi offers an input-identity hook",

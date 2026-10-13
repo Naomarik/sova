@@ -76,6 +76,8 @@ export const METHODS: Impl = {
         ...(a.delivery ? { delivery: a.delivery } : {}),
         ...(a.confirm ? { confirm: a.confirm } : {}),
         ...(a.byPerson ? { byPerson: true as const } : {}),
+        // Its message is labelled with the key, wherever it waits (§app.chat-processes/worker-instructions).
+        ...(a.key !== undefined ? { key: a.key } : {}),
       });
     } catch (err) {
       if (a.runTag !== undefined) chat.runTag.next = tagWas;

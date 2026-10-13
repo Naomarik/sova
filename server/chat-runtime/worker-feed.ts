@@ -3,6 +3,8 @@
 // per process and kept in a ring the server reads again after a dropped link (`feedSince`). Never a
 // `message_update`: the fold used them only for liveness. It also says how the last run settled,
 // under the key of the send that started it, so a parent that reattaches announces a settle once.
+// A user message names the key of the send it came from (`sendKey`), and a keyed send whose message
+// never ran is told as a `send_dropped` (§app.chat-processes/worker-instructions).
 import { randomUUID } from "node:crypto";
 import type { HarnessEvent } from "../../shared/harness";
 import { WORKER_FEED_EVENTS, type WorkerCursor, type WorkerState } from "../../pi-config/extensions/subagents/worker-host.ts";
@@ -18,6 +20,15 @@ export interface FeedSource {
   subscribe(fn: (event: HarnessEvent) => void): () => void;
   persistedId(handle: unknown): string | null;
 }
+
+/** Which keyed send a user message came from, and when the chat is done handing one over (server/send-keys.ts). */
+export interface FeedKeys {
+  keyOf(handle: unknown): string | undefined;
+  onDone(fn: (key: string) => void): () => void;
+}
+
+/** The keys of delivered messages remembered, so a late `done` for one is never told as dropped. */
+const SEEN_MAX = 1024;
 
 export interface FeedFrame {
   cursor: WorkerCursor;
@@ -41,6 +52,12 @@ export class WorkerFeed {
   private settles = 0;
   private lastAssistant: { stopReason?: unknown; errorMessage?: unknown } | null = null;
   settled: WorkerState["lastSettled"] = null;
+  /** Keys whose message was seen entering the context. */
+  private readonly seen = new Set<string>();
+  /** Keys given up on while a run was going: told before its settle, unless their message came meanwhile. */
+  private readonly undelivered = new Set<string>();
+  /** Between a run's start and its settle. */
+  private running = false;
 
   constructor(
     private readonly send: (f: FeedFrame) => void,
@@ -58,22 +75,50 @@ export class WorkerFeed {
     if (key) this.lastKey = key;
   }
 
-  /** Feed `session`'s events from now on. */
-  attach(session: FeedSource): () => void {
-    return session.subscribe((e) => this.onEvent(session, e));
+  /** Feed `session`'s events from now on; with `keys`, each user message names its send's key. */
+  attach(session: FeedSource, keys?: FeedKeys): () => void {
+    const off = session.subscribe((e) => this.onEvent(session, e, keys));
+    const offDone = keys?.onDone((key) => this.done(key));
+    return () => {
+      off();
+      offDone?.();
+    };
   }
 
-  private onEvent(session: FeedSource, e: HarnessEvent): void {
-    const event = (e.frame() as { event?: unknown }).event as Record<string, unknown> & { type?: string; message?: { role?: unknown; stopReason?: unknown; errorMessage?: unknown } };
+  /** Nothing more will hand `key`'s message over: unless it was seen, it never ran (told at once, or
+      before the running run's settle, by which time it would have entered). */
+  private done(key: string): void {
+    if (this.seen.has(key)) return;
+    if (this.running) this.undelivered.add(key);
+    else this.out({ type: "send_dropped", sendKey: key });
+  }
+
+  private onEvent(session: FeedSource, e: HarnessEvent, keys: FeedKeys | undefined): void {
+    let event = (e.frame() as { event?: unknown }).event as Record<string, unknown> & { type?: string; message?: { role?: unknown; stopReason?: unknown; errorMessage?: unknown } };
     if (!event?.type || !FED.has(event.type)) return;
+    if (event.type === "agent_start") this.running = true;
+    if ((event.type === "message_start" || event.type === "message_end") && event.message?.role === "user") {
+      const key = keys?.keyOf((e as { handle?: unknown }).handle);
+      if (key !== undefined) {
+        // A copy: the frame's event can be pi's own object, which every other listener reads too.
+        event = { ...event, sendKey: key };
+        this.undelivered.delete(key);
+        this.seen.delete(key);
+        this.seen.add(key);
+        if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value!);
+      }
+    }
     const assistant = event.type === "message_end" && event.message?.role === "assistant";
     if (assistant) {
       this.lastAssistant = event.message!;
       this.lastAssistantEntry = null;
     }
     if (event.type === "agent_settled") {
-      // After the final message's entry id is read: the settle names it.
+      this.running = false;
+      // After the final message's entry id is read: the settle names it. Keyed sends that never ran go first.
       return this.out(() => {
+        for (const key of [...this.undelivered]) this.emit({ type: "send_dropped", sendKey: key });
+        this.undelivered.clear();
         this.settle();
         // The parent's record keeps this key with the settle's announcement (picked back up, it announces a settle once).
         this.emit({ ...event, settleKey: this.settled!.key, ...(this.settled!.entryId ? { settleEntryId: this.settled!.entryId } : {}) });

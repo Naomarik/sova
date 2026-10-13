@@ -18,6 +18,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
 // The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
@@ -95,10 +96,10 @@ describe("a project overseer", async () => {
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
   });
 
-  test("operator sends go through the kind's own userSend; a fresh runtime is unattended (fail closed)", async () => {
+  test("the chat tells the operator's sends apart; a fresh runtime is unattended (fail closed)", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
-    assert.ok(chat.specialEntry?.userSend, "the kind hands operator sends through its own userSend");
+    assert.ok(chat.userTurns, "its loadout asks the chat to tell the operator's turns apart");
     assert.equal(po.attendedForTest(project.id), false, "starts unattended (fail closed)");
   });
 

@@ -466,8 +466,7 @@ test("composeChannelScript refuses NUL and bad env names", () => {
 });
 
 /**
- * Workers' MCP servers are launched as `node <file>.ts` (subagents/index.ts does exactly that), which
- * is node's STRIP-ONLY type stripping: parameter properties, enums and namespaces are syntax errors
+ * These modules stay loadable as `node <file>.ts`, which is node's STRIP-ONLY type stripping: parameter properties, enums and namespaces are syntax errors
  * there. This module and everything it imports must stay inside that subset.
  */
 test("channel.ts, argv.ts and exec.ts load under node's strip-only type stripping", () => {

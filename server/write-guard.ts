@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -51,15 +51,55 @@ function saveOwned(path: string, entry: Owned[string] | null): void {
   else if (prev) delete next[path];
   else return;
   sessionsChanged(); // this server wrote the session file: its row may read differently now
-  const kept = Object.entries(next).sort((a, b) => b[1].at - a[1].at).slice(0, OWNED_MAX);
+  const file = OWNED_FILE();
+  let unlock: (() => void) | null = null;
   try {
-    const file = OWNED_FILE();
     mkdirSync(dirname(file), { recursive: true });
+    // The server and each of its chat processes record here: the read and the write are one step
+    // under the lock, or two at once would each drop the other's record.
+    unlock = lockOwned(`${file}.lock`);
+    const merged = unlock ? loadOwned() : next;
+    if (entry) merged[path] = entry;
+    else delete merged[path];
+    const kept = Object.entries(merged).sort((a, b) => b[1].at - a[1].at).slice(0, OWNED_MAX);
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(Object.fromEntries(kept)));
     renameSync(tmp, file);
   } catch (err) {
     console.error("[write-guard] couldn't record an owned write", err);
+  } finally {
+    unlock?.();
+  }
+}
+
+/** How long a writer waits for owned-writes.json's lock, and the age past which a lock is a dead
+    writer's (a record takes milliseconds). */
+const OWNED_LOCK_WAIT_MS = 2_000;
+const OWNED_LOCK_STALE_MS = 10_000;
+const pause = new Int32Array(new SharedArrayBuffer(4));
+
+/** Take owned-writes.json's lock (O_EXCL), waiting up to 2 s; its release, or null when it stayed
+    held (the record is then written unlocked, as before the lock existed). Any small state file the
+    server and its chat processes all rewrite takes its lock the same way (session-limits.json). */
+export function lockOwned(lock: string): (() => void) | null {
+  const until = Date.now() + OWNED_LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      closeSync(openSync(lock, "wx", 0o600));
+      return () => rmSync(lock, { force: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") return null;
+    }
+    try {
+      if (Date.now() - statSync(lock).mtimeMs > OWNED_LOCK_STALE_MS) {
+        rmSync(lock, { force: true });
+        continue;
+      }
+    } catch {
+      continue; // released meanwhile
+    }
+    if (Date.now() >= until) return null;
+    Atomics.wait(pause, 0, 0, 5);
   }
 }
 

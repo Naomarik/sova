@@ -12,8 +12,8 @@ import type { SummarizerBackend, SummarizerChoice, SummarizerSettings, Summarize
  * / maxBudgetUsd) belong to the user and are written back exactly as they were.
  *
  * Only the Claude catalog is imported from pi-config (claude-code/catalog.ts, which imports
- * nothing): the extension's other rules are small, and mirrored below with a pointer to the original. The extension reads `join(homedir(), ".pi/agent")`; this uses
- * the agent dir, which is the same folder unless PI_CODING_AGENT_DIR isolates a test server.
+ * nothing): the extension's other rules are small, and mirrored below with a pointer to the original. Both this and the extension read the agent dir
+ * (PI_CODING_AGENT_DIR, else ~/.pi/agent), so a test server's settings reach its own sessions.
  */
 export const topicOutlineFile = () => join(agentRoot(), "topic-outline.json");
 

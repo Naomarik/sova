@@ -1,6 +1,8 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { chatHostHealth } from "./chat-host";
+import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
@@ -34,7 +36,7 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { getModelRuntime, heldChat, heldChats, ModeRefusedError } from "./chat-manager";
+import { chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
@@ -127,6 +129,7 @@ import { decisions } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
+import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, SERVER_HEADER, unlock, pair, revealToken } from "./auth";
@@ -212,7 +215,7 @@ export function buildApp(deps: AppDeps) {
 
   // What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then, and how
   // many entries its pi can't read it has met (§app.harness/unknown-entries; a number only, the route is open).
-  app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, unknownEntries: unknownEntries() }));
+  app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, chatHost: chatHostHealth(), unknownEntries: unknownEntries() }));
   // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
   app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
   // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
@@ -246,7 +249,13 @@ export function buildApp(deps: AppDeps) {
     // a live link, which restarts a claude-code chat's CLI).
     const made = await createWebSessionFile(c, cwd, linkMember ? [[LINK_MEMBER, { v: 1 }]] : undefined);
     if (made instanceof Response) return made;
-    if (subagentProfile !== undefined) appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+    if (subagentProfile !== undefined) {
+      // A file no chat holds, here or in a process of its own (§app.chat-processes/wire): only then is
+      // appending to it from outside safe. The file was just created, so this never trips today.
+      const lock = readLock(made.path);
+      if (chatHandle(made.path) || (lock && holderAlive(lock))) return c.json({ error: "That session is open in a chat process." }, 409);
+      appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+    }
     if (!start || !pick) return c.json(made, 201);
     const applied = await applyProfile(made.path, pick, start.by ?? "start");
     if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
@@ -860,13 +869,13 @@ export function buildApp(deps: AppDeps) {
   };
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
-  app.get("/api/settings/subagents", (c) => {
+  app.get("/api/settings/subagents", async (c) => {
     const raw = c.req.query("path");
     if (raw === undefined) return c.json(subagentProfilesInfo());
     const path = resolveSessionPath(raw);
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = heldChat(path);
-    return chat ? c.json(chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
+    const chat = chatHandle(path);
+    return chat ? c.json(await chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
   });
   app.put("/api/settings/subagents", async (c) => {
     const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
@@ -890,7 +899,7 @@ export function buildApp(deps: AppDeps) {
   app.post("/api/subagents", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "Open the chat first" }, 404);
     try { return c.json(await chat.switchSubagentProfile((await c.req.json()).profile)); }
     catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 409); }
@@ -913,8 +922,8 @@ export function buildApp(deps: AppDeps) {
   // The memory minor mode (§chat/memory): the Session pane's outline, Settings → Memory, the Overseer's switch.
   registerMemoryRoutes(app, {
     resolvePath: (raw) => (raw === undefined ? null : resolveSessionPath(raw)),
-    held: (path) => heldChat(path),
-    overseer: () => heldChats().find((c) => c.overseer),
+    held: (path) => chatHandle(path),
+    overseer: () => chatHandles().find((c) => c.mirror.special === "overseer"),
     readBranch,
     sources: delegateSources,
   });
@@ -983,6 +992,8 @@ export function buildApp(deps: AppDeps) {
   app.route("/api/sessions/tags", tagRoutes);
   // Phone notifications (Web Push): state, devices, settings, Send Test (server/push-routes.ts).
   app.route("/api/push", pushRoutes);
+  // Test only: the chat-runtime trial fires the Overseer's brief on demand (server/chat-trial-routes.ts).
+  if (process.env.SOVA_CHAT_TEST_SERVED === "1") app.route("/api/test", chatTrialRoutes);
 
   // Settings → Summaries: which model writes the sidebar's summary line. The file is the
   // topic-outline extension's; the TUI and every runtime read it once per session, at session start,
@@ -1048,12 +1059,12 @@ export function buildApp(deps: AppDeps) {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
       if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const chat = heldChat(path);
+      const chat = chatHandle(path);
       if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
       return modeRefusal(c, () => chat.saveModeDefault());
     }
     if (path === null) return c.json(await switchMode(request.patch));
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
     return modeRefusal(c, () => chat.switchMode(request.patch));
   });
@@ -1071,7 +1082,7 @@ export function buildApp(deps: AppDeps) {
     }
     const parsed = parseSandboxBody(body);
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
     return c.json(await chat.applySandbox(parsed.state));
   });
@@ -1083,11 +1094,11 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const id = c.req.query("id") ?? "";
     if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
     const outcome = await chat.resumeWorker(id);
     if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
-    return c.json({ worker: chat.workerInfo(id) } satisfies WorkerResumeResult);
+    return c.json({ worker: await chat.workerInfo(id) } satisfies WorkerResumeResult);
   });
 
   app.get("/api/transcript", async (c) => {
@@ -1133,10 +1144,7 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    const items = await piToolContent(path, ids, () => {
-      const chat = heldChat(path);
-      return chat ? chat.harness.branch() : undefined;
-    });
+    const items = await piToolContent(path, ids, async () => chatHandle(path)?.branch());
     return c.json({ items } satisfies ToolContentResponse);
   });
 

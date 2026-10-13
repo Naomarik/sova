@@ -203,7 +203,7 @@ rebuilt even at the same commit.
 - **The launcher.** `sova` sets `SOVA_BUN` to that Bun unless the caller set one, and runs the
   clone's `scripts/start-server.sh` with its arguments, so the server runs on Bun
   (§app.server-runtime/choice). `sova --node`, or `SOVA_RUNTIME=node` in its environment, runs it
-  on Node instead.
+  on Node instead, with no chats or workers.
 - **Why a download.** Bun lives and goes with the install directory, at the version Sova is
   tested on, with no version manager installed and no shell rc file edited.
 - Its closing message names the runtime: "runtime: Bun x.y.z in <install dir>/.bun (sova --node

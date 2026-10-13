@@ -16,8 +16,7 @@
  *
  * Every file operation goes through `Remote.run()`: the pinned channel (channel.ts) when it is up
  * and idle, else a per-call ssh. That transport — the probe, the status, the channel policy — is
- * `Connection` (connection.ts), which `Remote` extends and the workers' MCP server (mcp-server.ts)
- * shares; this file is the local half: path mapping and pi's tool operations. The connection
+ * `Connection` (connection.ts), which `Remote` extends; this file is the local half: path mapping and pi's tool operations. The connection
  * status goes out as a pair of setStatus keys: `remote` (prose, the TUI status bar) and
  * `remote-status` (RemoteStatus JSON, Sova's chip).
  *
@@ -104,7 +103,7 @@ export type RemoteDeps = ConnectionDeps;
 /**
  * A session's Connection plus everything local: the placeholder path mapping and pi's tool
  * operations. The transport, the probe, the status and the channel policy all live in Connection
- * (connection.ts), which the workers' MCP server shares.
+ * (connection.ts).
  */
 export class Remote extends Connection {
 	readonly localCwd: string;
@@ -117,7 +116,7 @@ export class Remote extends Connection {
 		/** The far cwd known without a round trip (the placeholder, or the entry's cwd). */
 		const farCwd = localCwd === root || localCwd.startsWith(root + "/") ? toRemotePath(localCwd, root) : target.cwd;
 		// `channel` keeps the extension's older meaning here — omitted = none (the --no-channel kill
-		// switch passes nothing); only direct Connection users (the workers' MCP server) get the
+		// switch passes nothing); only direct Connection users get the
 		// target's channel by default.
 		super(target, registry, farCwd, { ...deps, agentDir, channel: deps.channel ?? false });
 		this.localCwd = localCwd;

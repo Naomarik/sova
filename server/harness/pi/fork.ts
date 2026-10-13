@@ -24,7 +24,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { canonicalPath } from "../../paths";
-import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE } from "../../../pi-config/extensions/subagents/worker-transcript.ts";
+import { WORKER_MANIFEST_ENTRY_TYPE } from "../../../pi-config/extensions/subagents/worker-transcript.ts";
 import { forkCacheEntry } from "../../../pi-config/extensions/subagents/fork/cache.ts";
 import { FANOUT_MEMBER } from "../state-kinds";
 import { stateViewOf } from "./state";
@@ -147,7 +147,6 @@ export function isFanoutSource(doc: SourceDoc): boolean {
  */
 export const DROPPED_REGISTRY_TYPES: ReadonlySet<string> = new Set([
   WORKER_MANIFEST_ENTRY_TYPE,
-  LEGACY_REGISTRY_ENTRY_TYPE,
   "subagents-team-v1",
   "subagents-team-event-v1",
   "subagents-team-assignment-v1",

@@ -20,6 +20,7 @@ import { applyModelLevels, type ComposedModel, modelFetchEnabled, onLevelsUpdate
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
+import { installOwnCode, ownCodeLoader } from "./own-code";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -53,6 +54,8 @@ export interface OpenFlags {
   review?: boolean;
   alignVisuals?: boolean;
   link?: { origin: string; token: string; tools: "member" | "legacy" };
+  /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
+  extra?: Record<string, string | true>;
 }
 
 /** The flags as pi's extension flag values, in the order they have always been set. */
@@ -67,6 +70,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-token", f.link.token);
     flags.set("sova-link-tools", f.link.tools);
   }
+  for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
 
@@ -134,13 +138,18 @@ export function getModelRuntime(): Promise<ModelRuntime> {
  * no extension gets no flag at all (a flag nobody registered only logs "Unknown option"), and its
  * `flags` are never read.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, resourceLoaderOptions: PiLoaderOptions) {
+async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions) {
   // Its workers and tool commands start below the server (§app.load-priority/workers).
   installWorkerNice();
+  // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
+  // listed alike (§app.chat-processes/code-generations). The server: nothing.
+  installOwnCode();
+  const resourceLoaderOptions = ownCodeLoader(loader);
   const services = await createAgentSessionServices({
     cwd,
     modelRuntime,
-    extensionFlagValues: resourceLoaderOptions.noExtensions ? new Map() : extensionFlagValues(flags()),
+    // A loader that loads no extension reads no flag; a worker's loads only its own sources, which do.
+    extensionFlagValues: resourceLoaderOptions.noExtensions && !resourceLoaderOptions.additionalExtensionPaths?.length ? new Map() : extensionFlagValues(flags()),
     resourceLoaderOptions,
   });
   lowerToolCommands(services.settingsManager);
@@ -160,6 +169,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  */
 export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[]): Promise<void> {
   try {
+    installOwnCode();
     // The provider flag alone: the throwaway session needs nothing else, and the link flags would
     // read the access token, which throws (and logs its problem again) when the token file is damaged.
     const services = await createAgentSessionServices({

@@ -22,7 +22,7 @@ cacheWrite1h?, owner, parent, worker?, kind, purpose?, cwd?, project?, starter?,
 - Written at each call's end by this extension (one writer per file: the process's producer id) and by the
   server's own one-shots (`server/decide-llm.ts`, `server/decide-jev.ts`, `server/session-autotitle.ts`).
 - Read only by the server's usage helper (`server/usage-helper/`), through `parseUsageLine`.
-- A worker's records name their parent from `PI_USAGE_PARENT` (set by subagents).
+- A worker's records name their parent as Sova's chat manager registered it (`WorkerSpec.parent`).
 
 **Claude baselines.** `claude-usage.ts` keeps `<agent dir>/usage/cc-baseline/<claude session id>.json` `{v: 1, at,
 models}`, each Claude session's last cumulative `modelUsage`, so a resume never recounts. Beside it,
@@ -32,7 +32,7 @@ mid-turn is never recounted.
 **Other server imports** (builtins and each other only): `attribution.ts` (whose model call it is; a `globalThis`
 table every copy in one process shares), `record.ts` (one record per call, from whichever observer saw it end),
 `tracker.ts` (the in-flight count the live record carries, `presence.llm`), `runtime.ts` (the pi runtime's
-observer) and `hosted.ts` (unadopted detached workers, counted once). A cache warm's spend is the ledger's record,
+observer). A cache warm's spend is the ledger's record,
 written when the warm call ends (`runtime.ts`).
 
 The dev watcher doesn't watch this directory: an edit reaches a running server only at its restart.

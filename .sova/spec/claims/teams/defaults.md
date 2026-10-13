@@ -80,8 +80,7 @@ role nor members default; it does not remove workers already running.
   assignment in its own header. **Across a reload:** each assignment (up to 8,000 characters),
   each kept steer and each successor's inheritance are also appended to the parent session as
   `subagents-team-assignment-v1` custom entries and replayed, in order, onto the branch's recorded
-  teams at `session_start`, so once a member of such a team is back (re-adopted or
-  `agent_resume`d) the roster and any later successor still have them. Where none was recorded,
+  teams at `session_start`, so once a member of such a team is back (picked back up or `agent_resume`d) the roster and any later successor still have them. Where none was recorded,
   the roster says the assignment is not known and to ask the member.
   When the main thread adds members with `team_add`, the routing coordinator is sent a follow-up
   naming each new member and its assignment, and the `team_add` result says it was told (or that
@@ -157,8 +156,8 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
   that passes the spawn checks (primary, then fallback); if neither passes, the team is not
   created. An uncoordinated team gets no monitor, and the result says why.
 - **Tools.** `team_msg` (with an optional `notice`: `wrap-up`, `pause` or `resume`), `team_inbox`,
-  `team_roster` (read-only) and **`wake_nudge`** — for a pi monitor through the member extension,
-  for a claude-code monitor through the member MCP server. No other member has `wake_nudge`; the
+  `team_roster` (read-only) and **`wake_nudge`**, through the member extension (a claude-code monitor is a pi worker on
+  the Claude Code provider, so the same). No other member has `wake_nudge`; the
   monitor has no `team_ask`, `team_steer`, `team_report` or built-in tools, and it can never reach
   the parent.
 - **Standing instruction** (its header, with the effective thresholds at spawn; subsequent
@@ -214,11 +213,9 @@ working again; every worker state change and every accepted steer schedules one,
 thread steering a member or a member starting a task resumes the checks. A paused team's nudges
 always fire on time, so the resume check runs while everyone is idle; those fires are bounded:
 after 30 consecutive fires with no other member working, scheduling is refused until some member
-works again. Pending nudges die with the parent process (and with the monitor); they
-are not rebuilt after a reload. The pause itself survives one: a team whose last `pause`/`resume`
+works again. Pending nudges, held or not, are kept in the team's mailbox and armed again when the parent's session starts after a reload or a restart; a nudge that came due meanwhile fires then. The pause survives one too: a team whose last `pause`/`resume`
 event on the active branch is `pause` is paused again at `session_start`, and when its monitor
-rejoins (re-adopted or `agent_resume`d) it is sent its resume check at once in place of its lost
-nudges (run `team_roster`; resume if the window is back under the threshold or has reset,
+rejoins (picked back up or `agent_resume`d) with no nudge pending it is sent its resume check at once (run `team_roster`; resume if the window is back under the threshold or has reset,
 otherwise schedule the check); the `agent_resume` result says so instead of "nothing was sent to
 it". No other resumed member is sent anything.
 

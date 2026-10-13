@@ -37,9 +37,12 @@ export function sessionRef(raw: unknown): string {
 export function writableRefusal(s: SessionSummary, self = "you never act on yourself"): string | null {
   if (s.overseer) return `That is an Overseer conversation; ${self}.`;
   if (s.live) return `"${s.title}" is open in a terminal (pid ${s.live.pid}), so it is read-only. Point the user to it instead.`;
-  if (s.workerSession) return `"${s.title}" is a subagent's own session; act on the session that runs it.`;
+  if (s.workerSession) return subagentSessionRefusal(s.title);
   return null;
 }
+
+/** A worker's or hidden chat's own session: what an act on it, or a browser opening it, is told. */
+export const subagentSessionRefusal = (title: string) => `"${title}" is a subagent's own session; act on the session that runs it.`;
 
 /** Sessions no profile session ever sees (§chat.profiles/session-tools): the Overseer's, project
     overseers', organization and baton sessions, and workers' own. */

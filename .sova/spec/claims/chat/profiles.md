@@ -242,7 +242,10 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 - **Targets per run, 5.** Distinct sessions one run sends to.
 - **To one session per 10 minutes, 6.** Sends from this session to one target in any 10 minutes.
 - A refused send takes nothing from any allowance. The per-message and per-day counts outlive a
-  server restart; the per-run and per-pair counts are in memory.
+  server restart; the per-run and per-pair counts are in the memory of the chat's process: they
+  outlive a server restart in a chat process of its own (§app/chat-processes) and start over when the
+  chat's process restarts. Chat processes share the per-message and per-day counts through one file,
+  written under a lock, so none loses another's.
 - **Audit.** Every `session_send` and `session_read`, refused or not, is one line in
   `<state root>/session-actions.jsonl`: `{at, sessionId, profile, tool, target?, hop?, outcome,
   error?}`. The message text is never logged.

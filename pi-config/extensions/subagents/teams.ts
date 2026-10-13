@@ -5,8 +5,7 @@
  */
 import * as path from "node:path";
 import { roleSlug } from "./coordination.ts";
-import { MCP_SERVER_NAME } from "./member-mcp.ts";
-import { memberToolNames, type MemberDuty } from "./mailbox.ts";
+import type { MemberDuty } from "./mailbox.ts";
 import type { AgentStatus, TaskOutcome } from "./runner.ts";
 import type { CoordinatorDefaults, MonitorDefaults, TeamDefaultsFile, TeamDefaultsState, WorkerTuple } from "./team-defaults.ts";
 
@@ -294,12 +293,11 @@ function checkPaths(role: string, paths: unknown): string[] {
 
 const ownership = (paths: readonly string[]) => (paths.length ? paths.join(", ") : "none declared");
 /**
- * Which member tools the worker will actually have: pi members load member.ts;
- * claude-code members get the same tools from the member MCP server (member-mcp.ts,
- * seen as mcp__team__<tool>); any other backend loads nothing.
+ * Which member tools the worker will actually have: pi members load member.ts, and so do
+ * claude-code members (a pi worker on the Claude Code provider); any other backend loads nothing.
  */
-export type MemberTooling = "pi" | "mcp" | "none";
-export const memberTooling = (backend: string): MemberTooling => (backend === "pi" ? "pi" : backend === "claude-code" ? "mcp" : "none");
+export type MemberTooling = "pi" | "none";
+export const memberTooling = (backend: string): MemberTooling => (backend === "pi" || backend === "claude-code" ? "pi" : "none");
 export interface HeaderMember { role: string; ownedPaths: readonly string[]; orchestrator?: boolean; duty?: MemberDuty; successorOf?: string; task?: string; steers?: readonly string[] }
 /** What a coordinated team's headers need: who coordinates, where notes go, the standing instructions. */
 export interface CoordinationHeader {
@@ -320,10 +318,6 @@ const COORDINATED_TOOLS =
 export const LONG_REPORT_LINE =
 	"If your final answer would run past about 3,500 characters, write the full report to a file and make your final message that file's path plus a short summary.";
 const NO_SPAWN = "You cannot spawn, add or stop workers, and nothing you do reaches outside this team; the parent session remains the authority.";
-const mcpName = (tool: string) => `mcp__${MCP_SERVER_NAME}__${tool}`;
-/** Claude sees MCP tools under the server prefix; the header spells out the exact call names once. */
-const mcpNamesLine = (member: HeaderMember) =>
-	`Your team tools come from the "${MCP_SERVER_NAME}" MCP server, so call them as ${memberToolNames(member).map(mcpName).join(", ")}; below they are named without the mcp__${MCP_SERVER_NAME}__ prefix.`;
 
 /** The monitor's standing instruction, with the thresholds as read now. */
 export function monitorStanding(m: MonitorDefaults, coordinatorRole: string): string[] {
@@ -369,14 +363,12 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 				: "Messages from teammates, an orchestrator or the parent session can arrive as new instructions in your session. You have no tool to reply to teammates directly, so put anything meant for them in your final answer; the parent session coordinates, and your final answer is your report.",
 		];
 	}
-	const prefix = tooling === "mcp" ? [mcpNamesLine(member)] : [];
 	if (member.duty === "monitor" && coordination?.defaults) {
-		return [...prefix, ...monitorStanding(coordination.defaults.monitor, coordination.coordinatorRole), ...successor];
+		return [...monitorStanding(coordination.defaults.monitor, coordination.coordinatorRole), ...successor];
 	}
 	if (member.duty === "coordinator" && coordination) {
 		const extra = coordination.defaults?.coordinator.instructions;
 		return [
-			...prefix,
 			"You are this team's coordinator. You do no implementation yourself: never edit project files or do the objective's work; route and unblock the work the main thread assigned, check results, and keep the team moving.",
 			"The main thread (the parent session) assigns the work: each teammate's assigned task is listed above under its role, and team_roster lists them with the main thread's later instructions. Never invent tasks, never reassign or cancel a teammate's assigned work, and never tell a teammate that its task was not assigned: the main thread's steers and follow-ups to a member are legitimate assignments you must not countermand. You never tell a member that work from the main thread is not its work, and that includes the instructions a successor inherited from its predecessor, which are the successor's assignment; check team_roster before you tell a member what not to do. Direct a teammate only where its assignment leaves a gap or it is blocked; if the objective seems to need work nobody was given, ask the operator with team_ask.",
 			`You are the only member who talks to the operator. Teammates' final answers and team_ask questions are delivered to you. team_report tells the operator about a milestone or a concern and asks for nothing; team_ask is for a question or decision you need. Your own final answer goes to the operator, and wakes them only once no teammate is working, so while you wait end your turn with a one-line status.`,
@@ -390,14 +382,12 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 	}
 	if (member.orchestrator) {
 		return [
-			...prefix,
 			`You are this team's orchestrator: coordinate your teammates toward the objective. team_roster shows their live state and ownership; team_steer sends instructions to one teammate by role (mode followUp queues after their current task, redirect replaces it). ${COMMON_TOOLS}`,
 			`${NO_SPAWN} Acceptance of a steer or message is not execution: verify with team_roster. Your final answer is your report of the team's outcome.`,
 		];
 	}
 	if (coordination) {
 		return [
-			...prefix,
 			`Team tools: ${COORDINATED_TOOLS}`,
 			`This team has a coordinator, ${coordination.coordinatorRole}: report to it, not to the operator. Your final answer and your team_ask questions are delivered to the coordinator. ${handoff} If you are told to wrap up (your context is running high), finish the step you are in, write a handover note there (state, decisions, open work, files touched) and end your turn.`,
 			`${NO_SPAWN} Your final answer is your report.`,
@@ -405,7 +395,6 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 		];
 	}
 	return [
-		...prefix,
 		`Team tools: ${COMMON_TOOLS}`,
 		`${NO_SPAWN} Your final answer is your report.`,
 	];
@@ -415,7 +404,7 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
  * Deterministic header prepended to each member's task before backend validation, so
  * length limits apply to exactly what the worker receives. Existing workers are
  * never told about later additions. `tooling` states what the worker will really
- * have: pi members load member.ts, claude-code members the member MCP server.
+ * have: pi and claude-code members load member.ts.
  */
 export function composeMemberPrompt(
 	team: { id: string; name: string; objective: string },
@@ -860,7 +849,7 @@ export class TeamStore {
 	}
 
 	/**
-	 * A history team whose workers were re-adopted from detached hosts is live
+	 * A history team whose workers were reattached or resumed is live
 	 * again: it moves to the session teams (create-time defaults are not
 	 * persisted, so team_add then applies none). True if the team is live now.
 	 */

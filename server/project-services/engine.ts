@@ -46,7 +46,7 @@ import { copyContentsArgv } from "./copy-tree";
 import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, rssOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
-import { hostedBusy, restartGateLog, RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
+import { RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
 import { checkShare, instanceOfLink, linksOf, OVERSEER_SHARE_REFUSAL, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
@@ -313,16 +313,14 @@ export interface EngineDeps {
   dial?: (port: number) => Promise<boolean>;
   /** The checkout the running server was loaded from (§app.project-services/self-host); tests set it. */
   selfCheckout?: () => string | null;
-  /** Why this server's hosted sessions are busy, or null; tests fake it. */
-  hostBusy?: () => string | null;
   /** The registered project whose root this is, or null (§app.project-services/share); tests fake it. */
   projectIdOf?: (root: string) => Promise<string | null>;
   /** Every port this Sova process binds or names (server/project-previews.ts sovaPorts); tests fake it. */
   sovaPorts?: () => Promise<ReadonlySet<number>>;
   /** An adopted unit's status, read only (§app.project-services/adopt); tests fake it. */
   adoptedStatus?: (unit: string) => Promise<AdoptedStatus>;
-  /** Schedule an adopted unit's gated restart: null when scheduled, else why not; tests fake it. */
-  scheduleRestart?: (unit: string, mainPid: number | null) => Promise<string | null>;
+  /** Schedule an adopted unit's delayed restart: null when scheduled, else why not; tests fake it. */
+  scheduleRestart?: (unit: string) => Promise<string | null>;
 }
 
 /** Everything one verb run knows. */
@@ -383,11 +381,10 @@ export class ProjectEngine {
   private readonly clock: EngineClock;
   private readonly dial: ((port: number) => Promise<boolean>) | undefined;
   private readonly selfCheckout: () => string | null;
-  private readonly hostBusy: () => string | null;
   private readonly projectIdOf: (root: string) => Promise<string | null>;
   private readonly sovaPorts: () => Promise<ReadonlySet<number>>;
   private readonly adoptedStatus: (unit: string) => Promise<AdoptedStatus>;
-  private readonly scheduleRestart: (unit: string, mainPid: number | null) => Promise<string | null>;
+  private readonly scheduleRestart: (unit: string) => Promise<string | null>;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
@@ -417,7 +414,6 @@ export class ProjectEngine {
     this.clock = deps.clock ?? wallClock;
     this.dial = deps.dial;
     this.selfCheckout = deps.selfCheckout ?? serverCheckout;
-    this.hostBusy = deps.hostBusy ?? (() => hostedBusy());
     this.projectIdOf =
       deps.projectIdOf ??
       (async (root) => {
@@ -426,7 +422,7 @@ export class ProjectEngine {
       });
     this.sovaPorts = deps.sovaPorts ?? (async () => (await import("../project-previews")).sovaPorts());
     this.adoptedStatus = deps.adoptedStatus ?? ((unit) => adoptedStatus(unit));
-    this.scheduleRestart = deps.scheduleRestart ?? ((unit, pid) => scheduleRestart(unit, pid));
+    this.scheduleRestart = deps.scheduleRestart ?? ((unit) => scheduleRestart(unit));
   }
 
   unitOf(scopeId: string, service: string): string {
@@ -616,7 +612,8 @@ export class ProjectEngine {
 
   /**
    * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, a verb that
-   * stops or restarts slot 0 is the operator's, confirmed, and never while a hosted session is busy.
+   * stops or restarts slot 0 is the operator's, confirmed. Busy chats don't hold it: each runs in a
+   * process of its own and outlives the server (§app/chat-processes).
    */
   private selfHosted(run: Run): void {
     this.adoptedSlot0(run);
@@ -627,8 +624,6 @@ export class ProjectEngine {
     const what = `${run.verb} of the main checkout stops or restarts the Sova server's own checkout (${self})`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project ${run.verb} … --confirm)`);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project ${run.verb} … --confirm)`);
-    const busy = this.hostBusy();
-    if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
   }
 
   /** The service slot 0 adopts when `run` aims at slot 0 (its instance, or the main checkout before one exists), else null (§app.project-services/adopt). */
@@ -642,7 +637,7 @@ export class ProjectEngine {
   /**
    * An adopted slot 0 (§app.project-services/adopt): Sova never starts or stops its unit, so up, down,
    * reset and teardown are refused; apply, which schedules its restart, keeps the self-host rule for
-   * every caller and project: the operator, confirmed, and never while a hosted session is busy.
+   * every caller and project: the operator, confirmed.
    */
   private adoptedSlot0(run: Run): void {
     const s = this.adoptedIn(run);
@@ -654,8 +649,6 @@ export class ProjectEngine {
     const what = `apply of slot 0 restarts the adopted unit ${unit}`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Branches tab)`);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
-    const busy = this.hostBusy();
-    if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
   }
 
   private authorize(run: Run): void {
@@ -1595,7 +1588,7 @@ export class ProjectEngine {
 
   /**
    * apply on an adopted slot 0 (§app.project-services/adopt): its build when declared and changed, then,
-   * in place of a reload, the unit's gated restart scheduled RESTART_DELAY_SEC from now. Nothing is
+   * in place of a reload, the unit's restart scheduled RESTART_DELAY_SEC from now. Nothing is
    * waited for: the server can't watch a restart that may be its own.
    */
   private async applyAdopted(run: Run, def: ProjectDef, rec: InstanceRecord, s: ServiceDecl): Promise<void> {
@@ -1618,9 +1611,9 @@ export class ProjectEngine {
       });
     }
     await this.step(run, `restart:${s.name}`, "reload", async () => {
-      const why = await this.scheduleRestart(unit, st.pid);
-      if (why) throw new VerbFailure("unsupported", `the restart of ${unit} could not be scheduled (${why}): nothing restarts; restart it outside Sova once nothing is busy`, { service: s.name });
-      return { result: "done", detail: `restart scheduled: ${unit} restarts in ${RESTART_DELAY_SEC} s unless a session this server hosts is busy then (${restartGateLog()})` };
+      const why = await this.scheduleRestart(unit);
+      if (why) throw new VerbFailure("unsupported", `the restart of ${unit} could not be scheduled (${why}): nothing restarts; restart it outside Sova`, { service: s.name });
+      return { result: "done", detail: `restart scheduled: ${unit} restarts in ${RESTART_DELAY_SEC} s` };
     });
   }
 

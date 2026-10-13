@@ -1,13 +1,15 @@
 import { spawn } from "node:child_process";
 import type { ClaudeCliStatus } from "../shared/protocol";
 import { claudeBaseSpawnEnv, claudeLoginEnv } from "./claude-accounts";
+import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 
 /**
  * Is the Claude Code CLI on this machine, and which version?
  *
  * Deliberately the smallest possible question. The claude-code extension owns the real protocol
- * work (pi-config/extensions/claude-code), and the server does not import it: those modules are
- * under active development and a server-side import would make Sova's typecheck depend on them.
+ * work (pi-config/extensions/claude-code), and the server imports none of it but the program every
+ * spawn runs (claude-executable.ts, builtins only): the rest is under active development and a
+ * server-side import would make Sova's typecheck depend on it.
  * `claude --version` needs none of that, and the model count the status line pairs it with comes
  * from the shared runtime (server/models.ts), which is what the picker will actually show.
  */
@@ -15,8 +17,14 @@ const TIMEOUT_MS = 5000;
 /** A version string is one short line; anything longer is not one, so stop reading. */
 const MAX_OUTPUT = 4096;
 
-export function claudeCliStatus(executable = "claude"): Promise<ClaudeCliStatus> {
+export function claudeCliStatus(given?: string): Promise<ClaudeCliStatus> {
   return new Promise((resolve) => {
+    let executable: string;
+    try {
+      executable = given ?? claudeExecutable();
+    } catch (error) {
+      return resolve({ error: (error as Error).message });
+    }
     // The same env hygiene the extension uses (pi-config/extensions/claude-code/models.ts): these
     // two make the CLI think it is running inside Claude Code, which changes how it behaves.
     // On this host's first usable Claude login, like every `claude` (§app.claude-logins/spawn-selection).

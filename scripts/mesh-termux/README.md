@@ -14,7 +14,7 @@ off (key-only) and runs sshd as a runit service, so it comes back whenever Termu
 Sova runs on Bun: Bun's own Android build (`bun-linux-aarch64-android`, or `-x64-android` on an x86_64 device; it
 needs Android 9 or later), at the version mise.toml pins, downloaded by `scripts/fetch-bun.sh` into `~/sova-mesh/app/.bun`
 and checked against `scripts/bun-release.txt`. Termux has no Bun package. `--node` runs Sova on Termux's `nodejs-lts`
-instead (no Bun downloaded); `--bun` switches back.
+instead (no Bun downloaded, so no chats or workers: they need Bun); `--bun` switches back.
 
 `--node-id`, `--dns`, `--tailnet-ip`, `--port`, `--peer-port` and `--node`/`--bun` are remembered in `~/sova-mesh/.install/arg-*`: a rerun
 without one of them keeps the value given last (a new value replaces it), so a plain rerun never drops the phone's

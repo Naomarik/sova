@@ -18,7 +18,7 @@ import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, memoSessionTitleRecords, readSessionTitleRecords, type StoredTitle } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
-import { cwdOverride, disposeHeldChat, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount } from "./chat-manager";
+import { closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount } from "./chat-handle";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
@@ -1054,7 +1054,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
       if (!draftCounts(readDrafts()[s.id])) {
-        await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
+        await closeChat(s.path, "Session archived; its runtime was closed.");
         await unlink(s.path);
         cache.delete(s.path);
         setArchived(s.id, false);
@@ -1073,7 +1073,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
   if (archived) {
-    await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
+    await closeChat(s.path, "Session archived; its runtime was closed.");
     sessionArchived(s.id);
   }
   return { ok: true, summary: { ...s, archived } };
@@ -1209,7 +1209,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       continue;
     }
     try {
-      await disposeHeldChat(path, "Session deleted by archive cleanup; its runtime was closed.");
+      await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
       await unlink(path);
       cache.delete(path);
       setArchived(id, false);

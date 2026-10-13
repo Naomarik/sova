@@ -54,7 +54,8 @@ default for that field alone.
 
 `picker.ts` walks the fallbacks in order and takes the first entry that resolves,
 accepts images, and is not exhausted. Usage comes from the shared cache
-`usage-status` writes (`~/.pi/agent/cache/usage-status.json`), re-read at every
+`usage-status` writes (`cache/usage-status.json` in the agent dir: `~/.pi/agent`, or
+`$PI_CODING_AGENT_DIR` when set), re-read at every
 pick because it is refreshed out-of-band every ~3 minutes.
 
 | Provider | Usage bucket |

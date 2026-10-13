@@ -21,6 +21,7 @@ import {
   newClientId,
   queuedText,
   runDetail,
+  seedLive,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -680,4 +681,78 @@ test("a codemode script's own calls are no live tools; the script's updates carr
   assert.deepEqual(JSON.parse(JSON.stringify(s.tools.c1?.details)), calls, "the script's calls so far, live");
   feed(set, { type: "tool_execution_end", toolCallId: "c1", toolName: "codemode", result: { content: [{ type: "text", text: "Script completed" }], details: { calls: [] } }, isError: false });
   assert.equal(s.tools.c1?.status, "done");
+});
+
+// A hello's `live` snapshot is wire 2 only, so these run once, on SovaEvents.
+nodeTest("seedLive shows the reply so far, and the deltas after the hello continue it by index", () => {
+  const [s, set] = store();
+  seedLive(set, {
+    message: {
+      model: "zai/glm-5.3",
+      parts: [
+        { kind: "thinking", text: "Look at the file" },
+        { kind: "text", text: "The bug is in " },
+      ],
+    },
+  });
+  applyEvent(set, { type: "part.delta", index: 1, kind: "text", delta: "parse.ts" });
+  applyEvent(set, { type: "part.start", index: 2, kind: "toolCall", id: "t1", name: "read" });
+  assert.equal(s.entries.length, 1, "one reply, not a second one for the deltas");
+  const e = s.entries[0]!;
+  assert.equal(e.kind, "assistant");
+  if (e.kind !== "assistant") return;
+  assert.equal(e.model, "zai/glm-5.3");
+  assert.equal(e.done, false);
+  assert.deepEqual({ ...e.blocks[0] }, { type: "thinking", text: "Look at the file" });
+  assert.deepEqual({ ...e.blocks[1] }, { type: "text", text: "The bug is in parse.ts" }, "the text so far, then the new delta, once");
+  assert.equal(e.blocks[2]?.type, "toolCall");
+  assert.deepEqual(runDetail(s), { step: "tool", text: "running read" });
+});
+
+nodeTest("seedLive carries the running tools' output, and their end replaces it", () => {
+  const [s, set] = store();
+  seedLive(set, {
+    message: { parts: [{ kind: "toolCall", id: "b1", name: "bash", args: { command: "pnpm test" } }] },
+    tools: [
+      { callId: "b1", name: "bash", args: { command: "pnpm test" }, output: "38 of 214", images: [] },
+      { callId: "c1", name: "read", output: "inner", images: [], parentCallId: "b1" },
+    ],
+  });
+  assert.deepEqual(Object.keys(s.tools), ["b1"], "a call another tool made has no live tool of its own");
+  assert.equal(s.tools.b1?.status, "running");
+  assert.equal(s.tools.b1?.output, "38 of 214");
+  const e = s.entries[0];
+  assert.equal(e?.kind, "assistant");
+  if (e?.kind === "assistant") assert.deepEqual(JSON.parse(JSON.stringify(e.blocks[0])), { type: "toolCall", id: "b1", name: "bash", argsText: "", args: { command: "pnpm test" } });
+  applyEvent(set, { type: "tool.end", callId: "b1", isError: false, output: "214 passed", images: [] });
+  assert.equal(s.tools.b1?.status, "done");
+  assert.equal(s.tools.b1?.output, "214 passed");
+});
+
+nodeTest("a tool call joined mid-arguments shows no argument tail, and its end brings them whole", () => {
+  const [s, set] = store();
+  seedLive(set, { message: { parts: [{ kind: "text", text: "Running it." }, { kind: "toolCall", id: "b1", name: "bash" }] } });
+  applyEvent(set, { type: "part.delta", index: 1, kind: "toolCall", delta: 'test"}' });
+  const e = s.entries[0];
+  assert.equal(e?.kind, "assistant");
+  if (e?.kind !== "assistant") return;
+  const b = e.blocks[1];
+  assert.equal(b?.type === "toolCall" && b.argsText, "", "the tail of JSON whose head the hello never had is left out");
+  applyEvent(set, { type: "part.end", index: 1, kind: "toolCall", id: "b1", name: "bash", args: { command: "pnpm test" } });
+  const end = e.blocks[1];
+  assert.equal(end?.type, "toolCall");
+  if (end?.type === "toolCall") {
+    assert.deepEqual({ ...(end.args as object) }, { command: "pnpm test" });
+    assert.equal(end.joined, undefined);
+  }
+});
+
+nodeTest("seedLive with tools only, or nothing, draws no reply", () => {
+  const [s, set] = store();
+  seedLive(set, undefined);
+  seedLive(set, {});
+  assert.equal(s.entries.length, 0);
+  seedLive(set, { tools: [{ callId: "b1", name: "bash", output: "", images: [] }] });
+  assert.equal(s.entries.length, 0, "a tool between messages draws no empty reply");
+  assert.equal(s.tools.b1?.status, "running");
 });

@@ -126,6 +126,24 @@ test("a command made while a reload swaps the process waits for the replacement,
   assert.equal(h.reloading, false);
 });
 
+test("F14: once its process says it exits, the link is closed and a pane's prompt or steer comes back as a refusal naming it", async () => {
+  for (const cause of ["operator", "reload"] as const) {
+    const { h, link } = handle();
+    const got: unknown[] = [];
+    const pane = { send: (m: unknown) => got.push(m) } as never;
+    h.attach(pane);
+    h.clientMessage(pane, { type: "prompt", text: "before", clientId: "p0" });
+    assert.equal(link.sent.filter((f) => f.t === "client.msg").length, 1, "a live link takes it");
+    link.deliver({ t: "exit", cause } as never);
+    assert.equal(link.isOpen, false, `${cause}: the server closes the link once it hears the exit`);
+    h.clientMessage(pane, { type: "prompt", text: "/btw across the exit", clientId: "p1" });
+    h.clientMessage(pane, { type: "steer", text: "more", clientId: "p2" });
+    h.clientMessage(pane, { type: "set_model", ref: "x/y" } as never);
+    const refused = got.filter((m) => (m as { code?: string }).code === "refused") as { clientId?: string }[];
+    assert.deepEqual(refused.map((m) => m.clientId), ["p1", "p2"], cause);
+  }
+});
+
 test("an ended handle refuses at once", async () => {
   const { h } = handle();
   h.endPanes("gone");

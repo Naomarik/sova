@@ -1866,7 +1866,7 @@ async function t21l() {
     const reloadedOn = s.got.slice(f1).some((m) => m.type === "error" && m.code === "reloaded");
     // ...and only for a prompt never taken: a taken-but-unacked one would run and then be restored, asked
     // twice. Not taken: no model call carries it, and the closing process logged it refused.
-    const asked = mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes(`#${label}x`)).length;
+    const asked = mockLog(mock.log).filter((e) => e.scenario && ((e.hashes ?? []).includes(`${label}x`) || (e.userText ?? "").includes(`#${label}x`))).length;
     const sid = entries(path)[0]?.id ?? "";
     const procLog = (() => {
       try {
@@ -2658,6 +2658,8 @@ async function tstopchats() {
   };
   // What the mid-reply chat's file held just before the stop: the reopened history holds at least that.
   const lHeld = entries(L.path).filter((e) => e.type === "message").length;
+  // The model's requests from here on (one mock log serves every check of the run).
+  const mockAt = mockLog(mock.log).length;
   const first = stop();
   R.note(`tstopchats: stop-chats said: ${first.out.trim().split("\n").slice(-6).join(" | ").slice(0, 400)}`);
   R.check(first.code === 0 && /\d+ chat process(es)? stopped/.test(first.out), `tstopchats: stop-chats ran and stopped chat processes (exit ${first.code})`);
@@ -2691,7 +2693,7 @@ async function tstopchats() {
     R.note("tstopchats (mid-reply): no announced exit: a stop-chats stop that ends unannounced (killed past its grace) is a defect for the architect");
   R.check(deaths(L.path).length === 0, `tstopchats (mid-reply): no entry for it in chats/deaths.jsonl (${deaths(L.path).length})`);
   R.check(userEntriesWith(L.path, CRASH_RESUME_TEXT) === 0 && userEntriesWith(L.path, RESUME_TEXT) === 0, "tstopchats (mid-reply): no crash-resume or resume text in its session file");
-  R.check(!mockLog(mock.log).some((e) => /stopped unexpectedly and cut off your last turn/.test(e.userText ?? "")), "tstopchats (mid-reply): no crash-resume text reached the model");
+  R.check(!mockLog(mock.log).slice(mockAt).some((e) => e.tag === "resume" || /stopped unexpectedly and cut off your last turn/.test(e.userText ?? "")), "tstopchats (mid-reply): no crash-resume text reached the model");
   const resumed = resumeDecisions(L.path).filter((a) => a.outcome === "ok" || /resumed/.test(JSON.stringify(a)));
   R.check(resumed.length === 0, `tstopchats (mid-reply): no auto_resume resumed it (${fmtDecisions(resumeDecisions(L.path))})`);
   const l2 = await chat(c, L.path, 60000);

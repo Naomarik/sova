@@ -9,7 +9,7 @@
 // no server waits for one. It closes on a drain (idle, reload, archive), on SIGTERM, or when the chat
 // closes itself, and says why (`exit`) before it goes.
 import { randomUUID } from "node:crypto";
-import type { ChatCall, ChatLifecycleEvent, ChatMethod, ChatMethods, ChatRunEvent, ChatStateMirror, ServerToolCall, ServerToolDecl, ServerToolOutcome } from "../../shared/chat-runtime";
+import { type ChatCall, type ChatLifecycleEvent, type ChatMethod, type ChatMethods, type ChatRunEvent, type ChatStateMirror, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, unsentRefusal } from "../../shared/chat-runtime";
 import {
   CHAT_WIRE_MIN_PROTO,
   CHAT_WIRE_PROTO,
@@ -315,7 +315,14 @@ export class ChatRuntimeHost {
     link.on("client.attach", mine((f: FrameOf<"client.attach">) => this.attach(link, f)));
     link.on("client.msg", mine((f: FrameOf<"client.msg">) => {
       const c = this.clients.get(f.clientId);
-      if (c && this.chat) this.chat.handle(c, f.msg);
+      // A stopping chat takes no prompt: it goes back to its pane (the draft restored), never lost
+      // in a dispose or a pane this process never attached.
+      if (this.closing || !c || !this.chat || this.chat.disposed) {
+        const refusal = unsentRefusal(f.msg);
+        if (refusal) link.send({ t: "client.send", clientId: f.clientId, json: JSON.stringify(refusal) });
+        return;
+      }
+      this.chat.handle(c, f.msg);
       this.pokeSoon();
     }));
     link.on("client.detach", mine((f: FrameOf<"client.detach">) => {
@@ -947,7 +954,12 @@ export class ChatRuntimeHost {
       }
     }
     this.recorder.clear();
-    this.link?.send({ t: "exit", cause });
+    const link = this.link;
+    if (link?.send({ t: "exit", cause })) {
+      // The server closes the link once it hears the exit, so whatever a pane sent before then
+      // arrives here first and is refused back (client.msg above), never lost on a closed socket.
+      await Promise.race([link.closed, new Promise((r) => setTimeout(r, EXIT_LINGER_MS))]);
+    }
     this.o.exit(cause);
   }
 
@@ -964,6 +976,9 @@ export class ChatRuntimeHost {
     return heldChat(this.o.path);
   }
 }
+
+/** How long a closing process waits, after its `exit`, for the server to close the link. */
+const EXIT_LINGER_MS = 2_000;
 
 /** Backends whose workers are chat processes of their own (§app.chat-processes/workers); any other
     registered backend's worker runs inside its parent's process. */

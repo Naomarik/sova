@@ -6,7 +6,7 @@
 // browser frames pass through unparsed. Its server-hosted tools run here and its asks are answered
 // from this server's own sources.
 import { randomUUID } from "node:crypto";
-import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type ChatReply, noAnswer, type ServerToolCall } from "../shared/chat-runtime";
+import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type ChatReply, noAnswer, type ServerToolCall, unsentRefusal } from "../shared/chat-runtime";
 import type { ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
 import type { ChatClientMessage } from "../shared/protocol";
@@ -200,6 +200,9 @@ export class RemoteChatHandle extends ChatHandle {
       if (f.cause === "reload") this.reloadingNow = true;
       else this.ended = true;
       this.hooks.exit?.(this, f.cause);
+      // Heard: nothing more goes to it (a pane's send is refused back, clientMessage), and the
+      // process, which waits for this close, sees every frame sent before it.
+      link.close();
     });
     void link.closed.then((end) => {
       if (this.link !== link) return; // repointed since
@@ -343,7 +346,10 @@ export class RemoteChatHandle extends ChatHandle {
   }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
     const clientId = this.ids.get(client);
-    if (clientId) this.link.send({ t: "client.msg", clientId, msg });
+    if (clientId && !this.ended && this.link.send({ t: "client.msg", clientId, msg })) return;
+    // No process to take it (exited, stopping, or its link down): a prompt goes back to the pane.
+    const refusal = unsentRefusal(msg);
+    if (refusal) client.send(refusal);
   }
   detach(client: ChatClient): void {
     const clientId = this.ids.get(client);

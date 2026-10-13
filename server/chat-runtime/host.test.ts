@@ -287,9 +287,34 @@ test("drain: refused with a pane attached for idle; otherwise the chat closes an
   t.ctl.server.send({ t: "drain", id: "d2", reason: "idle", force: false });
   assert.deepEqual(await ok, { t: "drained", id: "d2", ok: true });
   assert.deepEqual(await exit, { t: "exit", cause: "idle" });
+  // It waits for the server to close the link (what a pane sent before then is refused back), then exits.
+  assert.deepEqual(t.exits, []);
+  t.ctl.server.close();
+  await settle();
   assert.deepEqual(t.exits, ["idle"]);
   assert.equal(t.host.hosting, false);
   assert.equal(readInflight(t.id), null);
+});
+
+test("F14: a prompt that reaches a stopping chat goes back to its pane as a refusal naming it, never lost in silence", async () => {
+  const t = await setup();
+  const sends = collect(t.ctl.server, "client.send");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  const exit = awaitFrame(t.ctl.server, "exit", 5_000);
+  // A stop from outside (SIGTERM) and, in flight behind it, the pane's /btw; then one sent after the exit.
+  void t.host.close("operator", { dispose: true, message: "Reconnecting." });
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "prompt", text: "/btw a side question", clientId: "p1" } });
+  await exit;
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "steer", text: "and this", clientId: "p2" } });
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "set_model", ref: "x/y" } as never });
+  await settle();
+  const refused = sends.map((f) => JSON.parse(f.json)).filter((m) => m.code === "refused");
+  assert.deepEqual(refused.map((m) => m.clientId), ["p1", "p2"]);
+  assert.match(refused[0].message, /restarting; your message wasn't sent/);
+  t.ctl.server.close();
+  await settle();
+  assert.deepEqual(t.exits, ["operator"]);
 });
 
 test("code: older than the server's build shows the badge and asks for a reload once quiet and alone", async () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import type { ChatDialogInfo, ChatLifecycleEvent, ChatRunEvent, ChatSpecialKind, RunStartAnswer, ServerToolCall, ServerToolDecl, ServerToolOutcome, SpecialSpec, WorkerHost, WorkerSpec } from "../shared/chat-runtime";
+import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
@@ -2846,6 +2846,9 @@ class ChatSession {
       client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(clientId ? { clientId } : {}) });
     };
     if (this.disposed) {
+      // A prompt comes back to the draft first; the reconnect alone would drop it in silence.
+      const refusal = unsentRefusal(msg);
+      if (refusal) client.send(refusal);
       client.send({ type: "error", code: "reloaded", message: "Session runtime was closed; reconnect" });
       return;
     }

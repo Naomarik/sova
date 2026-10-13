@@ -89,6 +89,8 @@ export class Link {
       }
     });
     socket.on("error", () => {}); // a reset ends in close
+    // The peer closed its side (a half-open link means nothing here): ended, as on close.
+    socket.on("end", () => this.end({ reason: "closed" }));
     socket.on("close", () => this.end({ reason: "closed" }));
   }
 

@@ -434,13 +434,19 @@ const realProcFs: ProcFs = {
 
 /**
  * Every process's command line and working folder. Linux: /proc (a pid that ended or isn't readable,
- * another user's, is skipped; /proc not listable fails the scan). macOS: `ps -axww -o command=` and
- * `lsof -a -d cwd -Fn -u <uid>` (partial output from a refused pid is used; ps or lsof missing, failing
- * with nothing printed, or past 10 s fails the scan). Elsewhere: no scan.
+ * another user's, is skipped). macOS: `ps -axww -o pid=,command=` and `lsof -a -u <uid> -d cwd -Fpn -w`
+ * (whatever their exit: a pid lsof may not read makes it exit 1 with the rest printed). A listing that
+ * doesn't hold this server's own pid, ps or lsof missing or past 10 s, fails the scan. Elsewhere: no scan.
  */
-export async function scanProcesses(platform: NodeJS.Platform = process.platform, proc: ProcFs = realProcFs, exec: typeof run = run): Promise<ProcScan> {
+export async function scanProcesses(platform: NodeJS.Platform = process.platform, proc: ProcFs = realProcFs, exec: typeof run = run, own: number = process.pid): Promise<ProcScan> {
+  // A listing is whole only when it holds this server's own process (always there, with a working
+  // folder): one without it, whatever its exit, is no listing at all.
+  const whole = (what: string, has: boolean) => {
+    if (!has) throw new Error(`${what} does not list this server's own process`);
+  };
   if (platform === "linux") {
     const pids = (await proc.list()).filter((n) => /^\d+$/.test(n));
+    whole("/proc", pids.includes(String(own)));
     const out: ProcScan = { commands: [], cwds: [] };
     for (const pid of pids) {
       const cmd = await proc.cmdline(pid).catch(() => null);
@@ -451,14 +457,21 @@ export async function scanProcesses(platform: NodeJS.Platform = process.platform
     return out;
   }
   if (platform === "darwin") {
-    const ps = await exec("ps", ["-axww", "-o", "command="]);
-    if (ps.missing || ps.timedOut || (ps.code !== 0 && !ps.stdout)) throw new Error(`ps ${ps.missing ? "is missing" : ps.timedOut ? "timed out" : `failed (${ps.code})`}`);
-    const lsof = await exec("lsof", ["-a", "-d", "cwd", "-Fn", "-u", String(process.getuid?.() ?? "")]);
-    if (lsof.missing || lsof.timedOut || (lsof.code !== 0 && !lsof.stdout)) throw new Error(`lsof ${lsof.missing ? "is missing" : lsof.timedOut ? "timed out" : `failed (${lsof.code})`}`);
-    return {
-      commands: ps.stdout.split("\n").filter(Boolean),
-      cwds: lsof.stdout.split("\n").flatMap((l) => (l.startsWith("n") ? [l.slice(1)] : [])),
-    };
+    const fail = (what: string, r: { code: number; missing: boolean; timedOut: boolean }) =>
+      new Error(`${what} ${r.missing ? "is missing" : r.timedOut ? "timed out" : `failed (${r.code})`}`);
+    const ps = await exec("ps", ["-axww", "-o", "pid=,command="]);
+    if (ps.missing || ps.timedOut) throw fail("ps", ps);
+    const rows = ps.stdout.split("\n").flatMap((l) => {
+      const m = /^\s*(\d+)\s+(.*)$/.exec(l);
+      return m ? [{ pid: Number(m[1]), command: m[2]! }] : [];
+    });
+    whole("ps", rows.some((r) => r.pid === own));
+    // -Fpn: a "p<pid>" line, then its "n<path>"; -w: no warnings for processes it may not read.
+    const lsof = await exec("lsof", ["-a", "-u", String(process.getuid?.() ?? ""), "-d", "cwd", "-Fpn", "-w"]);
+    if (lsof.missing || lsof.timedOut) throw fail("lsof", lsof);
+    const lines = lsof.stdout.split("\n");
+    whole("lsof", lines.includes(`p${own}`));
+    return { commands: rows.map((r) => r.command), cwds: lines.flatMap((l) => (l.startsWith("n") ? [l.slice(1)] : [])) };
   }
   throw new Error(`no process scan on ${platform}`);
 }

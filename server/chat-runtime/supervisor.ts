@@ -273,8 +273,9 @@ export interface ChatLaunch {
 
 export interface SupervisorDeps {
   driver: Driver;
-  /** The chat process's argv and env (`[bun, main.ts]`; `chatEnv` with SOVA_CHAT_*), and the build it runs. */
-  launch(chat: ChatLaunch & { unit: string; sock: string; epoch: number }): { argv: string[]; env: Record<string, string>; build?: string; nice?: number };
+  /** The chat process's argv and env (`[bun, main.ts]`; `chatEnv` with SOVA_CHAT_*), the build it runs, and
+      where it runs (its code generation's copy; default `workdir`). */
+  launch(chat: ChatLaunch & { unit: string; sock: string; epoch: number }): { argv: string[]; env: Record<string, string>; build?: string; nice?: number; workdir?: string };
   /** This server's controller epoch (nextEpoch at boot). */
   epoch: number;
   /** A chat process died without saying it exits: called once per death. */
@@ -465,7 +466,7 @@ export class ChatSupervisor {
 
   /** Start `unit` for `chat` and wait for its main process; the record is the caller's to write. */
   private async spawn(chat: ChatLaunch, unit: string, sock: string): Promise<ChatRecord> {
-    const { argv, env, build, nice } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
+    const { argv, env, build, nice, workdir } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
     // What a unit's env file can't carry is dropped there: said once per name, so a missing variable is visible.
     for (const [k, v] of Object.entries(env))
       if (!envFileKeeps(k, v) && !this.skippedEnv.has(k)) {
@@ -473,7 +474,7 @@ export class ChatSupervisor {
         this.log(`env ${k} is not passed to chat processes (${/[\n\r]/.test(v) ? "a value on more than one line" : "not a variable name"})`);
       }
     const rec: ChatRecord = { ...chat, unit, pid: null, sock, epoch: this.deps.epoch, ...(build ? { build } : {}), startedAt: new Date(this.now()).toISOString() };
-    await this.deps.driver.start({ unit, argv, cwd: this.deps.workdir ?? REPO_ROOT, env, ...(nice ? { nice } : {}) });
+    await this.deps.driver.start({ unit, argv, cwd: workdir ?? this.deps.workdir ?? REPO_ROOT, env, ...(nice ? { nice } : {}) });
     const until = this.now() + (this.deps.startWaitMs ?? 10_000);
     let st = await this.deps.driver.status(unit);
     while (st.pid === null && st.state === "activating" && this.now() < until) {

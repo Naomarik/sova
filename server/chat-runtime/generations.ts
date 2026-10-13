@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { constants, existsSync, readFileSync, readlinkSync, renameSync, writeFileSync } from "node:fs";
-import { chmod, copyFile, link, lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink } from "node:fs/promises";
+import { chmod, copyFile, link, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, symlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { buildCommit, realMachine } from "../mesh/details-collect";
 import { chatsRoot } from "./supervisor";
@@ -29,6 +29,8 @@ export interface Generation {
   /** True: the checkout itself (no copy was made; `why` says why). */
   live: boolean;
   why?: string;
+  /** Its node_modules is a full copy, not hardlinks: the copies root is on another filesystem. */
+  depsCopied?: boolean;
 }
 
 /** Where this server puts the copies: `SOVA_CHAT_CODE_ROOT` (trials only; never a chat process's own
@@ -88,7 +90,7 @@ export async function liveGeneration(why: string, o: { repo?: string; env?: Node
 /** For `GET /api/health`'s chatHost (§app.server-runtime/health): fixed short words only. */
 export function generationHealth(): { code: "copy" | "live"; codeWhy?: string } | null {
   if (!current) return null;
-  if (!current.live) return { code: "copy" };
+  if (!current.live) return current.depsCopied ? { code: "copy", codeWhy: "full node_modules copy (another filesystem)" } : { code: "copy" };
   return { code: "live", codeWhy: current.why === "test switch" ? "test switch" : "copy failed" };
 }
 
@@ -96,7 +98,7 @@ export function generationHealth(): { code: "copy" | "live"; codeWhy?: string } 
  * Make, or reuse, the generation of `repo`'s current code under `root`. Never throws: on any failure
  * the checkout itself, with the reason logged once. `SOVA_CHAT_CODE=live` (tests) skips the copy.
  */
-export async function currentGeneration(o: { repo?: string; root?: string; env?: NodeJS.ProcessEnv; log?: (line: string) => void } = {}): Promise<Generation> {
+export async function currentGeneration(o: { repo?: string; root?: string; env?: NodeJS.ProcessEnv; log?: (line: string) => void; link?: LinkFile } = {}): Promise<Generation> {
   const repo = o.repo ?? REPO;
   const env = o.env ?? process.env;
   const log = o.log ?? ((l: string) => console.log(`[chat-code] ${l}`));
@@ -111,20 +113,22 @@ export async function currentGeneration(o: { repo?: string; root?: string; env?:
       const id = await buildId(repo, env);
       if (id === "unknown") throw new Error("this checkout's build is unknown");
       const dir = generationDir(id, root);
+      const mk = { link: o.link ?? link, log };
+      let deps: Deps | null;
       if (isComplete(dir)) {
-        const deps = await ensureDeps(repo, root, dir);
-        log(`chats run code ${id} (reused ${dir}, ${Date.now() - t0} ms${depsNote(deps)})`);
+        deps = await ensureDeps(repo, root, dir, mk);
+        log(`chats run code ${id} (reused ${dir}, ${Date.now() - t0} ms)`);
       } else {
-        const deps = await makeGeneration(repo, root, id, dir);
+        deps = await makeGeneration(repo, root, id, dir, mk);
         // Written to while copied: the copy may hold another tree than its id says. Once more, else no copy.
         if ((await buildId(repo, env)) !== id) {
           await rm(dir, { recursive: true, force: true });
           if (attempt >= 1) throw new Error("the checkout kept changing while its code was copied");
           continue;
         }
-        log(`chats run code ${id} (copied to ${dir} in ${Date.now() - t0} ms${depsNote(deps)})`);
+        log(`chats run code ${id} (copied to ${dir} in ${Date.now() - t0} ms)`);
       }
-      current = { id, dir, live: false };
+      current = { id, dir, live: false, ...(deps?.how === "copied" ? { depsCopied: true } : {}) };
       break;
     }
   } catch (err) {
@@ -158,12 +162,19 @@ async function publish(tmp: string, dir: string): Promise<void> {
   }
 }
 
-/** How a copy's shared node_modules came to be: there already, hardlinked, or copied in full (another filesystem). */
-type Deps = "reused" | "linked" | "copied";
-const depsNote = (d: Deps) =>
-  d === "copied" ? "; node_modules copied in full, not hardlinked: the code root is on another filesystem than the checkout (SOVA_CHAT_CODE_ROOT on the checkout's filesystem avoids it)" : "";
+/** How a copy's shared node_modules was made: hardlinked, or copied in full (another filesystem); its bytes copied. */
+interface Deps {
+  how: "linked" | "copied";
+  bytes: number;
+}
+/** Hardlink one file (fs.link; a test injects EXDEV). */
+type LinkFile = (src: string, dst: string) => Promise<void>;
+interface Making {
+  link: LinkFile;
+  log: (line: string) => void;
+}
 
-async function makeGeneration(repo: string, root: string, id: string, dir: string): Promise<Deps> {
+async function makeGeneration(repo: string, root: string, id: string, dir: string, mk: Making): Promise<Deps | null> {
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (existsSync(dir)) await rm(dir, { recursive: true, force: true }); // half-made: rebuilt
   const tmp = tmpIn(root);
@@ -173,7 +184,7 @@ async function makeGeneration(repo: string, root: string, id: string, dir: strin
     const lock = await lockHash(join(tmp, "pnpm-lock.yaml"));
     if (lock) await symlink(join("..", DEPS, lock, "node_modules"), join(tmp, "node_modules"));
     writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ id, lock, at: new Date().toISOString() })}\n`, { mode: 0o444 });
-    const deps = lock ? await depsSnapshot(repo, root, lock) : "reused";
+    const deps = lock ? await depsSnapshot(repo, root, lock, mk) : null;
     await publish(tmp, dir);
     return deps;
   } catch (err) {
@@ -214,10 +225,17 @@ async function lockHash(file: string): Promise<string | null> {
   return b ? createHash("sha256").update(b).digest("hex").slice(0, 16) : null;
 }
 
-/** Copy the tree `from` to `to`: each file hardlinked (cloned, else copied, across filesystems), each link as it is. */
-async function linkTree(from: string, to: string): Promise<"linked" | "copied"> {
+/**
+ * Copy the tree `from` to `to`: each file hardlinked (cloned, else copied, across filesystems), each link as
+ * it is. A directory that is `skip` (the copies root, should it lie inside the tree) is left out: never a
+ * copy of itself.
+ */
+async function linkTree(from: string, to: string, linkFile: LinkFile, skip: string): Promise<Deps> {
   let crossDevice = false;
+  let bytes = 0;
+  const skipReal = await realpath(skip).catch(() => resolve(skip));
   const walk = async (src: string, dst: string): Promise<void> => {
+    if ((await realpath(src).catch(() => src)) === skipReal) return;
     await mkdir(dst);
     const entries = await readdir(src, { withFileTypes: true });
     let next = 0;
@@ -231,20 +249,21 @@ async function linkTree(from: string, to: string): Promise<"linked" | "copied"> 
         else if (e.isFile()) {
           if (!crossDevice)
             try {
-              await link(s, d);
+              await linkFile(s, d);
               continue;
             } catch (err) {
               if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
               crossDevice = true;
             }
           await copyFile(s, d, constants.COPYFILE_FICLONE);
+          bytes += (await stat(d)).size;
         }
       }
     };
     await Promise.all(Array.from({ length: Math.min(8, entries.length) }, one));
   };
   await walk(from, to);
-  return crossDevice ? "copied" : "linked";
+  return { how: crossDevice ? "copied" : "linked", bytes };
 }
 
 /**
@@ -253,9 +272,9 @@ async function linkTree(from: string, to: string): Promise<"linked" | "copied"> 
  * copied. Guarded against a `pnpm install` running meanwhile: the checkout's lockfile must read `lock`
  * before and after the copy (one retry).
  */
-async function depsSnapshot(repo: string, root: string, lock: string): Promise<Deps> {
+async function depsSnapshot(repo: string, root: string, lock: string, mk: Making): Promise<Deps> {
   const dir = join(root, DEPS, lock);
-  if (isComplete(dir)) return "reused";
+  if (isComplete(dir)) return depsMade(dir);
   const src = join(repo, "node_modules");
   if (!existsSync(src)) throw new Error(`the checkout has no node_modules`);
   await mkdir(join(root, DEPS), { recursive: true, mode: 0o700 });
@@ -264,11 +283,12 @@ async function depsSnapshot(repo: string, root: string, lock: string): Promise<D
     const tmp = tmpIn(join(root, DEPS));
     await mkdir(tmp);
     try {
-      const how = await linkTree(src, join(tmp, "node_modules"));
+      const made = await linkTree(src, join(tmp, "node_modules"), mk.link, root);
       if ((await lockHash(join(repo, "pnpm-lock.yaml"))) !== lock) throw new Error("the checkout's lockfile changed during the copy of its node_modules");
-      writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ lock, at: new Date().toISOString() })}\n`);
+      writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ lock, at: new Date().toISOString(), ...made })}\n`);
       await publish(tmp, dir);
-      return how;
+      if (made.how === "copied") mk.log(`copies root on another filesystem: full node_modules copy, ${Math.round(made.bytes / 1048576)} MB`);
+      return made;
     } catch (err) {
       await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
       if (attempt >= 1) throw err;
@@ -276,10 +296,20 @@ async function depsSnapshot(repo: string, root: string, lock: string): Promise<D
   }
 }
 
-/** A reused copy whose shared dependencies were collected (or never finished) gets them again. */
-async function ensureDeps(repo: string, root: string, dir: string): Promise<Deps> {
+/** How a finished deps snapshot was made (its .complete says; an older one without it: hardlinked). */
+function depsMade(dir: string): Deps {
+  try {
+    const c = JSON.parse(readFileSync(join(dir, COMPLETE), "utf8")) as Partial<Deps>;
+    return { how: c.how === "copied" ? "copied" : "linked", bytes: c.bytes ?? 0 };
+  } catch {
+    return { how: "linked", bytes: 0 };
+  }
+}
+
+/** A reused copy's shared dependencies, made again when they were collected (or never finished). */
+async function ensureDeps(repo: string, root: string, dir: string, mk: Making): Promise<Deps | null> {
   const lock = depsOf(dir);
-  return lock && !isComplete(join(root, DEPS, lock)) ? depsSnapshot(repo, root, lock) : "reused";
+  return lock ? depsSnapshot(repo, root, lock, mk) : null;
 }
 
 /** The lockfile hash a copy's `node_modules` link names, or null. */

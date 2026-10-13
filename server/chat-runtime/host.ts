@@ -162,6 +162,8 @@ export class ChatRuntimeHost {
   /** A pane's "Reload now" stands until the chat reloads, fails or is current: a drain refused as busy re-arms it. */
   private reloadNowWanted = false;
   private reloadAsked = false;
+  /** Which server (pid and start) the controller is: a reload, and its failure, are that server's own. */
+  private serverLife: string | null = null;
   private readonly ctx: CallCtx = { turns: new Map() };
   private readonly clients = new Map<string, ChatClient>();
   private orphaned = false;
@@ -235,6 +237,15 @@ export class ChatRuntimeHost {
     this.link = link;
     this.epoch = control.epoch;
     this.settings = control.settings;
+    const life = `${control.serverPid}:${control.serverStartedAt}`;
+    if (this.serverLife !== null && this.serverLife !== life && this.codeSaid) {
+      // The last server's reload (or failure) ends with it: this one sees older code and asks by its own rules.
+      this.codeSaid = null;
+      this.reloadAsked = false;
+      if (this.reloadNowWanted) this.reloadPending = true;
+      this.codeChanged();
+    }
+    this.serverLife = life;
     void link.closed.then(() => {
       if (this.link === link) this.lostLink();
     });

@@ -302,6 +302,9 @@ export interface ConnectLinkOptions extends LinkOptions {
   helloWithinMs?: number;
 }
 
+/** This server's start, worked out once: the same on every link it opens, so a chat tells one server life from the next. */
+const SERVER_STARTED_AT = Math.round(Date.now() - process.uptime() * 1000);
+
 export class LinkRefused extends Error {
   constructor(readonly refusal: FrameOf<"refuse">) {
     super(`The chat process refused this server: ${refusal.message}`);
@@ -348,7 +351,7 @@ export async function connectLink(sockPath: string, opts: ConnectLinkOptions): P
       proto: CHAT_WIRE_PROTO,
       epoch: opts.epoch,
       serverPid: opts.serverPid ?? process.pid,
-      serverStartedAt: opts.serverStartedAt ?? Math.round(Date.now() - process.uptime() * 1000),
+      serverStartedAt: opts.serverStartedAt ?? SERVER_STARTED_AT,
       build: opts.build,
       since: opts.since,
       settings: opts.settings,

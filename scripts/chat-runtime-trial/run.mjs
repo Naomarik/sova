@@ -352,12 +352,13 @@ function noResume(path, label) {
   R.check(!inLedger(path), `${label}: runs-in-flight.json does not list the chat`);
   R.check(resumeDecisions(path).length === 0, `${label}: no auto-resume decision about the chat (${fmtDecisions(resumeDecisions(path))})`);
 }
-/** darwin (no cgroups): `pid` is apart from the server: not its descendant, nor in its process group or
-    session, so a stop of the server's launchd job (which signals its group) never reaches it. */
+/** darwin (no cgroups): `pid` is apart from the server: not its descendant, nor in its process group, so a
+    stop of the server's launchd job (which signals its group) never reaches it. (ps shows every session as 0
+    there, so sessions are reported, not compared.) */
 function apartFromServer(pid, label, what = "the chat") {
   const me = info(pid);
   const sv = info(srv.pid());
-  R.check(me && sv && !ancestors(pid).includes(sv.pid) && me.pgid !== sv.pgid && me.sid !== sv.sid, `${label}: ${what} is apart from the server (pid ${pid} pgid ${me?.pgid} sess ${me?.sid}; server ${sv?.pid} pgid ${sv?.pgid} sess ${sv?.sid})`);
+  R.check(me && sv && !ancestors(pid).includes(sv.pid) && me.pgid !== sv.pgid, `${label}: ${what} is apart from the server (pid ${pid} pgid ${me?.pgid} sess ${me?.sid}; server ${sv?.pid} pgid ${sv?.pgid} sess ${sv?.sid})`);
 }
 function sameProcess(path, pid1, label) {
   const pid2 = chatPid(path);

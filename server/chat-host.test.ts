@@ -78,7 +78,7 @@ const quiet = () => {};
 let epoch = 1_000;
 
 /** A router over a fake driver whose started units answer as chat-runtime hosts in this process. */
-function setup(o: { out?: boolean } = {}) {
+function setup(o: { out?: boolean; bun?: string | null } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -104,7 +104,7 @@ function setup(o: { out?: boolean } = {}) {
     setImmediate(() => h.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings }));
     return { link, hello };
   }) as never;
-  const router = new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor });
+  const router = new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}) });
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
   const again = (delayMs = 0) =>
@@ -135,6 +135,13 @@ test("an ordinary chat runs in a process of its own; a link member is ordinary",
   const m = await t.router.acquire(member.path, false);
   assert.equal(m?.where, "process");
   assert.equal(t.driver.started.length, 2);
+  t.router.detach();
+});
+
+test("with no Bun anywhere every chat open is refused, and no process starts", async () => {
+  const t = setup({ bun: null });
+  await assert.rejects(t.router.acquire(session().path, false), /Chats need Bun to run Sova's chat runtime/);
+  assert.equal(t.driver.started.length, 0);
   t.router.detach();
 });
 

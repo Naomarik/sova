@@ -74,32 +74,24 @@ export function supervisorConfig(env: NodeJS.ProcessEnv = process.env): Supervis
 
 // ---- where chats run ----------------------------------------------------------------------------
 
-export type ChatHost = { mode: "out"; why: string } | { mode: "in"; why: string };
+export type ChatHost = { driver: "systemd" | "detached"; why: string };
 
 /**
- * Whether this server runs ordinary chats in processes of their own: only with the per-server switch
- * on (`SOVA_CHAT_HOST=out`), on Linux, with the server on Bun (the chat runs on the server's own
- * binary), and the systemd user manager answering. Otherwise in this process as before, and `why`
- * says which condition decided it. macOS stays in-process until its stand-in test passes; a Linux
- * host without systemd too, since a detached child of a server run by a service manager would still
- * die with the server's cgroup. `SOVA_CHAT_DRIVER=detached` (tests only) skips the systemd probe.
+ * How this server runs chat processes (§app.chat-processes/supervision): systemd user units where the
+ * user manager answers (Linux), else detached sessions it records (macOS, a Linux without one).
+ * `SOVA_CHAT_DRIVER=detached` (tests) skips the probe. Never in this process.
  */
-export async function chooseChatHost(deps: { env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform; bun?: string | undefined; driver?: Pick<Driver, "available"> } = {}): Promise<ChatHost> {
+export async function chooseChatHost(deps: { env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform; driver?: Pick<Driver, "available"> } = {}): Promise<ChatHost> {
   const env = deps.env ?? process.env;
   const platform = deps.platform ?? process.platform;
-  const bun = "bun" in deps ? deps.bun : process.versions.bun;
-  const sw = env.SOVA_CHAT_HOST?.trim();
-  if (sw !== "out") return { mode: "in", why: sw ? `SOVA_CHAT_HOST=${sw} (only "out" moves chats out)` : "chats run in the server (SOVA_CHAT_HOST is not out)" };
-  if (platform !== "linux") return { mode: "in", why: `SOVA_CHAT_HOST=out, but chat processes are Linux-only for now (this is ${platform})` };
-  if (!bun) return { mode: "in", why: "SOVA_CHAT_HOST=out, but chat processes need the server on Bun" };
-  if (supervisorConfig(env).driver === "detached") return { mode: "out", why: "SOVA_CHAT_HOST=out, detached test driver (SOVA_CHAT_DRIVER=detached)" };
+  if (supervisorConfig(env).driver === "detached") return { driver: "detached", why: "detached sessions (SOVA_CHAT_DRIVER=detached)" };
+  if (platform !== "linux") return { driver: "detached", why: `detached sessions (${platform} has no systemd)` };
   const probe = await (deps.driver ?? new SystemdDriver()).available();
-  if (!probe.ok) return { mode: "in", why: `SOVA_CHAT_HOST=out, but ${probe.detail}` };
-  return { mode: "out", why: `SOVA_CHAT_HOST=out, ${probe.detail}` };
+  return probe.ok ? { driver: "systemd", why: `systemd user units: ${probe.detail}` } : { driver: "detached", why: `detached sessions: ${probe.detail}` };
 }
 
 /** The driver chats run under: systemd units in the chats' slice, env in a 0600 file, never restarted by
-    systemd; or, for tests, detached sessions recorded under `chats/procs` and `chats/logs`. */
+    systemd; or detached sessions recorded under `chats/procs` and `chats/logs`. */
 export function chatDriver(config: Pick<SupervisorConfig, "slice" | "driver"> = supervisorConfig(), exec: Exec = realExec): Driver {
   if (config.driver === "detached") return new DetachedDriver(CHAT_STOP_SEC * 1000, { restart: false, procsDir: () => join(chatsRoot(), "procs"), logsDir: () => join(chatsRoot(), "logs") });
   return new SystemdDriver(exec, { slice: config.slice, timeoutStopSec: CHAT_STOP_SEC, restart: false, envFile: (unit) => join(envDir(), `${unit}.env`) });

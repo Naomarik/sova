@@ -138,13 +138,14 @@ export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").
 /** The server's environment: the scratch agent dir, the knobs, and nothing that names a real login
     or key (only the mock, or an auth.json copied in, may answer). `on`: the switch; `driver`:
     "detached" or "systemd" (then `slice` is the stand-in slice); `idleMs`, `build`, `failBoot`. */
-export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, claude, extra = {} }) {
+export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failBoot, claude, liveLike = false, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
   // No network: no price fetch, no usage poll (it would ask Claude with whatever login it finds).
   Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off", SOVA_USAGE_POLL: "off" });
   // `claude`: fakeClaude()'s dirs: the fake first on PATH, its login as the default one.
   if (claude) Object.assign(env, { PATH: `${claude.claudeBin}:${env.PATH ?? ""}`, CLAUDE_CONFIG_DIR: claude.claudeLogin });
-  if (on) env[KNOBS.switch] = "out";
+  // `liveLike` (T26): no switch, as on the live server once chats run in their own processes by default.
+  if (on && !liveLike) env[KNOBS.switch] = "out";
   if (on && driver === "detached") env[KNOBS.driver] = "detached";
   if (on && slice) env[KNOBS.slice] = slice;
   if (idleMs !== undefined) env[KNOBS.idle] = String(idleMs / 60_000);
@@ -173,7 +174,7 @@ export { sc, show };
  * restart. mode "child" runs it as a plain child instead (no user bus: the switch-off check). `root`: the
  * tree it runs from (default ROOT; T25 runs a git clone it edits).
  */
-export function server({ tag, env, mode = "unit", log, root = ROOT }) {
+export function server({ tag, env, mode = "unit", log, root = ROOT, liveLike = false }) {
   if (mode === "unit" && darwin) return launchdStandIn({ label: `test.sova-s5-${tag}`, env, log, root });
   env = { ...env };
   const unit = `sova-trial-server-${tag}.service`;
@@ -182,7 +183,11 @@ export function server({ tag, env, mode = "unit", log, root = ROOT }) {
   const up = () => {
     if (mode === "unit") {
       const sets = Object.entries(env).filter(([k]) => /^(PATH|HOME|PORT|PI_CODING_AGENT_DIR|CLAUDE_CONFIG_DIR|SOVA_\w+|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|TMPDIR|LANG)$/.test(k));
-      execFileSync("systemd-run", ["--user", `--unit=${unit}`, "--property=KillMode=control-group", "--property=TimeoutStopSec=30", `--working-directory=${root}`, `--property=StandardOutput=append:${log}`, `--property=StandardError=append:${log}`, ...sets.map(([k, v]) => `--setenv=${k}=${v}`), start], { stdio: "pipe" });
+      execFileSync("systemd-run", ["--user", `--unit=${unit}`, ...(liveLike
+        ? // docs/running-as-a-service.md's unit, as sova-runtime.service has it (its ExecStartPre, pi-config/install.sh --links,
+          // writes ~/.pi/agent and is left out); KillMode is the default, control-group.
+          ["--property=Type=simple", "--property=Restart=always", "--property=RestartSec=2", "--property=TimeoutStopSec=90"]
+        : ["--property=KillMode=control-group", "--property=TimeoutStopSec=30"]), `--working-directory=${root}`, `--property=StandardOutput=append:${log}`, `--property=StandardError=append:${log}`, ...sets.map(([k, v]) => `--setenv=${k}=${v}`), start], { stdio: "pipe" });
     } else {
       child = spawn(start, [], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
       // A log that can't be written (a full disk) loses lines, never the runner.

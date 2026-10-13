@@ -78,6 +78,10 @@
 //     t25       code generations: a chat runs its own copy of the code; an edit to the checkout never
 //               reaches it; a restart moves quiet chats one at a time; a worker of an older chat runs
 //               the current copy; unused copies go; new code that fails to boot halts the rollout
+//     t27       Part B/C B1: a broken deploy: no last good copy refuses with the reason; else a new chat
+//               opens on the last good copy with the failure banner
+//     tdefault  Part B/C B4/B1: no switch, and SOVA_CHAT_HOST=off: chats and workers still run in processes
+//               of their own, never in the server or as its children
 //     tserverless  Part B 5e(a): with the server stopped for good, a quiet chat exits after the (shortened)
 //               idle time, one mid-reply runs on until its reply ends; the next server sees no death
 //     hermetic  hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
@@ -138,7 +142,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t22", "t23", "t24", "t25", "tserverless", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t22", "t23", "t24", "t25", "t27", "tdefault", "tserverless", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -149,6 +153,10 @@ const mode = opt("mode", userBus() ? "unit" : "child");
 // stand-in, lib.mjs launchdStandIn).
 const driver = opt("driver", mode === "unit" && !darwin ? "systemd" : "detached");
 if (driver === "systemd" && !userBus()) (console.error("--driver systemd needs the systemd user manager (none answers here)"), process.exit(2));
+// T26 (stage5-design.md Part B/C): the server as a unit with sova-runtime.service's own settings and no switch
+// (chats out of process by default); run the survival checks under it: run.mjs t1 t1b t1c t1d t1e t7 t17 t19 t21 --mode unit --live-like
+const liveLike = argv.includes("--live-like");
+if (liveLike && mode !== "unit") (console.error("--live-like needs --mode unit (the server as a stand-in unit)"), process.exit(2));
 const fixedPort = opt("port") ? Number(opt("port")) : null;
 // darwin: a short real path (/var is a link to /private/var, and deep /private/var/folders paths overrun the
 // 104-byte limit of a unix socket path, 104 included).
@@ -245,10 +253,14 @@ async function boot(o = {}) {
   // A share listener of its own on loopback, so a trial can post as a baton's participant.
   const sharePort = await freePort();
   const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
-  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
-  const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`), root: o.root });
+  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
+  const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`), root: o.root, liveLike });
   s.up();
   await healthy(url);
+  if (liveLike && !o.agent && (o.on ?? true)) {
+    const h = await fetch(`${url}/api/health`).then((r) => r.json()).catch(() => null);
+    R.check(h?.chatHost?.mode === "out", `live-like: with no switch set, chats run out of the server (health chatHost ${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
+  }
   const cl = client(url, tokenOf(o.agent ?? agent));
   if (!o.agent) {
     shareBase = `http://127.0.0.1:${sharePort}`;
@@ -2354,6 +2366,90 @@ async function t25() {
   await boot();
 }
 
+// T27 (stage5-design.md Part B/C, B1): a broken deploy. The server runs from a scratch git clone (each
+// empty commit a new code id) on a code root of its own.
+//   (1) no last good copy yet and the current code fails to start: a new chat's open is refused with
+//       the reason;
+//   (2) a chat ran on code A (A is last good); code B fails to start: a new chat opens on A and shows
+//       the failure banner, and the chat already on A keeps its process;
+//   (3) a reload whose open fails relaunches the chat on its previous code. It needs a knob that fails
+//       an open (asked of core); without it this part is noted, not run.
+async function t27() {
+  const src = existsSync(join(ROOT, ".trial-repo")) ? readFileSync(join(ROOT, ".trial-repo"), "utf8").trim() : ROOT;
+  const rev = existsSync(join(ROOT, ".trial-rev")) ? readFileSync(join(ROOT, ".trial-rev"), "utf8").trim() : execFileSync("git", ["-C", ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const clone = join(scratch, "t27-clone");
+  const codeDir = join(ROOT, "node_modules", ".cache", `sova-chat-code-t27-${tag}`);
+  rmSync(clone, { recursive: true, force: true });
+  rmSync(codeDir, { recursive: true, force: true });
+  const git = (...a) => execFileSync("git", ["-C", clone, "-c", "user.name=trial", "-c", "user.email=trial@example.invalid", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  execFileSync("git", ["clone", "-q", "--no-checkout", src, clone], { stdio: "pipe" });
+  git("checkout", "-q", "--detach", rev);
+  symlinkSync(realpathSync(join(ROOT, "node_modules")), join(clone, "node_modules"));
+  const next = (m) => (git("commit", "-q", "--allow-empty", "-m", `trial: ${m}`), git("rev-parse", "HEAD"));
+  const code = { [KNOBS.codeRoot]: codeDir, [KNOBS.codeGc]: "on" };
+  const codeFrames = (s) => s.got.filter((m) => m.type === "code").map((m) => m.state);
+  try {
+    // (1)
+    const genA = next("A");
+    await teardown();
+    await boot({ root: clone, build: null, extra: { ...code, [KNOBS.failBoot]: genA } });
+    const refused = await newChat().then(
+      (x) => (x.s.close(), null),
+      (e) => String(e.message ?? e),
+    );
+    R.check(refused && /didn.t start|did not start|could not start/i.test(refused), `t27(1): with no last good copy, a chat on code that fails to start is refused with the reason (${refused?.slice(0, 200) ?? "it opened"})`);
+    // (2)
+    await teardown();
+    await boot({ root: clone, build: null, extra: code });
+    const X = await newChat();
+    await turn(X, "say ok");
+    const pidX = chatPid(X.path);
+    R.check(record(X.path)?.build === genA, `t27(2): a chat runs on code A (${record(X.path)?.build})`);
+    X.s.close();
+    const genB = next("B");
+    await restart({ [KNOBS.failBoot]: genB });
+    const Y = await newChat();
+    await turn(Y, "say ok on a broken deploy");
+    await sleep(2000);
+    R.check(record(Y.path)?.build === genA && chatPid(Y.path), `t27(2): a new chat opens on the last good code A while B fails (${record(Y.path)?.build})`);
+    R.check(codeFrames(Y.s).includes("failed"), `t27(2): it shows the failure banner (code frames ${JSON.stringify(codeFrames(Y.s))})`);
+    R.check(chatPid(X.path) === pidX, `t27(2): the chat already on A keeps its process (${pidX} → ${chatPid(X.path)})`);
+    Y.s.close();
+    // (3)
+    if (KNOBS.failOpen) R.note("t27(3): not written yet: the knob that fails an open exists, the steps don't");
+    else R.note("t27(3): not run: no knob fails a replacement's open (asked of core)");
+  } finally {
+    await teardown();
+    rmSync(codeDir, { recursive: true, force: true });
+  }
+  await boot();
+}
+
+// Tdefault (Part B/C, B4 and B1): chats in processes of their own by default, with no in-server path:
+// no switch set, and then the old switch-off value set, the server reports chats out of process, an
+// ordinary chat and its worker each run in a process of their own, and neither is the server's child.
+async function tdefault() {
+  for (const [label, extra] of [["no switch", {}], ["SOVA_CHAT_HOST=off", { [KNOBS.switch]: "off" }]]) {
+    await teardown();
+    await boot({ on: false, extra: { [KNOBS.driver]: "detached", ...extra } });
+    const h = await c.api("/api/health").catch(() => null);
+    R.check(h?.chatHost?.mode === "out", `tdefault (${label}): the server reports chats out of process (${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
+    const { path, s } = await newChat();
+    prompt(s, "[spawn 1 6 #tdw] start a worker");
+    const w = await workerWith(path, "#tdw");
+    await waitFor(() => w && chatPid(w.path), 30000);
+    const pp = chatPid(path);
+    const wp = w && chatPid(w.path);
+    const server = srv.pid();
+    R.check(pp && pp !== server && !tree(server).some((p) => p.pid === pp), `tdefault (${label}): the chat runs in a process of its own, not the server's child (${pp}, server ${server})`);
+    R.check(wp && wp !== pp && !tree(server).some((p) => p.pid === wp), `tdefault (${label}): its worker too (${wp || "none"})`);
+    await workerDone(s, "trial-tdw");
+    s.close();
+  }
+  await teardown();
+  await boot();
+}
+
 // Tserverless (Part B 5e(a)): chats with no server. Idle-stop shortened (SOVA_CHAT_IDLE_MIN=0.05). The
 // server stops for good, chats left running (systemctl stop of its unit, or a launchd bootout on darwin);
 // a quiet chat with no controller then exits by itself after the idle time, a chat mid-reply keeps
@@ -2563,7 +2659,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t22, t23, t24, t25, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t22, t23, t24, t25, t27, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

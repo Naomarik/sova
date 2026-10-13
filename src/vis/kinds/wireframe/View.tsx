@@ -263,7 +263,7 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
 
   const cls = (b: WBlock, base: string, e: Emphasis | undefined) =>
     // A mark rings the block in its own tone; the block keeps its own (an accent button stays filled).
-    `${base} vis-tone-${b.tone ?? "none"}${e ? ` vis-wf-em vis-wf-em-${e.tone}` : ""}${b.wide ? " vis-wf-wide" : ""}${b.on ? " vis-wf-on" : ""}`;
+    `${base} vis-tone-${b.tone ?? "none"}${e ? ` vis-wf-em vis-wf-em-${e.tone}` : ""}${b.wide ? " vis-wf-wide" : ""}${b.on ? " vis-wf-on" : ""}${b.right ? " vis-wf-right" : ""}${b.grow ? " vis-wf-grow" : ""}${b.share ? ` vis-wf-share-${b.share}` : ""}`;
 
   /** `bare`: without its chip, which the caller places. */
   function Block(p: { b: WBlock; bare?: boolean }): JSX.Element {
@@ -347,7 +347,7 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
         );
       case "row":
         return (
-          <div class={c("vis-wf-row")}>
+          <div class={c(`vis-wf-row${b.content ? " vis-wf-pack" : ""}${b.end ? " vis-wf-end" : ""}${b.shares ? " vis-wf-shares" : ""}${b.align ? ` vis-wf-align-${b.align}` : ""}`)}>
             {kids()}
             {/* Beside the blocks while each keeps about 12ch, else on a line of its own under them (wireframe.css). */}
             <Show when={b.to !== undefined || b.toName}>

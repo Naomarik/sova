@@ -58,9 +58,9 @@
 
   <nav class="sidebar-list pane" aria-label="Session list">
     <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
-         you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups),
-         then Profiles (§app.session-list/profile-shelf), only while a session runs with a profile.
-         All four omitted here for length. Live & web comes next (below); then Organizations
+         you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups).
+         There is no Profiles region: a session that runs with a profile keeps its row where it lives,
+         with its badge (§chat.profiles/after-first-message). All three omitted here for length. Live & web comes next (below); then Organizations
          (§app.session-list/organizations), then the Archive (§app.session-list/regions-top-and-archive). -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
@@ -686,53 +686,6 @@ label a person reads says "sessions pane".
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
-## §app.session-list/profile-shelf — Profiles
-
-Under Groups (§app.session-list/groups), above Live & web: the sessions that run with a profile
-(§chat/profiles), grouped by profile. It is a **shortcut, not a place**: every row also keeps its
-place in Live & web (and Groups), but a session it lists is never a Recent row
-(§app.session-list/recent).
-
-```html
-<details class="sidebar-region sidebar-profiles" open>
-  <summary class="sidebar-region-head"><span>Profiles</span><span class="sidebar-region-count">· 3</span></summary>
-  <!-- one sub-group per profile in use -->
-  <div class="profile-shelf-group">
-    <p class="profile-shelf-head">…icon… Docs reviewer <span class="text-muted">2 live</span>
-      <button class="button button-sm button-ghost">Run</button></p>
-    <ul class="list">…session rows…</ul>
-  </div>
-  <!-- a One at a time profile run at least once, with no live session: one line; a project's
-       profile names its project -->
-  <p class="profile-shelf-slot">…icon… Release checker <span class="text-muted">· acme ·</span>
-    <span class="text-muted">Not running</span>
-    <button class="button button-sm">Start</button></p>
-</details>
-```
-
-- **Not a capability-neutral profile.** A profile that only sets model, effort, subagents, mode
-  or minor modes (`SessionSummary.profile.neutral`, §chat.profiles/model) is not a shelf profile: its sessions get
-  no rows here and it gets no sub-group or slot. They keep the head chip, the info row and the list
-  badge (§chat.profiles/after-first-message).
-- **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set and not neutral, under
-  its profile's sub-head, newest started first. Sub-groups are keyed by the profile's identity
-  (§chat.profiles/projects), so the same id from two projects is two sub-groups; a custom pick is
-  grouped by its label. A sub-head carries the profile's icon and label, a project profile's
-  project name after it ("· {project}"), then "{n} live" and **Run**, or, for a One at a time
-  profile, "One at a time" and no Run. The region's count is its rows.
-- **One at a time slots.** A One at a time profile that has been run at least once keeps a one-line
-  slot while none of its sessions is live: "{label} · Not running · Start". Once run it stays, for as
-  long as the profile exists (a deleted profile loses its slot).
-- **Shown** only while it has a row or a slot; hidden while searching.
-- **Run / Start** make a new session with that profile picked and open it on its empty screen,
-  where the picker, and a linked playbook's card, show it (§chat.profiles/picker). Nothing is sent.
-  Run starts in the sub-group's newest session's folder, Start in the project's root for a
-  project profile, else in the open session's folder. It is `POST /api/sessions` with `cwd` and
-  `profile`. Start on a One at a time profile that is live answers with the picker's alert
-  (§chat.profiles/singleton) as a toast with **Open the Running {Label}**.
-- **New Session** is one button: the session it makes starts with no profile (My settings), and its empty screen is
-  where a profile is picked.
-
 ## §app.session-list/needs-you — Needs you
 
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
@@ -855,9 +808,9 @@ mark, menu and accessible name.
 that saves four.
 - **Who is eligible.** An ordinary session (§app.session-list/ordinary-surfaces: never an Overseer file
 or an organization session, in any state — live, busy, unread or just replied), not archived
-(`archived !== true`), and not a profile session (`SessionSummary.profile` set and not
-`neutral`; a capability-neutral profile's session is eligible, since the shelf leaves it out): Profiles lists those
-(§app.session-list/profile-shelf) — and deliberately **not** the pane rule
+(`archived !== true`), whatever profile it runs with (`SessionSummary.profile`, neutral or not: a
+profile session is a session like any other here, and the list has no other place that gathers
+them) — and deliberately **not** the pane rule
 `isTopSession`. A session you ran in a TUI last week and closed is exactly what this region is
 for, and the pane rule files that under the Archive. Archiving is the user saying "done with
 this", so an archived session never reappears here; that is the one gesture Recent has to honour,
@@ -865,8 +818,7 @@ or the archive gesture doesn't work.
 - **The operator's own coding sessions are eligible too.** A coding session the operator started in
 a standalone project (New Session in the project's folder, or the project's New Coding Session,
 §app.projects/folder-sessions: `SessionSummary.project` `{kind: "coding", operator: true}`, no `org`)
-is the operator's own thread, so Recent lists it under the same rules (not archived, not a profile
-session, by activity) while it stays listed among its project's Sessions. A build the project's
+is the operator's own thread, so Recent lists it under the same rules (not archived, by activity) while it stays listed among its project's Sessions. A build the project's
 overseer started on its own (`kind: "coding"` without `operator`) never is, nor is any session a
 server that sends no `operator` marks, nor an organization's. Live & web and the Archive are
 unchanged: such a session lives in its project's block, and Recent only says it once more.
@@ -1675,7 +1627,7 @@ forced open (case 1 below).
   close under the user while they're on that session.
 
 **Ordering.** The top region comes first and the Archive last, with Organizations between them;
-above them all sit the shortcut regions, Needs you first; Profiles, under Groups (§app.session-list/profile-shelf). Inside each region, groups and
+above them all sit the shortcut regions: Needs you, then Recent, then Groups. Inside each region, groups and
 rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.
@@ -1746,8 +1698,7 @@ for the same reason: something other than the operator runs them.
 - the global **Needs you** region (§app.session-list/needs-you) and its spine door;
 - **Recent** (§app.session-list/recent), the spine's tiles, and the overview's `Last active` / `Resume`
   (§chat.transcript/landing-page) — enforced in Recent's own eligibility rule, so every caller gets it;
-  these also leave out profile sessions (`SessionSummary.profile` set and not `neutral`), which
-  Profiles lists (§app.session-list/profile-shelf), and, of the sessions a project owns, add back
+  a session's profile never leaves it out of these, and, of the sessions a project owns, they add back
   the one kind the operator started: a standalone project's coding session marked `operator`
   (§app.session-list/recent), which stays in its project's block too;
 - **Live & web** and the **Archive** with its date sections, their counts and their spine doors

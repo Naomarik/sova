@@ -5,7 +5,7 @@
 import { type Accessor, batch, createSignal, onCleanup } from "solid-js";
 import type { OlderSummary, TranscriptItem, TranscriptRows } from "../../shared/protocol";
 import { fetchTranscriptRows } from "./api";
-import { helloRows, type Older, OlderLoader } from "./older-rows";
+import { afterRows, helloRows, type Older, OlderLoader } from "./older-rows";
 import type { OlderRowsApi } from "../components/Thread";
 
 /** Runs `fn` when the browser is idle; Safari has no idle callback. */
@@ -27,6 +27,8 @@ export function createOlderRows(o: {
   const [slow, setSlow] = createSignal(false);
   /** Loads asked for before the hello: they go once it has said what's above. */
   let waiting: (() => void)[] = [];
+  /** A hello or snapshot has landed: rows read from the file before it are no longer news. */
+  let answered = false;
 
   /** The newest rows (`items`, with `count` rows above them) onto the list on screen; `also` in the
       same update. */
@@ -85,14 +87,43 @@ export function createOlderRows(o: {
     whole: () => older()?.left === 0,
     api,
     /** A hello or snapshot: its rows (newest only, with `count` above them), and a prefetch of the
-        rest when the server says this browser may as well have them all. */
-    hello(msg: { items: TranscriptItem[]; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }): void {
+        rest when the server says this browser may as well have them all. A chat's hello that
+        continues after a row the view named (`after`, §chat.transcript/instant-open) keeps the rows
+        up to that one; one whose row the list no longer holds leaves the list as it is and reads
+        the file's newest rows again. */
+    hello(msg: { items: TranscriptItem[]; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; after?: string }): void {
+      answered = true;
       loader.reset();
+      const release = () => {
+        const now = waiting;
+        waiting = [];
+        now.forEach((r) => r());
+      };
+      if (msg.after !== undefined) {
+        const placed = afterRows(o.items(), msg.items, msg.after, msg.older, msg.olderSummary);
+        if (!placed) {
+          void reload().then(release);
+          return;
+        }
+        batch(() => {
+          o.setItems(placed.items);
+          setOlder(placed.older);
+        });
+        release();
+        if (msg.prefetch && o.prefetch !== false && placed.older.left > 0) void loader.prefetch();
+        return;
+      }
       const next = land(msg.items, msg.older, msg.olderSummary);
-      const now = waiting;
-      waiting = [];
-      now.forEach((r) => r());
+      release();
       if (msg.prefetch && o.prefetch !== false && next.left > 0) void loader.prefetch();
+    },
+    /** The newest rows read from the session file before the chat has answered
+        (§chat.transcript/instant-open): painted as a hello's would be, with what's above them. A
+        read that lands after a hello or snapshot is ignored (false): that said it all, and newer. */
+    paint(r: TranscriptRows): boolean {
+      if (answered) return false;
+      land(r.items, r.older, r.olderSummary);
+      return true;
     },
     /** The rows held, again from the file (a turn ended), with the context fill; the newest rows
         when it holds none (a new session's first turn). `also` runs in the same update as the rows

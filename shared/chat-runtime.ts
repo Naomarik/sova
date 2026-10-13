@@ -379,6 +379,9 @@ export interface ChatClientInfo {
   wire?: 2;
   tail?: boolean;
   pull?: { prefetch: boolean };
+  /** The last row the browser holds (`/ws/chat?have=`): its first hello carries only the rows after
+      it, when it can (server/tail-hello.ts `afterHave`). Sent on the pane's first attach only. */
+  have?: string;
 }
 
 /** Browser frames: attach, a message from the browser, detach (server → chat), and the chat's

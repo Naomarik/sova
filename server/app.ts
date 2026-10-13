@@ -230,7 +230,7 @@ export function buildApp(deps: AppDeps) {
   registerProfileRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
-      With `start`, it is made with that profile (§app.session-list/profile-shelf) and, given one, its
+      With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
   async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }, subagentProfile?: string, linkMember = false) {
     let pick: ProfilePick | undefined = start?.profile;
@@ -321,7 +321,7 @@ export function buildApp(deps: AppDeps) {
     return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
   });
 
-  /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the shelf's Run and Start, the Overseer. */
+  /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */
   function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start" } | undefined {
     const p = body.profile as { source?: unknown; id?: unknown } | string | undefined;
     const pick: ProfilePick | undefined =

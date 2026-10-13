@@ -21,6 +21,8 @@ export interface ModeControl {
   state: Accessor<ModeState | null>;
   /** This chat's session file: POST /api/mode?path= switches this chat and no other. */
   path: string;
+  /** Why the switch waits (the chat connecting or starting, §chat.transcript/instant-open), or null. */
+  blocked?: () => string | null;
 }
 
 /** radio: the major mode; check: a minor mode; action: opens a settings screen or the picker, switches nothing. */
@@ -520,7 +522,12 @@ export function ModeMenu(props: { control: ModeControl }) {
         aria-label={name()}
         title={name()}
         data-applies={current()?.applies}
-        onClick={() => (open() ? closeMenu() : void openMenu())}
+        aria-disabled={props.control.blocked?.() ? "true" : undefined}
+        aria-describedby={props.control.blocked?.() ? paneId("composer-reason") : undefined}
+        onClick={() => {
+          if (open()) closeMenu();
+          else if (!props.control.blocked?.()) void openMenu();
+        }}
       >
         <Icon name="sliders" small />
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}

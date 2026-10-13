@@ -224,13 +224,11 @@ export async function saveCurrentProfile(path: string, label: string): Promise<{
 export async function profilesListing(cwd?: string | null): Promise<ProfilesListing> {
   const [src, all] = await Promise.all([profileSources(cwd), listSessions()]);
   const running: ProfilesListing["running"] = {};
-  const everRun = new Set<string>();
   for (const s of all) {
     const p = s.profile;
-    if (!p?.singleton || p.custom) continue;
+    if (!p?.singleton || p.custom || s.archived) continue;
     const key = keyOf(p);
-    everRun.add(key);
-    if (!s.archived && !running[key]) running[key] = holderOf(s);
+    if (!running[key]) running[key] = holderOf(s);
   }
   const info = subagentProfilesInfo();
   const unusable = await unusableProfiles([...src.builtins, ...src.yours, ...src.project.profiles], info);
@@ -242,7 +240,6 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
     problems: src.problems,
     hidden: readHidden(),
     running,
-    everRun: [...everRun],
     unusable,
     subagents: info.profiles.map((p) => ({ id: p.id, name: p.name, footprint: p.footprint })),
     ...(src.yoursError ? { error: src.yoursError } : {}),

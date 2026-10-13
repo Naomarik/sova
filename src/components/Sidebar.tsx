@@ -1,4 +1,3 @@
-import { ProfileShelf } from "./ProfileShelf";
 import { AutomationsShelf } from "./AutomationsShelf";
 import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
@@ -2528,15 +2527,7 @@ export function Sidebar(props: {
             </details>
           </Show>
 
-          {/* Profiles, under Groups and above Live & web (§app.session-list/profile-shelf): a shortcut, grouped by profile. Never in Recent (lib/recent). */}
-          <ProfileShelf
-            sessions={all()}
-            cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd ?? null}
-            searching={!!query().trim()}
-            row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-          />
-
-          {/* Automations, under Profiles (§app.session-list/automations): the sessions Sova's schedules run, a shortcut. */}
+          {/* Automations, under Groups (§app.session-list/automations): the sessions Sova's schedules run, a shortcut. */}
           <AutomationsShelf sessions={all()} searching={!!query().trim()} row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />} />
 
           {/* Hidden when a search empties it            </details>

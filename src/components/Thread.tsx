@@ -1428,6 +1428,9 @@ export function ThreadScroller(props: {
   current?: boolean;
   /** The thread shows a new session's empty state: there is no latest to jump to. */
   empty?: boolean;
+  /** Floats over the transcript's end, taking no height (a chat connecting or starting,
+      §chat.transcript/instant-open). */
+  note?: JSX.Element;
 }) {
   const paneId = usePaneId();
   let el!: HTMLElement;
@@ -2031,6 +2034,7 @@ export function ThreadScroller(props: {
         <Icon name="chevron-down" small />
         {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
       </button>
+      {props.note}
     </div>
   );
 }

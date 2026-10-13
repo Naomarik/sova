@@ -3116,31 +3116,19 @@ class ChatSession {
     return history;
   }
 
-  /** The `steer` case of handle(), whose failures `fail` reports to the sender. */
+  /**
+   * The `steer` case of handle(), whose failures `fail` reports to the sender: the composer's typed
+   * message, whatever the tab believed about the run (src/lib/send-frame.ts). It takes the same
+   * accept path as the composer's prompt (acceptPrompt: the write guards, a blank no-op, the topics
+   * pause lifted, held while a turn starts, a compaction runs or a keyed send would be deferred, the
+   * person's turn marked), as a steer: busy, it waits in Sova's queue and lands at the agent's next
+   * step with every other waiting steer; idle, it starts its turn as a prompt does.
+   */
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
-    assertNotLive(this.path);
-    this.assertNoForeignWrites();
     this.assertModelAllowed();
-    const text = String(msg.text ?? "");
-    const images = parseImages(msg.images);
-    if (!text.trim() && !images) return;
-    this.setTopicsPaused(false);
-    // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
-    // there is nothing to queue behind, so it starts its turn straight away (and the
-    // extension-command split lives in handOffQueued, which both paths reach). While a
-    // compaction runs it is held the same way, and goes in when the compaction ends.
-    if (this.harness.isRunning() || this.isCompacting()) {
-      this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
-      if (clientId) client.send({ type: "send_ack", clientId, queued: true });
-      return;
-    }
-    this.flushDeferredAppends();
-    if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-    this.toSdk("client", () => this.tracked(text, () => this.harness.send(text, { images })))
-      .catch((err) => {
-        if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
-      })
-      .catch(fail);
+    const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, { delivery: "steer" });
+    if (clientId) client.send({ type: "send_ack", clientId, queued });
+    turn.catch(fail);
   }
 
   /**

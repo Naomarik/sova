@@ -343,3 +343,24 @@ test("a take-back that fails starts no collection of unused code (a chat it miss
     next.detach();
   }
 });
+
+test("an open that waited on a chat whose process went meanwhile (an operator stop) opens it anew, never failing as unreachable", async () => {
+  const t = setup();
+  const s = session();
+  const first = await t.router.acquire(s.path, false);
+  assert.equal(first?.where, "process");
+  const { noAnswer } = await import("../shared/chat-runtime");
+  const priv = t.router as unknown as { forget: (path: string) => void };
+  // The reacquire was waiting for the link when the process exited on the operator's word: forgotten, then failed.
+  (first as unknown as { call: () => Promise<never> }).call = async () => {
+    priv.forget(s.path);
+    throw noAnswer("The chat's process is not reachable right now.");
+  };
+  try {
+    const again = await t.router.acquire(s.path, false);
+    assert.notEqual(again, first);
+    assert.equal(again?.where, "process", "opened in a new process");
+  } finally {
+    t.router.detach();
+  }
+});

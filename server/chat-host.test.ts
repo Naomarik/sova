@@ -468,3 +468,30 @@ test("a crash resume the server had not sent yet when it stopped is sent by the 
   died(third);
   assert.equal(resumes.length, 2);
 });
+
+test("a death the next server finds at its start: the dead process's last writes are the server's when its end is known, never an append after it, nor with its end unknown", async () => {
+  const t = setup();
+  const { lockFileOf, locksDir, readLock } = await import("./chat-runtime/writer-lock");
+  const { recentForeignWriteAgeSec } = await import("./write-guard");
+  const DEAD = 0x3ffffff;
+  const die = (s: { path: string; id: string }, endedAt: string | undefined) => {
+    mkdirSync(locksDir(), { recursive: true });
+    writeFileSync(lockFileOf(s.path), JSON.stringify({ pid: DEAD, start: "S0", at: 1, unit: "u", path: s.path }));
+    // No handle and no record in this server: as found at boot.
+    (t.router as unknown as { died(d: unknown): void }).died({ chatId: s.id, sessionPath: s.path, unit: "u", cause: "lost", exit: null, signal: null, logTail: [], pid: DEAD, ...(endedAt ? { endedAt } : {}), at: new Date().toISOString() });
+  };
+  // Written a moment before it ended (after its last own-write record): the server's.
+  const a = session({ fresh: true });
+  die(a, new Date(Date.now() + 1000).toISOString());
+  assert.equal(recentForeignWriteAgeSec(a.path), null, "opens for chat at once");
+  assert.equal(readLock(a.path), null, "its lock let go");
+  // Appended after it ended: not the server's.
+  const b = session({ fresh: true });
+  die(b, new Date(Date.now() - 60_000).toISOString());
+  assert.notEqual(recentForeignWriteAgeSec(b.path), null);
+  // When it ended is unknown (the detached driver): not taken for the server's; its lock still goes.
+  const c = session({ fresh: true });
+  die(c, undefined);
+  assert.notEqual(recentForeignWriteAgeSec(c.path), null);
+  assert.equal(readLock(c.path), null);
+});

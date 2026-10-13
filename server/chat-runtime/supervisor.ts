@@ -220,6 +220,8 @@ export interface ChatDeath {
   logTail: string[];
   /** When the unit's main process ended, from the journal line saying so (systemd); absent when unknown (the detached driver). */
   endedAt?: string;
+  /** The dead process's pid, from its record (a death found at a server's start has no handle to say it). */
+  pid?: number | null;
   at: string;
 }
 
@@ -634,6 +636,7 @@ export class ChatSupervisor {
       ...(st.detail ? { detail: st.detail } : {}),
       logTail: tail,
       ...(endedAt ? { endedAt } : {}),
+      pid: rec.pid,
       at: new Date(this.now()).toISOString(),
     };
   }
@@ -718,7 +721,7 @@ export class ChatSupervisor {
     await this.deps.driver.stop(t.rec.unit).catch(() => {});
     const logs = (await this.deps.driver.logs(t.rec.unit, LOG_TAIL).catch(() => [])).map((l) => l.text);
     if (this.chats.get(chatId) !== t) return; // reported meanwhile, or a new process took the id
-    const death: ChatDeath = { chatId, sessionPath: t.rec.sessionPath, unit: t.rec.unit, cause: "lost", exit: null, signal: null, detail, logTail: logs, at: new Date(this.now()).toISOString() };
+    const death: ChatDeath = { chatId, sessionPath: t.rec.sessionPath, unit: t.rec.unit, cause: "lost", exit: null, signal: null, detail, logTail: logs, pid: t.rec.pid, at: new Date(this.now()).toISOString() };
     // One that never said hello did not start: a failed start, not a death.
     if (!t.connected) return this.bootFailed(t, death);
     await this.report(t.rec, death);

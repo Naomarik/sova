@@ -84,6 +84,8 @@ test("an entry a reply appends is recorded as ours at once, after pi appends it:
   const path = canonicalPath(join(dir, "2026-10-12T00-00-00-000Z_s2.jsonl"));
   writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "s2", timestamp: new Date().toISOString(), cwd: agentDir })}\n`, { flag: "wx" });
   markOwned(path);
+  // From before the chat is held: no guard tick (every 3 s from then on) can have run by the check.
+  const started = Date.now();
   const chat = await acquireChat(path);
   const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
@@ -99,7 +101,6 @@ test("an entry a reply appends is recorded as ours at once, after pi appends it:
     },
     result: async () => reply,
   });
-  const started = Date.now();
   void chat.acceptPrompt("hello", undefined, "server").turn.catch(() => {});
   await until(() => piSession(chat).sessionManager.getEntries().some((e) => (e as { message?: { role?: string } }).message?.role === "assistant"));
   await new Promise((r) => setImmediate(r));

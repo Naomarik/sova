@@ -506,16 +506,12 @@ test("its chat's death: once resumed it runs on with a note; otherwise it ends i
 	assert.equal(h.counts.settled, 1);
 });
 
-test("an idle stop and a reload change nothing the parent sees; a stop with the server lists it restored", async () => {
+test("an idle stop and a reload change nothing the parent sees", async () => {
 	const h = make();
 	await boot(h);
 	h.host.end(h.chatId(), { cause: "idle" });
 	h.host.end(h.chatId(), { cause: "reload" });
 	assert.equal(h.worker.status, "running");
-	h.host.end(h.chatId(), { cause: "server-stopped" });
-	await h.worker.whenClosed;
-	assert.equal(h.worker.status, "restored");
-	assert.equal(h.counts.exits, 0, "let go of, never ended here");
 });
 
 // ── a gap in the feed ──────────────────────────────────────────────────────

@@ -36,7 +36,6 @@ export interface FakeWorker {
 export interface FakeWorkerHostOptions {
 	/** Where the fake session files are named (never written). Default /fake/sessions. */
 	sessionDir?: string;
-	placement?: WorkerRef["placement"];
 	/** Frames kept per worker for replay. Default 2000, as the server's ring. */
 	ringMax?: number;
 	/** Make a start throw (after recording it), e.g. the server's "Workers need Bun …". */
@@ -84,7 +83,6 @@ export class FakeWorkerHost implements WorkerHost {
 			sessionFile,
 			workerId: req.spec.parent.workerId,
 			kind: req.spec.kind,
-			placement: this.options.placement ?? "unit",
 			pid,
 			state: "open",
 		};

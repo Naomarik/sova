@@ -228,17 +228,6 @@ export class ChatWorker extends WorkerFold {
 				return this.finalize({ status: "error", error: f.detail ?? "This worker's process stopped unexpectedly" });
 			case "done":
 				return this.finalize({});
-			case "server-stopped":
-				// What a restart does today (§4.1 case 1): its record is left as it was, so the next start
-				// lists it restored (interrupted when it was mid-run); it is let go of, never ended here.
-				this.push("system", "Sova's server stopped this worker with it");
-				this.status = "restored";
-				this.processAlive = false;
-				this.unwatch?.();
-				this.unwatch = null;
-				this.release();
-				this.touch();
-				return;
 		}
 	}
 

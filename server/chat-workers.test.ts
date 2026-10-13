@@ -1,14 +1,14 @@
 // The worker registry (§app.chat-processes/workers, /worker-crash) over a fake router: no process, no
 // socket. A worker chat's "handle" is a stand-in with a mirror and a `call` that records.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import type { WorkerFeedFrame, WorkerStart } from "../shared/chat-runtime";
 import type { RemoteChatHandle } from "./chat-handle-remote";
 import type { ChatDeath } from "./chat-runtime/supervisor";
-import { deathText, type Placement, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
+import { deathText, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 
 interface FakeHandle {
   mirror: Record<string, unknown> & { sessionId: string; worker: { proc: string; seq?: number; lastSettled: unknown } };
@@ -27,8 +27,7 @@ function fakeProcs(o: { failStart?: string; failSend?: string; feedSince?: (args
   const handles: FakeHandle[] = [];
   const stopped: string[] = [];
   const procs: WorkerProcesses = {
-    placement: () => "unit",
-    start: async (rec: WorkerRecord, prefer: Placement) => {
+    start: async (rec: WorkerRecord) => {
       if (o.failStart) throw new Error(o.failStart);
       const h: FakeHandle = {
         mirror: { sessionId: rec.chatId, running: false, starting: false, compacting: false, model: rec.spec.model ? { ref: rec.spec.model } : null, thinking: "low", worker: { proc: `p${++n}`, lastSettled: null } },
@@ -48,7 +47,7 @@ function fakeProcs(o: { failStart?: string; failSend?: string; feedSince?: (args
         sendWorker: (f) => void h.sent.push(f),
       };
       handles.push(h);
-      return { handle: h as unknown as RemoteChatHandle, placement: prefer };
+      return h as unknown as RemoteChatHandle;
     },
     stop: async (rec) => void stopped.push(rec.chatId),
   };
@@ -223,7 +222,7 @@ describe("WorkerRegistry", () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const { procs, handles } = fakeProcs();
-    const slow: WorkerProcesses = { ...procs, start: async (rec, prefer) => (handles.length ? await gate : undefined, procs.start(rec, prefer)) };
+    const slow: WorkerProcesses = { ...procs, start: async (rec) => (handles.length ? await gate : undefined, procs.start(rec)) };
     const r = reg(slow, { logged });
     const ref = await r.start(start("k", null));
     const death: ChatDeath = { chatId: ref.chatId, sessionPath: ref.sessionFile, unit: "u", cause: "crashed", exit: null, signal: "KILL", logTail: [], at: "t1" };
@@ -276,14 +275,21 @@ describe("WorkerRegistry", () => {
     assert.equal(((parent.sent[2] as { result: unknown[] }).result).length, 1);
   });
 
-  test("records outlive the registry: a child-placement worker ends with the server, a unit record waits idle", async () => {
+  test("records outlive the registry: a record with no process waits idle; an older server's server-stopped end replays as a died one", async () => {
     const { procs } = fakeProcs();
     const r = reg(procs);
     const ref = await r.start(start("k", null));
-    const again = reg({ ...procs, placement: () => "unit" });
+    const again = reg(procs);
     again.settleBoot();
     assert.equal(again.list("sid")[0]!.state, "idle");
     assert.equal(again.record(ref.chatId)!.key, "k");
+    // A record an older server ended as "server-stopped" (it ran workers as its own children).
+    const file = join(dir, "workers", `${ref.chatId}.json`);
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), placement: "child", state: "ended", ended: { cause: "server-stopped", at: "t" } }));
+    const third = reg(procs);
+    const got: WorkerFeedFrame[] = [];
+    third.watch(ref.chatId, null, (f) => got.push(f));
+    assert.deepEqual(got.find((f) => f.t === "ended"), { t: "ended", cause: "died", detail: "Sova's server stopped this worker with it" });
   });
 
   test("each crash-resume decision is logged: resumed, already a resume, the setting off, no run in flight", async () => {

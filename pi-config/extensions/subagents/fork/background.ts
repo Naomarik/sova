@@ -193,7 +193,7 @@ class ForkWatch {
 					outcome: aborted ? "aborted" : "error",
 					...(aborted
 						? {}
-						: { error: frame.detail ?? (frame.cause === "server-stopped" ? `the ${this.name} worker was stopped with the server` : `the ${this.name} worker ended before it finished`) }),
+						: { error: frame.detail ?? `the ${this.name} worker ended before it finished` }),
 					finalOutput: this.run.run.text,
 					...(this.model ? { model: this.model } : {}),
 				});

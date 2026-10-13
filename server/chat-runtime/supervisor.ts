@@ -97,15 +97,6 @@ export function chatDriver(config: Pick<SupervisorConfig, "slice" | "driver"> = 
   return new SystemdDriver(exec, { slice: config.slice, timeoutStopSec: CHAT_STOP_SEC, restart: false, envFile: (unit) => join(envDir(), `${unit}.env`) });
 }
 
-/** Workers placed as the server's own detached children (no units here: the switch off, not Linux, no
-    systemd, or a unit that failed): a supervisor of their own, its records, processes and logs under
-    `chats/children/`, its prefix never another supervisor's. They end with the server. */
-export const childrenRoot = () => join(chatsRoot(), "children");
-export const childUnitPrefix = (hash = stateHash()) => `sova-chatw-${hash}-`;
-export function childDriver(): Driver {
-  return new DetachedDriver(CHAT_STOP_SEC * 1000, { restart: false, procsDir: () => join(childrenRoot(), "procs"), logsDir: () => join(childrenRoot(), "logs") });
-}
-
 // ---- socket path and epoch ----------------------------------------------------------------------
 
 /**
@@ -759,8 +750,7 @@ export class ChatSupervisor {
 
   /**
    * Stop every chat process this supervisor's records name, and every unit of its prefix, adopting
-   * none (workers placed as the server's children: what a server that died left running, at the next
-   * start; and every child at shutdown). The records it stopped.
+   * none. The records it stopped.
    */
   async stopAll(cause: ExitCause = "operator"): Promise<ChatRecord[]> {
     const recs = this.records();

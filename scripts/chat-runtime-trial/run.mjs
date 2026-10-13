@@ -87,6 +87,9 @@
 //               of their own, never in the server or as its children
 //     tserverless  Part B 5e(a): with the server stopped for good, a quiet chat exits after the (shortened)
 //               idle time, one mid-reply runs on until its reply ends; the next server sees no death
+//     tstopchats  Part B 5e(b): with the server stopped for good, scripts/stop-chats.ts --agent-dir stops every
+//               recorded chat (a quiet one, one mid-reply, a parent and its worker); none left, a second run
+//               finds none, the next server reads no death
 //     hermetic  hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
 //               claude-code-cli, a restart and every page's GET read or write nothing in its ~/.pi/agent,
 //               ~/.claude, ~/.codex (bar the Overseer redactor reading four home secrets to mask them) and
@@ -134,6 +137,7 @@ import {
   show,
   sleep,
   startMock,
+  strays,
   sweep,
   tokenOf,
   userBus,
@@ -145,7 +149,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t23", "t24", "t25", "t27", "tdefault", "tserverless", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -2603,6 +2607,68 @@ async function tserverless() {
   await boot();
 }
 
+// Tstopchats (Part B 5e(b)): scripts/stop-chats.ts. A quiet chat, one mid-reply and a parent with a working
+// worker are left running and the server stops for good; `bun scripts/stop-chats.ts --agent-dir <trial's>`
+// stops every chat process the state root records (never by name), each as an operator stop: none is left,
+// a second run finds none, and the next server reads no death. Its only cover is this check.
+async function tstopchats() {
+  await teardown();
+  await boot();
+  const Q = await newChat();
+  await turn(Q, "say ok");
+  const L = await newChat();
+  prompt(L.s, "[long 80 #tsc] a long reply");
+  await L.s.until(delta(/part 3\//), 30000, "L streams");
+  const P = await newChat();
+  prompt(P.s, "[spawn 1 80 #tscw] start a worker");
+  await P.s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  const w = await workerWith(P.path, "#tscw");
+  await waitFor(() => w && chatPid(w.path), 30000);
+  const pids = { quiet: chatPid(Q.path), "mid-reply": chatPid(L.path), parent: chatPid(P.path), worker: w ? chatPid(w.path) : 0 };
+  for (const o of [Q, L, P]) o.s.close();
+  await srv.down();
+  await sleep(2000);
+  R.check(Object.values(pids).every((p) => p && alive(p)), `tstopchats: with the server stopped, the chats and the worker still run (${JSON.stringify(pids)})`);
+  const bun = process.env.SOVA_BUN || (() => {
+    try {
+      return execFileSync("mise", ["which", "bun"], { cwd: ROOT, encoding: "utf8" }).trim();
+    } catch {
+      return "bun";
+    }
+  })();
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("SOVA_") && k !== "PI_CODING_AGENT_DIR")), ...(driver === "systemd" ? { [KNOBS.slice]: slice } : {}) };
+  const stop = () => {
+    try {
+      return { code: 0, out: execFileSync(bun, [join(ROOT, "scripts", "stop-chats.ts"), "--agent-dir", agent], { cwd: ROOT, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120000 }) };
+    } catch (e) {
+      return { code: e.status ?? -1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` };
+    }
+  };
+  const first = stop();
+  R.note(`tstopchats: stop-chats said: ${first.out.trim().split("\n").slice(-6).join(" | ").slice(0, 400)}`);
+  R.check(first.code === 0 && /\d+ chat process(es)? stopped/.test(first.out), `tstopchats: stop-chats ran and stopped chat processes (exit ${first.code})`);
+  const gone = await waitFor(() => Object.values(pids).every((p) => !p || !alive(p)), 30000);
+  R.check(gone, `tstopchats: every chat process is stopped, the worker's too (${Object.entries(pids).filter(([, p]) => p && alive(p)).map(([k, p]) => `${k} ${p}`).join(", ") || "none left"})`);
+  const left = strays(agent, { mock: false });
+  R.check(left.length === 0, `tstopchats: no process of the trial's state root is left (${left.map((p) => `${p.pid} ${p.cmd.slice(0, 60)}`).join("; ") || "none"})`);
+  const recs = allRecords().filter((r) => alive(r.pid));
+  R.check(recs.length === 0, `tstopchats: no record names a running chat (${recs.map((r) => r.unit).join(", ") || "none"})`);
+  const again = stop();
+  R.check(again.code === 0 && /no chat process was recorded as running/.test(again.out), `tstopchats: a second run finds nothing to stop (${again.out.trim().slice(0, 120)})`);
+  srv.up();
+  await healthy(base);
+  await sleep(3000);
+  const ds = [Q.path, L.path, P.path, ...(w ? [w.path] : [])].flatMap((p) => deaths(p));
+  R.check(ds.length === 0, `tstopchats: the next server reads each stop as orderly, no death (${ds.length})`);
+  R.note(`tstopchats: resume decisions after the stop: quiet ${fmtDecisions(resumeDecisions(Q.path))}; mid-reply ${fmtDecisions(resumeDecisions(L.path))}`);
+  const q2 = await chat(c, Q.path, 60000);
+  await turn({ path: Q.path, s: q2 }, "say ok after stop-chats");
+  R.check(chatPid(Q.path) && chatPid(Q.path) !== pids.quiet, `tstopchats: the quiet chat reopens on attach in a new process (${pids.quiet} → ${chatPid(Q.path)})`);
+  q2.close();
+  await teardown();
+  await boot();
+}
+
 // hermetic: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
 // ~/.claude.json and ~/.codex hold decoy files, and its ~/.local/bin/claude (also last on PATH) is a
 // decoy claude that logs each call. Through ordinary chats, a pi worker, a claude-code worker, /btw, a
@@ -2774,7 +2840,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r, t23, t24, t25, t27, trestart, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

@@ -5,6 +5,20 @@
 # for example:
 #   run-mac.sh t1 t1b t1d t7 --mode unit     # T26-mac: the server as a launchd stand-in (test.sova-s5-<tag>)
 #   run-mac.sh t2 t9 t17 t17c                # the server a plain child; chats on the detached driver
+#   run-mac.sh --set                         # the architect's Mac set, group by group (below)
+#
+# The Mac set (stage5-design, Part B darwin), each group a run of its own (a scratch, a leftover check):
+#   t26mac   t1 t1b t1d t7 --mode unit        T26-mac: survival under the launchd stand-in
+#   gen      t2 t9
+#   workers  t17 t17c t18 t19 t20 t23
+#   slash    t21 t21l t21h
+#   code     t25 t27 t4 t4fail
+#   two      t8
+#   noserver tserverless --mode unit          the server booted out for good (launchctl bootout)
+# and, beyond the architect's list, the two checks that are the only cover of a darwin path:
+#   restart  trestart --mode unit             C1: Apply's restart of an adopted launchd agent (kickstart -k)
+#   stop     tstopchats                       5e(b): scripts/stop-chats.ts on detached sessions
+# `--set <group…>` runs only those groups. A summary goes to mac-results/<rev>-set-<pid>.txt.
 #
 # Getting the checkout there (from the Linux worktree; placeholders, nothing machine-specific):
 #   git bundle create /tmp/s5-<rev>.bundle <rev>    then copy it to the Mac and, there:
@@ -31,7 +45,11 @@ command -v pi >/dev/null || print -u2 "run-mac: warning: no global pi on PATH (p
 [[ -d node_modules ]] || pnpm install --frozen-lockfile || exit 2
 
 rev=$(git rev-parse --short HEAD)
-tag=$$
+
+# One run: run.mjs on its own scratch, its results kept, leftovers listed and stopped. Returns run.mjs's
+# code, or 3 when something was left.
+run_one() {
+tag=$$-${RUN_SEQ:-0}
 scratch=/private/tmp/sova-t-$tag
 results=$here/mac-results/$rev-$tag
 mkdir -p $results
@@ -54,5 +72,41 @@ for p in $(ps -wwEax -o pid=,command= | awk -v s=" PI_CODING_AGENT_DIR=$scratch"
   kill $p 2>/dev/null
 done
 rm -rf $scratch
-(( left )) && exit 3
-exit $code
+(( left )) && return 3
+return $code
+}
+
+typeset -A groups
+groups=(
+  t26mac   "t1 t1b t1d t7 --mode unit"
+  gen      "t2 t9"
+  workers  "t17 t17c t18 t19 t20 t23"
+  slash    "t21 t21l t21h"
+  code     "t25 t27 t4 t4fail"
+  two      "t8"
+  noserver "tserverless --mode unit"
+  restart  "trestart --mode unit"
+  stop     "tstopchats"
+)
+order=(t26mac gen workers slash code two noserver restart stop)
+
+if [[ ${1:-} == --set ]]; then
+  shift
+  (( $# )) && order=("$@")
+  summary=$here/mac-results/$rev-set-$$.txt
+  worst=0
+  RUN_SEQ=0
+  for g in $order; do
+    [[ -n ${groups[$g]:-} ]] || { print -u2 "run-mac: no group $g (groups: ${(k)groups})"; exit 2; }
+    RUN_SEQ=$((RUN_SEQ + 1))
+    run_one ${=groups[$g]}
+    gc=$?
+    print "$g (${groups[$g]}): exit $gc; $(grep -c '^PASS' $results/run.log) PASS, $(grep -c '^FAIL' $results/run.log) FAIL; $results" >> $summary
+    (( gc > worst )) && worst=$gc
+  done
+  print "run-mac: set done"; cat $summary
+  exit $worst
+fi
+
+run_one "$@"
+exit $?

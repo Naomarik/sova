@@ -1,7 +1,7 @@
 // The worker registry (§app.chat-processes/workers, /worker-crash) over a fake router: no process, no
 // socket. A worker chat's "handle" is a stand-in with a mirror and a `call` that records.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -23,12 +23,17 @@ interface FakeHandle {
 let dir: string;
 let n = 0;
 
-function fakeProcs(o: { failStart?: string; failSend?: string; feedSince?: (args: { proc: string; seq: number }) => unknown } = {}) {
+/** What a worker's surviving process took under its keys (its keyed-send receipts): shared across fake handles of one "process". */
+type Taken = Set<string>;
+
+function fakeProcs(o: { failStart?: string; failSend?: string; feedSince?: (args: { proc: string; seq: number }) => unknown; holdStart?: boolean; holdSend?: "before" | "after"; taken?: Taken } = {}) {
   const handles: FakeHandle[] = [];
   const stopped: string[] = [];
   const procs: WorkerProcesses = {
     start: async (rec: WorkerRecord) => {
       if (o.failStart) throw new Error(o.failStart);
+      // The server dies here: the process never opens.
+      if (o.holdStart) return new Promise<never>(() => {});
       const h: FakeHandle = {
         mirror: { sessionId: rec.chatId, running: false, starting: false, compacting: false, model: rec.spec.model ? { ref: rec.spec.model } : null, thinking: "low", worker: { proc: `p${++n}`, lastSettled: null } },
         at: { pid: 1000 + n, unit: "u" },
@@ -38,6 +43,17 @@ function fakeProcs(o: { failStart?: string; failSend?: string; feedSince?: (args
           h.calls.push({ method, args });
           if (method === "send") {
             if (o.failSend) throw new Error(o.failSend);
+            // The server dies before the send leaves it, or after the process took it (its answer lost).
+            if (o.holdSend === "before") {
+              h.calls.pop();
+              return new Promise<never>(() => {});
+            }
+            const key = (args as { key?: string }).key;
+            if (key && o.taken) {
+              if (o.taken.has(key)) return { queued: false, turnId: null, again: true };
+              o.taken.add(key);
+            }
+            if (o.holdSend === "after") return new Promise<never>(() => {});
             return { queued: false, turnId: null };
           }
           if (method === "feedSince") return o.feedSince ? o.feedSince(args as { proc: string; seq: number }) : { gap: true };
@@ -108,6 +124,80 @@ describe("WorkerRegistry", () => {
     assert.equal(handles[0]!.calls.length, 1);
     assert.deepEqual(r.list("sid").map((x) => x.chatId), [ref.chatId]);
     assert.deepEqual(r.list("other"), []);
+  });
+
+  test("a start the last server recorded but never finished is finished by the next one when the parent's start comes again: one task, taken once", async () => {
+    const taken = (h: FakeHandle[]) => h.flatMap((x) => x.calls).filter((c) => c.method === "send" && (c.args as { key: string }).key === "sid:ag_01:1:task");
+    // (a) It dies after recording the worker, before its process opened.
+    {
+      const first = reg(fakeProcs({ holdStart: true }).procs);
+      void first.start(start());
+      await new Promise((r) => setTimeout(r, 20));
+      const { procs, handles } = fakeProcs();
+      const next = reg(procs);
+      const ref = await next.start(start());
+      assert.equal(handles.length, 1, "one worker");
+      assert.equal(taken(handles).length, 1, "its task, sent once");
+      assert.equal(ref.state, "open");
+      await next.start(start());
+      assert.equal(taken(handles).length, 1, "and not again");
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+    // (b) It dies after the process opened, before the task was sent.
+    {
+      const first = reg(fakeProcs({ holdSend: "before" }).procs);
+      void first.start(start());
+      await new Promise((r) => setTimeout(r, 20));
+      const { procs, handles } = fakeProcs();
+      const ref = await reg(procs).start(start());
+      assert.equal(taken(handles).length, 1);
+      assert.ok(ref.chatId);
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+    // (c) The process took the task, the answer was lost: sent again under its key, taken once (the surviving process's receipt).
+    {
+      const process1: Taken = new Set();
+      const first = reg(fakeProcs({ holdSend: "after", taken: process1 }).procs);
+      void first.start(start());
+      await new Promise((r) => setTimeout(r, 20));
+      await reg(fakeProcs({ taken: process1 }).procs).start(start());
+      assert.deepEqual([...process1], ["sid:ag_01:1:task"]);
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+    // (d) Taken, the answer lost, and the worker's process gone too (no receipts left): its session holds the task, so it is not sent again.
+    {
+      const first = reg(fakeProcs({ holdSend: "after", taken: new Set() }).procs);
+      void first.start(start());
+      await new Promise((r) => setTimeout(r, 20));
+      const rec = JSON.parse(readFileSync(join(dir, "workers", readdirSync(join(dir, "workers")).find((f) => f.endsWith(".json"))!), "utf8")) as WorkerRecord;
+      appendFileSync(rec.path, `${JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text: "do it" }], timestamp: Date.now() } })}\n`);
+      const { procs, handles } = fakeProcs({ taken: new Set() });
+      await reg(procs).start(start());
+      assert.equal(taken(handles).length, 0, "already in its session: not run twice");
+    }
+  });
+
+  test("a start asked again while its first is still in flight answers only once the task was taken", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { procs, handles } = fakeProcs();
+    const real = procs.start;
+    procs.start = async (rec) => {
+      const h = (await real(rec)) as unknown as FakeHandle;
+      const call = h.call;
+      h.call = async (m, a) => (m === "send" ? (await gate, call(m, a)) : call(m, a));
+      return h as unknown as RemoteChatHandle;
+    };
+    const r = reg(procs);
+    void r.start(start());
+    await new Promise((ok) => setTimeout(ok, 20));
+    let answered = false;
+    const again = r.start(start()).then((x) => ((answered = true), x));
+    await new Promise((ok) => setTimeout(ok, 20));
+    assert.equal(answered, false, "no success before the task is taken");
+    release();
+    await again;
+    assert.equal(handles[0]!.calls.filter((c) => c.method === "send").length, 1);
   });
 
   test("a resume opens the file as it is and sends nothing", async () => {

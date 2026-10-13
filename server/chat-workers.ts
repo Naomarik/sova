@@ -5,7 +5,7 @@
 // its link), and each worker's events go back to whoever watches it, from a ring kept per worker. A
 // record per worker, written before its process starts, outlives the server: the next one knows what
 // each recorded process is.
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isNoAnswer, NO_ANSWER, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSpec, type WorkerStart, type WorkerState } from "../shared/chat-runtime";
 import type { FrameOf } from "../shared/chat-runtime-wire";
@@ -47,6 +47,9 @@ export interface WorkerRecord {
   /** The last settle key a watcher was told of or its parent was opened for: a server that takes the
       worker back announces only a settle after it. */
   seenSettleKey?: string;
+  /** Its first task while not yet taken (cleared once it is): a server that dies first leaves the
+      start for the next one to finish. `from`: the session file's size when the start began. */
+  task?: { text: string; key: string; from: number };
 }
 
 /** Where a worker's chat process runs: the router (server/chat-host.ts) does the processes. */
@@ -77,9 +80,42 @@ interface Live {
   settleTimer: NodeJS.Timeout | null;
   /** A start or a reopen in flight. */
   opening: Promise<RemoteChatHandle> | null;
+  /** Its first task being handed over (once at a time). */
+  finishing: Promise<void> | null;
 }
 
 const log = (line: string) => console.log(`[chat-workers] ${line}`);
+
+function sizeOf(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** Whether a user message holding `task.text` was written to session file `path` after `task.from`. */
+function sessionHolds(path: string, task: { text: string; from: number }): boolean {
+  let tail: string;
+  try {
+    tail = readFileSync(path).subarray(task.from).toString("utf8");
+  } catch {
+    return false;
+  }
+  for (const line of tail.split("\n")) {
+    if (!line.includes('"user"')) continue;
+    try {
+      const e = JSON.parse(line) as { type?: string; message?: { role?: string; content?: unknown } };
+      if (e.type !== "message" || e.message?.role !== "user") continue;
+      const c = e.message.content;
+      const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => (p && typeof p === "object" && "text" in p ? String(p.text) : "")).join("") : "";
+      if (text.includes(task.text)) return true;
+    } catch {
+      // a partial last line
+    }
+  }
+  return false;
+}
 
 /** The death text (§app.chat-processes/worker-crash): how it ended, then its last output. */
 export function deathText(d: Pick<ChatDeath, "exit" | "signal" | "logTail">): string {
@@ -159,6 +195,7 @@ export class WorkerRegistry {
       opened: new Set(),
       settleTimer: null,
       opening: null,
+      finishing: null,
     };
     this.live.set(rec.chatId, l);
     this.keys.set(rec.key, rec.chatId);
@@ -200,16 +237,17 @@ export class WorkerRegistry {
 
   /** Start a worker chat (idempotent by key): its session file, its record, its process, its task. */
   start(req: WorkerStart): Promise<WorkerRef> {
+    const pending = this.starting.get(req.key);
+    if (pending) return pending;
     const known = this.keys.get(req.key);
     if (known) {
       const l = this.live.get(known)!;
+      // A start this server or the last recorded and never finished: finished now, its ref once the task is taken.
+      if (l.rec.state !== "ended" && l.rec.task) return this.finishStart(l).then(() => this.ref(l));
       return l.opening ? l.opening.then(() => this.ref(l)) : Promise.resolve(this.ref(l));
     }
-    let p = this.starting.get(req.key);
-    if (!p) {
-      p = this.startNew(req).finally(() => this.starting.delete(req.key));
-      this.starting.set(req.key, p);
-    }
+    const p = this.startNew(req).finally(() => this.starting.delete(req.key));
+    this.starting.set(req.key, p);
     return p;
   }
 
@@ -225,6 +263,7 @@ export class WorkerRegistry {
       spec: req.spec,
       state: "open",
       startedAt: new Date(this.now()).toISOString(),
+      ...(req.task !== null ? { task: { text: req.task, key: `${req.key}:task`, from: sizeOf(file.path) } } : {}),
     };
     // Recorded before its process exists: a server that dies in between knows what it was.
     this.write(rec);
@@ -236,16 +275,28 @@ export class WorkerRegistry {
       this.end(l, "died", { detail });
       throw err instanceof Error ? err : new Error(detail);
     }
-    if (req.task !== null) {
+    await this.finishStart(l);
+    return this.ref(l);
+  }
+
+  /** Hand a start's first task over, once (under its key; not again if its session already holds it). */
+  private finishStart(l: Live): Promise<void> {
+    const task = l.rec.task;
+    if (!task) return Promise.resolve();
+    l.finishing ??= (async () => {
       try {
-        await this.deliver(l, { text: req.task, key: `${req.key}:task` });
+        // Taken by a process that has since gone (its receipts with it), the answer lost: its session says so.
+        if (!sessionHolds(l.rec.path, task)) await this.deliver(l, { text: task.text, key: task.key });
+        this.set(l, { task: undefined });
       } catch (err) {
         // Nobody holds it yet: a worker whose task was refused is stopped, never left running unowned.
         await this.stop(l.rec.chatId, "its task was not accepted");
         throw err;
+      } finally {
+        l.finishing = null;
       }
-    }
-    return this.ref(l);
+    })();
+    return l.finishing;
   }
 
   /** Its process, started (or started again: an idle stop, a crash resume) and open. */

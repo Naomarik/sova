@@ -1830,6 +1830,8 @@ async function t21l() {
     process.kill(pid1, "SIGTERM");
     // The page's reconnect: at once, then its first commands, while the replacement may still be coming.
     await s.until((m) => m.type === "error" || m.type === "reloaded", 15000, "the pane hears of the reload", f0).catch(() => null);
+    // A page keeps its socket until the server ends it: a refusal may follow the first notice.
+    await waitFor(() => s.closed(), 5000, 100);
     s.close();
     const s2 = await chat(c, path, 60000);
     s2.send({ type: "set_model", ref: "trial/m1" });
@@ -1843,7 +1845,7 @@ async function t21l() {
     await sleep(2000);
     const notes = entries(path).filter((e) => e.customType === "btw-note" && JSON.stringify(e).includes(btwX)).length;
     const shown = live || s.got.slice(f1).some((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX));
-    R.check((notes === 1 && shown) || (notes === 0 && refusal), `${label} (F10/F14 across the exit): the /btw sent as the process stopped is answered once and shown live, or refused back to the pane (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${notes}�, ${shown ? "shown live" : "not shown"}`})`);
+    R.check((notes === 1 && shown) || (notes === 0 && refusal), `${label} (F10/F14 across the exit): the /btw sent as the process stopped is answered once and shown live, or refused back to the pane (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${notes}×, ${shown ? "shown live" : "not shown"}; pane frames after the send: ${[...s.got.slice(f1), ...s2.got].map((m) => m.type + (m.code ? `:${m.code}` : "")).join(",").slice(0, 300)}`})`);
     const bad = [...s.got.slice(f1), ...s2.got].filter(alert);
     R.check(chatPid(path) !== pid1 && bad.length === 0, `${label} (F11): after /btw and an exit of the idle parent's process the pane reconnects with no turn-error alert (pid ${pid1} → ${chatPid(path)}; ${bad.map((m) => JSON.stringify(m).slice(0, 160)).join(" | ") || "none"})`);
     await turn({ path, s: s2 }, "say ok after");

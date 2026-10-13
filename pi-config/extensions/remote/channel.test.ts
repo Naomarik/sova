@@ -12,7 +12,9 @@ import {
 	buildChannelArgv,
 	Channel,
 	CHANNEL_PROGRAM,
+	CHANNEL_START_TIMEOUT_MS,
 	ChannelError,
+	channelStartTimeoutMs,
 	type ChannelState,
 	composeChannelScript,
 	encodeRequest,
@@ -457,6 +459,27 @@ test("buildChannelArgv: its own connection, the same far side", () => {
 	assert.equal(buildChannelArgv({ name: "d", kind: "docker", docker: { container: "web" } }), null);
 	assert.equal(Channel.forTarget({ name: "d", kind: "docker", docker: { container: "web" } }), null);
 	assert.equal(Channel.forTarget(t)?.state, "new");
+});
+
+test("the channel's ssh and start timeout follow connectTimeoutS (unset: ConnectTimeout=10 and 15 s)", () => {
+	const t: Target = { name: "p", kind: "ssh", ssh: { host: "h.example" } };
+	const unset = buildChannelArgv(t)!;
+	assert.deepEqual(unset.slice(8, 14), ["-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
+	assert.equal(channelStartTimeoutMs(t, [t]), CHANNEL_START_TIMEOUT_MS);
+	assert.equal(CHANNEL_START_TIMEOUT_MS, 15_000);
+	const slow: Target = { ...t, connectTimeoutS: 40 };
+	const set = buildChannelArgv(slow)!;
+	assert.deepEqual(set, unset.map((w) => (w === "ConnectTimeout=10" ? "ConnectTimeout=40" : w)), "only ConnectTimeout differs");
+	assert.equal(channelStartTimeoutMs(slow, [slow]), 45_000);
+	// The entry's own ConnectTimeout precedes ours (ssh keeps the first) and sets the start timeout.
+	const own: Target = { ...slow, ssh: { host: "h.example", options: ["ConnectTimeout=60"] } };
+	assert.deepEqual(buildChannelArgv(own)!.filter((w) => w.startsWith("ConnectTimeout=")), ["ConnectTimeout=60", "ConnectTimeout=40"]);
+	assert.equal(channelStartTimeoutMs(own, [own]), 65_000);
+	// via: the hop's value.
+	const box: Target = { name: "box", kind: "docker", docker: { container: "web" }, via: "p" };
+	assert.ok(buildChannelArgv(box, [slow, box])!.includes("ConnectTimeout=40"));
+	assert.equal(channelStartTimeoutMs(box, [slow, box]), 45_000);
+	assert.equal(channelStartTimeoutMs(box, [t, box]), CHANNEL_START_TIMEOUT_MS);
 });
 
 test("composeChannelScript refuses NUL and bad env names", () => {

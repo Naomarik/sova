@@ -86,6 +86,7 @@ test("runArgv is bounded: a hung command is killed and classified offline; ssh's
   // Cut off by its 200 ms bound, not finished: timedOut says which, with no clock to read.
   const r = await T.runArgv(["sleep", "10"], 200);
   assert.equal(r.timedOut, true);
+  assert.equal(r.timeoutMs, 200, "a cut run records the bound that cut it");
   assert.equal(T.classifyFailure(r)?.status, "offline");
   assert.equal(T.classifyFailure({ code: 255, stdout: "", stderr: "ssh: connect to host x port 22: Connection refused\n", timedOut: false })?.status, "offline");
   assert.deepEqual(T.classifyFailure({ code: 1, stdout: "", stderr: "a\nnope\n", timedOut: false }), { status: "error", error: "nope" });

@@ -553,6 +553,50 @@ test("code: a reload, or its failure, ends with the server that ran it: the next
   assert.equal(thirdStates.at(-1)?.mirror.code.state, "older");
 });
 
+test("code: a reload asked for but not yet begun when the server restarts is asked of the next server: Reload now's as auto false, else the automatic one", async () => {
+  // Reload now pressed during a reply (a working worker of another backend holds it), asked once the reply ends.
+  const t = await setup({ build: "a", serverBuild: "b" });
+  const live = join(agentDir, "sessions", "live", `test-${t.id}.json`);
+  writeFileSync(live, JSON.stringify({ session: { pid: process.pid, sessionFile: t.path, sessionId: t.id }, heartbeat: Date.now() + 60_000, presence: { workerCounts: { total: 1, working: 1 }, workers: [{ id: "ag_01", name: "w", status: "running", backend: "native-cli" }] } }));
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  const reloads = collect(t.ctl.server, "reload.request");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  tick();
+  await settle();
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
+  await settle();
+  assert.equal(reloads.length, 0, "held by the reply");
+  rmSync(live, { force: true });
+  tick();
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: false }], "asked as the reply ends");
+  // The server goes before it begins the reload (no push), and another server takes control.
+  t.ctl.drop();
+  await settle();
+  const next = t.connect(null, "b", undefined, 2);
+  const nextReloads = collect(next.server, "reload.request");
+  await settle(150);
+  tick();
+  await settle();
+  assert.deepEqual(nextReloads, [{ t: "reload.request", auto: false }]);
+
+  // No Reload now and no pane: the automatic request, asked again of the next server.
+  const u = await setup({ build: "a", serverBuild: "b" });
+  const uReloads = collect(u.ctl.server, "reload.request");
+  (u.host as unknown as { check(): void }).check();
+  await settle();
+  assert.deepEqual(uReloads, [{ t: "reload.request", auto: true }]);
+  u.ctl.drop();
+  await settle();
+  const uNext = u.connect(null, "b", undefined, 2);
+  const uNextReloads = collect(uNext.server, "reload.request");
+  await settle(150);
+  (u.host as unknown as { check(): void }).check();
+  await settle();
+  assert.deepEqual(uNextReloads, [{ t: "reload.request", auto: true }]);
+});
+
 test("code: workers in processes of their own never hold a reload (they're reattached); another backend's working worker does; idle stop waits for both", async () => {
   /** This process's live record for the chat, with one worker of `backend` working. */
   const liveRecord = (t: { path: string; id: string }, backend: string) =>

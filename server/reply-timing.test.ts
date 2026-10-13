@@ -169,13 +169,58 @@ describe("reply timing (§app.insights/reply-timing)", () => {
     r.piece({ kind: "tool-call.end", index: 3 });
     r.piece({ kind: "tool-call.start", index: 4 });
     r.wait(300);
-    // characters with no start open a window; a part still open at the end closes there
+    // characters with no start open a window; a part still open at the end closes at its last characters
     r.piece({ kind: "text", index: 5, delta: "tail" });
+    r.wait(100);
+    r.piece({ kind: "text", index: 5, delta: "more" });
     r.wait(100);
     const m = measured(r.end({ stop: "toolUse" }));
     assert.deepEqual(m.thinking, { ms: 4000, n: 2 });
-    assert.deepEqual(m.tool, { ms: 600, n: 2 });
+    assert.deepEqual(m.tool, { ms: 700, n: 2 }, "the second call had no characters: open until the reply's end");
     assert.deepEqual(m.text, { ms: 600, n: 2 });
+  });
+
+  test("a part ends at its last characters: every end sent at the stream's end (pi-ai openai-completions) never overlaps thinking with the text after it", () => {
+    const r = rig();
+    r.request();
+    r.start();
+    r.wait(500);
+    r.piece({ kind: "thinking.start", index: 0 });
+    r.piece({ kind: "thinking", index: 0, delta: "hm" });
+    for (let i = 0; i < 10; i++) {
+      r.wait(100);
+      r.piece({ kind: "thinking", index: 0, delta: "hm" });
+    }
+    r.wait(50);
+    r.piece({ kind: "text.start", index: 1 });
+    r.piece({ kind: "text", index: 1, delta: "a" });
+    for (let i = 0; i < 20; i++) {
+      r.wait(100);
+      r.piece({ kind: "text", index: 1, delta: "b" });
+    }
+    r.wait(30);
+    r.piece({ kind: "thinking.end", index: 0 });
+    r.piece({ kind: "text.end", index: 1 });
+    const m = measured(r.end());
+    assert.deepEqual(m.thinking, { ms: 1000, n: 1 });
+    assert.deepEqual(m.text, { ms: 2000, n: 1 });
+    assert.ok(m.thinking.ms + m.text.ms <= m.endAt - m.firstAt, "the windows never add up past the stream");
+  });
+
+  test("a part with no characters (Claude's hidden thinking) runs from its start to its end", () => {
+    const r = rig();
+    r.request();
+    r.start();
+    r.piece({ kind: "thinking.start", index: 0 });
+    r.wait(3000);
+    r.piece({ kind: "thinking.end", index: 0 });
+    r.piece({ kind: "text.start", index: 1 });
+    r.wait(10);
+    r.piece({ kind: "text", index: 1, delta: "x" });
+    r.wait(500);
+    const m = measured(r.end());
+    assert.deepEqual(m.thinking, { ms: 3000, n: 1 });
+    assert.deepEqual(m.text, { ms: 10, n: 1 }, "still open at the end: closed at its last characters");
   });
 
   test("R3: a reply a provider marked as no measurement (a Claude invalid-tool retry inside it) writes no sample", () => {

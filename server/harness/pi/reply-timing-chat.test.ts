@@ -89,6 +89,7 @@ async function openChat(steps: Step[]) {
         yield { type: "text_start", contentIndex: 1, partial: base };
         yield { type: "text_delta", contentIndex: 1, delta: step.text, partial: base };
         await sleep(40);
+        yield { type: "text_delta", contentIndex: 1, delta: ".", partial: base };
         yield { type: "text_end", contentIndex: 1, content: step.text, partial: base };
         yield { type: "done", reason: "stop", message: final };
       },

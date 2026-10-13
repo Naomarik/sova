@@ -12,7 +12,6 @@
  */
 
 import { readJsonObject } from "./settings.ts";
-import { join } from "node:path";
 import type { VisionSettings } from "./settings.ts";
 
 /** Just enough of pi-ai's Model to choose one. */
@@ -62,10 +61,8 @@ export function hasVision(model: PickableModel): boolean {
 	return Boolean(model.input?.includes("image"));
 }
 
-/** The usage-status cache in the active agent dir (never a hard-coded ~/.pi/agent: a hermetic pi reads its own). */
-export function usageCacheFile(agentDir: string): string {
-	return join(agentDir, "cache", "usage-status.json");
-}
+/** The usage-status cache in the active agent dir (never a hard-coded ~/.pi/agent: a hermetic pi reads its own); usage-status owns the path. */
+export { usageCacheFile } from "../usage-status/fetch.ts";
 
 /** Re-read at every pick: the cache is refreshed out-of-band by usage-status. */
 export function readUsage(cacheFile: string): Record<string, unknown> | undefined {

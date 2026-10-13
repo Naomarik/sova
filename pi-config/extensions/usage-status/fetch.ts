@@ -31,7 +31,9 @@ const AGENT_DIR = defaultAgentDir();
 const PI_AUTH = path.join(AGENT_DIR, "auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
 const CODEX_AUTH = path.join(HOME, ".codex/auth.json");
 export const CACHE_DIR = path.join(AGENT_DIR, "cache");
-export const CACHE_FILE = path.join(CACHE_DIR, "usage-status.json");
+/** The usage cache in an agent dir: this process's is CACHE_FILE; readers that resolve the agent dir per call (vision-delegate) use this. */
+export const usageCacheFile = (agentDir: string): string => path.join(agentDir, "cache", "usage-status.json");
+export const CACHE_FILE = usageCacheFile(AGENT_DIR);
 const LOCK_FILE = `${CACHE_FILE}.lock`;
 
 export const FRESH_MS = 150_000; // cache younger than this is used without fetching

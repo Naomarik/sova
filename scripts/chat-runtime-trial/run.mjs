@@ -1927,13 +1927,15 @@ async function t21r() {
     p = await chat(c, path, 60000);
     await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === `t21rh${k}`), 60000);
     await sleep(1500);
-    const moved = chatPid(path) !== pid1 || readFileSync(logFile, "utf8").slice(logFrom).split("\n").some((l) => l.includes(sid) && /reloading/.test(l));
+    // Held: the same process, its record still on the build before this restart's, and no reload of it logged since the offset.
+    const since = readFileSync(logFile, "utf8").slice(logFrom).split("\n").filter((l) => l.includes(sid));
+    const moved = chatPid(path) !== pid1 || record(path)?.build === build || since.some((l) => /reloading|reloaded into/.test(l));
     if (!moved) break;
     R.note(`t21r: setup ${k}: the chat reloaded by itself before Reload now (pid ${pid1} → ${chatPid(path)}); again on new code`);
     s = p;
     p = null;
   }
-  if (!R.check(p, "t21r: setup: the chat is older, quiet, its pane attached, and has not moved before Reload now")) {
+  if (!R.check(p, p ? `t21r: setup held: the chat is on the old build (${record(path)?.build}), quiet, its pane attached, not reloaded before Reload now` : "t21r: setup race: auto-reloaded before Reload now (twice)")) {
     await teardown();
     await boot();
     return;

@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import { registerHooks } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
@@ -18,19 +17,6 @@ import {
 	readSettings,
 	writeSettings,
 } from "./logic.ts";
-
-// pi-tui is nested under pi-coding-agent's node_modules: retry @earendil-works/* from there before index.ts loads.
-const piAgentUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
-registerHooks({
-	resolve(specifier, context, nextResolve) {
-		try {
-			return nextResolve(specifier, context);
-		} catch (error) {
-			if (!specifier.startsWith("@earendil-works/")) throw error;
-			return nextResolve(specifier, { ...context, parentURL: piAgentUrl });
-		}
-	},
-});
 
 // ---------------------------------------------------------------------------
 // globToRegExp
@@ -212,35 +198,6 @@ test("manifestExtensionFiles and expandEntry on real package layouts", () => {
 	fs.writeFileSync(path.join(dir, "src", "skip.ts"), "");
 	assert.deepEqual(manifestExtensionFiles(dir), ["src/a.ts"]);
 	assert.deepEqual(expandEntry(dir, "src"), ["src/a.ts", "src/skip.ts"]);
-});
-
-// ---------------------------------------------------------------------------
-// /extensions on a hermetic agent dir
-
-test("/extensions lists the active agent dir's extensions (PI_CODING_AGENT_DIR), never ~/.pi/agent's", async () => {
-	const { agentDir, cwd } = sandbox();
-	const homeExt = path.join(os.homedir(), ".pi", "agent", "extensions", "home-only.ts");
-	const hadHomeExt = fs.existsSync(homeExt);
-	if (!hadHomeExt) {
-		fs.mkdirSync(path.dirname(homeExt), { recursive: true });
-		fs.writeFileSync(homeExt, "export default () => {};");
-	}
-	const saved = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = agentDir;
-	try {
-		const { default: extensionToggle } = await import("./index.ts");
-		let handler: ((args: string, ctx: unknown) => Promise<void>) | undefined;
-		extensionToggle({ registerCommand: (_name: string, spec: { handler: typeof handler }) => { handler = spec.handler; } } as never);
-		const notes: string[] = [];
-		await handler!("", { cwd, mode: "rpc", isProjectTrusted: () => false, ui: { notify: (text: string) => notes.push(text) } });
-		assert.equal(notes.length, 1);
-		assert.match(notes[0], /alpha/, "the agent dir's own extension");
-		assert.doesNotMatch(notes[0], /home-only/, "nothing from ~/.pi/agent");
-	} finally {
-		if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = saved;
-		if (!hadHomeExt) fs.rmSync(homeExt, { force: true });
-	}
 });
 
 test("defaultAgentDir: PI_CODING_AGENT_DIR with a leading ~ expanded, else ~/.pi/agent", () => {

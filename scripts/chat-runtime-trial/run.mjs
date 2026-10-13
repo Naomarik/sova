@@ -1910,7 +1910,9 @@ async function t21l() {
 //   unit test: F14's covers an operator close.)
 async function t21r(variant = "f15") {
   const label = variant === "f15" ? "t21r" : "t21rx";
-  const text = `say hi DURING-RELOAD ${label}`;
+  // A reply of ~10 s (25 parts at the mock's 400 ms): a short one could end before the replacement booted, and
+  // the drain then found the chat quiet again, so neither branch's race was run (seen on systemd).
+  const text = `[long 25 #${label}d] DURING-RELOAD ${label}`;
   await teardown();
   await boot({ build: "trial-a" });
   const first = await newChat();

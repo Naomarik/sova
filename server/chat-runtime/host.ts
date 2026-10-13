@@ -773,6 +773,25 @@ export class ChatRuntimeHost {
       // the live dir mid-write: next tick
     }
     this.check();
+    this.idleWithoutServer();
+  }
+
+  /** Since when this chat has had no server linked and nothing in flight, or null. */
+  private unlinkedQuietSince: number | null = null;
+  /** No server linked (Sova stopped for good, §app.chat-processes/idle-stop): a chat with nothing in
+      flight for the idle-stop time (as the last server set it) exits by itself, as an idle stop. Run
+      facts no server has acknowledged don't hold it: the session file has them. */
+  private idleWithoutServer(): void {
+    const chat = this.chat;
+    if (this.link || this.closing || !chat || chat.disposed || !(this.settings.idleStopMin > 0) || !this.quietOf(mirrorOf(chat), false, true)) {
+      this.unlinkedQuietSince = null;
+      return;
+    }
+    const now = this.now();
+    this.unlinkedQuietSince ??= now;
+    if (now - this.unlinkedQuietSince < this.settings.idleStopMin * 60_000) return;
+    this.log(`no server, and quiet for ${this.settings.idleStopMin} min: closing`);
+    void this.close("idle", { dispose: true });
   }
 
   private check(): void {
@@ -801,7 +820,7 @@ export class ChatRuntimeHost {
   /** Nothing in flight: no run, compaction, start, queue, dialog, working worker, server call or
       action, unacked run fact or wait-ask. For a reload, only a worker inside this process counts:
       the rest run in processes of their own and are reattached (§app.chat-processes/code-pickup). */
-  private quietOf(m: ChatStateMirror, reload = false): boolean {
+  private quietOf(m: ChatStateMirror, reload = false, unlinked = false): boolean {
     return (
       !m.running &&
       !m.compacting &&
@@ -812,7 +831,7 @@ export class ChatRuntimeHost {
       (reload ? this.workersInProcess : this.workersWorking) === 0 &&
       this.tools.size === 0 &&
       this.workers.pending === 0 &&
-      this.outbox.length === 0 &&
+      (unlinked || this.outbox.length === 0) &&
       this.waits.size === 0
     );
   }

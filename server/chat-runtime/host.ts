@@ -318,10 +318,12 @@ export class ChatRuntimeHost {
       // A stopping chat takes no prompt: it goes back to its pane (the draft restored), never lost
       // in a dispose or a pane this process never attached.
       if (this.closing || !c || !this.chat || this.chat.disposed) {
+        this.log(`a pane's ${f.msg.type} came while ${this.closing ? "closing" : !c ? "its pane is not attached" : "no chat is open"}: ${unsentRefusal(f.msg) ? "refused" : "dropped"}`);
         const refusal = unsentRefusal(f.msg);
         if (refusal) link.send({ t: "client.send", clientId: f.clientId, json: JSON.stringify(refusal) });
         return;
       }
+      if ((f.msg.type === "prompt" || f.msg.type === "steer") && String(f.msg.text ?? "").startsWith("/")) this.log(`took a pane's ${f.msg.type} command ${String(f.msg.text).split(/\s/)[0]}`);
       this.chat.handle(c, f.msg);
       this.pokeSoon();
     }));
@@ -949,9 +951,12 @@ export class ChatRuntimeHost {
       // Finish what was taken (F14): a command running (an idle chat runs `/btw` at once) and what
       // it asked the server get a bounded moment, so its request reaches the server before the
       // dispose cuts it off; prompts arriving meanwhile are refused (client.msg above).
+      const busy = () => chat.commandsInFlight > 0 || chat.turnStarting || this.workers.pending > 0;
+      const state = () => `${chat.commandsInFlight} command(s) running, turn starting ${chat.turnStarting}, ${this.workers.pending} request(s) to the server unanswered`;
+      this.log(`closing (${cause}): ${state()}`);
       const until = Date.now() + CLOSE_QUIESCE_MS;
-      while ((chat.turnStarting || this.workers.pending > 0) && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
-      if (chat.turnStarting || this.workers.pending > 0) this.log(`closing with ${chat.turnStarting ? "a command" : "nothing"} unfinished and ${this.workers.pending} request(s) to the server unanswered`);
+      while (busy() && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
+      if (busy()) this.log(`closing with work unfinished: ${state()}`);
       try {
         if (opts.message) await disposeHeldChat(chat.path, opts.message);
         else await chat.dispose();

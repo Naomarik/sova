@@ -1020,6 +1020,21 @@ class ChatSession {
     this.starting = null;
     for (const w of this.startWaiters.splice(0)) w();
   }
+  /** Client sends that may run an extension command (text starting with "/"), from the send until it
+      settles: an idle chat runs a command at once and outside any run (pi awaits its handler), so a
+      process closing on purpose lets it finish first (§app.chat-processes/survives-restart, F14). */
+  private commandsRunning = 0;
+  get commandsInFlight(): number {
+    return this.commandsRunning;
+  }
+  private tracked<T>(text: string, send: () => Promise<T>): Promise<T> {
+    if (!text.startsWith("/")) return send();
+    this.commandsRunning++;
+    const p = send();
+    const done = () => void this.commandsRunning--;
+    p.then(done, done);
+    return p;
+  }
   /** A turn was handed to the SDK and its run has not begun (see `starting`): the SDK's abort()
       misses it, so whoever must stop it waits for `whenStarted` first. */
   get turnStarting(): boolean {
@@ -1215,7 +1230,7 @@ class ChatSession {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      const turn = toSdk(() => this.harness.send(item.text, { images, source }));
+      const turn = toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, source })));
       this.noteStarting(turn);
       turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
@@ -1233,7 +1248,7 @@ class ChatSession {
       await toSdk(() => this.harness.steer(item.text, images, { source }));
       return;
     }
-    await toSdk(() => this.harness.send(item.text, { images, delivery: item.kind, source })).catch((err) => {
+    await toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, delivery: item.kind, source }))).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
   }
@@ -2523,7 +2538,7 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.toSdk(origin, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) }), opts?.confirm);
+    const turn = this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm);
     this.noteStarting(turn);
     if (send)
       turn.catch(() => {
@@ -3087,7 +3102,7 @@ class ChatSession {
     }
     this.flushDeferredAppends();
     if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-    this.toSdk("client", () => this.harness.send(text, { images }))
+    this.toSdk("client", () => this.tracked(text, () => this.harness.send(text, { images })))
       .catch((err) => {
         if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
       })

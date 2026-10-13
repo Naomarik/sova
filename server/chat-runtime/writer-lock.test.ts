@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { lockFileOf, procStart, readLock, releaseLockOf, takeWriterLock, WriterLockHeld } from "./writer-lock";
+import { holderAlive, lockFileOf, procStart, readLock, releaseLockOf, takeWriterLock, WriterLockHeld } from "./writer-lock";
 
 const dir = mkdtempSync(join(tmpdir(), "wlock-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -34,9 +34,11 @@ test("a dead holder's lock is taken over", () => {
   lock.release();
 });
 
-test("a reused pid is not the holder (its start time differs)", { skip: procStart(process.pid) === null ? "no /proc" : false }, () => {
+test("a reused pid is not the holder (its start time differs)", () => {
   const start = procStart(process.pid)!;
-  writeFileSync(lockFileOf("/s/d.jsonl", dir), JSON.stringify({ pid: process.pid, start: start + 1, at: 1, unit: null, path: "/s/d.jsonl" }));
+  assert.notEqual(start, null);
+  const other = typeof start === "number" ? start + 1 : `${start} (another)`;
+  writeFileSync(lockFileOf("/s/d.jsonl", dir), JSON.stringify({ pid: process.pid, start: other, at: 1, unit: null, path: "/s/d.jsonl" }));
   const lock = takeWriterLock("/s/d.jsonl", { dir });
   assert.equal(readLock("/s/d.jsonl", dir)?.start, start);
   lock.release();
@@ -51,4 +53,18 @@ test("a release leaves a lock someone else holds now", () => {
   assert.equal(releaseLockOf("/s/e.jsonl", { pid: DEAD_PID, start: null }, dir), false, "not the holder: kept");
   assert.equal(releaseLockOf("/s/e.jsonl", { pid: process.pid, start: null }, dir), true);
   assert.equal(existsSync(lockFileOf("/s/e.jsonl", dir)), false);
+});
+
+test("on macOS a process's start time is ps's lstart (the detached driver's clock), so a reused pid is never the holder there either", () => {
+  const calls: string[][] = [];
+  const exec = (file: string, args: string[]) => (calls.push([file, ...args]), { code: 0, stdout: "Mon Oct 13 02:00:01 2026\n" });
+  assert.equal(procStart(4242, "darwin", exec), "Mon Oct 13 02:00:01 2026");
+  assert.deepEqual(calls[0], ["ps", "-o", "lstart=", "-p", "4242"]);
+  assert.equal(procStart(4242, "darwin", () => ({ code: 1, stdout: "" })), null, "no such process");
+  // The holder's recorded start against the one now: the same process, or a later one on its pid.
+  assert.equal(holderAlive({ pid: process.pid, start: "Mon Oct 13 02:00:01 2026" }, () => "Mon Oct 13 02:00:01 2026"), true);
+  assert.equal(holderAlive({ pid: process.pid, start: "Mon Oct 13 02:00:01 2026" }, () => "Tue Oct 14 09:00:00 2026"), false);
+  // A lock file written so is read back as it was.
+  writeFileSync(lockFileOf("/s/f.jsonl", dir), JSON.stringify({ pid: DEAD_PID, start: "Mon Oct 13 02:00:01 2026", at: 1, unit: null, path: "/s/f.jsonl" }));
+  assert.equal(readLock("/s/f.jsonl", dir)?.start, "Mon Oct 13 02:00:01 2026");
 });

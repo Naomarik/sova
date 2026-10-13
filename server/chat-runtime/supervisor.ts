@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DetachedDriver, envFileKeeps, realExec, SystemdDriver, type Driver, type Exec, type UnitStatus } from "../project-services/drivers";
+import { realSyncExec, type SyncExec } from "../project-services/proctable";
 import { stateHash } from "../project-services/store";
 import type { ExitCause } from "../../shared/chat-runtime-wire";
 import { stateRoot } from "../state-root";
@@ -109,20 +110,34 @@ export async function sweepOldChildren(root = join(chatsRoot(), "children"), has
 
 // ---- socket path and epoch ----------------------------------------------------------------------
 
+/** The longest a unix socket's path may be: sockaddr_un's sun_path less its terminating NUL. */
+export const sockPathMax = (platform: NodeJS.Platform = process.platform): number => (platform === "darwin" ? 103 : 107);
+/** Room kept for a reload replacement's suffix (`-r<epoch base36>-<n>`, supervisor.startReplacement). */
+const SUFFIX_ROOM = 18;
+
 /**
  * Where chat `chatId`'s socket lives (design §2.1): `<state root>/chats/s/<hash16><suffix>.sock` when
- * that path fits in 100 bytes, else `<XDG_RUNTIME_DIR or the temp dir>/sova-chats-<state hash>/…`
- * (a sockaddr holds 108; a deep hermetic worktree path would not fit).
+ * that path, with room for a replacement's suffix, fits the platform's sockaddr limit; else under
+ * `<XDG_RUNTIME_DIR or the temp dir>/sova-chats-<state hash>/` (on macOS `/private/tmp`, since its temp
+ * dir under /var/folders is too deep). A path that fits neither is refused: no socket is ever cut short.
  */
-export function chatSocketPath(chatId: string, o: { suffix?: string; root?: string; runtimeDir?: string | undefined; tmp?: string; hash?: string } = {}): string {
+export function chatSocketPath(chatId: string, o: { suffix?: string; root?: string; runtimeDir?: string | undefined; tmp?: string; hash?: string; platform?: NodeJS.Platform } = {}): string {
+  const platform = o.platform ?? process.platform;
+  const max = sockPathMax(platform);
   // A short hash of the whole id: a session id's first characters are its creation time (UUIDv7),
   // so two chats made in the same millisecond would share a prefix. A chat already running keeps
   // the path its record names (adoption connects to `rec.sock`, never to this).
-  const name = `${createHash("sha256").update(chatId).digest("hex").slice(0, 16)}${o.suffix ?? ""}.sock`;
-  const primary = join(o.root ?? chatsRoot(), "s", name);
-  if (Buffer.byteLength(primary) <= 100) return primary;
-  const base = "runtimeDir" in o ? o.runtimeDir : process.env.XDG_RUNTIME_DIR;
-  return join(base || (o.tmp ?? tmpdir()), `sova-chats-${o.hash ?? stateHash()}`, name);
+  const id = createHash("sha256").update(chatId).digest("hex").slice(0, 16);
+  // The place is chosen without the suffix, so a chat's replacements live beside it.
+  const fits = (dir: string) => Buffer.byteLength(join(dir, `${id}.sock`)) + SUFFIX_ROOM <= max;
+  const name = `${id}${o.suffix ?? ""}.sock`;
+  const primary = join(o.root ?? chatsRoot(), "s");
+  if (fits(primary)) return join(primary, name);
+  const base = platform === "darwin" ? "/private/tmp" : ("runtimeDir" in o ? o.runtimeDir : process.env.XDG_RUNTIME_DIR) || (o.tmp ?? tmpdir());
+  const fallback = join(base, `sova-chats-${o.hash ?? stateHash()}`);
+  const path = join(fallback, name);
+  if (!fits(fallback) || Buffer.byteLength(path) > max) throw new Error(`This chat's socket path is too long for a unix socket here (at most ${max} bytes): ${path}`);
+  return path;
 }
 
 /** This server's controller epoch (design §2.3): max(now, the last one + 1), written back. */
@@ -266,21 +281,27 @@ export function claimRecordedChats(ownPid: (pid: number) => () => void, dir: () 
   }
 }
 
-/** Whether `pid` is alive and, where /proc tells, a chat process (never a pid reused by another
-    program, say a terminal's pi on the same file). Without /proc (macOS): alive is enough. */
-export function chatProcessAlive(pid: number): boolean {
+/** Whether `pid` is alive and a chat process (never a pid reused by another program, say a
+    terminal's pi on the same file): its command from /proc on Linux, from `ps` elsewhere. */
+export function chatProcessAlive(pid: number, platform: NodeJS.Platform = process.platform, exec: SyncExec = realSyncExec): boolean {
   try {
     process.kill(pid, 0);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EPERM") return false;
   }
-  let cmdline: string;
-  try {
-    cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8");
-  } catch {
-    return process.platform !== "linux";
+  let command: string;
+  if (platform === "linux") {
+    try {
+      command = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+    } catch {
+      return false;
+    }
+  } else {
+    const r = exec("ps", ["-o", "command=", "-p", String(pid)]);
+    if (r.code !== 0) return false;
+    command = r.stdout;
   }
-  return cmdline.includes("chat-runtime/main.ts");
+  return command.includes("chat-runtime/main.ts");
 }
 
 export interface ChatLaunch {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { envFileText, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
-import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -620,6 +620,28 @@ test("the socket lives under the state root, or in the runtime dir when that pat
   assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: undefined, tmp: "/tmp", hash: "h1" }), `/tmp/sova-chats-h1/${abc}.sock`);
   // Two session ids made in the same millisecond (UUIDv7: the same first 12 characters) get sockets of their own.
   assert.notEqual(chatSocketPath("0199bbbb-0000-7000-8000-000000000001", { root: "/a/chats" }), chatSocketPath("0199bbbb-0000-7000-8000-000000000002", { root: "/a/chats" }));
+});
+
+test("5d: a socket path fits the platform's sockaddr limit (darwin 103, Linux 107) with room for a replacement's suffix; macOS falls back to /private/tmp", () => {
+  const abc = chatSocketPath("abc", { root: "/a/chats" }).split("/").pop()!.replace(/\.sock$/, "");
+  // A root that fits on Linux with the suffix's room, but not on darwin (4 bytes less).
+  const mid = `/${"m".repeat(107 - 18 - "/s/".length - 16 - ".sock".length - 1)}`;
+  assert.equal(chatSocketPath("abc", { root: mid, platform: "linux" }), `${mid}/s/${abc}.sock`);
+  assert.equal(chatSocketPath("abc", { root: mid, platform: "darwin", hash: "h1" }), `/private/tmp/sova-chats-h1/${abc}.sock`, "darwin: never its /var/folders temp dir");
+  // A replacement lives beside its chat, and its path still fits.
+  const rep = chatSocketPath("abc", { root: mid, platform: "linux", suffix: "-rmv62926i-12" });
+  assert.equal(rep, `${mid}/s/${abc}-rmv62926i-12.sock`);
+  assert.ok(Buffer.byteLength(rep) <= 107);
+  // Too long anywhere: refused, never cut short.
+  assert.throws(() => chatSocketPath("abc", { root: `/${"d".repeat(120)}`, runtimeDir: `/${"r".repeat(100)}`, hash: "h1", platform: "linux" }), /too long for a unix socket here \(at most 107 bytes\)/);
+});
+
+test("5d: a recorded pid is a chat process only by its command: /proc on Linux, ps on macOS (alive is never enough)", () => {
+  const ps = (stdout: string, code = 0) => (file: string, args: string[]) => (assert.deepEqual([file, ...args], ["ps", "-o", "command=", "-p", String(process.pid)]), { code, stdout });
+  assert.equal(chatProcessAlive(process.pid, "darwin", ps("/opt/bun/bin/bun /copies/g1/server/chat-runtime/main.ts\n")), true);
+  assert.equal(chatProcessAlive(process.pid, "darwin", ps("/usr/local/bin/pi --session x.jsonl\n")), false, "a reused pid: another program");
+  assert.equal(chatProcessAlive(process.pid, "darwin", ps("", 1)), false);
+  assert.equal(chatProcessAlive(0x3ffffff, "darwin", () => assert.fail("a dead pid needs no ps")), false);
 });
 
 test("the controller epoch only grows, across starts and a clock that went back", () => {

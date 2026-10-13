@@ -425,15 +425,17 @@ export class ChatHostRouter {
       found(each);
       await Promise.all(each.values());
       this.workers.settleBoot();
+      return true;
     })()
-      .catch((err) => log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`))
-      .finally(() => {
-        // Whatever the take-back did: no open waits on it any more, deaths are watched, and copies no
-        // chat runs any more go (after it, so a surviving chat's copy is known).
+      .catch((err) => (log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`), false))
+      .then((tookBack) => {
+        // Whatever the take-back did: no open waits on it any more, and deaths are watched. Copies no
+        // chat runs any more go only after a whole take-back: one that failed may not know a
+        // surviving chat, and so not its copy.
         found(new Map());
         this.sup.watch(2_000);
         this.childSup.watch(2_000);
-        if (this.gen) this.gc = startGenerationGc(() => this.buildsInUse());
+        if (this.gen && tookBack) this.gc = startGenerationGc(() => this.buildsInUse());
       });
   }
 

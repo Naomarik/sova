@@ -167,7 +167,7 @@ const server = createServer(async (req, res) => {
   } catch {}
   // Code markers in the tools' descriptions (T25 edits one into an extension in its checkout).
   const marks = [...new Set(JSON.stringify(ask.tools ?? []).match(/GEN-MARK-\w+/g) ?? [])];
-  const entry = { n: id, at: new Date().toISOString(), pid, scenario, tag: scenario === "long" ? (long?.[2] ?? null) : null, afterTool, step: stepNo, toolText: toolText.slice(0, 1000), anyResume, userText: userText.slice(0, 300), ...(afterTool ? { turnText: turnText.slice(0, 300) } : {}), messages: msgs.length, tools: (ask.tools ?? []).map((t) => t.function?.name ?? t.name).filter(Boolean).length, ...(marks.length ? { marks } : {}) };
+  const entry = { n: id, at: new Date().toISOString(), pid, scenario, tag: scenario === "long" ? (long?.[2] ?? null) : null, afterTool, step: stepNo, toolText: toolText.slice(0, 1000), anyResume, userText: userText.slice(0, 300), hashes: [...new Set([...tags.matchAll(/#([\w-]+)\]/g)].map((m) => m[1]))], ...(afterTool ? { turnText: turnText.slice(0, 300) } : {}), messages: msgs.length, tools: (ask.tools ?? []).map((t) => t.function?.name ?? t.name).filter(Boolean).length, ...(marks.length ? { marks } : {}) };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });

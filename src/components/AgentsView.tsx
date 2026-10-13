@@ -875,7 +875,7 @@ export function AgentsView(props: {
   return (
     <InsightsPage
       title="Agents"
-      meta={props.costs !== null && meta() ? <span title={metaTitle()}>{meta()}</span> : undefined}
+      meta={onCosts() && meta() ? <span title={metaTitle()}>{meta()}</span> : undefined}
       refreshLabel="Refresh Agents"
       onRefresh={() => {
         props.agents.refetch();

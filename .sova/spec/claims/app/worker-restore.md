@@ -1,7 +1,7 @@
 # §app/worker-restore — Workers across a restart
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-A session's subagent workers are chat processes of their own (§app.chat-processes/workers). When the Sova server restarts (a deploy, `systemctl restart`, a crash) with chats out of its process, they keep running and their parent picks them back up; with chats in the server's process, the server stops them with it. Until this surface, a session forgot workers that ended so: `agent_list` came back empty, the pane lost its rows and the
+A session's subagent workers are chat processes of their own (§app.chat-processes/workers). When the Sova server restarts (a deploy, `systemctl restart`, a crash), they keep running and their parent picks them back up. Until this surface, a session forgot workers that ended so: `agent_list` came back empty, the pane lost its rows and the
 lifetime Σ restarted at zero. This surface makes a worker outlive its process **as a record**:
 what it was, where its transcript is, what it spent. It does not make the process outlive the
 restart. A restored worker is idle, and only an explicit resume starts it again.
@@ -40,7 +40,7 @@ same fold also reads the older `subagents-worker-registry` entries, which were w
 
 ## §app.worker-restore/failure-reason — A worker that dies says why
 
-When a worker's process dies and is not continued (§app.chat-processes/worker-crash), the error its record keeps (§app.worker-restore/worker-record) and `agent_list` shows is "This worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by "Last output: …" with the last lines of its log: at most 20 lines and 2 KB, the newest kept. With no output it is the bare sentence. A Claude Code worker is a pi worker (§app.subagents-pane/claude-code-workers), so the same holds for it.
+When a worker's process dies and the worker ends with an error (§app.chat-processes/worker-crash: mid-run and not continued), the error its record keeps (§app.worker-restore/worker-record) and `agent_list` shows is "This worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by "Last output: …" with the last lines of its log: at most 20 lines and 2 KB, the newest kept. With no output it is the bare sentence. A Claude Code worker is a pi worker (§app.subagents-pane/claude-code-workers), so the same holds for it.
 
 ## §app.worker-restore/transcript-protocol — One transcript protocol, one adapter per backend
 
@@ -80,7 +80,7 @@ snapshot stays in the record for the TUI's own views.
 
 ## §app.worker-restore/restore — Restored as idle entries, never restarted
 
-When a session's runtime opens after a restart (or a reload, or a switch back to the session), it first picks up again every worker of its that still runs (§app.chat-processes/workers), and a waiting worker whose process stopped while idle is still a live, waiting worker. Each other worker its record names that no process runs (its server stopped it, it died for good, it ran before workers became chat processes, or the server no longer knows it) comes back as a **restored** entry:
+When a session's runtime opens after a restart (or a reload, or a switch back to the session), it first picks up again every worker of its that still runs (§app.chat-processes/workers), and a waiting worker whose process stopped while idle is still a live, waiting worker. Each other worker its record names that no process runs (it died for good, an older server stopped it with itself, it ran before workers became chat processes, or the server no longer knows it) comes back as a **restored** entry:
 listed by `agent_list`, shown in the pane and on `#/agents`, with no process behind it. Nothing
 is started, nothing is sent, and nothing is announced to the parent agent. A restored worker is
 settled: it takes no live slot, and a steer to it is refused with the way back (`agent_resume`,

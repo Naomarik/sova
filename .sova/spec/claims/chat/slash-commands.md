@@ -253,7 +253,10 @@ the same in the TUI and in Sova; `/compact` is unchanged.
 - **Refused while busy.** While a turn runs, a compaction runs, messages are queued or an earlier
   `/compact-handoff` is still under way (its note being written, or its compaction waiting), it
   does nothing and says why in a notification. A session with no conversation on disk yet has
-  nothing to hand off and is refused the same way.
+  nothing to hand off and is refused the same way. So is a session with nothing to compact yet:
+  everything since its last compaction still fits in the recent part a compaction keeps (pi's
+  `compaction.keepRecentTokens`, 20,000 tokens unless set), so a compaction would have nothing to
+  summarize. No fork starts, and the notification says nothing can be compacted yet.
 - **The note is written in a background fork.** Otherwise it starts a background fork of the
   session (§chat.session-fork/background): a hidden child with the whole conversation, on the
   session's warm prompt cache, that may only read (files, search, read-only shell; no writes, no
@@ -324,7 +327,7 @@ where it was appended, as `/explain`'s do.
   note failed" with a `.chip-error` "Failed" chip and the reason; cancelled, "Handoff cancelled";
   interrupted, "Handoff interrupted" with a `.chip-warn` "Interrupted" chip. The compaction that
   follows is its own row.
-- **Interrupted.** A run whose fork's chat is gone before it settled (the server stopped it, with chats not in processes of their own, or its process died for good) leaves its running entry as the newest. Opening the session writes nothing, so the row still reads running then; the session's next prompt, or its next `/compact-handoff`, appends the `interrupted` entry, which replaces it. A `/reload` of the session, its process's crash, or a server restart with chats in processes of their own interrupts nothing: the fork keeps writing, the session watches it again when it opens, and the row settles when the fork finishes.
+- **Interrupted.** A run whose fork's chat is gone before it settled (its process died for good, or was stopped) leaves its running entry as the newest. Opening the session writes nothing, so the row still reads running then; the session's next prompt, or its next `/compact-handoff`, appends the `interrupted` entry, which replaces it. A `/reload` of the session, its process's crash, or a server restart interrupts nothing: the fork keeps writing, the session watches it again when it opens, and the row settles when the fork finishes.
 
 ## §chat.slash-commands/btw — /btw: a side conversation
 

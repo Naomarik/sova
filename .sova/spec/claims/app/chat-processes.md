@@ -1,18 +1,23 @@
 # §app/chat-processes — Chats in a process of their own
 
-On Linux, a server started with `SOVA_CHAT_HOST=out` runs each ordinary chat in a process of its
-own instead of inside the server. The process is a systemd transient user service in a slice of
-its own, outside the server's service, so stopping or restarting the server does not stop it. The
-switch is read once at start and is off by default. With it off, or on a host where it can't apply
-(not Linux, no systemd user manager answering, the server on Node), every chat runs in the server's
-process as before, and `GET /api/health` says which and why (§app.server-runtime/health).
+Every chat runs in a process of its own, outside the server: on Linux with a systemd user manager
+answering, a transient user service in a slice of its own; elsewhere (macOS, a Linux without one),
+a detached session the server records and supervises. Stopping or restarting the server does not
+stop it. There is no switch, and `GET /api/health` says which of the two this server uses
+(§app.server-runtime/health). Chat processes run on Bun, found as for workers when the server
+itself runs on Node; with no Bun anywhere, every chat open is refused with "Chats need Bun to run
+Sova's chat runtime", and the server still serves everything else.
 
-Every chat goes out. Workers and the hidden chats (`/btw`, `/explain`, a compaction's hand-off) are chat processes whatever the switch says (§app.chat-processes/workers), and a worker's own session file is never opened as a chat anywhere else. The Overseer, a project overseer, a baton session (its wrap-up included) and a chat whose profile grants
+Every chat goes out. Workers and the hidden chats (`/btw`, `/explain`, a compaction's hand-off) are chat processes too (§app.chat-processes/workers), and a worker's own session file is never opened as a chat anywhere else. The Overseer, a project overseer, a baton session (its wrap-up included) and a chat whose profile grants
 powers go out like any other (§app.chat-processes/special-kinds); a link member or a fan-out member
-does too. A chat the
-server could not start in a process of its own (the unit didn't start or never answered) runs in
-the server's process until the server restarts, and the server logs why; a chat that refuses to open
-(another writer, a missing folder) is refused as before.
+does too. The server never
+runs a chat in its own process. A chat whose process can't start on the current code (it didn't
+start, never answered, or the chat didn't open in it) starts again on the last code a chat process
+booted and opened on (§app.chat-processes/code-generations), when that is another complete copy,
+and shows the failure as a reload's does (§app.chat-processes/code-pickup); with no such copy, or
+if that start fails too, the open is refused with the reason ("This chat's process didn't start:
+…"), and the server logs why. A chat that refuses to open (another writer, a missing folder) is
+refused as before.
 
 To the person, a chat in its own process is the same chat: the same transcript, composer, tools,
 workers, dialogs and refusals. What differs is what survives a server restart
@@ -25,9 +30,10 @@ workers, dialogs and refusals. What differs is what survives a server restart
   reply keeps streaming, its workers keep working in processes of their own (§app.chat-processes/workers), and its tools keep running. The server only
   says goodbye on the chat's socket. Its run is never recorded as cut off, so no "The Sova server
   restarted…" message follows (§app.overseer/auto-resume).
-- **The next server takes it back.** At start, before it accepts any chat connection, the server
-  finds the chat processes of its own state root that are still running and reconnects to each. A
-  browser that reconnects meanwhile waits for that, never starting a second copy of the chat. Each
+- **The next server takes it back.** At start the server finds the chat processes of its own state
+  root that are still running and reconnects to each. Opening a chat whose process is among them
+  waits for its own take-back, never starting a second copy of the chat; a chat with no process
+  left running opens at once, without waiting for the others. Each
   chat process's live record counts as the server's own from the server's start (before it
   answers any request, while it is still taking the chats back), through a reload's replacement,
   until the server has stopped, so a chat process never reads as a terminal holding its file (a
@@ -56,11 +62,15 @@ death: nothing is reported and nothing is resumed.
 - **Its last writes are the server's.** While the dead process still held the session file's writer
   lock and the file hasn't changed since it ended, what it wrote is the server's own write
   (§chat.transcript/own-writes-across-restart): the chat reopens for chat at once, never read-only
-  as changed by a process Sova can't identify. Otherwise the 120-second rule applies.
+  as changed by a process Sova can't identify. This holds too for a death the next server finds when
+  it starts, as long as when the process ended is known (systemd's journal says); where it isn't (the
+  detached driver, macOS), only what the process recorded as its own counts, and a change after
+  that falls under the 120-second rule. Otherwise the 120-second rule applies.
 - **Continue, once.** When it died with a run in flight, the chat gets one message, a few seconds
   later: "This chat's process stopped unexpectedly and cut off your last turn. Continue where you
   left off.", under the same rules and setting as a resume after a server restart
-  (§app.overseer/auto-resume). A run that resume started and that is cut off again is not resumed a
+  (§app.overseer/auto-resume). A server that stops before that message is sent leaves it to the next
+  server, which sends it once it has taken back its chats. A run that resume started and that is cut off again is not resumed a
   second time. A process that stopped because it was asked to (idle, archived, a code reload, the
   chat closing itself) is never resumed, and a server restart is never a death.
 
@@ -78,7 +88,7 @@ server isn't answering, so this action didn't run. Try it again in a minute." A 
 handed and that the server stopped before answering is never sent again: the tool answers "The Sova
 server restarted while this action ran, so its outcome is unknown. Check whether it took effect
 before you try it again." Stopping the reply cancels the call on the server. The tools are declared
-to the model as in the server's process, so the chat's prompt and tool list don't change. A baton
+to the model as if they ran in the chat, so the chat's prompt and tool list don't change. A baton
 composer's message whose outcome is unknown fails with that sentence; a powers send whose outcome is
 unknown keeps what it spent of its limits. What else an ordinary chat reads of the server (a project's
 instance note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
@@ -91,8 +101,10 @@ and a powers read fails the tool with the "isn't answering" sentence, never an e
 ## §app.chat-processes/wire — The chat process's socket
 
 The server and a chat process talk over one unix socket per chat, in a directory only the user can
-open (0700, the socket 0600), under the state root, or under the runtime directory when that path
-would be too long for a socket. The chat process listens and the server dials. Each frame is a
+open (0700, the socket 0600), under the state root, or, when that path would be too long for a
+socket (with room for a reload replacement's suffix: at most 103 bytes on macOS, 107 on Linux),
+under the runtime directory (the temp directory without one; `/private/tmp` on macOS). A chat
+whose socket path fits neither is refused, never given a path cut short. The chat process listens and the server dials. Each frame is a
 4-byte big-endian length followed by that many bytes of UTF-8 JSON, one object with a type `t`. A
 frame above 64 MiB, an empty one, or one that isn't such an object closes the link. Every
 connection starts with the chat's `hello` (protocol, build, pid, state, last event number, highest
@@ -102,24 +114,42 @@ it, and a command carrying another epoch is refused unrun. Each side speaks prot
 N-1. The kernel frames (hello, control, refuse, ping, drain, drained, exit, bye) never change, so
 any server can drain any chat; every other frame is additive, and a frame of an unknown type is
 ignored. Lifecycle events are numbered by the chat process and replayed from the last number the
-server saw, or reported as a gap. Browser frames pass through as the chat serialised them. A session
-file has one writer: a chat process, or the server for a chat in its own process, holds a lock on it
-under the state root while the chat is open. A lock whose process is gone is taken over.
+server saw, or reported as a gap. Browser frames pass through as the chat serialised them. A recorded chat process is taken
+back only while its pid still runs `server/chat-runtime/main.ts` (read from `/proc` on Linux, from
+`ps` on macOS), never a pid another program reused.
+
+## §app.chat-processes/one-writer — One writer per session file
+
+A session file has one writer: the chat process holds a lock on it under the state root while the
+chat is open, naming its pid and start time (from `/proc` on Linux, `ps` on macOS). A lock whose
+process is gone, or whose pid now belongs to a later process, is taken over. A lock is published
+whole, never half-written; one left unreadable (by an older process that crashed while writing it)
+is taken over once it is 10 s old, and refused as held before that.
 
 ## §app.chat-processes/supervision — Who runs a chat's process
 
-The server starts each chat it runs out of its process as a systemd transient user service named
-`sova-chat-<state hash>-<session id>`, in `sova-chats.slice`, outside the server's own service. The
-process is the server's own Bun running `server/chat-runtime/main.ts` from the repository root
-(never the chat's own folder). Stopping it sends SIGTERM to the chat's process and, 30 s later,
-SIGKILL to whatever is left of its unit (`KillMode=mixed`). There is no `Restart=`: systemd never
-starts a chat again; the server decides.
+Where the systemd user manager answers (Linux), the server starts each chat as a systemd transient
+user service named `sova-chat-<state hash>-<session id>`, in `sova-chats.slice`, outside the
+server's own service. Anywhere else (macOS, a Linux without one) it starts the chat in a session of
+its own, detached from the server, recorded by pid and start time under `<state root>/chats/procs`
+with its output in `<state root>/chats/logs`; it reads processes from `/proc` on Linux and from
+`ps` on macOS, and a recorded pid whose start time differs is never taken for the chat. The choice
+is made once at start and logged. The
+process is the server's own Bun running `server/chat-runtime/main.ts` from its code generation's
+copy, with that copy as its working directory (§app.chat-processes/code-generations; the checkout
+itself only when no copy could be made, never the chat's own folder). Stopping it sends SIGTERM to the chat's process and, 30 s later,
+SIGKILL to whatever is left of its unit (`KillMode=mixed`) or its session. There is no `Restart=`:
+nothing but the server ever starts a chat again.
 
 - **Environment.** The chat's process gets the server's environment, minus the service manager's
   per-unit variables (`INVOCATION_ID`, `NOTIFY_SOCKET`, `LISTEN_*`, `WATCHDOG_*` and the like), `PWD`
   and `OLDPWD`, and the server's own `PORT` and `HOST`. On `PATH` come Sova's Bun first, then the
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
-  `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*`. All of it is passed in a file only
+  `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
+  copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`). A chat process's own
+  variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
+  `_COPIES_ROOT`) are never passed on from the server's environment, and a server deletes them from
+  its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.
 - **Records and adoption.** Each chat is recorded under `<state root>/chats/registry/`. At a server
@@ -132,14 +162,14 @@ starts a chat again; the server decides.
   server recorded but could not deliver before it stopped is delivered at its next start. Exit 0
   without a stated cause reads as an operator stop, not a death. A process that ends, or doesn't answer in time,
   before it ever answered the server is a failed start, not a death: logged, never in the deaths log,
-  and the chat opens in the server's process (§app/chat-processes).
+  and the chat starts on the last good code, or its open is refused (§app/chat-processes).
 - **One process per chat.** Starting a chat whose previous process is still exiting waits up to
   10 s for that process and the session's writer lock to go.
 - **Claude programs.** Across all chat processes at most 4 idle Claude CLI children are kept
   (`SOVA_CHAT_CLAUDE_IDLE_MAX`). Beyond that, the one idle longest is let go, and a busy one never
   is; that chat's next turn resumes from its resume record (§app.claude-code-provider/continuity).
 - **Tests.** `SOVA_CHAT_SLICE` names another slice, and `SOVA_CHAT_DRIVER=detached` runs chats as
-  detached sessions instead of units. Neither is ever chosen on its own.
+  detached sessions even where units could run.
 
 ## §app.chat-processes/idle-stop — An idle chat process stops
 
@@ -151,24 +181,43 @@ accepts but has not exited 30 s later is stopped. An idle stop is not a death an
 "continue". The chat stays closed until someone opens it, which starts a new process in under a
 second. Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
 
+With no server at all (Sova stopped for good, its chats left running), a chat's process that has
+no server linked and nothing in flight, for the same idle time (as the last server set it), exits
+by itself as an idle stop, so the next server reads its end as orderly: no death, no "continue". So
+does a process started for a chat that never opened it (a server that stopped mid-start, or a
+reload's replacement it never moved the chat into); such a process never touches the chat's record
+of a run in flight, which belongs to the process that has the chat open.
+A reply in flight or an open dialog keeps it running until that ends; a pane left attached when
+the server went does not. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
+process the install's state root records, through its records and driver (never a process found by
+name), each as an operator stop.
+
 ## §app.chat-processes/code-pickup — Picking up new code
 
-Each chat's process carries the build of the server that started it: the commit, plus a digest of
-uncommitted changes when the tree is dirty (`SOVA_BUILD` overrides it for tests; an unknown build
-means no badge). A chat whose build differs from the server's, both known, is on older code. It asks
+Each chat's process runs its own unchangeable copy of the code its server started with, its code
+generation (§app.chat-processes/code-generations), and carries that generation's id: the commit,
+plus a digest of uncommitted changes and untracked files when the tree is dirty (`SOVA_BUILD`
+overrides it for tests; an unknown build means no badge). A chat whose build differs from the server's, both known, is on older code. It asks
 to reload at a quiet moment: when nobody is attached, or after 5 minutes quiet. "Reload Now" asks at
 once when the chat is quiet, else when its reply ends. Its workers don't hold a reload: they run in
 processes of their own, keep working through it and are reattached (§app.chat-processes/workers);
 only a working worker of another backend, which runs inside the chat's process, still holds it. Reloads run one
 at a time. The server first starts a replacement process and waits up to 30 s for it to boot; only
 then does it ask the old process to close. The old process refuses if it is no longer quiet; the
-replacement is then stopped, and the reload is tried again later. On close, the chat reopens in the
+replacement is then stopped, and the reload is tried again later. A reload the person asked for ("Reload Now")
+that is refused this way (a reply started between the press and the close) stays asked for: the button
+reads `Reloads after this reply` and the reload is asked for again the moment that reply ends, without
+the 5-minute wait. On close, the chat reopens in the
 replacement, and attached browsers reconnect with their draft kept. A reload never cuts off a reply.
 When a replacement fails to boot, or the chat fails to open in it, the replacement is stopped and
-no further automatic reload happens until the server restarts; "Reload Now" still tries. After a
+no further automatic reload happens until the server restarts (the server's log names the new
+code's id and the reason); "Reload Now" still tries. After a
 failed boot the chat keeps its old process and shows the failure. After a failed open the old
-process is already gone, so the chat opens in the server's process the next time it is opened, on
-the server's own code, and shows no failure.
+process is already gone, so the chat starts again at once on the code it ran before and shows the
+failure. A reload, and a failure it showed, belong to the server that ran it: when the server
+restarts after a reload was asked for, before it began, in the middle of it or after it failed, the chat
+shows the next server plain older code (never a `reloading` badge no server will finish) and asks
+that server again by the rules above; a "Reload Now" still stands.
 
 A chat running in its own process on older code than its server says so in its head: a muted
 `On older code` chip (tooltip: "This chat keeps the code it started with until its next quiet
@@ -183,6 +232,39 @@ banner over the thread says "Couldn't start this chat on new code." with "It kee
 code." and the reason, and a `Try Again` button that asks again. A chat on its server's code, or
 hosted in the server itself, shows none of this; a `Reload Now` that reaches a chat already on the
 current code just clears the chip.
+
+## §app.chat-processes/code-generations — A chat's own copy of the code
+
+A server start copies its checkout's code, the tracked files and the untracked ones Git does not
+ignore, to `<state root>/chats/code/<id>` (`SOVA_CHAT_CODE_ROOT` overrides the place), read-only,
+or reuses the copy already there. The id is the commit, plus a digest of the uncommitted changes
+and the untracked files when the tree has any (`SOVA_BUILD` overrides it for tests). Its
+`node_modules` is one copy per lockfile, hardlinked from the checkout's where they share a
+filesystem (else copied in full, and the server's log and `GET /api/health` say so), and shared by every copy with that
+lockfile. Every chat process the server starts afterwards (a new chat, a reopen, a
+reload's replacement, a worker, a hidden chat) runs that copy. A change to the checkout never
+reaches a running chat process, not even when it rebuilds its session (a mode switch, a new
+session, a fork); it reaches the chat only when the chat reloads onto a newer copy
+(§app.chat-processes/code-pickup).
+
+Sova's own extensions load from the chat's copy: an extension the agent dir links into a Sova
+checkout's `pi-config/`, or into another copy's, loads from the same place in the chat's copy, and
+extensions switched off with /extensions stay off. A Sova extension added to the checkout after
+the chat's copy was made is left out of that chat until it reloads onto newer code; the chat
+process logs it. Installed packages, a project's own
+extensions and a worktree's own agent dir load from where they are. A worker whose extension is
+missing from its copy (renamed since its parent's copy was made) does not start, and says
+"<file> is not in this chat's code (<id>); reload the parent chat". Settings, models, skills,
+prompts, themes and the agent dir's other files are read live.
+
+When the copy can't be made (no Git, no space, no tree), chats run from the checkout as before;
+the server logs why once, and `GET /api/health` says so (§app.server-runtime/health). Copies no
+chat uses are removed at the server's start, after each run of reloads and every hour, once they
+are 10 minutes old; the current copy, the last copy a chat started and opened on, and any copy a
+chat or worker process still runs are always kept. A shared `node_modules` copy goes with the
+last copy that uses it. No server removes copies under a place set with `SOVA_CHAT_CODE_ROOT`,
+which several servers may share, unless `SOVA_CHAT_CODE_GC=on` says the place is that server's
+alone (tests).
 
 ## §app.chat-processes/special-kinds — The Overseer, project overseers and batons in a chat process
 
@@ -237,12 +319,11 @@ opens it the way it opens any chat. The parent never starts a worker's process a
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.
 
-- **Where it runs.** On a server started with `SOVA_CHAT_HOST=out` on Linux, each is a transient
-  unit of its own in the chats' slice. A server restart leaves it running, and the next server takes
-  it back. Anywhere else (the switch off, not Linux, no systemd user manager answering), and for a
-  worker whose unit failed to start (logged), it is a detached child of the server. The server
-  stops such children when it stops, as before, and stops what a server that died left running at
-  its next start. Either way it is lowered to the worker niceness (§app.load-priority/workers).
+- **Where it runs.** Each runs as any chat does (§app.chat-processes/supervision): a transient unit
+  of its own in the chats' slice, or a detached session the server records. A server restart leaves
+  it running, and the next server takes it back. A worker whose process doesn't start fails to
+  start with the reason ("The worker's process did not start: …"); it never falls back to another
+  place. It is lowered to the worker niceness (§app.load-priority/workers).
   Workers run on Bun: the server's own runtime, else `$SOVA_BUN`, else `bun` on the server's
   `PATH`; with none, a start is refused with "Workers need Bun to run Sova's chat runtime". A chat
   outside Sova (pi on its own, with no worker host) starts no worker: a spawn fails with "A worker
@@ -253,7 +334,10 @@ passes its events back. A worker never runs inside the server's process.
   comes from its file, and a run that finished while the parent was away is announced to the parent
   once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
   reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
-  within 10 seconds, the server opens the parent chat once so that it takes the report.
+  within 10 seconds, the server opens the parent chat once so that it takes the report. A parent that
+  doesn't open is tried again after 10, 30 and 90 seconds; the report counts as taken only once the
+  parent opened, so one still not taken then is the next server's to deliver, if the worker is still running;
+  otherwise the parent finds it when it next opens.
 - **Across a server restart.** A task, steer, follow-up, abort or kill the parent sends while no
   server is connected waits for the next server, up to a minute, and is delivered once; after that
   it fails with "The Sova server isn't answering". The worker is never stopped for it: a steer or
@@ -261,7 +345,10 @@ passes its events back. A worker never runs inside the server's process.
   stopped answering), is not sent again, and leaves the worker's current task as it was, with one
   error line in its transcript that says the message may not have been delivered and the worker
   was not stopped. The parent's view of each worker's events picks
-  up where it left off.
+  up where it left off. A start the server had recorded but not finished when it stopped (its
+  process not yet open, or its first task not yet taken) is finished by the next server when the
+  parent's start reaches it: the worker gets its first task exactly once, and the start reports
+  success only once the task was taken.
 - **A chat's own workers only.** A chat lists, steers, aborts, stops and follows only its own
   workers (worker ids repeat in every session): a start that names another parent session is
   refused, and any other request about another session's worker fails with "No worker chat <id> for
@@ -281,8 +368,9 @@ passes its events back. A worker never runs inside the server's process.
   reattached and settles when it finishes; it reads interrupted only when its chat is gone (the
   server stopped it, or it died for good). `/btw`'s side thread survives a parent reload.
 - **Not ordinary chats.** A worker's or hidden chat's session file stays out of the session list,
-  is never opened as a chat anywhere else (the subagent-session refusal), and its transcript stays
-  readable.
+  is never opened as a chat anywhere else (the subagent-session refusal: a browser that opens one
+  gets `"<title>" is a subagent's own session; act on the session that runs it.` as a permanent
+  open failure, never retried), and its transcript stays readable.
 - **Counted once.** Each model call of a worker or hidden chat, `/btw`'s included, is counted once,
   in the process that makes it, and attributed to its parent session and worker id, in the usage
   ledger and in the in-flight counts.
@@ -297,14 +385,13 @@ process stopped unexpectedly and cut off your last turn. Continue where you left
 same setting as a chat's crash resume (§app.overseer/auto-resume). Each decision is logged in the overseer's action
 log as a chat's is (`auto_resume`, naming the worker's file, its parent's file and its worker id):
 resumed, or why not (the setting off, already a resume, no run in flight, or the reopen failed). Its transcript in the parent
-shows "Process stopped unexpectedly (…); continuing once", and it stays running. Otherwise (it was
-idle, or it dies again in that resumed run) it ends: its status is error, with the error "This
+shows "Process stopped unexpectedly (…); continuing once", and it stays running. A worker that was
+idle (no run in flight) goes idle again, as after an idle stop: its status stays waiting and its
+next instruction starts it in a new process. Otherwise (the setting off, or it dies again in that
+resumed run, or the reopen failed) it ends: its status is error, with the error "This
 worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by
 "Last output: …" with its log's last 20 lines, at most 2 KB, the newest kept. No second continue is
 sent.
 
 A server restart is never a death, nor is a stop the server asked for (idle, a code reload, an
-archive, a kill): nothing is reported and nothing is resumed. A switch-off server that stops its
-worker children when it stops records them as stopped by the server; their parents list them
-restored, interrupted when they were mid-run, and only those worker ends are hidden from attention
-in the restart's window (§app.overseer/attention-digest).
+archive, a kill): nothing is reported and nothing is resumed.

@@ -184,7 +184,8 @@ probe's answer).
 - **detached** (any Unix, macOS included): each process is started in a session of its own, so it
   survives a restart of the server; its output is appended to
   `<state root>/project-services/logs/<unit>.log`, and it is recorded by pid and start time, so a
-  later process that reuses the pid is never taken for it. The unit is that whole session, process
+  later process that reuses the pid is never taken for it: never reported as the unit, and never
+  signalled by its stop or restart (only the stale record goes). The unit is that whole session, process
   groups inside it included. It is stopped by signalling every process in it (TERM, then KILL after
   15 s). On Linux, processes are read from `/proc`; elsewhere from `ps`, and where `ps` has no
   session column (macOS) the unit is its first process's tree plus every process group a member of
@@ -198,7 +199,7 @@ probe's answer).
 
 Sova stops, restarts and signals only units with its own prefix and state hash, never a process it
 did not start; an adopted unit (§app.project-services/adopt) is only read, and restarted only by the
-restart gate an operator's confirmed `apply` schedules. A `static` service is served inside the server's process (as
+delayed restart an operator's confirmed `apply` schedules. A `static` service is served inside the server's process (as
 §mesh.public/preview-serve serves folders), and it is bound again when the server starts. The
 previews' sweep, which stops the folder serves of ended previews, never stops it. A
 `container` service is also removed by name (`docker rm -f` / `podman rm -f`) after each stop and
@@ -268,7 +269,7 @@ order: its `build` runs when the build's fingerprint changed, then its `reload` 
 a command, or nothing), or a restart when `restart` is set, then Sova waits for its readiness
 again. A service that is not running is skipped. A service the record still wants that the
 definition no longer declares is stopped and marked stopped, as up does. `changed` is true only when something reloaded or such a service was stopped.
-On an adopted slot 0 it schedules the unit's gated restart instead of reloading it, and waits for
+On an adopted slot 0 it schedules the unit's delayed restart instead of reloading it, and waits for
 nothing (§app.project-services/adopt).
 
 ## §app.project-services/status-logs — status and logs
@@ -539,10 +540,9 @@ was loaded from) is Sova hosting itself. On it, a verb that stops or restarts th
 instance (slot 0) — `apply`, `down`, `reset` and `teardown` — always needs the operator's confirm,
 whatever the caller and at every autonomy level: the operator passes `confirm` (the CLI's
 `--confirm`); every other caller gets `needs-confirm` ("…stops or restarts the Sova server's own
-checkout: the operator does it…"). Even confirmed, it is refused with `busy` while any session this
-server hosts is busy: its live record (`sessions/live/p<server pid>-*.json`, heartbeat at most 30 s
-old) shows a working subagent or a turn in flight, the asking session's own turn included. The
-refusal names how many are busy, and nothing changes. Instances of the project's other worktrees
+checkout: the operator does it…"). Confirmed, it goes ahead whatever the chats are doing. Every
+chat, worker and hidden chat runs in a process of its own (§app/chat-processes), so stopping or
+restarting the server cuts none of them off. Instances of the project's other worktrees
 are not affected: their verbs follow the ordinary rules. When slot 0 adopts a unit
 (§app.project-services/adopt), of this project or any other, the same rule guards its `apply`, and
 `down`, `reset` and `teardown` of it are refused outright.
@@ -570,21 +570,17 @@ file launchd writes the agent's standard output to). `create` records the instan
 runs no setup or data step there; `up`, `down`, `reset` and `teardown` answer `refused-slot0` ("…is
 the adopted unit …, which Sova never starts or stops"), as does a test run that needs the adopted
 service. `apply` is the one verb that changes it, under the self-host rule
-(§app.project-services/self-host) for every caller and project: the operator, confirmed, and never
-while a session this server hosts is busy. Then the service's `build` runs when declared and
-changed, and instead of a reload Sova schedules a gated restart, `systemd-run --user
---on-active=30s` running `scripts/sova-restart-gate.mjs` from the server's own code, each schedule a
-transient unit of its own (on macOS, the same script started as a process in a session of its own
-that waits the 30 s itself, so it outlives the restart it causes); the step says "restart
-scheduled", and `apply` answers at once without
-waiting for readiness, since the server may be the unit it restarts. When it fires, the gate reads
-the scheduling server's live records again (the same busy rule) and only then restarts the unit
-with `systemctl --user restart` (on macOS `launchctl kickstart -k gui/<uid>/<label>`); a busy server
-makes it exit 75 and restart nothing, and a unit
-whose main pid changed since the schedule was restarted already, so it does nothing. Each outcome
-is a line in `<state root>/project-services/logs/restart-gate.log`. A unit that is not loaded
-answers `not-found`; a host where `systemd-run` can't schedule it (on macOS, where the gate can't be
-started) answers `unsupported`; nothing restarts in either case.
+(§app.project-services/self-host) for every caller and project: the operator, confirmed. Then the
+service's `build` runs when declared and changed, and instead of a reload Sova schedules the unit's
+restart 3 s out, long enough for the answer to get out: `systemd-run --user --on-active=3s` running
+`systemctl --user restart <unit>`, each schedule a transient unit of its own (on macOS, a process in
+a session of its own that waits the 3 s and runs `launchctl kickstart -k gui/<uid>/<label>`, which
+outlives the restart it causes). The step says "restart scheduled", and `apply` answers at once
+without waiting for readiness, since the server may be the unit it restarts. Nothing checks for
+busy sessions, and nothing is held: a restart cuts off no chat, worker or reply
+(§app/chat-processes). A unit that is not loaded answers `not-found`; a host where `systemd-run`
+can't schedule it (on macOS, where that process can't be started) answers `unsupported`; nothing
+restarts in either case.
 
 ## §app.project-services/on-merge — The main checkout's copy follows main
 

@@ -18,8 +18,10 @@ takes effect at the server's next start.
   server is the launcher's own process (a service manager's main pid stays the server's). A
   leading `--node` is taken by the launcher and the server gets `SOVA_RUNTIME=node`, so it and
   what it starts see the same choice. `pnpm start` runs the launcher.
-- `pnpm run dev:server` (the gated watcher) and `pnpm run dev:hermetic` follow the same choice:
-  each (re)start spawns `bun server/index.ts`, or the Node command when Node is asked for.
+- `pnpm run dev:server` (the dev watcher) and `pnpm run dev:hermetic` follow the same choice:
+  each (re)start spawns `bun server/index.ts`, or the Node command when Node is asked for. The dev
+  watcher restarts the server 300 ms after the last edit to its import graph, whatever the sessions
+  are doing: nothing holds the restart, since chats and workers run in processes of their own.
   `pnpm run dev:hermetic:node` is the hermetic server on Node.
 - The test suite follows it too: `pnpm test`, `pnpm test:int`, `pnpm test:all`
   (§app.server-runtime/test-tiers) and the project's test verb run on Bun, and on Node with
@@ -39,7 +41,7 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 
 ## §app.server-runtime/pi-workers — Workers run on Sova's chat runtime on Bun, the same from every folder
 
-- Every worker (a subagent on any backend, a team member, a hidden chat) runs Sova's chat runtime (`server/chat-runtime/main.ts`, §app.chat-processes/workers) on the same Bun whatever folder it works in. The server finds that Bun once and keeps it for its lifetime: its own runtime when the server runs on Bun; otherwise `$SOVA_BUN`, else `bun` on the server's `PATH`, a version-manager shim there resolved from Sova's own folder. A server with no Bun at all starts no workers: each start is refused with "Workers need Bun to run Sova's chat runtime".
+- Every worker (a subagent on any backend, a team member, a hidden chat) runs Sova's chat runtime (`server/chat-runtime/main.ts`, §app.chat-processes/workers) on the same Bun whatever folder it works in. The server finds that Bun once and keeps it for its lifetime: its own runtime when the server runs on Bun; otherwise `$SOVA_BUN`, else `bun` on the server's `PATH`, a version-manager shim there resolved from Sova's own folder. A server with no Bun at all starts no workers: each start is refused with "Workers need Bun to run Sova's chat runtime". Every other chat runs on that Bun too, and with none each open is refused with "Chats need Bun to run Sova's chat runtime" (§app/chat-processes).
 - The worker's folder never decides which runtime runs: the chat process starts in Sova's own folder, so a project's version manager, `bunfig.toml` and `.env` never pick or configure it.
 - A change to any of this takes effect at the server's next start.
 
@@ -49,11 +51,15 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 (§chat.profiles/live-commit): `name` is the runtime this process runs on (`"bun"` when
 `process.versions.bun` is set, else `"node"`), `version` that runtime's version, `chosen` the
 runtime the choice asks for (`"node"` when its environment has `SOVA_RUNTIME=node`, else `"bun"`),
-read once at start. It also adds `chatHost: {mode, why}`: `mode` is `"out"` when ordinary chats
-run in processes of their own (§app/chat-processes), else `"in"`, and `why` is one fixed short
-reason (`switch off`, `not Linux`, `server not on Bun`, `no systemd user manager`, `systemd user
-units`, `test driver`, or `starting` before it is decided), never a value from the environment; the
-full reason is in the server's log. The answer's other fields, `unknownEntries` among them (a number only, never an
+read once at start. It also adds `chatHost: {driver}`: how chat processes run (§app/chat-processes),
+`"systemd"` (user units) or `"detached"` (sessions the server records), or `"starting"` before it
+is decided, with `bun: false` added when no Bun was found (every chat open is then refused); the
+full reason for the choice is in the server's log. Once decided, `chatHost` also has `code`:
+`"copy"` when chat processes run from a code generation (§app.chat-processes/code-generations),
+with `codeWhy` `full node_modules copy (another filesystem)` when its dependencies could not be
+hardlinked, and `"live"` when they run from the checkout, with `codeWhy`, one fixed short reason
+(`copy failed`, `test switch`); the full reason is in the server's log. `code` is absent while the choice is `starting`, and while the server is still making or finding its copy
+(a new commit's first start can take seconds). The answer's other fields, `unknownEntries` among them (a number only, never an
 entry's type or content: the route needs no sign-in), are §chat.profiles/live-commit's.
 
 ## §app.server-runtime/quirks — Runtime differences, worked around in one place

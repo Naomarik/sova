@@ -4,7 +4,7 @@
 What the user's pi extensions publish, read-only except for one cache: subscription usage, provider-reported credits and activity
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
 subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
-(each process's own count in its live record, and each connected host's own count,
+(the server's own count with its chat processes' reports, and each connected host's own count,
 §app.insights/llm-inflight, §app.insights/token-velocity), and
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
@@ -278,7 +278,7 @@ decisions, topic outlines, compaction, cache warming.
   no payload, no transcript and no other token count is read or written for it, and nothing is
   written per token. The same boundary, at the same call end, appends the call's usage record
   (§app.insights/usage-ledger); that is the ledger's, not part of this count.
-  - **pi** (Sova's own server with its hosted chats and one-shots, a TUI, a pi worker): the
+  - **pi** (Sova's own server with its one-shots, a chat process, a pi worker): the
     process's model runtime, which every session, compaction and background caller of that
     process shares. A call is counted once however many wrappers it passes through.
   - **Claude Code.** A chat session on the `claude-code` provider is a pi call like any other: one
@@ -291,13 +291,13 @@ decisions, topic outlines, compaction, cache warming.
     spawn to the process's exit — **approximate**: the process's start-up and exit count too, so
     for part of that time it may not be calling at all, and what it does inside can't be seen.
   - **Jev** (§app/decisions): from the request to its answer.
-- **How a host adds up.** Sova's server reads its own process directly. A chat in a process of its own (a worker or a hidden chat included, §app.chat-processes/workers) counts its own calls, and the server counts them from what that process reports with its state, once, whether or not its parent is running (each report replaces its last one, and goes when the server lets go of the process; its tokens stay). The report names the process, so a live record of the same process is never summed again. Every other process on the host publishes its count in its live record (`presence.llm`,
-  `pi-config/extensions/sessions/public/SCHEMA.md`), rewritten only when the count or its coverage
-  changes, never per token. A call's output tokens land in that same rewrite, at the moment it ends. The server counts each process once (by its producer id, so a
-  process with several live records is not counted twice, and the records its own hosted chats
-  write are never added to its own count). A fresh record with no `presence.llm` (a process
-  without the counter), and a record whose heartbeat went stale while its pid lives, make the
-  host's count **partial**; a dead pid's record counts nothing.
+- **How a host adds up.** Sova's server reads its own process directly. A chat in a process of its
+  own (a worker or a hidden chat included, §app.chat-processes/workers) counts its own calls, and
+  the server counts them from what that process reports with its state, once, whether or not its
+  parent is running (each report replaces its last one, and goes when the server lets go of the
+  process; its tokens stay). Nothing else on the host is counted: no live record is read for it,
+  and a pi or Claude Code run outside Sova (a terminal pi, say) is not part of the count. A counter
+  that can't see its runtime makes the host's count **partial**.
 - **Connected hosts.** While the mesh is on (§mesh/peers) and at least one browser is listening,
   the server holds one socket per peer to that peer's **local** count (`/ws/watch?feed=llm`,
   through the peer listener's gate) and adds it once per host. A peer only ever publishes its own
@@ -318,7 +318,7 @@ decisions, topic outlines, compaction, cache warming.
   no longer prints the count or its sentence (its figure is the working count,
   §app.session-list/working-now), so they are for its readers — the token ring's coverage
   (§app.insights/token-velocity), the server's own consumers and any later view.
-  - **Complete** — every process on every counted host reports and nothing is known to be
+  - **Complete** — every Sova process on every counted host reports and nothing is known to be
     unseen: the count is exact, `0` included.
   - **Partial** — the count is a floor: `partial` with the gaps that say why (Claude Code's own
     internal calls aren't visible; a process or a host doesn't report).
@@ -328,8 +328,8 @@ decisions, topic outlines, compaction, cache warming.
     and from the moment the socket drops until the next snapshot). A previous connection's
     snapshot is never used.
 - **What it is not.** It is not the number of HTTP requests on the wire, nor every model call any
-  program on the machine makes: only processes running the counter report, and its partial
-  state says so whenever something is known to be missing.
+  program on the machine makes: only Sova's server and its chat processes report, and its partial
+  state says so whenever something of theirs is known to be missing.
 
 ## §app.insights/token-velocity — Token velocity: how fast the agents are writing
 
@@ -348,22 +348,17 @@ host and every connected host.**
   the same boundary: a pi process reads the final message's output count of each call its model
   runtime makes. A chat on the `claude-code` provider, and a Claude Code worker (a pi worker on that
   provider), is counted once, as its pi call, never again by the CLI it drives. A one-shot `claude -p` and Jev add no tokens.
-- **How it adds up.** As the calls do. A chat process, a worker's included, carries its ring in the report it sends the server with its state, and the server sums it with its own; a process that ends leaves its tokens in the server's ring until they age out. Each process publishes its ring in its live
-  record (`presence.llm.tokens`, `pi-config/extensions/sessions/public/SCHEMA.md`); the server
-  sums each counted process once, by the same producer rule (a chat process's tokens, already in the server's own sum from its
-  report, are never added again from its live record), and adds each connected host's own ring once. While anyone listens, a process
-  or host that goes (an exit, a dead pid, a stale record, a dropped peer) leaves its last ring in
-  the sum until it ages out; tokens from before the server started, or ended while nobody
+- **How it adds up.** As the calls do. A chat process, a worker's included, carries its ring in the report it sends the server with its state, and the server sums it with its own; a process that ends leaves its tokens in the server's ring until they age out. The server adds each connected host's own ring once. While anyone listens, a host
+  that goes (a dropped peer) leaves its last ring in the sum until it ages out; tokens from before the server started, or ended while nobody
   listened by processes since gone, are not there.
 - **Partial, never a guessed number.** Every gap of the calls count (a Claude Code turn running,
-  whose internal calls' tokens can't be seen; an unreported process; a peer connecting,
-  unreachable or too old) makes the tokens partial too, and so does a process, worker or peer that
-  publishes a count without a ring (an older counter, until its `/reload`).
+  whose internal calls' tokens can't be seen; a counter that can't see its runtime; a peer
+  connecting, unreachable or too old) makes the tokens partial too, and so does a peer that
+  publishes a count without a ring.
 - **Bounds.** One process's slot is capped at 10,000,000 tokens and one host's at 100,000,000; a
   malformed ring is dropped (its tokens unknown, so partial), never its count with it.
 - **Pushed with the count, never per token.** A call's tokens land at the instant it ends, in the
-  one change that already rewrites its live record and pushes the `llm_inflight` frame for the
-  count's drop. No timer, file or frame is added: time passing alone sends no frame (the browser
+  one change that already pushes the `llm_inflight` frame for the count's drop. No timer, file or frame is added: time passing alone sends no frame (the browser
   slides the windows itself).
 - **The means** are windowed means of the `tokens` ring on the `llm_inflight` frame
   (§app.insights/llm-inflight), computed in the browser by `tokenVelocityView()` in
@@ -1025,12 +1020,14 @@ due (sooner after a failed fetch, never more often than the extension itself wou
 - **A TUI pi**, unchanged: its own timer and after each turn.
 
 Two servers with different agent dirs (the live one and a hermetic test server) keep separate
-caches and locks, so each fetches on its own; servers on the same agent dir share one.
+caches and locks, so each fetches on its own; servers on the same agent dir share one. A server or pi on another agent dir (a hermetic test
+server) reads pi's `auth.json` from that dir, for the fetch and for the sign-in numbers below,
+never the live `~/.pi/agent/auth.json`.
 
 **Sign-in data.** `GET /api/insights/usage` adds `auth` (`UsageAuth`) to a provider when its
 credentials say something: expiry times, when the sign-in was last renewed, and whether the access
 and refresh tokens have expired by the server's clock. It comes from the same credential files the
-usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `~/.pi/agent/auth.json`, the
+usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `auth.json` in the agent dir (`~/.pi/agent/auth.json` on the live server), the
 Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
 credentials file is read from its keychain item instead, for the fetch and for these numbers
 (§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and

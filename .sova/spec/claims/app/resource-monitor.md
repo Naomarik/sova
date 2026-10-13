@@ -93,8 +93,8 @@ says that it isn't.
   whose cwd lies in exactly one hosted session's cwd (`cwd`).
 - **A chat in a process of its own** (§app/chat-processes) is not under the server. It is measured
   all the same: a chat in a unit of its own with that unit's whole cgroup, so what it started and
-  then lost (a `setsid`'d, reparented dev server) is still its; a chat that is the server's child,
-  or has no unit, with its process tree. What it measures is charged to its session through that
+  then lost (a `setsid`'d, reparented dev server) is still its; a chat in a detached session
+  (no unit) with its process tree. What it measures is charged to its session through that
   process's pid (`descendant`), never counted as escaped from the server's unit, and its workers,
   title and tool activity come from what the chat process reports to the server. A **worker's or
   hidden chat's** process is charged to its parent session as that worker, never as a session of

@@ -14,7 +14,7 @@
 //   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
 //   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
-//   restart-check         is a restart needed, and are this server's hosted sessions idle? prints the systemd-run line only then
+//   restart-check         is a restart needed? prints the systemctl restart line when one is (busy sessions never hold it)
 //   report                the round report's skeleton
 //
 // Exit 0: go. Exit 1: something to act on or decide. Exit 2: couldn't tell; fail closed.
@@ -210,9 +210,6 @@ export function hasScript(tree, name) {
 
 /** A step's timeout: the larger of its floor and twice the median of its earlier passing runs. */
 export const timeoutFor = (floorMs, passedMs = []) => Math.max(floorMs, Math.round(2 * median(passedMs)));
-
-/** A hosted session with a turn in flight or a worker working (a live record, pi-config/extensions/sessions/schema.ts). */
-export const busyOf = (record) => (record?.presence?.workerCounts?.working ?? 0) > 0 || record?.presence?.activity?.state === "working";
 
 /** Text with the home directory written as `~`, so a local path never shows the home path and `~/…`
  *  still resolves (the worktree tool expands it). Its real path too, when the home is a symlink. */
@@ -478,7 +475,6 @@ const NOTE_FRESH_MS = 15 * MIN;
 const ASK_GAP_MS = 10 * MIN;
 /** Note ids `reply` remembers per branch, so a batch piped again never counts twice. */
 const READ_NOTES_KEPT = 200;
-const HEARTBEAT_MS = 30_000;
 const DEFAULT_UNIT = "sova-runtime.service";
 const MANIFEST = ".sova/spec/manifest.json";
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1294,60 +1290,18 @@ class Round {
     return { exit: 0, lines: [...scanned, `Pushed ${origin.slice(0, 7)}..${master.slice(0, 7)} to origin/master.`], next: st.restart?.pending ? "round.mjs restart-check" : "round.mjs report" };
   }
 
-  /** The Sova server this process runs under: the nearest ancestor running server/index.ts, else the unit's main pid. */
-  async serverPid(unit) {
-    let pid = process.ppid;
-    for (let hops = 0; pid > 1 && hops < 64; hops++) {
-      try {
-        const args = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
-        if (args.some((a) => a === "server/index.ts" || a.endsWith("/server/index.ts"))) return { pid, how: "process ancestry" };
-        const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-        pid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
-      } catch {
-        break;
-      }
-    }
-    const r = await run("systemctl", ["--user", "show", "-p", "MainPID", "--value", unit], { timeoutMs: 5000 });
-    const main = Number(r.stdout.trim());
-    return r.code === 0 && Number.isSafeInteger(main) && main > 1 ? { pid: main, how: `${unit}'s main pid` } : null;
-  }
-
+  /** Is a restart needed? It reads no live records: a restart cuts no chat, worker or reply off (§app/chat-processes), so busy sessions never hold it. */
   async restartCheck() {
-    const sid = this.sessionId();
     const st = this.loadState();
     const unit = this.settings.restartUnit ?? DEFAULT_UNIT;
     if (!/^[A-Za-z0-9@._-]+\.service$/.test(unit) || this.mask(unit) !== unit) stop(2, "The settings' restartUnit isn't a plain unit name: ask the user to restart.");
-    const server = await this.serverPid(unit);
-    if (!server) stop(2, "Can't find the Sova server's pid (no server/index.ts ancestor, and the unit has no main pid). Restart nothing; ask the user.");
-    const live = join(this.agent, "sessions", "live");
-    let names = [];
-    try { names = readdirSync(live).filter((n) => n.startsWith(`p${server.pid}-`) && n.endsWith(".json")); } catch {}
-    const fresh = [];
-    for (const n of names) {
-      let r;
-      try { r = JSON.parse(readFileSync(join(live, n), "utf8")); } catch { continue; }
-      if (r?.session?.pid !== server.pid || typeof r.heartbeat !== "number" || this.now - r.heartbeat > HEARTBEAT_MS) continue;
-      fresh.push(r);
-    }
-    if (!fresh.length) stop(2, `No live record of server pid ${server.pid} (found by ${server.how}) has a heartbeat in the last 30 s: can't tell who is busy. Restart nothing.`);
-    const others = fresh.filter((r) => r.session.sessionId !== sid);
-    const busy = others.filter(busyOf);
     const needLine = this.applyNeed(st, await this.restartNeed());
     const pending = !!st.restart?.pending;
-    this.event("restart-check", { busy: busy.length, hosted: others.length });
+    this.event("restart-check", { pending });
     this.saveState();
-    if (busy.length) {
-      const lines = [needLine, `${busy.length} of ${others.length} other hosted session${others.length === 1 ? "" : "s"} busy (server pid ${server.pid}):`];
-      for (const r of busy) {
-        const why = [r.presence?.activity?.state === "working" ? "turn in flight" : "", (r.presence?.workerCounts?.working ?? 0) > 0 ? `${r.presence.workerCounts.working} worker(s) working` : ""].filter(Boolean);
-        lines.push(`- ${r.session.sessionId ?? r.session.id}${r.session.name ? ` "${r.session.name}"` : ""}: ${why.join(", ")}`);
-      }
-      return { exit: 1, lines: [...lines, "Restart only with the user's OK; put this list in the report."], data: { busy: busy.map((r) => r.session.sessionId ?? r.session.id) }, next: "the report, with the busy list" };
-    }
-    const lines = [needLine, `Every other hosted session is idle (${others.length}, server pid ${server.pid}).`];
-    if (!pending) return { exit: 0, lines: [...lines, "No restart pending."], next: "round.mjs report" };
-    lines.push("As your turn's LAST tool call, then end the turn:", `systemd-run --user --on-active=30s systemctl --user restart ${unit}`, "If it fails, ask the user to restart; never another way.");
-    return { exit: 0, lines, next: "the report, then that call as your last" };
+    if (!pending) return { exit: 0, lines: [needLine, "No restart pending."], next: "round.mjs report" };
+    const lines = [needLine, "Restart the live server (chats, workers and replies run on through it):", `systemctl --user restart ${unit}`, "If it fails, ask the user to restart; never another way."];
+    return { exit: 0, lines, next: "that call, then the report; the next start confirms the head it came back on" };
   }
 
   async report() {
@@ -1366,7 +1320,7 @@ class Round {
     const checks = of("check");
     lines.push(`- Checks: ${checks.map((e) => `${e.branch} ${e.ok ? "landable" : `needs: ${st.branches[e.branch]?.check?.needs?.join("; ") ?? "?"}`}`).join(" · ") || "none run"}`);
     const rc = of("restart-check").at(-1);
-    lines.push(`- Restart: ${st.restart?.pending ? `pending (${(st.restart.merges ?? []).map((m) => m.branch).join(", ") || `the server runs ${String(st.restart.serverHead ?? "?").slice(0, 7)}`})${rc ? `, ${rc.busy} busy at the last check` : ", not checked"}` : st.restart?.confirmedAt >= since ? "done and confirmed" : "none needed"}`);
+    lines.push(`- Restart: ${st.restart?.pending ? `pending (${(st.restart.merges ?? []).map((m) => m.branch).join(", ") || `the server runs ${String(st.restart.serverHead ?? "?").slice(0, 7)}`})${rc ? ", checked" : ", not checked"}` : st.restart?.confirmedAt >= since ? "done and confirmed" : "none needed"}`);
     // Branches with no live owner reach the user once per branch and head (§chat.merge-round/round).
     st.toldUser ??= {};
     const forUser = (st.lastStatus?.forUser ?? []).filter((b) => st.toldUser[b.branch] !== `${b.head}:${b.group}`);
@@ -1378,7 +1332,7 @@ class Round {
     this.saveState();
     const quiet = !sess.firstRound && !sess.hold && !st.restart?.pending && !forUser.length && st.lastStatus?.board && st.lastStatus.at >= since && !["landed", "pushed", "push-refused", "check", "asked", "answer"].some((k) => of(k).length);
     if (quiet) return { exit: 0, lines: ["Nothing new on the merge board."], next: "report exactly that one line, unless something was handed back; end the turn" };
-    return { exit: 0, lines, next: "end the turn (or the restart call, if restart-check printed it)" };
+    return { exit: 0, lines, next: "end the turn" };
   }
 }
 

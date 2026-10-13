@@ -17,7 +17,7 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   launchd examples, the Node switch), [docs/bun-quirks.md](../../docs/bun-quirks.md) (the Bun quirk
   registry), [server/harness/pi/README.md](../../server/harness/pi/README.md) and
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
-  [AGENTS.md](../../AGENTS.md#live-server-restart-worker-suicide).
+  [AGENTS.md](../../AGENTS.md#live-server-restart).
 - Spec: `§app/server-runtime`.
 - What the server imports from `pi-config/` and `src/`: [agents/extensions/overview.md](../extensions/overview.md)
   and [agents/frontend/overview.md](../frontend/overview.md).
@@ -29,19 +29,20 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
 - `sova-runtime.service` lives in `~/.config/systemd/user/` (`Restart=always`). Its ExecStart is
   `scripts/start-server.sh` (Bun); `node --import tsx server/index.ts` on a unit not yet switched.
   Without a watcher, the process keeps the code it loaded at start.
-- Hosted chat sessions survive a restart (JSONL persistence; the webapp reconnects and the runtime
-  reopens). Workers (pi or claude-code, from agent_spawn/team_create) don't.
+- Chats, workers (pi or claude-code, from agent_spawn/team_create), team members and hidden chats run
+  in processes of their own (§app/chat-processes) and keep running through a restart; the webapp
+  reconnects. A permanent stop of the server doesn't stop them either: each exits on its own once it
+  has been idle with no server for its idle time. To stop them for good (a teardown, a removed install),
+  `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat the install's state root records,
+  each as an operator stop, through the supervisor's records, never a process found by name.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
   the launchd example in docs/running-as-a-service.md), and every restart rule holds. Its restart is
-  `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
-  verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the
-  server, waits the 30 s itself, then kickstarts the agent) or ask the user. Pid and state:
-  `launchctl print gui/$(id -u)/sova-runtime`; start time: `ps -o lstart= -p <pid>`; log:
-  `~/Library/Logs/sova-runtime.log`.
-- The claude-code bridge's `globalThis` singleton is a `Symbol.for` registry entry: a fresh session
-  that reloads the extension still gets the bridge built from the code loaded first.
-- Hosted runtimes are never idle-disposed: they live until archived (running subagents die with
-  them), a foreign-writer reload, or server shutdown.
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; the verb form
+  (`sova-project apply --checkout ~/webapps/sova --confirm`) runs it 3 s later from a process detached
+  from the server. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
+  `ps -o lstart= -p <pid>`; log: `~/Library/Logs/sova-runtime.log`.
+- The claude-code bridge's `globalThis` singleton is a `Symbol.for` registry entry in each chat's
+  process: a chat gets a bridge from new code only when it reloads onto that code.
 
 ### Dev watcher (`pnpm run dev:server`, not the live unit)
 
@@ -79,8 +80,8 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   `[runtime] bun not found: …` and exit 1; nothing starts. A Bun server that crashes at boot just fails
   (the unit's `Restart=` retries it); nothing switches to Node, nothing counts boots.
 - **Switch the live unit:** set `Environment=SOVA_RUNTIME=node` (or `--node` on its ExecStart),
-  `systemctl --user daemon-reload`, then restart under the AGENTS.md restart rules (the gate, never
-  `systemctl restart` from a hosted session). An agent never edits the unit.
+  `systemctl --user daemon-reload`, then restart under the AGENTS.md restart rules. An agent never
+  edits the unit.
 - **The live unit** runs `scripts/start-server.sh`, so it is on Bun. docs/running-as-a-service.md
   has the complete unit example (`%h` paths, the same ExecStartPre, PATH, Restart and TimeoutStopSec
   as the live unit) and the switch steps.

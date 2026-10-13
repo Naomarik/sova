@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, areaGuides, busyOf, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -163,7 +163,7 @@ after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("pure rules: temporary subjects, restart files, dirty paths, timeouts, busy", () => {
+test("pure rules: temporary subjects, restart files, dirty paths, timeouts", () => {
   assert.equal(tempCommitOf(["fine", "WIP: x", "TEMP"]), "WIP: x");
   assert.equal(tempCommitOf(["amend! x"]), "amend! x");
   assert.equal(tempCommitOf(["template work"]), undefined);
@@ -174,7 +174,6 @@ test("pure rules: temporary subjects, restart files, dirty paths, timeouts, busy
   assert.equal(homeShown("/h/u/w/x and /h/u, not /h/us or /x/h/u", "/h/u"), "~/w/x and ~, not /h/us or /x/h/u");
   assert.equal(shellPath("/h/u/w/it's", "/h/u"), `"$HOME"'/w/it'\\''s'`);
   assert.equal(shellPath("/srv/w", "/h/u"), "'/srv/w'");
-  assert.ok(busyOf({ presence: { workerCounts: { working: 1 } } }) && busyOf({ presence: { activity: { state: "working" } } }) && !busyOf({ presence: { activity: { state: "idle" }, workerCounts: { working: 0 } } }));
   assert.deepEqual(failingTestFiles("✖ server/a.test.ts (3ms)\n  test at file:///r/src/lib/b.test.ts:1:2\n  test at /elsewhere/c.test.ts:1:1", "/r"), ["server/a.test.ts", "src/lib/b.test.ts"]);
   // scripts/run-tests.mjs on Bun: each failing file's FAIL line, then the summary's list.
   const bun = "ok   server/ok.test.ts (3 pass)\nFAIL server/sync/logins.test.ts (exit 1, 20 pass, 1 fail)\nerror: FAIL inside output.test.ts\n\nrun-tests (bun): 2 files\n  FAIL server/sync/logins.test.ts\n  FAIL src/lib/x.test.tsx";
@@ -839,44 +838,31 @@ test("push: refused on a leak-scan hit, pushed when clean, refused when not a fa
   assert.equal(git(bare, "rev-parse", "master"), theirs);
 });
 
-test("restart-check: drops its own record, ignores stale and other servers, fails closed with no server", async () => {
+test("restart-check: a pending restart prints the systemctl restart line whatever the sessions are doing; it reads no live records and finds no server", async () => {
   const live = join(agent, "sessions", "live");
-  const serverDir = join(root, "server");
-  mkdirSync(serverDir, { recursive: true });
-  // A stand-in for the Sova server: writes live records under its own pid, then runs the check as its child.
-  writeFileSync(join(serverDir, "index.ts"), `import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
-const live = process.env.LIVE_DIR;
-const now = Date.now();
-const rec = (tag, sessionId, presence, heartbeat = now, pid = process.pid) =>
-  writeFileSync(live + "/p" + pid + "-" + tag + ".json", JSON.stringify({ v: 1, session: { id: "p" + pid + "-" + tag, pid, sessionId, name: sessionId + " ${PLANTED}", cwd: "/", model: "m", startedAt: now, lastActivity: now }, presence, heartbeat }));
-rec("aaaaaaaa", process.env.PI_SESSION_ID, { activity: { state: "working" } });
-rec("bbbbbbbb", "idle-one", { activity: { state: "idle" }, workerCounts: { working: 0 } });
-rec("cccccccc", "stale-one", { activity: { state: "working" } }, now - 60_000);
-rec("dddddddd", "other-server", { workerCounts: { working: 2 } }, now, 4242424);
-if (process.env.ADD_BUSY) rec("eeeeeeee", "busy-one", { workerCounts: { working: 1 } });
-const r = spawnSync(process.execPath, [process.env.ROUND, "restart-check"], { encoding: "utf8" });
-process.stdout.write(r.stdout);
-process.exitCode = r.status;
-`);
-  const env = { LIVE_DIR: live, ROUND };
-  // A restart pending, and no health to read: it stays pending, so the line is printed.
+  mkdirSync(live, { recursive: true });
+  // A busy session of some server: before chat processes it held the restart; now it doesn't matter.
+  const now = Date.now();
+  writeFileSync(join(live, `p${process.pid}-eeeeeeee.json`), JSON.stringify({ v: 1, session: { id: `p${process.pid}-eeeeeeee`, pid: process.pid, sessionId: "busy-one", name: "busy-one", cwd: "/", model: "m", startedAt: now, lastActivity: now }, presence: { workerCounts: { working: 1 }, activity: { state: "working" } }, heartbeat: now }));
+  // Nothing pending: no line.
+  const idle = state();
+  idle.restart = { pending: false };
+  writeFileSync(stateFile, JSON.stringify(idle));
+  const none = await run(["restart-check"]);
+  assert.equal(none.code, 0, none.out);
+  assert.match(none.out, /No restart pending\./);
+  assert.ok(!none.out.includes("systemctl --user restart"));
+  // A restart pending, and no health to read: it stays pending (the next test confirms it), so the line is printed.
   const st = state();
   st.restart = { pending: true, since: Date.now(), merges: [] };
   writeFileSync(stateFile, JSON.stringify(st));
-  const idle = await run([], { env, script: join(serverDir, "index.ts") });
-  assert.equal(idle.code, 0, idle.out);
-  assert.match(idle.out, /Every other hosted session is idle \(1,/);
-  assert.match(idle.out, /Restart pending since \d+s ago; the server's health can't be read, so it isn't confirmed\./);
-  assert.match(idle.out, /^systemd-run --user --on-active=30s systemctl --user restart sova-runtime\.service$/m);
+  const due = await run(["restart-check"]);
+  assert.equal(due.code, 0, due.out);
+  assert.match(due.out, /Restart pending since \d+s ago; the server's health can't be read, so it isn't confirmed\./);
+  assert.match(due.out, /^systemctl --user restart sova-runtime\.service$/m);
+  assert.ok(!/busy/.test(due.out), "no busy list, no hold");
+  assert.ok(!due.out.includes("systemd-run"));
   for (const f of readdirSync(live)) rmSync(join(live, f));
-  const busy = await run([], { env: { ...env, ADD_BUSY: "1" }, script: join(serverDir, "index.ts") });
-  assert.equal(busy.code, 1, busy.out);
-  assert.match(busy.out, /busy-one "busy-one \[private name\]": 1 worker\(s\) working/);
-  assert.ok(!busy.out.includes("systemd-run"));
-  const none = await run(["restart-check"]);
-  assert.equal(none.code, 2, none.out);
-  assert.ok(!none.out.includes("systemd-run --user"));
 });
 
 test("start confirms a restart from /api/health, and report gives the skeleton", async () => {

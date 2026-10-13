@@ -63,10 +63,11 @@ Extensions with no guide, and the contract Sova parses where there is one:
   `git grep -n "pi-config/extensions/<name>/" -- server src shared scripts`.
 - **Restart.** The live unit has no watcher: no edit reaches it before its restart. The dev watcher
   (`scripts/dev-server.mjs`) watches only `server/`, `shared/` and `pi-config/extensions/mode/`. An edit to
-  any other pi-config file the server imports reaches a running server only at its next restart. A
-  `globalThis` singleton (the claude-code bridge, the provider-limits gate, `LoginUsers`) keeps the code that
-  built it first, so even a fresh session that reloads the extension gets the old one. Say a change is not
-  live yet, and restart under AGENTS.md's restart rules.
+  any other pi-config file the server imports reaches a running server only at its next restart. Each chat
+  runs the copy of the code it started with, so an extension edit (a `globalThis` singleton such as the
+  claude-code bridge, the provider-limits gate or `LoginUsers` included) reaches a chat when it reloads onto
+  the new code after that restart, never before. Say a change is not live yet, and restart under AGENTS.md's
+  restart rules.
 - **No new extension for Sova features.** A new Sova agent feature is never a new pi-config extension, and
   never a new call to an extension's command handler; the existing ones are grandfathered (see
   [the harness guide](../server/harness/overview.md)).

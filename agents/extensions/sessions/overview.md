@@ -18,9 +18,8 @@ and busy state.
 
 - The live registry `<agent dir>/sessions/live/*.json` is a contract Sova parses (`server/insights.ts`). The
   extension also loads inside Sova's embedded runtimes and writes their records.
-- The restart rules read these records (`presence.workerCounts.working`, `presence.activity.state`), and so do
-  `scripts/dev-server.mjs` and the merge round. A change to those fields changes
-  when a restart is held.
+- `scripts/dev-server.mjs` and the merge round read these records (`presence.workerCounts.working`,
+  `presence.activity.state`). A change to those fields changes when they hold a restart.
 - Sova imports no file from this directory.
 
 ## When you change it, also update

@@ -8,7 +8,7 @@
 // reads as the holder. A lock whose process is gone is
 // stale: it is taken over.
 import { createHash } from "node:crypto";
-import { linkSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { psTable, realSyncExec, type SyncExec } from "../project-services/proctable";
 import { chatStateRoot } from "../state-root";
@@ -113,9 +113,10 @@ export interface WriterLock {
 
 /**
  * Take the lock on session file `path` for this process. Throws WriterLockHeld when another live
- * process holds it (this process too: one hold per path). A stale lock is taken over once.
+ * process holds it (this process too: one hold per path). A stale lock is taken over once; one let go
+ * of between our refused link and the read of its holder is taken. `raced` (a test seam) runs there.
  */
-export function takeWriterLock(path: string, opts: { unit?: string | null; dir?: string } = {}): WriterLock {
+export function takeWriterLock(path: string, opts: { unit?: string | null; dir?: string; raced?: () => void } = {}): WriterLock {
   const dir = opts.dir ?? locksDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = lockFileOf(path, dir);
@@ -137,7 +138,10 @@ export function takeWriterLock(path: string, opts: { unit?: string | null; dir?:
       linkSync(tmp, file);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      opts.raced?.();
       const held = readLock(path, dir);
+      // Released between our link and this read: free now, so taken.
+      if (!held && !existsSync(file) && attempt < 2) continue;
       // Unreadable and fresh: an older process mid-write (it created the file before writing): held.
       if ((held ? !holderAlive(held) : unreadableAndOld(file)) && attempt === 0) {
         rmSync(file, { force: true });

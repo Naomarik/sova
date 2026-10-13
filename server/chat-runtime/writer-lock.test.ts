@@ -32,6 +32,14 @@ test("held while taken, by anyone; free once released", () => {
   takeWriterLock("/s/a.jsonl", { dir }).release();
 });
 
+test("a lock its holder lets go of between our refused link and the read is taken, never refused as held (pid 0)", () => {
+  const holder = takeWriterLock("/s/race.jsonl", { dir });
+  const lock = takeWriterLock("/s/race.jsonl", { dir, raced: () => holder.release() });
+  assert.equal(readLock("/s/race.jsonl", dir)?.pid, process.pid);
+  assert.deepEqual(readLock("/s/race.jsonl", dir), lock.info);
+  lock.release();
+});
+
 test("a dead holder's lock is taken over", () => {
   writeFileSync(lockFileOf("/s/c.jsonl", dir), JSON.stringify({ pid: DEAD_PID, start: 1, at: 1, unit: null, path: "/s/c.jsonl" }));
   const lock = takeWriterLock("/s/c.jsonl", { dir });

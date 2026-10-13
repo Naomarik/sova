@@ -1960,9 +1960,12 @@ async function t24() {
 // T25: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
 // ~/.claude.json and ~/.codex hold decoy files, and its ~/.local/bin/claude (also last on PATH) is a
 // decoy claude that logs each call. Through ordinary chats, a pi worker, a claude-code worker, /btw, a
-// parent on claude-code-cli and a server restart, nothing opens anything there (inotify open/access;
-// a bare stat makes no event) and the decoy claude never runs; the fake claude did (each path that
-// needs a claude reached the trial's own).
+// parent on claude-code-cli, look_at_image, the Claude Code bridge's debug log, a server restart and
+// every page's data, nothing is read or written there (inotify; a bare stat makes no event) and the
+// decoy claude never runs; the fake claude did (each path that needs a claude reached the trial's own).
+// One exception, by decision (coordinator, stage 5): the Overseer's redactor (overseer-redact.ts
+// secretSources) reads the user's own credential files to mask their values; those four files, read
+// only, during GET /api/overseer, are allowed and each is noted.
 const T25_GETS = [
   "/api/auth/status", "/api/claude/accounts", "/api/extensions", "/api/explanations", "/api/insights/agents", "/api/insights/usage",
   "/api/mode", "/api/models", "/api/monitor", "/api/overseer", "/api/overseer/attention", "/api/profiles", "/api/projects", "/api/provider-limits/waiting", "/api/schedules",
@@ -1970,6 +1973,8 @@ const T25_GETS = [
   "/api/settings/models", "/api/settings/overseer", "/api/settings/provider-limits", "/api/settings/session-titles", "/api/settings/spec", "/api/settings/subagents", "/api/settings/summarizer",
   "/api/settings/team", "/api/settings/team/options", "/api/targets", "/api/themes", "/api/usage/costs", "/api/usage/prices", "/api/usage/today", "/api/voice",
 ];
+const REDACTOR_HOME = new Set(["~/.pi/agent/auth.json", "~/.pi/agent/models.json", "~/.claude/.credentials.json", "~/.claude.json"]);
+const REDACTOR_STEP = "GET /api/overseer";
 async function t25() {
   const home = join(scratch, "tripwire-home");
   const decoys = [".pi/agent", ".claude", ".codex", ".local/bin"];
@@ -1983,12 +1988,19 @@ async function t25() {
   decoy(".codex/auth.json", JSON.stringify({ tripwire: true }));
   const decoyCalls = join(scratch, "decoy-claude-calls.log");
   writeFileSync(join(home, ".local/bin/claude"), `#!/bin/sh\necho "$$ $*" >> ${decoyCalls}\nexit 1\n`, { mode: 0o755 });
-  // The watch: every open or read of a decoy (a directory listing is an open too).
+  // The watch: every open, read or write of a decoy (a directory listing is an open too), stamped
+  // with the step running when it arrived (inotify gives no pid).
   const { spawn } = await import("node:child_process");
   const watched = [...decoys.map((d) => join(home, d)), join(home, ".claude.json")];
-  const ino = spawn("inotifywait", ["-m", "-r", "-e", "open,access", "--timefmt", "%T", "--format", "%T %w%f|%e", ...watched], { stdio: ["ignore", "pipe", "pipe"] });
+  const ino = spawn("inotifywait", ["-m", "-r", "-e", "open,access,modify,close_write,create,delete,moved_to,moved_from,attrib", "--format", "%w%f|%e", ...watched], { stdio: ["ignore", "pipe", "pipe"] });
+  let step = "setup";
   const hits = [];
-  ino.stdout.on("data", (d) => hits.push(...String(d).split("\n").filter(Boolean)));
+  ino.stdout.on("data", (d) => {
+    for (const l of String(d).split("\n").filter(Boolean)) {
+      const [file, ev] = l.split("|");
+      hits.push({ file: file.replace(`${home}/`, "~/"), ev, step });
+    }
+  });
   const ready = await new Promise((ok) => {
     let err = "";
     ino.stderr.on("data", (d) => ((err += String(d)), /Watches established/.test(err) && ok(true)));
@@ -2018,54 +2030,53 @@ async function t25() {
   // A 1x1 png for look_at_image (the mock model sees no images; the tool reads the usage cache first).
   writeFileSync(join(proj, "t25.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
   try {
-    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} boot`);
+    step = "boot";
     await boot({ extra: env });
+    step = "a chat's turn";
     const { path, s } = await newChat();
     const o = { path, s };
-    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} booted; first turn`);
     await turn(o, "say ok");
+    step = "a pi worker";
     prompt(s, "[spawn 1 10 #t25w] start a worker");
     R.check((await workerDone(s, "trial-t25w"))?.outcome === "success", "t25: a pi worker ran to its end");
+    step = "a claude-code worker";
     prompt(s, "[spawn-claude 2000 #t25c] start a claude worker");
     R.check((await workerDone(s, "trial-claude"))?.outcome === "success", "t25: a claude-code worker ran to its end");
-    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} /btw`);
+    step = "/btw";
     prompt(s, "/btw [btw #t25b] a side question");
     R.check(await waitFor(() => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t25b")), 60000), "t25: /btw answered");
-    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} a parent on claude-code-cli`);
+    step = "a parent on claude-code-cli";
     const cc = await newChat("claude-code-cli/claude-sonnet-5-5");
     await turn(cc, "say ok", 90000);
+    step = "look_at_image";
     await turn(o, `[call look_at_image ${JSON.stringify({ path: "t25.png", question: "what colour" })}]`);
     s.close();
     cc.s.close();
-    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} restart`);
+    step = "restart";
     await restart();
     const s2 = await chat(c, path);
     await turn({ path, s: s2 }, "say ok again");
-    R.note(`t25: ${new Date().toTimeString().slice(0, 8)} GETs`);
-    // Every page's data, as the browser asks for it (no mesh, peer, outreach or editor routes: those reach out).
-    const got = [];
-    for (const r of T25_GETS) {
-      const before = hits.length;
-      const answer = await c.api(r).then(() => "ok", (e) => String(e.message ?? e).slice(0, 40));
-      await sleep(300);
-      const opened = [...new Set(hits.slice(before).map((h) => h.slice(9).replace(`${home}/`, "~/").replace(/\|.*/, "")))];
-      got.push(`${r} ${answer}${opened.length ? ` OPENED ${opened.join(", ")}` : ""}`);
-    }
-    R.note(`t25: GET ${got.join("; ")}`);
     s2.close();
+    // Every page's data, as the browser asks for it (no mesh, peer, outreach or editor routes: those reach out).
+    const answers = [];
+    for (const r of T25_GETS) {
+      step = `GET ${r}`;
+      answers.push(`${r} ${await c.api(r).then(() => "ok", (e) => String(e.message ?? e).slice(0, 40))}`);
+      await sleep(300);
+    }
+    R.note(`t25: GET ${answers.join("; ")}`);
+    step = "after";
     await sleep(5000);
   } finally {
     ino.kill("SIGTERM");
   }
-  // When each decoy was first opened, against when each step began (inotify gives no pid).
-  const first = new Map();
-  for (const h of hits) {
-    const [at, what] = [h.slice(0, 8), h.slice(9).replace(`${home}/`, "~/")];
-    if (!first.has(what)) first.set(what, at);
-  }
-  R.note(`t25: first opens: ${[...first].map(([w, at]) => `${at} ${w}`).join("; ") || "none"}`);
-  const seen = [...first.keys()];
-  R.check(seen.length === 0, `t25: nothing opened anything in the tripwire home (~/.pi/agent, ~/.claude, ~/.claude.json, ~/.codex, ~/.local/bin): ${seen.slice(0, 12).join("; ") || "none"}${seen.length > 12 ? ` (+${seen.length - 12})` : ""}`);
+  const write = (h) => !/^(OPEN|ACCESS|CLOSE_NOWRITE)/.test(h.ev.replace(/,ISDIR/, ""));
+  const allowed = (h) => !write(h) && REDACTOR_HOME.has(h.file) && h.step === REDACTOR_STEP;
+  const fmt = (hs) => [...new Set(hs.map((h) => `${h.file} ${h.ev} (${h.step})`))];
+  const ok = fmt(hits.filter(allowed));
+  for (const a of ok) R.note(`t25: allowed, the Overseer's redactor reading a home secret to mask it: ${a}`);
+  const bad = fmt(hits.filter((h) => !allowed(h)));
+  R.check(bad.length === 0, `t25: nothing else read or wrote anything in the tripwire home (~/.pi/agent, ~/.claude, ~/.claude.json, ~/.codex, ~/.local/bin): ${bad.slice(0, 12).join("; ") || "none"}${bad.length > 12 ? ` (+${bad.length - 12})` : ""}`);
   const decoyRan = existsSync(decoyCalls) ? readFileSync(decoyCalls, "utf8").trim() : "";
   R.check(!decoyRan, `t25: the decoy ~/.local/bin/claude never ran (${decoyRan.slice(0, 160) || "no call"})`);
   R.check(fakeCalls() > fake0, `t25: the claude paths ran on the trial's fake claude (${fakeCalls() - fake0} calls)`);

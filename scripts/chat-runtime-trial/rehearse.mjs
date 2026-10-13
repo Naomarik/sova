@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { CRASH_RESUME_TEXT, RESUME_TEXT, ROOT, chat, client, fakeClaude, freePort, healthy, mockLog, modelsJson, recorder, sc, show, sleep, startMock, strays, tokenOf, userBus } from "./lib.mjs";
+import { CRASH_RESUME_TEXT, RESUME_TEXT, ROOT, chat, client, fakeClaude, freePort, healthy, mockLog, modelsJson, recorder, sc, show, sleep, startMock, strays, sweep, tokenOf, userBus } from "./lib.mjs";
 import { alive, tree } from "./procs.mjs";
 
 const argv = process.argv.slice(2);
@@ -203,8 +203,9 @@ const unitDown = () => {
   } catch {}
 };
 const mainPid = () => Number(show(UNIT, "MainPID")) || 0;
-/** The trial's mock provider and defaults in the agent dir: replaced, never written through a link. */
-function putMock(mockPort) {
+/** The trial's mock provider and defaults in the agent dir: replaced, never written through a link.
+    `onMaster`: also master's summarizer onto the fake claude (below). */
+function putMock(mockPort, { onMaster = false } = {}) {
   const put = (file, fn) => {
     const f = join(agent, file);
     const cur = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
@@ -214,6 +215,14 @@ function putMock(mockPort) {
   put("models.json", (m) => ({ ...m, providers: { ...(m.providers ?? {}), ...modelsJson(mockPort).providers } }));
   put("settings.json", (s) => ({ ...s, defaultProvider: "trial", defaultModel: "m1" }));
   put("trust.json", (t) => ({ ...t, [proj]: true }));
+  // Master's topic-outline summarizer spawns claudeBin, default $HOME/.local/bin/claude (0ba0e92c
+  // pi-config/extensions/topic-outline/config.ts:18): the tripwire's decoy. On master only, a trusted
+  // project's .pi/topic-outline.json points it at the fake claude (as lib.mjs buildAgentDir does). The switch
+  // removes it, so F resolves claude on its own and the decoy still catches F reaching $HOME/.local/bin/claude.
+  if (onMaster) {
+    mkdirSync(join(proj, ".pi"), { recursive: true });
+    writeFileSync(join(proj, ".pi", "topic-outline.json"), JSON.stringify({ claudeBin: join(fake.claudeBin, "claude"), summarizers: [{ backend: "claude-code", model: "claude-sonnet-5-5", timeoutMs: 20000 }] }, null, 2));
+  }
   mkdirSync(sova, { recursive: true });
   const ov = join(sova, "overseer.json");
   if (!existsSync(ov)) writeFileSync(ov, JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" } }, null, 2));
@@ -226,11 +235,8 @@ const cleanup = async () => {
     sc("stop", SLICE);
   } catch {}
   mock?.stop();
-  const left = strays(agent, { mock: false });
-  for (const p of left)
-    try {
-      process.kill(p.pid, "SIGTERM");
-    } catch {}
+  // F's chat processes may outlive the server's stop: TERM, a grace for their own shutdown, then KILL.
+  const left = await sweep(agent, { mock: false, graceMs: 10000 });
   if (left.length) Rec.note(`cleanup: stopped ${left.length} process(es) of the agent dir: ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 60)}`).join("; ")}`);
   console.log(`\nresults: ${Rec.save({ variant: VARIANT, from: FROM, to: toRev, scratch: R })}`);
 };
@@ -243,7 +249,7 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"])
 try {
   // (a)
   mock = await startMock({ port: await freePort(), log: join(R, "mock.jsonl"), step: 400 });
-  putMock(mock.port);
+  putMock(mock.port, { onMaster: true });
   const homeBefore = listing(home);
   const decoyLog = join(R, "decoy-claude-calls.log");
   const decoyBefore = existsSync(decoyLog) ? readFileSync(decoyLog, "utf8").length : 0;
@@ -313,6 +319,7 @@ try {
     for (const mode of [[], ["--mode", "share"]]) execFileSync(vite, ["build", ...mode], { cwd: checkout, stdio: "pipe", timeout: 600000 });
   }
   execFileSync(process.execPath, [join(checkout, "scripts", "hermetic-agent-dir.mjs")], { env: { ...process.env, HERMETIC_AGENT_DIR: agent }, stdio: "pipe" });
+  rmSync(join(proj, ".pi", "topic-outline.json"), { force: true });
   putMock(mock.port);
   const tSwitched = Date.now();
   unitUp(true);
@@ -326,7 +333,14 @@ try {
   Rec.check(oClosed, "the socket left open on master (O) was closed by the stop, as a page's is");
   const c2 = client(baseUrl, tokenOf(agent));
   const reopen = async (path, label) => {
-    const s = await chat(c2, path, 60000);
+    // busy: a chat whose reply the stop cut may be refused as written by an unknown process (its last
+    // entry, master's abort, is not in master's owned-writes record): the page reads "Read only while
+    // another process may be writing this file." for up to 120 s. Noted, then opened anyway as a user can.
+    const s = await chat(c2, path, 60000).catch(async (e) => {
+      if (VARIANT !== "busy" || !/"code":"recent"/.test(String(e?.message))) throw e;
+      Rec.note(`busy: ${label} refused on F as recently written by an unknown process (${String(e.message).slice(9, 140)}); opened anyway (&force=1)`);
+      return chat(c2, path, 60000, { force: true });
+    });
     s.send({ type: "set_model", ref: "trial/m1" });
     await s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer").catch(() => null);
     const from = s.got.length;

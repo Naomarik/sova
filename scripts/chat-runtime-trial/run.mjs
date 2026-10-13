@@ -1943,8 +1943,14 @@ async function t21r() {
   const from = p.got.length;
   // The window under test: from just before the restart that made the chat older (its reload lines).
   const chatLog = () => (existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "").split("\n").filter((l) => sid && l.includes(sid));
+  // F15's window: after the reload is asked for (the rollout says "reloading" as it starts the replacement)
+  // and before its drain, which waits for the replacement to be ready. A prompt sent there makes the chat
+  // busy before the drain, so the drain is refused. (A prompt before Reload now leaves Reload now merely
+  // pending, with no drain; one at once leaves the order to timing: the drain may win, F14's other branch.)
   p.send({ type: "reload_code" });
+  const reloadingSeen = await p.until((m) => m.type === "code" && m.state === "reloading", 15000, "the reloading state", from).then(() => true, () => false);
   const cid = prompt(p, "say hi DURING-RELOAD t21r");
+  R.note(`t21r: the prompt was sent ${reloadingSeen ? "as the pane heard 'reloading' (the replacement starting)" : "after 15 s with no 'reloading' frame"}`);
   // When the prompt's reply ended (if it ran) and when the chat moved to a new process.
   let tEnd = 0;
   let tRel = 0;
@@ -1967,7 +1973,7 @@ async function t21r() {
     const notQuiet = lines.some((l) => /not quiet any more/.test(l));
     R.check(notQuiet, `t21r (F15): the prompt was taken first: the drain was refused and logged ('not quiet any more': ${notQuiet})`);
     R.check(tEnd && tRel && tRel - tEnd <= 15000, `t21r (F15): the pending Reload now reloaded as the reply ended, no 5-min dwell (${tEnd && tRel ? `${Math.round((tRel - tEnd) / 1000)} s after the reply's end` : `reply end ${tEnd ? "seen" : "not seen"}, reload ${tRel ? "seen" : "not seen"} within 90 s`})`);
-  } else R.note("t21r: the drain won the race: the prompt came back refused and the reload completed");
+  } else R.check(false, "t21r (F15): not exercised: the drain won the race (the prompt came back refused, F14's branch); the prompt is sent on the 'reloading' frame so the drain should find the chat busy");
   p.close();
   p2.close();
   await teardown();

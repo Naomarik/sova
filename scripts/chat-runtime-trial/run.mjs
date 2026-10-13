@@ -595,7 +595,10 @@ async function waitReloaded(path, oldPid) {
     await sleep(500);
   }
 }
+// Each run of t4 tags B's reply on its own (t4 t4 t4 shares one mock log).
+let t4runs = 0;
 async function t4() {
+  const bTag = `t4b${++t4runs}`;
   await teardown();
   await boot({ build: "trial-a" });
   // Chat A: attached the whole time, reloaded with Reload now.
@@ -604,7 +607,7 @@ async function t4() {
   await settled(A.s, 0, 60000);
   // Chat B: mid-reply at the restart, nobody attached: reloads by itself once the reply ends.
   const B = await newChat();
-  prompt(B.s, "[long 30 #t4b] a long reply");
+  prompt(B.s, `[long 30 #${bTag}] a long reply`);
   await B.s.until(delta(/part 3\//), 30000, "B streams");
   const pidA = chatPid(A.path);
   const pidB = chatPid(B.path);
@@ -630,11 +633,11 @@ async function t4() {
   R.check(pend?.state === "older" && pend.pending === true, `t4: Reload now during a reply answers {older, pending} (${JSON.stringify(pend)})`);
   b2.close();
   // B must not reload while its reply runs.
-  for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.event === "done" && e.tag === "t4b"); i++) {
+  for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.event === "done" && e.tag === bTag); i++) {
     if (chatPid(B.path) !== pidB) break;
     await sleep(500);
   }
-  R.check(mockLog(mock.log).some((e) => e.event === "done" && e.tag === "t4b") && turnAssistants(B.path, "[long 30 #t4b]").length === 1, "t4: B's reply ran to its end, never cut by a reload");
+  R.check(mockLog(mock.log).some((e) => e.event === "done" && e.tag === bTag) && turnAssistants(B.path, `[long 30 #${bTag}]`).length === 1, "t4: B's reply ran to its end, never cut by a reload");
   await waitReloaded(B.path, pidB);
   const recB = record(B.path);
   R.check(chatPid(B.path) && chatPid(B.path) !== pidB && recB?.build === "trial-b", `t4: B (Reload now while busy) reloaded at its quiet moment (pid ${pidB} → ${chatPid(B.path)}, build ${recB?.build})`);

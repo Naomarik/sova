@@ -95,12 +95,9 @@ them. Hosted chats survive either way (JSONL; the webapp reconnects).
 - The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts
   `sova-runtime.service`): the operator's Apply on the Services tab, or
   `sova-project apply --checkout ~/webapps/sova --confirm` (`--project` alone is refused,
-  `invalid-request`). Refused while any hosted session is busy (your own turn too, so an agent never
-  gets it through); otherwise it schedules `scripts/sova-restart-gate.mjs` 30 s out, which re-checks and
-  restarts only if nothing is busy (else exit 75, logged in
-  `<state root>/project-services/logs/restart-gate.log`). up, down, reset and teardown of slot 0 are
-  refused. Never run the gate script against `sova-runtime.service` by hand or point a test at it:
-  tests and gates use a stand-in unit.
+  `invalid-request`). A confirmed restart is scheduled 3 s out without a busy check. up, down, reset
+  and teardown of slot 0 are refused. Never point a test at `sova-runtime.service`: tests and gates
+  use a stand-in unit.
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`), so provider edits also
   need a restart. Before trusting a live test, compare the unit's start time
   (`systemctl --user status sova-runtime.service`) with the edited files' mtimes.

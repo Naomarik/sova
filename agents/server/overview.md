@@ -1,5 +1,5 @@
 ---
-watches: ["server/runtime-choice.ts", "server/runtime-quirks.ts", "scripts/start-server.sh", "scripts/dev-server.mjs", "scripts/sova-restart-gate.mjs", "scripts/fetch-bun.sh", "mise.toml", "scripts/prices-update.mjs", "shared/model-prices/**"]
+watches: ["server/runtime-choice.ts", "server/runtime-quirks.ts", "scripts/start-server.sh", "scripts/dev-server.mjs", "scripts/fetch-bun.sh", "mise.toml", "scripts/prices-update.mjs", "shared/model-prices/**"]
 alsoUpdate: ["agents/server/overview.md", "docs/running-as-a-service.md", "docs/bun-quirks.md"]
 ---
 # Server

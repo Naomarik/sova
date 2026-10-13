@@ -82,7 +82,11 @@ export class Rollout<L = unknown> {
     this.chain = run.catch(() => undefined);
     const settled = (outcome: ReloadOutcome | null) => {
       // A refused run let go of its place already, and a new ask may hold it now.
-      if (this.queued.get(chatId) === run) this.queued.delete(chatId);
+      if (this.queued.get(chatId) === run) {
+        this.queued.delete(chatId);
+        // A Reload now that joined this run was answered by it: never carried into the chat's next request.
+        this.manual.delete(chatId);
+      }
       if (outcome === "reloaded") this.moved = true;
       if (this.queued.size || !this.moved || !this.deps.collect) return;
       this.moved = false;
@@ -122,6 +126,7 @@ export class Rollout<L = unknown> {
       // Its place goes before "older" is said: the chat may ask again at once (a Reload now that stood),
       // and that ask is a reload of its own, never this refused one.
       this.queued.delete(chatId);
+      this.manual.delete(chatId);
       this.deps.setCode(chatId, "older");
       return "refused";
     }

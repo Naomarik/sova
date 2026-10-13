@@ -82,7 +82,8 @@ export function buildAgentDir(scratch, { mockPort, auth } = {}) {
   writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" } }, null, 2));
   mkdirSync(join(agent, "extensions"), { recursive: true });
   copyFileSync(join(HERE, "trial-dialog.ts"), join(agent, "extensions", "trial-dialog.ts"));
-  if (auth) copyFileSync(auth, join(agent, "auth.json"));
+  // Replaced, never written through: a link there would reach whatever it names.
+  if (auth) (rmSync(join(agent, "auth.json"), { force: true }), copyFileSync(auth, join(agent, "auth.json")));
   const fake = fakeClaude(scratch);
   // topic-outline reads ~/.pi/agent/topic-outline.json and spawns ~/.local/bin/claude whatever the
   // agent dir: in the trial's project (trusted here) its own config sends the outline's one-shot to

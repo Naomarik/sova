@@ -78,6 +78,8 @@
 //     real      (only with --model) t1 on a real model
 //     plumbing  (only when asked) the trial's stage-3 steps work: an Overseer tool call, an org with a
 //               baton, a project overseer and a look now
+//     serve     (only when asked) the hermetic server left up for a browser; prints the unlock URL;
+//               ^C stops it and everything it started (with --model: new chats start on that model)
 //
 //   --driver <d>      detached (default with --mode child) or systemd (default with --mode unit)
 //   --mode <m>        unit: the server runs as a stand-in unit sova-trial-server-<tag>.service
@@ -128,7 +130,7 @@ const opt = (name, fallback) => {
 const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t22", "t23", "t24", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
-for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
+for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
 const checks = asked.length && !asked.includes("all") ? asked : [...ALL, ...(opt("model") ? ["real"] : [])];
 const tag = `${process.pid}`;
 const mode = opt("mode", userBus() ? "unit" : "child");
@@ -2086,9 +2088,26 @@ async function hermetic() {
   await boot();
 }
 
+// serve (only when asked): the trial's hermetic server, left up for a person with a browser (the
+// real-model drive, tmp/browser-drive.md). With --model, new chats start on it. Prints the page's
+// unlock URL and the scratch paths, then waits for ^C or SIGTERM, which stop everything it started.
+async function serve() {
+  if (opt("model")) {
+    const [provider, ...id] = opt("model").split("/");
+    const f = join(agent, "settings.json");
+    writeFileSync(f, JSON.stringify({ ...readJson(f), defaultProvider: provider, defaultModel: id.join("/") }, null, 2));
+    await teardown();
+    await boot();
+  }
+  console.log(`\nserve: open ${base}/#t=${tokenOf(agent)}`);
+  console.log(`serve: agent dir ${agent}; server log ${join(scratch, `server-${n}.log`)}; project ${proj}`);
+  console.log("serve: ^C (or SIGTERM to this pid) stops the server and every chat process it started");
+  await new Promise(() => {});
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, hermetic, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t22, t23, t24, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */
@@ -2112,9 +2131,9 @@ const finish = () =>
 // before, a check cut off this way left its chat and worker processes running (report-s4 item 9).
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"])
   process.once(sig, () => {
-    R.check(false, `the runner ran to its end`, `stopped by ${sig}`);
+    if (!checks.includes("serve")) R.check(false, `the runner ran to its end`, `stopped by ${sig}`);
     console.log(`\nchat-runtime-trial: ${sig}, stopping what the trial started`);
-    finish().finally(() => process.exit(code || 1));
+    finish().finally(() => process.exit(code || (checks.includes("serve") && R.checks.every((x) => x.ok !== false) ? 0 : 1)));
   });
 try {
   await boot();

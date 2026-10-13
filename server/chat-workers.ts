@@ -29,7 +29,6 @@ const DEATH_BYTES = 2048;
 
 export const workersDir = () => join(stateRoot(), "chats", "workers");
 
-export type Placement = WorkerRef["placement"];
 /** A parent chat, as its link or its binding names it. */
 type Parent = { sessionId: string; path: string };
 type EndCause = Extract<WorkerFeedFrame, { t: "ended" }>["cause"];
@@ -42,7 +41,6 @@ export interface WorkerRecord {
   kind: WorkerKind;
   parent: WorkerSpec["parent"];
   spec: WorkerSpec;
-  placement: Placement;
   state: WorkerRef["state"];
   ended?: { cause: EndCause; detail?: string; logTail?: string[]; at: string };
   startedAt: string;
@@ -53,13 +51,10 @@ export interface WorkerRecord {
 
 /** Where a worker's chat process runs: the router (server/chat-host.ts) does the processes. */
 export interface WorkerProcesses {
-  /** Start the worker chat's process and open it as that worker; its handle once open. `prefer`: the
-      placement asked for (a unit unless the server places children only); the one it got. */
-  start(rec: WorkerRecord, prefer: Placement): Promise<{ handle: RemoteChatHandle; placement: Placement }>;
+  /** Start the worker chat's process and open it as that worker; its handle once open. */
+  start(rec: WorkerRecord): Promise<RemoteChatHandle>;
   /** Stop its process (a kill): resolves when it is gone. */
   stop(rec: WorkerRecord): Promise<void>;
-  /** The placement a new worker gets on this server. */
-  placement(): Placement;
 }
 
 interface Watcher {
@@ -190,7 +185,6 @@ export class WorkerRegistry {
       sessionFile: l.rec.path,
       workerId: l.rec.parent.workerId,
       kind: l.rec.kind,
-      placement: l.rec.placement,
       pid: l.handle && !l.handle.closed ? l.handle.at.pid : null,
       state: l.rec.state,
     };
@@ -229,7 +223,6 @@ export class WorkerRegistry {
       kind: req.spec.kind,
       parent: req.spec.parent,
       spec: req.spec,
-      placement: this.procs.placement(),
       state: "open",
       startedAt: new Date(this.now()).toISOString(),
     };
@@ -260,8 +253,7 @@ export class WorkerRegistry {
     if (l.handle && !l.handle.closed) return Promise.resolve(l.handle);
     l.opening ??= (async () => {
       try {
-        const { handle, placement } = await this.procs.start(l.rec, l.rec.placement);
-        if (placement !== l.rec.placement) this.set(l, { placement });
+        const handle = await this.procs.start(l.rec);
         this.attach(l, handle);
         if (l.rec.state !== "open") this.set(l, { state: "open" });
         return handle;
@@ -330,7 +322,12 @@ export class WorkerRegistry {
     };
     const tail = () => {
       emit({ t: "state", cursor: { proc: l.proc ?? "", seq: l.seq }, state: this.stateOf(l) });
-      if (l.rec.state === "ended" && l.rec.ended) emit({ t: "ended", cause: l.rec.ended.cause, ...(l.rec.ended.detail ? { detail: l.rec.ended.detail } : {}), ...(l.rec.ended.logTail ? { logTail: l.rec.ended.logTail } : {}) });
+      const e = l.rec.ended;
+      if (l.rec.state !== "ended" || !e) return;
+      // An older server's record of a worker it stopped with itself (it ran workers as its children).
+      const legacy = (e.cause as string) === "server-stopped";
+      const detail = legacy ? "Sova's server stopped this worker with it" : e.detail;
+      emit({ t: "ended", cause: legacy ? "died" : e.cause, ...(detail ? { detail } : {}), ...(e.logTail ? { logTail: e.logTail } : {}) });
     };
     if (!cursor || !l.proc) {
       if (cursor) emit({ t: "gap" });
@@ -552,27 +549,12 @@ export class WorkerRegistry {
     this.end(l, "died", { detail, logTail });
   }
 
-  /** Children stopped with the server (child placement): their records end as stopped by the server. */
-  serverStopped(chatId: string): void {
-    const l = this.live.get(chatId);
-    if (!l || l.rec.state === "ended") return;
-    l.handle = null;
-    this.end(l, "server-stopped", {});
-  }
-
-  /** At boot, after the take-back: a unit record with no process that ended in order waits, idle;
-      a child's (child placement) ended with the server that ran it. */
+  /** At boot, after the take-back: a record with no process that ended in order waits, idle. */
   settleBoot(): void {
     for (const l of this.live.values()) {
       if (l.rec.state === "ended" || l.opening || (l.handle && !l.handle.closed)) continue;
-      if (l.rec.placement === "child") this.end(l, "server-stopped", {});
-      else if (l.rec.state === "open") this.set(l, { state: "idle" });
+      if (l.rec.state === "open") this.set(l, { state: "idle" });
     }
-  }
-
-  /** Every child-placement worker that is not ended (the router stops their processes). */
-  children(): WorkerRecord[] {
-    return [...this.live.values()].filter((l) => l.rec.placement === "child" && l.rec.state !== "ended").map((l) => l.rec);
   }
 
   private end(l: Live, cause: EndCause, o: { detail?: string; logTail?: string[] }): void {

@@ -61,7 +61,6 @@ export interface WorkerRef {
 	sessionFile: string;
 	workerId: string;
 	kind: WorkerKind;
-	placement: "unit" | "child";
 	pid: number | null;
 	state: "open" | "idle" | "ended";
 }
@@ -101,7 +100,7 @@ export type WorkerFeedFrame =
 	| { t: "gap" }
 	| {
 			t: "ended";
-			cause: "killed" | "done" | "died" | "server-stopped" | "reload" | "idle";
+			cause: "killed" | "done" | "died" | "reload" | "idle";
 			detail?: string;
 			logTail?: string[];
 			resuming?: boolean;

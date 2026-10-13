@@ -37,7 +37,7 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { cachedTitleOf, getSessionSummary, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
-import { detachChatHost, startChatHost, stopWorkerChildren, stopWorkersOf } from "./chat-host";
+import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
 import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
@@ -298,8 +298,6 @@ async function shutdown() {
   // Only chats in this process: a chat in a process of its own runs on, its reply included
   // (§app.chat-processes/survives-restart), and never enters the ledger.
   const aborts = chatHandles().filter((chat) => chat.where === "server" && chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
-  // Workers this server runs as its own children (no units here) stop with it; units run on.
-  await Promise.race([stopWorkerChildren().catch(() => {}), new Promise((r) => setTimeout(r, 6_000))]);
   // Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();
   usagePoller.stop();

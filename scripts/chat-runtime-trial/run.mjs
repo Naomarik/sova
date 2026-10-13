@@ -363,13 +363,14 @@ function noResume(path, label) {
   R.check(!inLedger(path), `${label}: runs-in-flight.json does not list the chat`);
   R.check(resumeDecisions(path).length === 0, `${label}: no auto-resume decision about the chat (${fmtDecisions(resumeDecisions(path))})`);
 }
-/** darwin (no cgroups): `pid` is apart from the server: not its descendant, nor in its process group, so a
-    stop of the server's launchd job (which signals its group) never reaches it. (ps shows every session as 0
-    there, so sessions are reported, not compared.) */
+/** darwin (no cgroups): `pid` is apart from the server: not in its process group, so a stop of the server's
+    launchd job (which signals its group) never reaches it. A detached chat is started with setsid and stays the
+    server's child by ppid, so ancestry is reported, not compared; so are sessions (ps shows every session as 0
+    there). The restart checks prove the survival itself. */
 function apartFromServer(pid, label, what = "the chat") {
   const me = info(pid);
   const sv = info(srv.pid());
-  R.check(me && sv && !ancestors(pid).includes(sv.pid) && me.pgid !== sv.pgid, `${label}: ${what} is apart from the server (pid ${pid} pgid ${me?.pgid} sess ${me?.sid}; server ${sv?.pid} pgid ${sv?.pgid} sess ${sv?.sid})`);
+  R.check(me && sv && me.pgid !== sv.pgid, `${label}: ${what} is apart from the server, outside its process group (pid ${pid} pgid ${me?.pgid} sess ${me?.sid}; server ${sv?.pid} pgid ${sv?.pgid} sess ${sv?.sid}; ${ancestors(pid).includes(sv?.pid) ? "the server's descendant (setsid child)" : "not the server's descendant"})`);
 }
 function sameProcess(path, pid1, label) {
   const pid2 = chatPid(path);
@@ -2502,8 +2503,17 @@ async function tdefault() {
     const pp = chatPid(path);
     const wp = w && chatPid(w.path);
     const server = srv.pid();
-    R.check(pp && pp !== server && !tree(server).some((p) => p.pid === pp), `tdefault (${label}): the chat runs in a process of its own, not the server's child (${pp}, server ${server})`);
-    R.check(wp && wp !== pp && !tree(server).some((p) => p.pid === wp), `tdefault (${label}): its worker too (${wp || "none"})`);
+    // The detached driver starts each chat with setsid: its parent is the server until that exits, but it
+    // has a session and process group of its own, so a stop of the server's group never reaches it.
+    // (Under systemd a chat is a unit, never in the server's tree: t1/t17 check that.)
+    const apart = (pid) => {
+      const me = info(pid);
+      const sv = info(server);
+      return me && sv && pid !== server && me.pgid !== sv.pgid && (darwin || me.sid !== sv.sid);
+    };
+    const fmt = (pid) => `${pid || "none"} pgid ${info(pid)?.pgid} sess ${info(pid)?.sid}; server ${server} pgid ${info(server)?.pgid} sess ${info(server)?.sid}`;
+    R.check(pp && apart(pp), `tdefault (${label}): the chat runs in a process of its own, a session and process group apart from the server (${fmt(pp)})`);
+    R.check(wp && wp !== pp && apart(wp), `tdefault (${label}): its worker too (${fmt(wp)})`);
     await workerDone(s, "trial-tdw");
     s.close();
   }

@@ -518,6 +518,49 @@ test("an instruction Stop dropped from the queue is reported plainly with the ru
 	await h.worker.dispose();
 });
 
+test("instructions that land together in one step: the task starts at the last of them, one settle reports the reply to all", async () => {
+	const h = make({}, {}, undefined, "keyed");
+	await boot(h);
+	h_start(h);
+	assistant(h, "working on the task");
+	assert.equal((await h.worker.steer("also check the docs")).ok, true);
+	assert.equal((await h.worker.steer("and the tests")).ok, true);
+	// pi's next step takes both steers: two user messages, each naming its own key, then one reply.
+	userMessage(h, "also check the docs");
+	userMessage(h, "and the tests");
+	assistant(h, "checked docs and tests");
+	settleRun(h);
+	assert.equal(h.counts.settled, 1, "one settle for the batch");
+	assert.equal(h.counts.snapshots[0]!.finalOutput, "checked docs and tests", "the task begun at the last instruction: the earlier output is not in it");
+	assert.equal(h.worker.taskOutcome, "success");
+	const steers = h.worker.transcript.filter((t) => t.kind === "steer").map((t) => t.text);
+	assert.deepEqual(steers, ["also check the docs", "and the tests"], "each instruction its own line, in order");
+	assert.ok(!h.worker.transcript.some((t) => /accepted but never ran/.test(t.text)), "both ran");
+	// Both delivered: a later death owes no never-ran line for either.
+	h.host.end(h.chatId(), { cause: "died", detail: "This worker's process stopped unexpectedly (exit 1)" });
+	await h.worker.whenClosed;
+	assert.ok(!h.worker.transcript.some((t) => /accepted but never ran/.test(t.text)));
+});
+
+test("Stop with several instructions in pi's queue: one never-ran line each, in order, reported with the run's settle", async () => {
+	const h = make({}, {}, undefined, "keyed");
+	await boot(h);
+	h_start(h);
+	assistant(h, "working");
+	assert.equal((await h.worker.steer("part two")).ok, true);
+	assert.equal((await h.worker.steer("part three")).ok, true);
+	h.ev({ type: "send_dropped", sendKey: sendKeyOf(h, 0) });
+	h.ev({ type: "send_dropped", sendKey: sendKeyOf(h, 1) });
+	assistant(h, "", { stopReason: "aborted" });
+	settleRun(h);
+	const lines = h.worker.transcript.filter((t) => /accepted but never ran/.test(t.text)).map((t) => t.text);
+	assert.deepEqual(lines, ["This instruction was accepted but never ran: part two", "This instruction was accepted but never ran: part three"]);
+	assert.equal(h.counts.settled, 1, "reported once, with the run's settle");
+	assert.equal(h.worker.status, "waiting");
+	assert.match(h.worker.error ?? "", /never ran: part two; .*never ran: part three/);
+	await h.worker.dispose();
+});
+
 test("an instruction to an idle worker whose turn never started is reported at once, as an error", async () => {
 	const h = make({}, {}, undefined, "keyed");
 	await boot(h);

@@ -19,6 +19,7 @@ import { ScriptedModel } from "./testing/scripted-model.ts";
 import { PiHarnessSession } from "./session.ts";
 import { SendKeys } from "../../send-keys.ts";
 import { WebQueue } from "../../queue.ts";
+import { steerAllAtOnce } from "./queue-modes.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -94,6 +95,8 @@ interface QuirkSessionOptions {
   /** The faux model id to build with; null leaves the choice to the SDK. Default faux-1. */
   model?: string | null;
   settings?: Record<string, unknown>;
+  /** A settings manager of the test's own (instead of an in-memory one from `settings`). */
+  settingsManager?: unknown;
   /** Inline extensions, and extension files loaded by path. */
   extensions?: ((api: any) => void)[];
   extensionPaths?: string[];
@@ -110,7 +113,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
   const runtime = await fauxRuntime();
   const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
   mkdirSync(cwd, { recursive: true });
-  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
+  const settingsManager = (o.settingsManager as never) ?? SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: dir,
@@ -869,6 +872,41 @@ return w + ":" + r.stopReason;`;
     } finally {
       unpatch();
     }
+  });
+
+  test("P25 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
+    // A settings file pi really reads (and would write), in an agent dir of its own.
+    const agentDir = join(dir, "p25-agent");
+    mkdirSync(agentDir, { recursive: true });
+    const settingsFile = join(agentDir, "settings.json");
+    writeFileSync(settingsFile, `${JSON.stringify({ cacheWarming: "off", retry: { enabled: false } }, null, 2)}\n`);
+    const before = readFileSync(settingsFile, "utf8");
+    const settingsManager = SettingsManager.create(dir, agentDir);
+    assert.equal(settingsManager.getSteeringMode(), "one-at-a-time", "pi's own default, which the getter replaces");
+    steerAllAtOnce(settingsManager);
+    const { session, model } = await quirkSession({ settingsManager });
+    assert.equal(session.agent.steeringMode, "all", "createAgentSession builds the agent's mode from the getter");
+    assert.equal(session.agent.followUpMode, "one-at-a-time", "follow-ups keep pi's one at a time");
+    /** Two steers queued behind a held reply: the calls the run made, and the user messages of its second. */
+    const twoSteers = async (a: string, b: string) => {
+      const from = model.calls.length;
+      const release = model.hold();
+      const run = session.prompt(`go ${a}`);
+      await until(() => model.calls.length === from + 1, "the held reply");
+      await session.steer(a);
+      await session.steer(b);
+      release();
+      await run;
+      const users = ((model.calls[from + 1]!.context as any).messages as any[]).filter((m) => m.role === "user").map(userText);
+      return { calls: model.calls.length - from, last: users.slice(-2) };
+    };
+    assert.deepEqual(await twoSteers("s1", "s2"), { calls: 2, last: ["s1", "s2"] }, "both steers in the step after the held reply: one call for the pair");
+    await session.reload();
+    assert.equal(session.agent.steeringMode, "all", "reload() re-read settings.json and kept the getter's mode");
+    assert.deepEqual(await twoSteers("s3", "s4"), { calls: 2, last: ["s3", "s4"] }, "and still lands them together");
+    assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    assert.equal("steeringMode" in JSON.parse(readFileSync(settingsFile, "utf8")), false, "no steeringMode in settings.json");
+    session.dispose();
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

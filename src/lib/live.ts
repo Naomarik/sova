@@ -46,6 +46,15 @@ export type LiveBlock =
  */
 export type LiveUserState = "sending" | "queued" | "delivered";
 
+/**
+ * The state a pending row of ours shows (§chat.transcript/a-queued-message). A queued row the server
+ * has handed to the agent shows `Sending…` again, with no Remove: it lands at the agent's next step
+ * (several steers land together) and can't be taken back on its own any more, only by Stop.
+ */
+export function shownUserState(row: { state: LiveUserState; handed?: boolean }): LiveUserState {
+  return row.state === "queued" && row.handed ? "sending" : row.state;
+}
+
 export type LiveEntry =
   | {
       kind: "user";

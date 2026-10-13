@@ -858,8 +858,10 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
 
 /** A message whose user entry still needs its sender marker. `itemId`: it rode in on a queue
     item; `held` while that item has not departed, so the settle sweep leaves the mark alone (its
-    message may still be in the SDK's queue). */
-type SenderMark = { text: string; sender: Sender; itemId?: string; held?: boolean };
+    message may still be in the SDK's queue). `sender` null: a queue item with no sender, marked only
+    to keep its place, so a later item with the same text (several are in pi at once when steers land
+    together) never takes this one's message: marks match in hand-off order, first in, first out. */
+type SenderMark = { text: string; sender: Sender | null; itemId?: string; held?: boolean };
 
 /** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
 export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
@@ -1091,9 +1093,10 @@ class ChatSession {
 
   /**
    * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
-   * into the SDK's queue goes here first, and exactly one of ours is inside the SDK at a time —
-   * which is what makes a single queued message removable at all (the SDK can only clear the lot).
-   * A message sent to an IDLE session never enters it: there is nothing to queue behind.
+   * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
+   * waiting steer at once (they land together, at the agent's next step). What it still holds is
+   * removable one by one (the SDK can only clear the lot). A message sent to an IDLE session never
+   * enters it: there is nothing to queue behind.
    */
   readonly queue: WebQueue = new WebQueue({
     sdk: {
@@ -1219,7 +1222,8 @@ class ChatSession {
   }
 
   /**
-   * Give ONE queued message to the SDK. The queue calls this and nothing else does.
+   * Give ONE queued message to the SDK (several steers go in one after another, each its own call).
+   * The queue calls this and nothing else does.
    *
    * It resolves when the message has been ACCEPTED, never when its turn ends. That distinction is
    * the whole reason the idle branch is not awaited: `AgentSession.prompt()` on an idle session
@@ -1241,10 +1245,11 @@ class ChatSession {
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
     // so a message the user types meanwhile with the same text must not take its mark. It stays
-    // until the message ends (markSend) or the item departs undelivered (onGone).
+    // until the message ends (markSend) or the item departs undelivered (onGone). An item with no
+    // sender gets a place-keeping mark: marks match first in, first out (SenderMark).
     const sender = senderOfItem(item);
-    const mark: SenderMark | null = sender ? { text: item.text, sender, itemId: item.id, held: true } : null;
-    if (mark) this.senderMarks.push(mark);
+    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true };
+    this.senderMarks.push(mark);
     if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
@@ -1255,7 +1260,7 @@ class ChatSession {
       // Its turn over: its message ran or never will (one held back for a compaction goes in again).
       if (item.key !== undefined) turn.then(() => this.sendKeys.done(item.key), (err) => this.keyedTurnFailed(item.key!, err));
       turn.catch((err) => {
-        if (mark) this.dropSenderMark(mark);
+        this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
@@ -2611,15 +2616,18 @@ class ChatSession {
    * (walking back past custom entries to the user entry) behave exactly as on any user turn.
    */
   private markSend(text: string): void {
+    // The oldest mark with this text is this message's: messages enter in the order they were handed over.
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
+    const sender = send!.sender;
+    if (!sender) return; // a place-keeping mark: this message has no sender
     queueMicrotask(() => {
       if (this.disposed || this.foreignWrite) return;
       const leaf = this.harness.leafId();
       const entry = leaf ? this.harness.entry(leaf) : undefined;
       if (entry?.kind !== "user") return;
-      const markerId = appendSenderMarker(this.harness.state, entry.id!, send?.sender ?? { kind: "overseer" });
+      const markerId = appendSenderMarker(this.harness.state, entry.id!, sender);
       markOwned(this.path);
       const marker = this.harness.entry(markerId);
       if (marker) {

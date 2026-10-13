@@ -47,6 +47,7 @@ import {
   queuedText,
   runDetail,
   seedLive,
+  shownUserState,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -1280,9 +1281,10 @@ export function ChatView(props: {
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
       A row with no id (sent before this build, or by a client that minted none) offers nothing —
       there is no truthful way to name it to the server. */
-  const queueActions = (row: { id?: string; state: LiveUserState; text: string }): MessageActionItem[] => {
+  const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
     const id = row.id;
-    if (!id) return [];
+    // Handed to the agent: no Remove (§chat.transcript/a-queued-message); Stop takes it back.
+    if (!id || shownUserState(row) !== row.state) return [];
     return [
       {
         kind: "remove",

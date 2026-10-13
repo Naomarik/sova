@@ -362,6 +362,28 @@ const isEvent = (t) => (m) => m.type === "event" && m.event?.type === t;
 const settled = (s, from = 0, ms = 180000) => s.until(isEvent("run.settled"), ms, "run.settled", from);
 const delta = (re) => (m) => m.type === "event" && m.event?.type === "part.delta" && re.test(m.event.delta ?? "");
 const liveText = (hello) => (hello.live?.message?.parts ?? []).filter((p) => (p.kind ?? p.type) === "text").map((p) => p.text ?? "").join("");
+/** What a chat's processes logged: its files under chats/logs (the detached driver), else, for a chat that
+    ran as a systemd unit (its log goes to the user journal), the journal of `unit` (taken from its record
+    before the process went: a stopped chat's record goes), else of `pid`. */
+function chatProcLog(path, { unit, pid } = {}) {
+  const sid = entries(path)[0]?.id ?? "";
+  let text = "";
+  try {
+    const dir = join(sova, "chats", "logs");
+    text = readdirSync(dir).filter((f) => sid && f.includes(sid)).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+  } catch {}
+  if (text || darwin) return text;
+  const journal = (match) => {
+    try {
+      return execFileSync("journalctl", ["--user", "--no-pager", "-o", "cat", match], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+    } catch {
+      return "";
+    }
+  };
+  if (unit) text = journal(`_SYSTEMD_USER_UNIT=${unit.endsWith(".service") ? unit : `${unit}.service`}`);
+  if (!text && pid) text = journal(`_PID=${pid}`);
+  return text;
+}
 /** Whether the mock cut off a reply of `tag` (its cut-off record names the request number, not the tag). */
 const cutOff = (tag) => {
   const log = mockLog(mock.log);
@@ -1846,6 +1868,7 @@ async function t21l() {
     // The drive's step: the parent idle, /btw sent, and at once an outside SIGTERM to the parent's
     // process (an exit, not a reload).
     const pid1 = chatPid(path);
+    const unit1 = record(path)?.unit;
     const alert = (m) => /not reachable|turn stopped with an error/i.test(JSON.stringify(m));
     const f1 = s.got.length;
     const cidX = prompt(s, `/btw [btw #${label}x] a side question across the exit`);
@@ -1872,14 +1895,7 @@ async function t21l() {
     // twice. Not taken: no model call carries it, and the closing process logged it refused.
     const asked = mockLog(mock.log).filter((e) => e.scenario && ((e.hashes ?? []).includes(`${label}x`) || (e.userText ?? "").includes(`#${label}x`))).length;
     const sid = entries(path)[0]?.id ?? "";
-    const procLog = (() => {
-      try {
-        const dir = join(sova, "chats", "logs");
-        return readdirSync(dir).filter((f) => sid && f.includes(sid)).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
-      } catch {
-        return "";
-      }
-    })();
+    const procLog = chatProcLog(path, { unit: unit1, pid: pid1 });
     const refusedInLog = /came while closing: refused/.test(procLog);
     const restored = !acked && reloadedOn && asked === 0 && refusedInLog;
     const live = refusal ? null : await s2.until((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX), 60000, "the btw row after the exit").catch(() => null);
@@ -2686,6 +2702,8 @@ async function tstopchats() {
   };
   // What the mid-reply chat's file held just before the stop: the reopened history holds at least that.
   const lHeld = entries(L.path).filter((e) => e.type === "message").length;
+  // Its unit, for its journal under systemd: stop-chats removes the record.
+  const lUnit = record(L.path)?.unit;
   // The model's requests from here on (one mock log serves every check of the run).
   const mockAt = mockLog(mock.log).length;
   const first = stop();
@@ -2707,16 +2725,7 @@ async function tstopchats() {
   // The chat stopped mid-reply (the architect, from §app.chat-processes/crash, /supervision, /idle-stop and
   // §app.overseer/auto-resume): an operator stop, announced, never a death, never resumed; it reopens on
   // demand with its history. Its cut reply's partial text is whatever was written: no finish asserted.
-  const procLogOf = (path) => {
-    const sid = entries(path)[0]?.id ?? "";
-    const dir = join(sova, "chats", "logs");
-    try {
-      return readdirSync(dir).filter((f) => sid && f.includes(sid)).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
-    } catch {
-      return "";
-    }
-  };
-  const lLog = procLogOf(L.path);
+  const lLog = chatProcLog(L.path, { unit: lUnit, pid: pids["mid-reply"] });
   if (!R.check(/exit operator/.test(lLog), `tstopchats (mid-reply): its process announced an operator exit ('exit operator' in its log; last lines: ${lLog.trim().split("\n").slice(-3).join(" | ").slice(0, 200)})`))
     R.note("tstopchats (mid-reply): no announced exit: a stop-chats stop that ends unannounced (killed past its grace) is a defect for the architect");
   R.check(deaths(L.path).length === 0, `tstopchats (mid-reply): no entry for it in chats/deaths.jsonl (${deaths(L.path).length})`);

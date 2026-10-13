@@ -225,6 +225,7 @@ export function replyTimingOf(rec: PerfRecord): ReplyTiming {
     thinkingMs: rec.thinkingMs,
     replyMs: rec.replyMs,
     ...(rec.tool.n > 0 ? { toolCalls: rec.tool.n } : {}),
+    ...(rec.thinking.n > 0 ? { thinkingParts: rec.thinking.n } : {}),
     output: rec.output,
     ...(rec.reasoning !== undefined ? { reasoning: rec.reasoning } : {}),
   };

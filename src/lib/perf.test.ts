@@ -95,3 +95,10 @@ test("empty: before anything was measured it says so; after, it names the range"
   assert.equal(perfEmptyTitle(q, true), "No measured replies in the last 30 days.");
   assert.equal(perfEmptyTitle({ ...q, providers: ["zai"] }, true), "No measured replies in the last 30 days with these filters.");
 });
+
+test("a reply that thought in no measurable time keeps its Thinking line and shows its reply as a time", () => {
+  const l = lines({ effort: "high", ttftMs: 900, thinkingMs: 0, thinkingParts: 1, replyMs: 2000, output: 500 });
+  assert.equal(l.Thinking, msWord(0));
+  assert.equal(l.Reply, msWord(2000), "its output holds uncounted thinking tokens: no reply speed");
+  assert.equal("Thinking" in lines({ ttftMs: 900, thinkingMs: 0, replyMs: 2000, output: 500 }), false);
+});

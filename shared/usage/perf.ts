@@ -27,12 +27,16 @@ export const PERF_ALL_TOOLS = "Every reply wrote tool calls";
 
 const speed = (tokens: number, ms: number): number | undefined => (tokens >= PERF_MIN_TOKENS && ms >= PERF_MIN_MS ? tokens / (ms / 1000) : undefined);
 
+/** The reply thought: it wrote a thinking part, however short its window (a part's characters can all
+    arrive in one chunk; Claude's hidden thinking can end in the tick it starts). */
+export const didThink = (t: ReplyTiming): boolean => (t.thinkingParts ?? 0) > 0 || t.thinkingMs > 0;
+
 /** Reply-text tokens, where the split is real: no tool calls (their argument tokens are output too),
     and the reply didn't think (every token is reply) or the provider counted the thinking ones. */
 export function replyTokens(t: ReplyTiming): number | undefined {
   if ((t.toolCalls ?? 0) > 0) return undefined;
   if (t.reasoning !== undefined) return Math.max(0, t.output - t.reasoning);
-  return t.thinkingMs > 0 ? undefined : t.output;
+  return didThink(t) ? undefined : t.output;
 }
 
 /**

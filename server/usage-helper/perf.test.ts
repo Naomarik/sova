@@ -117,3 +117,14 @@ test("a reply with tool calls: overall speed includes the tool-call writing wind
   assert.equal(figuresOf([tool, tool]).reply.unsupported, PERF_ALL_TOOLS);
   assert.equal(figuresOf([tool, t({ output: 600, replyMs: 2000 })]).reply.n, 1);
 });
+
+test("a reply that thought in no measurable time (one chunk, or Claude's hidden thinking in one tick) has no reply-text speed and counts as thinking", () => {
+  const quick = t({ thinkingMs: 0, thinkingParts: 1, output: 500, replyMs: 2000 });
+  assert.equal(replySpeeds(quick).reply, undefined, "its output holds uncounted thinking tokens");
+  assert.ok(replySpeeds(quick).overall !== undefined);
+  assert.equal(replySpeeds(t({ thinkingMs: 0, output: 500 })).reply, 250, "no thinking part: every token is reply");
+  assert.equal(normalizeTiming({ ...quick, reasoning: 0 }).reasoning, undefined, "a 0 count beside a thinking part is 'not reported'");
+  assert.equal(normalizeTiming(quick).thinkingParts, 1);
+  const f = figuresOf([quick, t({})]);
+  assert.equal(f.thought, 1, "it thought, however briefly");
+});

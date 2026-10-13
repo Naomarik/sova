@@ -138,7 +138,7 @@ describe("reply timing in a chat (§app.insights/reply-timing)", () => {
     // Wire 2: message.end carries it.
     await until(() => wire2.some((f) => f.v === 2 && f.event?.type === "message.end" && f.event.reply), "wire 2's message.end");
     const end2 = wire2.find((f) => f.v === 2 && f.event?.type === "message.end" && f.event.reply);
-    assert.deepEqual(end2.event.reply, { ttftMs: rec!.ttftMs, thinkingMs: rec!.thinkingMs, replyMs: rec!.replyMs, output: 120, effort: rec!.effort ?? end2.event.reply.effort });
+    assert.deepEqual(end2.event.reply, { ttftMs: rec!.ttftMs, thinkingMs: rec!.thinkingMs, replyMs: rec!.replyMs, thinkingParts: 1, output: 120, effort: rec!.effort ?? end2.event.reply.effort });
     // A new wire-2 client's hello: the reply's first row has the fact.
     const hello2: any[] = [];
     chat.attach({ wire: 2, send: (m: unknown) => hello2.push(m) } as never);

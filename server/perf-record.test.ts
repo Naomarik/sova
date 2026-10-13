@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { scratchRoot } from "./test-scratch";
-import { appendPerfRecord, formatPerfRecord, normalizePerfRecord, parsePerfRecordLine, perfFilePath, perfWriteFailures, type PerfRecord } from "./perf-record";
+import { appendPerfRecord, formatPerfRecord, normalizePerfRecord, parsePerfRecordLine, perfFilePath, perfWriteFailures, replyTimingOf, type PerfRecord } from "./perf-record";
 
 const root = scratchRoot("perf-record-");
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -90,5 +90,14 @@ describe("perf record (§app.insights/reply-timing)", () => {
     mkdirSync(join(blocked, "usage", "perf"), { recursive: true });
     writeFileSync(join(blocked, "usage", "perf", "v1"), "");
     assert.doesNotThrow(() => assert.equal(appendPerfRecord(rec(), blocked), false));
+  });
+
+  test("a record's timing for the card: thinking and tool-call parts counted, absent when none", () => {
+    assert.deepEqual(replyTimingOf(rec({ thinkingMs: 0, thinking: { ms: 0, n: 1 }, tool: { ms: 10, n: 2 } })), {
+      effort: "high", ttftMs: 800, thinkingMs: 0, replyMs: 5000, toolCalls: 2, thinkingParts: 1, output: 900, reasoning: 400,
+    });
+    const bare = replyTimingOf(rec({ thinkingMs: 0, thinking: { ms: 0, n: 0 } }));
+    assert.equal("thinkingParts" in bare, false);
+    assert.equal("toolCalls" in bare, false);
   });
 });

@@ -4,6 +4,7 @@ import {
   PERF_MIN_RANGE,
   PERF_ALL_TOOLS,
   PERF_NO_SPLIT,
+  didThink,
   replySpeeds,
   replyTokens,
   type PerfBin,
@@ -36,7 +37,8 @@ export function normalizeTiming(t: ReplyTiming): ReplyTiming {
   const out: ReplyTiming = { ttftMs: nonneg(t.ttftMs), thinkingMs: nonneg(t.thinkingMs), replyMs: nonneg(t.replyMs), output: nonneg(t.output) };
   if (t.effort !== undefined) out.effort = t.effort;
   if (t.toolCalls !== undefined && t.toolCalls > 0) out.toolCalls = t.toolCalls;
-  if (t.reasoning !== undefined && Number.isFinite(t.reasoning) && !(t.reasoning <= 0 && out.thinkingMs > 0)) out.reasoning = Math.min(out.output, Math.max(0, t.reasoning));
+  if (t.thinkingParts !== undefined && t.thinkingParts > 0) out.thinkingParts = t.thinkingParts;
+  if (t.reasoning !== undefined && Number.isFinite(t.reasoning) && !(t.reasoning <= 0 && didThink(out))) out.reasoning = Math.min(out.output, Math.max(0, t.reasoning));
   return out;
 }
 const nonneg = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
@@ -101,7 +103,7 @@ export function figuresOf(timings: readonly ReplyTiming[]): PerfFigures {
     if (replyTokens(t) !== undefined) split++;
     if (!((t.toolCalls ?? 0) > 0)) toolFree++;
     ttft.push(t.ttftMs);
-    if (t.thinkingMs > 0) {
+    if (didThink(t)) {
       thought++;
       thinkingMs.push(t.thinkingMs);
       if (t.reasoning !== undefined) {

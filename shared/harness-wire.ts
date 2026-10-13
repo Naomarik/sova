@@ -15,8 +15,11 @@ export interface ReplyTiming {
   effort?: string;
   /** Request sent to the first token of any kind. */
   ttftMs: number;
-  /** Thinking parts' windows, summed (0: the reply didn't think). */
+  /** Thinking parts' windows, summed. 0 may still mean it thought: a part whose characters came in one
+      chunk, or Claude's hidden thinking ending in the tick it started (`thinkingParts`). */
   thinkingMs: number;
+  /** Thinking parts the reply wrote, when any (absent: it didn't think). */
+  thinkingParts?: number;
   /** Reply text and tool-call parts' windows, summed. */
   replyMs: number;
   /** Tool-call parts the reply wrote, when any (absent: none). Their tokens are part of `output`, so

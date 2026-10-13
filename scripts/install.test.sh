@@ -677,6 +677,9 @@ check "$(yes_if grep -qF '<!-- X-Sova-Launcher=v1' "$app/Contents/Info.plist")" 
 if command -v python3 >/dev/null 2>&1; then
 	parsed=$(python3 -c 'import plistlib,sys; p=plistlib.load(open(sys.argv[1],"rb")); print(p["CFBundleName"], p["CFBundleIdentifier"], p["CFBundleExecutable"], p["CFBundleIconFile"])' "$app/Contents/Info.plist" 2>/dev/null || true)
 	check "$(yes_if [ "$parsed" = "Sova io.github.naomarik.sova.app sova-app sova" ])" "entry, mac: Info.plist parses, with name, identifier, executable, icon"
+	# A script executable starts under Rosetta, and the browser with it, unless the bundle names arm64 alone.
+	archs=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb")).get("LSArchitecturePriority"))' "$app/Contents/Info.plist" 2>/dev/null || true)
+	check "$(yes_if [ "$archs" = "['arm64']" ])" "entry, mac: the bundle runs natively on Apple silicon (arm64 only)"
 fi
 check "$(yes_if [ -x "$app/Contents/MacOS/sova-app" ] && grep -qF "exec $(printf '%q' "$home/.local/bin/sova") app" "$app/Contents/MacOS/sova-app")" \
 	"entry, mac: the executable runs sova app"

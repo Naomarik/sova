@@ -9086,7 +9086,11 @@
         "src/vis/views.ts",
         "src/vis/share-views.ts",
         "pi-config/extensions/mode/vis/wireframe.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-12T17:34Z"
+      }
     },
     "§app.claude-logins/borrow-return": {
       "kind": "behavior",
@@ -12267,7 +12271,11 @@
         "src/vis/kinds/wireframe/wireframe.css",
         "src/vis/kinds/wireframe/layout.ts",
         "src/vis/kinds/wireframe/layout.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-12T17:34Z"
+      }
     },
     "§chat.markdown/vis-lenience-content": {
       "kind": "behavior",
@@ -12296,6 +12304,7 @@
         "src/vis/kinds/tree/parse.ts",
         "src/vis/kinds/code/parse.ts",
         "src/vis/kinds/wireframe/parse.ts",
+        "src/vis/kinds/wireframe/parse.test.ts",
         "src/vis/content-lenience.test.ts",
         "pi-config/extensions/mode/vis/flow.md",
         "src/lib/markdown.ts",
@@ -12304,7 +12313,11 @@
         "src/vis/lenience.test.ts",
         "src/vis/markdown.test.ts",
         "server/vis-check.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-12T17:34Z"
+      }
     },
     "§tools.spec/agree-command": {
       "kind": "behavior",

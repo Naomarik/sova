@@ -2484,10 +2484,12 @@ async function trestart() {
   rmSync(root, { recursive: true, force: true });
   mkdirSync(join(root, ".sova"), { recursive: true });
   const port = Number(new URL(base).port);
+  // The contract wants a <name>.service everywhere; on darwin Sova strips it for the launchd label.
+  const adopted = srv.unit.endsWith(".service") ? srv.unit : `${srv.unit}.service`;
   const def = {
     version: 1,
     slots: { cap: 2 },
-    services: { server: { cmd: ["node", "-e", "setInterval(()=>{},1e9)"], ports: { http: { base: (await freePort()) + 10, stride: 10 } }, ready: { http: "http", path: "/api/health" }, adopt: { unit: srv.unit, ports: { http: port } } } },
+    services: { server: { cmd: ["node", "-e", "setInterval(()=>{},1e9)"], ports: { http: { base: (await freePort()) + 10, stride: 10 } }, ready: { http: "http", path: "/api/health" }, adopt: { unit: adopted, ports: { http: port } } } },
   };
   writeFileSync(join(root, ".sova", "project.json"), JSON.stringify(def));
   const git = (...a) => execFileSync("git", ["-C", root, "-c", "user.name=trial", "-c", "user.email=trial@example.invalid", ...a], { stdio: "pipe" });
@@ -2498,7 +2500,7 @@ async function trestart() {
   const sanitized = srv.unit.replace(/\.service$/, "").replace(/[^A-Za-z0-9_.-]/g, "_");
   try {
     const cr = await verb("create", { project: root });
-    if (!R.check(cr?.ok !== false, `trestart: create records the scratch project's slot 0, adopting ${srv.unit} (${cr?.error?.message ?? cr?.state ?? "ok"})`)) return;
+    if (!R.check(cr?.ok !== false, `trestart: create records the scratch project's slot 0, adopting ${adopted} (${cr?.error?.message ?? cr?.state ?? "ok"})`)) return;
     const main = cr.instance;
     // Busy: a chat mid-reply, another chat with a working worker.
     const A = await newChat();

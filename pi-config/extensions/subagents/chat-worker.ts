@@ -248,7 +248,7 @@ export class ChatWorker extends WorkerFold {
 		if (s.model) this.model = s.model;
 		if (s.thinking) this.effort = s.thinking;
 		// A process says whether its feed names send keys (none: a worker on code from before them).
-		if (s.pid !== null) this.keyed = s.keys === true;
+		if (s.pid !== null) this.setKeyed(s.keys === true);
 		this.sessionId = s.sessionId;
 		this.sessionFile = s.sessionFile;
 		if ((first && this.adopted) || resync) {

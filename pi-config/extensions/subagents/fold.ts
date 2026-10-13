@@ -171,7 +171,8 @@ export abstract class WorkerFold implements Worker {
 	protected keyed = false;
 	/** The key the armed steer was sent under. */
 	private armedKey: string | null = null;
-	/** Accepted (or awaiting acceptance) keyed instructions whose message has not been seen yet: key → text. */
+	/** Accepted (or awaiting acceptance) instructions whose message has not been seen yet, key → text:
+	    tracked only while the feed is keyed (an unkeyed delivery names no key to clear one by). */
 	protected readonly outstanding = new Map<string, string>();
 	/** Between a run's start and its settle, as the feed says. */
 	protected runActive = false;
@@ -264,7 +265,7 @@ export abstract class WorkerFold implements Worker {
 					// Tool-reported usage is nested LLM work; it contributes to totals.
 					this.addUsage(message.usage);
 				} else if (message.role === "user" && (this.keyed || typeof event.sendKey === "string")) {
-					this.keyed = true;
+					this.setKeyed(true);
 					this.keyedDelivery(typeof event.sendKey === "string" ? event.sendKey : undefined, textOf(message.content));
 				} else if (message.role === "user" && this.isSupersededDelivery(textOf(message.content))) {
 					this.beginSupersededRun();
@@ -334,6 +335,14 @@ export abstract class WorkerFold implements Worker {
 				break;
 		}
 		this.touch();
+	}
+
+	/** The feed names send keys, or stops naming them (its worker's process changed code): what was
+	    outstanding under the other mode is no longer known, never reported as never run. */
+	protected setKeyed(on: boolean): void {
+		if (this.keyed === on) return;
+		this.keyed = on;
+		this.outstanding.clear();
 	}
 
 	/** A keyed feed's user message: the instruction whose key it names begins here (exact, never by text). */
@@ -618,7 +627,7 @@ export abstract class WorkerFold implements Worker {
 		this.armedAwaitingRun = true;
 		this.armedMessage = message;
 		this.armedKey = key;
-		this.outstanding.set(key, message);
+		if (this.keyed) this.outstanding.set(key, message);
 		this.armedQueued = null;
 		this.armedPredecessorSettled = false;
 		this.settleAnnounced = false;

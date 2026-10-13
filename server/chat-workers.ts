@@ -9,12 +9,14 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { join } from "node:path";
 import { isNoAnswer, NO_ANSWER, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSpec, type WorkerStart, type WorkerState } from "../shared/chat-runtime";
 import type { FrameOf } from "../shared/chat-runtime-wire";
+import type { HEntry } from "../shared/harness";
 import { CRASH_RESUME_TEXT } from "./auto-resume";
 import { acquireChatHandle } from "./chat-handle";
 import type { RemoteChatHandle } from "./chat-handle-remote";
 import type { ChatDeath } from "./chat-runtime/supervisor";
 import { crashResumeOn, crashSkip } from "./chat-runtime/crash";
 import type { InflightMarker } from "./chat-runtime/inflight";
+import { joinedText, toHEntry } from "./harness/pi/reader";
 import { createWorkerSession } from "./harness/pi/worker-session";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
@@ -111,15 +113,13 @@ function sessionHolds(path: string, task: { text: string; from: number }): boole
   }
   for (const line of tail.split("\n")) {
     if (!line.includes('"user"')) continue;
+    let h: HEntry | null;
     try {
-      const e = JSON.parse(line) as { type?: string; message?: { role?: string; content?: unknown } };
-      if (e.type !== "message" || e.message?.role !== "user") continue;
-      const c = e.message.content;
-      const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => (p && typeof p === "object" && "text" in p ? String(p.text) : "")).join("") : "";
-      if (text.includes(task.text)) return true;
+      h = toHEntry(JSON.parse(line));
     } catch {
-      // a partial last line
+      continue; // a partial last line
     }
+    if (h?.kind === "user" && joinedText(h, { sep: "", images: false }).includes(task.text)) return true;
   }
   return false;
 }

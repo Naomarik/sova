@@ -179,6 +179,8 @@ git -C "$seed" init --quiet -b master
 git -C "$seed" -c user.email=t@t -c user.name=t add -A
 git -C "$seed" -c user.email=t@t -c user.name=t commit --quiet -m seed
 git -C "$seed" tag v0.1.0
+# `stable`, the moving tag the installer defaults to, annotated as a release makes it.
+git -C "$seed" -c user.email=t@t -c user.name=t tag -a stable -m 'stable: v0.1.0'
 
 # ---- one case = one fresh HOME, whose path has a space in it ----
 
@@ -891,17 +893,40 @@ check "$(yes_if [ "$status" -ne 0 ] && [ "$(git -C "$home/.local/share/sova" rev
 seed_master=$(git -C "$seed" rev-parse master)
 CASE_REF=master run_install ref-branch
 check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, a branch: the summary names it and its commit"
-# With no SOVA_REF, the default is master (until a release commit sets its own tag).
-fresh_home ref-default
-set +e
-out=$(env -u SOVA_REF HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_TTY="$tmp/.no-tty" \
-	SVC_LOG="$tmp/ref-default/svc.log" SVC_STATE="$tmp/ref-default/svc" "$test_bash" "$installer" 2>&1)
-status=$?
-set -e
-check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_master" ])" \
-	"ref, unset: installs master's latest commit"
-check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, unset: the summary names master"
+# With no SOVA_REF, the default is the `stable` tag, whatever it points at when the run starts: a
+# re-run after a release moves it installs the new commit, and one after it is moved back (a
+# rollback) the old one. The first run has stable on `next`, which master is not, so installing
+# master in its place would fail.
 seed_next=$(git -C "$seed" rev-parse next)
+seed_v010=$(git -C "$seed" rev-parse 'v0.1.0^{commit}')
+move_stable() { git -C "$seed" -c user.email=t@t -c user.name=t tag -fa stable "$1" -m "stable: $1" >/dev/null; }
+inst_default() {
+	set +e
+	out=$(env -u SOVA_REF HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_TTY="$tmp/.no-tty" \
+		SVC_LOG="$tmp/ref-default/svc.log" SVC_STATE="$tmp/ref-default/svc" "$test_bash" "$installer" 2>&1)
+	status=$?
+	set -e
+}
+installed_head() { git -C "$home/.local/share/sova" rev-parse HEAD 2>/dev/null; }
+fresh_home ref-default
+move_stable next
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(installed_head)" = "$seed_next" ] && [ "$seed_next" != "$seed_master" ])" \
+	"ref, unset: installs the commit stable points at, not master"
+check "$(yes_if said "installed stable (${seed_next:0:7})")" "ref, unset: the summary names stable and its commit"
+move_stable v0.1.0
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(installed_head)" = "$seed_v010" ])" \
+	"ref, unset: stable moved back, a re-run installs the older commit again"
+check "$(yes_if said "installed stable (${seed_v010:0:7})")" "ref, unset: the rollback re-run rebuilds and says so"
+move_stable next
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(installed_head)" = "$seed_next" ])" \
+	"ref, unset: stable re-pointed forward, a re-run installs the new commit"
+inst_default
+check "$(yes_if [ "$status" -eq 0 ] && said "is already at stable (${seed_next:0:7}); nothing to rebuild")" \
+	"ref, unset: stable unmoved, a re-run rebuilds nothing"
+move_stable v0.1.0
 CASE_REF=$seed_next run_install ref-commit
 check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_next" ])" \
 	"ref, a commit: installs that commit"

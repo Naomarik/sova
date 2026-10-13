@@ -26,7 +26,7 @@ machine; with several Sova hosts, one gateway can serve the links of all of them
 
 ## Before you start
 
-- A Sova with public links: installed from `vNEXT` or later, or a source checkout of `master`.
+- A Sova with public links: installed from `v0.2.0` or later, or a source checkout of `master`.
   `pnpm run build` (which the installer runs) also builds the share page; without it, a link
   answers "The share page is not built on this host."
 - A domain name you control, such as `share.example.com`.

@@ -39,6 +39,11 @@ any other. The launcher replaces itself with the server (`exec`), so a service m
 server process itself. The unit tests follow the same switch: `pnpm test` runs on Bun, and
 `pnpm run test:node` (or `SOVA_RUNTIME=node pnpm test`) on Node.
 
+**A server on Node runs no chats.** Chats and workers run on the server's own Bun, so on Node
+every chat open and worker start is refused ("Chats need Bun to run Sova's chat runtime") and
+`/api/health` says `chatHost.bun: false`. Node is for tooling and tests; run a host with chats on
+Bun.
+
 **Check what runs:** `curl -s http://127.0.0.1:4800/api/health` answers
 `"runtime": {"name": "bun", "version": "1.4.2", "chosen": "bun"}`.
 

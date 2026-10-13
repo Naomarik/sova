@@ -92,7 +92,7 @@ const log = (line: string) => console.log(`[chat-host] ${line}`);
 export interface RouterDeps {
   driver?: Driver;
   connect?: typeof connectLink;
-  /** The Bun chat processes run on, null when none was found (the server: chatBun). */
+  /** The Bun chat processes run on, null on a Node server (the server: chatBun). */
   bun?: () => string | null;
   /** Where the supervisor keeps its records and sockets, and its units' prefix. */
   supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix" | "isChatProcess">;
@@ -153,7 +153,7 @@ export class ChatHostRouter {
     const currentCode = deps.gen?.dir ?? REPO;
     this.settings = { ...DEFAULT_RUNTIME_SETTINGS, idleStopMin: cfg.idleMs / 60_000 };
     // A worker chat's process gets its loadout's environment and agent dir, the server's state root
-    // for its bookkeeping, Bun however the server runs, and the worker niceness.
+    // for its bookkeeping, the server's own Bun, and the worker niceness.
     const launch: SupervisorDeps["launch"] = (c) => {
       const w = this.workers?.record(c.chatId);
       const id = this.codeFor.get(c.chatId) ?? build;
@@ -781,7 +781,7 @@ let router: ChatHostRouter | null = null;
 export function startChatHost(): void {
   const boot = (async () => {
     host = await chooseChatHost();
-    log(`chats run in processes of their own, as ${host.why}${chatBun() ? "" : `; no Bun was found, so every chat open is refused`}`);
+    log(`chats run in processes of their own, as ${host.why}${chatBun() ? "" : `; this server runs on Node, so every chat open is refused`}`);
     // Chats start on this server's own copy of its code (made now, or reused).
     const gen = await currentGeneration({ log });
     router = new ChatHostRouter(nextEpoch(), gen.id, { gen });

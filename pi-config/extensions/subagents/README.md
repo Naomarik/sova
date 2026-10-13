@@ -680,8 +680,8 @@ assign non-overlapping edits or use separate worktrees. The parent conversation
 is not copied. Children load their own normal Pi context, skills, settings, and
 credentials for their cwd.
 
-A worker runs Sova's chat runtime on Bun, found once by the server
-(`server/chat-runtime/bun.ts`), never from the worker's cwd. A worker whose process stops
+A worker runs Sova's chat runtime on the server's own Bun (`server/chat-runtime/bun.ts`;
+a server on Node starts no workers), never on a runtime picked from the worker's cwd. A worker whose process stops
 unexpectedly carries the last 20 lines (2 KB) of its log in its error.
 
 Children open with extension discovery off and only their listed extensions, so they

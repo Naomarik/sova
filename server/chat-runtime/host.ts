@@ -797,10 +797,12 @@ export class ChatRuntimeHost {
   private unlinkedQuietSince: number | null = null;
   /** No server linked (Sova stopped for good, §app.chat-processes/idle-stop): a chat with nothing in
       flight for the idle-stop time (as the last server set it) exits by itself, as an idle stop. Run
-      facts no server has acknowledged don't hold it: the session file has them. */
+      facts no server has acknowledged don't hold it: the session file has them. A process never opened
+      (its server stopped mid-start, or a reload's replacement never moved into) is quiet. */
   private idleWithoutServer(): void {
     const chat = this.chat;
-    if (this.link || this.closing || !chat || chat.disposed || !(this.settings.idleStopMin > 0) || !this.quietOf(mirrorOf(chat), false, true)) {
+    const quiet = !chat || (!chat.disposed && this.quietOf(mirrorOf(chat), false, true));
+    if (this.link || this.closing || !(this.settings.idleStopMin > 0) || !quiet) {
       this.unlinkedQuietSince = null;
       return;
     }
@@ -1011,7 +1013,9 @@ export class ChatRuntimeHost {
         this.log(`dispose failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    this.recorder.clear();
+    // The run marker is the open chat's: a process that never opened it (a reload's replacement) leaves
+    // the one the chat's own process wrote.
+    if (chat) this.recorder.clear();
     const link = this.link;
     if (link?.send({ t: "exit", cause })) {
       // The server closes the link once it hears the exit, so whatever a pane sent before then

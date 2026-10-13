@@ -3,7 +3,7 @@
 // throwaway PI_CODING_AGENT_DIR with no credentials (no model is ever called). The test plays the
 // server: control, open, calls, browsers, server-hosted tools, drains.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -412,6 +412,41 @@ test("5e: with no server linked, a quiet chat exits by itself after the idle-sto
   await settle(100);
   assert.deepEqual(t.exits, ["idle"]);
   assert.ok(logs.some((l) => /no server, and quiet for 0.001 min: closing/.test(l)), logs.join("\n"));
+});
+
+test("5e: a process never opened (a start or a reload's replacement its server never finished) exits by itself with no server too, and leaves the chat's run marker alone", async () => {
+  const t = await setup({ open: false, settings: { idleStopMin: 0.001 } });
+  const { inflightDir } = await import("./inflight");
+  // The chat's run in flight, recorded by the process that has it open (a reload's old process).
+  mkdirSync(inflightDir(), { recursive: true });
+  const marker = join(inflightDir(), `${encodeURIComponent(t.id)}.json`);
+  writeFileSync(marker, JSON.stringify({ v: 1, path: t.path, since: 1 }));
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  tick();
+  await settle(120);
+  tick();
+  await settle();
+  assert.deepEqual(t.exits, [], "a server is linked: the server decides");
+  t.ctl.drop();
+  await settle();
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, ["idle"]);
+  assert.ok(existsSync(marker), "another process's run marker is kept");
+  rmSync(marker, { force: true });
+});
+
+test("a process stopped before it opened the chat (a reload's replacement) leaves the chat's run marker alone", async () => {
+  const t = await setup({ open: false });
+  const { inflightDir } = await import("./inflight");
+  mkdirSync(inflightDir(), { recursive: true });
+  const marker = join(inflightDir(), `${encodeURIComponent(t.id)}.json`);
+  writeFileSync(marker, JSON.stringify({ v: 1, path: t.path, since: 1 }));
+  await t.host.close("operator", { dispose: true });
+  assert.ok(existsSync(marker));
+  rmSync(marker, { force: true });
 });
 
 test("5e: with no server linked, a chat with something in flight keeps running", async () => {

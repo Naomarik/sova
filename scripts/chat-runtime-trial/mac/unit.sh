@@ -1,7 +1,9 @@
 #!/bin/zsh
 # The darwin unit checks of stage 5 (stage5-design.md B-F1, item G): per-chat code copies (clonefile on
 # APFS, hardlinked node_modules), Sova's extensions mapped into a copy (realpaths: /var is
-# /private/var), the supervisor, the writer lock and the chat host, run on a Mac.
+# /private/var), the supervisor, the writer lock, the chat host, the project-services drivers (the detached
+# driver's process groups and its stop of a reused pid, the darwin ps table; its integration file runs real
+# processes, detached only, no systemd) and the chat workers, run on a Mac.
 #   zsh -lc 'cd <scratch checkout> && scripts/chat-runtime-trial/mac/unit.sh [more test files…]'
 # From a scratch checkout with its node_modules installed, never the Mac's live Sova. It runs the files
 # through the repo's runner (a throwaway home per file, the tier guard) on bun 1.4.2, with a short temp
@@ -23,6 +25,9 @@ files=(
   server/chat-runtime/supervisor.test.ts
   server/chat-runtime/writer-lock.test.ts
   server/chat-host.test.ts
+  server/project-services/drivers.test.ts
+  server/project-services/drivers.integration.test.ts
+  server/chat-workers.test.ts
   "$@"
 )
 echo "mac/unit.sh: $(uname -sm), $(sw_vers -productVersion 2>/dev/null || echo '?'), commit $(git rev-parse --short HEAD 2>/dev/null || cat .trial-rev 2>/dev/null || echo '?'), TMPDIR $TMPDIR"

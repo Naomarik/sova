@@ -332,7 +332,8 @@ export class ChatHostRouter {
   /** A link ended without the chat saying it exits: reconnect while its unit is up, else it is the
       supervisor's to report (one death reporter, onDeath). */
   private async linkEnded(h: RemoteChatHandle, end: { reason: string }): Promise<void> {
-    if (h.closed || this.remotes.get(h.path) !== h) return;
+    // A reload's old process: its replacement takes the handle over (the rollout's open).
+    if (h.closed || h.reloading || this.remotes.get(h.path) !== h) return;
     if (end.reason === "refused") {
       log(`${h.path}: another server controls this chat now`);
       this.forget(h.path);

@@ -9,7 +9,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import type {
   ChatCall,
   ChatId,
@@ -36,7 +35,6 @@ import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wi
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
 import {
-  acquireChat,
   BusyError,
   type ChatClient,
   type ChatSession,
@@ -47,11 +45,8 @@ import {
   type SpecialPort,
   chatEventsSince,
   ConfigError,
-  disposeHeldChat,
   drainQueueThenAbort,
   emitChatEvent,
-  heldChat,
-  heldChats,
   linksFor,
   onLinksNotified,
   singletonFor,
@@ -64,8 +59,7 @@ import {
   serverToolSpec,
   setServerToolPort,
 } from "./chat-manager";
-import { type CallCtx, failureReply, refusalOf, runMethod } from "./chat-runtime/methods";
-import { LiveMirror } from "./chat-runtime/mirror";
+import { failureReply, refusalOf } from "./chat-runtime/methods";
 import type { LoadoutEntryData } from "./session-loadout";
 import { branchOf, readPi, strictBranchTo } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
@@ -104,9 +98,6 @@ export {
   warmChatRuntime,
 } from "./chat-manager";
 
-/** The controller epoch of this server's calls. One process: one controller, always current. */
-const EPOCH = 1;
-
 export { failureReply, refusalOf };
 
 /** The error a refusal is thrown as on this side, so `instanceof` reads it as the chat meant it. */
@@ -118,8 +109,9 @@ export function errorOfRefusal(r: ChatRefusal): Error {
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** One held chat, as the server talks to it: in this process (LocalChatHandle) or in a process of
-    its own (RemoteChatHandle, server/chat-handle-remote.ts, §app/chat-processes). The typed commands
+/** One held chat, as the server talks to it: in a process of its own (RemoteChatHandle,
+    server/chat-handle-remote.ts, §app/chat-processes), or in the caller's own process (tests only:
+    server/testing/in-process-chats.ts). The typed commands
     are the same for both; each is one `call`. */
 export abstract class ChatHandle {
   /** Where the chat runs: this server's process, or a chat process of its own. */
@@ -277,66 +269,6 @@ export abstract class ChatHandle {
 }
 
 /** A chat in this server's process: a call runs the chat's method at once. */
-export class LocalChatHandle extends ChatHandle {
-  readonly where = "server" as const;
-  /** What the server may read without asking (see ChatStateMirror). */
-  readonly mirror: ChatStateMirror;
-  private readonly ctx: CallCtx = { turns: new Map() };
-  private calls = 0;
-
-  constructor(private readonly chat: ChatSession) {
-    super();
-    this.mirror = new LiveMirror(chat);
-  }
-
-  get chatId(): ChatId {
-    return this.chat.path;
-  }
-  /** The session file this chat hosts (its id, today). */
-  get path(): string {
-    return this.chat.path;
-  }
-  get closed(): boolean {
-    return this.chat.disposed;
-  }
-
-  /**
-   * One command: its result, or its refusal thrown as the error class it names. It runs at once:
-   * whatever the method does before its first await happens inside this call, as it did when callers
-   * called the chat directly. In one process the caller gets the very error the chat threw (its
-   * class, its fields; failureReply is what crosses a socket), and the answer takes no turn of the
-   * event loop of its own beyond the promise's: the order callers rely on against the chat's own
-   * events (a settle, a statechart's next effect) was built on direct calls.
-   */
-  call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
-    const call: ChatCall<M> = { id: `c${++this.calls}`, epoch: EPOCH, chatId: this.chat.path, method, args };
-    try {
-      const out = runMethod(this.chat, call, this.ctx);
-      return out instanceof Promise ? out : Promise.resolve(out);
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  }
-
-  attach(client: ChatClient): void {
-    this.chat.attach(client);
-  }
-  clientMessage(client: ChatClient, msg: ChatClientMessage): void {
-    this.chat.handle(client, msg);
-  }
-  detach(client: ChatClient): void {
-    this.chat.detach(client);
-  }
-}
-
-/** One handle per chat, for as long as the chat lives. */
-const handles = new WeakMap<ChatSession, ChatHandle>();
-const handleOf = (chat: ChatSession): ChatHandle => {
-  let h = handles.get(chat);
-  if (!h) handles.set(chat, (h = new LocalChatHandle(chat)));
-  return h;
-};
-
 // The special kinds (the Overseer, batons, project overseers; §app.harness/session-special): each one's
 // server side, registered by the module that owns it. A chat gets its loadout as data (SpecialSpec)
 // and asks the rest of its kind through its SpecialPort: here a loopback (LocalSpecialPort), in a
@@ -383,9 +315,15 @@ const specialHosts: SpecialHost[] = [];
 /** Each chat's kind, as its spec was last built or its process taken back. */
 const kindOfChat = new Map<ChatId, ChatSpecialKind>();
 
+let specialsHere: LocalSpecials | null = null;
 export function registerSpecialHost(h: SpecialHost): void {
   if (!specialHosts.some((x) => x.kind === h.kind)) specialHosts.push(h);
-  setLocalSpecials(localSpecials);
+  setLocalSpecials(specialsHere ?? serverSpecials);
+}
+/** Tests' chats in their own process add the loopback to the kinds (server/testing/in-process-chats.ts). */
+export function setSpecialsHere(s: LocalSpecials): void {
+  specialsHere = s;
+  setLocalSpecials(s);
 }
 export const specialHostOf = (kind: ChatSpecialKind): SpecialHost | undefined => specialHosts.find((h) => h.kind === kind);
 /** The special kind a session file opens as: the Overseer's first, then each registered kind. */
@@ -439,49 +377,10 @@ export async function adoptSpecial(kind: ChatSpecialKind, path: string): Promise
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") serveTools(path, [trialServedSleep()]);
 }
 
-/** A server action's outcome as a port answers it: the action's own result. */
-const actionOutcome = (out: ServerToolOutcome<ToolResult>): ServerToolOutcome<unknown> => (out.ok ? { ok: true, result: out.result.details } : out);
-
-/** The run events each chat in this process told its kind, by path (their numbers). */
-const eventsHere = new Map<string, number>();
-
-/** The loopback to a special kind, for a chat in this process. */
-class LocalSpecialPort implements SpecialPort {
-  private actions = 0;
-  constructor(
-    private readonly host: SpecialHost,
-    private readonly path: string,
-  ) {}
-  private async ctxOf(local: { ctx: HookCtx } | undefined, leafId: string | null): Promise<HookCtx> {
-    return local?.ctx ?? fileHookCtx(this.path, { sessionId: chatHandle(this.path)?.mirror.sessionId ?? "", leafId });
-  }
-  async runStart(a: { leafId: string | null; images: boolean }, local?: { ctx: HookCtx }) {
-    return this.host.runStart(this.path, await this.ctxOf(local, a.leafId), { images: a.images });
-  }
-  async compact(a: { leafId: string | null }, local?: { ctx: HookCtx }) {
-    return this.host.compact ? this.host.compact(this.path, await this.ctxOf(local, a.leafId)) : null;
-  }
-  async agentEnd(a: { text: string }) {
-    return this.host.agentEnd ? this.host.agentEnd(this.path, a.text) : null;
-  }
-  runEvent(e: ChatRunEvent): void {
-    const n = (eventsHere.get(this.path) ?? 0) + 1;
-    eventsHere.set(this.path, n);
-    this.host.runEvent?.(this.path, e, n);
-  }
-  action(name: "@clientSend" | "@clientSendRefused" | "@saveChoice", args: unknown): Promise<ServerToolOutcome<unknown>> {
-    const call: ServerToolCall = { effectId: `${this.path}#${name}#${++this.actions}#${randomUUID()}`, chatId: this.path, toolCallId: name, name, params: args, attended: false, card: null };
-    const none = () => {
-      throw new Error("A server action reads nothing of its chat.");
-    };
-    return deliverServerToolCall(call, { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: none, entries: none, append: none, tool: () => undefined } }).then(actionOutcome);
-  }
-  composerClosed(): string | null {
-    return this.host.composerClosed?.(this.path) ?? null;
-  }
-}
-
-const localSpecials: LocalSpecials = {
+/** The kinds as the server's own code reads them: what a file opens as, where, its loadout. The
+    loopback to a kind (`port`, `opened`) is only for a chat in the caller's process (tests:
+    server/testing/in-process-chats.ts). */
+export const serverSpecials: LocalSpecials = {
   kindOf: specialKindOf,
   cwd(path) {
     for (const h of specialHosts) {
@@ -491,14 +390,6 @@ const localSpecials: LocalSpecials = {
     return undefined;
   },
   spec: specialSpecFor,
-  port(kind, path) {
-    const h = specialHostOf(kind);
-    if (!h) throw new Error("This chat's kind is not available here.");
-    return new LocalSpecialPort(h, path);
-  },
-  async opened(kind, chat) {
-    await specialHostOf(kind)?.opened?.(handleOf(chat));
-  },
 };
 export type { SessionMarks, SpecialKind } from "./chat-manager";
 
@@ -508,19 +399,16 @@ export type { SessionMarks, SpecialKind } from "./chat-manager";
  */
 export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
   // The server's router: every chat in a process of its own (it waits for the chat's own take-back,
-  // if a previous server left it running). With none (a chat process, a test), the chat opens here.
-  if (router) return router.acquire(path, force);
-  return handleOf(await acquireChat(path, force));
+  // if a previous server left it running).
+  if (!router) throw new Error("no chat router: the server hosts no chat in its process");
+  return router.acquire(path, force);
 }
 
 /** The open chat for a session file (already through resolveSessionPath), or undefined. */
-export const chatHandle = (path: string): ChatHandle | undefined => {
-  const chat = heldChat(path);
-  return chat ? handleOf(chat) : router?.get(path);
-};
+export const chatHandle = (path: string): ChatHandle | undefined => router?.get(path);
 
 /** Every chat this server holds open, here or in processes of their own. */
-export const chatHandles = (): ChatHandle[] => [...heldChats().map(handleOf), ...(router?.all() ?? [])];
+export const chatHandles = (): ChatHandle[] => router?.all() ?? [];
 
 /**
  * Where the server's chats run (server/chat-host.ts, §app/chat-processes): installed at the server's
@@ -570,7 +458,6 @@ export const chatHandleById = (sessionId: string): ChatHandle | undefined => cha
 /** Close a held chat for good (archive/close): every open tab is told to reconnect, and the session
     reopens on demand. A running turn is aborted and its workers die with it. False: none held. */
 export async function closeChat(path: string, message: string): Promise<boolean> {
-  if (await disposeHeldChat(path, message)) return true;
   return router ? router.close(path, message) : false;
 }
 
@@ -608,7 +495,6 @@ function serveOnce(): void {
     // What a special kind kept for the chat goes with it.
     const kind = kindOfChat.get(e.chatId);
     kindOfChat.delete(e.chatId);
-    eventsHere.delete(e.chatId);
     if (kind) specialHostOf(kind)?.closed?.(e.chatId);
   });
 }

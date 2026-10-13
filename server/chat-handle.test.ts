@@ -22,6 +22,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+const { installInProcessChats } = await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const {
   acquireChatHandle,
   BusyError,
@@ -195,7 +196,8 @@ test("server code reaches a chat only through its handle: nothing outside the ch
   const allowed = new Set(["server/chat-handle.ts", "server/chat-runtime/host.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts", "server/chat-special.ts"]);
   const importers = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
-    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && f !== "server/chat-manager.ts")
+    // server/testing/: test-only (a chat in the test's own process), never product.
+    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && !f.startsWith("server/testing/") && f !== "server/chat-manager.ts")
     .filter((f) => /from "(?:\.\.?\/)+(?:[\w-]+\/)*chat-manager(?:\.ts)?"/.test(readFileSync(join(root, f), "utf8")));
   assert.deepEqual(importers.filter((f) => !allowed.has(f)), []);
   assert.deepEqual([...allowed].filter((f) => !importers.includes(f)), [], "an allowed file that no longer imports it leaves the list");
@@ -213,7 +215,7 @@ test("nothing outside the chat's host is handed a chat or its driving session", 
       .replace(/\/\/.*$/gm, "");
   const files = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
-    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && !f.startsWith("shared/harness") && f !== "server/chat-manager.ts" && !CHAT_HOST.has(f));
+    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && !f.startsWith("server/testing/") && !f.startsWith("shared/harness") && f !== "server/chat-manager.ts" && !CHAT_HOST.has(f));
   // The handle hands out no chat: no ChatSession, no hook that gets one, no way back to one.
   const handle = code("server/chat-handle.ts");
   assert.doesNotMatch(handle, /export (type )?\{[^}]*\bChatSession\b/, "chat-handle re-exports no ChatSession");
@@ -228,6 +230,7 @@ test("nothing outside the chat's host is handed a chat or its driving session", 
 });
 
 test("a server that will install a router makes boot readers wait for it: chats a previous server left running are taken back first", async () => {
+  setChatRouter(null); // the in-process router these tests run on, out of the way
   expectChatRouter();
   let ready = false;
   const waiting = chatsReady().then(() => (ready = true));
@@ -243,4 +246,5 @@ test("a server that will install a router makes boot readers wait for it: chats 
   assert.equal(ready, true);
   setChatRouter(null);
   await chatsReady(); // with none expected and none installed: at once
+  installInProcessChats();
 });

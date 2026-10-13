@@ -24,6 +24,7 @@ const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { markOwned } = await import("./write-guard");
 const { getSessionTools } = await import("./session-tools");

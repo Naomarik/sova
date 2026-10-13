@@ -27,6 +27,7 @@ mkdirSync(liveDir, { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, resolveRegenerate } = await import("./chat-manager");
 const { deliverLinkMessage, heldSessionPath } = await import("./link-delivery");
 const { canonicalPath } = await import("./paths");

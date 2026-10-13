@@ -73,6 +73,7 @@ writeFileSync(
 mkdirSync(join(agentDir, "prompts"), { recursive: true });
 writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a session\n---\nCreate one empty session titled $1.\n");
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
 const { parseModeRequest } = await import("./mode-state");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");

@@ -19,10 +19,9 @@ At that same end each call also appends one usage record, its token counts only 
   `floor(ms / 30000)`); `subscribe(fn)` is called only when those change (the ring moving with
   time is no change). The end takes the call's tokens: `end({output, since?, at?})`. `withinLlmCall`/`currentLlmCall` scope one call
   to the code below it (the provider-limits gate marks that very call waiting in a cooldown; a call
-  begun inside is a new call, never suppressed). `setChildCounts` holds a worker's reported counts
-  (replaced, never added), their rings summed with the process's own; a child forgotten while
-  summed leaves its ring in a retired ring until it ages out (`{retire: false}`, a detached
-  worker that goes on reporting it itself, drops it). A child that reported no ring makes
+  begun inside is a new call, never suppressed). `setChildCounts` holds a child process's reported counts
+  (replaced, never added; Sova's server keeps one per chat process), their rings summed with the process's own; a child forgotten while
+  summed leaves its ring in a retired ring until it ages out. A child that reported no ring makes
   `tokens.partial`. `markDegraded` and `beginClaudeTurn` report what can't be seen.
 - `runtime.ts` (builtins only; Sova imports it): `instrumentModelRuntime(runtime)` wraps
   `stream`, `streamSimple`, `streamDeferred` and `cancelDeferred` on one pi `ModelRuntime`
@@ -37,37 +36,21 @@ At that same end each call also appends one usage record, its token counts only 
   back to the stream's first event. A request that returns a deferred handle leaves remote work
   nobody local sees: the process is degraded until the handle's final reply or cancel. Fetching a
   handle is never a counted call.
-- `claude.ts`: `createClaudeRequestObserver()` reads a Claude Code CLI's stream-json frames (fed
-  by `claude-code/transport.ts` before its owner's hooks). Claude Code 2.x writes
-  `system/status "requesting"` when its query loop starts a request, before sending it; a call
-  counts from there to the reply's `message_stop`, the next `requesting`, the turn's `result` or the
-  process closing. A tool_use reply ends at its `message_stop`; its tokens are the stream's last
-  `usage.output_tokens`, spread back to its `message_start` (a bridge, `countRequests: false`,
-  counts none: the pi runtime counts that call). A reply with no `requesting` before
-  it is counted from `message_start` and marks the process degraded. Its own subagents, side
-  queries and compaction are not streamed, so a running turn is reported in `claudeTurns` (the
-  count is partial) rather than guessed; the CLI's internal retries of one request are one call. A
-  re-adopted worker's replay only rebuilds state: counting starts when its host goes live.
-  `beginClaudeOneShot()` counts a `claude -p --output-format json` spawn to exit, as approximate
+- `claude.ts`: `createClaudeRequestObserver()` reads a provider bridge's Claude Code CLI
+  stream-json frames (fed by `claude-code/transport.ts` before its owner's hooks). It counts no
+  call and no token: the pi runtime counts the bridge's calls. The CLI's own subagents, side
+  queries and compaction are not streamed, so a running turn (from `system/status "requesting"` or
+  a reply's `message_start` to the turn's `result` or the process closing) is reported in
+  `claudeTurns` (the count is partial) rather than guessed. `beginClaudeOneShot()` counts a `claude -p --output-format json` spawn to exit, as approximate
   (with no tokens).
 - `index.ts` (the extension): instruments `ctx.modelRegistry`'s runtime at `session_start` and
-  before each turn; with no runtime to instrument the process is degraded. In a pi worker (the
-  `subagents:worker` role, RPC mode) it reports its counts to the session that runs it with a
-  fire-and-forget `setStatus("sova-llm-inflight", json)`, only when they change; the subagents
-  runner folds that into its own process's counts until the worker exits.
-
-- `hosted.ts` (builtins only; Sova imports it): `readUnadoptedWorkers(root?)` finds hosted workers
-  left running with no manager (after a restart, before re-adoption). A manager holds the worker's
-  `adopt.lock` while it runs the worker, and its own count includes that worker. A worker whose host
-  lives with no live lock holder is unadopted: its counts come from the host's `llm.json` (the
-  worker's latest report, which `subagents/host.ts` rewrites only when it changes, and zeroes when
-  the worker exits), or `null` (unknown) for a worker that never reported, such as a Claude Code
-  worker. Reads are cached by file stat; nothing is scanned per token. A detached transport emits
-  `detached`, and the runner then stops counting the worker.
-- **Never twice:** a snapshot's `folded` lists the producer ids of every worker whose counts it
-  includes, transitively (a worker reports its own producer and its own `folded`). A reader skips
-  any record or worker file whose producer is already folded into a count it took. This covers a
-  worker that also loads the sessions extension (the agent_spawn `extensions` parameter allows it).
+  before each turn; with no runtime to instrument the process is degraded. No worker loads it: a
+  worker is a chat process of its own, whose runtime Sova instruments and whose counts the server
+  takes from that process (`setChildCounts("chat:<session id>")`, server/chat-host.ts).
+- **Never twice:** a snapshot's `folded` lists the producer ids of every child process whose counts
+  it includes, transitively (a child reports its own producer and its own `folded`). A reader skips
+  any record whose producer is already folded into a count it took. This covers a chat process
+  that also publishes a live record of its own.
 
 ## The usage ledger
 
@@ -85,8 +68,8 @@ token counts only, never a price):
   `modelUsage` shows beyond the recorded messages, against the session's last total in
   `<agent dir>/usage/cc-baseline/<claude session>.json` (`ccr:<session>:<total>:<model>`). A
   resume, fork or re-adoption with no baseline takes its first result as the baseline; a replayed
-  result at or under it adds nothing. Workers (`claude-code/runner.ts`) and the provider bridge
-  (`provider/session-bridge.ts`) both record; the bridge claims `claude-code-cli` from the runtime.
+  result at or under it adds nothing. The provider bridge (`provider/session-bridge.ts`) records,
+  for chats and Claude Code workers alike; it claims `claude-code-cli` from the runtime.
 - `record.ts`: `recordUsage` (fills producer, device, key), `recordClaudeEnvelope` for a
   `claude -p --output-format json` run (`cp:<envelope session>:<model>`; Sova's decisions and
   titles, topic-outline's Claude summarizer), and the provider claim.
@@ -95,9 +78,8 @@ token counts only, never a price):
   Sova's chat manager for its hosted chats, `noteUsageSession` for an Overseer's kind). Otherwise
   the caller's `withUsageContext({owner, cwd, purpose, kind, project, starter})` (an
   AsyncLocalStorage scope, so concurrent side calls keep their own), else the process's only
-  session, else none. `withUsagePurpose` marks a side call that never falls back. A pi worker
-  names its parent from `PI_USAGE_PARENT=<parent session>:<worker id>`, which the subagents
-  extension sets at every spawn (a Claude Code worker's runner reads it from its spawn options).
+  session, else none. `withUsagePurpose` marks a side call that never falls back. A worker chat
+  is registered by Sova's chat manager with its parent session and worker id, from its loadout.
 
 ## Who counts what
 

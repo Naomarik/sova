@@ -25,7 +25,8 @@ After each settled run (debounced, one run at a time, skipped when nothing chang
 
 1. **Pi model registry** — `ollama-cloud/deepseek-v4.1-flash` via
    `ctx.modelRegistry.complete()` (Pi's own auth resolution).
-2. **Claude Code CLI with sonnet** — spawned directly (`claudeBin`, never via your shell
+2. **Claude Code CLI with sonnet** — spawned directly (the Claude program every Sova spawn
+   runs, `claude-code/claude-executable.ts`, or `claudeBin` when set; never via your shell
    alias), no tools, no settings sources, no MCP, `dontAsk` permissions, no session
    persistence, in an empty private temp dir, prompt on stdin, `$0.05` budget cap.
 
@@ -104,7 +105,7 @@ everything fails, the last good outline stays in place, marked stale; nothing bl
 
 ## Config
 
-`~/.pi/agent/topic-outline.json` (project-local `.pi/topic-outline.json` is honored only
+`<agent dir>/topic-outline.json` (`~/.pi/agent`, or `$PI_CODING_AGENT_DIR`) (project-local `.pi/topic-outline.json` is honored only
 for trusted projects):
 
 ```json
@@ -116,7 +117,6 @@ for trusted projects):
   "trigger": { "debounceMs": 3000, "minNewMessages": 2 },
   "shareWithSessions": "now-only",
   "shareLastHeading": true,
-  "claudeBin": "~/.local/bin/claude",
   "limits": { "maxTopics": 40, "maxBullets": 3 }
 }
 ```
@@ -168,7 +168,7 @@ outline in memory only.
 ## Debugging jumps
 
 Run pi with `PI_TOPIC_OUTLINE_DEBUG=1` to append one JSON line per jump attempt to
-`~/.pi/agent/topic-outline-debug.log` (`at`, `heading`, `asFullscreen`, `ordinalFound`,
+`<agent dir>/topic-outline-debug.log` (`at`, `heading`, `asFullscreen`, `ordinalFound`,
 `rowsCount`, `markers`, `fingerprintMatched`, `row`, `reason`). Message text is never
 logged. Reasons: `ok`, `ok-ordinal-only`, `not-fullscreen`, `anchor-not-in-context`,
 `no-transcript-view`, `no-markers`, `marker-not-found`, `error:<name>`.

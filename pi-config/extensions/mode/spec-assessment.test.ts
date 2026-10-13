@@ -6,9 +6,8 @@ import { tmpdir } from "node:os";
 import * as assessment from "./spec-assessment.ts";
 const { callAssessment } = assessment;
 
-test("only the transport and the spawn attribution names remain: nothing to capture or observe with", () => {
- assert.deepEqual(Object.keys(assessment).sort(), ["ASSESSMENT_OWNER_ENV", "ASSESSMENT_TEAM_ENV", "ASSESSMENT_WORKER_ENV", "callAssessment"]);
- assert.deepEqual([assessment.ASSESSMENT_OWNER_ENV, assessment.ASSESSMENT_WORKER_ENV, assessment.ASSESSMENT_TEAM_ENV], ["SOVA_SPEC_OWNER_SESSION", "SOVA_SPEC_WORKER_ID", "SOVA_SPEC_TEAM_ID"]);
+test("only the transport remains: nothing to capture or observe with", () => {
+ assert.deepEqual(Object.keys(assessment).sort(), ["callAssessment"]);
 });
 
 test("valid JSON with disagreeing process exit, malformed and capped stdout are unavailable transport", async t => {

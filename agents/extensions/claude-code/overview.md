@@ -4,18 +4,19 @@ alsoUpdate: ["pi-config/extensions/claude-code/README.md"]
 ---
 # claude-code
 
-The `claude-code` worker backend and the Claude Code model provider. It drives the installed `claude` CLI,
-owns the Claude logins and the pool's marks, and holds Sova's Claude model catalog.
+The Claude Code model provider (`claude-code-cli`), which a Claude Code chat and a Claude Code worker (a pi
+worker on it, `subagents/claude-workers.ts`) both run on. It drives the installed `claude` CLI, owns the Claude
+logins and the pool's marks, and holds Sova's Claude model catalog.
 
 ## What lives here
 
-- [`README.md`](../../../pi-config/extensions/claude-code/README.md) (logins, Delegate, the sandbox, spec
-  hooks, the provider and its limitations, tests),
+- [`README.md`](../../../pi-config/extensions/claude-code/README.md) (logins, Claude Code workers, the
+  provider and its limitations, tests),
   [`provider/DESIGN-bridge.md`](../../../pi-config/extensions/claude-code/provider/DESIGN-bridge.md) and
   [`protocol-probes.md`](../../../pi-config/extensions/claude-code/docs/protocol-probes.md).
 - Requirements: §app/claude-code-provider. Before planning anything that changes what a Claude Code chat's model
   sees or which tools it has, read it: Sova owns the conversation and the tools; the CLI is only the model.
-- Tests: `cd pi-config/extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs`.
+- Tests: `cd pi-config/extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs`.
 
 ## What Sova relies on
 
@@ -29,10 +30,14 @@ owns the Claude logins and the pool's marks, and holds Sova's Claude model catal
   The browser imports it through `src/lib/format.ts` only (`modelLabel`, §app.claude-code-provider/model-names), so it must import
   nothing at all. `pnpm run claude:catalog` diffs the catalog
   against the installed CLI's own table.
-- `accounts.ts` (builtins plus its siblings `keychain.ts` and `fixed-settings.ts`): the logins, below.
+- `accounts.ts` (builtins plus its siblings `keychain.ts`, `fixed-settings.ts` and `claude-executable.ts`): the logins, below.
   Imported by `server/claude-accounts.ts` (Settings → Accounts, and the login the server's own `claude`
   spawns run on: model discovery, `--version`), `server/auth-status.ts`, `server/claude-login-state.ts`, the
   pool agent `server/claude-pool/`, and `usage-status/fetch.ts`.
+- `claude-executable.ts` (builtins only): the one Claude program every `claude` spawn runs, an absolute path
+  resolved from the host's own `PATH` (never a chat's cwd), else `~/.local/bin/claude`, or a plain-words "Claude
+  program not found" (§app.claude-code-provider/one-program). The provider, `accounts.ts`, `server/decide-llm.ts`,
+  `claude-models.ts`, `claude-status.ts` and `claude-accounts.ts` take their default from it.
 - `fixed-settings.ts` (imports nothing): the `--settings` every `claude` spawn gets: no attribution, auto-memory
   off (§app.claude-code-provider/no-memory). `server/decide-llm.ts`, `session-autotitle.ts`, `claude-models.ts`
   and `memory/summarizer.ts` import it.
@@ -106,9 +111,8 @@ watcher doesn't watch this directory either.
 
 ## When you change it, also update
 
-- Any contract above: the README section that documents it (Logins, Spec hooks, the provider), and its Sova
+- Any contract above: the README section that documents it (Logins, the provider), and its Sova
   reader in the same branch.
 - `catalog.ts`: run `pnpm run claude:catalog`; models are named only by catalog ids.
-- `spec-hooks.ts`: the merge round runs the spec replay suite (see [modes/spec](../../modes/spec/overview.md)).
 - A new import from the server: this guide, and keep it builtins-only and pi-runtime-free.
 - After landing a provider or `accounts.ts` change: the live server needs a restart.

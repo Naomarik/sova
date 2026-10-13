@@ -5,15 +5,16 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P23 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P24 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
+import { patchResolve } from "./own-code.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
@@ -775,6 +776,48 @@ return w + ":" + r.stopReason;`;
     assert.ok(!second!.has("at_turn_start"), "registered at turn_start: too late for that request (fixed: pi builds the loadout after turn_start)");
     assert.ok(third!.has("at_turn_start"), "the control: it is declared in the request after");
     session.dispose();
+  });
+
+  test("P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy", async () => {
+    const { createAgentSessionServices, DefaultPackageManager } = pi.agent;
+    const t = join(dir, "p24");
+    const ext = (file: string, name: string) => {
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, `export default (pi) => { pi.registerCommand(${JSON.stringify(name)}, { description: "p24", handler: async () => {} }); };\n`);
+    };
+    // A Sova checkout and its copy; the agent dir links into the checkout.
+    ext(join(t, "live", "pi-config", "extensions", "linked", "index.ts"), "linked");
+    ext(join(t, "own", "pi-config", "extensions", "linked", "index.ts"), "linked");
+    const agentDir = join(t, "agent");
+    mkdirSync(join(agentDir, "extensions"), { recursive: true });
+    symlinkSync(join(t, "live", "pi-config", "extensions", "linked"), join(agentDir, "extensions", "linked"));
+    ext(join(agentDir, "extensions", "plain.ts"), "plain");
+    ext(join(agentDir, "extensions", "off.ts"), "off");
+    // A package with an extensions filter, and a project's own extension.
+    ext(join(t, "pkg", "a.ts"), "pkg-a");
+    ext(join(t, "pkg", "b.ts"), "pkg-b");
+    writeFileSync(join(t, "pkg", "package.json"), JSON.stringify({ name: "p24-pkg", pi: { extensions: ["./a.ts", "./b.ts"] } }));
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: ["!off.ts"], packages: [{ source: join(t, "pkg"), extensions: ["a.ts"] }] }));
+    const cwd = join(t, "proj");
+    ext(join(cwd, ".pi", "extensions", "proj.ts"), "proj");
+
+    const modelRuntime = await ModelRuntime.create({ authPath: join(t, "auth.json"), modelsPath: null, refreshOnCreate: false });
+    const loaded = async () => {
+      const services = await createAgentSessionServices({ cwd, agentDir, modelRuntime });
+      return new Map<string, string>(services.resourceLoader.getExtensions().extensions.flatMap((e: any) => [...e.commands.keys()].map((k: string) => [k, realpathSync(e.resolvedPath ?? e.path)])));
+    };
+    const before = await loaded();
+    assert.deepEqual([...before.keys()].sort(), ["linked", "pkg-a", "plain", "proj"], "the control: the linked, plain, filtered-package and project extensions load, the disabled one doesn't");
+    assert.equal(before.get("linked"), realpathSync(join(t, "live", "pi-config", "extensions", "linked", "index.ts")));
+    const unpatch = patchResolve(DefaultPackageManager, { own: realpathSync(join(t, "own")), live: realpathSync(join(t, "live")) });
+    try {
+      const after = await loaded();
+      assert.deepEqual([...after.keys()].sort(), [...before.keys()].sort(), "the same extensions");
+      assert.equal(after.get("linked"), realpathSync(join(t, "own", "pi-config", "extensions", "linked", "index.ts")), "fixed?: pi's loader no longer takes discovered extensions from its package manager's resolve()");
+      for (const k of ["pkg-a", "plain", "proj"]) assert.equal(after.get(k), before.get(k), k);
+    } finally {
+      unpatch();
+    }
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

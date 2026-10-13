@@ -352,8 +352,7 @@ closed, and the markdown on the left when open.
   `status`. Per id, only the newest entry renders (as with an older session's align-doc entries), so a settled run is one
   row, and a live append replaces the running row in place. A running row is not a link — there
   is no page yet — and reads "Explaining {topic}" with the live pulse where the chevron sits.
-- **Explain rows: interrupted.** A run whose parent stopped before it settled (a server restart, a
-  `/reload`) leaves its running entry as the newest. Opening the session writes nothing, so the
+- **Explain rows: interrupted.** A run whose fork's chat is gone before it settled (its process died for good, or was stopped) leaves its running entry as the newest. A `/reload` of the parent or a server restart doesn't interrupt it: the parent watches the fork again and the row settles when the page is written. Opening the session writes nothing, so the
   row still reads Explaining then; the session's next prompt (or its next `/explain`) appends the
   final entry under the same id with `status: "interrupted"`, which replaces the row. It carries
   a `.chip-warn` "Interrupted" chip where a failed run has "Failed", and the reason under the row
@@ -517,6 +516,12 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   class `message-streaming`. Its head is `author` + `<span class="live-dot"></span>`.
   `text_delta` appends into its body; `thinking_delta` feeds a streaming `.disclosure` placed
   before it. `toolcall_start` adds a `.toolcard` with the Running chip.
+- **Joining mid-reply.** A browser that connects or reconnects while a reply streams shows the
+  reply so far, from the hello's `live` snapshot: its thinking, text and tool calls, and each tool
+  still running with its output so far. It then keeps streaming into that same message from the next
+  delta, so nothing shows twice and nothing from before the reconnect is missing. Seeding the reply
+  announces nothing and does nothing a turn's start does. A hello without `live` (an older server,
+  or nothing streaming) shows only what streams after it, as before.
 - **Run status.** Above the textarea, inside `.composer-inner`:
   `<p class="run-status"><span class="live-dot"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>`.
   **One live dot leads the row whenever the session has work in flight**: a turn, Stopping, a
@@ -921,11 +926,17 @@ can't identify, and no TUI claims it, so we only read it. Chatting here would pu
 file." The age is live: it counts on while the banner is up, instead of freezing at connect time.
 
 The server's own writes are not "a process we can't identify", **across a restart too**. It
-keeps the size and modification time it last left each file in, in `owned-writes.json` under
-Sova's state root (the most recent 500), and a file whose size and time both still match opens
+keeps the size and modification time it or one of its chat processes last left each file in, in
+`owned-writes.json` under Sova's state root (the most recent 500); each process that records one
+locks the file for the moment it takes, so two processes recording at once never lose each other's
+record, and a file whose size and time both still match opens
 for chat at once. A stat is recorded only where the write is certainly the server's: a file it
 just created, an entry a runtime it held just appended, and a stretch its write guard verified
-entry by entry as its own. Any later append by anyone breaks the match, and a TUI-live session is
+entry by entry as its own. Each message a chat's run writes is recorded as soon as it is on disk,
+not only at the guard's next check, so a chat process that dies mid-run leaves its last messages
+known as the server's. A reply a server stop cuts off is one of these: the stop waits (a few
+seconds at most) for each abort to write it, and each chat records it as it closes, before its
+runtime finishes shutting down, so the next start can resume that chat (§app.overseer/auto-resume). Any later append by anyone breaks the match, and a TUI-live session is
 refused before this check. A missing or corrupt file means nothing is known to be the server's,
 and the 120-second rule applies.
 

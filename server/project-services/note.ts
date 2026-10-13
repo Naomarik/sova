@@ -110,13 +110,20 @@ export async function resultNote(engine: ProjectEngine, r: VerbResult, state: St
  * its text differs from the last one on the branch; after a compaction, again. Never in the system prompt.
  */
 export function registerInstanceNote(pi: PiExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
-  const render = async (ctx: HookCtx): Promise<string | null> => {
-    try {
-      return await currentNote(engine(), await own(ctx), ctx.state());
-    } catch {
-      return null;
-    }
-  };
+  registerNoteHooks(pi, (ctx) => sessionNote(engine, own, ctx));
+}
+
+/** The session's note now (null: none, or it could not be read). */
+export async function sessionNote(engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>, ctx: HookCtx): Promise<string | null> {
+  try {
+    return await currentNote(engine(), await own(ctx), ctx.state());
+  } catch {
+    return null;
+  }
+}
+
+/** The note's delivery, whatever renders it: in a chat process (§app/chat-processes) the server does. */
+export function registerNoteHooks(pi: PiExtensionAPI, render: (ctx: HookCtx) => Promise<string | null>): void {
   pi.on("before_agent_start", async (_event, ctx) => {
     const c = toolCtx(ctx);
     const text = await render(c);

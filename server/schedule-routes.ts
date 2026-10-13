@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { agentRoot } from "./state-root";
 // The claude-code extension's login standing (node built-ins only). See agents/extensions/claude-code/overview.md.
 import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
-import { heldChat } from "./chat-manager";
+import { chatHandle } from "./chat-handle";
 import { chatClaudeLogin, loginName } from "./claude-login-state";
 import { briefOverseer, countStarted, freeRunSlots } from "./overseer";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
@@ -76,16 +76,16 @@ export async function lastTurn(path: string): Promise<{ failed: boolean; at: num
 /** The playbook block for a session (§chat.schedules/delivery): its held branch, else its file. */
 async function payloadFor(path: string | null, bundle: { id: string; dir: string; entry: string }) {
   if (!path) return playbookPayload(bundle, null);
-  const held = heldChat(path);
-  const branch = held?.harness.branch() ?? (await readBranch(path));
-  const cwd = held?.harness.cwd || (await getSessionSummary(path))?.cwd || bundle.dir;
+  const held = chatHandle(path);
+  const branch = held ? await held.branch() : await readBranch(path);
+  const cwd = held?.mirror.cwd || (await getSessionSummary(path))?.cwd || bundle.dir;
   return playbookPayload(bundle, { branch, cwd });
 }
 
 /** Held and running a turn, or holding a queued message. */
 function heldBusy(path: string): boolean {
-  const chat = heldChat(path);
-  return !!chat && (chat.harness.isRunning() || chat.queue.size > 0 || chat.harness.queue.hasQueued());
+  const chat = chatHandle(path);
+  return !!chat && (chat.mirror.running || chat.mirror.pendingSends);
 }
 
 /**

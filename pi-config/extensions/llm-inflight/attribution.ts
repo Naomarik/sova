@@ -52,9 +52,6 @@ export interface UsageAttribution {
 	routed: boolean;
 }
 
-/** The env var a worker's spawn sets: `<parent session id>:<worker id>`. */
-export const USAGE_PARENT_ENV = "PI_USAGE_PARENT";
-
 /** Housekeeping of a session's own conversation: it keeps the session's kind. */
 const HOUSEKEEPING = new Set(["compaction", "branch-summary", "cache-warm"]);
 
@@ -68,16 +65,6 @@ const KEY = Symbol.for("sova.llm-inflight.attribution.v1");
 function state(): State {
 	const g = globalThis as unknown as Record<symbol, State | undefined>;
 	return (g[KEY] ??= { sessions: new Map(), notes: new Map(), context: new AsyncLocalStorage<UsageContext>() });
-}
-
-/** `PI_USAGE_PARENT` as {parent, worker}, or undefined. */
-export function usageParentFromEnv(env: NodeJS.ProcessEnv = process.env): { parent: string; worker?: string } | undefined {
-	const v = env[USAGE_PARENT_ENV];
-	if (!v) return undefined;
-	const i = v.lastIndexOf(":");
-	const parent = i > 0 ? v.slice(0, i) : v;
-	const worker = i > 0 ? v.slice(i + 1) : undefined;
-	return parent ? { parent, ...(worker ? { worker } : {}) } : undefined;
 }
 
 /** Register a session this process runs (idempotent; the last registration wins). Returns its removal. */

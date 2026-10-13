@@ -8,6 +8,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { BackgroundForkHandle } from "../subagents/fork/background.ts";
+import type { WorkerHost } from "../subagents/worker-host.ts";
 import { ExplainRuns, FORK_DIR, type ExplainHost } from "./explain.ts";
 import { EXPLAIN_ENTRY_TYPE, INTERRUPTED_NO_PAGE, INTERRUPTED_WITH_PAGE, runningEntryData, storeDir, writeMeta, type ExplainEntryData, type KnownMeta } from "./store.ts";
 
@@ -15,21 +17,36 @@ function tmp(): string {
 	return mkdtempSync(join(tmpdir(), "explain-runs-"));
 }
 
-function harness(env: NodeJS.ProcessEnv) {
+/** `live`: the explain forks the worker host still runs for this session, by run id. */
+function harness(env: NodeJS.ProcessEnv, live: string[] = []) {
 	const entries: ExplainEntryData[] = [];
 	const started: { spec: any; settle: (r: any) => void }[] = [];
+	const reattached: { id: string; settle: (r: any) => void; stopped: number }[] = [];
+	const wakes: string[] = [];
 	const host: ExplainHost = {
 		env,
 		now: () => Date.parse("2026-09-28T10:00:00.000Z"),
 		appendEntry: (data) => entries.push(data),
 		notify: () => {},
-		wake: () => {},
+		wake: (text) => wakes.push(text),
+		workerHost: () => ({}) as WorkerHost,
 		start: (spec, handlers) => {
 			started.push({ spec, settle: handlers.onSettled });
-			return { stop: async () => {} };
+			return { stop: async () => {}, detach: () => {} };
+		},
+		reattach: async (_host, kind, _name, handlersFor) => {
+			const handles = new Map<string, BackgroundForkHandle>();
+			for (const id of live) {
+				const handlers = kind === "explain" ? handlersFor(id) : undefined;
+				if (!handlers) continue;
+				const fork = { id, settle: handlers.onSettled, stopped: 0 };
+				reattached.push(fork);
+				handles.set(id, { stop: async () => { fork.stopped++; }, detach: () => {} });
+			}
+			return handles;
 		},
 	};
-	return { runs: new ExplainRuns(host), entries, started };
+	return { runs: new ExplainRuns(host), entries, started, reattached, wakes };
 }
 
 const known = (id: string): KnownMeta => ({ id, topic: `topic ${id}`, parentSessionId: "sess-1", cwd: "/repo", createdAt: "2026-09-28T09:00:00.000Z", model: "zai/glm-5.3" });
@@ -80,7 +97,7 @@ test("reconcile leaves a run this process is still running alone", () => {
 	}
 });
 
-test("a forked run's session copy is deleted when it settles and when it is stopped", async () => {
+test("a forked run's session copy is deleted when it settles, and kept while a closed session leaves its child running", async () => {
 	const root = tmp();
 	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
 	try {
@@ -93,9 +110,43 @@ test("a forked run's session copy is deleted when it settles and when it is stop
 		assert.ok(a!.startsWith(join(root, "explanations", FORK_DIR)) && readFileSync(a!, "utf8").length > 0);
 		started[0]!.settle({ outcome: "error", error: "x", finalOutput: "" });
 		assert.throws(() => readFileSync(a!), /ENOENT/);
-		await runs.stopAll();
-		assert.throws(() => readFileSync(b!), /ENOENT/);
+		assert.equal(started[0]!.spec.sessionDir, join(root, "explanations", FORK_DIR, started[0]!.spec.id), "the fork's own session beside its copy");
+		runs.detachAll();
+		assert.ok(readFileSync(b!, "utf8").length > 0, "the child still runs; the next session reattaches it");
 		assert.equal(EXPLAIN_ENTRY_TYPE, "explain-doc");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("reattach makes a running entry whose fork the host still runs a live run again: it records its end once and is never interrupted", async () => {
+	const root = tmp();
+	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
+	try {
+		// "live-1" still runs in its own chat; "gone-1" has no chat any more; "done-1" settled earlier.
+		const { runs, entries, reattached, wakes } = harness(env, ["live-1", "done-1", "stray-1"]);
+		const branch: ExplainEntryData[] = [
+			runningEntryData(known("live-1")),
+			runningEntryData(known("gone-1")),
+			runningEntryData(known("done-1")),
+			{ ...runningEntryData(known("done-1")), status: undefined, summary: "finished" },
+		];
+		assert.equal(await runs.reattach(branch), 1);
+		assert.deepEqual(reattached.map((r) => r.id), ["live-1"], "only a running entry claims a chat");
+		assert.equal(runs.live, 1);
+		assert.equal(runs.reconcile(branch), 1, "the gone run is interrupted, the reattached one is not");
+		assert.deepEqual(entries.map((e) => [e.id, e.status]), [["gone-1", "interrupted"]]);
+
+		const dir = storeDir("live-1", env);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "index.html"), "<!doctype html><meta name=viewport content=\"width=device-width\"><h1>t</h1><p>Explained by x</p>");
+		writeMeta(dir, { ...known("live-1"), summary: "What it says." });
+		reattached[0]!.settle({ outcome: "success", finalOutput: "done", model: "zai/glm-5.3" });
+		assert.deepEqual(entries.map((e) => [e.id, e.status ?? "final"]), [["gone-1", "interrupted"], ["live-1", "final"]]);
+		assert.equal(entries[1]!.error, undefined);
+		assert.equal(wakes.length, 1, "the parent is woken once");
+		assert.equal(reattached[0]!.stopped, 1, "its chat is stopped once the run is recorded");
+		assert.equal(runs.live, 0);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

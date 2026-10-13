@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "slots": {"cap": 10},
+  "slots": {"cap": 15},
   "sources": ["package.json", "mise.toml", "pnpm-lock.yaml", "scripts/hermetic-agent-dir.mjs"],
   "setup": [
     {

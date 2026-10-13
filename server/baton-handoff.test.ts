@@ -14,6 +14,7 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-handoff-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const loadout = await import("./baton-loadout");

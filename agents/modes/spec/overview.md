@@ -1,5 +1,5 @@
 ---
-watches: ["pi-config/extensions/spec/**", "pi-config/extensions/mode/spec*.ts", "pi-config/extensions/mode/spec-mode.md", "pi-config/extensions/claude-code/spec-hooks.ts", "pi-config/extensions/subagents/spec-brief.ts", "pi-config/extensions/worktrees/spec.ts"]
+watches: ["pi-config/extensions/spec/**", "pi-config/extensions/mode/spec*.ts", "pi-config/extensions/mode/spec-mode.md", "pi-config/extensions/subagents/spec-brief.ts", "pi-config/extensions/worktrees/spec.ts"]
 alsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]
 ---
 # spec
@@ -14,7 +14,7 @@ guide is for changing the system. To follow the discipline while working on Sova
 |---|---|---|
 | The tools (read-only core, drafts, review, assessment) | `pi-config/extensions/spec/core/*.mjs` | [`spec/README.md`](../../../pi-config/extensions/spec/README.md), [`core/README.md`](../../../pi-config/extensions/spec/core/README.md), [`DRAFTS.md`](../../../pi-config/extensions/spec/DRAFTS.md), [`PROMOTE.md`](../../../pi-config/extensions/spec/PROMOTE.md) |
 | The mode's text, injected while spec is on | `pi-config/extensions/mode/spec-mode.md` | (it is the text) |
-| The mode's hooks, worker checks and brief | `mode/minor.ts`, `mode/prompt.ts`, `mode/spec-guard.ts`, `mode/spec-worker.ts`, `claude-code/spec-hooks.ts`, `subagents/spec-brief.ts`, `worktrees/spec.ts` | [`MODE.md`](../../../pi-config/extensions/spec/docs/MODE.md), every piece and how they connect |
+| The mode's hooks, worker checks and brief | `mode/minor.ts`, `mode/prompt.ts`, `mode/spec-guard.ts`, `mode/spec-worker.ts`, `subagents/spec-brief.ts`, `worktrees/spec.ts` | [`MODE.md`](../../../pi-config/extensions/spec/docs/MODE.md), every piece and how they connect |
 | Goals, history, ledger | `pi-config/extensions/spec/docs/` | [`README.md`](../../../pi-config/extensions/spec/docs/README.md): [`GOALS.md`](../../../pi-config/extensions/spec/docs/GOALS.md), [`EVOLUTION.md`](../../../pi-config/extensions/spec/docs/EVOLUTION.md), [`CHANGELOG.md`](../../../pi-config/extensions/spec/docs/CHANGELOG.md) |
 | Sova's own spec, and how to run the tools in this repo | `.sova/spec/` | [`.sova/spec/README.md`](../../../.sova/spec/README.md), [`.sova/spec/USAGE.md`](../../../.sova/spec/USAGE.md) |
 | The user-facing page | `site/src/content/docs/modes/spec.md` | |
@@ -40,8 +40,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   itself). It seeds and backs the subagent profiles' spec writer, syncs like the other mode files, and is re-read at
   each turn boundary by every session with spec on, in either major mode.
 - **Never run the replay suite while working.** `tests/replay` is a landing gate the merge round runs, one at a time per
-  machine, when a landing touches `spec/core/`, `spec/tests/replay/`, `mode/spec-guard.ts` or
-  `claude-code/spec-hooks.ts`. Without `SOVA_SPEC_REPLAY=1` every test in it skips.
+  machine, when a landing touches `spec/core/`, `spec/tests/replay/` or `mode/spec-guard.ts`. Without `SOVA_SPEC_REPLAY=1` every test in it skips.
 - **One copy of the tools.** The spec tools exist only in `core/`, run through the installed extension (`$core`).
   No project, Sova included, keeps a copy; a copy found in a project is that project's code, never run without asking.
 
@@ -50,8 +49,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - Tool tests (about a minute):
   `cd pi-config/extensions/spec && node --test --test-concurrency=4 tests/*.test.mjs`.
 - Mode tests: the `mode` line in `pi-config/README.md` "Tests" (`spec.test.ts`, `spec-guard.test.ts`,
-  `spec-assessment.test.ts`, `tests/spec-turn.mjs`, `tests/spec-worker.mjs`, …), and claude-code's suite for
-  `spec-hooks.ts`.
+  `spec-assessment.test.ts`, `tests/spec-turn.mjs`, `tests/spec-worker.mjs`, …).
 - Search changes: the topic bench in `tests/search/` (its README; a held-out set is run once).
 - Measuring a tool change: `tests/replay/run.mjs` against a baseline tree (`make-tree.mjs master …`), as its README
   shows. That is the measurement, not the gate.

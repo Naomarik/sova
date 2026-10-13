@@ -1,15 +1,16 @@
+import { randomBytes } from "node:crypto";
+import { join } from "node:path";
 import {
   buildSessionContext,
-  createAgentSession,
-  createExtensionRuntime,
-  SessionManager,
-  type AgentSession,
+  getAgentDir,
   type AgentSessionEvent,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
-  type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
+import { workerHostOf } from "../subagents/fork/background.ts";
+import { NO_WORKER_HOST, type WorkerHost } from "../subagents/worker-host.ts";
+import { BTW_TOOLS, BtwChat, btwChatMode, type BtwAnswer, type BtwFeedEvent } from "./chat.ts";
 import { type AssistantMessage, type Message, type ThinkingLevel as AiThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
 import {
   Box,
@@ -71,6 +72,8 @@ type BtwDetails = {
   thinkingLevel: SessionThinkingLevel;
   timestamp: number;
   usage?: AssistantMessage["usage"];
+  /** The answer's entry id in the btw chat's own session: an exchange is recorded once, across reloads. */
+  entryId?: string;
 };
 
 type ParsedBtwArgs = {
@@ -138,11 +141,10 @@ type BtwTranscriptState = {
   toolCalls: Map<string, { turnId: number; callEntryId: number; resultEntryId?: number }>;
 };
 
+/** The side thread's hidden chat (`./chat.ts`), in its own process. */
 type BtwSessionRuntime = {
-  session: AgentSession;
+  chat: BtwChat;
   mode: BtwThreadMode;
-  subscriptions: Set<() => void>;
-  sideThreadStartIndex: number;
 };
 
 type OverlayRuntime = {
@@ -169,26 +171,13 @@ function stripDynamicSystemPromptFooter(systemPrompt: string): string {
     .trim();
 }
 
-function createBtwResourceLoader(
-  ctx: ExtensionCommandContext,
-  appendSystemPrompt: string[] = [BTW_SYSTEM_PROMPT],
-): ResourceLoader {
-  const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() };
-  const systemPrompt = stripDynamicSystemPromptFooter(ctx.getSystemPrompt());
-
-  return {
-    getExtensions: () => extensionsResult,
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => systemPrompt,
-    getSystemPromptSource: () => undefined,
-    getAppendSystemPrompt: () => appendSystemPrompt,
-    getAppendSystemPromptSources: () => [],
-    extendResources: () => {},
-    reload: async () => {},
-  };
+/**
+ * The side thread's whole system prompt: the main thread's, without its date and folder footer,
+ * then the given sections. No skills, prompts or context files of the btw chat's own (its child.ts
+ * replaces pi's prompt with this text).
+ */
+function btwSystemPrompt(ctx: ExtensionCommandContext, appendSystemPrompt: string[] = [BTW_SYSTEM_PROMPT]): string {
+  return [stripDynamicSystemPromptFooter(ctx.getSystemPrompt()), ...appendSystemPrompt].filter(Boolean).join("\n\n");
 }
 
 function extractText(parts: AssistantMessage["content"], type: "text" | "thinking"): string {
@@ -260,30 +249,6 @@ function parseBtwThinkingArgs(args: string):
 
 function formatModelRef(model: Pick<SessionModel, "provider" | "id" | "api">): string {
   return `${model.provider}/${model.id} (${model.api})`;
-}
-
-/**
- * Give a fresh BTW session its seed history. pi 0.87 builds provider context from the
- * SessionManager (`refreshContext()` re-reads it), so an assignment to `agent.state.messages`
- * is overwritten before the first request and the side thread silently loses the main thread.
- * Older pi has no `refreshContext` and sends `agent.state.messages` as it is.
- *
- * Returns where the side thread starts in `session.state.messages`, counted from the end: the
- * canonical projection may add or reshape entries ahead of it, never after.
- */
-function seedBtwSession(
-  session: AgentSession,
-  sessionManager: SessionManager,
-  seed: { messages: Message[]; sideThreadStartIndex: number },
-): number {
-  const refresh = (session as { refreshContext?: () => void }).refreshContext;
-  if (typeof refresh !== "function") {
-    session.agent.state.messages = seed.messages as typeof session.state.messages;
-    return seed.sideThreadStartIndex;
-  }
-  for (const message of seed.messages) sessionManager.appendMessage(message);
-  refresh.call(session);
-  return Math.max(0, session.state.messages.length - (seed.messages.length - seed.sideThreadStartIndex));
 }
 
 function buildBtwSeedState(
@@ -917,17 +882,6 @@ function buildOverlayTranscript(entries: BtwTranscript, theme: ExtensionContext[
   return lines;
 }
 
-function getLastAssistantMessage(session: AgentSession): AssistantMessage | null {
-  for (let i = session.state.messages.length - 1; i >= 0; i--) {
-    const message = session.state.messages[i];
-    if (message.role === "assistant") {
-      return message as AssistantMessage;
-    }
-  }
-
-  return null;
-}
-
 type BtwHandoffExchange = {
   user: string;
   assistant: string;
@@ -939,60 +893,6 @@ function buildBtwMessageContent(question: string, answer: string): string {
 
 function formatThread(thread: BtwHandoffExchange[]): string {
   return thread.map((entry) => `User: ${entry.user.trim()}\nAssistant: ${entry.assistant.trim()}`).join("\n\n---\n\n");
-}
-
-function isThreadContinuationMarker(messages: Message[], index: number): boolean {
-  const userMessage = messages[index];
-  const assistantMessage = messages[index + 1];
-  return (
-    userMessage?.role === "user" &&
-    extractMessageText(userMessage) === BTW_CONTINUE_THREAD_USER_TEXT &&
-    assistantMessage?.role === "assistant" &&
-    extractMessageText(assistantMessage) === BTW_CONTINUE_THREAD_ASSISTANT_TEXT
-  );
-}
-
-function extractBtwHandoffThread(sessionRuntime: BtwSessionRuntime): BtwHandoffExchange[] {
-  const handoffMessages = sessionRuntime.session.state.messages.slice(sessionRuntime.sideThreadStartIndex);
-  const threadMessages = isThreadContinuationMarker(handoffMessages as Message[], 0) ? handoffMessages.slice(2) : handoffMessages;
-  const exchanges: BtwHandoffExchange[] = [];
-  let currentUser = "";
-  let currentAssistant = "";
-
-  const pushCurrent = () => {
-    if (!currentUser && !currentAssistant) {
-      return;
-    }
-
-    exchanges.push({
-      user: currentUser.trim() || "(No user prompt)",
-      assistant: currentAssistant.trim() || "(No assistant response)",
-    });
-    currentUser = "";
-    currentAssistant = "";
-  };
-
-  for (const message of threadMessages) {
-    if (message.role !== "user" && message.role !== "assistant") {
-      continue;
-    }
-
-    const text = extractMessageText(message).trim();
-    if (!text) {
-      continue;
-    }
-
-    if (message.role === "user") {
-      pushCurrent();
-      currentUser = text;
-      continue;
-    }
-
-    currentAssistant = currentAssistant ? `${currentAssistant}\n\n${text}` : text;
-  }
-
-  pushCurrent();
-  return exchanges;
 }
 
 function buildVisibleBtwNote(details: BtwDetails) {
@@ -1380,8 +1280,10 @@ class BtwOverlayComponent extends Container implements Focusable {
 }
 
 export type BtwDeps = {
-  /** Sub-session factory; tests substitute a fake so no model is called. */
-  createAgentSession?: typeof createAgentSession;
+  /** Sova's worker host; default: the one announced on pi.events. Tests substitute a fake so no model is called. */
+  workerHost?: () => WorkerHost | undefined;
+  /** Where the side threads' runs and sessions go; default `<agent dir>/btw`. */
+  root?: () => string;
 };
 
 export default function (pi: ExtensionAPI) {
@@ -1389,7 +1291,18 @@ export default function (pi: ExtensionAPI) {
 }
 
 export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
-  const createSession = deps.createAgentSession ?? createAgentSession;
+  /** The session whose thread's chat waits to be reattached, until Sova announces its host. */
+  let attachCtx: ExtensionContext | undefined;
+  // Sova announces the host at its own session_start, which may come after ours.
+  const announced = deps.workerHost
+    ? undefined
+    : workerHostOf(pi.events, () => {
+        const ctx = attachCtx;
+        attachCtx = undefined;
+        if (ctx) void reattachThread(ctx).catch(() => {});
+      });
+  const hostOf = deps.workerHost ?? (() => announced?.current());
+  const rootOf = deps.root ?? (() => join(getAgentDir(), "btw"));
   let pendingThread: BtwDetails[] = [];
   let pendingMode: BtwThreadMode = "contextual";
   let btwModelOverride: SessionModel | null = null;
@@ -1456,72 +1369,31 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
     overlayRuntime?.refresh?.();
   }
 
-  function removeBtwSessionSubscription(sessionRuntime: BtwSessionRuntime, unsubscribe: () => void): void {
-    if (!sessionRuntime.subscriptions.delete(unsubscribe)) {
+  /** The btw chat's feed, drawn into the overlay while one is open (whole messages: the feed has no deltas). */
+  function handleBtwChatEvent(chat: BtwChat, event: BtwFeedEvent): void {
+    if (activeBtwSession?.chat !== chat || !overlayRuntime) {
       return;
     }
 
-    try {
-      unsubscribe();
-    } catch {
-      // Ignore unsubscribe errors during BTW session replacement/shutdown.
-    }
-  }
-
-  function clearBtwSessionSubscriptions(sessionRuntime: BtwSessionRuntime): void {
-    for (const unsubscribe of [...sessionRuntime.subscriptions]) {
-      removeBtwSessionSubscription(sessionRuntime, unsubscribe);
-    }
-  }
-
-  function handleBtwSessionEvent(
-    sessionRuntime: BtwSessionRuntime,
-    event: AgentSessionEvent,
-    ctx?: ExtensionContext | ExtensionCommandContext,
-  ): void {
-    if (activeBtwSession?.session !== sessionRuntime.session || !overlayRuntime) {
-      return;
-    }
-
-    applyTranscriptEvent(transcriptState, event);
+    const ctx = lastUiContext ?? undefined;
+    applyTranscriptEvent(transcriptState, event as AgentSessionEvent);
 
     if (event.type === "tool_execution_start") {
-      setOverlayStatus(`⏳ running tool: ${event.toolName}`, ctx);
+      setOverlayStatus(`⏳ running tool: ${String(event.toolName)}`, ctx);
       return;
     }
 
-    if (event.type === "tool_execution_end") {
-      setOverlayStatus(sessionRuntime.session.isStreaming ? `⏳ running tool: ${event.toolName}` : "⏳ streaming...", ctx);
-      return;
-    }
-
-    if (event.type === "turn_end") {
+    if (event.type === "tool_execution_end" || event.type === "turn_end") {
       setOverlayStatus("⏳ streaming...", ctx);
       return;
     }
 
-    if (
-      event.type === "message_start" ||
-      event.type === "message_update" ||
-      event.type === "message_end" ||
-      event.type === "turn_start"
-    ) {
+    if (event.type === "message_start" || event.type === "message_end" || event.type === "turn_start") {
       syncUi(ctx);
     }
   }
 
-  function subscribeOverlayToActiveBtwSession(ctx?: ExtensionContext | ExtensionCommandContext): void {
-    const sessionRuntime = activeBtwSession;
-    if (!sessionRuntime || sessionRuntime.subscriptions.size > 0) {
-      return;
-    }
-
-    const unsubscribe = sessionRuntime.session.subscribe((event: AgentSessionEvent) => {
-      handleBtwSessionEvent(sessionRuntime, event, ctx);
-    });
-    sessionRuntime.subscriptions.add(unsubscribe);
-  }
-
+  /** Stop the thread's chat (a thread switch, a reset, a model or thinking change). */
   async function disposeBtwSession(): Promise<void> {
     const current = activeBtwSession;
     activeBtwSession = null;
@@ -1529,15 +1401,13 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       return;
     }
 
-    clearBtwSessionSubscriptions(current);
+    await current.chat.stop("btw thread closed");
+  }
 
-    try {
-      await current.session.abort();
-    } catch {
-      // Ignore abort errors during BTW session replacement/shutdown.
-    }
-
-    current.session.dispose();
+  /** The session is closing: leave the thread's chat running for the next session to reattach. */
+  function detachBtwSession(): void {
+    activeBtwSession?.chat.detach();
+    activeBtwSession = null;
   }
 
   async function dismissOverlaySession(): Promise<void> {
@@ -1674,26 +1544,53 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
     notify(ctx, `${message} ${describeResolvedThinking(settings)}`, "info");
   }
 
+  /** Start a hidden btw chat on Sova's worker host (`./chat.ts`). Throws where none serves the session (the pi TUI). */
+  async function startBtwChat(
+    ctx: ExtensionCommandContext,
+    mode: BtwThreadMode | "summarize",
+    model: SessionModel,
+    thinkingLevel: SessionThinkingLevel,
+    messages: Message[],
+    systemPrompt: string,
+    tools: string[],
+  ): Promise<BtwChat> {
+    const host = hostOf();
+    if (!host) {
+      throw new Error(`/btw ${NO_WORKER_HOST}`);
+    }
+
+    let chat: BtwChat | undefined;
+    chat = await BtwChat.start(
+      host,
+      {
+        parent: { sessionId: ctx.sessionManager.getSessionId(), path: ctx.sessionManager.getSessionFile() ?? "" },
+        mode,
+        nonce: `${Date.now().toString(36)}${randomBytes(3).toString("hex")}`,
+        cwd: ctx.cwd,
+        model: `${model.provider}/${model.id}`,
+        thinking: thinkingLevel,
+        messages,
+        systemPrompt,
+        root: rootOf(),
+        tools,
+      },
+      (event) => {
+        if (chat) handleBtwChatEvent(chat, event);
+      },
+    );
+    return chat;
+  }
+
   async function createBtwSubSession(ctx: ExtensionCommandContext, mode: BtwThreadMode): Promise<BtwSessionRuntime> {
     const settings = await resolveBtwSettings(ctx, true);
     if (!settings.model) {
       throw new Error(settings.fallbackReason || "No active model selected.");
     }
 
-    const sessionManager = SessionManager.inMemory();
-    const { session } = await createSession({
-      sessionManager,
-      model: settings.model,
-      thinkingLevel: settings.thinkingLevel,
-      // Match pi's default coding-agent toolset (read/bash/edit/write).
-      tools: ["read", "bash", "edit", "write"],
-      resourceLoader: createBtwResourceLoader(ctx),
-    });
-
     const seed = buildBtwSeedState(ctx, pendingThread, mode, settings.model);
-    const sideThreadStartIndex = seed.messages.length > 0 ? seedBtwSession(session, sessionManager, seed) : 0;
-
-    return { session, mode, subscriptions: new Set(), sideThreadStartIndex };
+    // Match pi's default coding-agent toolset (read/bash/edit/write).
+    const chat = await startBtwChat(ctx, mode, settings.model, settings.thinkingLevel, seed.messages, btwSystemPrompt(ctx), BTW_TOOLS);
+    return { chat, mode };
   }
 
   async function ensureBtwSession(ctx: ExtensionCommandContext, mode: BtwThreadMode): Promise<BtwSessionRuntime | null> {
@@ -1721,7 +1618,6 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
     }
 
     if (overlayRuntime?.handle) {
-      subscribeOverlayToActiveBtwSession(ctx);
       focusOverlay();
       return;
     }
@@ -1732,9 +1628,6 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
         return;
       }
       runtime.closed = true;
-      if (activeBtwSession) {
-        clearBtwSessionSubscriptions(activeBtwSession);
-      }
       runtime.handle?.hide();
       if (overlayRuntime === runtime) {
         overlayRuntime = null;
@@ -1786,8 +1679,6 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
             overlay.dispose();
             closeRuntime();
           };
-
-          subscribeOverlayToActiveBtwSession(ctx);
 
           if (runtime.closed) {
             done();
@@ -2190,14 +2081,22 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       return;
     }
 
-    const sessionRuntime = await ensureBtwSession(ctx, mode);
+    let sessionRuntime: BtwSessionRuntime | null;
+    try {
+      sessionRuntime = await ensureBtwSession(ctx, mode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOverlayStatus(message, ctx);
+      notify(ctx, message, "error");
+      return;
+    }
     if (!sessionRuntime) {
       setOverlayStatus("No active model selected.", ctx);
       notify(ctx, "No active model selected.", "error");
       return;
     }
 
-    const session = sessionRuntime.session;
+    const chat = sessionRuntime.chat;
     const wasBusy = !ctx.isIdle();
     pendingMode = mode;
     const thinkingLevel = settings.thinkingLevel;
@@ -2206,12 +2105,8 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
     await ensureOverlay(ctx);
 
     try {
-      await session.prompt(question, { source: "extension" });
-
-      const response = getLastAssistantMessage(session);
-      if (!response) {
-        throw new Error("BTW request finished without a response.");
-      }
+      const asked = await chat.ask(question);
+      const response = asked.message as unknown as AssistantMessage;
       if (response.stopReason === "aborted") {
         removeTranscriptTurn(transcriptState, transcriptState.lastTurnId ?? transcriptState.currentTurnId);
         setOverlayStatus("Request aborted.", ctx);
@@ -2237,7 +2132,11 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
         thinkingLevel,
         timestamp: Date.now(),
         usage: response.usage,
+        ...(asked.entryId ? { entryId: asked.entryId } : {}),
       };
+      if (asked.entryId) {
+        recordedAnswers.add(asked.entryId);
+      }
 
       pendingThread.push(details);
       if (headless) {
@@ -2269,24 +2168,94 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
     }
   }
 
+  /**
+   * After a reload, new code or a crash of this session's process the thread's chat may still run.
+   * One whose mode is the restored thread's is the thread again: its last answer (one it was
+   * writing then, or one it finished meanwhile) is recorded when known, once, by the answer's entry
+   * id. Any other btw chat of this session is stopped. Sova only (the TUI has no host), so the
+   * record is the headless note.
+   */
+  async function reattachThread(ctx: ExtensionContext): Promise<void> {
+    const host = hostOf();
+    if (!host) {
+      attachCtx = ctx;
+      return;
+    }
+
+    for (const ref of await host.list()) {
+      if (ref.kind !== "btw" || ref.state === "ended" || activeBtwSession?.chat.ref.chatId === ref.chatId) {
+        continue;
+      }
+      if (activeBtwSession || btwChatMode(ref.workerId) !== pendingMode) {
+        await BtwChat.attach(host, ref, rootOf()).stop("no btw thread records it");
+        continue;
+      }
+
+      let chat: BtwChat | undefined;
+      chat = BtwChat.attach(host, ref, rootOf(), (event) => {
+        if (chat) handleBtwChatEvent(chat, event);
+      });
+      activeBtwSession = { chat, mode: pendingMode };
+      chat.inFlight?.then(
+        (answer) => recordReattachedAnswer(ctx, answer),
+        () => {},
+      );
+    }
+  }
+
+  /** Answers recorded by this extension instance, by entry id (a headless note can land after the current turn). */
+  const recordedAnswers = new Set<string>();
+
+  function recordReattachedAnswer(ctx: ExtensionContext, asked: BtwAnswer): void {
+    const entryId = asked.entryId;
+    if (!entryId || recordedAnswers.has(entryId)) {
+      return;
+    }
+    try {
+      if (ctx.sessionManager.getBranch().some((entry) => parseBtwExchangeEntry(entry)?.entryId === entryId)) {
+        return;
+      }
+    } catch {
+      return; // The session moved on: the next one reads its own branch.
+    }
+    recordedAnswers.add(entryId);
+    const response = asked.message as unknown as AssistantMessage;
+    if (response.stopReason === "aborted" || response.stopReason === "error" || !asked.question) {
+      return;
+    }
+
+    const details: BtwDetails = {
+      question: asked.question,
+      thinking: extractThinking(response),
+      answer: extractAnswer(response),
+      provider: response.provider,
+      model: response.model,
+      api: response.api,
+      thinkingLevel: btwThinkingOverride ?? (pi.getThinkingLevel() as SessionThinkingLevel),
+      timestamp: Date.now(),
+      usage: response.usage,
+      entryId,
+    };
+    pendingThread.push(details);
+    appendPersistedTranscriptTurn(transcriptState, details);
+    saveHeadlessBtwNote(pi, details);
+  }
+
   function getPendingThreadForHandoff(): BtwHandoffExchange[] {
     return pendingThread.map((entry) => ({ user: entry.question, assistant: entry.answer }));
   }
 
-  async function getBtwHandoffThread(
-    ctx: ExtensionCommandContext,
-  ): Promise<{ sessionRuntime: BtwSessionRuntime | null; thread: BtwHandoffExchange[] }> {
-    const sessionRuntime = activeBtwSession ?? (await ensureBtwSession(ctx, pendingMode));
-    const thread = sessionRuntime ? extractBtwHandoffThread(sessionRuntime) : [];
-    const resolvedThread = thread.length > 0 ? thread : getPendingThreadForHandoff();
-
-    if (resolvedThread.length === 0) {
+  /** The thread as recorded in this session: one exchange per answered question. */
+  async function getBtwHandoffThread(_ctx: ExtensionCommandContext): Promise<{ thread: BtwHandoffExchange[] }> {
+    const thread = getPendingThreadForHandoff();
+    if (thread.length === 0) {
       throw new Error("No BTW thread available for handoff.");
     }
 
-    return { sessionRuntime, thread: resolvedThread };
+    return { thread };
   }
 
+  /** Summarize in a second hidden chat: no tools, the summary instructions as its whole prompt; stopped when it answers. */
   async function summarizeThread(ctx: ExtensionCommandContext, thread: BtwHandoffExchange[]): Promise<string> {
     const settings = await resolveBtwSettings(ctx, true);
     const model = settings.model;
@@ -2299,21 +2268,9 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       throw new Error(auth.ok ? `No credentials available for ${model.provider}/${model.id}.` : auth.error);
     }
 
-    const { session } = await createSession({
-      sessionManager: SessionManager.inMemory(),
-      model,
-      thinkingLevel: "off",
-      tools: [],
-      resourceLoader: createBtwResourceLoader(ctx, [BTW_SUMMARIZE_SYSTEM_PROMPT]),
-    });
-
+    const chat = await startBtwChat(ctx, "summarize", model, "off", [], BTW_SUMMARIZE_SYSTEM_PROMPT, []);
     try {
-      await session.prompt(formatThread(thread), { source: "extension" });
-
-      const response = getLastAssistantMessage(session);
-      if (!response) {
-        throw new Error("BTW summarize finished without a response.");
-      }
+      const response = (await chat.ask(formatThread(thread))).message as unknown as AssistantMessage;
       if (response.stopReason === "error") {
         throw new Error(response.errorMessage || "Failed to summarize BTW thread.");
       }
@@ -2323,12 +2280,7 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
 
       return extractAnswer(response);
     } finally {
-      try {
-        await session.abort();
-      } catch {
-        // Ignore abort errors during summarize session shutdown.
-      }
-      session.dispose();
+      await chat.stop("btw summary done");
     }
   }
 
@@ -2376,6 +2328,11 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
 
   pi.on("session_start", async (_event, ctx) => {
     await restoreThread(ctx);
+    try {
+      await reattachThread(ctx);
+    } catch {
+      // No host answering: the thread is re-seeded from its entries at the next question.
+    }
   });
 
   pi.on("session_tree", async (_event, ctx) => {
@@ -2383,7 +2340,8 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
   });
 
   pi.on("session_shutdown", async () => {
-    await disposeBtwSession();
+    // The thread's chat outlives this session; the next one over the same file reattaches it.
+    detachBtwSession();
     dismissOverlay();
   });
 

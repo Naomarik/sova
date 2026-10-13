@@ -24,9 +24,8 @@ const UNIT = "sova-gate-standin.service";
 let BASE = 0;
 let parent = "";
 let project = "";
-let busy: string | null = null;
 let unit: AdoptedStatus = { state: "active", pid: process.pid, startedAt: "2026-10-03T12:00:00.000Z", rssBytes: 1024 };
-const scheduled: [string, number | null][] = [];
+const scheduled: string[] = [];
 let scheduleFails: string | null = null;
 let listener: Server;
 let engine: ProjectEngine;
@@ -58,11 +57,10 @@ before(async () => {
     driver: new DetachedDriver(3_000),
     pollMs: 50,
     selfCheckout: () => "/not/this/project",
-    hostBusy: () => busy,
     adoptedStatus: async () => unit,
-    scheduleRestart: async (u, pid) => {
+    scheduleRestart: async (u) => {
       if (scheduleFails) return scheduleFails;
-      scheduled.push([u, pid]);
+      scheduled.push(u);
       return null;
     },
   });

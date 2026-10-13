@@ -22,12 +22,12 @@ The server runs on Bun. The installer downloads the Bun version Sova pins into S
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 ```
 
-Until the first release is tagged, this installs Sova's `master` branch, which changes from day to day; running it again updates to master's latest commit.
+This installs Sova's newest stable release (the `stable` tag, which each release moves to itself); running it again updates to the newest stable release then.
 
-The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead; one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.2.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 
@@ -74,7 +74,7 @@ There's no account, password, or expiry: anyone with the token has the same acce
 Pass options to the script after `bash -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash -s -- --service
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash -s -- --service
 ```
 
 | Option | Does |
@@ -100,7 +100,7 @@ It needs launchd or a systemd user manager. In a container or on another machine
 
 ## Run it again
 
-Running the install command again updates to master's latest commit (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800 and a run without `--no-app-entry` writes the app entry. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
+Running the install command again updates to the newest stable release (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800 and a run without `--no-app-entry` writes the app entry. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
 
 ## Remove it
 

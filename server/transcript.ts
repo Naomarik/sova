@@ -442,9 +442,10 @@ function modeMarker(h: StateEntry, id: string): TranscriptItem[] {
 }
 
 /** A pi-btw side-channel exchange. Hidden custom state in the TUI (it lives in the overlay);
-    the web has no overlay, so show it as a report row or /btw answers would be silent. */
-function btwRow(id: string, h: StateEntry): TranscriptItem[] {
-  const d: any = h.data;
+    the web has no overlay, so show it as a report row or /btw answers would be silent. The
+    headless /btw's `btw-note` message carries the same details and gets the same row. */
+function btwRow(id: string, h: HEntry, data: unknown): TranscriptItem[] {
+  const d: any = data;
   const answer = typeof d?.answer === "string" ? d.answer : "";
   if (!answer.trim()) return []; // still running or malformed: stay hidden like the TUI
   const question = typeof d.question === "string" ? d.question.replace(/\s+/g, " ").trim().slice(0, 80) : "";
@@ -757,6 +758,11 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
           return [it];
         }
       }
+      // Sova's headless /btw (pi-config/extensions/btw): the question and answer in its details.
+      if (h.noteType === "btw-note") {
+        const btw = btwRow(id, h, h.details);
+        if (btw.length) return btw;
+      }
       return [customRow(id, h)];
     case "summary":
       return [item(id, "info", h, `${h.of === "branch" ? "Branch" : "Compaction"} summary: ${h.summary ?? ""}`)];
@@ -791,7 +797,7 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
     a team event. Older sessions' `spec-turn` and `spec-check-error` records give no row. */
 function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === "mode") return modeMarker(h, id);
-  if (h.key === "btw-thread-entry") return btwRow(id, h);
+  if (h.key === "btw-thread-entry") return btwRow(id, h, h.data);
   if (h.key === ALIGN_DOC) return alignRow(id, h);
   if (h.key === EXPLAIN_DOC) return explainRow(id, h);
   if (h.key === HANDOFF_RUN) return handoffRunRow(id, h);

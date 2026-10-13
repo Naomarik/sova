@@ -69,8 +69,6 @@ function realpathOr(p: string): string {
 
 /** This extension's directory, for a worker's `-e` list. */
 const SELF_DIR = realpathOr(dirname(fileURLToPath(import.meta.url)));
-/** The confined-launch entry a spawner (or a hosting process) imports by path. */
-const LAUNCH_MODULE = join(SELF_DIR, "launch.ts");
 
 /** Subagents only (the default off), or Off with `workersOff`. */
 function offState(level: SandboxLevel = "workspace-write", workersOff = false): SandboxActive {
@@ -235,8 +233,7 @@ export default function sandbox(pi: ExtensionAPI) {
 	 * How one worker starts (§chat.sandbox/workers, §chat.worktrees/workers). On: the parent's scope
 	 * (narrowed to a tracked worktree's `root`), or the refusal; Subagents only: a write-only scope in
 	 * a tracked worktree, else nothing; Off (§chat.sandbox/states): nothing, ever. pi workers get the
-	 * extension's flags; any other backend a scope for `confineLaunch` (launch.ts), which runs its
-	 * whole process under the same policy.
+	 * extension's flags; any other backend the scope its whole process would run under (launch.ts).
 	 */
 	function workerLaunch(on: boolean, workersOff: boolean, req: WorkerLaunchRequest): WorkerLaunch {
 		if (!on && workersOff) return { kind: "none" };
@@ -258,7 +255,7 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 		if (req.backend === "pi") return { kind: "pi", extensionPath: SELF_DIR, flags: { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) } };
 		if (!OWNER_ID.test(req.owner) || req.owner === "." || req.owner === "..") return { kind: "refused", reason: `Sandbox: invalid worker id ${JSON.stringify(req.owner)}; a worker cannot start sandboxed.` };
-		return { kind: "confine", scope: encodeLaunchScope({ v: 1, agentDir: agentDir(), sessionId: tmpId || sessionId || `pid${process.pid}`, owner: req.owner, parent: scope }), module: LAUNCH_MODULE };
+		return { kind: "confine", scope: encodeLaunchScope({ v: 1, agentDir: agentDir(), sessionId: tmpId || sessionId || `pid${process.pid}`, owner: req.owner, parent: scope }) };
 	}
 
 	function renderStatus(): void {

@@ -154,10 +154,15 @@ Running the installer again with the same inputs leaves the machine as it was.
 ## §app.installer/ref — The ref it installs
 
 The installer installs `SOVA_REF` when set: a tag, a branch or a commit of the repository. Unset,
-it installs the script's own default ref: `master` on master until the first release is tagged, so
-the published command `curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash`
-installs master's latest commit and a re-run updates to it. A release commit sets the default to
-its own tag, so the installer fetched from that tag installs that tag.
+it installs the `stable` tag, so the published command
+`curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash`
+installs the newest stable release. `stable` is the one tag that moves: each release points it at
+its own numbered tag (`vX.Y.Z`), and numbered tags never move. A re-run installs the commit
+`stable` points at then: the newer release once it moves forward, and the older one again when it
+is moved back, each rebuilt from a fresh clone. The default is the same in every commit, so the
+installer fetched from a numbered tag, or from any branch, also installs whatever `stable` points
+at; installing or staying on one release takes `SOVA_REF=vX.Y.Z`, and a re-run with a branch
+named updates to that branch's latest commit.
 
 - **Checked before anything is written.** A name that is neither a tag nor a branch of the
   repository, and is not a commit (seven or more hex digits), stops the install before anything
@@ -198,7 +203,7 @@ rebuilt even at the same commit.
 - **The launcher.** `sova` sets `SOVA_BUN` to that Bun unless the caller set one, and runs the
   clone's `scripts/start-server.sh` with its arguments, so the server runs on Bun
   (§app.server-runtime/choice). `sova --node`, or `SOVA_RUNTIME=node` in its environment, runs it
-  on Node instead.
+  on Node instead, with no chats or workers.
 - **Why a download.** Bun lives and goes with the install directory, at the version Sova is
   tested on, with no version manager installed and no shell rc file edited.
 - Its closing message names the runtime: "runtime: Bun x.y.z in <install dir>/.bun (sova --node

@@ -45,7 +45,6 @@ import {
   serveTools,
 } from "./chat-handle";
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
-import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import {
@@ -315,22 +314,15 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const sessions = await listSessions();
     const records = readLiveRecords({ includeOwn: true });
     const byPath = new Map<string, { failed: number; since: number; errorTimes: number[] }>();
-    // Workers this server's own restart ended are no errors of theirs (server/server-stop.ts): only
-    // rows restored in this server's runtimes, whose records carry its pid.
-    const window = restartWindow();
-    const restartEnded = (row: unknown) => endedByRestart(row, window);
     for (const r of records) {
       if (!r.sessionFile) continue;
       const prev = byPath.get(r.sessionFile);
-      // Only this process's own records: a chat process's workers outlive the restart, so an error
-      // of theirs is real (§app.chat-processes/survives-restart).
-      const skip = r.pid === process.pid ? restartEnded : undefined;
-      const failed = failedWorkersOf(r.rec, skip);
+      const failed = failedWorkersOf(r.rec);
       const since = activityOf(r.rec)?.since ?? 0;
       byPath.set(r.sessionFile, {
         failed: Math.max(failed, prev?.failed ?? 0),
         since: Math.max(since, prev?.since ?? 0),
-        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec, skip)],
+        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec)],
       });
     }
     const nowMs = Date.now();

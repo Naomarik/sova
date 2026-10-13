@@ -384,7 +384,6 @@ const fixtures: Record<string, () => Session> = {
     s.custom("subagents-team-event-v1", teamEvent("retire", "ag_02", "writer", T0 + 12 * 60_000, "retired: successor writer-2 (ag_04) confirmed the takeover"));
     s.custom("subagents-worker-manifest", manifest({ workerId: "ag_03", status: "lost", at: T0 + 13 * 60_000 }));
     s.customMessage("subagent-complete", "### ag_02 (writer) — done · task success\nWrote 3 files.", true);
-    s.custom("subagents-worker-registry", { version: 1, workers: [{ id: "ag_09", name: "legacy" }] });
     s.custom("worktrees", { version: 1, trees: [{ path: "/wt/golden-writer", branch: "feat/golden-writer", base: "abc", baseBranch: "master", status: "active", session: "0190a000-0000-7000-8000-o00000000000", how: "created", at: T0 }] });
     s.assistant([text("The team finished.")], { usage: usage(9000, 400, 30000, 0) });
     return s;

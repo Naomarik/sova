@@ -71,8 +71,8 @@ export interface SessionSummary {
       the sidebar does not list it (src/lib/regions.ts `isMainThread`). True when the file itself
       carries the spawn marker pi-config's subagents extension writes into every pi worker
       (`subagents-worker-session`, server/worker-sessions.ts), when another session's file names it
-      as a worker (that owner's `subagents-worker-registry` entries, or the `Session:` line of its
-      inline `subagent-complete` message), or when a live record lists it as a running worker.
+      as a worker (the `Session:` line of its inline `subagent-complete` message), or when a live
+      record lists it as a running worker.
       NOT the same thing as `workers` above, which counts the subagents THIS session runs.
       Safe by absence: absent = a main thread, and an older server that never sends it hides
       nothing. */

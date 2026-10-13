@@ -17,7 +17,6 @@
  */
 import type { Worker } from "./contracts.ts";
 import {
-	LEGACY_REGISTRY_ENTRY_TYPE,
 	WORKER_MANIFEST_ENTRY_TYPE,
 	refFromIdentity,
 	taskPreview,
@@ -29,8 +28,6 @@ import {
 } from "./worker-transcript.ts";
 
 export { WORKER_MANIFEST_ENTRY_TYPE };
-/** The hosted-only record this one replaced; still folded by readWorkerManifests, never written. */
-export const WORKER_REGISTRY_ENTRY_TYPE = LEGACY_REGISTRY_ENTRY_TYPE;
 
 /** What resume needs to start the worker again; written once, at publication. */
 export interface WorkerLaunchSpec {

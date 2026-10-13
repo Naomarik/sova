@@ -351,6 +351,8 @@ const enforce = (process.env.SOVA_TEST_GUARD || "enforce") === "enforce";
 // Each file's bun runs in a process group of its own, killed whole: on FILE_LIMIT_MS, and when this
 // runner stops (a signal, its exit, or its parent gone: a wrapper's timeout killing only the runner left
 // a bun test running on, growing to ~100 GB). Its children (servers, workers a test starts) go with it.
+// A runner killed by SIGKILL can do none of this: each file's process then ends its own group once its
+// parent is no longer this runner (SOVA_TEST_RUNNER_PID, polled by test-tier-guard.mjs).
 const fileGroups = new Set();
 const killGroup = (pid) => {
   try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ }
@@ -372,7 +374,7 @@ function runFile(file, extra) {
   const target = file.startsWith("/") || file.startsWith("./") ? file : `./${file}`;
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(bun, ["test", "--preload", PRELOAD, "--preload", GUARD, ...extra, ...bunFlags, target], { cwd: ROOT, env: { ...env, SOVA_TEST_FILE: file, SOVA_TEST_GUARD_DIR: guardDir }, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    const child = spawn(bun, ["test", "--preload", PRELOAD, "--preload", GUARD, ...extra, ...bunFlags, target], { cwd: ROOT, env: { ...env, SOVA_TEST_FILE: file, SOVA_TEST_GUARD_DIR: guardDir, SOVA_TEST_RUNNER_PID: String(process.pid) }, stdio: ["ignore", "pipe", "pipe"], detached: true });
     if (child.pid) fileGroups.add(child.pid);
     let out = "";
     // A file still running after FILE_LIMIT_MS is stuck (a hang, or tests done with a handle left

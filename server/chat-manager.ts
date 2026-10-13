@@ -80,6 +80,7 @@ import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
+import { SendKeys } from "./send-keys";
 import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
@@ -947,6 +948,9 @@ class ChatSession {
   private clientSends: Promise<void> = Promise.resolve();
   /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
   userTurns: UserTurns | null = null;
+  /** Which keyed send each user message came from (§app.chat-processes/worker-instructions); watched on
+      every session the runtime builds. */
+  sendKeys = new SendKeys();
   /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
   runTag: { next?: string } = {};
   /** This runtime is the Overseer's. */
@@ -1106,6 +1110,8 @@ class ChatSession {
     streaming: () => this.harness.isRunning(),
     // A Claude login switch landing holds it too, so the next turn starts on the new login.
     paused: () => this.isCompacting() || this.starting !== null || this.loginApplying,
+    // A keyed item waits out pi's settle window, so its message is labelled (quirk P5).
+    settling: () => this.harness.inSettleWindow(),
     // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
     // in it: they are never the user's to take back (§mesh.links/delivery).
     clearSdkQueue: () => this.clearSdkQueue(),
@@ -1120,6 +1126,8 @@ class ChatSession {
     // reason but "delivered", so whichever client wants to offer it back to a composer can.
     onGone: (item, reason) => {
       this.settleSenderMark(item.id, reason === "delivered");
+      // Gone undelivered: nothing will hand its message over any more (a delivered one: its turn's end, or pi's queue, decides).
+      if (reason !== "delivered") this.sendKeys.done(item.key);
       this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) });
     },
     onChange: (items) => this.broadcast({ type: "queue", items }),
@@ -1227,7 +1235,8 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
-    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send, item.confirm);
+    // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
@@ -1243,6 +1252,8 @@ class ChatSession {
       // the text back to the composer for a message that HAS been sent).
       const turn = toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, source })));
       this.noteStarting(turn);
+      // Its turn over: its message ran or never will (one held back for a compaction goes in again).
+      if (item.key !== undefined) turn.then(() => this.sendKeys.done(item.key), (err) => this.keyedTurnFailed(item.key!, err));
       turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
@@ -1262,6 +1273,11 @@ class ChatSession {
     await toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, delivery: item.kind, source }))).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
+  }
+
+  /** A keyed turn failed: its message never ran, unless it is held for a compaction to go in again (heldForCompaction). */
+  private keyedTurnFailed(key: string, err: unknown): void {
+    if (!isCompactionInProgress(err) || this.disposed) this.sendKeys.done(key);
   }
 
   /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
@@ -1286,10 +1302,10 @@ class ChatSession {
    */
   private heldForCompaction(
     err: unknown,
-    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"]; session?: WebQueueItem["session"] },
+    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"]; session?: WebQueueItem["session"]; key?: string },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
-    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}), ...(item.session ? { session: item.session } : {}) });
+    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}), ...(item.session ? { session: item.session } : {}), ...(item.key !== undefined ? { key: item.key } : {}) });
     return true;
   }
 
@@ -2501,6 +2517,8 @@ class ChatSession {
       confirm?: string;
       /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
       byPerson?: true;
+      /** The key it was sent under: its message is labelled with it (§app.chat-processes/worker-instructions). */
+      key?: string;
     },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
@@ -2517,13 +2535,16 @@ class ChatSession {
     // a queue that some messages could skip would not be a queue.
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
-    if (this.harness.isRunning() || this.isCompacting() || this.starting) {
+    // A keyed message in pi's settle window is queued too: a prompt now would be deferred past the send
+    // that labels it (quirk P5), and the queue hands it over once the window has passed.
+    const key = opts?.key;
+    if (this.harness.isRunning() || this.isCompacting() || this.starting || (key !== undefined && this.harness.inSettleWindow())) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
       const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson });
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...(key !== undefined ? { key } : {}) });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -2541,8 +2562,9 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm);
+    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm));
     this.noteStarting(turn);
+    if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
       turn.catch(() => {
         const i = this.senderMarks.indexOf(send);
@@ -2563,6 +2585,7 @@ class ChatSession {
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
         ...(opts?.byPerson ? { byPerson: true as const } : {}),
+        ...(key !== undefined ? { key } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
     };
@@ -3856,12 +3879,15 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
   // A special loadout's run events and the person's turns (SpecialLoadoutResult.attribution): one
   // for the chat, kept across the runtimes it builds.
   const runs: RunHearing = { turns: null, tag: {} };
+  // Which keyed send each user message came from, on every session this runtime builds (§app.chat-processes/worker-instructions).
+  const sendKeys = new SendKeys();
   /** The last build's special loadout, if this chat is a special kind's. */
   const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
   const worker = presetWorkers.get(path) ?? null;
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
-    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else.
-    if (worker) return workerBuild(worker);
+    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
+    // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
+    if (worker) return { ...workerBuild(worker), built: (session) => sendKeys.watch(session) };
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -3969,6 +3995,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       },
       forkCacheRouting: !special,
       built: (session) => {
+        sendKeys.watch(session);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);
@@ -4000,6 +4027,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       forgetSpecial(path);
       onDisposed();
     });
+    chat.sendKeys = sendKeys;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
     try {

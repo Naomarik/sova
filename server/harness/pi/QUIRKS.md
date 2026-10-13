@@ -40,9 +40,9 @@ Paths in "Where" are under `server/`.
 | P2 compaction-write-wrap | monkey-patch | `compactSession` (harness/pi/history-ops.ts), `PiHarnessSession.compact` (harness/pi/session.ts) | `AgentSession.compact`, `SessionManager.appendCompaction` | pi offers a pre-write hook for a compaction |
 | P3 compaction-error-text | error-text | `compactSession` (harness/pi/history-ops.ts), `isCompactionInProgress` (harness/pi/history-ops.ts) | `AgentSession.compact`, `AgentSession.prompt` | pi throws typed errors |
 | P4 already-processing | error-text | `isAlreadyProcessing` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `Agent.prompt` | pi throws a typed error |
-| P5 settle-window | private-read | `PiHarnessSession.inSettleWindow` (harness/pi/session.ts), `ChatSession.deliverTopicBatch` (chat-manager.ts) | `AgentSession._isEmittingAgentSettled`, `AgentSession.prompt`, `AgentSession._emitAgentSettled` | pi exposes the settle window, or stops deferring a prompt made inside it |
+| P5 settle-window | private-read | `PiHarnessSession.inSettleWindow` (harness/pi/session.ts), `ChatSession.deliverTopicBatch`, `ChatSession.acceptPrompt` (chat-manager.ts), `WebQueue.pumpOnce` (queue.ts) | `AgentSession._isEmittingAgentSettled`, `AgentSession.prompt`, `AgentSession._emitAgentSettled` | pi exposes the settle window, or stops deferring a prompt made inside it |
 | P6 refresh-context | semantic | `PiHarnessSession.appendUserMessage` (harness/pi/session.ts), `PiHarnessSession.refreshContext` (harness/pi/session.ts), `ChatSession.enterQueued` (chat-manager.ts) | `AgentSession.refreshContext`, `SessionManager.appendMessage` | never: a contract worth keeping a canary for |
-| P7 user-turns-wrap | monkey-patch | `watchUserMessages` (harness/pi/turns.ts), `UserTurns.watch` (user-turns.ts) | `Agent.prompt`, `Agent.steer`, `Agent.followUp`, `AgentSession.prompt`, `AgentSession.steer`, `AgentSession.followUp` | pi offers an input-identity hook |
+| P7 user-turns-wrap | monkey-patch | `watchUserMessages` (harness/pi/turns.ts), `UserTurns.watch` (user-turns.ts), `SendKeys.watch` (send-keys.ts) | `Agent.prompt`, `Agent.steer`, `Agent.followUp`, `AgentSession.prompt`, `AgentSession.steer`, `AgentSession.followUp` | pi offers an input-identity hook |
 | P8 stream-function | monkey-patch | `useSlicedProviderReads` (runtime-quirks.ts), `PiChatHost.useSlicedProviderReads` (harness/pi/host.ts) | `Agent.streamFunction` | the fetch-read-size Bun quirk retires (docs/bun-quirks.md), or pi takes a fetch option |
 | P9 queue-one-bit | semantic | `PiHarnessSession.queue` (harness/pi/session.ts), `SdkQueueView` (queue.ts), `WebQueue.sdkHolds` (queue.ts) | `Agent.hasQueuedMessages`, `Agent.continue`, `Agent.peekQueuedMessages`, `AgentSession.getSteeringMessages`, `AgentSession.getFollowUpMessages`, `AgentSession.clearQueue` | Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity |
 | P10 leaf-is-last-line | semantic | `rewindSession` (harness/pi/history-ops.ts), `PiHarnessSession.rewindTo` (harness/pi/session.ts), `activeBranchLines` (harness/pi/fork.ts) | `AgentSession.navigateTree`, `SessionManager.open`, `SessionManager.getLeafId` | pi persists the leaf |
@@ -90,7 +90,7 @@ Canary: `P4 already-processing: a prompt mid-run without streamingBehavior, and 
 
 ### P5 settle-window
 
-`_isEmittingAgentSettled` is true while `agent_settled` is emitted, and a `prompt()` made then is deferred: it resolves at once and its turn runs after the emit. The driving session reads it as `inSettleWindow()`; topic delivery stays out of that window.
+`_isEmittingAgentSettled` is true while `agent_settled` is emitted, and a `prompt()` made then is deferred: it resolves at once and its turn runs after the emit, outside the async context of the call that made it. The driving session reads it as `inSettleWindow()`; topic delivery stays out of that window, and so does a keyed send (a worker's steer or follow-up, §app.chat-processes/worker-instructions): `acceptPrompt` queues one, and the queue holds a keyed item until the window has passed, so its message is labelled with its key (send-keys.ts). The canary pins both: the deferred prompt runs unlabelled, the held keyed hand-off labelled once.
 
 Canary: `P5 settle-window: inside an agent_settled emit _isEmittingAgentSettled is true and a prompt resolves at once, its turn running after`.
 
@@ -104,7 +104,7 @@ Canary: `P6 refresh-context: a user entry appended outside a run reaches the age
 
 ### P7 user-turns-wrap
 
-`AgentSession` hands user input to `this.agent.prompt`/`steer`/`followUp` by property lookup, and the object it passes is the one later emitted in `message_start`, so wrapping those three tells a message the user sent from every other by identity. `watchUserMessages` wraps them once per agent; claimers registered later see the input first, as nested wraps did.
+`AgentSession` hands user input to `this.agent.prompt`/`steer`/`followUp` by property lookup, and the object it passes is the one later emitted in `message_start`, so wrapping those three tells a message the user sent from every other by identity. `watchUserMessages` wraps them once per agent; claimers registered later see the input first, as nested wraps did. `SendKeys.watch` claims the same way: a keyed send's message carries its key (§app.chat-processes/worker-instructions).
 
 Canary: `P7 user-turns-wrap: prompt, steer and followUp reach the agent by property lookup, and the object passed is the one message_start carries`.
 

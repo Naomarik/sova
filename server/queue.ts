@@ -97,6 +97,9 @@ export interface WebQueueItem {
   byPerson?: true;
   /** The Overseer only: a click on the confirm card of this tool call (§app.overseer/org-people-facing). */
   confirm?: string;
+  /** The key it was sent under (a worker's steer or follow-up): kept to its hand-off, where the message the
+      SDK builds from it is labelled with it (server/send-keys.ts, §app.chat-processes/worker-instructions). */
+  key?: string;
 }
 
 /**
@@ -183,6 +186,13 @@ export interface QueueDeps {
    * and go in at the next wake after it ends. Absent = never paused.
    */
   paused?(): boolean;
+  /**
+   * Whether the SDK is settling a run right now (quirk P5): a prompt made now is deferred and runs
+   * outside the async context of its hand-off, so a KEYED item would reach the model unlabelled. A
+   * keyed item waits until it has passed (looked at again on the next timer tick); others go as
+   * before. Absent = never settling.
+   */
+  settling?(): boolean;
   /** AgentSession.clearQueue(): empties BOTH SDK queues and returns what was in them. */
   clearSdkQueue(): { steering: string[]; followUp: string[] };
   /** The write guards (TUI ownership, foreign writers). Throws on refusal. */
@@ -319,6 +329,7 @@ export class WebQueue {
     baton?: WebQueueItem["baton"];
     session?: WebQueueItem["session"];
     byPerson?: true;
+    key?: string;
   }): string {
     const item: WebQueueItem = {
       id: input.id || randomUUID(),
@@ -330,6 +341,7 @@ export class WebQueue {
       ...(input.baton ? { baton: input.baton } : {}),
       ...(input.session ? { session: input.session } : {}),
       ...(input.byPerson ? { byPerson: true as const } : {}),
+      ...(input.key !== undefined ? { key: input.key } : {}),
     };
     this.held.push(item);
     this.deps.onChange(this.snapshot());
@@ -485,6 +497,18 @@ export class WebQueue {
     this.closed = true;
     this.held = [];
     this.clearInFlight();
+    if (this.settleRetry) clearTimeout(this.settleRetry);
+    this.settleRetry = null;
+  }
+
+  /** The pump's look again once a settle window has passed (one at a time). */
+  private settleRetry: ReturnType<typeof setTimeout> | null = null;
+  private afterSettle(): void {
+    if (this.settleRetry || this.closed) return;
+    this.settleRetry = setTimeout(() => {
+      this.settleRetry = null;
+      void this.pump();
+    }, 0);
   }
 
   /**
@@ -551,6 +575,9 @@ export class WebQueue {
       const next = this.held[0];
       if (!next) return;
       if (this.deps.paused?.()) return; // woken again when the compaction ends
+      // A keyed item never goes in while the SDK settles a run: its prompt would be deferred past the
+      // send that labels it (quirk P5). It goes, labelled, once the window has passed.
+      if (next.key !== undefined && this.deps.settling?.()) return this.afterSettle();
 
       // IDLE WITH SOMETHING ALREADY QUEUED: wake the SDK instead of going in.
       //

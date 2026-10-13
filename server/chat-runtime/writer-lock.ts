@@ -32,10 +32,15 @@ export const locksDir = () => join(chatStateRoot(), "chats", "locks");
 export const lockFileOf = (path: string, dir = locksDir()) => join(dir, `${createHash("sha256").update(path).digest("hex").slice(0, 16)}.lock`);
 
 /** A process's start time (clock ticks since boot on Linux, `ps`'s lstart elsewhere), or null: no such process. */
-export function procStart(pid: number, platform: NodeJS.Platform = process.platform, exec: SyncExec = realSyncExec): number | string | null {
+export function procStart(
+  pid: number,
+  platform: NodeJS.Platform = process.platform,
+  exec: SyncExec = realSyncExec,
+  readStat: (pid: number) => string = (p) => readFileSync(`/proc/${p}/stat`, "utf8"),
+): number | string | null {
   if (platform !== "linux") return psTable(exec).startOf(pid);
   try {
-    const s = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const s = readStat(pid);
     const f = s.slice(s.lastIndexOf(")") + 2).split(" ");
     const v = Number(f[19]);
     return Number.isFinite(v) ? v : null;

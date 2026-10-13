@@ -47,8 +47,11 @@ test("a reused pid is not the holder (its start time differs)", () => {
   selfStart = "S1";
 });
 
-test("on Linux a process's start time is /proc's clock ticks", { skip: process.platform !== "linux" ? "no /proc" : false }, () => {
-  assert.equal(typeof procStart(process.pid, "linux"), "number");
+test("on Linux a process's start time is /proc's clock ticks", () => {
+  // stat's 22nd field, counted after the command's closing parenthesis (a command may hold ") " itself).
+  const stat = `4242 (a) b) S ${Array.from({ length: 18 }, (_, i) => i + 1).join(" ")} 987654 0 0\n`;
+  assert.equal(procStart(4242, "linux", undefined, () => stat), 987654);
+  assert.equal(procStart(4242, "linux", undefined, () => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); }), null, "no such process");
   assert.equal(procStart(DEAD_PID, "linux"), null);
 });
 

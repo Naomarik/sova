@@ -4,6 +4,32 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.3.0 — 2026-10-13
+
+Every chat now runs in a process of its own. 353 commits since v0.2.0. The highlights:
+
+- **A server restart cuts nothing off.** Each chat, worker, team member and hidden chat keeps
+  running through a restart or an update of the server, a reply in flight included; open browsers
+  reconnect by themselves. A server-hosted tool that was running when the server stopped reports
+  "outcome unknown" to its chat and is never retried.
+- **New code reaches a chat at its next quiet moment.** A chat keeps the code it started with and
+  shows **On older code** until it reloads on its own, or until you press **Reload Now**.
+- **Chats outlive the server.** With no server, a chat exits by itself once it has been idle for
+  its idle time; `bun scripts/stop-chats.ts` stops every recorded chat at once.
+- **A chat cut off mid-reply picks up again.** A chat whose process died mid-run is resumed once
+  by the next server, even across a restart, and never twice.
+- **Steadier workers.** A worker start interrupted by a restart is finished when its parent asks
+  again, and a finished worker's wake reaches its parent even when the first try fails.
+
+### What you must do differently
+
+- **Chats need Bun.** A server started on Node (`sova --node`) runs no chats or workers: opening
+  one is refused. The default `sova` runs on Bun.
+- After updating, open chats show **On older code** until they reload; nothing is lost.
+
+To go back, install `v0.2.0` with `SOVA_REF=v0.2.0`, after stopping every chat
+(`bun scripts/stop-chats.ts`); going back hasn't been tested on this release.
+
 ## v0.2.0 — 2026-10-13
 
 The first stable release. The install command now installs the newest release instead of

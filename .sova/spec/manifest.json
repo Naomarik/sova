@@ -5561,11 +5561,18 @@
         "server/harness/pi/golden/expected/synthetic/unknown/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/user-kinds/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/workers/baton-view.json",
-        "server/share-message.integration.test.ts"
+        "server/share-message.integration.test.ts",
+        "src/vis/kinds/frame/ImageView.tsx",
+        "src/vis/kinds/frame/svg-image.ts",
+        "src/vis/kinds/frame/svg-image.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-13T22:37Z"
+      }
     },
     "§app.baton/rejected": {
       "kind": "note",
@@ -8352,7 +8359,11 @@
       "requires": [
         "§chat.markdown/code-blocks",
         "§chat.markdown/streaming"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-13T22:37Z"
+      }
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
       "kind": "behavior",
@@ -10305,7 +10316,11 @@
         "src/share/session-share.css",
         "src/vis/share-views.ts",
         "src/vis/share-markdown.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-13T22:37Z"
+      }
     },
     "§app.session-share/presence": {
       "kind": "behavior",

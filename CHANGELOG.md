@@ -4,7 +4,7 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
-## v0.2.0 — RELEASE-DATE
+## v0.2.0 — 2026-10-13
 
 The first stable release. The install command now installs the newest release instead of
 `master`:

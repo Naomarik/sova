@@ -330,6 +330,8 @@ export interface SupervisorDeps {
   drain?(chatId: string, reason: "idle" | "reload"): Promise<{ ok: boolean }>;
   /** Ask chat `chatId` to let its idle Claude CLI child go (the handle's releaseIdleModelChild). */
   reapClaude?(chatId: string): void | Promise<"released" | "busy" | "none" | void>;
+  /** Whether `pid` still runs a chat process (chatProcessAlive: its command line, so never a reused pid). */
+  isChatProcess?(pid: number): boolean;
   /** Whether a process other than a chat's exiting one still holds the session's writer lock. */
   lockHeld?(sessionPath: string): boolean;
   /** Count `pid` among this server's own chat processes until the returned call (live.ts addOwnPid). */
@@ -727,7 +729,10 @@ export class ChatSupervisor {
     // runs kept, and is stopped again at the next watch tick; no death is reported.
     const after = await this.deps.driver.status(t.rec.unit).catch(() => null);
     if (this.chats.get(chatId) !== t) return; // reported meanwhile, or a new process took the id
-    if (!after || !isGone(after)) {
+    // A status that says gone may only mean the manager could not be asked (systemctl failing reads as
+    // "missing"): the recorded process still running chat-runtime/main.ts is not gone either.
+    const running = !!t.rec.pid && (this.deps.isChatProcess ?? chatProcessAlive)(t.rec.pid);
+    if (!after || !isGone(after) || running) {
       if (t.lostDetail === null) this.log(`${chatId}: ${detail}, but its unit ${t.rec.unit} is still there after a stop (${after ? `${after.state}${after.pid ? `, pid ${after.pid}` : ""}` : "its status unknown"}); kept, stopped again at the next check`);
       t.lostDetail = detail;
       return;

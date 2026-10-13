@@ -454,6 +454,31 @@ export async function sweep(root, { graceMs = 2000, mock = true } = {}) {
   return found;
 }
 
+/**
+ * What a chat's processes logged. Under the detached driver: its files under <stateRoot>/chats/logs (named
+ * with its session id). Under systemd a chat unit logs to the user journal: `journalctl --user -u <unit>`
+ * from `since` (the run's start, so a unit name met in an earlier run never counts), else by `pid`. Take
+ * `unit` from the chat's record before its process goes: a stopped chat's record goes with it.
+ */
+export function chatProcLog({ stateRoot, sessionId, unit, pid, since }) {
+  let text = "";
+  try {
+    const dir = join(stateRoot, "chats", "logs");
+    text = readdirSync(dir).filter((f) => sessionId && f.includes(sessionId)).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+  } catch {}
+  if (text || darwin) return text;
+  const journal = (...match) => {
+    try {
+      return execFileSync("journalctl", ["--user", "--no-pager", "-o", "cat", ...(since ? [`--since=@${Math.floor(since / 1000)}`] : []), ...match], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+    } catch {
+      return "";
+    }
+  };
+  if (unit) text = journal("-u", unit.endsWith(".service") ? unit : `${unit}.service`);
+  if (!text.trim() && pid) text = journal(`_PID=${pid}`);
+  return text;
+}
+
 /** Results and a log, written as the report's raw evidence. */
 export function recorder(file) {
   const checks = [];

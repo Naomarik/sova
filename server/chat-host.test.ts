@@ -81,7 +81,8 @@ const quiet = () => {};
 let epoch = 1_000;
 
 /** A router over a fake driver whose started units answer as chat-runtime hosts in this process. */
-function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean } } = {}) {
+type ResumeCall = { path: string; since: number; done?: () => void };
+function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[] } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -107,7 +108,9 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
     setImmediate(() => h.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings }));
     return { link, hello };
   }) as never;
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}) });
+  // A crash resume, recorded (never sent: its 5 s wait is the test's to end, or a server stop's).
+  const resumeCrashed = o.resumes ? (path: string, since: number, _before: unknown, done?: () => void) => void o.resumes!.push({ path, since, ...(done ? { done } : {}) }) : undefined;
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}), ...(resumeCrashed ? { resumeCrashed } : {}) });
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
   const again = (delayMs = 0) =>
@@ -115,6 +118,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
       driver,
       connect: delayMs ? (((sock: string, opts: never) => new Promise((r) => setTimeout(r, delayMs)).then(() => (connect as (s: string, o: never) => Promise<unknown>)(sock, opts))) as never) : connect,
       supervisor,
+      ...(resumeCrashed ? { resumeCrashed } : {}),
     });
   return { router, driver, hosts, exits, connects: () => connects, again, connect: connect as typeof import("./chat-runtime/link").connectLink, supervisor };
 }
@@ -432,4 +436,35 @@ test("an open that waited on a chat whose process went meanwhile (an operator st
   } finally {
     t.router.detach();
   }
+});
+
+test("a crash resume the server had not sent yet when it stopped is sent by the next server once; the resumed run cut off again is not resumed", async () => {
+  const resumes: ResumeCall[] = [];
+  const t = setup({ resumes });
+  const s = session();
+  const { inflightDir } = await import("./chat-runtime/inflight");
+  const marker = join(inflightDir(), `${encodeURIComponent(s.id)}.json`);
+  mkdirSync(inflightDir(), { recursive: true });
+  const died = (r: unknown) => (r as { died(d: unknown): void }).died({ chatId: s.id, sessionPath: s.path, exit: 1, signal: null, logTail: [], at: new Date().toISOString(), endedAt: new Date().toISOString() });
+  // It dies mid-run: one resume scheduled. The server stops within its delay (the timer goes with it).
+  writeFileSync(marker, JSON.stringify({ v: 1, path: s.path, since: 1000 }));
+  died(t.router);
+  assert.equal(resumes.length, 1);
+  t.router.detach();
+  // The next server, once it has taken its chats back: the resume, once.
+  const next = t.again();
+  next.start();
+  await next.ready();
+  assert.equal(resumes.length, 2, "the next server sends it");
+  assert.deepEqual({ path: resumes[1]!.path, since: resumes[1]!.since }, { path: s.path, since: 1000 });
+  // It was sent: the resumed run started (its process writes a marker of its own, an automatic resume's).
+  writeFileSync(marker, JSON.stringify({ v: 1, path: s.path, since: 2000, auto: true }));
+  resumes[1]!.done?.();
+  const third = t.again();
+  third.start();
+  await third.ready();
+  assert.equal(resumes.length, 2, "a marker of a run in flight is no resume to send");
+  // That resumed run is cut off too: not resumed a second time.
+  died(third);
+  assert.equal(resumes.length, 2);
 });

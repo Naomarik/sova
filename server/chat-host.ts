@@ -38,7 +38,7 @@ import { type ChatSpecialKind, isNoAnswer, type SpecialSpec, type WorkerSpec } f
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
-import { takeInflight } from "./chat-runtime/inflight";
+import { dropResume, type InflightMarker, markResume, pendingResumes, readInflight, takeInflight } from "./chat-runtime/inflight";
 import { codeRoot, currentGeneration, type Generation, generationDir, generationHealth, isGenerationComplete, lastGood, noteGood, startGenerationGc } from "./chat-runtime/generations";
 import { linkWaitReady, Rollout } from "./chat-runtime/rollout";
 import {
@@ -102,9 +102,12 @@ export interface RouterDeps {
   sweepChildren?: () => Promise<string[]>;
   /** The code generation chat processes start on (§app.chat-processes/code-generations); none: the checkout. */
   gen?: Generation;
+  /** A crashed chat's one resume, a few seconds on (the server: overseer's resumeCrashedChat); `done` once sent or refused. */
+  resumeCrashed?: (path: string, since: number, before: (path: string) => Promise<void>, done?: () => void) => void;
 }
 
 export class ChatHostRouter {
+  private readonly resumeCrashed: NonNullable<RouterDeps["resumeCrashed"]>;
   private readonly remotes = new Map<string, RemoteChatHandle>();
   /** Worker chats' session files: their handles are the registry's, never a browser's chat. */
   private readonly workerPaths = new Set<string>();
@@ -144,6 +147,7 @@ export class ChatHostRouter {
     this.bun = deps.bun ?? chatBun;
     this.sweepChildren = deps.sweepChildren;
     this.gen = deps.gen;
+    this.resumeCrashed = deps.resumeCrashed ?? resumeCrashedChat;
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
     const currentCode = deps.gen?.dir ?? REPO;
@@ -412,6 +416,9 @@ export class ChatHostRouter {
       found(each);
       await Promise.all(each.values());
       this.workers.settleBoot();
+      // Resumes the last server had not sent when it stopped: a chat it took back runs on (its marker is a live run's).
+      const back = new Set(adopted.map((rec) => rec.chatId));
+      for (const { sessionId, marker } of pendingResumes()) if (!back.has(sessionId) && !this.workers.has(sessionId)) this.resume(sessionId, marker);
       return true;
     })()
       .catch((err) => (log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`), false))
@@ -713,13 +720,24 @@ export class ChatHostRouter {
       }
       releaseLockOf(path, lock);
     }
-    const marker = takeInflight(d.chatId);
-    if (worker) return this.workers.died(d, marker);
+    if (worker) return this.workers.died(d, takeInflight(d.chatId));
     if (special && special !== "powers") specialHostOf(special)?.died?.(path);
-    if (marker && !crashSkip(marker))
-      resumeCrashedChat(path, marker.since, async (p) => {
+    const marker = readInflight(d.chatId);
+    if (marker && !crashSkip(marker)) this.resume(d.chatId, marker);
+    else takeInflight(d.chatId);
+  }
+
+  /** A crashed chat's one resume: marked on disk until sent or refused, so a server stop before then leaves it to the next. */
+  private resume(chatId: string, marker: InflightMarker): void {
+    markResume(chatId, marker);
+    this.resumeCrashed(
+      marker.path,
+      marker.since,
+      async (p) => {
         await (await acquireChatHandle(p)).markResuming();
-      });
+      },
+      () => dropResume(chatId),
+    );
   }
 
   /** The server is stopping: chats in their own process run on; each is told goodbye, never stopped. */

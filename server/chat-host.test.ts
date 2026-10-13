@@ -83,6 +83,10 @@ let epoch = 1_000;
 /** A router over a fake driver whose started units answer as chat-runtime hosts in this process. */
 type ResumeCall = { path: string; since: number; done?: () => void };
 
+/** The Bun chat processes run on, on either runtime (the fake driver runs nothing): a test of the
+    router never depends on the server's own runtime, which on Node has none (a case passes its own). */
+const anyBun = () => process.execPath;
+
 /** What each test made, ended after it: no router, chat host, link or interval outlives its test. */
 const made = { routers: [] as { detach(): void }[], hosts: [] as InstanceType<typeof ChatRuntimeHost>[], links: [] as { close(): void }[] };
 afterEach(async () => {
@@ -144,7 +148,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   // every test: the real one would act on the shared in-flight markers.
   const resumes = o.resumes ?? [];
   const resumeCrashed = (path: string, since: number, _before: unknown, done?: () => void) => void resumes.push({ path, since, ...(done ? { done } : {}) });
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
   made.routers.push(router);
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
@@ -153,6 +157,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
       driver,
       connect: delayMs ? (((sock: string, opts: never) => new Promise((r) => setTimeout(r, delayMs)).then(() => (connect as (s: string, o: never) => Promise<unknown>)(sock, opts))) as never) : connect,
       supervisor,
+      bun: anyBun,
       resumeCrashed,
     });
     made.routers.push(next);
@@ -399,6 +404,7 @@ test("while another chat's take-back is slow, a chat with no process left opens 
     driver: t.driver,
     connect: ((sock: string, opts: never) => later(sock).then(() => t.connect(sock, opts))) as never,
     supervisor: t.supervisor,
+    bun: anyBun,
   });
   try {
     next.start();
@@ -465,7 +471,7 @@ test("a chat starting again on its previous code after a failed open keeps that 
 
 test("a take-back that fails starts no collection of unused code (a chat it missed may run from one), yet opens go on", async () => {
   const t = setup();
-  const next = new ChatHostRouter(++epoch, "g1", { driver: t.driver, connect: t.connect, supervisor: t.supervisor, gen: { id: "g1", dir: "/copies/g1", live: false } });
+  const next = new ChatHostRouter(++epoch, "g1", { driver: t.driver, connect: t.connect, supervisor: t.supervisor, bun: anyBun, gen: { id: "g1", dir: "/copies/g1", live: false } });
   const priv = next as unknown as { sup: { adopt: () => Promise<unknown> }; gc: unknown };
   priv.sup.adopt = async () => {
     throw new Error("registry unreadable");

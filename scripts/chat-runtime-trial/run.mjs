@@ -1469,8 +1469,12 @@ async function t18() {
   const from = p2.got.length;
   p2.send({ type: "reload_code" });
   const reloaded = await p2.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
-  R.check(reloaded, `t18: Reload now reloaded the parent (code frames: ${JSON.stringify(p2.got.slice(from).filter((m) => m.type === "code"))})`);
+  // The parent is quiet and was unattended across the restart, so the rollout may move it before the pane
+  // is back; Reload now then answers "current". Either way it must end on build b in a new process.
+  const codes = p2.got.slice(from).filter((m) => m.type === "code");
+  const already = codes.some((m) => m.state === "current");
   await waitReloaded(path, ppid);
+  R.check(reloaded || (already && record(path)?.build === "trial-b"), `t18: the parent reloaded onto build b (${reloaded ? "by Reload now" : already ? "by the rollout before the pane was back" : "not at all"}; code frames ${JSON.stringify(codes)})`);
   R.check(chatPid(path) && chatPid(path) !== ppid, `t18: the parent runs a new process (pid ${ppid} → ${chatPid(path) || "none"})`);
   R.check(chatPid(w.path) === wpid && alive(wpid), `t18: the worker's process is unchanged by the parent's reload (pid ${wpid} → ${chatPid(w.path) || "none"})`);
   const p3 = { path, s: await chat(c, path) };

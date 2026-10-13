@@ -703,7 +703,7 @@ export class ChatHostRouter {
     const h = this.remotes.get(path);
     const worker = this.workers.has(d.chatId);
     const special = h && !worker ? kindOfMirror(h.mirror) : null;
-    const pid = h?.at.pid ?? this.sup.record(d.chatId)?.pid ?? null;
+    const pid = h?.at.pid ?? this.sup.record(d.chatId)?.pid ?? d.pid ?? null;
     if (!worker) {
       const how = d.exit !== null ? `exit ${d.exit}` : d.signal ? `signal ${d.signal}` : "it stopped answering";
       const tail = d.logTail.slice(-3).join("\n").slice(-300);
@@ -713,8 +713,12 @@ export class ChatHostRouter {
     // Step 0 (design §4.5): the dead process held the lock and nobody wrote since it ended.
     const lock = readLock(path);
     if (lock && pid !== null && lock.pid === pid && !holderAlive(lock)) {
+      // When it ended: the journal's word, else when this server saw it go (it was linked to it). A
+      // death found at a start with no end time (the detached driver) has no bound: a later append by
+      // anyone would read as ours, so only what the process recorded as its own counts.
+      const bound = d.endedAt ?? (h ? d.at : null);
       try {
-        if (statSync(path).mtimeMs <= Date.parse(d.endedAt ?? d.at)) markOwned(path);
+        if (bound && statSync(path).mtimeMs <= Date.parse(bound)) markOwned(path);
       } catch {
         // the file is gone: nothing to record
       }

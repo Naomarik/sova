@@ -100,7 +100,9 @@ as it is.
   `gtk-update-icon-cache` run after a change only when they are installed.
 - **macOS.** `~/Applications/Sova.app`, a bundle (`io.github.naomarik.sova.app`) whose executable
   runs `<bin dir>/sova app`, with an icon built from the same PNG by `sips` and `iconutil` (no icon
-  when either is missing). It shows no Dock icon of its own: the window is the browser's.
+  when either is missing). It shows no Dock icon of its own: the window is the browser's. Its
+  executable is a script, which macOS would start under Rosetta, and the browser with it; the
+  bundle declares Apple silicon (`arm64`) only, so both run natively. Intel Macs are not supported.
 - **Ours, or refused.** The `.desktop` file and the bundle's `Info.plist` carry a marker. A file
   at either path that this script did not write, or any file at the icon's path while no
   `.desktop` of ours is there, is refused before anything is installed, named, and left alone, with a

@@ -27,7 +27,7 @@ import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
-import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, fetchTranscriptRows, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -78,6 +78,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
+import { errorHandsBack, WAIT_START, waitOnHello, waitOnStatus, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -121,7 +122,7 @@ import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
-import { inputTotal, lastInput as lastInputOf, newestOnly, newRows } from "../lib/older-rows";
+import { inputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
@@ -281,6 +282,9 @@ export function ChatView(props: {
   const [helloed, setHelloed] = createSignal(false);
   /** Hellos this visit has had: each (re)connect, a rebuilt runtime's included. */
   const [hellos, setHellos] = createSignal(0);
+  /** Whether this connection's chat has said its hello: until then Send and the composer's controls
+      wait (§chat.transcript/instant-open, lib/chat-wait). Every connection starts without it. */
+  const [wait, setWait] = createSignal<ChatWait>(WAIT_START);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
   // row isn't here is fetched, down to it.
@@ -655,6 +659,13 @@ export function ChatView(props: {
     const current = drafts.get(props.path);
     setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
   };
+  /** Every send never acknowledged, back to the composer: the chat went before taking them. */
+  const handBackUnsent = () => {
+    const back = unacked.takeAll(handedBack);
+    if (!back.length) return;
+    putBack(back);
+    announce("That message couldn't be sent. It's back in the composer.");
+  };
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
@@ -690,7 +701,25 @@ export function ChatView(props: {
   };
   onCleanup(dropNotFound);
 
-  const socket = createReconnectingSocket<ChatServerMessage>(newestOnly(wsUrl("/ws/chat", props.path, props.force)), {
+  // Rows from the file first (§chat.transcript/instant-open): a chat with no rows kept in this tab,
+  // or kept rows older than its file, paints the file's newest rows (the read-only GET the Recent
+  // preload makes), then connects. Every connect names the last row the view holds, so the hello
+  // carries only the rows after it. A file read that fails connects as before; one that lands
+  // after a hello is ignored (the hello said it all).
+  const keptCurrent = !!cached?.items.length && !keptBehind(transcripts.stamp(cacheKey), untrack(() => props.summary?.()?.lastActiveAt));
+  const fromFile = keptCurrent
+    ? undefined
+    : fetchTranscriptRows(props.path, { tail: true }).then(
+        (r) => {
+          if ("code" in r) return;
+          batch(() => {
+            if (olderRows.paint(r)) setNewFrom(r.items[0]?.id ?? null);
+          });
+        },
+        () => {},
+      );
+  const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
+    after: fromFile,
     onOpen(isReconnect) {
       setEverOpened(true);
       // hello follows and replaces everything; dialogs belonged to the old connection.
@@ -711,12 +740,16 @@ export function ChatView(props: {
           statusAsker.hello();
           owner.reset();
           batch(() => {
+            // A hello that continues after the row this view named (`after`) adds to the rows held:
+            // the first of them stays where "new" counts from.
+            const firstHeld = msg.after !== undefined ? (untrack(newFrom) ?? untrack(items)?.[0]?.id ?? null) : null;
             // The newest rows; the rest are fetched when wanted (lib/older-rows). Rows kept above
             // the hello's first row are that row's ancestors, entries that never change: they stay,
             // so a rewind or a reconnect doesn't make a whole list partial or its counts blink.
             olderRows.hello(msg);
-            setNewFrom(msg.items[0]?.id ?? null);
+            setNewFrom(msg.after !== undefined ? firstHeld : (msg.items[0]?.id ?? null));
             setHelloed(true);
+            setWait(waitOnHello());
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
@@ -1027,6 +1060,9 @@ export function ChatView(props: {
               setLive("running", false);
               return;
             default: {
+              // Before this connection's hello the chat didn't open (it failed to start): what the
+              // server never acknowledged goes back to the composer; the socket retries.
+              if (errorHandsBack(wait())) handBackUnsent();
               if (modelError() || thinkingError()) break; // shown as the switch's banner
               // A refused switch of Claude login is its own banner, never a turn failure.
               if (msg.message.startsWith(LOGIN_UNCHANGED)) {
@@ -1085,6 +1121,19 @@ export function ChatView(props: {
       settleRequest(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
   };
   createEffect(on(socket.status, (status) => status !== "open" && dropRequests(), { defer: true }));
+  // A connection that ends waits for its own hello again; one that ends before its hello (its chat
+  // didn't start) hands back what it never acknowledged (§chat.transcript/instant-open).
+  createEffect(
+    on(
+      socket.status,
+      (status) => {
+        const { next, handBack } = waitOnStatus(untrack(wait), status, untrack(everOpened));
+        if (handBack) handBackUnsent();
+        setWait(next);
+      },
+      { defer: true },
+    ),
+  );
   onCleanup(dropRequests);
   const refuseHere = (reason: string, message: string): ActionResult => {
     announce(message);
@@ -1337,22 +1386,22 @@ export function ChatView(props: {
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
     const baton = batonGate();
     if (baton) return baton;
-    switch (socket.status()) {
-      case "connecting":
-        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…", soft: true };
-      case "reconnecting":
-        return { icon: "clock", text: "Reconnecting. Your draft is kept." };
-      case "failed":
-      case "closed":
-        return { icon: "clock", text: "Not connected." };
-    }
-    if (!listHere()) return { icon: "clock", text: "Connecting…", soft: true };
+    // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
+    // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
+    const waiting = waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
+    if (waiting) return waiting;
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
     // extension's. The server would hold a send meanwhile; saying so is better than a queue row.
     if (compacting() || pending().compact > 0) return { icon: "clock", text: COMPACTING_REASON };
     return null;
+  };
+
+  /** What the note over the transcript's end says while the chat connects or starts, or null. */
+  const waitNote = (): ComposerReason | null => {
+    const reason = blocked();
+    return reason?.quiet ? reason : null;
   };
 
   // ---- Taking recommendations from an alignment card (§chat.alignment/card) --------------
@@ -1549,7 +1598,7 @@ export function ChatView(props: {
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path };
+  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => (waitNote() ? blocked()!.text : null) };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
@@ -1773,6 +1822,16 @@ export function ChatView(props: {
         resume={resume()}
         busy={!items()}
         empty={emptyScreen()}
+        note={
+          <Show when={waitNote()} keyed>
+            {(r) => (
+              <div class="chat-wait-note" data-soft={r.soft ? "" : undefined} aria-hidden="true">
+                <Icon name={r.icon} small />
+                {r.text}
+              </div>
+            )}
+          </Show>
+        }
         banner={
           <div class="stack-2">
             <Show when={!archivedPane()}>

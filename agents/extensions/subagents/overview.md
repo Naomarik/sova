@@ -71,9 +71,8 @@ background forks `/explain` runs. Its server half:
 
 **Where workers run.** Every worker, team member and hidden chat (/explain, /compact-handoff, /btw) is a chat
 process of its own, started through the server's `WorkerRegistry` (`server/chat-workers.ts`) from the `WorkerSpec`
-this extension computes (`worker-host.ts`, `chat-worker.ts`). With the chat switch off they are the server's
-detached children and a restart ends them (their records keep them, restored); with it on they are units of their
-own and survive it. A parent's reload never ends them: its next manager reattaches. The dev watcher doesn't watch
+this extension computes (`worker-host.ts`, `chat-worker.ts`). Every chat, worker and team member runs in a process
+of its own, so a server restart never ends them. A parent's reload never ends them: its next manager reattaches. The dev watcher doesn't watch
 this directory, so an edit to any file above reaches the server at its restart, and a running chat process at its
 next code reload.
 

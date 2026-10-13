@@ -304,9 +304,9 @@ Guarantees, enforced by `team-widget.test.ts`:
 - **Teams are session-scoped; their members are not tied to the parent's
   process.** A reload, a session switch or the parent's crash leaves every
   member running in its own chat process; the next manager of that session
-  reattaches to it, and its team becomes live again. A server restart ends them
-  only when they are the server's children (the chat switch off); they are then
-  listed restored, ready for `agent_resume`. The mailbox and pending nudges are
+  reattaches to it, and its team becomes live again. Every chat, worker and team
+  member runs in a process of its own, so a server restart never ends them either.
+  The mailbox and pending nudges are
   kept beside the team's handover notes.
 - **History is per branch.** On session start, team entries
   (`subagents-team-v1`, versioned create/add operations) restore from the

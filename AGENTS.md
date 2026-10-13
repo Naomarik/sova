@@ -72,35 +72,34 @@ also update Y" list live in its guide: read the guide of every area your task to
 - Editing `statecharts/`: start `pnpm statecharts:watch` first and run `pnpm statecharts:test`; never
   cold-compile in a loop (statecharts guide).
 
-## Live server restart (worker suicide)
+## Live server restart
 
 The live server on 127.0.0.1:4800 is the systemd user unit `sova-runtime.service` (macOS: a launchd
-agent, server guide). It has no file watcher: an edit to `server/**`, `shared/**` or
-`pi-config/extensions/mode/**` goes live only on `systemctl --user restart sova-runtime.service`. With
-the chat switch off, that restart ends every worker, team member and hidden chat (they are the server's
-child processes); their parents' records keep them, listed restored and resumable with `agent_resume`.
-With it on (`SOVA_CHAT_HOST=out`, Linux), they run in units of their own and their parents reattach to
-them. Hosted chats survive either way (JSONL; the webapp reconnects).
+agent, server guide). It has no file watcher: an edit to `server/**`, `shared/**` or `pi-config/**`
+goes live on `systemctl --user restart sova-runtime.service` (macOS:
+`launchctl kickstart -k gui/$UID/<label>`, the agent's label), and only then.
 
-- After a server-side change, say it is not live yet and needs that restart.
-- Before any restart, read the live records `~/.pi/agent/sessions/live/p<server-pid>-*.json`
-  (heartbeat ≤ 30 s) of every hosted session; hold it if any shows `presence.workerCounts.working > 0`
-  or `presence.activity.state === "working"` (your own turn counts).
-- Never run `systemctl restart` from inside a hosted session: you are the server's child. The one
-  allowed form is a delayed transient unit, `systemd-run --user --on-active=30s systemctl --user
-  restart <unit>`, scheduled right after a final busy check as your turn's LAST tool call, the turn
-  ending at once (a turn another session starts in those 30 s can still be cut off). If `systemd-run`
-  fails (a sandboxed session can't reach the user bus, by design), never work around it: ask the user.
-  Confirm afterwards with `GET /api/health` (`startedAt`, `head`).
-- The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts
-  `sova-runtime.service`): the operator's Apply on the Services tab, or
-  `sova-project apply --checkout ~/webapps/sova --confirm` (`--project` alone is refused,
-  `invalid-request`). A confirmed restart is scheduled 3 s out without a busy check. up, down, reset
-  and teardown of slot 0 are refused. Never point a test at `sova-runtime.service`: tests and gates
-  use a stand-in unit.
-- The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`), so provider edits also
-  need a restart. Before trusting a live test, compare the unit's start time
-  (`systemctl --user status sova-runtime.service`) with the edited files' mtimes.
+- A restart cuts nothing off. Every chat, worker, team member and hidden chat runs in a process of its
+  own and keeps running through it, including a reply in flight; browsers reconnect. A server-hosted
+  action (a server tool) that was running when the server stopped reports "outcome unknown" to its chat
+  and is never retried.
+- A permanent stop of the server doesn't stop its chats either: each exits on its own once it has been
+  idle with no server for its idle time, or `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every
+  recorded chat of a state root.
+- New code reaches a chat at its next quiet moment, not at the restart. Each chat runs the copy of the
+  code it started with and shows `On older code` until it reloads (or until someone presses
+  `Reload Now`). That holds for pi-config edits too, the claude-code bridge included. Reloads go one
+  chat at a time and stop at the first chat that fails to start on the new code.
+- After a server-side change, say that it is not live yet and needs that restart. Then confirm with
+  `GET /api/health` (`startedAt`, `head`).
+- You may run the restart from inside a chat: your chat is not the server's child. A sandboxed session
+  can't reach the user bus, by design. Never work around that: ask the user.
+- The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts `sova-runtime.service`)
+  is the operator's Apply on the Services tab, or `sova-project apply --checkout ~/webapps/sova
+  --confirm` (`--project` alone is refused, `invalid-request`). It always needs the operator's confirm,
+  then restarts the unit 3 s later. up, down, reset and teardown of slot 0 are refused.
+- Never restart `sova-runtime.service` to test something: tests use hermetic servers and stand-in
+  units.
 
 The server runs on Bun; Node only when the user asks (server guide). An agent never edits the unit.
 

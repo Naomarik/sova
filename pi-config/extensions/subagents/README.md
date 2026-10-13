@@ -19,8 +19,8 @@ Every worker is a chat process of its own that Sova's server starts and keeps (i
 pi TUI) spawns are refused: "needs Sova's chat runtime". **A reload, a session
 replacement or the parent's crash never ends a worker**: the next manager of that
 session reattaches to every live one, and a completion it missed is announced once.
-A server restart ends workers only when they are the server's children (the chat
-switch off); they are then listed restored. Agent/run ID sequences are restored from
+Every chat, worker and team member runs in a process of its own, so a server restart
+never ends a worker either. Agent/run ID sequences are restored from
 the parent session so old references cannot target unrelated new workers.
 
 ## Tools
@@ -706,8 +706,9 @@ keep worker sessions out of its session list (`server/worker-sessions.ts`,
 ### Restored workers and `agent_resume`
 
 A worker's process outlives its manager: `/reload`, a session switch or the
-parent's crash leaves it running, and the next manager reattaches. A server restart
-ends it only when it is the server's child (the chat switch off). Either way its
+parent's crash leaves it running, and the next manager reattaches. Every chat, worker
+and team member runs in a process of its own, so a server restart leaves it running
+too. Either way its
 **durable record** survives: small `subagents-worker-manifest` custom entries in the
 owner's session file (`registry.ts`, written for every worker of every backend). They
 record publication (spec, team, the launch spec a resume needs), the backend

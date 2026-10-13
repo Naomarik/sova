@@ -78,7 +78,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { errorHandsBack, WAIT_START, waitOnHello, waitOnStatus, waitReason, type ChatWait } from "../lib/chat-wait";
+import { errorHandsBack, FILE_READ_WAIT_MS, WAIT_START, waitOnHello, waitOnOpen, waitOnStatus, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -659,9 +659,10 @@ export function ChatView(props: {
     const current = drafts.get(props.path);
     setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
   };
-  /** Every send never acknowledged, back to the composer: the chat went before taking them. */
-  const handBackUnsent = () => {
-    const back = unacked.takeAll(handedBack);
+  /** The sends made on connection `conn` it never acknowledged, back to the composer: it ended
+      before its chat's hello, so no chat took them. Earlier connections' sends stay. */
+  const handBackUnsent = (conn: number) => {
+    const back = unacked.takeFrom(conn, handedBack);
     if (!back.length) return;
     putBack(back);
     announce("That message couldn't be sent. It's back in the composer.");
@@ -705,7 +706,8 @@ export function ChatView(props: {
   // or kept rows older than its file, paints the file's newest rows (the read-only GET the Recent
   // preload makes), then connects. Every connect names the last row the view holds, so the hello
   // carries only the rows after it. A file read that fails connects as before; one that lands
-  // after a hello is ignored (the hello said it all).
+  // after a hello is ignored (the hello said it all). A read that hasn't answered within
+  // FILE_READ_WAIT_MS doesn't hold the socket: it connects naming no row.
   const keptCurrent = !!cached?.items.length && !keptBehind(transcripts.stamp(cacheKey), untrack(() => props.summary?.()?.lastActiveAt));
   const fromFile = keptCurrent
     ? undefined
@@ -720,8 +722,10 @@ export function ChatView(props: {
       );
   const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
     after: fromFile,
+    afterMs: FILE_READ_WAIT_MS,
     onOpen(isReconnect) {
       setEverOpened(true);
+      setWait(waitOnOpen(untrack(wait)));
       // hello follows and replaces everything; dialogs belonged to the old connection.
       if (isReconnect) setDialogs([]);
     },
@@ -749,7 +753,7 @@ export function ChatView(props: {
             olderRows.hello(msg);
             setNewFrom(msg.after !== undefined ? firstHeld : (msg.items[0]?.id ?? null));
             setHelloed(true);
-            setWait(waitOnHello());
+            setWait(waitOnHello(untrack(wait)));
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
@@ -1062,7 +1066,8 @@ export function ChatView(props: {
             default: {
               // Before this connection's hello the chat didn't open (it failed to start): what the
               // server never acknowledged goes back to the composer; the socket retries.
-              if (errorHandsBack(wait())) handBackUnsent();
+              const failed = errorHandsBack(untrack(wait));
+              if (failed !== null) handBackUnsent(failed);
               if (modelError() || thinkingError()) break; // shown as the switch's banner
               // A refused switch of Claude login is its own banner, never a turn failure.
               if (msg.message.startsWith(LOGIN_UNCHANGED)) {
@@ -1128,7 +1133,7 @@ export function ChatView(props: {
       socket.status,
       (status) => {
         const { next, handBack } = waitOnStatus(untrack(wait), status, untrack(everOpened));
-        if (handBack) handBackUnsent();
+        if (handBack !== null) handBackUnsent(handBack);
         setWait(next);
       },
       { defer: true },
@@ -1696,7 +1701,7 @@ export function ChatView(props: {
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
     if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
-    unacked.sent(clientId, text);
+    unacked.sent(clientId, text, untrack(wait).conn);
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
@@ -1823,11 +1828,13 @@ export function ChatView(props: {
         busy={!items()}
         empty={emptyScreen()}
         note={
-          <Show when={waitNote()} keyed>
+          // One element for the whole wait, its clock drawn from the stylesheet (app.css): a note
+          // that first shows while the server is down still has its icon.
+          <Show when={waitNote()}>
             {(r) => (
-              <div class="chat-wait-note" data-soft={r.soft ? "" : undefined} aria-hidden="true">
-                <Icon name={r.icon} small />
-                {r.text}
+              <div class="chat-wait-note" data-soft={r().soft ? "" : undefined} aria-hidden="true">
+                <span class="icon icon-sm chat-wait-note-icon" />
+                {r().text}
               </div>
             )}
           </Show>

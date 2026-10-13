@@ -1,7 +1,7 @@
 /**
- * Offline tests for /explain. No model requests and no real pi process: the
- * child is a fake RPC process injected through the runner's spawnImpl seam, and
- * every store is a temp directory. Run with:
+ * Offline tests for /explain. No model requests and no process: the child's start
+ * is the ExplainHost `start` seam (a fake background fork), and every store is a
+ * temp directory. Run with:
  *
  *   node --test index.test.ts
  */
@@ -237,7 +237,7 @@ interface Recorded {
 	entries: { type: string; data: ExplainEntryData }[];
 	notes: { message: string; level: string }[];
 	wakes: string[];
-	started: { spec: any; settle: (result: any) => void; killed: boolean }[];
+	started: { spec: any; settle: (result: any) => void; killed: boolean; detached: boolean }[];
 }
 
 function harness(env: NodeJS.ProcessEnv): { runs: ExplainRuns; rec: Recorded } {
@@ -249,9 +249,9 @@ function harness(env: NodeJS.ProcessEnv): { runs: ExplainRuns; rec: Recorded } {
 		notify: (message, level) => rec.notes.push({ message, level }),
 		wake: (text) => rec.wakes.push(text),
 		start: (spec, handlers) => {
-			const entry = { spec, settle: handlers.onSettled, killed: false };
+			const entry = { spec, settle: handlers.onSettled, killed: false, detached: false };
 			rec.started.push(entry);
-			return { stop: async () => { entry.killed = true; } };
+			return { stop: async () => { entry.killed = true; }, detach: () => { entry.detached = true; } };
 		},
 	};
 	return { runs: new ExplainRuns(host), rec };
@@ -442,7 +442,7 @@ test("meta.json is written atomically and leaves no temp file", () => {
 	}
 });
 
-test("concurrency is capped and stopAll stops every live child", async () => {
+test("concurrency is capped, and detachAll leaves every live child running", async () => {
 	const root = tmp();
 	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
 	const { runs, rec } = harness(env);
@@ -453,10 +453,10 @@ test("concurrency is capped and stopAll stops every live child", async () => {
 		assert.equal(rec.entries.length, MAX_LIVE, "one running entry per spawned child");
 		assert.throws(() => runs.begin({ topic: "one too many", cwd: "/repo", parentSessionId: "sess-1", model: "m" }), /already running/);
 		assert.equal(rec.entries.length, MAX_LIVE, "a refused spawn leaves no phantom running entry");
-		await runs.stopAll();
+		runs.detachAll();
 		assert.equal(runs.live, 0);
-		assert.ok(rec.started.every((s) => s.killed));
-		assert.ok(rec.entries.every((e) => e.data.status === "running"), "a stopped child records no final entry");
+		assert.ok(rec.started.every((s) => s.detached && !s.killed), "the children outlive the closing session");
+		assert.ok(rec.entries.every((e) => e.data.status === "running"), "a closing session records no final entry");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

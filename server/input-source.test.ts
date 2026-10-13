@@ -26,6 +26,7 @@ writeFileSync(
 `,
 );
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { inputSourceOf } = await import("./queue");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");

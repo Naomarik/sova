@@ -9,7 +9,7 @@ import { notSentReason, type LinkRef, type SendAnswer } from "../shared/outreach
 import type { ItemSendInput, ItemSendResult, StartedSession } from "../shared/project-overseer";
 import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { readBuilds } from "./build-loadout";
-import { isSessionBusy } from "./chat-manager";
+import { isSessionBusy } from "./chat-handle";
 import { ABILITIES_PARAM, baseAbilities, FILES_PARAM, overseerAbilities, withFiles } from "./gathering-abilities";
 import { actOrThrow, heldAt, holdRef, hostOf, isOrgHostOpen, onOrgHostOpened } from "./org-engine";
 import type { Envelope } from "./org-envelope";

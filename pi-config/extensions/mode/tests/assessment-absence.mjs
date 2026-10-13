@@ -1,7 +1,8 @@
 // Offline test that no backend runs spec assessments by itself: a pi session with spec on (mode/index.ts),
 // a worktree-config worker (the same file, with the worker role and its launch flags), a pi worker
-// (spec-worker.ts alone, as the spawn path's -e loads it) and Claude Code's spec hooks (spec-hooks.ts,
-// a fresh process per event, run by the command specHookSettings gives Claude). Each runs against a
+// (spec-worker.ts alone, as the spawn path's -e loads it) and, only in an older tree that still has
+// them, the native Claude Code worker's spec hooks (claude-code/spec-hooks.ts; Claude Code workers are
+// pi workers now). Each runs against a
 // spec core whose sova-spec-assess.mjs is a trap: it appends its argv to a marker file before anything
 // else, then runs the real companion. The trap is proven first by calling it directly, a call that
 // fails included. Real AgentSessions, a scripted provider, scratch Git projects; no model requests.
@@ -246,8 +247,8 @@ for (const role of ["session", "worktree-config worker"]) {
 	}
 }
 
-// 4. Claude Code's hooks: each event runs the command the spawn path's --settings gives Claude.
-{
+// 4. An older tree's native Claude Code hooks: each event runs the command its spawn path gave Claude.
+if (existsSync(path.join(ext, "claude-code/spec-hooks.ts"))) {
 	const p = project("native");
 	const state = path.join(scratch, "native-state");
 	const { specHookSettings } = await jiti.import(path.join(ext, "claude-code/spec-hooks.ts"));
@@ -256,7 +257,7 @@ for (const role of ["session", "worktree-config worker"]) {
 	assert.ok(command.post.includes(path.join(ext, "claude-code/spec-hooks.ts")), "the settings run this tree's hook script");
 	const run = (event, input) => {
 		if (!command[event]) return undefined; // no Stop hook installed: a turn ends when the model stops
-		const r = spawnSync("/bin/sh", ["-c", command[event]], { cwd: p.cwd, encoding: "utf8", input: JSON.stringify({ cwd: p.cwd, ...input }), env: { ...process.env, SOVA_SPEC_OWNER_SESSION: "owner", SOVA_SPEC_WORKER_ID: "ag_01" }, timeout: 60_000 });
+		const r = spawnSync("/bin/sh", ["-c", command[event]], { cwd: p.cwd, encoding: "utf8", input: JSON.stringify({ cwd: p.cwd, ...input }), timeout: 60_000 });
 		assert.equal(r.status, 0, r.stderr);
 		return r.stdout.trim() ? JSON.parse(r.stdout) : undefined;
 	};

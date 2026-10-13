@@ -30,6 +30,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
 // This device's subagent library: two profiles, "house" the default.
 sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "house", "House"), sp.legacyProfile(agentDir, "claude-subs", "Claude subs")] });

@@ -11,10 +11,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
-/** The setStatus key a pi worker reports its counts under, on its RPC stdout (index.ts). */
-export const LLM_STATUS_KEY = "sova-llm-inflight";
-
-export type LlmCallSource = "runtime" | "claude-raw" | "claude-oneshot" | "jev";
+export type LlmCallSource = "runtime" | "claude-oneshot" | "jev";
 
 /** What one process publishes (its live record's `presence.llm`), and what a child reports. */
 export interface LlmCounts {
@@ -24,7 +21,7 @@ export interface LlmCounts {
 	approximate: number;
 	/** Claude Code turns running now, whose internal calls the counter cannot see. */
 	claudeTurns: number;
-	/** Some calls this process makes can't be seen (runtime not instrumented, response-only Claude, …). */
+	/** Some calls this process makes can't be seen (runtime not instrumented, …). */
 	degraded: boolean;
 }
 
@@ -301,17 +298,16 @@ export function markDegraded(reason: string): () => void {
 }
 
 /**
- * A child process's counts as it last reported them (a worker's, through its parent): replaced,
+ * A child process's counts as it last reported them (a chat process's, through Sova's server): replaced,
  * never added to, so a replayed report changes nothing. `undefined` forgets the child: its tokens,
- * if they were summed, stay in this process's ring until they age out (`retire: false` drops them
- * instead: a detached worker goes on reporting them itself).
+ * if they were summed, stay in this process's ring until they age out.
  */
-export function setChildCounts(key: string, counts: LlmChildReport | undefined, opts?: { retire?: boolean; now?: number }): void {
+export function setChildCounts(key: string, counts: LlmChildReport | undefined, opts?: { now?: number }): void {
 	const s = state();
 	const old = s.gauges.get(key);
 	if (counts === undefined) {
 		if (!old) return;
-		if (old.tokens && opts?.retire !== false && summedChildren(s).includes(key)) {
+		if (old.tokens && summedChildren(s).includes(key)) {
 			const end = Math.max(s.retired.end, old.tokens.end, slotOf(opts?.now ?? Date.now()));
 			const out = alignRing(s.retired, end);
 			addSlots(out, alignRing(old.tokens, end));
@@ -436,19 +432,4 @@ function normalizeCounts(c: Partial<LlmChildReport>): LlmChildReport {
 		out.folded = folded;
 	}
 	return out;
-}
-
-/** The counts in a child's report (an object or its JSON); undefined when it isn't one. */
-export function parseCounts(value: unknown): LlmChildReport | undefined {
-	let v = value;
-	if (typeof v === "string") {
-		if (v.length > 65_536) return undefined;
-		try {
-			v = JSON.parse(v);
-		} catch {
-			return undefined;
-		}
-	}
-	if (!v || typeof v !== "object" || (v as { v?: unknown }).v !== 1) return undefined;
-	return normalizeCounts(v as Partial<LlmChildReport>);
 }

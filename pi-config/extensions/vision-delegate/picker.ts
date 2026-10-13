@@ -5,15 +5,13 @@
  * the policy is testable without a registry or a filesystem.
  *
  * Usage comes from the shared cache ../usage-status/ writes
- * (~/.pi/agent/cache/usage-status.json). It is up to ~3 minutes stale and may be
+ * (<agent dir>/cache/usage-status.json). It is up to ~3 minutes stale and may be
  * absent entirely; unknown usage never blocks a candidate, it only fails to
  * rescue one. Providers outside the map (fireworks, opencode, local ollama, ...)
  * have no subscription limit we can see and are always treated as available.
  */
 
 import { readJsonObject } from "./settings.ts";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { VisionSettings } from "./settings.ts";
 
 /** Just enough of pi-ai's Model to choose one. */
@@ -63,10 +61,11 @@ export function hasVision(model: PickableModel): boolean {
 	return Boolean(model.input?.includes("image"));
 }
 
-export const USAGE_CACHE = join(homedir(), ".pi/agent/cache/usage-status.json");
+/** The usage-status cache in the active agent dir (never a hard-coded ~/.pi/agent: a hermetic pi reads its own); usage-status owns the path. */
+export { usageCacheFile } from "../usage-status/fetch.ts";
 
 /** Re-read at every pick: the cache is refreshed out-of-band by usage-status. */
-export function readUsage(cacheFile = USAGE_CACHE): Record<string, unknown> | undefined {
+export function readUsage(cacheFile: string): Record<string, unknown> | undefined {
 	return readJsonObject(cacheFile);
 }
 

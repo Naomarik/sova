@@ -356,7 +356,7 @@ describe("what stays open", () => {
     const body = JSON.parse(res.body) as { ok: boolean; unknownEntries: unknown };
     assert.equal(body.ok, true);
     // The unknown-entry count goes out as a number only, never a type name (§app.harness/unknown-entries).
-    assert.deepEqual(Object.keys(body).sort(), ["head", "ok", "runtime", "startedAt", "unknownEntries"]);
+    assert.deepEqual(Object.keys(body).sort(), ["chatHost", "head", "ok", "runtime", "startedAt", "unknownEntries"]);
     assert.equal(typeof body.unknownEntries, "number");
   });
 

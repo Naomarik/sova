@@ -224,8 +224,10 @@ The seventh tab: which model writes the summary line under each session's title
 here: a primary and a fallback are the choices that matter, and timeouts and budgets stay in the
 file.
 
-The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared with pi in the
-terminal. The TUI and every runtime read it once per session, at session start, so **a change
+The file is `topic-outline.json` in the server's agent dir (`~/.pi/agent`, or the dir
+`PI_CODING_AGENT_DIR` names; shown in the footnote), shared with pi in the terminal. The
+topic-outline extension reads the same agent dir that its server and pi run with, so a test
+server with an agent dir of its own never reads or follows the user's file. The TUI and every runtime read it once per session, at session start, so **a change
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
 pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `claude-sonnet-5-5` (Sonnet 5.5) — and, while nothing is staged,

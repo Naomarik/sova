@@ -80,7 +80,7 @@ const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
 import { policyDenial, readPolicy } from "../subagents/policy.ts";
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, type DelegateBackend } from "./delegate.ts";
-import { WorkerProbe } from "./discovery.ts";
+import { WorkerProbe, type ClaudeModelSource } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import {
 	adoptableMinorModes,
@@ -144,9 +144,10 @@ const SPEC_CORE = join(getAgentDir(), "extensions", "spec", "core");
 
 /**
  * How long one backend's discovery stands before a Delegate turn refreshes it in the background:
- * a model list for 10 minutes; a failed discovery (CLI missing, timed out) for 1 minute, so a fix
- * shows up soon without spawning the CLI every turn; a backend that wasn't loaded is asked again
- * at the very next turn — asking costs one event, no process.
+ * a model list for 10 minutes; a failed discovery (a registry that threw, a timed-out backend) for
+ * 1 minute, so a fix shows up soon; a registered backend that wasn't loaded is asked again at the
+ * very next turn — asking costs one event, no process. (claude-code is built in: its list is the
+ * Claude catalog, never missing.)
  */
 const DISCOVERY_TTL_MS = { models: 10 * 60 * 1000, error: 60 * 1000, missing: 0 } as const;
 
@@ -171,7 +172,13 @@ export const VISUALS_FLAG = "align-visuals";
  */
 type ModeMarker = ({ mode: Mode } | { minor: MinorMode; on: boolean } | { strict: boolean }) & { active?: ModeActive; head?: MinorMode[] };
 
-export default function modeExtension(pi: ExtensionAPI): void {
+/** Test-only overrides; pi loads the extension without them. */
+export interface ModeExtensionOptions {
+	/** Replaces Sova's Claude catalog as claude-code's model list. */
+	claudeModels?: ClaudeModelSource;
+}
+
+export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOptions = {}): void {
 	/** The file: shortcuts (read once, at registration) and the default a new session starts from. */
 	let config: ModeState = loadState(STATE_FILE);
 	/** This session's active state. Resolved per session in session_start / session_tree; never global. */
@@ -259,7 +266,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * probe's result, and with it the fallback notice a switch into delegate had asked for.
 	 */
 	let inflight: { key: string; notify: boolean; done: Promise<void> } | undefined;
-	const probe = new WorkerProbe(pi);
+	const probe = new WorkerProbe(pi, options.claudeModels);
 	/** Active-tools list captured before strict mode hid edit/write. */
 	let toolsSnapshot: string[] | undefined;
 	/** Serializes concurrent probes so a rapid toggle cannot apply a stale result. */

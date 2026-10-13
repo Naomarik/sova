@@ -257,3 +257,58 @@ export function foldedRows<T extends Pick<DecisionRow, "id" | "folded">>(d: T, b
   walk(d);
   return out;
 }
+
+// ---- keys and owner areas (pure: the server and a chat process alike) ---------------------------------
+
+/** A spec ID segment: lowercase ASCII letters and single hyphens only (the § grammar allows no
+    digits), accents folded, ≤ `max` characters, cut at a word boundary; "" when nothing is left. */
+export function specSlug(text: string, max = 40): string {
+  const words = text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  let out = "";
+  for (const w of words) {
+    const next = out ? `${out}-${w}` : w;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out || (words[0] ?? "").slice(0, max);
+}
+
+/** The spec area a recorded area files under. */
+export const areaKeyOf = (area: string): string => specSlug(area, 40) || "general";
+
+const quoted = (xs: string[]) => xs.map((x) => `"${x}"`);
+const orList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
+
+/** An owner area as given (the model's, the operator's), against the owner areas offered now ("none"
+    aside): one with the same key, as offered, or "none"; else why not, naming every choice. */
+export function pickFromOwnerAreas(choices: readonly string[], value: unknown): { ok: true; ownerArea: string } | { ok: false; error: string } {
+  const given = typeof value === "string" ? value.trim() : "";
+  if (given) {
+    const k = areaKeyOf(given);
+    if (k === OWNER_AREA_NONE) return { ok: true, ownerArea: OWNER_AREA_NONE };
+    const hit = choices.find((a) => areaKeyOf(a) === k);
+    if (hit) return { ok: true, ownerArea: hit };
+  }
+  if (!choices.length) return { ok: false, error: `Give the owner area: "${OWNER_AREA_NONE}" (no one on the roster has a decision area yet).` };
+  const list = orList(quoted([...choices, OWNER_AREA_NONE]));
+  return { ok: false, error: given ? `"${given}" is not an owner area. Use one of: ${list}.` : `Give the owner area. Use one of: ${list}.` };
+}
+
+/** record_decision's `prepareArguments` as a rule a chat runs itself (the "owner-area" prepare rule):
+    the choices are the declaration's own `ownerArea` enum ("none" last), refreshed at each run start.
+    A case or spacing variant becomes the offered spelling; anything else is refused naming every choice. */
+export function prepareOwnerArea(parameters: unknown, args: unknown): unknown {
+  if (typeof args !== "object" || args === null) return args;
+  const e = (parameters as { properties?: { ownerArea?: { enum?: unknown } } } | null)?.properties?.ownerArea?.enum;
+  const choices = Array.isArray(e) ? e.filter((x): x is string => typeof x === "string" && x !== OWNER_AREA_NONE) : [];
+  const owner = pickFromOwnerAreas(choices, (args as { ownerArea?: unknown }).ownerArea);
+  if (!owner.ok) throw new Error(owner.error);
+  return { ...(args as object), ownerArea: owner.ownerArea };
+}

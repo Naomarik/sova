@@ -19,10 +19,12 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
-const { BATON_TOOLS, LOADOUT_TOOLS } = await import("./baton-loadout");
+const { activeBatonTools, BATON_TOOLS, LOADOUT_TOOLS } = await import("./baton-loadout");
 const { acquireChat, disposeAllChats, ModeRefusedError } = await import("./chat-manager");
+const { specialHostOf } = await import("./chat-handle");
 const { normalizeEntry } = await import("./transcript");
 const { canonicalPath } = await import("./paths");
 const { sessionItems } = await import("./attention");
@@ -51,6 +53,19 @@ describe("a baton session's runtime", async () => {
     assert.deepEqual(loaded, ["<inline:sova-baton>"], "no pi-config extension loads");
   });
 
+  test("the chat-runtime trial's slow served tool stays active only under its test switch", () => {
+    const was = process.env.SOVA_CHAT_TEST_SERVED;
+    try {
+      delete process.env.SOVA_CHAT_TEST_SERVED;
+      assert.ok(!activeBatonTools(c.sessionId).includes("trial_served_sleep"));
+      process.env.SOVA_CHAT_TEST_SERVED = "1";
+      assert.ok(activeBatonTools(c.sessionId).includes("trial_served_sleep"));
+    } finally {
+      if (was === undefined) delete process.env.SOVA_CHAT_TEST_SERVED;
+      else process.env.SOVA_CHAT_TEST_SERVED = was;
+    }
+  });
+
   test("control: an ordinary session in the same agent dir does load the pi-config extensions", async () => {
     const cwd = join(root, "proj");
     const dir = join(agentDir, "sessions", "--ordinary--");
@@ -65,9 +80,9 @@ describe("a baton session's runtime", async () => {
 
   test("the operator's composer writes only while holding the baton; no mode, no rewind", async () => {
     const chat = await acquireChat(c.path);
-    assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" }), /Tony holds the baton\. Take it back to write\./);
+    assert.throws(() => specialHostOf("baton")!.clientSend!(c.path, { images: 0, text: "" }), /Tony holds the baton\. Take it back to write\./);
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
-    assert.match(chat.specialEntry!.refuses!("rewind") ?? "", /can't be rewound/);
+    assert.match(chat.specialRefuses("rewind") ?? "", /can't be rewound/);
   });
 
   test("/ws/chat: a composer send while someone else holds the baton is a refusal (code refused), not an internal error", async () => {

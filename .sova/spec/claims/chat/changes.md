@@ -225,7 +225,7 @@ A binary file says "Binary file, not shown."; a rename with no line changes says
 
 ## §chat.changes/tool-card-diff — Edits and writes as diffs in tool cards
 
-An `edit` or `write` tool card (pi's, and a Claude Code worker's `Edit`, `MultiEdit` and `Write`,
+An `edit` or `write` tool card (pi's, and an older native Claude Code worker's `Edit`, `MultiEdit` and `Write`,
 which read as `edit` and `write`) shows what it changed as a diff (§chat.changes/diff-renderer)
 under a "Changes" label (`edit`) or "Content" (`write`), with Copy Code for the text written: a
 `write`'s whole content, or an `edit`'s new text (several replacements joined by a blank line). Its

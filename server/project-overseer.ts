@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { agentRoot } from "./state-root";
-import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
@@ -26,11 +26,12 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
-import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
+import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
+import type { ChatStreamTrip } from "../shared/chat-runtime";
+import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -38,7 +39,7 @@ import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefa
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
-import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
@@ -50,7 +51,6 @@ import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overs
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes } from "./overseer-store";
 import { readTodos, updateTodo } from "./overseer-todos";
-import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
@@ -68,7 +68,7 @@ import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
-import { readBranch } from "./harness/pi/reader";
+import { joinedText, readBranch } from "./harness/pi/reader";
 import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -141,15 +141,17 @@ const PROMPT_FILE = join(import.meta.dirname, "project-overseer-prompt.md");
 
 interface Rt {
   projectId: string;
-  turns: UserTurns;
-  session: HarnessSession | null;
-  /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
-  lookStarting?: boolean;
-  /** The run id of the look whose message was just handed in, and of the look whose turn runs now: an act the
-      overseer makes in it names it (`lookRun`), so the history links it to that look. */
-  lookPending?: string;
+  /** The chat of its current conversation, once its runtime was built. */
+  chatId?: string;
+  /** Whether the run in progress answers a message the operator sent (UserTurns, in the chat). */
+  attended(): boolean;
+  /** The run id of the look whose turn runs now: an act the overseer makes in it names it (`lookRun`),
+      so the history links it to that look. */
   lookRun?: string;
 }
+/** A look's message names its run (`ChatSendInput.runTag`): the run it starts is the look's (the watch
+    hears `turn/started {look}`), with the look's run id after the prefix. */
+const LOOK_TAG = "look:";
 const rts = new Map<string, Rt>();
 /** The clock the watch loop, the counters and held items read (tests move it to another day). */
 let clock = (): number => Date.now();
@@ -157,11 +159,18 @@ export function setClockForTest(fn: (() => number) | null): void {
   clock = fn ?? (() => Date.now());
   setOrgClockForTest(fn);
 }
+/** The operator's turn as the chat tells it: a server-hosted tool reads it as its call carried it;
+    anything else reads the chat. A runtime not built yet is unattended (fail closed). */
+function attendedOf(rt: Rt): boolean {
+  const run = serverToolCall();
+  if (run && run.call.chatId === rt.chatId) return run.call.attended;
+  return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
+}
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
-    rt = { projectId, turns: new UserTurns(), session: null };
-    rts.set(projectId, rt);
+    const made: Rt = { projectId, attended: () => attendedOf(made) };
+    rts.set(projectId, (rt = made));
   }
   return rt;
 }
@@ -264,12 +273,10 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
   const st = readPoState(p);
   const oldPath = st ? await pathOfId(st.current) : null;
   if (oldPath) {
-    const chat = heldChat(oldPath);
-    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
-    await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
+    const chat = chatHandle(oldPath);
+    if (chat?.mirror.running) await chat.drainAndAbort().catch(() => {});
+    await closeChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
-  const rt = rtOf(projectId);
-  rt.turns.reset();
   const made = createPoFile(projectId);
   await tellProjectStatechart(projectId, "overseer/clear", made.id);
   await dropHistory(droppedSince(st, readPoState(p)));
@@ -430,12 +437,12 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
   if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(projectId, s.autonomy);
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
-  if (chat && !chat.harness.isRunning()) {
-    const cur = chat.harness.model()?.ref ?? null;
+  const chat = path ? chatHandle(path) : undefined;
+  if (chat && !chat.mirror.running) {
+    const cur = chat.mirror.model?.ref ?? null;
     try {
-      if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-      if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
+      if (s.model && s.model !== cur) await chat.setModel(s.model);
+      if (s.thinking && s.thinking !== chat.mirror.thinking) await chat.setThinking(s.thinking);
     } catch (err) {
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
@@ -539,16 +546,16 @@ function partCtx(rt: Rt, paths: ProjectOverseerPaths): OverseerPartCtx {
     project: () => projectOf(projectId),
     settings: () => readPoSettings(paths),
     effective: () => effectiveOf(projectId),
-    attended: () => rt.turns.attended(),
+    attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
-    envelope: () => overseerEnvelope(projectId, paths, rt.turns.attended()),
+    envelope: () => overseerEnvelope(projectId, paths, rt.attended()),
     gatheringChoice: (input) => gatheringChoice(projectId, input),
     limitRefused: (kind) => limitRefused(rt, paths, kind),
   };
 }
 
 async function limitRefused(rt: Rt, paths: ProjectOverseerPaths, kind: PoLimitKind): Promise<void> {
-  const e = overseerEnvelope(rt.projectId, paths, rt.turns.attended());
+  const e = overseerEnvelope(rt.projectId, paths, rt.attended());
   const a = e.allowance[kind];
   if (a.max !== null) await watchFact(rt.projectId, "limit/refused", { kind, ledger: e.ledger, used: a.used, max: a.max });
 }
@@ -557,7 +564,7 @@ function toolHost(rt: Rt): PoToolHost {
   const { projectId } = rt;
   const paths = projectOverseerPaths(projectId);
   const settings = () => readPoSettings(paths);
-  const envelope = () => overseerEnvelope(projectId, paths, rt.turns.attended());
+  const envelope = () => overseerEnvelope(projectId, paths, rt.attended());
   const engine = () => engineOrThrow(projectId);
   const projectSessionSid = projectSid(projectId);
   return {
@@ -565,7 +572,7 @@ function toolHost(rt: Rt): PoToolHost {
     project: () => projectOf(projectId),
     settings,
     effective: () => effectiveOf(projectId, settings()),
-    attended: () => rt.turns.attended(),
+    attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),
@@ -829,8 +836,8 @@ export async function gatheringChoice(projectId: string, input: { model?: string
 async function overseerRunning(projectId: string): Promise<{ model: string | null; thinking: string | null }> {
   const st = readPoState(projectOverseerPaths(projectId));
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
-  return { model: chat?.harness.model()?.ref ?? null, thinking: chat?.harness.thinking() ?? null };
+  const chat = path ? chatHandle(path) : undefined;
+  return { model: chat?.mirror.model?.ref ?? null, thinking: chat?.mirror.thinking ?? null };
 }
 
 export interface StartedCoding {
@@ -1019,7 +1026,7 @@ export async function removeCodingWorktree(projectId: string, sessionId: unknown
   projectOf(projectId);
   const path = await worktreeAct(projectId, sessionId, "build/remove-worktree");
   // Its cwd is gone: a held runtime would run tools in nothing.
-  if (path) await disposeHeldChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
+  if (path) await closeChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
   return projectOverseerInfo(projectId);
 }
 
@@ -1049,7 +1056,39 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
     and Sova's state (the host's link store, every session). */
 const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
 
-registerSpecialLoadout({
+/** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */
+const openedValues = new Map<string, Record<string, string>>();
+/** Each conversation's tools and prompt template, as its loadout was last built. */
+const builtFor = new Map<string, { tools: ToolSpec[]; template: string }>();
+
+/** The project overseer's file tools, served (§app.chat-processes/server-actions): read/grep/find/ls
+    in the project root only, never a secret file, a reserved folder or Sova's own state
+    (overseer-deny.ts), whatever the root holds; read also opens this conversation's own attachments
+    folder (what the operator pastes into it). write/edit the same, never into the attachments
+    folder, and only in a run the operator started. */
+function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
+  const p = projectOverseerPaths(rt.projectId);
+  return overseerFileTools(
+    projectOf(rt.projectId).root,
+    undefined,
+    undefined,
+    () => {
+      const own = sessionAttachmentsDir(idOf(path));
+      return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+    },
+    {
+      protectedRoots: confinedOut,
+      attended: () => rt.attended(),
+      unattended: PO_UNATTENDED_WRITE_REFUSAL,
+      log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
+    },
+  ).map((def) => fromPiToolDefinition(def, def.prepareArguments ? "pi-edit" : undefined));
+}
+
+// An org's change may archive or unarchive a project: its overseer's composer, in a process of its own, is told.
+onOrgChange(() => specialComposersChanged());
+
+registerSpecialHost({
   kind: "project-overseer",
   // The project's root on THIS host, not the one the file's header recorded where it was created.
   cwd(path) {
@@ -1073,119 +1112,99 @@ registerSpecialLoadout({
       return false;
     }
   },
-  async loadout(path) {
+  async spec(path) {
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);
     if (readPoState(p)?.current !== sessionIdOfFile(path))
       throw new BusyError("This is a previous conversation of the project overseer. It is read-only; open the current one from the project page.", "busy");
+    rt.chatId = path;
     const project = projectOf(rt.projectId);
     const tools = projectOverseerTools(toolHost(rt));
-    const template = readFileSync(PROMPT_FILE, "utf8");
     const settings = readPoSettings(p);
     const defaults = loadDefaults();
-    /** This conversation's opening values (overseer-opening.ts), once a run has read or set them. */
-    let opened: Record<string, string> | undefined;
+    // This build's conversation: its opening values once a run reads or sets them.
+    openedValues.delete(path);
+    builtFor.set(path, { tools, template: readFileSync(PROMPT_FILE, "utf8") });
+    serveTools(path, tools);
+    const files = poFileSpecs(path, rt);
+    serveTools(path, files);
     return {
-      resourceLoaderOptions: {
-        // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
-        // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
-        // agent dir's, and those of folders above the root, like the home folder's) don't.
-        agentsFilesOverride: ({ agentsFiles }) => ({ agentsFiles: projectContextFiles(agentsFiles, project.root) }),
-        noExtensions: true,
-        noSkills: true,
-        noPromptTemplates: true,
-        noThemes: true,
-        appendSystemPromptOverride: () => [],
-        extensionFactories: [
-          {
-            name: "sova-project-overseer",
-            factory: (pi) => {
-              for (const t of tools) pi.registerTool(toPiTool(t));
-              pi.on("before_agent_start", (event, ctx) => {
-                const branch = toolCtx(ctx).branch();
-                const recorded = openingOn(branch);
-                // The prompt stays as the conversation opened (§app.project-overseer/identity): the
-                // values its first run note recorded, or now's for a conversation that has none yet.
-                opened = recorded ?? opened ?? projectOverseerValues(rt.projectId);
-                event.systemPromptOptions.appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
-                // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
-                const now = new Date();
-                const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
-                const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
-                const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
-                const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
-                return { message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
-              });
-              pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), true, sessionActivity());
-                if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
-              });
-              pi.on("context", (event) => {
-                const messages = redactExtensionMessages(event.messages, serverRedactor());
-                return messages === event.messages ? undefined : { messages };
-              });
-            },
-          },
-        ],
-      },
-      tools: [...tools.map((t) => t.name), ...PO_BUILTINS],
-      // read/grep/find/ls in the project root only, never a secret file, a reserved folder or
-      // Sova's own state (overseer-deny.ts), whatever the root holds; read also opens this
-      // conversation's own attachments folder (what the operator pastes into it). This loadout is
-      // this conversation's: a clear opens the next one with its own.
-      // write/edit the same, never into the attachments folder, and only in a run the operator started.
-      customTools: overseerFileTools(
-        project.root,
-        undefined,
-        undefined,
-        () => {
-          const own = sessionAttachmentsDir(idOf(path));
-          return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
-        },
-        {
-          protectedRoots: confinedOut,
-          attended: () => rt.turns.attended(),
-          unattended: PO_UNATTENDED_WRITE_REFUSAL,
-          log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
-        },
-      ),
+      kind: "project-overseer",
+      extension: "sova-project-overseer",
+      cwd: this.cwd!(path),
+      tools: tools.map(declOfTool),
+      customTools: files.map(declOfTool),
+      allow: [...tools.map((t) => t.name), ...PO_BUILTINS],
+      // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
+      // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
+      // agent dir's, and those of folders above the root, like the home folder's) don't.
+      loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, append: "none", contextFilesWithin: { root: project.root, out: confinedOut() } },
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
+      // An operator's message makes the run theirs: the watch's message allowance, the write rule.
+      attribution: true,
+      usage: "overseer",
+      hooks: { compact: true },
+      context: "redact",
+      refuses: { mode: "The project overseer has no modes." },
+      saveChoice: true,
+      composerClosed: this.composerClosed!(path),
+      start: { prompt: {} },
     };
   },
-  watchSession(session, path) {
+  async adopt(path) {
     const rt = rtOfPath(path);
-    rt.session = session;
-    rt.turns.watch(session);
-    session.subscribe((event) => {
-      // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
-      if (event.type === "run.start") {
-        const look = !!rt.lookStarting;
-        rt.lookStarting = false;
-        rt.lookRun = look ? rt.lookPending : undefined;
-        rt.lookPending = undefined;
-        void watchFact(rt.projectId, "turn/started", { look });
-      }
-      if (rt.turns.observe(event)) {
-        // The watch starts a fresh message allowance (its ledger/reset-message).
-        void watchFact(rt.projectId, "turn/user-entered");
-      }
-      if (event.type === "run.settled") {
-        rt.lookRun = undefined;
-        void watchFact(rt.projectId, "turn/ended");
-      }
-    });
+    rt.chatId = path;
+    serveTools(path, [...projectOverseerTools(toolHost(rt)), ...poFileSpecs(path, rt)]);
   },
-  userSend(path, send) {
-    return rtOfPath(path).turns.send(send);
+  async runStart(path, ctx) {
+    const rt = rtOfPath(path);
+    let built = builtFor.get(path);
+    if (!built) builtFor.set(path, (built = { tools: projectOverseerTools(toolHost(rt)), template: readFileSync(PROMPT_FILE, "utf8") }));
+    const { tools, template } = built;
+    const branch = ctx.branch();
+    const recorded = openingOn(branch);
+    // The prompt stays as the conversation opened (§app.project-overseer/identity): the values its
+    // first run note recorded, or now's for a conversation that has none yet.
+    const opened = recorded ?? openedValues.get(path) ?? projectOverseerValues(rt.projectId);
+    openedValues.set(path, opened);
+    const appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
+    // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
+    const now = new Date();
+    const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
+    const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
+    const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
+    const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
+    return { prompt: { appendSystemPrompt }, message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
+  },
+  async compact(_path, ctx) {
+    const note = cardsNote(cardsOnBranch(ctx.branch()), true, sessionActivity());
+    return note ? { customType: CARDS_NOTE_MESSAGE, content: note, display: false as const } : null;
+  },
+  runEvent(path, event) {
+    const rt = rtOfPath(path);
+    rt.chatId = path;
+    // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
+    if (event.type === "run.start") {
+      const look = event.tag?.startsWith(LOOK_TAG) ?? false;
+      rt.lookRun = look ? event.tag!.slice(LOOK_TAG.length) || undefined : undefined;
+      void watchFact(rt.projectId, "turn/started", { look });
+    }
+    // The watch starts a fresh message allowance (its ledger/reset-message).
+    if (event.type === "user.entered") void watchFact(rt.projectId, "turn/user-entered");
+    if (event.type === "run.settled") {
+      rt.lookRun = undefined;
+      void watchFact(rt.projectId, "turn/ended");
+    }
+  },
+  closed(path) {
+    openedValues.delete(path);
+    builtFor.delete(path);
   },
   saveChoice(path, patch) {
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);
     writePoSettings(p, { ...readPoSettings(p), ...(patch.model ? { model: patch.model } : {}), ...(patch.thinking ? { thinking: patch.thinking } : {}) });
-  },
-  refuses(gesture) {
-    return gesture === "mode" ? "The project overseer has no modes." : null;
   },
   // An archived project's overseer is paused: its composer takes nothing (§app.organizations/archive).
   composerClosed(path) {
@@ -1199,14 +1218,13 @@ export const toolsForTest = (projectId: string, opts: { attended?: boolean } = {
   const rt = rtOf(projectId);
   if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
   // As in a turn the operator started (or not), whatever the runtime's own turn says.
-  const turns = Object.create(rt.turns) as typeof rt.turns;
-  turns.attended = () => opts.attended!;
-  const as = { ...rt, turns };
-  return projectOverseerTools(toolHost(as));
+  return projectOverseerTools(toolHost({ ...rt, attended: () => opts.attended! }));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
-export const attendedForTest = (projectId: string) => rtOf(projectId).turns.attended();
+export const attendedForTest = (projectId: string) => rtOf(projectId).attended();
+/** The look whose run is in progress (tests). */
+export const lookRunForTest = (projectId: string) => rtOf(projectId).lookRun;
 
 // ---- idea / to-do items → people and sessions ------------------------------------------------------------
 
@@ -1376,10 +1394,10 @@ export async function messageProjectOverseer(projectId: string, text: unknown, o
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   if (!st || !path || !projectOverseerOfPath(path)) throw new OrgError(`${project.name} has no overseer yet. Start it first (op start).`, 409);
-  const chat = await acquireChat(path);
-  chat.assertModelAllowed();
-  const { queued, turn } = chat.acceptPrompt(t, undefined, "client", undefined, { sentByOverseer: { overseerId } });
-  void turn.catch((err) => chat.reportTurnFailure(err));
+  const chat = await acquireChatHandle(path);
+  // Keyed by the Overseer's tool call: delivered again (a dropped link), it is one message.
+  const effectId = serverToolCall()?.call.effectId;
+  const { queued } = await chat.send({ text: t, origin: "client", checkModel: true, sentByOverseer: { overseerId }, ...(effectId ? { key: `po-msg:${effectId}` } : {}) });
   return { queued, sessionId: st.current, path };
 }
 
@@ -1427,14 +1445,15 @@ export async function lookNow(projectId: string, _force = true): Promise<{ start
 
 export const CUT_OFF_DETAIL = "The server restarted during the run.";
 
-/** How an unattended run ended, from its own part of the branch (entries past `from`). */
-function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
-  const mine = chat.harness.branch().slice(from);
+/** How an unattended run ended, from its own part of the branch (entries past `from`) and the stream
+    guard's trip, if it ended the run. */
+function runEnd(branch: readonly HEntry[], trip: ChatStreamTrip | null, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
+  const mine = branch.slice(from);
   const last = [...mine].reverse().find((e) => e.kind === "assistant");
   const stop = last?.stop;
   const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
   if (!failed) return { outcome: "finished" };
-  if (chat.lastStreamTrip) return { outcome: "stopped", detail: chat.lastStreamTrip.detail };
+  if (trip) return { outcome: "stopped", detail: trip.detail };
   if (shuttingDown()) return { outcome: "cut-off", detail: CUT_OFF_DETAIL };
   if (stop === "aborted") return { outcome: "stopped", detail: "Stopped." };
   if (stop === "error") return { outcome: "stopped", detail: last?.error || "The model failed." };
@@ -1477,38 +1496,52 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     const st = readPoState(projectOverseerPaths(projectId));
     const path = st ? await pathOfId(st.current) : null;
     if (!path) return report("not-started", "no conversation yet");
-    const po = await acquireChat(path);
-    po.assertModelAllowed();
-    const from = po.harness.branch().length;
-    const rt = rtOf(projectId);
-    rt.lookStarting = true;
-    rt.lookPending = runId;
-    const { queued, turn } = po.acceptPrompt(`${text}${lookAppendix(projectId)}`, undefined, "server");
-    const end = (err?: unknown) => {
-      const e = runEnd(po, from, err);
+    const po = await acquireChatHandle(path);
+    await po.assertModelAllowed();
+    const before = (await po.branch()).length;
+    // Keyed by the run (§app.chat-processes/server-messages): a look the next server resumes while its
+    // turn still runs in the chat's own process (or ended there meanwhile) gets the first receipt back
+    // and waits for that turn; it is never sent twice.
+    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true, runTag: `${LOOK_TAG}${runId ?? ""}`, ...(runId ? { key: `look:${runId}` } : {}) });
+    const end = async (err?: string) => {
+      const branch = await po.branch();
+      const e = runEnd(branch, po.mirror.streamTrip, lookFrom(branch, text, before), err);
       // Cut off by this process's shutdown: the next start's resume records it (the statechart's `sova/resumed`).
       if (e.outcome === "cut-off") return;
       report(e.outcome === "finished" ? "finished" : "stopped", e.detail);
     };
-    if (queued) {
+    if (receipt.queued) {
       // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.
       const off = onAgentSettled((settledPath) => {
         if (canonicalPath(settledPath) !== canonicalPath(path)) return;
         off();
-        end();
+        void end();
       });
     } else
-      void turn.then(
-        () => end(),
+      void po.turnEnd(receipt).then(
+        (t) => end(t.ok ? undefined : t.error),
         (err) => {
-          po.reportTurnFailure(err);
-          end(err);
+          // This server is stopping: the next one resumes the look (a chat in its own process runs on).
+          if (shuttingDown()) return;
+          report("stopped", po.where === "process" && po.closed ? LOOK_PROCESS_DIED : err instanceof Error ? err.message : String(err));
         },
       );
   } catch (err) {
-    rtOf(projectId).lookStarting = false;
     report("not-started", err instanceof Error ? err.message : String(err));
   }
+}
+
+/** A look whose project overseer's process died before its turn ended (§app.chat-processes/special-kinds). */
+export const LOOK_PROCESS_DIED = "The project overseer's process stopped unexpectedly.";
+
+/** Where a look's run begins on `branch`: its message (the latest user entry with the look's text), or
+    the branch's length before it was sent (a message the branch doesn't show). */
+function lookFrom(branch: readonly HEntry[], text: string, before: number): number {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const h = branch[i]!;
+    if (h.kind === "user" && joinedText(h, { images: false }).startsWith(text)) return Math.min(i, before);
+  }
+  return before;
 }
 
 onOrgHostOpened((host, engine) => {
@@ -1584,14 +1617,8 @@ export function noteCodingSettled(path: string): Promise<void> {
 
 /** Whether the held chat's last assistant message ended in an error or an abort. */
 function lastTurnFailed(path: string): boolean {
-  const chat = heldChat(path);
-  if (!chat) return false;
-  const branch = chat.harness.branch();
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.kind === "assistant") return e.stop === "error" || e.stop === "aborted";
-  }
-  return false;
+  const stop = chatHandle(path)?.mirror.lastStop;
+  return stop === "error" || stop === "aborted";
 }
 
 let started = false;

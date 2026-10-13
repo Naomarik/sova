@@ -2,7 +2,7 @@ import type { PiExtensionAPI } from "../harness/pi/extension-types";
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ToolCtx, ToolSpec } from "../../shared/harness";
+import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
 import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
@@ -10,7 +10,7 @@ import { WORKTREES } from "../harness/state-kinds";
 import { stateView } from "../harness/state-view";
 import { projectRootOf } from "../project-root";
 import type { Caller, ProjectEngine, VerbAct } from "./engine";
-import { registerInstanceNote, resultNote } from "./note";
+import { registerInstanceNote, resultNote, sessionNote } from "./note";
 
 /**
  * The verbs as tools (§app.project-services/callers), calling the engine in this process, never
@@ -191,30 +191,36 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
     name: "sova-project-verbs",
     hidden: true,
     factory: (pi: PiExtensionAPI) => {
-      pi.registerTool(
-        toPiTool(projectVerbsTool({
-          name: "project_verbs",
-          label: "Project verbs",
-          description:
-            "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. " +
-            "You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. " +
-            "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data.",
-          promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
-          engine,
-          defaultProject: async (ctx) => {
-            const cwd = ctx?.cwd;
-            return cwd ? projectRootOf(cwd) : null;
-          },
-          caller: async (ctx) => {
-            const cwd = ctx?.cwd;
-            return { kind: "session", id: ctx?.sessionId ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(ctx) };
-          },
-        })),
-      );
+      pi.registerTool(toPiTool(sessionVerbsTool(engine)));
       // Its own instances' ports, data and tests, as a hidden note (§app.project-services/instance-note).
       registerInstanceNote(pi, engine, ownCheckouts);
     },
   };
+}
+
+/** The session's own instance note now: what the server renders for a chat in its own process. */
+export const sessionInstanceNote = (engine: () => ProjectEngine, ctx: HookCtx): Promise<string | null> => sessionNote(engine, ownCheckouts, ctx);
+
+/** An ordinary session's `project_verbs`: its own worktrees' running instances. */
+export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
+  return projectVerbsTool({
+    name: "project_verbs",
+    label: "Project verbs",
+    description:
+      "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. " +
+      "You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. " +
+      "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data.",
+    promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
+    engine,
+    defaultProject: async (ctx) => {
+      const cwd = ctx?.cwd;
+      return cwd ? projectRootOf(cwd) : null;
+    },
+    caller: async (ctx) => {
+      const cwd = ctx?.cwd;
+      return { kind: "session", id: ctx?.sessionId ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(ctx) };
+    },
+  });
 }
 
 // ---- the Overseers' tool ---------------------------------------------------------------------------

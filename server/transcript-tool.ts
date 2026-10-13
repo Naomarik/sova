@@ -19,11 +19,11 @@ export function parseToolIds(raw: string | undefined): string[] | null {
 
 /** A pi session's tool rows: from its file, and for ids the file doesn't hold yet, from `branch`
     (the hosted runtime's branch, when there is one). */
-export async function piToolContent(path: string, ids: readonly string[], branch?: () => readonly HEntry[] | undefined): Promise<Record<string, ToolContent>> {
+export async function piToolContent(path: string, ids: readonly string[], branch?: () => Promise<readonly HEntry[] | undefined>): Promise<Record<string, ToolContent>> {
   const out = toolContents((await rowsOf(path)).items, ids);
   const missing = ids.filter((id) => !(id in out));
   if (missing.length === 0) return out;
-  const live = branch?.();
+  const live = await branch?.();
   return live ? { ...out, ...toolContents(historyRows(live), missing) } : out;
 }
 

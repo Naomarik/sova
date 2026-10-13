@@ -23,6 +23,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const stub = inProcessStreamStub({ payload: "letters", perDelta: 16, limit: 64, tool: "no_such_tool" });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.baseUrl)));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const { closeOrgHost, hostOf } = await import("./org-engine");
 const po = await import("./project-overseer");

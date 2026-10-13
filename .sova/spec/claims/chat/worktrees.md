@@ -65,8 +65,7 @@ A worker may start only in the session's own cwd (or below it), or inside one of
 **active** worktrees; any other cwd is refused at spawn with a message naming the session's
 worktrees. The check is one gate every start goes through: `agent_spawn`, `team_create`,
 `team_add`, a team successor and `agent_resume`, for pi and Claude Code workers alike. A remote
-session is not checked (its worker cwds are paths on the target). A hosted worker adopted after a
-restart is kept even if its cwd is no longer allowed: `agent_list` flags it "outside this
+session is not checked (its worker cwds are paths on the target). A worker the parent picks back up after a reload or a server restart is kept even if its cwd is no longer allowed: `agent_list` flags it "outside this
 session's worktrees", and nothing kills it.
 
 A **pi** worker started inside an active worktree writes only inside that worktree (and its git
@@ -95,9 +94,8 @@ included) and the environment is passed as it is. No policy file is read for it.
 
 Under Off the worker starts unconfined, like one outside a worktree. Under On or Subagents only,
 if the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
-Claude Code worker there is confined the same way, narrowed to the worktree or write-only, with
-its own state and token as §chat.sandbox/claude-state says; in write-only its environment is the
-host's less any login or token variable.
+Claude Code worker is a pi worker (§app.subagents-pane/claude-code-workers) and is confined exactly
+as above.
 
 ## §chat.worktrees/worktree-config — A worker on the worktree's own agent dir
 
@@ -107,8 +105,8 @@ directory, runs it on `<worktree>/.agent` instead: `PI_CODING_AGENT_DIR` points 
 session file is still written in the parent's sessions directory (so Sova shows its
 transcript), that tree's `mode` extension (its real path must be a mode extension) is loaded
 explicitly in normal mode with the spec minor mode, and the project is trusted for the run
-(`--approve`). It is refused for a Claude Code worker, outside an active tracked worktree, or when
-the worktree has no `.agent`. Extension discovery stays off, and
+(`--approve`). A Claude Code worker, being a pi worker, may use it too. It is refused outside an
+active tracked worktree, or when the worktree has no `.agent`. Extension discovery stays off, and
 the tree's subagents and worktrees extensions are never loaded. The model policy is still the
 parent's. The choice is recorded with the worker, so a resume applies it again.
 

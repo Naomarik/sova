@@ -65,8 +65,8 @@ describe("the routes", () => {
     resolvePath: (raw) => (raw && raw.endsWith(".jsonl") && raw.startsWith(agentDir) ? raw : null),
     held: () => undefined,
     overseer: () => ({
-      memory: { status: () => ({ state: "ready", messages: 0, background: 0 }), turnedOn: () => overseerCalls.push("on"), changed: () => overseerCalls.push("changed") },
-      memorySwitched: () => overseerCalls.push("switched"),
+      memoryStatus: async () => ({ state: "ready", messages: 0, background: 0 }),
+      memorySettingsChanged: async (turnedOn: boolean) => (overseerCalls.push(turnedOn ? "on" : "changed", "switched"), null),
     }),
     readBranch: async () => [],
     sources,

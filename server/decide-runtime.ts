@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DecisionKeyInfo, DecisionSettings, WorkerChoice } from "../shared/protocol";
-import { getModelRuntime } from "./chat-manager";
+import { getModelRuntime } from "./chat-handle";
 import { DecisionError, estimateTokens, type DecisionProvider, type DecisionProviderId, type DecisionRequest, type DecisionResult } from "./decide";
 import { createDecisionChain, type DecisionChain } from "./decide-chain";
 import { createJevProvider } from "./decide-jev";

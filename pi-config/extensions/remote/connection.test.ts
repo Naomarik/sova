@@ -1,5 +1,5 @@
 /**
- * Connection on its own — what the workers' MCP server uses, without the extension around it. The
+ * Connection on its own, without the extension around it. The
  * channel policy itself is covered through Remote in index.test.ts; this file covers the seam:
  * the far cwd both lanes run in, the `channel` dep's three meanings, idleClose, and bash.
  *
@@ -160,7 +160,7 @@ test("status(): the connection's own fields, and the probe fills host", async ()
 	done();
 });
 
-/** Workers launch mcp-server.ts (which imports this file) as `node <file>.ts`: strip-only mode. */
+/** connection.ts stays loadable as `node <file>.ts`: strip-only mode. */
 test("connection.ts loads under node's strip-only type stripping", () => {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const code = `

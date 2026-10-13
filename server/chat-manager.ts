@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
+import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
+import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
+import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
@@ -26,16 +28,21 @@ import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
 import { onWire, withRows } from "./wire-rows";
-import type { CompactOutcome, DialogBridge, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind, StateView } from "../shared/harness";
-import { historyOf, lineHeader, storedAsString } from "./harness/pi/reader";
+import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
+import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harness/pi/reader";
+import { stateView } from "./harness/state-view";
+import { LiveTail } from "./chat-runtime/live-tail";
+import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
-import type { PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
+import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
+import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -48,7 +55,7 @@ import { codemodeFactory } from "./harness/pi/codemode";
 import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
-import { playbookExtension } from "./harness/pi/playbook";
+import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
@@ -62,15 +69,19 @@ import { withWebMinors } from "./memory/permit";
 import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
-import { projectVerbsExtension } from "./project-services/tools";
+import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
+import { servedToolsExtension } from "./served-tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
-import { queuePushExtension, topicStore } from "./topics";
+import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
+import { agentRoot } from "./state-root";
+import { UserTurns } from "./user-turns";
+import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -84,6 +95,56 @@ export function setLinkOrigin(origin: string): void {
   linkOrigin = origin;
 }
 export const currentLinkOrigin = (): string | null => linkOrigin;
+/** The token the link tools send back (§app.access/callers): this server's own, unless the process
+    hosting the chat was handed its server's (a chat process, §app/chat-processes). */
+let linkToken: string | null = null;
+export function setLinkToken(token: string | null): void {
+  linkToken = token;
+}
+
+/** Where a chat's runs in flight are recorded, for resuming what a death cuts off: the chat process's
+    in-flight marker (§app.chat-processes/crash). Unset (the server's own process): nowhere. */
+export interface RunRecorder {
+  started(path: string): void;
+  settled(path: string): void;
+  markResuming(path: string): void;
+}
+const NO_RECORDER: RunRecorder = { started() {}, settled() {}, markResuming() {} };
+let runRecorder: RunRecorder = NO_RECORDER;
+export function setRunRecorder(r: RunRecorder | null): void {
+  runRecorder = r ?? NO_RECORDER;
+}
+/**
+ * An ordinary chat's server-hosted tools in a chat process of its own (§app/chat-processes): the
+ * declarations of `project_verbs` and `queue_push`, in loadout order, which the chat registers in
+ * place of the extensions that would run them in this process (whose singletons are not wired
+ * there). Unset (the server's own process): the tools run here.
+ */
+let servedDecls: readonly ServerToolDecl[] | null = null;
+export function setServedTools(decls: readonly ServerToolDecl[] | null): void {
+  servedDecls = decls;
+}
+
+/** What an ordinary chat's extensions ask the server that no setter of their own reaches: the
+    playbook host and the instance note's render. Unset, this server's own. */
+export interface ChatHosts {
+  playbook?: PlaybookHost;
+  instanceNote?: (ctx: HookCtx) => Promise<string | null>;
+}
+let chatHosts: ChatHosts = {};
+export function setChatHosts(h: ChatHosts): void {
+  chatHosts = h;
+}
+
+/** A pane's "Reload now" (`reload_code`), where the process hosting the chat runs code of its own
+    (a chat process, §app.chat-processes/code-pickup). Unset: the chat runs the server's code. */
+let codeReload: ((client: ChatClient) => void) | null = null;
+export function setCodeReload(fn: ((client: ChatClient) => void) | null): void {
+  codeReload = fn;
+}
+
+/** The chat's next run is a resume: cut off again, it is not resumed a second time. */
+export const markRunResuming = (path: string): void => runRecorder.markResuming(path);
 
 /**
  * The extension flags every webapp-hosted runtime starts with (named in pi's words by
@@ -120,7 +181,7 @@ function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy
   flags.claudeCode = true;
   if (launch ? launch.review : reviewSaved()) flags.review = true;
   if (launch) flags.alignVisuals = launch.visuals;
-  if (linkOrigin) flags.link = { origin: linkOrigin, token: sovaToken(), tools: linkTools };
+  if (linkOrigin) flags.link = { origin: linkOrigin, token: linkToken ?? sovaToken(), tools: linkTools };
   return flags;
 }
 
@@ -169,6 +230,22 @@ const DEFAULT_EXTENSION_FACTORIES = [
     Best-effort; never throws. */
 export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string): Promise<void> {
   return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES);
+}
+
+let runtimeWarm: Promise<void> | null = null;
+/**
+ * The chat runtime's own start, once per process: its instrumented model runtime (getModelRuntime
+ * counts every call it makes) with the Claude Code provider registered in it, whatever extensions
+ * the chats it opens load. A loadout that loads no extension (a project overseer, a baton) never
+ * registers the provider itself, so once this has started its open waits for it. Best-effort; never
+ * throws.
+ */
+export function warmChatRuntime(): Promise<void> {
+  runtimeWarm ??= getModelRuntime().then(
+    (runtime) => warmClaudeCodeProvider(runtime, agentRoot()),
+    (err) => console.warn("[chat] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err)),
+  );
+  return runtimeWarm;
 }
 
 /** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
@@ -249,6 +326,31 @@ export function activeConfigFailure(path: string): ConfigError | undefined {
 }
 
 /**
+ * Throw the open's permanent config failure, if the chat has one, and remember it: the cheap check
+ * before any expensive open, in this process or a chat process of its own (chat-host.ts).
+ */
+export function assertOpenConfig(path: string): void {
+  // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
+  // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
+  // makes a deleted directory exist.
+  const known = activeConfigFailure(path);
+  if (known) throw known;
+  // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
+  // would otherwise build a model runtime before the SDK reached the same conclusion.
+  const cwd = cwdOverride(path) ?? storedCwd(path);
+  if (cwd && !existsSync(cwd)) {
+    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
+    configFailures.set(path, failure);
+    throw failure;
+  }
+}
+
+/** Remember a permanent failure an open found elsewhere (a chat process's refusal). */
+export function recordConfigFailure(path: string, err: ConfigError): void {
+  configFailures.set(path, err);
+}
+
+/**
  * The session's stored cwd, read straight from the JSONL header, so a missing directory can be
  * detected before doing any of the expensive open work (model runtime, extensions, SDK session).
  * Unreadable or headerless files return null and are left to the normal open path to report.
@@ -290,6 +392,9 @@ export interface ChatClient {
   /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
       pushed, and its hellos carry `olderSummary` (and `prefetch`, for a browser on this machine). */
   pull?: { prefetch: boolean };
+  /** End this browser's socket (server/ws.ts): a chat whose process died tells it so, then closes
+      it so it reconnects (§app.chat-processes/crash). */
+  close?(code: number, reason: string): void;
 }
 
 const wireOfClient = (client: ChatClient) => client.wire ?? 1;
@@ -461,102 +566,169 @@ export function isOverseerFile(s: SessionMarks): boolean {
   return isOverseerId(s.id) && s.state.file().has(OVERSEER);
 }
 
-/**
- * What an Overseer runtime gets instead of the ordinary loadout (server/overseer.ts registers it,
- * so this module never imports the Overseer and the dependency points one way). `loadout` throws a
- * BusyError for an Overseer file that is not the current one: previous conversations are read-only.
- */
-export interface OverseerRuntime {
-  loadout(path: string): Promise<{
-    resourceLoaderOptions: PiLoaderOptions;
-    /** The tool allowlist: built-in, extension and inline tools alike. */
-    tools: string[];
-    /** SDK custom tools: they replace a built-in or an extension's tool of the same name (the
-        Overseer's secret-guarded read/grep/find/ls). */
-    customTools?: PiToolDefinition[];
-    /** From overseer.json, never defaults.json. */
-    model: string | null;
-    thinking: string | null;
-  }>;
-  /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
-  saveChoice(patch: { model?: string; thinking?: string }): void;
-  /** Every open of an Overseer runtime, once bound: brings its mode back to normal with no minor
-      modes, whatever its branch restored. */
-  opened(chat: ChatSession): Promise<void>;
-  /** Called with every session the Overseer's runtime builds, so `userSend` can recognise the
-      message it produced when that message reaches the Agent, and every run is decided from the
-      session's own event stream. */
-  watchSession(session: HarnessSession): void;
-  /** Runs the SDK call that hands the Overseer a message the user sent from the UI (a prompt, a
-      steer, a regenerate; `origin` "client"). The turn the resulting message opens is the user's,
-      whatever an extension's `input` handler or a template made of its text: full tools, and the
-      per-turn caps start over. Server-started runs (a brief, a wake-up) never go through it.
-      `confirm`: the message is a click on the confirm card of that tool call (never typed). */
-  userSend<T>(send: () => T, confirm?: string): T;
-}
-
-let overseerRuntime: OverseerRuntime | null = null;
-export function setOverseerRuntime(r: OverseerRuntime): void {
-  overseerRuntime = r;
-}
-
-/** What a special session's runtime gets instead of the ordinary loadout. */
-export type SpecialLoadoutResult = Awaited<ReturnType<OverseerRuntime["loadout"]>>;
-export type SpecialKind = "overseer" | "baton" | "project-overseer";
+/** The special kinds (§app.harness/session-special): the Overseer, a project overseer, a baton session. */
+export type SpecialKind = ChatSpecialKind;
 
 /**
- * A kind of special session other than the Overseer (§app/baton): recognised by its file, given its
- * own loadout. The Overseer is always matched first (`specialFor`), so a file carrying both markers
- * opens as the Overseer's, exactly as before this registry existed. Registered by the module that
- * owns the kind (server/baton-loadout.ts), so this module never imports it.
+ * What a special chat asks of its kind, which lives in the server (§app.chat-processes/special-kinds):
+ * in the server's process a loopback to the kind's SpecialHost (server/chat-handle.ts), in a chat
+ * process of its own the chat's socket (server/chat-runtime/host.ts). `local`: what only the loopback
+ * reads (the run's live context).
  */
-export interface SpecialLoadout {
-  kind: Exclude<SpecialKind, "overseer">;
-  matches(s: SessionMarks, path: string): boolean;
-  loadout(path: string): Promise<SpecialLoadoutResult>;
-  /** Every open, once bound. */
-  opened?(chat: ChatSession): Promise<void>;
-  /** Every session the runtime builds. */
-  watchSession?(session: HarnessSession, path: string): void;
-  /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
-      refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
-      kind recorded for it when the runtime then refuses the message. `text` and `images`, when
-      given, are what is sent instead (a baton session's attached images, inline). */
-  clientSend?(path: string, msg: { images: number; text: string }): { by: string; undo?(): void; text?: string; images?: ImageInput[] };
-  /** A client gesture this kind refuses (a message for the client), or null. */
-  refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
-  /** Its composer takes nothing right now (a message for the client), or null: an archived
-      project's overseer (§app.organizations/archive). */
-  composerClosed?(path: string): string | null;
-  /** Runs the SDK call that hands this runtime a message the operator sent from the UI (origin
-      "client"), like the Overseer's `userSend`: the kind can tell the operator's turns by identity. */
-  userSend?<T>(path: string, send: () => T): T;
-  /** The composer changed this runtime's model or thinking (`save: true`): the kind keeps it. */
-  saveChoice?(path: string, patch: { model?: string; thinking?: string }): void;
-  /** The directory this kind's runtime opens in on THIS host, or null (not this kind's file): used
-      instead of the header's cwd, which records the host the file was created on — an org's
-      workspace session restored onto another host keeps the old host's path there. */
-  cwd?(path: string): string | null;
-}
-const specialLoadouts: SpecialLoadout[] = [];
-export function registerSpecialLoadout(s: SpecialLoadout): void {
-  if (!specialLoadouts.some((x) => x.kind === s.kind)) specialLoadouts.push(s);
+export interface SpecialPort {
+  runStart(a: { leafId: string | null; images: boolean }, local?: { ctx: HookCtx }): Promise<RunStartAnswer>;
+  compact(a: { leafId: string | null }, local?: { ctx: HookCtx }): Promise<RunStartAnswer["message"] | null>;
+  agentEnd(a: { text: string }): Promise<RunStartAnswer["message"] | null>;
+  /** Each run event, in the chat's own event; never awaited. */
+  runEvent(e: ChatRunEvent): void;
+  /** A server action under an effect id of its own (a composer's message, a model choice saved). */
+  action(name: "@clientSend" | "@clientSendRefused" | "@saveChoice", args: unknown): Promise<ServerToolOutcome<unknown>>;
+  /** Why the composer is closed now, read live (the loopback); absent: the spec's, as last pushed. */
+  composerClosed?(): string | null;
 }
 
-/** A registered kind's working directory for this file on this host, or undefined: the header's. */
+/**
+ * The server's kinds as a chat in its own process reaches them (server/chat-handle.ts installs this,
+ * so this module never imports a kind and the dependency points one way). Never consulted for a
+ * chat whose spec was set (setSpecialSpec): a chat process takes its kind and loadout from its open.
+ */
+export interface LocalSpecials {
+  /** The kind a session file opens as (the Overseer's first), or null. */
+  kindOf(marks: SessionMarks, path: string): SpecialKind | null;
+  /** The directory a kind's chat opens in on this host, or undefined: the header's. */
+  cwd(path: string): string | undefined;
+  /** The loadout of one build, the kind's tools served for this chat; throws the kind's refusal. */
+  spec(kind: SpecialKind, path: string): Promise<SpecialSpec>;
+  /** The loopback to the kind, for a chat in the caller's process (tests only: the server opens none). */
+  port?(kind: SpecialKind, path: string): SpecialPort;
+  /** Every open of such a chat, once bound (the kind's `opened`, with the chat's handle). */
+  opened?(kind: SpecialKind, chat: ChatSession): Promise<void>;
+}
+let localSpecials: LocalSpecials | null = null;
+export function setLocalSpecials(s: LocalSpecials): void {
+  localSpecials = s;
+}
+
+/** Specs and ports given before an open (a chat process: from the server's `open`), by path. */
+const presetSpecs = new Map<string, SpecialSpec>();
+const presetPorts = new Map<string, SpecialPort>();
+export function setSpecialSpec(path: string, spec: SpecialSpec | null): void {
+  if (spec) presetSpecs.set(path, spec);
+  else presetSpecs.delete(path);
+}
+export function setSpecialPort(path: string, port: SpecialPort | null): void {
+  if (port) presetPorts.set(path, port);
+  else presetPorts.delete(path);
+}
+/** The spec a chat process was given for this path, if any. */
+export const specialSpecOf = (path: string): SpecialSpec | undefined => presetSpecs.get(path);
+
+/** Worker loadouts given before an open (a worker chat's process: from the server's `open`), by path. */
+const presetWorkers = new Map<string, WorkerSpec>();
+export function setWorkerSpec(path: string, spec: WorkerSpec | null): void {
+  if (spec) presetWorkers.set(path, spec);
+  else presetWorkers.delete(path);
+}
+/** The worker loadout a chat process was given for this path, if any. */
+export const workerSpecOf = (path: string): WorkerSpec | undefined => presetWorkers.get(path);
+
+/**
+ * Where a parent chat's workers are started (§app.chat-processes/workers): the server's worker
+ * registry for a chat in its process, the chat process's link to its server for one in a process of
+ * its own. Bound per session; null where neither is installed (no worker host is announced).
+ */
+let workerHostSource: ((parent: { sessionId: string; path: string }) => WorkerHost) | null = null;
+export function setWorkerHostSource(source: ((parent: { sessionId: string; path: string }) => WorkerHost) | null): void {
+  workerHostSource = source;
+}
+
+/**
+ * The inline extension that announces the session's worker host on its bus (WORKER_HOST_EVENT, again
+ * on each discover), bound to the session it runs: the subagents extension and the hidden chats start
+ * every worker through it.
+ */
+function workerHostExtension(pi: PiExtensionAPI): void {
+  let announcement: WorkerHostAnnouncement | null = null;
+  const announce = () => {
+    if (announcement) pi.events?.emit(WORKER_HOST_EVENT, announcement);
+  };
+  pi.events?.on(WORKER_HOST_DISCOVER_EVENT, announce);
+  pi.on("session_start", (_event, ctx) => {
+    const c = toolCtx(ctx);
+    const host = c.key && workerHostSource ? workerHostSource({ sessionId: c.sessionId, path: c.key }) : null;
+    announcement = host ? { version: 1, host } : null;
+    announce();
+  });
+}
+
+/**
+ * One build of a worker chat (design §2.3): its own extensions only, in its order, discovery off; its
+ * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
+ * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat.
+ */
+function workerBuild(w: WorkerSpec): PiBuild {
+  return {
+    loader: {
+      noExtensions: true,
+      additionalExtensionPaths: [...w.extensions],
+      extensionFactories: [],
+      ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
+    },
+    flags: () => ({ extra: w.flags }),
+    exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
+    // A worker trusts its project's local files as every Sova chat does.
+    opening: () => ({
+      ...(w.model ? { model: w.model } : {}),
+      ...(w.thinking ? { thinking: w.thinking } : {}),
+      fresh: { model: !!w.model, thinking: !!w.thinking },
+    }),
+    forkCacheRouting: false,
+  };
+}
+/** The server's word on the composer of a special chat in this process (`push special`). */
+export function setSpecialComposerClosed(path: string, text: string | null): void {
+  const spec = presetSpecs.get(path);
+  if (spec) spec.composerClosed = text;
+  const chat = held.get(path);
+  if (chat?.specialSpec) chat.specialSpec.composerClosed = text;
+}
+
+/** A special kind's working directory for this file on this host, or undefined: the header's. */
 export function cwdOverride(path: string): string | undefined {
-  for (const s of specialLoadouts) {
-    const cwd = s.cwd?.(path);
-    if (cwd) return cwd;
-  }
-  return undefined;
+  const preset = presetSpecs.get(path);
+  if (preset) return preset.cwd ?? undefined;
+  return localSpecials?.cwd(path);
 }
 
-/** The special kind a session file opens as: the Overseer's first, then each registered kind. */
-function specialFor(marks: SessionMarks, path: string): { kind: SpecialKind; entry: SpecialLoadout | null } | null {
-  if (isOverseerFile(marks)) return { kind: "overseer", entry: null };
-  const entry = specialLoadouts.find((s) => s.matches(marks, path));
-  return entry ? { kind: entry.kind, entry } : null;
+/** The special kind a session file opens as: the one its open was given, else the server's kinds
+    (the Overseer's first). With no kinds here, an Overseer file is still the Overseer's. */
+function specialFor(marks: SessionMarks, path: string): SpecialKind | null {
+  const preset = presetSpecs.get(path);
+  if (preset) return preset.kind;
+  if (localSpecials) return localSpecials.kindOf(marks, path);
+  return isOverseerFile(marks) ? "overseer" : null;
+}
+
+/** One build's special loadout: its spec and the port to its kind. */
+async function specialOf(kind: SpecialKind, path: string): Promise<{ spec: SpecialSpec; port: SpecialPort }> {
+  const spec = presetSpecs.get(path);
+  const port = presetPorts.get(path);
+  if (spec && port) return { spec, port };
+  if (!localSpecials?.port) throw new Error(kind === "overseer" ? "The Overseer is not available on this server." : "This chat's kind is not available here.");
+  return { spec: await localSpecials.spec(kind, path), port: localSpecials.port(kind, path) };
+}
+
+/**
+ * What a session file opens as, read from the file without building anything: a special kind, a
+ * profile that grants powers (`powers`), else null (an ordinary chat). The rule openSession applies,
+ * for a host deciding where a chat runs before it opens (§app/chat-processes).
+ */
+export async function openKindOf(path: string): Promise<SpecialKind | "powers" | null> {
+  const file = await readPi(path);
+  const all = stateView(file.entries);
+  const kind = specialFor({ id: file.header?.id ?? "", state: { file: () => all } }, path);
+  if (kind) return kind;
+  return stateView(branchOf(file.entries)).latest(PROFILE)?.data?.profile?.grant.length ? "powers" : null;
 }
 
 /** What a write guard's throw means to a rewind or a compaction: a BusyError is a refusal ("busy" when
@@ -666,17 +838,12 @@ interface PendingUi {
   /** The ui_request as broadcast (method, title, options…), for the Overseer's view of it. */
   request: Record<string, unknown>;
   since: number;
+  /** When its timeout answers it with the fallback (ms epoch); none without a timeout. */
+  deadline?: number;
 }
 
 /** One live-pending extension dialog of a hosted chat, as the Overseer sees it. */
-export interface PendingDialog {
-  id: string;
-  method: "select" | "confirm" | "input" | "editor";
-  title: string;
-  message?: string;
-  options?: string[];
-  since: number;
-}
+export type PendingDialog = ChatDialogInfo;
 
 /** Session events after which Sova's queue re-reads the SDK's own queue lengths. `run.settled` and
     `run.end` are here because a turn that ends with our queue non-empty must start the next one;
@@ -771,11 +938,39 @@ class ChatSession {
   disposed = false;
   /** The special kind this runtime is (set by openSession from the file's marker), else null. */
   special: SpecialKind | null = null;
-  /** The registered loadout of a non-Overseer special kind. */
-  specialEntry: SpecialLoadout | null = null;
+  /** A special chat's loadout (the last build's) and the port to its kind. */
+  specialSpec: SpecialSpec | null = null;
+  /** A worker chat's loadout (§app.chat-processes/workers), else null. */
+  workerSpec: WorkerSpec | null = null;
+  specialPort: SpecialPort | null = null;
+  /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
+  private clientSends: Promise<void> = Promise.resolve();
+  /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
+  userTurns: UserTurns | null = null;
+  /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
+  runTag: { next?: string } = {};
   /** This runtime is the Overseer's. */
   get overseer(): boolean {
     return this.special === "overseer";
+  }
+  /** A client gesture this special kind refuses (a message for the client), or null. */
+  specialRefuses(gesture: "rewind" | "regenerate" | "mode"): string | null {
+    return this.specialSpec?.refuses[gesture] ?? null;
+  }
+  /** Why this special chat's composer takes nothing right now, or null. */
+  private composerClosed(): string | null {
+    if (!this.specialSpec) return null;
+    return this.specialPort?.composerClosed ? this.specialPort.composerClosed() : this.specialSpec.composerClosed;
+  }
+  /** The composer changed a special chat's model or thinking (`save: true`): its kind keeps it. */
+  private saveSpecialChoice(patch: { model?: string; thinking?: string }): void {
+    if (!this.specialSpec?.saveChoice || !this.specialPort) return;
+    this.specialPort.action("@saveChoice", patch).then(
+      (out) => {
+        if (!out.ok) console.warn(`[chat] ${this.special}'s model choice not saved: ${out.error.message}`);
+      },
+      (err) => console.warn(`[chat] ${this.special}'s model choice not saved: ${err instanceof Error ? err.message : String(err)}`),
+    );
   }
   /** Texts sent here whose user entry still needs its sender marker. */
   private senderMarks: SenderMark[] = [];
@@ -824,6 +1019,21 @@ class ChatSession {
   private startedNow(): void {
     this.starting = null;
     for (const w of this.startWaiters.splice(0)) w();
+  }
+  /** Client sends that may run an extension command (text starting with "/"), from the send until it
+      settles: an idle chat runs a command at once and outside any run (pi awaits its handler), so a
+      process closing on purpose lets it finish first (§app.chat-processes/survives-restart, F14). */
+  private commandsRunning = 0;
+  get commandsInFlight(): number {
+    return this.commandsRunning;
+  }
+  private tracked<T>(text: string, send: () => Promise<T>): Promise<T> {
+    if (!text.startsWith("/")) return send();
+    this.commandsRunning++;
+    const p = send();
+    const done = () => void this.commandsRunning--;
+    p.then(done, done);
+    return p;
   }
   /** A turn was handed to the SDK and its run has not begun (see `starting`): the SDK's abort()
       misses it, so whoever must stop it waits for `whenStarted` first. */
@@ -989,6 +1199,17 @@ class ChatSession {
     else this.persistVerified();
   }
 
+  /** The guard's check: told to the clients when there are any; with none, only recorded (the stat
+      still has to be current for a restart). */
+  private checkOwnWrites(): void {
+    if (this.clients.size === 0) return this.recordOwnWrites();
+    try {
+      this.assertNoForeignWrites();
+    } catch {
+      // already broadcast
+    }
+  }
+
   /**
    * Give ONE queued message to the SDK. The queue calls this and nothing else does.
    *
@@ -1020,7 +1241,7 @@ class ChatSession {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      const turn = toSdk(() => this.harness.send(item.text, { images, source }));
+      const turn = toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, source })));
       this.noteStarting(turn);
       turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
@@ -1038,18 +1259,20 @@ class ChatSession {
       await toSdk(() => this.harness.steer(item.text, images, { source }));
       return;
     }
-    await toSdk(() => this.harness.send(item.text, { images, delivery: item.kind, source })).catch((err) => {
+    await toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, delivery: item.kind, source }))).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
   }
 
-  /** Hand a message to the SDK. In the Overseer, one the user sent from the UI (`origin` "client")
-      goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
+  /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
+      project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
+      the turn it opens is known as theirs by identity, not text; a confirm card's click only in the
+      Overseer. */
   private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.specialEntry?.userSend) return this.specialEntry.userSend(this.path, send);
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.overseer ? confirm : undefined);
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
-    return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send, confirm) : send();
+    return send();
   }
 
   /**
@@ -1462,15 +1685,7 @@ class ChatSession {
         if (this.harness.isRunning() || this.harness.isCompacting()) this.harness.abort().catch(() => {});
         return;
       }
-      if (this.clients.size === 0) {
-        this.recordOwnWrites(); // nobody to tell, but the stat still has to be current for a restart
-        return;
-      }
-      try {
-        this.assertNoForeignWrites();
-      } catch {
-        // already broadcast
-      }
+      this.checkOwnWrites();
     }, GUARD_POLL_MS);
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
@@ -1510,6 +1725,10 @@ class ChatSession {
         const wire = event.frame();
         if (event.type === "message.end") this.holdForEntryId(wire, event.handle);
         else this.broadcast(wire);
+        // A note an extension sends while the chat is idle (pi's sendMessage, triggerTurn false: /btw's
+        // answer) is written with no entry_appended and no turn to end: its row goes out now, after
+        // its message_end (held for its entry id), as an append would.
+        if (event.type === "message.end" && event.noteType !== undefined && !this.harness.isRunning()) this.appendIdleNote(event.handle, event.noteType);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
@@ -1539,11 +1758,11 @@ class ChatSession {
         });
       if (event.type === "run.start") {
         this.releaseLinks(true);
-        startedTurn(this.path);
+        emitChatEvent(this.path, "started");
         // The runs in flight, for resuming what a restart cuts off (§app.overseer/auto-resume).
-        runLedger.started(this.path);
+        runRecorder.started(this.path);
       }
-      if (event.type === "run.settled") runLedger.settled(this.path);
+      if (event.type === "run.settled") runRecorder.settled(this.path);
       if (event.type === "message.start" && this.linkInSdk.length && event.role === "user") {
         const i = this.linkInSdk.indexOf(event.text!);
         if (i >= 0) this.linkInSdk.splice(i, 1);
@@ -1572,7 +1791,7 @@ class ChatSession {
           if (!this.harness.isRunning() && !this.starting) for (const m of stale) this.dropTopicMark(m);
         }, 0);
       }
-      if (event.type === "run.settled" || event.type === "compaction.end") receiverIdle(this.path);
+      if (event.type === "run.settled" || event.type === "compaction.end") emitChatEvent(this.path, "receiverIdle");
       if (event.type === "run.settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
         // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
@@ -1583,7 +1802,7 @@ class ChatSession {
           if (!this.harness.isRunning()) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
         }, 0);
       }
-      if (event.type === "run.settled") settledTurn(this.path);
+      if (event.type === "run.settled") emitChatEvent(this.path, "settled");
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -1725,7 +1944,7 @@ class ChatSession {
    */
   async switchMode(patch: ModePatch): Promise<ChatModeResult> {
     if (this.overseer) throw new ModeRefusedError();
-    const refused = this.specialEntry?.refuses?.("mode");
+    const refused = this.specialRefuses("mode");
     if (refused) throw new ModeRefusedError(refused);
     // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
     if (!this.memoryOffered() && (patch.memory || (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory"))))
@@ -1763,7 +1982,7 @@ class ChatSession {
   /** Whether this chat's mode menu offers memory: an ordinary chat whose runtime has the engine (never the
       Overseer, whose switch is its own, nor a session that refuses mode switches). */
   memoryOffered(): boolean {
-    return !this.overseer && !this.specialEntry?.refuses?.("mode") && this.memoryAvailable();
+    return !this.overseer && !this.specialRefuses("mode") && this.memoryAvailable();
   }
 
   /** Whether this runtime has the memory engine (its recall tools are registered). */
@@ -1830,13 +2049,13 @@ class ChatSession {
   /** Why switchSubagentProfile would refuse right now (short of an unknown id), or null: a profile
       pick checks this before it writes anything. */
   subagentSwitchRefusal(): string | null {
-    if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) return "This session's subagent profile can't be switched here.";
+    if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) return "This session's subagent profile can't be switched here.";
     if (!this.modeCommand()) return "The mode extension isn't loaded in this chat.";
     return null;
   }
 
   async switchSubagentProfile(id: unknown) {
-    if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
+    if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
     assertNotLive(this.path);
     const profile = requireSubagentProfile(id);
     if (!this.modeCommand()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
@@ -1849,7 +2068,7 @@ class ChatSession {
 
   async saveModeDefault(): Promise<ModeInfo> {
     if (this.overseer) throw new ModeRefusedError();
-    const refused = this.specialEntry?.refuses?.("mode");
+    const refused = this.specialRefuses("mode");
     if (refused) throw new ModeRefusedError(refused);
     const profile = this.subagentProfileInfo().current.id;
     if (profile === null) throw new ModeRefusedError("Fix the subagent profiles file before saving the default.");
@@ -2159,9 +2378,11 @@ class ChatSession {
     }
   }
 
-  hello(): Extract<ChatServerMessage, { type: "hello" }> {
+  /** `live`: with the reply in flight so far (a wire-2 client's hello, §chat.transcript/streaming). */
+  hello(live = false): Extract<ChatServerMessage, { type: "hello" }> {
     const harness = this.harness;
     const branch = harness.branch();
+    const tail = live ? this.liveTail.snapshot() : undefined;
     return {
       type: "hello",
       items: rowsOf(branch),
@@ -2171,12 +2392,16 @@ class ChatSession {
       thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.host.models),
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
+      ...(tail ? { live: tail } : {}),
     };
   }
 
+  /** The reply in flight, folded from the wire-2 events broadcast (server/chat-runtime/live-tail.ts). */
+  private readonly liveTail = new LiveTail();
+
   attach(client: ChatClient): void {
     this.clients.add(client);
-    const hello = this.hello();
+    const hello = this.hello(client.wire === 2);
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.
     const cut = client.tail ? cutHello(hello, !client.pull) : null;
@@ -2196,7 +2421,41 @@ class ChatSession {
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
     pushLinks(this, client);
+    // The dialogs still waiting, with the time each has left: a pane that joins (a second tab, a
+    // reconnect after its chat process lost the server) can answer them (§app.harness/session-open).
+    for (const [id, p] of this.pendingUi)
+      client.send({ type: "ui_request", id, request: { ...p.request, timeout: p.deadline === undefined ? undefined : Math.max(0, p.deadline - Date.now()) } });
     if (!client.pull) sendHistory(cut, [client], (c) => this.clients.has(c));
+  }
+
+  /**
+   * The server this chat's process answers to went away (§app.chat-processes/survives-restart): its
+   * panes are kept as orphans, each a mute stand-in that still counts as attached, so a pending
+   * dialog stays open and a new one may open. Nothing is sent to them.
+   */
+  orphanClients(): void {
+    for (const c of [...this.clients]) {
+      if (this.orphans.has(c)) continue;
+      this.clients.delete(c);
+      const ghost: ChatClient = { send: () => {}, ...(c.wire ? { wire: c.wire } : {}), ...(c.tail ? { tail: c.tail } : {}), ...(c.pull ? { pull: c.pull } : {}) };
+      this.orphans.add(ghost);
+      this.clients.add(ghost);
+    }
+  }
+
+  /** The orphans go: a pane came back (dialogs stay), or none did in time (`resolveDialogs`: the
+      last-pane rule applies, as when the last pane leaves). */
+  dropOrphans(opts: { resolveDialogs: boolean }): void {
+    for (const ghost of this.orphans) this.clients.delete(ghost);
+    this.orphans.clear();
+    if (opts.resolveDialogs && this.clients.size === 0) this.resolveDialogsUnanswered();
+  }
+
+  private readonly orphans = new Set<ChatClient>();
+
+  private resolveDialogsUnanswered(): void {
+    for (const p of this.pendingUi.values()) p.resolve(undefined);
+    this.pendingUi.clear();
   }
 
   detach(client: ChatClient): void {
@@ -2204,8 +2463,7 @@ class ChatSession {
     if (this.clients.size === 0) {
       // Nobody can answer open dialogs anymore: resolve them with defaults. The runtime stays
       // alive: a session closes when the user archives it, not when the last tab leaves.
-      for (const p of this.pendingUi.values()) p.resolve(undefined);
-      this.pendingUi.clear();
+      this.resolveDialogsUnanswered();
     }
   }
 
@@ -2283,7 +2541,7 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.toSdk(origin, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) }), opts?.confirm);
+    const turn = this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm);
     this.noteStarting(turn);
     if (send)
       turn.catch(() => {
@@ -2364,6 +2622,22 @@ class ChatSession {
   async keepQueued(keep: (item: WebQueueItem) => boolean): Promise<number> {
     const since = this.leafId();
     return this.enterQueued(await this.stopRun(keep), since);
+  }
+
+  /**
+   * Stop the reply in flight and keep every queued message, written into the transcript as its
+   * sender's (a baton session's stop-reply). A queue wake could start another run as this one
+   * settles, so it checks again, a few times at most. Returns how many it wrote.
+   */
+  async interruptKeepingQueued(): Promise<number> {
+    const since = this.leafId();
+    const kept: WebQueueItem[] = [];
+    for (let i = 0; i < 3 && (this.harness.isRunning() || this.isCompacting() || this.turnStarting); i++) {
+      // A turn that is starting (a message just handed over) can't be aborted until its run begins.
+      await this.whenStarted();
+      kept.push(...(await this.stopRun(() => true)));
+    }
+    return this.enterQueued(kept, since);
   }
 
   /** The current leaf, the point `enterQueued` looks back to for messages the run took itself. */
@@ -2512,10 +2786,9 @@ class ChatSession {
     // Overseer acting on a session, Settings → Overseer) never becomes anyone's default.
     if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
-    if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.harness.thinking() });
-    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.harness.thinking() });
-    // Another special kind (a baton) keeps the pick in its own file only: never the host's default.
-    else if (!this.specialEntry && this.isPristine()) saveDefaults({ model: ref });
+    // A special kind keeps it as it says (a baton: in its own file only, never the host's default).
+    if (this.special) this.saveSpecialChoice({ model: ref, thinking: this.harness.thinking() });
+    else if (this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -2541,10 +2814,9 @@ class ChatSession {
         items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
-    if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
-    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { thinking: after });
+    if (this.special) this.saveSpecialChoice({ thinking: after });
     // A session with no messages yet: this level is also the next new session's default (never a special kind's).
-    else if (!this.specialEntry && this.isPristine()) saveDefaults({ thinking: after });
+    else if (this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 
@@ -2558,6 +2830,30 @@ class ChatSession {
     this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider } : {}) });
   }
 
+  /** A composer message its kind attributes (a baton session: only while the operator holds the
+      baton): the kind decides who sent it, before anything is queued or written; a refusal from
+      acceptPrompt itself is handed back to the kind. */
+  private async clientSend(port: SpecialPort, client: ChatClient, msg: Extract<ChatClientMessage, { type: "prompt" | "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): Promise<void> {
+    const out = await port.action("@clientSend", { images: msg.images?.length ?? 0, text: String(msg.text ?? "") });
+    if (!out.ok) throw "unknown" in out ? new Error(out.error.message) : new RefusedError(out.error.message);
+    const sent = out.result as { by: string; text?: string; images?: ImageInput[] };
+    const own = parseImages(msg.images);
+    const images = sent.images?.length ? [...(own ?? []), ...sent.images] : own;
+    let accepted: ReturnType<ChatSession["acceptPrompt"]>;
+    try {
+      accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
+        sentByBaton: { by: sent.by },
+        ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+      });
+    } catch (err) {
+      void port.action("@clientSendRefused", {}).catch(() => {});
+      throw err;
+    }
+    const { queued, turn } = accepted;
+    if (clientId) client.send({ type: "send_ack", clientId, queued });
+    turn.catch(fail);
+  }
+
   handle(client: ChatClient, msg: ChatClientMessage): void {
     // The failing send's own id rides along when it has one, so the client restores THAT draft and
     // no other; a chat-wide failure still reports without one, exactly as before.
@@ -2567,6 +2863,9 @@ class ChatSession {
       client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(clientId ? { clientId } : {}) });
     };
     if (this.disposed) {
+      // A prompt comes back to the draft first; the reconnect alone would drop it in silence.
+      const refusal = unsentRefusal(msg);
+      if (refusal) client.send(refusal);
       client.send({ type: "error", code: "reloaded", message: "Session runtime was closed; reconnect" });
       return;
     }
@@ -2592,7 +2891,7 @@ class ChatSession {
         case "prompt":
         case "steer": {
           // A kind whose composer is closed right now (an archived project's overseer).
-          const closed = this.specialEntry?.composerClosed?.(this.path);
+          const closed = this.composerClosed();
           if (closed) {
             fail(new BusyError(closed, "busy"));
             return;
@@ -2618,24 +2917,11 @@ class ChatSession {
           // the operator holds the baton) decides here, before anything is queued or written.
           // The model gate runs first, so a refusal never counts against the kind (a baton's budget);
           // a refusal from acceptPrompt itself is handed back through `undo`.
-          if (this.specialEntry?.clientSend) {
+          if (this.specialSpec?.clientSend && this.specialPort) {
             this.assertModelAllowed();
-            const sent = this.specialEntry.clientSend(this.path, { images: msg.images?.length ?? 0, text: String(msg.text ?? "") });
-            const own = parseImages(msg.images);
-            const images = sent.images?.length ? [...(own ?? []), ...sent.images] : own;
-            let accepted: ReturnType<ChatSession["acceptPrompt"]>;
-            try {
-              accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
-                sentByBaton: { by: sent.by },
-                ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
-              });
-            } catch (err) {
-              sent.undo?.();
-              throw err;
-            }
-            const { queued, turn } = accepted;
-            if (clientId) client.send({ type: "send_ack", clientId, queued });
-            turn.catch(fail);
+            const port = this.specialPort;
+            const step = this.clientSends.then(() => this.clientSend(port, client, msg, clientId, fail));
+            this.clientSends = step.catch(fail);
             return;
           }
           if (msg.type === "steer") {
@@ -2666,7 +2952,9 @@ class ChatSession {
           // In a baton session a participant's queued message is theirs, not the composer's to
           // take back: it enters the transcript instead (§app.baton/hand-off, nothing dropped).
           if (this.special === "baton") {
-            this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR).catch(fail);
+            // After the composer messages its kind is still attributing (@clientSend): a Stop pressed
+            // right after a message stops that message's turn, as it always did.
+            this.clientSends = this.clientSends.then(async () => void (await this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR))).catch(fail);
             return;
           }
           drainQueueThenAbort(this.harness, (m) => this.broadcast(m), this.queue).catch(fail);
@@ -2687,7 +2975,7 @@ class ChatSession {
           return;
         }
         case "regenerate": {
-          const refused = this.specialEntry?.refuses?.("regenerate");
+          const refused = this.specialRefuses("regenerate");
           if (refused) throw new Error(refused);
           this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
@@ -2708,7 +2996,7 @@ class ChatSession {
           }
           return;
         case "rewind": {
-          const refused = this.specialEntry?.refuses?.("rewind");
+          const refused = this.specialRefuses("rewind");
           if (refused) throw new Error(refused);
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
@@ -2716,6 +3004,13 @@ class ChatSession {
         case "compact": {
           const instructions = typeof msg.instructions === "string" ? msg.instructions.trim() : "";
           this.compact(client, String(msg.id ?? ""), instructions || undefined).catch(fail);
+          return;
+        }
+        case "reload_code": {
+          // A chat in the server's own process runs the server's code: it is current
+          // (§app.chat-processes/code-pickup). A chat process answers it itself (setCodeReload).
+          if (codeReload) codeReload(client);
+          else client.send({ type: "code", state: "current" });
           return;
         }
         case "ui_response": {
@@ -2810,7 +3105,7 @@ class ChatSession {
     }
     this.flushDeferredAppends();
     if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-    this.toSdk("client", () => this.harness.send(text, { images }))
+    this.toSdk("client", () => this.tracked(text, () => this.harness.send(text, { images })))
       .catch((err) => {
         if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
       })
@@ -2983,10 +3278,33 @@ class ChatSession {
       return;
     }
     let on2: (ChatServerMessage | V2EventFrame)[] | undefined;
+    // Every live event folds into the reply so far, whoever is attached: a pane that joins later
+    // starts from it.
+    if (msg.type === "event") for (const f of (on2 ??= onWire(msg, 2))) if (f.type === "event" && "v" in f && f.v === 2) this.liveTail.apply(f.event);
     for (const c of this.clients) {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2))) c.send(m);
       else c.send(msg);
     }
+  }
+
+  /** An idle note's rows, once its entry is known (after holdForEntryId's flush, queued before this).
+      The pane renders an idle note only from this append (its message_end makes no row of a note), so
+      a client that one day also rows the message_end would show it twice. */
+  private appendIdleNote(message: unknown, noteType: string): void {
+    queueMicrotask(() => {
+      try {
+        // pi writes a note as a new entry, not the message object it emits: by its id when the
+        // harness knows it, else the branch's last entry when it is that note.
+        const id = this.harness.persistedId(message);
+        const entries = this.harness.entries();
+        const last = entries.at(-1);
+        const entry = id !== null ? entries.find((h) => h.id === id) : last?.kind === "note" && last.noteType === noteType ? last : undefined;
+        const items = entry ? rowsOfEntry(entry) : [];
+        if (items.length) this.broadcast({ type: "append", items });
+      } catch (err) {
+        console.error("[chat] failed to send an idle note", err);
+      }
+    });
   }
 
   /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */
@@ -3012,6 +3330,9 @@ class ChatSession {
       } catch {
         // untagged: a client falls back to the rows it can see
       }
+      // The entry is on disk now (P12): ours, recorded at once, so a process that dies before the
+      // guard's next tick leaves no "recent" behind (§chat.transcript/own-writes-across-restart).
+      if (!this.disposed && !this.foreignWrite) this.checkOwnWrites();
       const out = this.held ?? [];
       this.held = null;
       for (const m of out) this.broadcast(m);
@@ -3077,6 +3398,11 @@ class ChatSession {
     this.pendingUi.clear();
     if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one
     this.onDisposed();
+    emitChatEvent(this.path, "closed");
+    // Recorded now as well as after: the run's last entry (a reply a shutdown cut off) is already
+    // written, and a stop that ends the process before the runtime's own dispose returns must not
+    // leave it reading as another process's write (§chat.transcript/own-writes-across-restart).
+    this.recordOwnWrites();
     try {
       await this.host.dispose();
     } catch (err) {
@@ -3119,6 +3445,7 @@ class ChatSession {
         this.pendingUi.set(id, {
           request,
           since: Date.now(),
+          ...(opts?.timeout ? { deadline: Date.now() + opts.timeout } : {}),
           resolve: (v) => {
             // Accept bare values or pi rpc-style {value}|{confirmed}|{cancelled:true}.
             if (v && typeof v === "object") {
@@ -3139,9 +3466,6 @@ class ChatSession {
   };
 }
 
-/** Listeners told each time a hosted chat's run settles (attention signals, tags). A registry, not
-    an import, so those modules can import the list without a cycle back into this one. */
-const settledListeners = new Set<(path: string) => void>();
 /** Where a session's `links` rows come from (§mesh.links/agents-pane): server/mesh/links.ts
     registers it through server/link-delivery.ts. Unset, no chat gets a `links` frame. */
 type LinksSource = (sessionId: string, path: string) => Promise<LinkedAgentInfo[]>;
@@ -3169,6 +3493,7 @@ function pushLinks(chat: ChatSession, client?: ChatClient): void {
 /** A link message landed, or a link was made or ended: push `links` to every held chat of those
     sessions, and to the Overseer's, whose pane lists every link on this host. */
 export function notifyLinksChanged(sessionIds: readonly string[]): void {
+  for (const fn of linksListeners) fn(sessionIds);
   const ids = new Set(sessionIds);
   for (const chat of heldChats()) {
     if (!chat.clients.size) continue;
@@ -3176,52 +3501,63 @@ export function notifyLinksChanged(sessionIds: readonly string[]): void {
   }
 }
 
-/** A hosted session started a turn (agent_start): a project's build hears it as `turn/started` (F21). */
-const startedListeners = new Set<(path: string) => void>();
-export function onAgentStarted(fn: (path: string) => void): () => void {
-  startedListeners.add(fn);
-  return () => startedListeners.delete(fn);
+/** Who else hears a links change: the chats in processes of their own (server/chat-handle.ts). */
+const linksListeners = new Set<(sessionIds: readonly string[]) => void>();
+export function onLinksNotified(fn: (sessionIds: readonly string[]) => void): () => void {
+  linksListeners.add(fn);
+  return () => linksListeners.delete(fn);
 }
-function startedTurn(path: string): void {
-  for (const fn of startedListeners) {
+/** A session's `links` rows from this server's source, for a chat that asks from its own process. */
+export const linksFor = (sessionId: string, path: string): Promise<LinkedAgentInfo[]> => (linksSource ? linksSource(sessionId, path) : Promise.resolve([]));
+/** This server's singleton check, for a chat that asks from its own process. */
+export const singletonFor = (key: string, path: string): Promise<{ id: string; path: string; title: string } | null> =>
+  singletonCheck ? singletonCheck(key, path) : Promise.resolve(null);
+
+/** Every chat's lifecycle events, numbered across this runtime (shared/chat-runtime.ts
+    ChatLifecycleEvent); the server hears them through server/chat-handle.ts. The newest are kept,
+    so a consumer that missed some can ask for the ones after the last seq it saw. */
+let eventSeq = 0;
+const EVENTS_KEPT = 256;
+const recentEvents: ChatLifecycleEvent[] = [];
+const eventListeners = new Set<(event: ChatLifecycleEvent) => void>();
+const LISTENER_NAME: Record<ChatLifecycleEvent["type"], string> = {
+  started: "agent_start",
+  settled: "agent_settled",
+  receiverIdle: "receiver-idle",
+  closed: "closed",
+  topicEntered: "topic-entered",
+  topicGone: "topic-gone",
+};
+/** Listeners run inside the event, each on its own: one that throws is logged and the rest still run. */
+export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void {
+  eventListeners.add(fn);
+  return () => eventListeners.delete(fn);
+}
+/** The kept events with a seq above `seq`, oldest first. */
+export const chatEventsSince = (seq: number): ChatLifecycleEvent[] => recentEvents.filter((e) => e.seq > seq);
+export function emitChatEvent(chatId: string, type: ChatLifecycleEvent["type"], batch?: string): void {
+  const event: ChatLifecycleEvent = { seq: ++eventSeq, chatId, type, at: Date.now(), ...(batch ? { batch } : {}) };
+  recentEvents.push(event);
+  if (recentEvents.length > EVENTS_KEPT) recentEvents.shift();
+  for (const fn of eventListeners) {
     try {
-      fn(path);
+      fn(event);
     } catch (err) {
-      console.error("[chat] agent_start listener failed", err);
+      console.error(`[chat] ${LISTENER_NAME[type]} listener failed`, err);
     }
   }
 }
-
-const receiverIdleListeners = new Set<(path: string) => void>();
+const onEventOf = (type: ChatLifecycleEvent["type"], fn: (path: string) => void): (() => void) =>
+  onChatEvent((e) => {
+    if (e.type === type) fn(e.chatId);
+  });
+/** A hosted session started a turn (agent_start): a project's build hears it as `turn/started` (F21). */
+export const onAgentStarted = (fn: (path: string) => void): (() => void) => onEventOf("started", fn);
 /** A hosted runtime's turn settled or its compaction ended: a topic receiver may take its next
     batch (server/topic-delivery.ts). Called inside the event; listeners defer their own work. */
-export function onReceiverIdle(fn: (path: string) => void): () => void {
-  receiverIdleListeners.add(fn);
-  return () => receiverIdleListeners.delete(fn);
-}
-function receiverIdle(path: string): void {
-  for (const fn of receiverIdleListeners) {
-    try {
-      fn(path);
-    } catch (err) {
-      console.error("[chat] receiver-idle listener failed", err);
-    }
-  }
-}
-
-export function onAgentSettled(fn: (path: string) => void): () => void {
-  settledListeners.add(fn);
-  return () => settledListeners.delete(fn);
-}
-function settledTurn(path: string): void {
-  for (const fn of settledListeners) {
-    try {
-      fn(path);
-    } catch (err) {
-      console.error("[chat] agent_settled listener failed", err);
-    }
-  }
-}
+export const onReceiverIdle = (fn: (path: string) => void): (() => void) => onEventOf("receiverIdle", fn);
+/** A hosted chat's run settled (attention signals, tags). */
+export const onAgentSettled = (fn: (path: string) => void): (() => void) => onEventOf("settled", fn);
 
 /**
  * The model and thinking a new session opens on instead of the saved new-session defaults, for the
@@ -3229,6 +3565,13 @@ function settledTurn(path: string): void {
  * never records a switch from the default first). Ignored once the session has a user message.
  */
 const openingChoices = new Map<string, { model?: string; thinking?: string; fresh?: { model?: boolean; thinking?: boolean } }>();
+/** The opening choice waiting for a session's first open, taken: a host that opens it elsewhere
+    hands it on (§app/chat-processes). */
+export function takeOpeningChoice(path: string): { model?: string; thinking?: string; fresh?: { model?: boolean; thinking?: boolean } } | undefined {
+  const c = openingChoices.get(path);
+  openingChoices.delete(path);
+  return c;
+}
 /** `fresh`: open on the model and/or effort a new session would, not the ones the file records. */
 export function setOpeningChoice(path: string, choice: { model?: string | null; thinking?: string | null; fresh?: { model?: boolean; thinking?: boolean } }): void {
   const c = { ...(choice.model ? { model: choice.model } : {}), ...(choice.thinking ? { thinking: choice.thinking } : {}), ...(choice.fresh ? { fresh: choice.fresh } : {}) };
@@ -3278,15 +3621,9 @@ export function heldChatState(path: string): HeldChatState | undefined {
   };
 }
 
-async function overseerLoadout(path: string) {
-  if (!overseerRuntime) throw new Error("The Overseer is not available on this server.");
-  return overseerRuntime.loadout(path);
-}
-
-/** Bring an opened Overseer runtime to overseer.json's model and thinking, without the composer's
-    write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
-async function syncOverseerModel(chat: ChatSession, path: string): Promise<void> {
-  const want = await overseerLoadout(path);
+/** Bring an opened Overseer runtime to overseer.json's model and thinking (its spec's), without the
+    composer's write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
+async function syncOverseerModel(chat: ChatSession, want: Pick<SpecialSpec, "model" | "thinking">): Promise<void> {
   const harness = chat.harness;
   if (want.model && want.model !== (harness.model()?.ref ?? null) && modelAllowed(readModelPolicy(), want.model)) {
     const found = await harness.findModel(want.model).catch(() => null);
@@ -3296,8 +3633,213 @@ async function syncOverseerModel(chat: ChatSession, path: string): Promise<void>
     harness.setThinking(want.thinking);
 }
 
+// ---- server-hosted tools: the chat's side of the loopback ----------------------------------------
+
+/** What a server-hosted tool reads and writes of the chat that runs it, beyond its ToolCtx. In one
+    process it is the chat itself; a chat in its own process sends the reads with the call and runs
+    the writes and nested calls as calls back to it, within the call (§app.harness/session-special). */
+export interface ServerToolChat {
+  /** The active branch at the call, plus what this call appended since (root first). */
+  branch(): HEntry[];
+  /** Every entry of the file at the call, plus this call's appends. */
+  entries(): HEntry[];
+  /** Append a state record within this call. `announce`: through the special extension's own writer
+      (entry_appended fires: a baton's share refresh), else the chat's state writer. Resolves to the
+      new entry's id; it is the leaf after. */
+  append<T>(kind: StateKind<T>, data: T, o?: { announce?: boolean }): Promise<EntryId>;
+  /** A tool the chat's runtime registered (the subagents extension's), run by the chat within this
+      call, with the call's own context and abort signal. */
+  tool(name: string): { execute(toolCallId: string, params: unknown): Promise<ToolResult> } | undefined;
+}
+/** What travels with a server-hosted tool's call only while chat and server share a process. */
+export interface ServerToolLocal {
+  signal: AbortSignal | undefined;
+  onUpdate: ToolUpdate | undefined;
+  ctx: ToolCtx | undefined;
+  chat: ServerToolChat;
+  /** Set by the server when the run threw: the very error, for the chat to throw again. */
+  error?: unknown;
+}
+/** The server's side of server-hosted tools (server/chat-handle.ts installs it). */
+export interface ServerToolPort {
+  call(call: ServerToolCall, local: ServerToolLocal): Promise<ServerToolOutcome<ToolResult>>;
+}
+
+/** A declaration's prepare rule, run by the chat (pi asks for the arguments synchronously): pure,
+    from the declaration's own data. */
+function prepareOf(decl: ServerToolDecl): ((args: unknown) => unknown) | undefined {
+  if (decl.prepares === "owner-area") return (args) => prepareOwnerArea(decl.parameters, args);
+  if (decl.prepares === "pi-edit") return piPrepare("pi-edit");
+  return undefined;
+}
+
+/** Append within a server-hosted call (the chat's side of `ServerToolChat.append`): through the special
+    extension's own writer when `announce`, else the chat's state writer; the new entry, now the leaf. */
+export async function appendForCall(path: string, kind: string, data: unknown, announce: boolean): Promise<{ entryId: string; entry: HEntry }> {
+  const chat = held.get(path);
+  if (!chat || chat.disposed) throw new Error("This chat is closed.");
+  const k = stateKindOf(kind);
+  if (!k) throw new Error(`Unknown state kind: ${kind}`);
+  let id: EntryId = "";
+  if (announce) {
+    const write = specialWriter(path);
+    if (!write) throw new Error("This chat has no special loadout to write through.");
+    write.append(k, data);
+  } else id = chat.harness.state.append(k, data);
+  const branch = chat.harness.branch();
+  const entry = (id ? branch.find((h) => h.id === id) : undefined) ?? branch[branch.length - 1];
+  if (!entry?.id) throw new Error("The entry was not written.");
+  return { entryId: entry.id, entry };
+}
+let serverToolPort: ServerToolPort | null = null;
+export function setServerToolPort(port: ServerToolPort): void {
+  serverToolPort = port;
+}
+const portOrThrow = (): ServerToolPort => {
+  if (!serverToolPort) throw new Error("This server runs no server-hosted tools.");
+  return serverToolPort;
+};
+
+/**
+ * A server-hosted tool as the chat registers it: its declaration (data), each run a call to the
+ * server under an effect id of its own, answered with the run's outcome. The chat's turn as it stands
+ * goes with the call (`attended`, `card`), and what the tool reads and writes of the chat beyond its
+ * ToolCtx is the chat's own (ServerToolChat).
+ */
+export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
+  const { prepares: _rule, ...fields } = decl;
+  const prepare = prepareOf(decl);
+  return {
+    ...fields,
+    ...(prepare ? { prepareArguments: prepare } : {}),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const chat = heldChat(chatId);
+      if (!chat) throw new Error("This chat is closed.");
+      const turns = chat.userTurns;
+      const call: ServerToolCall = {
+        effectId: `${chatId}#${toolCallId}#${randomUUID()}`,
+        chatId,
+        toolCallId,
+        name: decl.name,
+        params,
+        attended: turns?.attended() ?? false,
+        card: turns?.confirmedCard() ?? null,
+      };
+      const local: ServerToolLocal = {
+        signal,
+        onUpdate,
+        ctx,
+        chat: {
+          branch: () => [...chat.harness.branch()],
+          entries: () => [...chat.harness.entries()],
+          append: async (kind, data, o) => {
+            if (!o?.announce) return chat.harness.state.append(kind, data);
+            const write = specialWriter(chatId);
+            if (!write) throw new Error("This chat has no special loadout to write through.");
+            return write.append(kind, data);
+          },
+          tool: (name) => chat.harness.registeredTool(name) as unknown as ReturnType<ServerToolChat["tool"]>,
+        },
+      };
+      const out = await portOrThrow().call(call, local);
+      if (out.ok) return out.result;
+      throw local.error ?? new Error(out.error.message);
+    },
+  };
+}
+
+/** The served tools whose names `which` takes, as this chat registers them (`queue_push`'s extension also
+    carries any test-only one the server serves, after it). */
+const servedSpecs = (chatId: string, which: (name: string) => boolean): ToolSpec[] => (servedDecls ?? []).filter((d) => which(d.name)).map((d) => serverToolSpec(chatId, d));
+
+/** What one chat's special loadout hears of its runs, across the runtimes it builds. */
+interface RunHearing {
+  turns: UserTurns | null;
+  tag: { next?: string };
+}
+
+/** The text of a streaming assistant message so far: its text blocks only. */
+const replyTextOf = (message: unknown): string => {
+  const content = (message as { content?: unknown } | null)?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string)
+    .join("");
+};
+
+/**
+ * A special loadout's ear on one runtime its chat builds: the driving session's stream, as data
+ * (ChatRunEvent), to the kind's `runEvent`, in the event and its tick. The person's turns are told
+ * apart here, by the object their message reaches the agent as (UserTurns), and the prompt is
+ * rebuilt at a run's start when the loadout's text for it changed (quirk P19).
+ */
+function hearRuns(
+  session: HarnessSession,
+  path: string,
+  runs: RunHearing,
+  o: { port: SpecialPort | null; replyText: boolean; prompt?: (branch: readonly HEntry[]) => string },
+): void {
+  const turns = runs.turns;
+  turns?.watch(session);
+  const emit = (event: ChatRunEvent) => {
+    try {
+      o.port?.runEvent(event);
+    } catch (err) {
+      console.error("[chat] run event listener failed", err);
+    }
+  };
+  let prompt: string | undefined;
+  session.subscribe((event) => {
+    if (event.type === "run.start") {
+      if (o.prompt) {
+        const text = o.prompt(session.branch());
+        if (text !== prompt) {
+          prompt = text;
+          // The SDK rebuilds the base prompt options from the loader's parts (quirk P19).
+          session.refreshSystemPrompt();
+        }
+      }
+      const tag = runs.tag.next;
+      runs.tag.next = undefined;
+      emit({ type: "run.start", ...(tag !== undefined ? { tag } : {}) });
+    }
+    if (turns?.observe(event)) emit({ type: "user.entered", card: turns.confirmedCard() });
+    if (event.type === "message.update" && event.role === "assistant" && o.replyText) emit({ type: "reply.text", text: replyTextOf(event.handle) });
+    if (event.type === "message.end") {
+      const card = event.role === "user" ? turns?.confirmedCard() : null;
+      if (card) emit({ type: "user.end", card });
+      emit({ type: "message.end" });
+    }
+    if (event.type === "entry.appended") emit({ type: "entry.appended" });
+    if (event.type === "run.settled") emit({ type: "run.settled" });
+  });
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
+  // One writer per session file, across this server and its chat processes (§app.chat-processes/wire):
+  // held from the open to the chat's dispose. Another live holder refuses as another writer does.
+  let lock: WriterLock;
+  try {
+    lock = takeWriterLock(path, { unit: process.env.SOVA_CHAT_UNIT ?? null });
+  } catch (err) {
+    if (err instanceof WriterLockHeld) throw new BusyError(err.message, "recent");
+    throw err;
+  }
+  try {
+    return await openLocked(path, () => {
+      lock.release();
+      onDisposed();
+    });
+  } catch (err) {
+    lock.release();
+    throw err;
+  }
+}
+
+async function openLocked(path: string, onDisposed: () => void): Promise<ChatSession> {
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
   // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
   const file = await openPiSession(path, cwdOverride(path));
@@ -3311,7 +3853,15 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // What the chat's align mode starts with (alignLaunchOf): its record once the file has one; until
   // then the values its first build took, kept for every rebuild, and written with its first message.
   const launch: AlignLaunch = { data: null, recorded: false };
+  // A special loadout's run events and the person's turns (SpecialLoadoutResult.attribution): one
+  // for the chat, kept across the runtimes it builds.
+  const runs: RunHearing = { turns: null, tag: {} };
+  /** The last build's special loadout, if this chat is a special kind's. */
+  const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
+  const worker = presetWorkers.get(path) ?? null;
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else.
+    if (worker) return workerBuild(worker);
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -3324,7 +3874,23 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
     const kind = specialFor(read, path);
-    const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
+    const special = kind ? await specialOf(kind, path) : null;
+    last.special = special;
+    const spec = special?.spec ?? null;
+    // A loadout that loads no extension never registers the provider itself: it waits for the
+    // runtime's own start, when this process started it (the server at boot; a chat's own process).
+    if (spec?.loader.noExtensions && runtimeWarm) await runtimeWarm;
+    if (spec?.attribution) runs.turns ??= new UserTurns();
+    // The memory minor mode's engine (§chat/memory), bound to the chat that hosts this runtime.
+    const memory = () => memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null));
+    // A special loadout, built from its spec (server/chat-special.ts): its tools and file tools are the server's.
+    const built = special
+      ? specialLoadout(path, special.spec, special.port, {
+          tool: (decl) => toPiTool(serverToolSpec(path, decl)) as PiToolDefinition,
+          memory,
+          log: (line) => console.warn(`[chat] ${kind}: ${line}`),
+        })
+      : null;
     // An ordinary chat gets the default extensions plus the vis feedback extension
     // (server/vis-check.ts); the special loadouts keep exactly their own.
     const data = special ? null : (read.state.branch().latest(PROFILE)?.data ?? null);
@@ -3350,20 +3916,31 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
-      loader: special
-        ? special.resourceLoaderOptions
+      loader: built
+        ? // A special chat that loads extensions (the Overseer, whose subagents start its explorers) has
+          // the worker host an ordinary chat has (§app.chat-processes/workers); one that loads none of
+          // the operator's (a baton, a project overseer) starts no worker and keeps its own alone.
+          special!.spec.loader.noExtensions
+          ? built.loader
+          : { ...built.loader, extensionFactories: [...(built.loader.extensionFactories ?? []), { name: "sova-worker-host", factory: workerHostExtension }] }
         : {
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,
+              // Its workers' and hidden chats' host (§app.chat-processes/workers).
+              { name: "sova-worker-host", factory: workerHostExtension },
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
-              memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null)),
+              memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
-              playbookExtension(playbookHost),
+              playbookExtension(chatHosts.playbook ?? playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
-              projectVerbsExtension(projectEngine),
+              servedDecls
+                ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+                : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
-              queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
+              servedDecls
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL))
+                : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               ...powers,
             ],
             ...overrides,
@@ -3372,7 +3949,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),
-      ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
+      ...(built ? { tools: built.allow, ...(built.customTools.length ? { customTools: built.customTools } : {}) } : {}),
       // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
       // the stored model ref is resolved against models with configured auth and the SDK clamps the
       // stored level to the model's ladder. Anything stale or unauthenticated is skipped, so a bad
@@ -3381,7 +3958,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
         if (read.branch().some((h) => h.kind === "user")) return null;
         const opening = openingChoices.get(path);
         openingChoices.delete(path);
-        const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };
+        const defaults = spec ? { model: spec.model ?? undefined, thinking: spec.thinking ?? undefined } : { ...loadDefaults(), ...opening };
         return {
           // A stored default the user has since turned off is stale like any other: skipped here, so
           // the session opens on pi's own default rather than on a model it would refuse to send with.
@@ -3397,9 +3974,17 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
           run.turns.watch(session);
           session.subscribe((event) => run.observe(event));
         }
-        // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
-        if (kind?.kind === "overseer") overseerRuntime?.watchSession(session);
-        else kind?.entry?.watchSession?.(session, path);
+        // A special loadout hears its runs, and tells a message the user sent from every other by
+        // the object it reaches the Agent as, from here: where its own watch was, so every listener
+        // keeps its place in the order.
+        if (special && built) {
+          if (special.spec.background) markBackground(session.id);
+          hearRuns(session, path, runs, {
+            port: special.port,
+            replyText: !!special.spec.replyText,
+            ...(built.promptAtRunStart ? { prompt: built.promptAtRunStart } : {}),
+          });
+        }
       },
     };
   };
@@ -3412,6 +3997,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     let unregisterUsage: (() => void) | undefined;
     const chat = new ChatSession(path, host, () => {
       unregisterUsage?.();
+      forgetSpecial(path);
       onDisposed();
     });
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
@@ -3424,36 +4010,59 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     }
     visHost.chat = chat;
     chat.deferredAppends = file.deferred;
+    if (worker) {
+      chat.workerSpec = worker;
+      // Its calls are its parent's worker's in the usage ledger (the extension's env attribution, gone).
+      unregisterUsage = registerUsageSession(file.read.id, {
+        kind: "worker",
+        ...(openCwd ? { cwd: openCwd } : {}),
+        parent: worker.parent.sessionId,
+        worker: worker.parent.workerId,
+      });
+      try {
+        await bringWorkerModel(chat, worker);
+      } catch (err) {
+        await chat.dispose();
+        throw err;
+      }
+      held.set(path, chat);
+      sessionsChanged();
+      return chat;
+    }
     // An ordinary chat's align launch record (a special loadout — the Overseer, a baton or project
     // overseer session — runs no align mode, so its file gets none and its hello says no flag).
-    if (!specialFor(file.read, path)) {
+    const kind = specialFor(file.read, path);
+    if (!kind) {
       chat.alignLaunch = launch;
       if (!launch.recorded) chat.deferredAppends.push(() => chat.recordAlignLaunch());
     }
     chat.profileState = profile;
-    if (!specialFor(file.read, path)) chat.loadoutState = loadout;
-    const kind = specialFor(file.read, path);
+    chat.userTurns = runs.turns;
+    chat.runTag = runs.tag;
+    if (!kind) chat.loadoutState = loadout;
     // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or
     // a project overseer's as `overseer`. Registered here as well as by the extension at
     // session_start, since a special loadout may not load it.
     const usageSid = file.read.id;
-    if (kind?.kind === "overseer" || kind?.kind === "project-overseer") noteUsageSession(usageSid, { kind: "overseer" });
+    if (last.special?.spec.usage === "overseer") noteUsageSession(usageSid, { kind: "overseer" });
     unregisterUsage = registerUsageSession(usageSid, { kind: "main", ...(openCwd ? { cwd: openCwd } : {}), parent: null });
-    if (kind && kind.kind !== "overseer") {
-      chat.special = kind.kind;
-      chat.specialEntry = kind.entry;
-      await kind.entry?.opened?.(chat);
+    if (kind && last.special) {
+      chat.special = kind;
+      chat.specialSpec = last.special.spec;
+      chat.specialPort = last.special.port;
     }
-    if (kind?.kind === "overseer") {
-      chat.special = "overseer";
+    // A chat process's kind is opened by its server, once the open is answered (server/chat-host.ts).
+    const local = !presetSpecs.has(path);
+    if (kind && kind !== "overseer" && local) await localSpecials?.opened?.(kind, chat);
+    if (kind === "overseer" && last.special) {
       // A conversation that already has messages keeps the model its file records (the SDK restores
       // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
       // this makes are still deferred (the hold is live until `restoreAppends`), so opening writes
       // nothing, like any other open.
-      await syncOverseerModel(chat, path).catch((err) =>
+      await syncOverseerModel(chat, last.special.spec).catch((err) =>
         console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
       );
-      await overseerRuntime?.opened(chat);
+      if (local) await localSpecials?.opened?.(kind, chat);
     }
     held.set(path, chat);
     sessionsChanged(); // its row now carries `chat` (heldChatState)
@@ -3464,6 +4073,24 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   } finally {
     file.restoreAppends();
   }
+}
+
+/**
+ * A worker's model when the open could not take it (a `claude-code-cli` id the catalog lacks: its
+ * provider registers it at session_start, after the build), and its thinking again on that model, set
+ * before any task is sent; a model that can't be set fails the start, never running on another.
+ */
+async function bringWorkerModel(chat: ChatSession, w: WorkerSpec): Promise<void> {
+  if (!w.model || chat.harness.model()?.ref === w.model) return;
+  try {
+    await chat.setModelRef(w.model);
+  } catch (err) {
+    const provider = w.model.slice(0, w.model.indexOf("/"));
+    throw new Error(
+      `Model ${w.model} could not be set on the worker (${err instanceof Error ? err.message : String(err)}); the task was not started. The ${provider} provider must be registered in the worker (the claude-code extension with --claude-code-provider).`,
+    );
+  }
+  if (w.thinking) chat.setThinking(w.thinking);
 }
 
 /**
@@ -3489,19 +4116,7 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   }
   assertNotLive(path);
   // The cheap pre-checks before the expensive open (model runtime, extensions, SDK session).
-  const cwd = cwdOverride(path) ?? storedCwd(path);
-  // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
-  // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
-  // makes a deleted directory exist.
-  const known = activeConfigFailure(path);
-  if (known) throw known;
-  // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
-  // below would otherwise build a model runtime before the SDK reached the same conclusion.
-  if (cwd && !existsSync(cwd)) {
-    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
-    configFailures.set(path, failure);
-    throw failure;
-  }
+  assertOpenConfig(path);
   if (!force) {
     // Shared constant with the frontend: RECENT_WRITE_MS (120s) in server/write-guard.ts.
     const age = recentForeignWriteAgeSec(path);

@@ -223,18 +223,6 @@ export const FORK_CACHE = kind<ForkCacheData>(
 /** A subagents worker's own session: the marker its child appends (subagents `worker-mark.ts`). Presence only. */
 export const WORKER_SESSION = kind<Record<string, unknown>>("subagents-worker-session", "presence", (d) => (isObject(d) ? d : null), "extension:subagents");
 
-/** A worker's older registry record (the host transport): its backend session's file or id. Read over the file. */
-export interface WorkerRegistryData {
-  backendSessionFile?: unknown;
-  backendSessionId?: unknown;
-}
-export const WORKER_REGISTRY = kind<WorkerRegistryData>(
-  "subagents-worker-registry",
-  "file-list",
-  (d) => (isObject(d) ? (d as WorkerRegistryData) : null),
-  "extension:subagents",
-);
-
 /** The session's sandbox state (newest usable on the branch), sandbox's `normalizeActive`. */
 export const SANDBOX = kind<SandboxActive>(SANDBOX_ENTRY_TYPE, "newest-on-branch", (d) => normalizeSandbox(d) ?? null, "extension:sandbox");
 
@@ -272,7 +260,7 @@ export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
-    MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, WORKER_REGISTRY, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
+    MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
   ].map((k) => [k.type, k as StateKind<unknown>]),
 );
 

@@ -457,7 +457,7 @@ webapp never writes to it (AGENTS.md: no file locking).
   when it has them), then a meta line of four short facts, so it holds one row at a normal pane
   width: **the model** leads, bare and in mono, the only fact that clips
   (`.meta-line-shrink`); its `title` carries the route that serves it and the full id
-  (`{provider} · {model id}`, e.g. "claude code · claude-haiku-4-5-20251001"). Then **the
+  (`{provider} · {model id}`, e.g. an older native Claude Code worker's "claude code · claude-haiku-4-5-20251001"). Then **the
   effort**, as the bare level in mono (`low`, `title` "effort low"; a worker that reports none
   shows nothing here), then the worker's tokens as `{n} tok` (the usage breakdown in its `title`),
   and last the **context readout**
@@ -500,8 +500,8 @@ webapp never writes to it (AGENTS.md: no file locking).
 | Workers list couldn't be fetched | `.banner-warn`: **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. Whatever is shown stays |
 | Selected, file empty (just started) | View head, then `.empty.subagents-empty`: **0 entries in {name}'s session so far.** Entries show up here as it writes them. |
 | Loading (after 300ms) | View head, then §chat/transcript's loading skeletons in the thread. `aria-busy="true"` on the section |
-| Selected, no session yet (Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
-| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (a claude-code worker reads `Claude session {id}`). Nothing else changed. |
+| Selected, no session yet (older native Claude Code worker) | View head, then `.empty.subagents-empty`: **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview, mono}. (Pi worker from an older pi-config: …runs on a pi that doesn't publish its session file yet.) |
+| File gone, first load | View head, then `.empty.subagents-empty`: **Couldn't find this worker's transcript.** `{path}` is gone (an older native claude-code worker reads `Claude session {id}`). Nothing else changed. |
 | File gone after loading | Keep what's shown. `.banner-warn` in the banner slot: **This transcript's file is gone.** What's shown is up to `{HH:MM}`. |
 | Connection lost, retrying | Keep what's shown. `.banner-warn`: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… (§design.copy-deck/live-watch). Pulses stop |
 | Gave up | `.banner-error`: **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · `Reconnect` |
@@ -522,7 +522,7 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 (a fill, `"compacted"` stated explicitly, or `null` before the first reply).
 
 - **Both backends, one rule.** A pi worker's reply carries `usage.input`, `cacheRead`,
-  `cacheWrite`; a Claude Code worker's `input_tokens`, `cache_read_input_tokens`,
+  `cacheWrite` (a Claude Code worker's included); an older native Claude Code worker's `input_tokens`, `cache_read_input_tokens`,
   `cache_creation_input_tokens`, on every line the CLI repeats a reply on. Claude Code's
   `isApiErrorMessage` and `<synthetic>` replies count as failed, a `compact_boundary` as a
   compaction, and nested agents' (`isSidechain`) lines are their own context, so they are skipped.
@@ -547,21 +547,43 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 
 ## §app.subagents-pane/claude-code-workers — Claude Code workers
 
-A worker on the claude-code backend writes no pi session file; it writes its own Claude Code
-transcript at `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`, and the live record gives us the
-session id (`WorkerInfo.sessionId`). Its meta line's provider reads `claude code`: this backend
-names its own route rather than an LLM provider. The viewer opens `/ws/watch?claude=<uuid>` instead of
+A worker started with `backend: "claude-code"` (by `agent_spawn`, a team member, a team's
+coordinator or monitor, Delegate or any other caller) runs a Claude model on Sova's tools: it is a
+pi worker whose model is the Claude Code provider's (`claude-code-cli/<catalog id>`), the same path
+a Claude Code chat runs on (§app/claude-code-provider). Its CLI runs with no built-in tools; every
+tool it calls is pi's, so its transcript is its pi session file, read, restored and resumed like any
+pi worker's, and it is recorded with backend `pi`. What the spawn asks for maps onto that worker:
+
+- **Model.** A Claude catalog id (an old id read as its catalog model,
+  §app.claude-code-provider/legacy-ids), or Sonnet's current id when none is given.
+- **Effort.** `low`, `medium` (the default), `high`, `xhigh` or `max`, kept as the worker's
+  thinking level after its model is set; the provider passes it to the CLI as its effort.
+- **Tools.** Claude's names map to Sova's: `Read` → `read`, `Bash` → `bash`, `Edit` → `edit`,
+  `Write` → `write`, `Grep` → `grep`, `Glob` → `find`, `LS` → `ls`; Sova's own names are accepted
+  as they are. Any other name (`WebFetch`, `Task`, …) is refused at spawn with that list. With no
+  `tools`, the worker gets all seven.
+- **`backendOptions`.** `permissionMode` `bypassPermissions` or `dontAsk` change nothing (the
+  worker has exactly the tools it was given, with no approval step); `plan` leaves it only `read`,
+  `grep`, `find` and `ls`. `acceptEdits` and `manual`, `allowedTools` and `maxBudgetUsd` are refused
+  at spawn with the reason: Sova's tools have no per-call approval and no spend ceiling.
+- **Team tools, sandbox, remote targets, spec mode, failover.** As for any pi worker: a member
+  loads the member tools, the session's sandbox confines each tool call (§chat.sandbox/workers), a
+  remote session's worker gets the remote tools, and a turn moves to another Claude login the way a
+  chat's turn does (§app.claude-logins/failover).
+
+A worker that ran before this change, on the Claude Code CLI's own tools, wrote no pi session file;
+it wrote its own Claude Code transcript at `~/.claude/projects/<cwd-slug>/<sessionId>.jsonl`, and
+its record holds the session id (`WorkerInfo.sessionId`). It stays readable; resuming it continues
+on Sova's tools in a new pi session under the same id (§app.worker-restore/resume), whose first
+message names this transcript's file. Its meta line's provider reads `claude code`: that
+backend names its own route rather than an LLM provider. The viewer opens `/ws/watch?claude=<uuid>` instead of
 `?path=`; the server finds the file by scanning the project dirs (id must be a UUID, the resolved
 file must stay inside `~/.claude/projects`; `server/claude-transcript.ts`) and tails it read-only
 like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, each carrying a
 pi-shaped synthetic `raw`, so every row renders through the existing components: prose, thinking
 (redacted signature-only blocks are dropped), tool calls paired with their results (CC's `Bash`,
 `Read`, `Edit`, `Write`, `Glob`, `Grep` map to pi's names and icons; anything else keeps CC's
-name), compaction boundaries as info rows. A worker whose Claude login leaves the device
-(§app.claude-logins/drain) moves to the next login with `--resume` of its own session, so this
-view keeps following the same file (every login keeps its transcripts in Claude Code's own
-`projects/`); the worker's own transcript gets the line `Claude: moved {A} → {B} (the login left
-this device)`. Image blocks (`{type:"image", source:{type:"base64",
+name), compaction boundaries as info rows. Image blocks (`{type:"image", source:{type:"base64",
 media_type, data}}`), in a tool result or a prompt, become the row's `images` as data URLs, the
 same field a pi row fills, so a worker's image results show in its tool cards as a pi session's
 do (§chat.images/thread-thumbnails); they never become placeholder text. Sidechains (a

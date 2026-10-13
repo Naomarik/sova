@@ -88,7 +88,7 @@ function placeGhost() {
 /** The dragged row, copied for the card: no ids (they'd repeat), no state classes. */
 function cardOf(source: Element): HTMLElement {
   const copy = source.cloneNode(true) as HTMLElement;
-  copy.classList.remove("session-row-lifted", "session-row-dragging", "session-row-shell-current", "session-row-shell-selecting", "session-row-shell-selected");
+  copy.classList.remove("session-row-lifted", "session-row-dragging", "session-row-shell-current");
   for (const el of [copy, ...copy.querySelectorAll("[id]")]) el.removeAttribute("id");
   return copy;
 }

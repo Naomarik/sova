@@ -41,7 +41,7 @@ import { agentsHref, teamKey } from "../lib/insights";
 import { createPoll, type Poll } from "../lib/poll";
 import { archivedProjectOf, orgProjectOf } from "../lib/drag-archive";
 import { archiveSession, renameSession } from "../lib/session-actions";
-import { archiveBlockReason } from "../lib/session-selection";
+import { archiveBlockReason } from "../lib/archive-block";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { announce, copyText, home, localRunning, sessionContext, toast } from "../lib/ui-state";
@@ -51,7 +51,7 @@ import { ActionMenu } from "./ActionMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
-import { TitleField } from "./SelectionToolbar";
+import { TitleField } from "./TitleField";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
 

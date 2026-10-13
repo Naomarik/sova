@@ -4,7 +4,7 @@
 
 import type { SessionSummary } from "../../shared/protocol";
 import { isTopSession } from "./regions";
-import { archiveBlockReason, type SelectableSession } from "./session-selection";
+import { archiveBlockReason, type ArchivableSession } from "./archive-block";
 
 /**
  * What a drop on the Archive tile would do with this row. `none`: nothing at all, and nothing
@@ -14,7 +14,7 @@ import { archiveBlockReason, type SelectableSession } from "./session-selection"
  */
 export type ArchiveDrag = { kind: "archive" } | { kind: "blocked"; reason: string } | { kind: "none" };
 
-export function archiveDragOf(s: SelectableSession): ArchiveDrag {
+export function archiveDragOf(s: ArchivableSession): ArchiveDrag {
   if (s.archived || !isTopSession(s)) return { kind: "none" };
   const reason = archiveBlockReason(s);
   return reason ? { kind: "blocked", reason } : { kind: "archive" };

@@ -3,7 +3,7 @@
 // throwaway PI_CODING_AGENT_DIR with no credentials (no model is ever called). The test plays the
 // server: control, open, calls, browsers, server-hosted tools, drains.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -333,6 +333,26 @@ test("F14: a prompt that reaches a stopping chat goes back to its pane as a refu
   t.ctl.server.close();
   await settle();
   assert.deepEqual(t.exits, ["operator"]);
+});
+
+test("F14: a prompt that reaches a chat closing for a reload goes back to its pane as a refusal, never run, never lost", async () => {
+  const t = await setup();
+  const sends = collect(t.ctl.server, "client.send");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  const exit = awaitFrame(t.ctl.server, "exit", 5_000);
+  // The rollout's drain closes it for a reload; the pane's prompt is in flight behind it.
+  void t.host.close("reload", { dispose: true });
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "prompt", text: "RELOAD-RACE-PROMPT", clientId: "p1" } });
+  assert.equal((await exit).cause, "reload");
+  await settle();
+  const refused = sends.map((f) => JSON.parse(f.json)).filter((m) => m.code === "refused");
+  assert.deepEqual(refused.map((m) => m.clientId), ["p1"]);
+  assert.ok(refused[0].message, "it says why");
+  assert.equal(readFileSync(t.path, "utf8").includes("RELOAD-RACE-PROMPT"), false, "never run here");
+  t.ctl.server.close();
+  await settle();
+  assert.deepEqual(t.exits, ["reload"]);
 });
 
 test("F14: an operator close lets what the chat already asked the server finish first (bounded), then disposes", async () => {

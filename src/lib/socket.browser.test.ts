@@ -72,3 +72,31 @@ test("a URL function is read at every connect", async () => {
   assert.equal(made.at(-1)!.url, "ws://h/d?have=r2");
   s.dispose();
 });
+
+test("afterMs: a first-connect wait that never settles connects once the time is up, once", async () => {
+  made.length = 0;
+  let last: string | undefined;
+  const s = solid.createRoot((dispose) => ({
+    socket: createReconnectingSocket(() => `ws://h/e${last ? `?have=${last}` : ""}`, { onMessage() {}, after: new Promise<void>(() => {}), afterMs: 20 }),
+    dispose,
+  }));
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(made.length, 0, "not before the time is up");
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(made.length, 1);
+  assert.equal(made[0]!.url, "ws://h/e", "nothing painted: no row named");
+  s.dispose();
+});
+
+test("afterMs: a read that lands first connects at once, and the timer adds no second socket", async () => {
+  made.length = 0;
+  let release!: () => void;
+  const s = solid.createRoot((dispose) => {
+    createReconnectingSocket("ws://h/f", { onMessage() {}, after: new Promise<void>((r) => (release = r)), afterMs: 30 });
+    return dispose;
+  });
+  release();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(made.length, 1);
+  s();
+});

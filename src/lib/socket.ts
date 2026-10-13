@@ -48,6 +48,8 @@ export interface SocketHandlers<M> {
   onOpen?(isReconnect: boolean): void;
   /** The first connect waits for this (settled either way); status reads "connecting" meanwhile. */
   after?: Promise<unknown>;
+  /** …but no longer than this many ms: past it, the first connect goes ahead. */
+  afterMs?: number;
 }
 
 /**
@@ -146,7 +148,14 @@ export function createReconnectingSocket<M>(url: string | (() => string), handle
     const first = () => {
       if (!ws && !stopped && status() === "connecting" && attempt() === 0) connect();
     };
-    void handlers.after.then(first, first);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const go = () => {
+      clearTimeout(timer);
+      first();
+    };
+    if (handlers.afterMs !== undefined) timer = setTimeout(go, handlers.afterMs);
+    onCleanup(() => clearTimeout(timer));
+    void handlers.after.then(go, go);
   } else connect();
   onCleanup(close);
 

@@ -1146,3 +1146,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .chat-wait-note[data-soft] { animation-delay: 300ms; }
 .jump-latest[data-shown] ~ .chat-wait-note { bottom: calc(var(--space-4) + var(--control-md) + var(--space-2)); }
+/* The note's clock, inline (public/icons/clock.svg): a note that first shows while the server is
+   down (a reconnect) can't fetch its icon, and the mask then drew a blank gap. */
+.chat-wait-note-icon {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
+}

@@ -2514,11 +2514,12 @@ async function trestart() {
     const pp = chatPid(P.path);
     const pw = chatPid(w.path);
     const before = srv.pid();
+    const started0 = (await c.api("/api/health"))?.startedAt;
     A.s.close();
     P.s.close();
     const t0 = Date.now();
     const ap = await verb("apply", { instance: main, confirm: true });
-    const step = ap?.steps?.find((x) => x.id === "reload:server");
+    const step = ap?.steps?.find((x) => x.id === "restart:server");
     R.check(ap?.ok === true && ap?.error?.code !== "busy", `trestart: with a reply and a worker running, the confirmed Apply is not refused as busy (${ap?.error ? `${ap.error.code}: ${ap.error.message}` : "ok"})`);
     R.check(step && /restart scheduled/.test(step.detail ?? "") && !/busy/.test(step.detail ?? ""), `trestart: it schedules the unit's restart, no busy condition (${step?.detail ?? JSON.stringify(ap)?.slice(0, 200)})`);
     const moved = await waitFor(() => {
@@ -2528,6 +2529,8 @@ async function trestart() {
     const took = Math.round((Date.now() - t0) / 1000);
     R.check(moved, `trestart: the server restarted while busy, ${took} s after Apply (pid ${before} → ${srv.pid() || "none"})`);
     await healthy(base);
+    const started1 = (await c.api("/api/health"))?.startedAt;
+    R.check(started0 && started1 && started1 !== started0, `trestart: /api/health's startedAt moved (${started0} → ${started1})`);
     R.note(`trestart: restart ${took} s after Apply`);
     R.check(alive(pa) && chatPid(A.path) === pa, `trestart: the chat mid-reply kept its process (${pa} → ${chatPid(A.path) || "none"})`);
     R.check(alive(pp) && chatPid(P.path) === pp, `trestart: the worker's parent kept its process (${pp} → ${chatPid(P.path) || "none"})`);

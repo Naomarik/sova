@@ -26,3 +26,14 @@ test("a refusal naming a send hands its text back once, and the reconnect then h
   handedBack.add("c2");
   assert.deepEqual(u.takeAll(handedBack), []);
 });
+
+test("takeFrom: only the sends of the connection named, oldest first, each once; the rest stay", () => {
+  const u = new UnackedSends();
+  const handedBack = new Set<string>();
+  u.sent("a", "on the first connection", 1);
+  u.sent("b", "on the second", 2);
+  u.sent("c", "also on the second", 2);
+  assert.deepEqual(u.takeFrom(2, handedBack), ["on the second", "also on the second"]);
+  assert.deepEqual(u.takeFrom(2, handedBack), []);
+  assert.deepEqual(u.takeAll(handedBack), ["on the first connection"]);
+});

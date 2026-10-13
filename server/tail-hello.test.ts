@@ -22,7 +22,8 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { cutTail, historyRanges, pullFields, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
+const { afterHave, cutTail, helloAfterHave, historyRanges, pullFields, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
+const { cutHello, firstHelloFor } = await import("./chat-manager");
 const { normalizeEntries } = await import("./transcript");
 const { activeBranch, parseLines } = await import("./harness/pi/reader");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
@@ -228,3 +229,59 @@ function bigSession(name: string): string {
   return path;
 }
 
+// §chat.transcript/instant-open: a browser that painted the rows up to `have` from the file.
+describe("a hello after the rows the client holds (`?have=`)", () => {
+  const branch = [row("u1"), row("a1:0", "assistant-text"), row("u2"), row("a2:0", "assistant-text"), row("a2:1", "assistant-text"), row("u3")];
+
+  test("afterHave: the rows after the named one, and how many come up to it; none after the last", () => {
+    assert.deepEqual(afterHave(branch, "a2:0", 0), { items: branch.slice(4), older: 4 });
+    assert.deepEqual(afterHave(branch, "u3", 0), { items: [], older: 6 });
+  });
+
+  test("afterHave: a row not on the branch (a fork, a rewind, unknown) is the usual hello", () => {
+    assert.equal(afterHave(branch, "u9", 0), null);
+    assert.equal(afterHave(branch, "", 0), null);
+    // An entry id is not its reply's block rows.
+    assert.equal(afterHave(branch, "a2", 0), null);
+  });
+
+  test("afterHave: a row above the usual hello's first row is the usual hello, never more than it carries", () => {
+    assert.equal(afterHave(branch, "u1", 2), null);
+    assert.deepEqual(afterHave(branch, "a1:0", 2), { items: branch.slice(2), older: 2 });
+  });
+
+  test("helloAfterHave: the hello's state, the rows after, `after`, and the summary of every row up to it", () => {
+    const hello = { type: "hello" as const, items: branch.slice(3), isStreaming: true, model: "zai/glm-5.3", older: 3 };
+    const got = helloAfterHave(hello, branch, 3, "u2", false)!;
+    assert.deepEqual(got.items, branch.slice(3));
+    assert.equal(got.after, "u2");
+    assert.equal(got.older, 3);
+    assert.equal(got.isStreaming, true);
+    assert.equal(got.model, "zai/glm-5.3");
+    assert.deepEqual(got.olderSummary, pullFields(branch, 3, false).olderSummary);
+    assert.equal(got.prefetch, undefined);
+    assert.equal(helloAfterHave(hello, branch, 3, "u2", true)!.prefetch, true);
+    assert.equal(helloAfterHave(hello, branch, 3, "nope", false), null);
+  });
+
+  test("firstHelloFor: a `?tail=rest` client naming its last row gets only the rows after it; any other gets the usual cut hello", () => {
+    const items = Array.from({ length: 80 }, (_, i) => row(`u${i}`));
+    const hello = { type: "hello" as const, items, isStreaming: false, model: null, thinking: "off", context: null };
+    const cut = cutHello(hello, false);
+    assert.ok((cut.hello.older ?? 0) > 0, "a long branch is cut");
+    const pull = { send: () => {}, tail: true, pull: { prefetch: false } };
+    const last = firstHelloFor(cut, { ...pull, have: "u79" }) as typeof hello & { after?: string; older?: number };
+    assert.equal(last.after, "u79");
+    assert.deepEqual(last.items, []);
+    assert.equal(last.older, 80);
+    const mid = firstHelloFor(cut, { ...pull, have: "u78" }) as typeof hello & { after?: string };
+    assert.deepEqual(mid.items.map((r) => r.id), ["u79"]);
+    // Unknown, or above the cut: the usual hello, as from a server that predates `have`.
+    const usual = firstHelloFor(cut, pull);
+    for (const have of ["u-gone", "u0"]) assert.deepEqual(firstHelloFor(cut, { ...pull, have }), usual);
+    assert.equal((usual as { after?: string }).after, undefined);
+    // `have` without `?tail=rest` (a `?tail=1` client is pushed its history): ignored.
+    const tail1 = { send: () => {}, tail: true, have: "u79" };
+    assert.deepEqual(firstHelloFor(cut, tail1), firstHelloFor(cut, { send: () => {}, tail: true }));
+  });
+});

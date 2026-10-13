@@ -671,6 +671,7 @@ export class ChatRuntimeHost {
       ...(f.client.wire ? { wire: f.client.wire } : {}),
       ...(f.client.tail ? { tail: f.client.tail } : {}),
       ...(f.client.pull ? { pull: f.client.pull } : {}),
+      ...(f.client.pull && typeof f.client.have === "string" ? { have: f.client.have } : {}),
       // After its hello, which starts the pane's account again (the hello may wait: ChatSession.attach).
       greeted: () => {
         const code = this.code();

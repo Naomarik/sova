@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { constants, existsSync, readFileSync, readlinkSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, copyFile, link, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, symlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { buildCommit, realMachine } from "../mesh/details-collect";
 import { chatsRoot } from "./supervisor";
 
@@ -344,13 +344,21 @@ export function lastGood(root = codeRoot()): string | null {
  * worker process still runs), not `lastGood`, and older than `graceMs`; then the shared dependencies
  * no remaining copy links, and leftovers of copies never finished. Returns what it removed.
  */
-export async function collectGenerations(keep: Set<string>, o: { root?: string; graceMs?: number; now?: () => number } = {}): Promise<string[]> {
+export async function collectGenerations(
+  keep: Set<string>,
+  o: { root?: string; graceMs?: number; now?: () => number; kept?: (name: string, why: "in use" | "last good" | "young") => void } = {},
+): Promise<string[]> {
   const root = o.root ?? codeRoot();
   const grace = o.graceMs ?? GC_GRACE_MS;
   const now = (o.now ?? Date.now)();
-  const keptDirs = new Set([...keep, ...(lastGood(root) ? [lastGood(root)!] : [])].map((id) => generationDir(id, root)));
+  const good = lastGood(root);
+  const inUse = new Set([...keep].map((id) => generationDir(id, root)));
+  const goodDir = good ? generationDir(good, root) : null;
+  // A copy's age is its `.complete` marker's (read-only, written once), never its directory's: a chat
+  // process runs with the copy as its working directory, and a file it writes there must not make the
+  // copy look new. A copy never finished (`.tmp-*`, or no marker) goes by its directory.
   const young = async (p: string) => {
-    const st = await stat(p).catch(() => null);
+    const st = (await stat(join(p, COMPLETE)).catch(() => null)) ?? (await stat(p).catch(() => null));
     return !st || now - st.mtimeMs < grace;
   };
   const removed: string[] = [];
@@ -364,8 +372,12 @@ export async function collectGenerations(keep: Set<string>, o: { root?: string; 
   for (const n of names) {
     if (n === DEPS || n === GOOD) continue;
     const p = join(root, n);
-    if (keptDirs.has(p) || (await young(p))) {
-      if (!n.startsWith(".tmp-")) remaining.push(p);
+    const why = inUse.has(p) ? "in use" : p === goodDir ? "last good" : (await young(p)) ? "young" : null;
+    if (why) {
+      if (!n.startsWith(".tmp-")) {
+        remaining.push(p);
+        o.kept?.(n, why);
+      }
       continue;
     }
     await rm(p, { recursive: true, force: true });
@@ -412,8 +424,11 @@ export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: str
     try {
       const keep = new Set(inUse());
       if (current) keep.add(current.id);
-      const gone = await collectGenerations(keep, { root: o.root ?? codeRoot(env), graceMs: graceOf(env) });
+      const kept: string[] = [];
+      const own = current ? basename(current.dir) : null;
+      const gone = await collectGenerations(keep, { root: o.root ?? codeRoot(env), graceMs: graceOf(env), kept: (n, why) => void (n !== own && kept.push(`${n} (${why})`)) });
       if (gone.length) log(`removed unused code: ${gone.join(", ")}`);
+      if (kept.length) log(`kept older code: ${kept.join(", ")}`);
     } catch (err) {
       log(`collecting unused code failed: ${(err as Error).message}`);
     }

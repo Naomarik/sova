@@ -147,9 +147,11 @@ const readdirNames = (dir: string): string[] => {
     return [];
   }
 };
+/** Make a copy (or a deps snapshot) look `ms` old: its directory and its `.complete` marker. */
 const age = (p: string, ms: number) => {
   const t = (Date.now() - ms) / 1000;
   utimesSync(p, t, t);
+  if (existsSync(join(p, ".complete"))) utimesSync(join(p, ".complete"), t, t);
 };
 
 test("collection keeps what is in use, the last good one and young ones; removes the rest and unused node_modules", async () => {
@@ -194,7 +196,7 @@ test("the collector: at once, keeping the current generation and what is in use;
     await gc.collect();
     gc.stop();
     assert.ok(!existsSync(old.dir) && existsSync(used.dir) && existsSync(cur.dir));
-    assert.deepEqual(lines, ["removed unused code: gen-old"]);
+    assert.deepEqual(lines.filter((l) => l.startsWith("removed")), ["removed unused code: gen-old"]);
   } finally {
     rmSync(base, { recursive: true, force: true });
     resetGenerations();
@@ -206,6 +208,27 @@ test("a server started from a chat's tools: once the chat's variables are delete
   scrubChatProcessEnv(server);
   assert.equal(codeRoot(server), join(chatsRoot(), "code"));
   assert.equal(ownCodeOf(server, "/anywhere"), null);
+});
+
+test("a copy's age is its marker's: a file a chat process writes in its working directory (the copy) doesn't keep it; what is kept, and why, is logged", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-old" }), log: quiet });
+    const used = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-used" }), log: quiet });
+    await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
+    for (const g of [old, used]) age(g.dir, 60 * 60_000);
+    writeFileSync(join(old.dir, "stray.log"), "written by a chat process\n"); // the directory is new again
+    const lines: string[] = [];
+    const gc = startGenerationGc(() => ["gen-used"], { root, log: (l) => lines.push(l) });
+    await gc.collect();
+    gc.stop();
+    assert.ok(!existsSync(old.dir), "its marker is old: collected");
+    assert.ok(lines.includes("removed unused code: gen-old"), lines.join("\n"));
+    assert.ok(lines.includes("kept older code: gen-used (in use)"), lines.join("\n"));
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
 });
 
 test("SOVA_CHAT_CODE_GRACE_MIN shortens the grace (trials)", async () => {

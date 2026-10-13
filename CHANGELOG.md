@@ -4,6 +4,17 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.3.1 — 2026-10-13
+
+A fix on top of v0.3.0.
+
+- **Delegate finds Claude Code workers again.** Since v0.3.0 the Delegate mode reported every
+  Claude Code profile as having no available worker, because it looked for Claude Code where it no
+  longer registers. It now reads the same Claude model list the model picker uses, so the Planning,
+  Investigation and Implementation profiles start their Claude Code workers as before.
+
+Going back to `v0.3.0` (`SOVA_REF=v0.3.0`) changes no stored settings or sessions.
+
 ## v0.3.0 — 2026-10-13
 
 Every chat now runs in a process of its own. 353 commits since v0.2.0. The highlights:

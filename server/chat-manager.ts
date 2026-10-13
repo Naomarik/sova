@@ -407,6 +407,9 @@ export interface ChatClient {
   /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
       pushed, and its hellos carry `olderSummary` (and `prefetch`, for a browser on this machine). */
   pull?: { prefetch: boolean };
+  /** Called after each hello this client is sent at its attach (greet), for what the host says to a
+      pane after its hello (its chat process's code state): the hello may wait (attach). */
+  greeted?(): void;
   /** End this browser's socket (server/ws.ts): a chat whose process died tells it so, then closes
       it so it reconnects (§app.chat-processes/crash). */
   close?(code: number, reason: string): void;
@@ -924,6 +927,10 @@ export function setSingletonCheck(fn: typeof singletonCheck): void {
   singletonCheck = fn;
 }
 
+/** How long a wire-2 pane's hello waits for the session's stored reply timings (ChatSession.attach):
+    a slow store delays a cold transcript by at most this. */
+export const HELLO_WAIT_MS = 1500;
+
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
   readonly clients = new Set<ChatClient>();
@@ -936,8 +943,12 @@ class ChatSession {
   private storedTimings: ReplyLookup | null = null;
   /** The stored timings are on their way (loadReplyTimings). */
   private timingsLoading = false;
-  /** Wire-2 panes greeted while they were. */
+  /** Wire-2 panes greeted while they were (their hold ran out first). */
   private readonly greetedEarly = new Set<ChatClient>();
+  /** Wire-2 panes that attached while they were: greeted once they arrive, or at HELLO_WAIT_MS. Not
+      yet in `clients` (nothing is sent to them before their hello), but they count as attached for a
+      dialog. */
+  private readonly helloHeld = new Map<ChatClient, NodeJS.Timeout>();
   private readonly replyLookup: ReplyLookup = (entryId) => this.replyTimings.get(entryId) ?? this.storedTimings?.(entryId);
   private streamGuardOff: (() => void) | null = null;
   /** This runtime's last stream-guard trip (server/stream-guard.ts); cleared when a run starts. */
@@ -1872,12 +1883,32 @@ class ChatSession {
       this.timingsLoading = false;
       const early = [...this.greetedEarly];
       this.greetedEarly.clear();
+      if (got && !this.disposed) this.storedTimings = got.get;
+      // Whatever the answer (none, failed, timed out), each held pane gets its one hello now.
+      this.releaseHeld();
       if (!got || this.disposed) return;
-      this.storedTimings = got.get;
       for (const c of early) if (this.clients.has(c)) this.greet(c);
     } catch {
       // no facts: rows look as they always did
-      if (this.replyTimings === fresh) this.timingsLoading = false;
+      if (this.replyTimings === fresh) {
+        this.timingsLoading = false;
+        this.releaseHeld();
+      }
+    }
+  }
+
+  /** Greet held panes (`only`: that one, its hold run out; it gets its hello again when the timings
+      arrive). */
+  private releaseHeld(only?: ChatClient): void {
+    for (const c of only ? [only] : [...this.helloHeld.keys()]) {
+      const t = this.helloHeld.get(c);
+      if (!t) continue;
+      clearTimeout(t);
+      this.helloHeld.delete(c);
+      if (this.disposed) continue;
+      this.clients.add(c);
+      this.greet(c);
+      if (only && this.timingsLoading) this.greetedEarly.add(c);
     }
   }
 
@@ -2484,11 +2515,18 @@ class ChatSession {
   private readonly liveTail = new LiveTail();
 
   attach(client: ChatClient): void {
+    // A wire-2 pane that comes while this session's stored reply timings are on their way waits
+    // for them, a bounded while, so its one hello carries the reply facts (loadReplyTimings). It
+    // joins `clients` at its hello: what it would have been sent before then, the hello holds.
+    if (this.timingsLoading && client.wire === 2 && !this.disposed) {
+      if (this.helloHeld.has(client)) return;
+      const t = setTimeout(() => this.releaseHeld(client), HELLO_WAIT_MS);
+      t.unref?.();
+      this.helloHeld.set(client, t);
+      return;
+    }
     this.clients.add(client);
     this.greet(client);
-    // Its rows went out before this session's stored reply timings arrived: it gets them in a
-    // second hello when they do (loadReplyTimings).
-    if (this.timingsLoading && client.wire === 2) this.greetedEarly.add(client);
   }
 
   /** A client's hello and the state its first paint needs, in one synchronous step (attach). */
@@ -2518,6 +2556,7 @@ class ChatSession {
     for (const [id, p] of this.pendingUi)
       client.send({ type: "ui_request", id, request: { ...p.request, timeout: p.deadline === undefined ? undefined : Math.max(0, p.deadline - Date.now()) } });
     if (!client.pull) sendHistory(cut, [client], (c) => this.clients.has(c), this.replyLookup);
+    client.greeted?.();
   }
 
   /**
@@ -2551,8 +2590,12 @@ class ChatSession {
   }
 
   detach(client: ChatClient): void {
+    const held = this.helloHeld.get(client);
+    if (held) clearTimeout(held);
+    this.helloHeld.delete(client);
+    this.greetedEarly.delete(client);
     this.clients.delete(client);
-    if (this.clients.size === 0) {
+    if (this.clients.size === 0 && this.helloHeld.size === 0) {
       // Nobody can answer open dialogs anymore: resolve them with defaults. The runtime stays
       // alive: a session closes when the user archives it, not when the last tab leaves.
       this.resolveDialogsUnanswered();
@@ -3486,6 +3529,8 @@ class ChatSession {
         .then(() => this.keepQueued((it) => !!it.baton))
         .catch((err) => console.warn(`[chat] queued messages not kept at close: ${err instanceof Error ? err.message : String(err)}`));
     this.disposed = true;
+    for (const t of this.helloHeld.values()) clearTimeout(t);
+    this.helloHeld.clear();
     this.memoryRef?.dispose();
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
@@ -3524,7 +3569,7 @@ class ChatSession {
       parse: (value: unknown) => T,
       opts: { signal?: AbortSignal; timeout?: number } | undefined,
     ): Promise<T> => {
-      if (opts?.signal?.aborted || this.clients.size === 0) return Promise.resolve(fallback);
+      if (opts?.signal?.aborted || (this.clients.size === 0 && this.helloHeld.size === 0)) return Promise.resolve(fallback);
       const id = randomUUID();
       return new Promise<T>((resolve) => {
         let timer: NodeJS.Timeout | undefined;

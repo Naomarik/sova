@@ -671,13 +671,16 @@ export class ChatRuntimeHost {
       ...(f.client.wire ? { wire: f.client.wire } : {}),
       ...(f.client.tail ? { tail: f.client.tail } : {}),
       ...(f.client.pull ? { pull: f.client.pull } : {}),
+      // After its hello, which starts the pane's account again (the hello may wait: ChatSession.attach).
+      greeted: () => {
+        const code = this.code();
+        if (code.state !== "current") client.send(codeMessage(code));
+      },
     };
     this.clients.set(f.clientId, client);
     // A pane is back: the orphans go, their dialogs stay (attach sends them again).
     if (this.orphaned) this.endOrphans(false);
     chat.attach(client);
-    const code = this.code();
-    if (code.state !== "current") client.send(codeMessage(code));
     this.pokeSoon();
   }
 

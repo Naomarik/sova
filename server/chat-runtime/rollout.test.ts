@@ -75,6 +75,21 @@ test("a chat no longer quiet refuses: the replacement goes and the chat keeps it
   assert.equal(r.halted, null, "a refusal is no failure");
 });
 
+test("a chat asking again the moment its refused reload says older gets a reload of its own, never the refused one", async () => {
+  let drains = 0;
+  let again: Promise<string> | null = null;
+  const f = make({
+    drain: async () => ({ ok: drains++ > 0 }),
+    // The chat asks at once on hearing "older" (a Reload now that stood), before the refused run has settled.
+    setCode: (id, state) => {
+      if (state === "older" && !again) again = f.r.request(id, { auto: false });
+    },
+  });
+  assert.equal(await f.r.request("a", { auto: true }), "refused");
+  assert.ok(again);
+  assert.equal(await again, "reloaded");
+});
+
 test("a replacement that fails to boot halts the automatic rollout; Reload Now still tries", async () => {
   let boots = 0;
   const { r, calls, codes } = make({ waitReady: async () => (boots++ === 0 ? { ok: false, error: "no hello in 30 s" } : { ok: true }) });

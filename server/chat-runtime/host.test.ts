@@ -632,6 +632,31 @@ test("code: a reload asked for but not yet begun when the server restarts is ask
   assert.deepEqual(uNextReloads, [{ t: "reload.request", auto: true }]);
 });
 
+test("code: Reload now pressed while an automatic reload is under way stands: refused at the drain, it asks again at the next quiet moment (t21r)", async () => {
+  const t = await setup({ build: "a", serverBuild: "b" });
+  const reloads = collect(t.ctl.server, "reload.request");
+  const sends = collect(t.ctl.server, "client.send");
+  // Nobody attached: the automatic request at once.
+  (t.host as unknown as { check(): void }).check();
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: true }]);
+  t.ctl.server.send({ t: "push", kind: "code", state: "reloading" });
+  await settle();
+  // A pane attaches and presses Reload now while that reload runs.
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
+  await settle();
+  // The drain is refused (a reply started), the replacement goes: older again.
+  t.ctl.server.send({ t: "push", kind: "code", state: "older" });
+  await settle();
+  assert.deepEqual(sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code").at(-1), { type: "code", state: "older", pending: true });
+  // Quiet, the pane attached, the dwell long: Reload now's request at once.
+  (t.host as unknown as { check(): void }).check();
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: true }, { t: "reload.request", auto: false }]);
+});
+
 test("code: workers in processes of their own never hold a reload (they're reattached); another backend's working worker does; idle stop waits for both", async () => {
   /** This process's live record for the chat, with one worker of `backend` working. */
   const liveRecord = (t: { path: string; id: string }, backend: string) =>

@@ -82,6 +82,9 @@
 //               the current copy; unused copies go; new code that fails to boot halts the rollout
 //     t27       Part B/C B1: a broken deploy: no last good copy refuses with the reason; else a new chat
 //               opens on the last good copy with the failure banner
+//     trestart  Part C C1 (--mode unit): with a reply and a worker running, the operator's confirmed Apply on
+//               a scratch project's slot 0 adopting the trial's stand-in unit is not refused as busy and
+//               restarts the server within seconds; chats and worker keep their processes, nothing resumed
 //     tdefault  Part B/C B4/B1: no switch, and SOVA_CHAT_HOST=off: chats and workers still run in processes
 //               of their own, never in the server or as its children
 //     tserverless  Part B 5e(a): with the server stopped for good, a quiet chat exits after the (shortened)
@@ -2470,6 +2473,100 @@ async function t27() {
   await boot();
 }
 
+// Trestart (Part C, C1): a restart with no busy gate. A scratch project whose slot 0 adopts the trial's
+// own stand-in unit (never sova-runtime.service); while a chat is mid-reply and another's worker runs,
+// the operator's confirmed Apply on slot 0 is not refused as busy, schedules the unit's restart in a few
+// seconds, and the server restarts then: both chats and the worker keep their processes, the reply ends
+// once, the worker's completion arrives once, nothing is resumed and no restart-gate log is written.
+async function trestart() {
+  if (mode !== "unit") return R.note("trestart: not run: Apply restarts the adopted unit, so it needs --mode unit");
+  const root = join(scratch, "trestart-proj");
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(join(root, ".sova"), { recursive: true });
+  const port = Number(new URL(base).port);
+  const def = {
+    version: 1,
+    slots: { cap: 2 },
+    services: { server: { cmd: ["node", "-e", "setInterval(()=>{},1e9)"], ports: { http: { base: (await freePort()) + 10, stride: 10 } }, ready: { http: "http", path: "/api/health" }, adopt: { unit: srv.unit, ports: { http: port } } } },
+  };
+  writeFileSync(join(root, ".sova", "project.json"), JSON.stringify(def));
+  const git = (...a) => execFileSync("git", ["-C", root, "-c", "user.name=trial", "-c", "user.email=trial@example.invalid", ...a], { stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-q", "-m", "trestart fixture");
+  const verb = (v, body) => fetch(`${base}/api/project-services/${v}`, { method: "POST", headers: { "x-sova-token": tokenOf(agent), "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+  const sanitized = srv.unit.replace(/\.service$/, "").replace(/[^A-Za-z0-9_.-]/g, "_");
+  try {
+    const cr = await verb("create", { project: root });
+    if (!R.check(cr?.ok !== false, `trestart: create records the scratch project's slot 0, adopting ${srv.unit} (${cr?.error?.message ?? cr?.state ?? "ok"})`)) return;
+    const main = cr.instance;
+    // Busy: a chat mid-reply, another chat with a working worker.
+    const A = await newChat();
+    prompt(A.s, "[long 60 #trs] a long reply");
+    await A.s.until(delta(/part 3\//), 30000, "A streams");
+    const P = await newChat();
+    prompt(P.s, "[spawn 1 60 #trsw] start a worker");
+    await P.s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+    const w = await workerWith(P.path, "#trsw");
+    if (!R.check(w, "trestart: the worker is recorded")) return;
+    await waitFor(() => mockLog(mock.log).some((e) => e.tag === "trsw"), 60000);
+    const pa = chatPid(A.path);
+    const pp = chatPid(P.path);
+    const pw = chatPid(w.path);
+    const before = srv.pid();
+    A.s.close();
+    P.s.close();
+    const t0 = Date.now();
+    const ap = await verb("apply", { instance: main, confirm: true });
+    const step = ap?.steps?.find((x) => x.id === "reload:server");
+    R.check(ap?.ok === true && ap?.error?.code !== "busy", `trestart: with a reply and a worker running, the confirmed Apply is not refused as busy (${ap?.error ? `${ap.error.code}: ${ap.error.message}` : "ok"})`);
+    R.check(step && /restart scheduled/.test(step.detail ?? "") && !/busy/.test(step.detail ?? ""), `trestart: it schedules the unit's restart, no busy condition (${step?.detail ?? JSON.stringify(ap)?.slice(0, 200)})`);
+    const moved = await waitFor(() => {
+      const p = srv.pid();
+      return p && p !== before;
+    }, 60000);
+    const took = Math.round((Date.now() - t0) / 1000);
+    R.check(moved, `trestart: the server restarted while busy, ${took} s after Apply (pid ${before} → ${srv.pid() || "none"})`);
+    await healthy(base);
+    R.note(`trestart: restart ${took} s after Apply`);
+    R.check(alive(pa) && chatPid(A.path) === pa, `trestart: the chat mid-reply kept its process (${pa} → ${chatPid(A.path) || "none"})`);
+    R.check(alive(pp) && chatPid(P.path) === pp, `trestart: the worker's parent kept its process (${pp} → ${chatPid(P.path) || "none"})`);
+    R.check(alive(pw) && chatPid(w.path) === pw, `trestart: the worker kept its process (${pw} → ${chatPid(w.path) || "none"})`);
+    const a2 = await chat(c, A.path);
+    await settled(a2, 0);
+    await sleep(1500);
+    const msgs = turnAssistants(A.path, "#trs]");
+    R.check(msgs.length === 1 && msgs[0].stopReason !== "aborted" && msgs[0].stopReason !== "error" && /REPLY-DONE/.test(textOfMsg(msgs[0])), `trestart: the reply ran to its end once (${msgs.map((m) => m.stopReason).join(", ") || "none"})`);
+    R.check(mockLog(mock.log).filter((e) => e.tag === "trs" && e.scenario).length === 1, "trestart: the model was asked for the reply once");
+    const p2 = await chat(c, P.path);
+    const done = await workerDone(p2, "trial-trsw");
+    R.check(done?.outcome === "success", `trestart: the worker finished on its own (${done?.outcome}${done?.error ? `: ${done.error}` : ""})`);
+    await sleep(5000);
+    R.check(completions(P.path, w.path) === 1, `trestart: the worker's completion reached the parent once (${completions(P.path, w.path)})`);
+    noResume(A.path, "trestart (reply)");
+    noResume(P.path, "trestart (parent)");
+    R.check(deaths(A.path).length + deaths(P.path).length + deaths(w.path).length === 0, "trestart: no death recorded");
+    const gateLog = join(sova, "project-services", "logs", "restart-gate.log");
+    R.check(!existsSync(gateLog) && !existsSync(join(ROOT, "scripts", "sova-restart-gate.mjs")), `trestart: no restart gate: no gate script, no gate log (${gateLog})`);
+    a2.close();
+    p2.close();
+  } finally {
+    // The scheduled restart's own transient units (sova-restart-<state hash>-<our unit>-*), never another's.
+    if (!darwin)
+      try {
+        const units = execFileSync("systemctl", ["--user", "list-units", "--all", "--plain", "--no-legend", "sova-restart-*"], { encoding: "utf8" })
+          .split("\n")
+          .map((l) => l.trim().split(/\s+/)[0])
+          .filter((u) => u && u.includes(`-${sanitized}-`));
+        for (const u of units)
+          try {
+            sc("stop", u);
+          } catch {}
+      } catch {}
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 // Tdefault (Part B/C, B4 and B1): chats in processes of their own by default, with no in-server path:
 // no switch set, and then the old switch-off value set, the server reports chats out of process, an
 // ordinary chat and its worker each run in a process of their own, and neither is the server's child.
@@ -2704,7 +2801,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t21r, t22, t23, t24, t25, t27, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t21r, t22, t23, t24, t25, t27, trestart, tdefault, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

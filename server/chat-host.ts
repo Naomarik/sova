@@ -35,7 +35,7 @@ import {
   specialSpecFor,
   takeOpeningChoice,
 } from "./chat-handle";
-import type { ChatSpecialKind, SpecialSpec, WorkerSpec } from "../shared/chat-runtime";
+import { type ChatSpecialKind, isNoAnswer, type SpecialSpec, type WorkerSpec } from "../shared/chat-runtime";
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
@@ -507,13 +507,25 @@ export class ChatHostRouter {
     await this.takenBack(path);
     const open = this.remotes.get(path);
     if (open && !open.closed) {
-      // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
-      if ((await open.call("reacquire", { force })) === "reloaded") {
-        const kind = kindOfMirror(open.mirror);
-        servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "", kind === "powers");
-        if (kind && kind !== "powers") await adoptSpecial(kind, path);
+      let again: "ok" | "reloaded" | null;
+      try {
+        again = await open.call("reacquire", { force });
+      } catch (err) {
+        // Its process exited while this open waited for it (an operator stop, an idle stop, an archive,
+        // a death): the handle is gone, so the chat opens anew below, never a stale "not reachable"
+        // for the pane.
+        if (!isNoAnswer(err) || (this.remotes.get(path) === open && !open.closed)) throw err;
+        again = null;
       }
-      return open;
+      if (again !== null) {
+        // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
+        if (again === "reloaded") {
+          const kind = kindOfMirror(open.mirror);
+          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "", kind === "powers");
+          if (kind && kind !== "powers") await adoptSpecial(kind, path);
+        }
+        return open;
+      }
     }
     if (!this.out() || this.inprocOnly.has(path)) return null;
     let p = this.starting.get(path);

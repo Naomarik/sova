@@ -697,7 +697,7 @@ export class DetachedDriver implements Driver {
   }
   owns(unit: string, pid: number) {
     const r = this.rec(unit);
-    if (!r) return false;
+    if (!r || this.reused(r)) return false;
     if (this.table.sessions) {
       const e = this.table.get(pid);
       return !!e && !e.zombie && e.sid === r.pid;

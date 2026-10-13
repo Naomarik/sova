@@ -153,3 +153,21 @@ test("detached: a recorded pid now someone else's (another start) is never signa
   assert.deepEqual(sent, [[6000, "SIGTERM"]]);
   process.kill = realKill;
 });
+
+test("detached, with session ids: a process in the session of a recorded pid now someone else's is not the unit's", () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-own-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const procs = join(root, "procs");
+  mkdirSync(procs, { recursive: true });
+  writeFileSync(join(procs, "u.json"), JSON.stringify({ pid: 7000, start: "S0", clock: "procfs", argv: ["true"], cwd: root, env: {}, at: "" }));
+  const entries: ProcEntry[] = [
+    { pid: 7000, ppid: 1, pgid: 7000, sid: 7000, zombie: false },
+    { pid: 7001, ppid: 7000, pgid: 7000, sid: 7000, zombie: false },
+  ];
+  let start = "S9";
+  const table: ProcTable = { kind: "procfs", sessions: true, list: () => entries, get: (pid) => entries.find((e) => e.pid === pid) ?? null, startOf: (pid) => (pid === 7000 ? start : null) };
+  const d = new DetachedDriver(200, { table, procsDir: () => procs, logsDir: () => join(root, "logs") });
+  assert.equal(d.owns("u", 7001), false, "a later session leader's member");
+  start = "S0";
+  assert.equal(d.owns("u", 7001), true, "the unit's own");
+});

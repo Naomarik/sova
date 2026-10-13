@@ -183,7 +183,12 @@ export function server({ tag, env, mode = "unit", log, root = ROOT }) {
       execFileSync("systemd-run", ["--user", `--unit=${unit}`, "--property=KillMode=control-group", "--property=TimeoutStopSec=30", `--working-directory=${root}`, `--property=StandardOutput=append:${log}`, `--property=StandardError=append:${log}`, ...sets.map(([k, v]) => `--setenv=${k}=${v}`), start], { stdio: "pipe" });
     } else {
       child = spawn(start, [], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
-      const out = (d) => writeFileSync(log, d, { flag: "a" });
+      // A log that can't be written (a full disk) loses lines, never the runner.
+      const out = (d) => {
+        try {
+          writeFileSync(log, d, { flag: "a" });
+        } catch {}
+      };
       child.stdout.on("data", out);
       child.stderr.on("data", out);
     }

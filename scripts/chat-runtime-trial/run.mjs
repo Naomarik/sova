@@ -67,6 +67,8 @@
 //     t21c      /btw and /explain on a claude-code-cli model (the fake claude): usage under the parent
 //     t21h      /compact-handoff on a claude-code-cli parent (the fake claude): the fork resumes its CLI
 //               session, the note is saved, it compacts, the fork's usage is under the parent
+//     t21l      browser-drive F10/F11: an idle parent's /btw row reaches the open pane live; an idle
+//               parent's process restart leaves the pane no "not reachable" alert (t21loff: switch off, F10)
 //     t22       the switch off: workers are lowered children of the server; a mode switch keeps them; a
 //               restart ends them (restored, interrupted); agent_resume reopens one, which takes a steer
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
@@ -133,7 +135,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t22", "t23", "t24", "t25", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t22", "t23", "t24", "t25", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1729,7 +1731,8 @@ async function t21() {
   // it settles: one settled entry, none interrupted or failed.
   const docs = entries(path).filter((e) => e.customType === "explain-doc").map((e) => e.data ?? {});
   R.check(docs.filter((d) => d.status !== "running").length === 1 && docs.every((d) => !["interrupted", "failed"].includes(d.status) && !d.error), `t21: the /explain row settled once, never interrupted (${docs.map((d) => d.status ?? (d.summary ? "settled" : "?")).join(", ")})`);
-  // /compact-handoff.
+  // /compact-handoff, on enough history that pi has something to compact (F12: a short session is refused).
+  await longHistory({ path, s: s2 });
   const p2 = chatPid(path);
   prompt(s2, "/compact-handoff [handoff 5]");
   const ho = await workerOf(path, (r) => r.kind === "handoff");
@@ -1737,7 +1740,8 @@ async function t21() {
   const note = join(agent, "compact-handoffs", `${sid}.md`);
   await waitFor(() => existsSync(note) && readFileSync(note, "utf8").includes("HANDOFF-NOTE"), 90000);
   R.check(existsSync(note) && readFileSync(note, "utf8").includes("HANDOFF-NOTE"), "t21: /compact-handoff saved the note");
-  await waitFor(() => entries(path).some((e) => e.type === "compaction"), 60000);
+  await waitFor(() => compactedAfterSaved(path), 60000);
+  R.check(compactedAfterSaved(path), `t21: a compaction entry follows the run's "saved" row (${handoffRows(path).join(", ")})`);
   // /btw through the real slash command (headless in Sova): the answer lands as a btw-note.
   prompt(s2, "/btw [btw #t21a] a side question");
   const bt = await workerOf(path, (r) => r.kind === "btw");
@@ -1810,14 +1814,88 @@ async function t21c() {
   s.close();
 }
 
+// T21l (browser drive F10, F11), on the chat-process path or (`on` false) the in-server one:
+//   F10: an idle parent's /btw answer reaches the open pane live, as an `append` of its row;
+//   F11 (the drive's step): the parent idle, /btw sent and at once an outside SIGTERM to the parent's
+//        process (chat-process path only: in the server there is no process to exit); the pane
+//        reconnects at once, as a page does, with no turn-error alert, and the answer is in the file
+//        once and reaches the pane live.
+async function t21l(on = true) {
+  const label = on ? "t21l" : "t21loff";
+  if (!on) {
+    await teardown();
+    await boot({ on: false });
+  }
+  const { path, s } = await newChat();
+  await turn({ path, s }, "say ok");
+  const f0 = s.got.length;
+  prompt(s, `/btw [btw #${label}] a side question`);
+  const row = await s
+    .until((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(`BTW-ANSWER ${label}`), 60000, "the btw row", f0)
+    .catch(() => null);
+  const saved = entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes(`BTW-ANSWER ${label}`));
+  R.check(row && saved, `${label} (F10): the /btw answer reached the open pane live (${row ? "append" : "no append"}; in the file: ${saved})`);
+  if (on) {
+    // The drive's step: the parent idle, /btw sent, and at once an outside SIGTERM to the parent's
+    // process (an exit, not a reload).
+    const pid1 = chatPid(path);
+    const alert = (m) => /not reachable|turn stopped with an error/i.test(JSON.stringify(m));
+    const f1 = s.got.length;
+    prompt(s, `/btw [btw #${label}x] a side question across the exit`);
+    process.kill(pid1, "SIGTERM");
+    // The page's reconnect: at once, then its first commands, while the replacement may still be coming.
+    await s.until((m) => m.type === "error" || m.type === "reloaded", 15000, "the pane hears of the reload", f0).catch(() => null);
+    s.close();
+    const s2 = await chat(c, path, 60000);
+    s2.send({ type: "set_model", ref: "trial/m1" });
+    await waitFor(() => chatPid(path) && chatPid(path) !== pid1, 30000);
+    await sleep(5000);
+    const btwX = `BTW-ANSWER ${label}x`;
+    const live = await s2.until((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX), 60000, "the btw row after the exit").catch(() => null);
+    await sleep(2000);
+    const notes = entries(path).filter((e) => e.customType === "btw-note" && JSON.stringify(e).includes(btwX)).length;
+    const shown = live || s.got.slice(f1).some((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX));
+    R.check(notes === 1 && shown, `${label} (F10 across the exit): the /btw answer is in the file once (${notes}) and reached the pane live (${shown ? "append" : "no append"})`);
+    const bad = [...s.got.slice(f1), ...s2.got].filter(alert);
+    R.check(chatPid(path) !== pid1 && bad.length === 0, `${label} (F11): after /btw and an exit of the idle parent's process the pane reconnects with no turn-error alert (pid ${pid1} → ${chatPid(path)}; ${bad.map((m) => JSON.stringify(m).slice(0, 160)).join(" | ") || "none"})`);
+    await turn({ path, s: s2 }, "say ok after");
+    s2.close();
+  } else {
+    R.note(`${label} (F11): not applicable with the switch off (the chat runs in the server: no process of its own to restart)`);
+    s.close();
+    await teardown();
+    await boot();
+  }
+}
+
+/** Three long turns: more than pi's keepRecentTokens (20k), so a compaction has something to summarize. */
+async function longHistory(o, ms = 90000) {
+  for (const i of [1, 2, 3]) await turn(o, `turn ${i}: ${"lorem ipsum dolor sit amet ".repeat(2500)}`, ms);
+}
+/** The /compact-handoff run rows of the session, oldest first. */
+const handoffRows = (path) => entries(path).filter((e) => e.customType === "compact-handoff-run").map((e) => e.data?.status);
+/** Whether a compaction entry comes after the newest "saved" run row. */
+function compactedAfterSaved(path) {
+  const es = entries(path);
+  const saved = es.findLastIndex((e) => e.customType === "compact-handoff-run" && e.data?.status === "saved");
+  return saved >= 0 && es.slice(saved + 1).some((e) => e.type === "compaction");
+}
+
 // T21h (stage 5, F8): /compact-handoff on a Claude Code parent (the fake claude): the fork resumes the
 // parent's live CLI session (--resume --fork-session) as a hidden chat, its note is saved, the parent
 // compacts, and the fork's usage is recorded under the parent as that hidden chat.
 async function t21h() {
   const { path, s } = await newChat("claude-code-cli/claude-sonnet-5-5");
   const o = { path, s };
+  // F12: on a short session the command refuses up front: a warning, no fork, no run row.
+  await turn(o, "say ok", 90000);
+  const f0 = s.got.length;
+  prompt(s, "/compact-handoff too early");
+  const early = await s.until((m) => m.type === "ui_request" && /nothing can be compacted yet/.test(m.request?.message ?? ""), 30000, "the refusal", f0).catch(() => null);
+  await sleep(3000);
+  R.check(early && !workerRecords(path).some((r) => r.kind === "handoff") && handoffRows(path).length === 0, `t21h: on a short session /compact-handoff refuses up front, with no fork and no row (${early ? "notice seen" : "no notice"}; forks ${workerRecords(path).filter((r) => r.kind === "handoff").length})`);
   // Enough history that pi has something to compact beyond the kept recent turns.
-  for (const i of [1, 2, 3]) await turn(o, `turn ${i}: ${"lorem ipsum dolor sit amet ".repeat(2500)}`, 90000);
+  await longHistory(o);
   const sid = entries(path)[0]?.id;
   const before = new Set(usageRecords().map((r) => r.key));
   const calls0 = (() => {
@@ -1837,8 +1915,8 @@ async function t21h() {
   await waitFor(() => runs().some((r) => r.status !== "running"), 60000);
   R.note(`t21h: run rows ${runs().map((r) => `${r.status}${r.error ? `: ${r.error}` : ""}`).join(", ")}`);
   R.check(runs().some((r) => r.status === "saved"), "t21h: the run's row settled as saved");
-  await waitFor(() => entries(path).some((e) => e.type === "compaction"), 90000);
-  R.check(entries(path).some((e) => e.type === "compaction"), "t21h: the parent compacted");
+  await waitFor(() => compactedAfterSaved(path), 90000);
+  R.check(compactedAfterSaved(path), `t21h: a compaction entry follows the run's "saved" row (${handoffRows(path).join(", ")})`);
   R.note(`t21h: the parent's notifications: ${s.got.filter((m) => m.type === "ui_request" && /notify/.test(m.request?.method ?? "")).map((m) => JSON.stringify(m.request).slice(0, 200)).join(" | ") || "none"}`);
   const calls = (() => {
     try {
@@ -2025,6 +2103,7 @@ async function t24() {
 //       rollout log), each then shows the new marker and no badge; (g) a worker spawned meanwhile by
 //       an attached chat still on the older code runs on the current one, its extensions mapped there;
 //   (e) once no record names the first generation it is collected;
+//   (h) a chat reloaded in an earlier server life reloads again into a unit of its own;
 //   (d) a restart whose new code fails to boot (SOVA_CHAT_TEST_FAIL_BOOT=<its id>): the first
 //       replacement fails, the rollout halts, the next chat is never tried, every chat keeps its
 //       process, one shows "failed"; (e) the generation those chats run is kept meanwhile.
@@ -2205,6 +2284,38 @@ async function t25() {
     R.check(!existsSync(join(codeDir, gen1)) && existsSync(join(codeDir, gen2)), `t25(e): the first generation was collected once no chat ran it (${codes()})`);
     A2.close();
 
+    // (h): a chat reloaded in an earlier server life reloads again: B runs a replacement unit of the last
+    // life; after new code and a restart its new replacement never takes the live one's unit or socket
+    // (it once did: -r<n> restarted per life). The others move too, each at its quiet moment.
+    // B goes first (the collision needed it): the idle worker is stopped and A and C are mid-reply across
+    // the restart, so B is the only quiet chat when the new server's rollout starts.
+    const oa = await chat(c, A.path);
+    const wid = (await agentList({ path: A.path, s: oa })).find((a) => a.name === "trial-t25g")?.id;
+    if (wid) await turn({ path: A.path, s: oa }, `[call agent_kill ${JSON.stringify({ id: wid })}]`);
+    await waitFor(() => !w || !chatPid(w.path), 20000);
+    const oc = await chat(c, C.path);
+    prompt(oa, "[long 40 #t25ha] a long reply");
+    prompt(oc, "[long 40 #t25hc] a long reply");
+    await oa.until(delta(/part 3\//), 30000, "A streams");
+    await oc.until(delta(/part 3\//), 30000, "C streams");
+    mark("twob", true);
+    const genB = git("rev-parse", "HEAD");
+    const unitB = record(B.path)?.unit;
+    const pidB3 = chatPid(B.path);
+    const rh = rollLines().length;
+    await restart();
+    oa.close();
+    oc.close();
+    await waitMoved(B.path, pidB3);
+    await sleep(2000);
+    const hl = rollLines().slice(rh).map((l) => l.replace(/.*\[chat-rollout\] /, ""));
+    R.note(`t25(h): rollout log: ${hl.join(" | ")}`);
+    const firstId = /^(\S+): reloading/.exec(hl.find((l) => /: reloading/.test(l)) ?? "")?.[1];
+    R.check(firstId && firstId === record(B.path)?.chatId, `t25(h): B was the first chat the new server reloaded (${firstId})`);
+    R.check(chatPid(B.path) && chatPid(B.path) !== pidB3 && record(B.path)?.build === genB && record(B.path)?.unit !== unitB && !hl.some((l) => /could not start/.test(l)), `t25(h): a chat reloaded in an earlier server life reloads again into a unit of its own (${unitB} → ${record(B.path)?.unit}, pid ${pidB3} → ${chatPid(B.path)})`);
+    // A and C move once their replies end; (d) starts from every chat on genB.
+    await waitFor(() => [A, C].every((x) => record(x.path)?.build === genB && chatPid(x.path)), 120000);
+
     // (d): new code that fails to boot. Its id is the clone's next one: committed, so the commit.
     mark("three", true);
     const gen3 = git("rev-parse", "HEAD");
@@ -2212,7 +2323,9 @@ async function t25() {
     const r1 = rollLines().length;
     await restart({ [KNOBS.failBoot]: gen3 });
     await sleep(45000);
-    const dl = rollLines().slice(r1).map((l) => l.replace(/.*\[chat-rollout\] /, ""));
+    // From this server's first line naming the failing code (a reload of the last life may still log its end).
+    const all = rollLines().slice(r1).map((l) => l.replace(/.*\[chat-rollout\] /, ""));
+    const dl = all.slice(Math.max(0, all.findIndex((l) => l.includes(gen3))));
     R.note(`t25(d): rollout log: ${dl.join(" | ")}`);
     const tried = dl.filter((l) => /: reloading/.test(l)).length;
     R.check(tried === 1 && !dl.some((l) => / reloaded into /.test(l)) && dl.some((l) => l.includes(`could not start on new code (${gen3})`)), `t25(d): the first replacement failed, the rollout halted, no other chat was tried (${tried} tried)`);
@@ -2220,9 +2333,12 @@ async function t25() {
     const panes = await Promise.all([A, B, C].map((x) => chat(c, x.path)));
     await sleep(2000);
     const states = panes.map((p) => codeMsgs(p).at(-1)?.state);
-    R.check(states.filter((x) => x === "failed").length === 1 && states.every((x) => x === "older" || x === "failed"), `t25(d): one chat shows "failed", the others "older" (${states.join(", ")})`);
+    // The chat the rollout tried first (any chat with a process, a worker too) shows "failed"; the rest "older".
+    const failedId = /^(\S+): could not start/.exec(dl.find((l) => /could not start/.test(l)) ?? "")?.[1];
+    const want = [A, B, C].map((x) => (record(x.path)?.chatId === failedId ? "failed" : "older"));
+    R.check(states.join() === want.join(), `t25(d): the chat that failed shows "failed", the others "older" (${states.join(", ")}; failed chat ${failedId})`);
     for (const p of panes) p.close();
-    R.check(existsSync(join(codeDir, gen2)), `t25(e): the generation the chats run is kept while the new code fails (${codes()})`);
+    R.check(existsSync(join(codeDir, genB)), `t25(e): the generation the chats run is kept while the new code fails (${codes()})`);
     await teardown();
   } finally {
     relink(clone, rootReal);
@@ -2378,7 +2494,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t22, t23, t24, t25, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t22, t23, t24, t25, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */
@@ -2406,6 +2522,21 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"])
     console.log(`\nchat-runtime-trial: ${sig}, stopping what the trial started`);
     finish().finally(() => process.exit(code || (checks.includes("serve") && R.checks.every((x) => x.ok !== false) ? 0 : 1)));
   });
+// And one whose parent is gone: run-tests.mjs SIGKILLs a test file that runs past its limit, which
+// kills the integration test but not this runner (spawnSync's child). Orphaned, the runner stops what
+// it started, and its output (a pipe to the dead test) never crashes it first (EPIPE).
+for (const stream of [process.stdout, process.stderr]) stream.on("error", () => {});
+const parentAtStart = process.ppid;
+setInterval(() => {
+  if (process.ppid === parentAtStart) return;
+  R.check(false, "the runner ran to its end", `its parent (${parentAtStart}) is gone`);
+  finish().finally(() => process.exit(code || 1));
+}, 2000).unref();
+// So does one that throws where no check catches it (a full disk under a socket's handler, say).
+process.once("uncaughtException", (e) => {
+  R.check(false, "the runner ran to its end", String(e instanceof Error ? e.stack : e).slice(0, 400));
+  finish().finally(() => process.exit(2));
+});
 try {
   await boot();
   for (const name of checks) {

@@ -992,6 +992,8 @@ export function ChatView(props: {
               announce(msg.message);
               return;
             case "reloaded": {
+              // Its code state was that process's: the next hello says the new one's (never a stale "Reloading").
+              setCode(null);
               // The chat is going (a reload, a stop): this socket's sends the server never took can't
               // be refused back to it any more (the pane reconnects under a new id), so they come back now.
               const back = unacked.takeAll(handedBack);

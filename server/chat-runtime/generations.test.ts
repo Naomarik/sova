@@ -252,6 +252,48 @@ test("SOVA_CHAT_CODE_GC=on: a root set by SOVA_CHAT_CODE_ROOT that is this serve
   }
 });
 
+test("hardlinks refused across filesystems (EXDEV): node_modules copied in full, said once in the log and in health, never a fallback to the checkout", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const lines: string[] = [];
+    let tries = 0;
+    const exdev = async () => {
+      tries++;
+      throw Object.assign(new Error("cross-device link"), { code: "EXDEV" });
+    };
+    const gen = await currentGeneration({ repo, root, env: env(), log: (l) => lines.push(l), link: exdev });
+    assert.equal(gen.live, false);
+    assert.equal(tries, 1, "tried once, then copies");
+    assert.equal(readFileSync(join(gen.dir, "node_modules", "dep", "index.js"), "utf8"), "module.exports = 1\n");
+    assert.deepEqual(lines.filter((l) => /another filesystem/.test(l)), ["copies root on another filesystem: full node_modules copy, 0 MB"]);
+    assert.deepEqual(generationHealth(), { code: "copy", codeWhy: "full node_modules copy (another filesystem)" });
+    // Reused: the snapshot says how it was made; nothing copied or logged again.
+    lines.length = 0;
+    await currentGeneration({ repo, root, env: env(), log: (l) => lines.push(l), link: exdev });
+    assert.equal(tries, 1);
+    assert.deepEqual(lines.filter((l) => /another filesystem/.test(l)), []);
+    assert.deepEqual(generationHealth(), { code: "copy", codeWhy: "full node_modules copy (another filesystem)" });
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
+test("a copies root inside the checkout's node_modules is never copied into itself", async () => {
+  const { base, repo } = checkout();
+  try {
+    const root = join(repo, "node_modules", ".cache", "sova-chat-code-t");
+    const gen = await currentGeneration({ repo, root, env: env(), log: quiet });
+    assert.equal(gen.live, false);
+    const deps = readlinkSync(join(gen.dir, "node_modules")).split("/")[2]!;
+    assert.ok(existsSync(join(root, "deps", deps, "node_modules", "dep", "index.js")));
+    assert.ok(!existsSync(join(root, "deps", deps, "node_modules", ".cache", "sova-chat-code-t")), "the root left out of its own snapshot");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
 test("a build id that is no directory name is hashed", () => {
   assert.equal(generationDir("abc+12345678", "/r"), "/r/abc+12345678");
   assert.match(generationDir("../x", "/r"), /^\/r\/h-[0-9a-f]{16}$/);

@@ -19,6 +19,9 @@ export interface ReplyTiming {
   thinkingMs: number;
   /** Reply text and tool-call parts' windows, summed. */
   replyMs: number;
+  /** Tool-call parts the reply wrote, when any (absent: none). Their tokens are part of `output`, so
+      a reply with any has no reply-text speed. */
+  toolCalls?: number;
   /** Every output token (thinking included). */
   output: number;
   /** The provider's thinking-token count, when the split is real. */

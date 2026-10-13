@@ -37,6 +37,8 @@ test("a line that isn't a finished reply's record is skipped", () => {
   assert.equal(parsePerfLine(rec({ stop: "aborted" })), null);
   assert.equal(parsePerfLine(rec({ reasoning: 0 }))!.timing.reasoning, undefined, "a 0 count with a thinking window is not reported");
   assert.equal(parsePerfLine(rec())!.timing.reasoning, 300);
+  assert.equal(parsePerfLine(rec({ tool: { ms: 4000, n: 2 } }))!.timing.toolCalls, 2);
+  assert.equal(parsePerfLine(rec())!.timing.toolCalls, undefined);
 });
 
 test("files are followed from where a read stopped; a torn tail waits for its newline; a key counts once", () => {

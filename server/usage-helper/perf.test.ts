@@ -2,7 +2,7 @@
 // time over replies that thought only, too few replies for a range, figures a provider can't give.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PERF_MIN_RANGE, PERF_NO_SPLIT, replySpeeds, type ReplyTiming } from "../../shared/usage/perf";
+import { PERF_ALL_TOOLS, PERF_MIN_RANGE, PERF_NO_SPLIT, replySpeeds, type ReplyTiming } from "../../shared/usage/perf";
 import { figure, figuresOf, logBins, normalizeTiming, percentile, performanceRows, type PerfSample } from "./perf";
 
 const t = (o: Partial<ReplyTiming>): ReplyTiming => ({ ttftMs: 500, thinkingMs: 0, replyMs: 2000, output: 200, ...o });
@@ -105,4 +105,15 @@ test("rows: one per provider+model, most replies first, effort lines in level or
     rows[0]!.efforts.map((e) => `${e.effort}:${e.replies}`),
     ["low:1", "medium:1", "xhigh:1", "unknown:1"],
   );
+});
+
+test("a reply with tool calls: overall speed includes the tool-call writing window, no reply-text speed", () => {
+  // A short preamble, then a long, slow tool-argument stream.
+  const tool = t({ output: 1200, replyMs: 12_000, toolCalls: 1, reasoning: 0 });
+  const s = replySpeeds(tool);
+  assert.equal(s.overall, 100);
+  assert.equal(s.reply, undefined);
+  assert.equal(normalizeTiming(t({ toolCalls: 0 })).toolCalls, undefined);
+  assert.equal(figuresOf([tool, tool]).reply.unsupported, PERF_ALL_TOOLS);
+  assert.equal(figuresOf([tool, t({ output: 600, replyMs: 2000 })]).reply.n, 1);
 });

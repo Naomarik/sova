@@ -50,6 +50,7 @@ export function parsePerfLine(line: string): PerfStored | null {
   const timing: ReplyTiming = { ttftMs: r.ttftMs, thinkingMs: r.thinkingMs, replyMs: r.replyMs, output: r.output };
   if (r.effort !== undefined) timing.effort = r.effort;
   if (r.reasoning !== undefined) timing.reasoning = r.reasoning;
+  if (r.tool.n > 0) timing.toolCalls = r.tool.n;
   const out: PerfStored = { key: r.key, ts: r.ts, sid: r.sid, entryId: r.entryId, provider: r.provider, model: r.model, timing: normalizeTiming(timing) };
   if (r.responseModel !== undefined) out.responseModel = r.responseModel;
   return out;

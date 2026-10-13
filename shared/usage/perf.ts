@@ -23,20 +23,23 @@ export const PERF_BINS = 12;
 
 /** Why a figure can't be had (PerfFigure.unsupported). */
 export const PERF_NO_SPLIT = "Provider doesn't count thinking tokens";
+export const PERF_ALL_TOOLS = "Every reply wrote tool calls";
 
 const speed = (tokens: number, ms: number): number | undefined => (tokens >= PERF_MIN_TOKENS && ms >= PERF_MIN_MS ? tokens / (ms / 1000) : undefined);
 
-/** Reply-text tokens, where the split is real: the reply didn't think (every token is reply), or the
-    provider counted the thinking ones. */
+/** Reply-text tokens, where the split is real: no tool calls (their argument tokens are output too),
+    and the reply didn't think (every token is reply) or the provider counted the thinking ones. */
 export function replyTokens(t: ReplyTiming): number | undefined {
+  if ((t.toolCalls ?? 0) > 0) return undefined;
   if (t.reasoning !== undefined) return Math.max(0, t.output - t.reasoning);
   return t.thinkingMs > 0 ? undefined : t.output;
 }
 
 /**
  * A reply's speeds (tokens per second), each only where its part has >= PERF_MIN_TOKENS tokens over
- * >= PERF_MIN_MS: overall = every output token over thinking + reply time; reply = reply-text tokens
- * over reply time (only where the split is real); thinking = thinking tokens over thinking time (only
+ * >= PERF_MIN_MS: overall = every output token over thinking + text + tool-call writing time; reply =
+ * reply-text tokens over reply time (only where the split is real: no tool calls, thinking absent or
+ * counted); thinking = thinking tokens over thinking time (only
  * where the provider counted them).
  */
 export function replySpeeds(t: ReplyTiming): { overall?: number; reply?: number; thinking?: number } {

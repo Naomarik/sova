@@ -2,16 +2,18 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { constants, existsSync, readFileSync, readlinkSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, copyFile, link, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, symlink } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { buildCommit, realMachine } from "../mesh/details-collect";
+import { agentRoot, stateRoot } from "../state-root";
 import { chatsRoot } from "./supervisor";
 
 /**
  * Per-chat fixed code (§app.chat-processes/code-generations, al_3 stage 5): a server start copies its
  * checkout's code (tracked files, and untracked ones Git does not ignore) to `<code root>/<id>`,
  * read-only, with `node_modules` a link to one hardlinked copy per lockfile; every chat process it
- * starts runs that copy, so nothing later written to the checkout reaches a running chat. Copies no
- * chat uses are collected. When no copy can be made, chats run from the checkout as before.
+ * starts runs that copy, so nothing later written to the checkout reaches a running chat. A deployed
+ * tree with no Git (stamped with BUILD_COMMIT) is copied whole, but for its deploy's own artifacts and
+ * state. Copies no chat uses are collected. When no copy can be made, chats run from the checkout as before.
  */
 
 const REPO = resolve(import.meta.dirname, "..", "..");
@@ -179,7 +181,9 @@ async function makeGeneration(repo: string, root: string, id: string, dir: strin
   if (existsSync(dir)) await rm(dir, { recursive: true, force: true }); // half-made: rebuilt
   const tmp = tmpIn(root);
   try {
-    const files = nulList(await git(repo, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
+    const files = existsSync(join(repo, ".git"))
+      ? nulList(await git(repo, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]))
+      : await deployedFiles(repo, [root, stateRoot(), agentRoot()]);
     await copyFiles(repo, tmp, files);
     const lock = await lockHash(join(tmp, "pnpm-lock.yaml"));
     if (lock) await symlink(join("..", DEPS, lock, "node_modules"), join(tmp, "node_modules"));
@@ -191,6 +195,38 @@ async function makeGeneration(repo: string, root: string, id: string, dir: strin
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
     throw err;
   }
+}
+
+/** Top-level entries of a deployed tree that are its deploy's own, never its code. */
+const DEPLOY_ONLY = new Set([".git", ".bun", ".accept", "dist", "dist-share"]);
+
+/**
+ * The files of a deployed tree with no Git of its own (a `git archive` stamped with BUILD_COMMIT), relative
+ * to `repo`: everything but any `node_modules` (linked per lockfile), DEPLOY_ONLY, and the directories
+ * inside `outside` (the copies root, the state root, the agent dir), so no session or login is copied.
+ */
+async function deployedFiles(repo: string, outside: string[]): Promise<string[]> {
+  const out: string[] = [];
+  const inside = (p: string, dir: string) => {
+    const rel = relative(dir, p);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  };
+  const top = await realpath(repo).catch(() => resolve(repo));
+  // Only those inside the tree: a tree that is itself inside the agent dir still copies.
+  const reals = (await Promise.all(outside.map((p) => realpath(p).catch(() => resolve(p))))).filter((r) => r !== top && inside(r, top));
+  const within = (p: string) => reals.some((r) => inside(p, r));
+  const walk = async (rel: string): Promise<void> => {
+    const dir = join(repo, rel);
+    if (rel && within(await realpath(dir).catch(() => dir))) return;
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules" || (!rel && DEPLOY_ONLY.has(e.name))) continue;
+      const p = rel ? join(rel, e.name) : e.name;
+      if (e.isDirectory()) await walk(p);
+      else if (e.isFile() || e.isSymbolicLink()) out.push(p);
+    }
+  };
+  await walk("");
+  return out;
 }
 
 /** Copy `files` (paths relative to `from`) to `to`, cloned where the filesystem can, then read-only. */

@@ -142,6 +142,51 @@ test("no copy: the checkout itself, with the reason; SOVA_CHAT_CODE=live skips t
   }
 });
 
+test("a deployed tree with no Git (stamped with BUILD_COMMIT): copied whole but for node_modules, the deploy's own artifacts and the agent dir inside it", async () => {
+  const base = mkdtempSync(join(tmpdir(), "gen-"));
+  const repo = join(base, "app");
+  const stamp = "0123456789abcdef0123456789abcdef01234567";
+  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  try {
+    mkdirSync(join(repo, "server", "chat-runtime"), { recursive: true });
+    writeFileSync(join(repo, "server", "chat-runtime", "main.ts"), "console.log('main')\n");
+    mkdirSync(join(repo, ".sova", "spec"), { recursive: true });
+    writeFileSync(join(repo, ".sova", "spec", "manifest.json"), "{}\n");
+    writeFileSync(join(repo, "BUILD_COMMIT"), `${JSON.stringify({ commit: stamp })}\n`);
+    writeFileSync(join(repo, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
+    mkdirSync(join(repo, "node_modules", "dep"), { recursive: true });
+    writeFileSync(join(repo, "node_modules", "dep", "index.js"), "module.exports = 1\n");
+    mkdirSync(join(repo, "pi-config", "extensions", "x", "node_modules", "y"), { recursive: true });
+    writeFileSync(join(repo, "pi-config", "extensions", "x", "index.ts"), "export default () => {}\n");
+    writeFileSync(join(repo, "pi-config", "extensions", "x", "node_modules", "y", "index.js"), "\n");
+    for (const d of [".bun/bin", ".accept", "dist", "dist-share"]) {
+      mkdirSync(join(repo, d), { recursive: true });
+      writeFileSync(join(repo, d, "f"), "deploy\n");
+    }
+    // The lab's layout: the agent dir inside the tree, the copies under its state root.
+    process.env.PI_CODING_AGENT_DIR = join(repo, ".agent");
+    mkdirSync(join(repo, ".agent", "sessions"), { recursive: true });
+    writeFileSync(join(repo, ".agent", "auth.json"), "{}\n");
+    const root = join(repo, ".agent", "sova", "chats", "code");
+    const gen = await currentGeneration({ repo, root, env: env(), log: quiet });
+    assert.equal(gen.live, false, gen.why);
+    assert.equal(gen.id, stamp);
+    assert.equal(readFileSync(join(gen.dir, "server", "chat-runtime", "main.ts"), "utf8"), "console.log('main')\n");
+    assert.ok(existsSync(join(gen.dir, ".sova", "spec", "manifest.json")), "a tracked dot-dir is code");
+    assert.ok(existsSync(join(gen.dir, "BUILD_COMMIT")));
+    assert.ok(existsSync(join(gen.dir, "pi-config", "extensions", "x", "index.ts")));
+    for (const gone of [".agent", ".bun", ".accept", "dist", "dist-share", "pi-config/extensions/x/node_modules"]) assert.ok(!existsSync(join(gen.dir, gone)), gone);
+    assert.match(readlinkSync(join(gen.dir, "node_modules")), /^\.\.\/deps\/[0-9a-f]{16}\/node_modules$/);
+    assert.equal(readFileSync(join(gen.dir, "node_modules", "dep", "index.js"), "utf8"), "module.exports = 1\n");
+    assert.deepEqual(generationHealth(), { code: "copy" });
+  } finally {
+    if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = agentDir;
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
 const readdirNames = (dir: string): string[] => {
   try {
     return readdirSync(dir);

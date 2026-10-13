@@ -1708,6 +1708,10 @@ class ChatSession {
         const wire = event.frame();
         if (event.type === "message.end") this.holdForEntryId(wire, event.handle);
         else this.broadcast(wire);
+        // A note an extension sends while the chat is idle (pi's sendMessage, triggerTurn false: /btw's
+        // answer) is written with no entry_appended and no turn to end: its row goes out now, after
+        // its message_end (held for its entry id), as an append would.
+        if (event.type === "message.end" && event.noteType !== undefined && !this.harness.isRunning()) this.appendIdleNote(event.handle, event.noteType);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
@@ -3261,6 +3265,24 @@ class ChatSession {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2))) c.send(m);
       else c.send(msg);
     }
+  }
+
+  /** An idle note's rows, once its entry is known (after holdForEntryId's flush, queued before this). */
+  private appendIdleNote(message: unknown, noteType: string): void {
+    queueMicrotask(() => {
+      try {
+        // pi writes a note as a new entry, not the message object it emits: by its id when the
+        // harness knows it, else the branch's last entry when it is that note.
+        const id = this.harness.persistedId(message);
+        const entries = this.harness.entries();
+        const last = entries.at(-1);
+        const entry = id !== null ? entries.find((h) => h.id === id) : last?.kind === "note" && last.noteType === noteType ? last : undefined;
+        const items = entry ? rowsOfEntry(entry) : [];
+        if (items.length) this.broadcast({ type: "append", items });
+      } catch (err) {
+        console.error("[chat] failed to send an idle note", err);
+      }
+    });
   }
 
   /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */

@@ -10,7 +10,7 @@ import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
-import type { RowFacts, SovaEvent, SovaPart } from "./harness-wire";
+import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -2192,6 +2192,9 @@ export interface V1EventFrame {
   type: "event";
   event: unknown;
   entryId?: string;
+  /** An assistant message_end's measured timing, tagged by the chat (shared/usage/perf.ts). Mapped
+      into wire 2's `message.end`; never sent on wire 1 (server/wire-rows.ts drops it). */
+  reply?: ReplyTiming;
 }
 
 /** A live event on wire 2, to a consumer that asked: one of the contract's events, the entry a

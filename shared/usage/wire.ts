@@ -7,6 +7,7 @@
 // Routes (all GET unless said; tz = the browser's IANA zone, Intl…resolvedOptions().timeZone,
 // which decides local days; an unknown or missing zone reads as UTC):
 //   GET  /api/usage/costs?range=7d|30d|all[&provider=<p>]…[&model=<p>/<m>]…&tz=<zone>  -> UsageCosts
+//   GET  /api/usage/performance?<same as costs>                                         -> UsagePerformance (./perf.ts)
 //   GET  /api/usage/today?tz=<zone>                                                     -> UsageToday
 //   GET  /api/usage/session?sid=<session id>                                            -> UsageSessionSpend
 //   POST /api/usage/sessions  body UsageSessionsRequest                                 -> UsageSessionsTotals

@@ -2067,7 +2067,12 @@ async function t25() {
   const rootReal = realpathSync(ROOT);
   relink(rootReal, clone);
   try {
-    const codeDir = join(sova, "chats", "code");
+    // The copies go on the checkout's filesystem (hardlinked node_modules, cloned files), never in the
+    // scratch on tmpfs (~350 MB a copy there). The only place there the sandbox can write is the
+    // worktree: its .cache, which Git ignores and bun test never walks (a hidden directory). This
+    // server's alone, so it collects there (SOVA_CHAT_CODE_GC=on); removed at the end.
+    const codeDir = join(ROOT, ".cache", "chat-runtime-trial", `t25-code-${tag}`);
+    rmSync(codeDir, { recursive: true, force: true });
     const codes = () => {
       try {
         return readdirSync(codeDir).join(", ");
@@ -2082,7 +2087,10 @@ async function t25() {
         return "";
       }
     };
-    const genOf = (pid) => /\/chats\/code\/([^/]+)\/server\/chat-runtime\/main\.ts$/.exec(runsFrom(pid))?.[1] ?? null;
+    const genOf = (pid) => {
+      const m = runsFrom(pid);
+      return m.startsWith(`${codeDir}/`) ? (/^([^/]+)\/server\/chat-runtime\/main\.ts$/.exec(m.slice(codeDir.length + 1))?.[1] ?? null) : null;
+    };
     /** Markers the mock saw in the tools of requests made by `pid` (since mock log line `from`). */
     const marksBy = (pid, from = 0) => [...new Set(mockLog(mock.log).slice(from).filter((e) => e.scenario && e.pid === pid).flatMap((e) => e.marks ?? []))];
     const rollLines = () => {
@@ -2093,10 +2101,12 @@ async function t25() {
       }
     };
     const waitMoved = (path, oldPid, ms = 90000) => waitFor(() => chatPid(path) && chatPid(path) !== oldPid, ms);
-    const grace = { SOVA_CHAT_CODE_GRACE_MIN: "0.05" };
+    const grace = { SOVA_CHAT_CODE_GRACE_MIN: "0.05", [KNOBS.codeRoot]: codeDir, [KNOBS.codeGc]: "on" };
     await teardown();
     await boot({ root: clone, build: null, extra: grace });
-    const health = await c.api("/api/health");
+    // The copy is made while the server already answers (chats wait, the HTTP server doesn't).
+    let health = null;
+    await waitFor(async () => (health = await c.api("/api/health").catch(() => null))?.chatHost?.code, 60000);
     R.check(health?.chatHost?.code === "copy", `t25: the server's chats run from a copy of its code (health chatHost ${JSON.stringify(health?.chatHost)?.slice(0, 160)})`);
 
     // (a), (f)
@@ -2216,6 +2226,7 @@ async function t25() {
     await teardown();
   } finally {
     relink(clone, rootReal);
+    rmSync(join(ROOT, ".cache", "chat-runtime-trial", `t25-code-${tag}`), { recursive: true, force: true });
   }
   await boot();
 }

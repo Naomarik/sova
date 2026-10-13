@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { EventEmitter } from "node:events";
 import { createWorkerSession } from "../harness/pi/worker-session";
-import { resolveBun } from "./bun";
+import { chatBun } from "./bun";
 import { type FeedFrame, WorkerFeed } from "./worker-feed";
 import { LinkWorkerHost } from "./worker-port";
 import { NOT_RUN_NO_SERVER } from "../../shared/chat-runtime-wire";
@@ -166,17 +166,20 @@ describe("worker sessions and Bun", () => {
     }
   });
 
-  test("Bun: the server's own runtime, else SOVA_BUN, else bun on PATH, else none", () => {
+  test("Bun: the server's own runtime, else none, whatever Bun the machine has", () => {
     const dir = mkdtempSync(join(tmpdir(), "bun-"));
+    const env = { SOVA_BUN: process.env.SOVA_BUN, PATH: process.env.PATH };
     try {
-      assert.equal(resolveBun({ env: {}, execPath: "/x/bun", bunVersion: "1.3", cwd: dir }), "/x/bun");
-      assert.equal(resolveBun({ env: { PATH: dir }, execPath: "/x/node", bunVersion: undefined, cwd: dir }), null);
-      mkdirSync(join(dir, "bin"));
-      const exe = join(dir, "bin", "bun");
+      assert.equal(chatBun({ ...process.versions, bun: "1.3" }, "/x/bun"), "/x/bun");
+      const exe = join(dir, "bun");
       writeFileSync(exe, "#!/bin/sh\n", { mode: 0o755 });
-      assert.equal(resolveBun({ env: { PATH: join(dir, "bin") }, execPath: "/x/node", bunVersion: undefined, cwd: dir }), exe);
-      assert.equal(resolveBun({ env: { SOVA_BUN: exe, PATH: "" }, execPath: "/x/node", bunVersion: undefined, cwd: dir }), exe);
+      process.env.SOVA_BUN = exe;
+      process.env.PATH = dir;
+      assert.equal(chatBun({ ...process.versions, bun: undefined } as NodeJS.ProcessVersions, "/x/node"), null, "a server on Node never looks for one");
     } finally {
+      process.env.SOVA_BUN = env.SOVA_BUN;
+      if (env.SOVA_BUN === undefined) delete process.env.SOVA_BUN;
+      process.env.PATH = env.PATH;
       rmSync(dir, { recursive: true, force: true });
     }
   });

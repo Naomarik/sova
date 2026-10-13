@@ -11,6 +11,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
+// @ts-expect-error: plain JS, no types
+import { sweep } from "./lib.mjs";
 
 const RUN = resolve(import.meta.dirname, "run.mjs");
 
@@ -19,21 +21,28 @@ type Check = { ok?: boolean; what?: string; detail?: string | null; note?: strin
 /** One describe block: each [check, title] a test running that check of run.mjs. */
 export function trialSuite(title: string, checks: [string, string][]): void {
   const root = mkdtempSync(join(tmpdir(), "sova-chat-trial-"));
-  after(() => rmSync(root, { recursive: true, force: true }));
+  after(async () => {
+    await sweep(root);
+    rmSync(root, { recursive: true, force: true });
+  });
   describe(title, () => {
-    for (const [check, name] of checks) test(name, { timeout: 280_000 }, () => void trial(root, check));
+    for (const [check, name] of checks) test(name, { timeout: 280_000 }, () => trial(root, check));
   });
 }
 
-function trial(root: string, check: string): void {
+async function trial(root: string, check: string): Promise<void> {
   const scratch = join(root, check);
   const r = spawnSync("node", [RUN, check, "--scratch", scratch, "--mode", "child", "--driver", "detached"], { encoding: "utf8", timeout: 270_000 });
+  // The runner stops what it started, even on SIGTERM (the timeout here); a runner killed outright
+  // cannot, so whatever still runs under its scratch dir is stopped here.
+  const left: { pid: number; cmd: string }[] = await sweep(scratch);
   let checks: Check[] = [];
   try {
     checks = JSON.parse(readFileSync(join(scratch, "results.json"), "utf8")).checks;
   } catch {}
   const failed = checks.filter((c) => c.ok === false);
   assert.ok(checks.length > 0, `no results from the trial (exit ${r.status}):\n${r.stdout.slice(-3000)}\n${r.stderr.slice(-3000)}`);
+  assert.equal(left.length, 0, `processes left running under ${scratch} after the runner exited (stopped now): ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 100)}`).join("; ")}`);
   assert.equal(failed.length, 0, `${failed.map((c) => `${c.what}${c.detail ? `: ${c.detail}` : ""}`).join("\n")}\n--- stdout\n${r.stdout.slice(-4000)}`);
   assert.equal(r.status, 0, r.stdout.slice(-3000));
 }

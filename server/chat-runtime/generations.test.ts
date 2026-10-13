@@ -382,7 +382,7 @@ test("a process scan that fails (no /proc, ps or lsof failing): nothing is colle
   }
 });
 
-test("the Linux process scan: a pid that ended or can't be read is skipped; /proc that can't be listed fails the scan", async () => {
+test("the Linux process scan: a pid that ended or can't be read is skipped; /proc that can't be listed, or lists no own pid, fails the scan", async () => {
   const gone = Object.assign(new Error("gone"), { code: "ENOENT" });
   const denied = Object.assign(new Error("denied"), { code: "EACCES" });
   const fake = {
@@ -396,28 +396,31 @@ test("the Linux process scan: a pid that ended or can't be read is skipped; /pro
       return `/w/${pid}`;
     },
   };
-  assert.deepEqual(await scanProcesses("linux", fake), {
+  assert.deepEqual(await scanProcesses("linux", fake, undefined, 77), {
     commands: ["bun /code/gen-1/server/chat-runtime/main.ts ", "bun /code/gen-77/server/chat-runtime/main.ts "],
     cwds: ["/w/42", "/w/77"],
   });
-  await assert.rejects(scanProcesses("linux", { ...fake, list: async () => Promise.reject(gone) }), /gone/);
+  await assert.rejects(scanProcesses("linux", fake, undefined, 99), /\/proc does not list this server's own process/);
+  await assert.rejects(scanProcesses("linux", { ...fake, list: async () => Promise.reject(gone) }, undefined, 77), /gone/);
   await assert.rejects(scanProcesses("win32", fake), /no process scan on win32/);
 });
 
-test("the macOS process scan: ps and lsof's working folders; lsof's partial output is used; ps or lsof missing, or failing with nothing printed, fails the scan", async () => {
+test("the macOS process scan: ps's commands and lsof's working folders, whatever the exit, when each lists this server's own pid; else the scan fails", async () => {
   const noProc = { list: async () => [], cmdline: async () => "", cwd: async () => "" };
   const ok = { code: 0, missing: false, timedOut: false };
-  const exec = (lsof: { code: number; stdout: string; missing?: boolean; timedOut?: boolean }) => async (file: string) =>
-    file === "ps" ? { ...ok, stdout: "/bin/bun /c/gen-a/server/chat-runtime/main.ts\nlogin -pf\n" } : { ...ok, missing: false, timedOut: false, ...lsof };
-  assert.deepEqual(await scanProcesses("darwin", noProc, exec({ code: 1, stdout: "p12\nfcwd\nn/c/gen-w/server\np13\n" })), {
-    commands: ["/bin/bun /c/gen-a/server/chat-runtime/main.ts", "login -pf"],
-    cwds: ["/c/gen-w/server"],
+  const ps = { ...ok, stdout: "  12 /bin/bun /c/gen-a/server/chat-runtime/main.ts\n 500 /bin/bun server/index.ts\n  13 login -pf\n" };
+  const exec = (lsof: Partial<typeof ps>, p: Partial<typeof ps> = {}) => async (file: string) => (file === "ps" ? { ...ps, ...p } : { ...ok, stdout: "", ...lsof });
+  // lsof exits 1 for a process it may not read, the rest printed: used.
+  assert.deepEqual(await scanProcesses("darwin", noProc, exec({ code: 1, stdout: "p12\nfcwd\nn/c/gen-w/server\np500\nn/c/gen-x\n" }), 500), {
+    commands: ["/bin/bun /c/gen-a/server/chat-runtime/main.ts", "/bin/bun server/index.ts", "login -pf"],
+    cwds: ["/c/gen-w/server", "/c/gen-x"],
   });
-  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 1, stdout: "", missing: true })), /lsof is missing/);
-  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 1, stdout: "", timedOut: true })), /lsof timed out/);
-  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 2, stdout: "" })), /lsof failed \(2\)/);
-  const psDown = async (file: string) => (file === "ps" ? { code: 1, stdout: "", missing: false, timedOut: false } : { ...ok, stdout: "" });
-  await assert.rejects(scanProcesses("darwin", noProc, psDown), /ps failed \(1\)/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 0, stdout: "p12\nn/c/gen-w\n" }), 500), /lsof does not list this server's own process/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ code: 1, stdout: "" }), 500), /lsof does not list/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ missing: true }), 500), /lsof is missing/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ timedOut: true }), 500), /lsof timed out/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ stdout: "p500\n" }, { code: 1, stdout: "  12 x\n" }), 500), /ps does not list this server's own process/);
+  await assert.rejects(scanProcesses("darwin", noProc, exec({ stdout: "p500\n" }, { missing: true, stdout: "" }), 500), /ps is missing/);
 });
 
 test("a build id that is no directory name is hashed", () => {

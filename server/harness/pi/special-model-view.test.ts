@@ -49,7 +49,10 @@ function fixed(text: string, ids: Record<string, string>): string {
     .join("<HOME>")
     .replace(/\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?/g, "<DATE>")
     .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?\b/g, "<TIME>")
-    .replace(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b/g, "<DAY>");
+    .replace(/\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day\b/g, "<DAY>")
+    // Date#toString: "Mon Oct 12 2026 <TIME> GMT+0000 (Coordinated Universal Time)", any day and zone.
+    .replace(/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{2} \d{4}\b/g, "<DATE>")
+    .replace(/\bGMT[+-]\d{4}(?: \([^)]*\))?/g, "<ZONE>");
 }
 
 async function firstRequest(path: string, ids: Record<string, string>): Promise<unknown> {

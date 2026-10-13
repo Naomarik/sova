@@ -862,6 +862,11 @@ test("restart-check: a pending restart prints the systemctl restart line whateve
   assert.match(due.out, /^systemctl --user restart sova-runtime\.service$/m);
   assert.ok(!/busy/.test(due.out), "no busy list, no hold");
   assert.ok(!due.out.includes("systemd-run"));
+  // macOS: the launchd agent's kickstart, its label the unit's name without .service.
+  const mac = await run(["restart-check"], { env: { SOVA_ROUND_PLATFORM: "darwin" } });
+  assert.equal(mac.code, 0, mac.out);
+  assert.match(mac.out, new RegExp(`^launchctl kickstart -k gui/${process.getuid()}/sova-runtime$`, "m"));
+  assert.ok(!mac.out.includes("systemctl"));
   for (const f of readdirSync(live)) rmSync(join(live, f));
 });
 

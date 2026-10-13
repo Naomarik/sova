@@ -455,6 +455,64 @@ test("code: older than the server's build shows the badge and asks for a reload 
   assert.deepEqual(sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code").at(-1), { type: "code", state: "failed", detail: "boom" });
 });
 
+test("code: Reload now whose drain is refused as busy asks again at the next quiet moment, not after the dwell", async () => {
+  const t = await setup({ build: "a", serverBuild: "b" });
+  const reloads = collect(t.ctl.server, "reload.request");
+  const sends = collect(t.ctl.server, "client.send");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: false }]);
+  // The rollout starts the replacement, then its drain is refused (a prompt arrived): code goes back to older.
+  t.ctl.server.send({ t: "push", kind: "code", state: "reloading" });
+  t.ctl.server.send({ t: "push", kind: "code", state: "older" });
+  await settle();
+  assert.deepEqual(sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code").at(-1), { type: "code", state: "older", pending: true });
+  // Quiet again with the pane still attached and the dwell long: Reload now's request, not the automatic rule's.
+  (t.host as unknown as { check(): void }).check();
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: false }, { t: "reload.request", auto: false }]);
+});
+
+test("code: Reload now while quiet, then a reply before its drain: refused, the pane says pending, and the reload is asked at once when the chat is quiet again (t21r)", async () => {
+  const t = await setup({ build: "a", serverBuild: "b" });
+  const reloads = collect(t.ctl.server, "reload.request");
+  const sends = collect(t.ctl.server, "client.send");
+  const lastCode = () => sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "code").at(-1);
+  // What makes the chat not quiet for a reload: here a working worker of another backend (it runs in this process).
+  const live = join(agentDir, "sessions", "live", `test-${t.id}.json`);
+  const busy = (on: boolean) =>
+    on
+      ? writeFileSync(live, JSON.stringify({ session: { pid: process.pid, sessionFile: t.path, sessionId: t.id }, heartbeat: Date.now() + 60_000, presence: { workerCounts: { total: 1, working: 1 }, workers: [{ id: "ag_01", name: "w", status: "running", backend: "native-cli" }] } }))
+      : rmSync(live, { force: true });
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "reload_code" } as never });
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: false }], "quiet: asked at once");
+  // The replacement boots; meanwhile the chat stops being quiet. The rollout's drain is refused.
+  t.ctl.server.send({ t: "push", kind: "code", state: "reloading" });
+  busy(true);
+  tick();
+  await settle();
+  const refused = awaitFrame(t.ctl.server, "drained", 2_000);
+  t.ctl.server.send({ t: "drain", id: "d1", reason: "reload", force: false });
+  assert.deepEqual(await refused, { t: "drained", id: "d1", ok: false, why: "busy" });
+  t.ctl.server.send({ t: "push", kind: "code", state: "older" });
+  await settle();
+  assert.deepEqual(lastCode(), { type: "code", state: "older", pending: true }, "Reloads after this reply");
+  tick();
+  await settle();
+  assert.equal(reloads.length, 1, "not while busy");
+  // Quiet again, the pane attached and the dwell long: Reload now's request at once.
+  busy(false);
+  tick();
+  await settle();
+  assert.deepEqual(reloads, [{ t: "reload.request", auto: false }, { t: "reload.request", auto: false }]);
+});
+
 test("code: workers in processes of their own never hold a reload (they're reattached); another backend's working worker does; idle stop waits for both", async () => {
   /** This process's live record for the chat, with one worker of `backend` working. */
   const liveRecord = (t: { path: string; id: string }, backend: string) =>

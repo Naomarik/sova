@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { envFileText, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
-import { chatDriver, chatEnv, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, nextEpoch, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -571,6 +571,16 @@ test("the chat env: the server's minus the deny list, Sova's bun and the resolve
   assert.equal(env.PATH, "/opt/bun/bin:/home/u/.local/bin:/usr/bin");
   assert.deepEqual([env.HOME, env.PI_CODING_AGENT_DIR, env.SOVA_CHAT_ID, env.HTTPS_PROXY, env.CLAUDE_CODE_X, env.LANG], ["/home/u", "/home/u/.pi/agent", "c1", "http://p", "1", "C.UTF-8"]);
   for (const k of ["INVOCATION_ID", "NOTIFY_SOCKET", "PORT", "HOST", "PWD"]) assert.equal(env[k], undefined, k);
+});
+
+test("a chat process's own variables: never inherited from its server, and deleted from a server's env at boot", () => {
+  const leaked = { SOVA_CHAT_SOCK: "/s", SOVA_CHAT_PATH: "/p", SOVA_CHAT_ID: "x", SOVA_CHAT_UNIT: "u", SOVA_CHAT_BUILD: "b", SOVA_CHAT_STATE_ROOT: "/live/sova", SOVA_CHAT_LIVE_ROOT: "/live", SOVA_CHAT_COPIES_ROOT: "/live/sova/chats/code" };
+  const env = chatEnv({ serverEnv: { ...leaked, SOVA_CHAT_CODE_ROOT: "/scratch", LANG: "C" }, bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a", extra: { SOVA_CHAT_ID: "c1" } });
+  for (const k of CHAT_PROCESS_ENV) assert.equal(env[k], k === "SOVA_CHAT_ID" ? "c1" : undefined, k);
+  assert.equal(env.SOVA_CHAT_CODE_ROOT, undefined, "the server's own code root");
+  const server: NodeJS.ProcessEnv = { ...leaked, SOVA_CHAT_HOST: "out", LANG: "C" };
+  assert.deepEqual(scrubChatProcessEnv(server).sort(), Object.keys(leaked).sort());
+  assert.deepEqual(server, { SOVA_CHAT_HOST: "out", LANG: "C" });
 });
 
 test("the socket lives under the state root, or in the runtime dir when that path would not fit", () => {

@@ -6,7 +6,8 @@ import type { PiLoaderOptions } from "./extension-types";
 /**
  * Sova's own extensions from a chat process's own code (§app.chat-processes/code-generations): a chat
  * process running from a code generation (`SOVA_CHAT_LIVE_ROOT` names the checkout it was copied from,
- * and is not where this file runs) loads every extension that lies in a Sova checkout's `pi-config/`,
+ * and is not where this file runs; `SOVA_CHAT_COPIES_ROOT` where the copies live; both set by the launch
+ * for that process only, and deleted from a server's env at its boot) loads every extension that lies in a Sova checkout's `pi-config/`,
  * the live one or another generation's, from the same place in its own copy. Bun keys modules by
  * their real path, so an extension loaded through the agent dir's link into the checkout would be a
  * second instance of every module the runtime itself imports from `pi-config/` (two trackers, two
@@ -43,7 +44,7 @@ const real = (p: string): string => {
 export function ownCodeOf(env: NodeJS.ProcessEnv = process.env, own = OWN_ROOT): OwnCode | null {
   const live = env.SOVA_CHAT_LIVE_ROOT?.trim();
   if (!live || real(live) === real(own)) return null;
-  const codeRoot = env.SOVA_CHAT_CODE_ROOT?.trim();
+  const codeRoot = env.SOVA_CHAT_COPIES_ROOT?.trim();
   return { own: real(own), live: real(live), ...(codeRoot ? { codeRoot: real(codeRoot) } : {}) };
 }
 
@@ -100,7 +101,9 @@ export function patchResolve(cls: ResolvesPaths, o: OwnCode, log: (line: string)
 }
 
 let installed = false;
-/** Once per process, and only in a chat process on a code generation: never in the server. */
+/** Once per process, and only in a chat process on a code generation: never in the server. Called at a
+    services build, never at import: a server deletes the chat-process variables it inherited (from a
+    chat's own tools) at boot, after its imports ran. */
 export function installOwnCode(o: OwnCode | null = ownCodeOf()): void {
   if (installed || !o) return;
   installed = true;

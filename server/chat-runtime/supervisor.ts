@@ -149,18 +149,43 @@ export function nextEpoch(file = epochFile(), now = Date.now()): number {
 
 // ---- the chat process's environment -------------------------------------------------------------
 
-/** What a chat process never inherits from the server: the service manager's per-unit variables, the shell's own, and the server's listen settings. */
-const DENY = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "WATCHDOG_PID", "WATCHDOG_USEC", "SYSTEMD_EXEC_PID", "PWD", "OLDPWD", "_", "PORT", "HOST"]);
+/** What a chat process never inherits from the server: the service manager's per-unit variables, the shell's own, and the server's listen settings and code root. */
+const DENY = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "WATCHDOG_PID", "WATCHDOG_USEC", "SYSTEMD_EXEC_PID", "PWD", "OLDPWD", "_", "PORT", "HOST", "SOVA_CHAT_CODE_ROOT"]);
+
+/**
+ * The variables the launch sets for one chat process, and only for it: its socket, file, id, unit and
+ * build, the state root of the server that started it, and where its code was copied from and to
+ * (§app.chat-processes/code-generations). A server never reads them: one started from a chat's own
+ * tools (a hermetic server in a worktree) deletes them from its env at boot (scrubChatProcessEnv),
+ * and a chat process never inherits them from its server.
+ */
+export const CHAT_PROCESS_ENV = [
+  "SOVA_CHAT_SOCK",
+  "SOVA_CHAT_PATH",
+  "SOVA_CHAT_ID",
+  "SOVA_CHAT_UNIT",
+  "SOVA_CHAT_BUILD",
+  "SOVA_CHAT_STATE_ROOT",
+  "SOVA_CHAT_LIVE_ROOT",
+  "SOVA_CHAT_COPIES_ROOT",
+] as const;
+
+/** Delete every chat process's own variable from a server's env (the server: at boot, before anything reads it); the names it held. */
+export function scrubChatProcessEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+  const held = CHAT_PROCESS_ENV.filter((k) => k in env);
+  for (const k of held) delete env[k];
+  return held;
+}
 
 /**
  * The environment a chat process starts with (design §1.2): the server's (in-process chats see it
- * whole today), minus DENY; PATH with Sova's Bun first and the Claude program's directory next (so the
+ * whole today), minus DENY and CHAT_PROCESS_ENV; PATH with Sova's Bun first and the Claude program's directory next (so the
  * chat finds the same `claude` the server resolved, whatever its cwd's mise config says), then the
  * server's PATH; HOME; PI_CODING_AGENT_DIR. `extra` (the chat's own `SOVA_CHAT_*`) goes last and wins.
  */
 export function chatEnv(o: { serverEnv: NodeJS.ProcessEnv; bun: string; claude?: string | null; home: string; agentDir: string; extra?: Record<string, string> }): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(o.serverEnv)) if (v !== undefined && !DENY.has(k)) env[k] = v;
+  for (const [k, v] of Object.entries(o.serverEnv)) if (v !== undefined && !DENY.has(k) && !(CHAT_PROCESS_ENV as readonly string[]).includes(k)) env[k] = v;
   const path: string[] = [];
   for (const d of [dirname(o.bun), ...(o.claude ? [dirname(o.claude)] : []), ...(o.serverEnv.PATH ?? "").split(":")]) if (d.startsWith("/") && !path.includes(d)) path.push(d);
   env.PATH = path.join(":");

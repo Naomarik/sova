@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlink
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { buildId, collectGenerations, currentGeneration, generationDir, generationHealth, lastGood, noteGood, resetGenerations, startGenerationGc } from "./generations";
+import { ownCodeOf } from "../harness/pi/own-code";
+import { buildId, codeRoot, collectGenerations, currentGeneration, generationDir, generationHealth, lastGood, noteGood, resetGenerations, startGenerationGc } from "./generations";
+import { chatsRoot, scrubChatProcessEnv } from "./supervisor";
 
 const quiet = () => {};
 const env = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
@@ -197,6 +199,21 @@ test("the collector: at once, keeping the current generation and what is in use;
     rmSync(base, { recursive: true, force: true });
     resetGenerations();
   }
+});
+
+test("a server started from a chat's tools: once the chat's variables are deleted, its copies go under its own state root, never the chat's server's, and it maps nothing", () => {
+  const server: NodeJS.ProcessEnv = { ...env(), SOVA_CHAT_LIVE_ROOT: "/live", SOVA_CHAT_COPIES_ROOT: "/live-state/chats/code", SOVA_CHAT_STATE_ROOT: "/live-state" };
+  scrubChatProcessEnv(server);
+  assert.equal(codeRoot(server), join(chatsRoot(), "code"));
+  assert.equal(ownCodeOf(server, "/anywhere"), null);
+});
+
+test("no collection on a root set by SOVA_CHAT_CODE_ROOT, which other servers may share", async () => {
+  const lines: string[] = [];
+  const gc = startGenerationGc(() => [], { env: { SOVA_CHAT_CODE_ROOT: "/shared" }, log: (l) => lines.push(l) });
+  await gc.collect();
+  gc.stop();
+  assert.match(lines.join("\n"), /not collected under SOVA_CHAT_CODE_ROOT \(\/shared\)/);
 });
 
 test("a build id that is no directory name is hashed", () => {

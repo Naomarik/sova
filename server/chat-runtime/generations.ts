@@ -371,7 +371,9 @@ export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: str
   const log = o.log ?? ((l: string) => console.log(`[chat-code] ${l}`));
   // A root set by SOVA_CHAT_CODE_ROOT may be shared by several servers (trials): what one keeps is not
   // what the others' chats run, so none of them collects there; the trial removes its scratch root.
-  if (!o.root && (o.env ?? process.env).SOVA_CHAT_CODE_ROOT?.trim()) {
+  // SOVA_CHAT_CODE_GC=on (trials) says the root is this server's alone, and it collects there.
+  const env = o.env ?? process.env;
+  if (!o.root && env.SOVA_CHAT_CODE_ROOT?.trim() && env.SOVA_CHAT_CODE_GC?.trim() !== "on") {
     log(`unused code is not collected under SOVA_CHAT_CODE_ROOT (${codeRoot(o.env)}), a root other servers may share`);
     return { collect: async () => {}, stop: () => {} };
   }
@@ -380,7 +382,7 @@ export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: str
     try {
       const keep = new Set(inUse());
       if (current) keep.add(current.id);
-      const gone = await collectGenerations(keep, { root: o.root, graceMs: graceOf(o.env ?? process.env) });
+      const gone = await collectGenerations(keep, { root: o.root ?? codeRoot(env), graceMs: graceOf(env) });
       if (gone.length) log(`removed unused code: ${gone.join(", ")}`);
     } catch (err) {
       log(`collecting unused code failed: ${(err as Error).message}`);

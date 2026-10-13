@@ -8,7 +8,6 @@ import { buildApp, SERVER_RUNTIME } from "./app";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { markShutdown } from "./wrapup-recovery";
-import { runLedger } from "./auto-resume";
 import { startBudgetRecount } from "./baton-recount";
 import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices } from "./project-services/routes";
@@ -42,7 +41,7 @@ import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
-import { setOverseerDispatch, startAutoResume, startOverseerLoop } from "./overseer";
+import { setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { setSovaPort } from "./extensions";
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
@@ -185,8 +184,6 @@ try {
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
-// The runs the last stop cut off get one "continue" each (§app.overseer/auto-resume).
-startAutoResume();
 startScheduleKeeper((path, init) => app.request(path, init));
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
@@ -285,10 +282,8 @@ async function shutdown() {
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
   // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();
-  // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
-  runLedger.freeze();
   // Only chats in this process: a chat in a process of its own runs on, its reply included
-  // (§app.chat-processes/survives-restart), and never enters the ledger.
+  // (§app.chat-processes/survives-restart).
   const aborts = chatHandles().filter((chat) => chat.where === "server" && chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
   // Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();

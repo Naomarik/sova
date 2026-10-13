@@ -52,6 +52,7 @@ import {
   chooseChatHost,
   nextEpoch,
   supervisorConfig,
+  sweepOldChildren,
 } from "./chat-runtime/supervisor";
 import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock";
 import { chatBun, NO_BUN, NO_BUN_CHATS } from "./chat-runtime/bun";
@@ -99,6 +100,8 @@ export interface RouterDeps {
   supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix">;
   /** Where the worker registry keeps its records. */
   workersDir?: () => string;
+  /** The one-time sweep of an older server's worker children (the server: sweepOldChildren). */
+  sweepChildren?: () => Promise<string[]>;
   /** The code generation chat processes start on (§app.chat-processes/code-generations); none: the checkout. */
   gen?: Generation;
 }
@@ -124,6 +127,7 @@ export class ChatHostRouter {
   private readonly connect: typeof connectLink;
   private readonly out: () => boolean;
   private readonly bun: () => string | null;
+  private readonly sweepChildren: (() => Promise<string[]>) | undefined;
   private readonly gen: Generation | undefined;
   /** Unused code generations collected (after the take-back, hourly, after a run of reloads). */
   private gc: { collect: () => Promise<void>; stop: () => void } | null = null;
@@ -137,6 +141,7 @@ export class ChatHostRouter {
     this.connect = deps.connect ?? connectLink;
     this.out = deps.out ?? (() => true);
     this.bun = deps.bun ?? chatBun;
+    this.sweepChildren = deps.sweepChildren;
     this.gen = deps.gen;
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
@@ -391,6 +396,8 @@ export class ChatHostRouter {
     let found!: (m: Map<string, Promise<void>>) => void;
     this.takingBack = new Promise((r) => (found = r));
     this.readyP = (async () => {
+      // Workers an older server ran as its own children (before every worker had a process of its own).
+      for (const unit of await (this.sweepChildren ?? sweepOldChildren)()) log(`${unit}: an older server's worker child; stopped`);
       const { adopted } = await this.sup.adopt();
       const each = new Map(adopted.map((rec) => [rec.sessionPath, this.takeBack(rec)] as const));
       found(each);

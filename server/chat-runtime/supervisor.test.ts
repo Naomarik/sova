@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { envFileText, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
-import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -574,6 +574,17 @@ test("chats run as systemd units where the user manager answers, else as detache
   assert.equal(nosd.driver, "detached");
   assert.match(nosd.why, /no systemd/);
   assert.equal((await chooseChatHost({ env: { SOVA_CHAT_DRIVER: "detached" }, platform: "linux", driver: up })).driver, "detached", "the test override");
+});
+
+test("once at start, an older server's worker children are stopped by their records and their place removed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-old-children-"));
+  mkdirSync(join(root, "procs"), { recursive: true });
+  const rec = { pid: 4_194_000, startedAt: 1 };
+  writeFileSync(join(root, "procs", "sova-chatw-h1-w1.json"), JSON.stringify(rec));
+  writeFileSync(join(root, "procs", "sova-chatw-other-w2.json"), JSON.stringify(rec));
+  assert.deepEqual(await sweepOldChildren(root, "h1"), ["sova-chatw-h1-w1"]);
+  assert.equal(existsSync(root), false, "the place is gone, so the next start sweeps nothing");
+  assert.deepEqual(await sweepOldChildren(root, "h1"), []);
 });
 
 test("the chat env: the server's minus the deny list, Sova's bun and the resolved claude first on PATH", () => {

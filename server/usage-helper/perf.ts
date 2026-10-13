@@ -2,6 +2,7 @@ import {
   PERF_BINS,
   PERF_EFFORT_ORDER,
   PERF_MIN_RANGE,
+  PERF_ALL_TOOLS,
   PERF_NO_SPLIT,
   replySpeeds,
   replyTokens,
@@ -34,6 +35,7 @@ export interface PerfSample {
 export function normalizeTiming(t: ReplyTiming): ReplyTiming {
   const out: ReplyTiming = { ttftMs: nonneg(t.ttftMs), thinkingMs: nonneg(t.thinkingMs), replyMs: nonneg(t.replyMs), output: nonneg(t.output) };
   if (t.effort !== undefined) out.effort = t.effort;
+  if (t.toolCalls !== undefined && t.toolCalls > 0) out.toolCalls = t.toolCalls;
   if (t.reasoning !== undefined && Number.isFinite(t.reasoning) && !(t.reasoning <= 0 && out.thinkingMs > 0)) out.reasoning = Math.min(out.output, Math.max(0, t.reasoning));
   return out;
 }
@@ -89,6 +91,7 @@ export function figuresOf(timings: readonly ReplyTiming[]): PerfFigures {
   const ttft: number[] = [];
   let thought = 0;
   let split = 0;
+  let toolFree = 0;
   let counted = 0;
   for (const t of timings) {
     const s = replySpeeds(t);
@@ -96,6 +99,7 @@ export function figuresOf(timings: readonly ReplyTiming[]): PerfFigures {
     if (s.reply !== undefined) reply.push(s.reply);
     if (s.thinking !== undefined) thinkingTps.push(s.thinking);
     if (replyTokens(t) !== undefined) split++;
+    if (!((t.toolCalls ?? 0) > 0)) toolFree++;
     ttft.push(t.ttftMs);
     if (t.thinkingMs > 0) {
       thought++;
@@ -112,7 +116,8 @@ export function figuresOf(timings: readonly ReplyTiming[]): PerfFigures {
     replies: timings.length,
     thought,
     overall: figure(overall),
-    reply: figure(reply, split === 0 ? PERF_NO_SPLIT : undefined),
+    // No reply could give a reply-text speed: every one wrote tool calls, or thought uncounted.
+    reply: figure(reply, split > 0 ? undefined : toolFree === 0 ? PERF_ALL_TOOLS : PERF_NO_SPLIT),
     thinkingTps: figure(thinkingTps, noCount),
     thinkingMs: figure(thinkingMs),
     thinkingTokens: figure(thinkingTokens, noCount),

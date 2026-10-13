@@ -1,7 +1,7 @@
-import { createSignal, For, onCleanup, type JSX } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, type JSX, Show } from "solid-js";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { placeHelpCard } from "../lib/help-popover";
-import { replyCardLines, replyCardSummary } from "../lib/perf";
+import { replyCard, replyCardSummary } from "../lib/perf";
 import "../reply-timing.css";
 
 let nextId = 0;
@@ -17,6 +17,7 @@ const CLOSE_DELAY_MS = 120;
  */
 export function ReplyTimingHead(props: { timing: ReplyTiming; author: JSX.Element; stamp: JSX.Element; extra?: JSX.Element }) {
   const id = `reply-timing-${++nextId}`;
+  const c = createMemo(() => replyCard(props.timing));
   let head!: HTMLDivElement;
   let button!: HTMLButtonElement;
   let card!: HTMLDivElement;
@@ -109,16 +110,24 @@ export function ReplyTimingHead(props: { timing: ReplyTiming; author: JSX.Elemen
         onPointerLeave={(e) => mouse(e) && !pinned() && later(hide, CLOSE_DELAY_MS)}
       >
         <span class="visually-hidden">{replyCardSummary(props.timing)}</span>
-        <dl class="reply-timing-lines" aria-hidden="true">
-          <For each={replyCardLines(props.timing)}>
-            {(l) => (
-              <div class="reply-timing-line">
-                <dt>{l.label}</dt>
-                <dd>{l.value}</dd>
-              </div>
-            )}
-          </For>
-        </dl>
+        <div class="reply-timing-body" aria-hidden="true">
+          <Show when={c().effort}>{(e) => <p class="reply-timing-effort">Effort {e()}</p>}</Show>
+          <div class="reply-timing-headline">
+            <span class="reply-timing-label">{c().headline.label}</span>
+            <span class="reply-timing-big">{c().headline.value}</span>
+            <span class="reply-timing-note">{c().headline.note}</span>
+          </div>
+          <dl class="reply-timing-lines">
+            <For each={c().parts}>
+              {(l) => (
+                <div class="reply-timing-line">
+                  <dt>{l.label}</dt>
+                  <dd>{l.value}</dd>
+                </div>
+              )}
+            </For>
+          </dl>
+        </div>
       </div>
     </div>
   );

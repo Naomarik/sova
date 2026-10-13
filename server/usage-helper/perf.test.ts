@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PERF_ALL_TOOLS, PERF_MIN_RANGE, PERF_NO_SPLIT, replySpeeds, type ReplyTiming } from "../../shared/usage/perf";
-import { figure, figuresOf, logBins, normalizeTiming, percentile, performanceRows, type PerfSample } from "./perf";
+import { binsOn, figure, figuresOf, logBins, normalizeTiming, percentile, performanceRows, type PerfSample } from "./perf";
 
 const t = (o: Partial<ReplyTiming>): ReplyTiming => ({ ttftMs: 500, thinkingMs: 0, replyMs: 2000, output: 200, ...o });
 
@@ -105,6 +105,25 @@ test("rows: one per provider+model, most replies first, effort lines in level or
     rows[0]!.efforts.map((e) => `${e.effort}:${e.replies}`),
     ["low:1", "medium:1", "xhigh:1", "unknown:1"],
   );
+});
+
+test("every effort level is binned on its model's bands: the same spread at two levels draws the same heights", () => {
+  const thought = (effort: string, thinkingMs: number): PerfSample => ({ provider: "zai", model: "glm-5.3", timing: t({ effort, thinkingMs, thinkingParts: 1 }) });
+  const low = [100, 200, 200, 400, 800];
+  const high = low.map((v) => v * 10);
+  const [row] = performanceRows([...low.map((v) => thought("low", v)), ...high.map((v) => thought("high", v)), thought("xhigh", 300)]);
+  const model = row!.thinkingMs.bins!;
+  const [lo, hi, few] = row!.efforts.map((e) => e.thinkingMs);
+  const edges = (bins: { lo: number; hi: number }[]) => bins.map((b) => [b.lo, b.hi]);
+  assert.deepEqual(edges(lo!.bins!), edges(model), "low on the model's bands");
+  assert.deepEqual(edges(hi!.bins!), edges(model), "high on the model's bands");
+  const counts = (bins: { n: number }[]) => bins.map((b) => b.n);
+  assert.equal(Math.max(...counts(lo!.bins!)), Math.max(...counts(hi!.bins!)), "comparable peak heights");
+  assert.deepEqual(counts(lo!.bins!).filter(Boolean), counts(hi!.bins!).filter(Boolean), "the same shape, moved along the axis");
+  assert.equal(counts(lo!.bins!).reduce((a, b) => a + b), low.length);
+  assert.equal(few!.bins, undefined, "a level under 5 has no bins");
+  // A value at or under the first band's lo falls in it, one over the last band's hi in the last.
+  assert.deepEqual(counts(binsOn([{ lo: 10, hi: 20, n: 9 }, { lo: 20, hi: 40, n: 9 }], [0, 10, 25, 40, 99])), [2, 3]);
 });
 
 test("a reply with tool calls: overall speed includes the tool-call writing window, no reply-text speed", () => {

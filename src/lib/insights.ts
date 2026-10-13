@@ -5,7 +5,7 @@ import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBa
 import type { Tone } from "../components/ui";
 import { accountGroups, type LoginFacts, loginName } from "./claude-login-groups";
 import { costsRouteFromHash, type CostsQuery } from "./cost-history";
-import { perfRouteFromHash } from "./perf";
+import { type PerfQuery, perfRouteFromHash } from "./perf";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
 import { currentIncluded, includedCreditPct } from "./ollama-usage";
@@ -808,7 +808,7 @@ export const explanationsHref = (sessionId?: string | null) =>
     `#/explanations`, `#/explanations/<sessionId>`. */
 export type InsightsRoute =
   | { page: "usage" }
-  | { page: "agents"; team: string | null; costs?: CostsQuery; performance?: CostsQuery }
+  | { page: "agents"; team: string | null; costs?: CostsQuery; performance?: PerfQuery }
   | { page: "explanations"; session: string | null };
 
 export function insightsRouteFromHash(hash: string): InsightsRoute | null {

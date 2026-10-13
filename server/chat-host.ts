@@ -39,7 +39,7 @@ import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } f
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
 import { takeInflight } from "./chat-runtime/inflight";
-import { codeRoot, currentGeneration, type Generation, generationHealth, noteGood, startGenerationGc } from "./chat-runtime/generations";
+import { codeRoot, currentGeneration, type Generation, generationDir, generationHealth, isGenerationComplete, lastGood, noteGood, startGenerationGc } from "./chat-runtime/generations";
 import { linkWaitReady, Rollout } from "./chat-runtime/rollout";
 import {
   type ChatDeath,
@@ -92,8 +92,6 @@ const log = (line: string) => console.log(`[chat-host] ${line}`);
 export interface RouterDeps {
   driver?: Driver;
   connect?: typeof connectLink;
-  /** Whether ordinary chats move out now (tests of the in-process path; the server: always). */
-  out?: () => boolean;
   /** The Bun chat processes run on, null when none was found (the server: chatBun). */
   bun?: () => string | null;
   /** Where the supervisor keeps its records and sockets, and its units' prefix. */
@@ -114,9 +112,11 @@ export class ChatHostRouter {
   readonly workers: WorkerRegistry;
   /** Session id (the supervisor's chat id) → session file. */
   private readonly paths = new Map<string, string>();
-  private readonly starting = new Map<string, Promise<ChatHandle | null>>();
-  /** Chats that run in this process until it restarts: a start that failed, an open on new code that did. */
-  private readonly inprocOnly = new Set<string>();
+  private readonly starting = new Map<string, Promise<ChatHandle>>();
+  /** The code a chat's next process starts on when it is not the current copy (a fallback), by chat id. */
+  private readonly codeFor = new Map<string, string>();
+  /** The code each chat's process runs (its record's build), by chat id: a failed reload's way back. */
+  private readonly builds = new Map<string, string>();
   private readonly settings: ChatRuntimeSettings;
   private readonly sup: ChatSupervisor;
   private readonly rollout: Rollout<Link>;
@@ -125,7 +125,6 @@ export class ChatHostRouter {
       supervisor has adopted them). */
   private takingBack: Promise<Map<string, Promise<void>>> = Promise.resolve(new Map());
   private readonly connect: typeof connectLink;
-  private readonly out: () => boolean;
   private readonly bun: () => string | null;
   private readonly sweepChildren: (() => Promise<string[]>) | undefined;
   private readonly gen: Generation | undefined;
@@ -139,18 +138,19 @@ export class ChatHostRouter {
   ) {
     const cfg = supervisorConfig();
     this.connect = deps.connect ?? connectLink;
-    this.out = deps.out ?? (() => true);
     this.bun = deps.bun ?? chatBun;
     this.sweepChildren = deps.sweepChildren;
     this.gen = deps.gen;
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
-    const code = deps.gen?.dir ?? REPO;
+    const currentCode = deps.gen?.dir ?? REPO;
     this.settings = { ...DEFAULT_RUNTIME_SETTINGS, idleStopMin: cfg.idleMs / 60_000 };
     // A worker chat's process gets its loadout's environment and agent dir, the server's state root
     // for its bookkeeping, Bun however the server runs, and the worker niceness.
     const launch: SupervisorDeps["launch"] = (c) => {
       const w = this.workers?.record(c.chatId);
+      const id = this.codeFor.get(c.chatId) ?? build;
+      const code = id === build ? currentCode : generationDir(id);
       const bun = this.bun() ?? process.execPath;
       return {
         argv: [bun, join(code, "server", "chat-runtime", "main.ts")],
@@ -168,12 +168,12 @@ export class ChatHostRouter {
             SOVA_CHAT_PATH: c.sessionPath,
             SOVA_CHAT_ID: c.chatId,
             SOVA_CHAT_UNIT: c.unit,
-            SOVA_CHAT_BUILD: build,
+            SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
           },
         }),
-        build,
+        build: id,
         ...(w?.spec.lowered ? { nice: readWorkerNice() } : {}),
       };
     };
@@ -188,8 +188,7 @@ export class ChatHostRouter {
           log(`worker chat ${id}: its process did not start (${d.detail ?? d.cause})`);
           return;
         }
-        log(`${id}: did not start (${d.detail ?? d.cause}); it runs in the server until it restarts`);
-        this.inprocOnly.add(d.sessionPath);
+        log(`${id}: did not start (${d.detail ?? d.cause})`);
         this.forget(d.sessionPath);
       },
       onStopped: (id) => {
@@ -224,6 +223,7 @@ export class ChatHostRouter {
         const h = this.remotes.get(rep.sessionPath);
         if (h) h.repoint(link, { unit: rep.unit, pid: rep.pid ?? 0 }, mirror);
         else this.adoptHandle(rep, link, mirror);
+        if (rep.build) this.builds.set(id, rep.build);
         this.good(rep);
       },
       setCode: (id, state, detail) => this.handleOf(id)?.pushCode(state, detail),
@@ -235,9 +235,11 @@ export class ChatHostRouter {
           this.workers.onExit(id, "closed");
           return;
         }
-        log(`${path}: ${reason}; it runs in the server until it restarts`);
-        this.inprocOnly.add(path);
+        // Its old process is gone: it starts again at once on the code it ran before, showing why.
+        const before = this.builds.get(id);
         this.forget(path);
+        log(`${path}: ${reason}; it starts again on ${before ?? "the code it ran before"}`);
+        void this.startOnce(path, true, { code: before, why: reason }).catch((err) => log(`${path}: it did not start again (${err instanceof Error ? err.message : String(err)})`));
       },
     });
     onLinksNotified((ids) => {
@@ -365,6 +367,7 @@ export class ChatHostRouter {
     const h = new RemoteChatHandle(rec.sessionPath, rec.sessionPath, { unit: rec.unit, pid: rec.pid ?? 0 }, link, mirror, this.epoch, this.hooks, held);
     this.remotes.set(rec.sessionPath, h);
     this.paths.set(rec.chatId, rec.sessionPath);
+    if (rec.build) this.builds.set(rec.chatId, rec.build);
     this.hooks.state?.(h);
     return h;
   }
@@ -472,7 +475,7 @@ export class ChatHostRouter {
     return [...this.remotes.values()].filter((h) => !h.closed && !this.workerPaths.has(h.path));
   }
 
-  async acquire(path: string, force: boolean): Promise<ChatHandle | null> {
+  async acquire(path: string, force: boolean): Promise<ChatHandle> {
     // A worker's or hidden chat's own file is never opened as a chat (the subagent-session refusal),
     // permanently: a browser never retries it.
     const s = await getSessionSummary(path).catch(() => null);
@@ -502,60 +505,98 @@ export class ChatHostRouter {
         return open;
       }
     }
-    if (!this.out() || this.inprocOnly.has(path)) return null;
     if (!this.bun()) throw new Error(NO_BUN_CHATS);
+    return this.startOnce(path, force);
+  }
+
+  /** One start at a time per chat: a second open waits for the first. */
+  private startOnce(path: string, force: boolean, back?: { code: string | undefined; why: string }): Promise<ChatHandle> {
     let p = this.starting.get(path);
     if (!p) {
-      p = this.startChat(path, force).finally(() => this.starting.delete(path));
+      p = this.startChat(path, force, back).finally(() => this.starting.delete(path));
       this.starting.set(path, p);
     }
     return p;
   }
 
-  /** Start the chat in a process of its own, or null: it runs here (not ordinary, or its start failed). */
-  private async startChat(path: string, force: boolean): Promise<ChatHandle | null> {
-    let kind: OpenKind;
-    try {
-      kind = await openKindOf(path);
-    } catch {
-      return null; // unreadable: the in-process open says why
-    }
-    // Every chat goes out but a worker's own file (§app/chat-processes): the special kinds and powers too.
+  /** The copy a chat whose process can't start on the current code starts on: the last good one, when
+      it is another complete copy (§app/chat-processes), else none. */
+  private fallbackCode(prefer?: string): string | null {
+    if (!this.gen || this.gen.live) return null;
+    for (const id of [prefer, lastGood()]) if (id && id !== this.build && isGenerationComplete(id)) return id;
+    return null;
+  }
+
+  /**
+   * Start the chat in a process of its own. One that can't start on the current code (no process, no
+   * answer, a failed open) starts on the last good copy and shows why; with none, or if that fails
+   * too, the open is refused with the reason. `back`: a reload's failed open, so straight to the code
+   * the chat ran before.
+   */
+  private async startChat(path: string, force: boolean, back?: { code: string | undefined; why: string }): Promise<ChatHandle> {
+    const kind: OpenKind = await openKindOf(path);
     const summary = await getSessionSummary(path).catch(() => null);
-    if (!summary || summary.workerSession) return null;
+    if (!summary) throw new Error("This session's file can't be read.");
     // A special kind's refusal (a previous conversation is read-only) comes before any process starts.
     const special = kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined;
-    // The cheap refusals first, as the in-process open makes them: no process for a doomed open.
+    // The cheap refusals first: no process for a doomed open.
     assertNotLive(path);
     assertOpenConfig(path);
     if (!force) {
       const age = recentForeignWriteAgeSec(path);
       if (age !== null) throw new BusyError(`modified ${age}s ago by a process we can't identify`, "recent");
     }
+    // A refusal (busy, recent, config) is the caller's; the process exits by itself.
+    const refused = (err: unknown) => err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError;
+    const startOn = async (code: string | null) => {
+      if (code) this.codeFor.set(summary.id, code);
+      try {
+        return await this.startProcess(
+          this.sup,
+          { chatId: summary.id, sessionPath: path, cwd: summary.cwd ?? REPO },
+          // A special or powers chat needs a chat process that speaks proto 2 (an older one opens it as ordinary).
+          kind ? 2 : 0,
+          (link, rec) => this.openOn(link, path, rec.chatId, force, kind, special),
+          async (h) => {
+            // Its kind's every-open hook (the Overseer's mode, a baton's abilities), before anyone has it.
+            const opened = kindOfMirror(h.mirror);
+            if (opened && opened !== "powers") await specialHostOf(opened)?.opened?.(h);
+            this.pushSpecial(h);
+          },
+          refused,
+        );
+      } catch (err) {
+        // A config failure is remembered too: the next open answers from it, with no process.
+        if (err instanceof ConfigError) recordConfigFailure(path, err);
+        throw err;
+      } finally {
+        this.codeFor.delete(summary.id);
+      }
+    };
+    const text = (err: unknown) => (err instanceof Error ? err.message : String(err));
+    let why = back?.why ?? "";
+    if (!back) {
+      try {
+        return await startOn(null);
+      } catch (err) {
+        if (refused(err)) throw err;
+        why = `${err instanceof NoProcess ? "it could not start its process" : "it did not open in its process"} (${text(err)})`;
+      }
+    }
+    const code = this.fallbackCode(back?.code);
+    if (!code) {
+      log(`${path}: ${why}; no older code to start it on`);
+      throw new Error(`This chat's process didn't start: ${why}`);
+    }
+    log(`${path}: ${why}; starting it on ${code}`);
     try {
-      return await this.startProcess(
-        this.sup,
-        { chatId: summary.id, sessionPath: path, cwd: summary.cwd ?? REPO },
-        // A special or powers chat needs a chat process that speaks proto 2 (an older one opens it as ordinary).
-        kind ? 2 : 0,
-        (link, rec) => this.openOn(link, path, rec.chatId, force, kind, special),
-        async (h) => {
-          // Its kind's every-open hook (the Overseer's mode, a baton's abilities), before anyone has it.
-          const opened = kindOfMirror(h.mirror);
-          if (opened && opened !== "powers") await specialHostOf(opened)?.opened?.(h);
-          this.pushSpecial(h);
-        },
-        // A refusal (busy, recent, config) is the caller's, as in-process; the process exits by itself.
-        (err) => err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError,
-      );
+      const h = await startOn(code);
+      h.pushCode("failed", why);
+      return h;
     } catch (err) {
-      // A config failure is remembered here too: the next open answers from it, with no process.
-      if (err instanceof ConfigError) recordConfigFailure(path, err);
-      if (err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError) throw err;
-      const what = err instanceof NoProcess ? "could not start its process" : "did not open in its process";
-      log(`${path}: ${what} (${err instanceof Error ? err.message : String(err)}); it runs in the server until it restarts`);
-      this.inprocOnly.add(path);
-      return null;
+      if (refused(err)) throw err;
+      log(`${path}: it did not start on ${code} either (${text(err)})`);
+      throw new Error(`This chat's process didn't start: ${text(err)}`);
     }
   }
 
@@ -748,11 +789,11 @@ export function startChatHost(): void {
     ready: () => Promise.race([boot.then(() => router?.ready()), new Promise<void>((r) => setTimeout(r, 2 * READY_WAIT_MS))]),
     get: (path) => router?.get(path),
     all: () => router?.all() ?? [],
-    // Opening waits for the router itself (the server's build can take seconds to compute): a chat is
-    // never opened here while a process of its own may still hold it.
+    // Opening waits for the router itself (the server's build can take seconds to compute).
     acquire: async (path, force) => {
       await Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
-      return router ? router.acquire(path, force) : null;
+      if (!router) throw new Error("The Sova server's chat host did not start.");
+      return router.acquire(path, force);
     },
     close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),

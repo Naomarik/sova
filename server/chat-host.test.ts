@@ -78,7 +78,7 @@ const quiet = () => {};
 let epoch = 1_000;
 
 /** A router over a fake driver whose started units answer as chat-runtime hosts in this process. */
-function setup(o: { out?: boolean; bun?: string | null } = {}) {
+function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean } } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -104,14 +104,13 @@ function setup(o: { out?: boolean; bun?: string | null } = {}) {
     setImmediate(() => h.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings }));
     return { link, hello };
   }) as never;
-  const router = new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}) });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect, supervisor, ...("bun" in o ? { bun: () => o.bun ?? null } : {}), ...(o.gen ? { gen: o.gen } : {}) });
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
   const again = (delayMs = 0) =>
     new ChatHostRouter(++epoch, "b1", {
       driver,
       connect: delayMs ? (((sock: string, opts: never) => new Promise((r) => setTimeout(r, delayMs)).then(() => (connect as (s: string, o: never) => Promise<unknown>)(sock, opts))) as never) : connect,
-      out: () => o.out ?? true,
       supervisor,
     });
   return { router, driver, hosts, exits, connects: () => connects, again, connect: connect as typeof import("./chat-runtime/link").connectLink, supervisor };
@@ -145,17 +144,13 @@ test("with no Bun anywhere every chat open is refused, and no process starts", a
   t.router.detach();
 });
 
-test("a chat whose profile grants powers runs in a process of its own too; every chat with the switch off stays in", async () => {
+test("a chat whose profile grants powers runs in a process of its own too", async () => {
   const t = setup();
   const powers = session({ extra: [{ type: "custom", id: "p1", parentId: "a1", timestamp: "2026-10-12T00:00:03.000Z", customType: PROFILE_ENTRY, data: { v: 1, profile: { id: "ops", name: "Ops", grant: ["shell"], remove: [] } } }] });
   const p = await t.router.acquire(powers.path, false);
   assert.equal(p?.where, "process");
   assert.equal(t.driver.started.length, 1);
   t.router.detach();
-
-  const off = setup({ out: false });
-  assert.equal(await off.router.acquire(session().path, false), null);
-  assert.equal(off.driver.started.length, 0);
 });
 
 test("two opens of one chat at once start one process (single-flight)", async () => {
@@ -168,13 +163,33 @@ test("two opens of one chat at once start one process (single-flight)", async ()
   t.router.detach();
 });
 
-test("a start that fails leaves the chat in the server until it restarts, never retried", async () => {
+test("B1: a chat whose process can't start, with no older copy, is refused with the reason; never opened in the server", async () => {
   const t = setup();
   const s = session();
   t.driver.failNextStart = "systemd-run: boom";
-  assert.equal(await t.router.acquire(s.path, false), null);
-  assert.equal(await t.router.acquire(s.path, false), null);
+  await assert.rejects(t.router.acquire(s.path, false), /This chat's process didn't start: it could not start its process \(.*boom/);
   assert.equal(t.driver.started.length, 0);
+  // Not remembered: the next open tries again, and starts.
+  const h = await t.router.acquire(s.path, false);
+  assert.equal(h.where, "process");
+  t.router.detach();
+});
+
+test("B1: a chat whose process can't start on the current copy starts on the last good one, and shows why", async () => {
+  const { codeRoot, generationDir } = await import("./chat-runtime/generations");
+  mkdirSync(generationDir("g1"), { recursive: true });
+  writeFileSync(join(generationDir("g1"), ".complete"), "{}\n");
+  writeFileSync(join(codeRoot(), "good"), "g1\n");
+  const t = setup({ build: "g2", gen: { id: "g2", dir: "/copies/g2", live: false } });
+  const s = session();
+  t.driver.failNextStart = "systemd-run: boom";
+  const h = await t.router.acquire(s.path, false);
+  assert.equal(h.where, "process");
+  assert.equal(t.driver.started.length, 1);
+  assert.equal(t.driver.started[0]!.env.SOVA_CHAT_BUILD, "g1", "on the last good copy");
+  assert.equal(t.driver.started[0]!.cwd, generationDir("g1"));
+  t.router.detach();
+  rmSync(codeRoot(), { recursive: true, force: true });
 });
 
 test("a cheap refusal comes before any process: a file written moments ago by someone else", async () => {
@@ -311,7 +326,6 @@ test("while another chat's take-back is slow, a chat with no process left opens 
   const next = new ChatHostRouter(++epoch, "b1", {
     driver: t.driver,
     connect: ((sock: string, opts: never) => later(sock).then(() => t.connect(sock, opts))) as never,
-    out: () => true,
     supervisor: t.supervisor,
   });
   try {
@@ -328,9 +342,9 @@ test("while another chat's take-back is slow, a chat with no process left opens 
   }
 });
 
-test("a worker's own session file is refused for good with the subagent-session text, with the switch on or off", async () => {
-  for (const out of [true, false]) {
-    const t = setup({ out });
+test("a worker's own session file is refused for good with the subagent-session text", async () => {
+  {
+    const t = setup();
     const s = session({ extra: [{ type: "custom", customType: "subagents-worker-session", id: "w1", parentId: "a1", timestamp: "2026-10-12T00:00:03.000Z", data: {} }] });
     await assert.rejects(t.router.acquire(s.path, false), (e: Error) => e instanceof ConfigError && /is a subagent's own session; act on the session that runs it\.$/.test(e.message));
     assert.equal(t.driver.started.length, 0);
@@ -358,7 +372,7 @@ test("a chat whose folder is gone is refused before any process, and remembered 
 
 test("a take-back that fails starts no collection of unused code (a chat it missed may run from one), yet opens go on", async () => {
   const t = setup();
-  const next = new ChatHostRouter(++epoch, "g1", { driver: t.driver, connect: t.connect, out: () => true, supervisor: t.supervisor, gen: { id: "g1", dir: "/copies/g1", live: false } });
+  const next = new ChatHostRouter(++epoch, "g1", { driver: t.driver, connect: t.connect, supervisor: t.supervisor, gen: { id: "g1", dir: "/copies/g1", live: false } });
   const priv = next as unknown as { sup: { adopt: () => Promise<unknown> }; gc: unknown };
   priv.sup.adopt = async () => {
     throw new Error("registry unreadable");

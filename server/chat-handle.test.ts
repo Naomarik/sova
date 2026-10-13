@@ -235,7 +235,7 @@ test("a server that will install a router makes boot readers wait for it: chats 
   assert.equal(ready, false, "no router yet: not \"none\", just not yet");
   let release!: () => void;
   const taken = new Promise<void>((r) => (release = r));
-  setChatRouter({ ready: () => taken, get: () => undefined, all: () => [], acquire: async () => null, close: async () => false });
+  setChatRouter({ ready: () => taken, get: () => undefined, all: () => [], acquire: async () => assert.fail("not opened here"), close: async () => false });
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(ready, false, "the router is there, taking chats back");
   release();

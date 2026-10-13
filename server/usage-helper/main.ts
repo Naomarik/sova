@@ -32,6 +32,7 @@ const svc = createService({
   usageRoot,
   stateDir: path.join(stateRoot, "usage-ledger"),
   pricesPath: path.join(stateRoot, "model-prices.json"),
+  perfRoot: path.join(agentDir, "usage", "perf", "v1"),
   device: () => readDeviceId(agentDir),
   log,
 });

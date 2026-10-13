@@ -7,7 +7,7 @@
 // the record, the next server read the file as changed by a process it can't identify, and refused
 // to auto-resume the chat (§app.overseer/auto-resume) for 120 s.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -76,4 +76,36 @@ test("a reply the stop's abort ended is recorded as ours before the runtime's di
   void chat.dispose();
   await until(() => chat.disposed);
   assert.equal(recentForeignWriteAgeSec(path), null, "the cut-off reply is the server's own write");
+});
+
+test("an entry a reply appends is recorded as ours at once, after pi appends it: a process that dies before the guard's 3 s tick leaves no 'recent' behind", async () => {
+  const dir = join(agentDir, "sessions", "--tmp-own-writes-at-message-end--");
+  mkdirSync(dir, { recursive: true });
+  const path = canonicalPath(join(dir, "2026-10-12T00-00-00-000Z_s2.jsonl"));
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "s2", timestamp: new Date().toISOString(), cwd: agentDir })}\n`, { flag: "wx" });
+  markOwned(path);
+  const chat = await acquireChat(path);
+  const session = piSession(chat) as unknown as {
+    _modelRuntime: { hasConfiguredAuth(p: string): boolean };
+    agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
+  };
+  session._modelRuntime.hasConfiguredAuth = () => true;
+  session.agent.state.model = TEST_MODEL;
+  session.agent.getApiKey = async () => "stub";
+  const reply = { role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), content: [{ type: "text", text: "done" }], usage, stopReason: "stop" };
+  session.agent.streamFunction = async () => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "done", reason: "stop", message: reply };
+    },
+    result: async () => reply,
+  });
+  const started = Date.now();
+  void chat.acceptPrompt("hello", undefined, "server").turn.catch(() => {});
+  await until(() => piSession(chat).sessionManager.getEntries().some((e) => (e as { message?: { role?: string } }).message?.role === "assistant"));
+  await new Promise((r) => setImmediate(r));
+  assert.ok(Date.now() - started < 3000, "before the guard's 3 s tick");
+  // The process dies here: the next server finds the file as this one left it. The record matches the
+  // file with the reply on it, so it was taken after pi appended the reply, never before.
+  assert.ok(readFileSync(path, "utf8").includes('"text":"done"'));
+  assert.equal(recentForeignWriteAgeSec(path), null, "the reply is the server's own write");
 });

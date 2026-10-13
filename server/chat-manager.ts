@@ -1199,6 +1199,17 @@ class ChatSession {
     else this.persistVerified();
   }
 
+  /** The guard's check: told to the clients when there are any; with none, only recorded (the stat
+      still has to be current for a restart). */
+  private checkOwnWrites(): void {
+    if (this.clients.size === 0) return this.recordOwnWrites();
+    try {
+      this.assertNoForeignWrites();
+    } catch {
+      // already broadcast
+    }
+  }
+
   /**
    * Give ONE queued message to the SDK. The queue calls this and nothing else does.
    *
@@ -1674,15 +1685,7 @@ class ChatSession {
         if (this.harness.isRunning() || this.harness.isCompacting()) this.harness.abort().catch(() => {});
         return;
       }
-      if (this.clients.size === 0) {
-        this.recordOwnWrites(); // nobody to tell, but the stat still has to be current for a restart
-        return;
-      }
-      try {
-        this.assertNoForeignWrites();
-      } catch {
-        // already broadcast
-      }
+      this.checkOwnWrites();
     }, GUARD_POLL_MS);
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
@@ -3327,6 +3330,9 @@ class ChatSession {
       } catch {
         // untagged: a client falls back to the rows it can see
       }
+      // The entry is on disk now (P12): ours, recorded at once, so a process that dies before the
+      // guard's next tick leaves no "recent" behind (§chat.transcript/own-writes-across-restart).
+      if (!this.disposed && !this.foreignWrite) this.checkOwnWrites();
       const out = this.held ?? [];
       this.held = null;
       for (const m of out) this.broadcast(m);

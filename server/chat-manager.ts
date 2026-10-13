@@ -43,7 +43,7 @@ import { isCompactionInProgress } from "./harness/pi/history-ops";
 import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
-import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
+import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
@@ -392,6 +392,9 @@ export interface ChatClient {
   /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
       pushed, and its hellos carry `olderSummary` (and `prefetch`, for a browser on this machine). */
   pull?: { prefetch: boolean };
+  /** …and already holds the rows up to this one (`?have=`, §chat.transcript/instant-open): its
+      first hello carries only the rows after it, when it can (server/tail-hello.ts `afterHave`). */
+  have?: string;
   /** End this browser's socket (server/ws.ts): a chat whose process died tells it so, then closes
       it so it reconnects (§app.chat-processes/crash). */
   close?(code: number, reason: string): void;
@@ -416,7 +419,7 @@ function deliver(client: ChatClient, msg: PerWire): void {
 
 /** A hello cut for tail clients: the hello they get, and the history that follows it. Cut on wire-1
     rows (their JSON sizes), so both wires cut at the same rows. */
-interface CutHello {
+export interface CutHello {
   hello: Extract<ChatServerMessage, { type: "hello" }>;
   history: HistoryPart[];
   /** The history on wire 2, made for the first wire-2 client that gets it. */
@@ -426,7 +429,7 @@ interface CutHello {
 }
 
 /** `history`: false when only `?tail=rest` clients get it, who are never pushed any. */
-function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
+export function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
   const cut = cutTail(hello.items, { history });
   return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
 }
@@ -436,6 +439,14 @@ function helloFor(cut: CutHello, client: ChatClient): ChatServerMessage {
   const older = cut.hello.older ?? 0;
   const hello = client.pull && older > 0 ? { ...cut.hello, ...pullFields(cut.all, older, client.pull.prefetch) } : cut.hello;
   return withRows(hello, wireOfClient(client));
+}
+
+/** A pane's first hello: when it holds the rows up to `have` (it painted them from the file,
+    §chat.transcript/instant-open), only the rows after that one, with `after` naming it and the
+    summary counting every row up to it; else the usual cut hello (tail-hello.ts `afterHave`). */
+export function firstHelloFor(cut: CutHello, client: ChatClient): ChatServerMessage {
+  const after = client.pull && client.have ? helloAfterHave(cut.hello, cut.all, cut.hello.older ?? 0, client.have, client.pull.prefetch) : null;
+  return after ? withRows(after, wireOfClient(client)) : helloFor(cut, client);
 }
 
 /** A cut hello's history to the tail clients that got that hello and are still here. */
@@ -2405,7 +2416,7 @@ class ChatSession {
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.
     const cut = client.tail ? cutHello(hello, !client.pull) : null;
-    client.send(cut ? helloFor(cut, client) : withRows(hello, wireOfClient(client)));
+    client.send(cut ? firstHelloFor(cut, client) : withRows(hello, wireOfClient(client)));
     client.send(this.commands());
     // The queue goes out on EVERY attach, empty or not: a reconnect resets the pane's live rows to
     // nothing, so a client that is told nothing cannot tell "no queue" from "not told yet" and

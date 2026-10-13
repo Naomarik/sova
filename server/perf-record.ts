@@ -13,6 +13,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import type { ReplyTiming } from "../shared/harness-wire";
 
 export const PERF_RECORD_VERSION = 1;
 /** Under the agent dir. */
@@ -213,4 +214,18 @@ export function appendPerfRecord(record: PerfRecord, agentDir: string): boolean 
     w.failures++;
     return false;
   }
+}
+
+/** A record's timing as the reply card and a row's `reply` fact read it (the helper's perf-store maps a
+    stored record the same way). */
+export function replyTimingOf(rec: PerfRecord): ReplyTiming {
+  return {
+    ...(rec.effort !== undefined ? { effort: rec.effort } : {}),
+    ttftMs: rec.ttftMs,
+    thinkingMs: rec.thinkingMs,
+    replyMs: rec.replyMs,
+    ...(rec.tool.n > 0 ? { toolCalls: rec.tool.n } : {}),
+    output: rec.output,
+    ...(rec.reasoning !== undefined ? { reasoning: rec.reasoning } : {}),
+  };
 }

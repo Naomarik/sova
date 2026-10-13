@@ -5,7 +5,7 @@
 // user-message entry point once per agent. Uses a throwaway PI_CODING_AGENT_DIR with no credentials: no model
 // is ever called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -204,6 +204,9 @@ describe("PiHarnessSession (§app.harness/session)", () => {
       message: { ...message, diagnostics: [{ type: "claude-code.invalid-tool-input", timestamp: 1 }, { type: MEASUREMENT_INVALID_DIAGNOSTIC, timestamp: 2, details: { reason: "invalid-tool-retry" } }] },
     });
     assert.equal(marked.type === "message.end" && marked.reply?.invalid, "invalid-tool-retry");
+    // The claude-code provider writes the mark under the same name (pi-config can't import Sova's).
+    const provider = readFileSync(new URL("../../../pi-config/extensions/claude-code/provider/stream.ts", import.meta.url), "utf8");
+    assert.ok(provider.includes(`export const MEASUREMENT_INVALID_DIAGNOSTIC = "${MEASUREMENT_INVALID_DIAGNOSTIC}";`));
     // Only an assistant message's end; never its start, a user's or a nameless one.
     assert.ok(!("reply" in harnessEventOf({ type: "message_start", message })));
     assert.ok(!("reply" in harnessEventOf({ type: "message_end", message: { role: "user", content: "x" } })));

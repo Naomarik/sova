@@ -126,6 +126,23 @@ test("a command made while a reload swaps the process waits for the replacement,
   assert.equal(h.reloading, false);
 });
 
+test("an open already sent when the process exits for a reload goes to the replacement once, never failing as unreachable (t18)", async () => {
+  const { h, link } = handle();
+  const p = h.call("reacquire", { force: false });
+  assert.equal(link.calls().length, 1);
+  // The old process closes for the reload before answering.
+  link.deliver({ t: "exit", cause: "reload" } as never);
+  await tick();
+  const next = new FakeLink();
+  h.repoint(next as never, { unit: "u-r1", pid: 2 }, mirror());
+  await tick();
+  const [c] = next.calls();
+  assert.equal(c?.call.method, "reacquire");
+  next.deliver({ t: "reply", reply: { id: c!.call.id, ok: true, result: "ok" } });
+  assert.equal(await p, "ok");
+  assert.equal(next.calls().length, 1, "once");
+});
+
 test("F14: once its process says it exits, the link is closed and a pane's prompt or steer comes back as a refusal naming it", async () => {
   for (const cause of ["operator", "reload"] as const) {
     const { h, link } = handle();

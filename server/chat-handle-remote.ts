@@ -250,9 +250,11 @@ export class RemoteChatHandle extends ChatHandle {
     if ([...this.pending.values()].some((p) => p.resend)) void this.waitRelink().catch(() => this.failPending());
   }
 
-  /** A command safe to send again: a keyed send (answered with its first receipt) or a turn's end. */
+  /** A command safe to send again: a keyed send (answered with its first receipt), a turn's end, or an
+      open cut off by the process exiting for a reload (the replacement answers it, never "unreachable"). */
   private resendable(call: ChatCall): boolean {
     if (call.method === "turnEnd") return true;
+    if (call.method === "reacquire" && this.reloadingNow) return true;
     return call.method === "send" && !!(call.args as { key?: string }).key;
   }
 

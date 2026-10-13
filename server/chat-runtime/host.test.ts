@@ -337,6 +337,30 @@ test("F14: an operator close lets what the chat already asked the server finish 
   t.ctl.server.close();
 });
 
+test("F14: an extension command an idle chat took (a /btw sent as a steer runs at once) holds an operator close until it settles", async () => {
+  const logs: string[] = [];
+  const t = await setup({ log: (l) => logs.push(l) });
+  const chat = t.host.heldChat()!;
+  let finish!: () => void;
+  const running = new Promise<void>((r) => (finish = r));
+  const sent: string[] = [];
+  (chat as unknown as { harness: { send(text: string): Promise<void> } }).harness.send = (text: string) => (sent.push(text), running);
+  const exits = collect(t.ctl.server, "exit");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  t.ctl.server.send({ t: "client.msg", clientId: "k1", msg: { type: "steer", text: "/btw a side question", clientId: "s1" } });
+  await settle();
+  assert.deepEqual(sent, ["/btw a side question"], "taken");
+  void t.host.close("operator", { dispose: true, message: "Reconnecting." });
+  await settle(200);
+  assert.equal(exits.length, 0, "the command is still running: not disposed");
+  finish();
+  await settle(200);
+  assert.deepEqual(exits.map((f) => f.cause), ["operator"]);
+  assert.ok(logs.some((l) => /closing \(operator\): 1 command\(s\) running/.test(l)), logs.join("\n"));
+  t.ctl.server.close();
+});
+
 test("F14: a request the server never answers holds the close only for the bound, and is logged", async () => {
   const logs: string[] = [];
   const t = await setup({ proto: CHAT_WIRE_PROTO, log: (l) => logs.push(l) });

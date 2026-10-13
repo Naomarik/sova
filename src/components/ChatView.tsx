@@ -18,6 +18,7 @@ import type {
 import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
+import { UnackedSends } from "../lib/unacked-sends";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -646,6 +647,14 @@ export function ChatView(props: {
       for one message — a failed departure and the refusal `error` that accompanies it — hand it
       back exactly once, in whichever order they arrive. */
   const handedBack = new Set<string>();
+  /** Sends the server hasn't acknowledged: back in the draft when the chat goes from under the pane. */
+  const unacked = new UnackedSends();
+  /** Texts the pane got back (a refusal, a reconnect) go to the top of the draft. */
+  const putBack = (texts: string[]) => {
+    if (!texts.length) return;
+    const current = drafts.get(props.path);
+    setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
+  };
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
@@ -781,6 +790,7 @@ export function ChatView(props: {
         // The server has our message: it is queued, not merely sent. Until this lands, the row says
         // "Sending…" and offers no Remove — nothing is known to hold it.
         case "send_ack":
+          unacked.settled(msg.clientId);
           owner.ack(msg.clientId, msg.queued);
           if (msg.queued) markQueued(setLive, msg.clientId);
           break;
@@ -800,6 +810,7 @@ export function ChatView(props: {
          * that sent it — the only tab with anywhere to put it.
          */
         case "queue_item_gone": {
+          unacked.settled(msg.itemId);
           const effect = queueGoneEffect(msg.reason);
           // The text to hand back, from the message when it carries one and otherwise from the row
           // we are about to remove. A "dropped" message has no other carrier — no message_start,
@@ -957,6 +968,8 @@ export function ChatView(props: {
           setDialogs((d) => d.filter((x) => x.id !== msg.id));
           break;
         case "error":
+          // A turn error naming a send settles it (a refusal hands its text back below).
+          if (msg.code !== "refused") unacked.settled(msg.clientId);
           if (pendingModel()) modelFailed(msg.message, msg.code);
           if (pendingThinking()) thinkingFailed(msg.message);
           switch (msg.code) {
@@ -970,13 +983,22 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
+              // A command it names makes no user row: its text comes back from here.
+              putBack([unacked.take(msg.clientId, handedBack)].filter((t): t is string => t !== null));
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
               toast(msg.message);
               announce(msg.message);
               return;
-            case "reloaded":
+            case "reloaded": {
+              // The chat is going (a reload, a stop): this socket's sends the server never took can't
+              // be refused back to it any more (the pane reconnects under a new id), so they come back now.
+              const back = unacked.takeAll(handedBack);
+              if (back.length) {
+                putBack(back);
+                announce("That message couldn't be sent. It's back in the composer.");
+              }
               // The Overseer's runtime can be replaced by a clear in another tab: its route may now
               // name a new file, and reconnecting here would reopen the old one.
               if (props.overseer) {
@@ -992,6 +1014,7 @@ export function ChatView(props: {
               }
               socket.reconnect();
               return;
+            }
             // Permanent (the session's cwd is gone): one banner, no retry loop. The socket layer
             // already refuses to reconnect on close 4422; closing here covers a server that sends
             // the message without the close code.
@@ -1622,6 +1645,7 @@ export function ChatView(props: {
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
     if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
+    unacked.sent(clientId, text);
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).

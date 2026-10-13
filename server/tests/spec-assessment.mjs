@@ -53,7 +53,7 @@ function fixtureHost(childEnv) {
    w.state = { ...w.state, sessionId: chatId, sessionFile: got.data.sessionFile };
    workers.set(chatId, w);
    if (req.task !== null) { w.lastKey = `${req.key}:task`; void request(w, { id: `p${++w.n}`, type: "prompt", message: req.task }); state(w, { status: "running" }); }
-   return { chatId, sessionId: chatId, sessionFile: got.data.sessionFile, workerId: req.spec.parent.workerId, kind: req.spec.kind, placement: "child", pid: child.pid, state: "open" };
+   return { chatId, sessionId: chatId, sessionFile: got.data.sessionFile, workerId: req.spec.parent.workerId, kind: req.spec.kind, pid: child.pid, state: "open" };
   },
   async send(chatId, input) { const w = workers.get(chatId); w.lastKey = input.key; await request(w, { id: `p${++w.n}`, type: "prompt", message: input.text }); state(w, { status: "running" }); return { queued: false }; },
   async abort(chatId) { const w = workers.get(chatId); await request(w, { id: `a${++w.n}`, type: "abort" }); },

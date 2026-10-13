@@ -268,11 +268,10 @@ export abstract class ChatHandle {
   }
 }
 
-/** A chat in this server's process: a call runs the chat's method at once. */
 // The special kinds (the Overseer, batons, project overseers; §app.harness/session-special): each one's
 // server side, registered by the module that owns it. A chat gets its loadout as data (SpecialSpec)
-// and asks the rest of its kind through its SpecialPort: here a loopback (LocalSpecialPort), in a
-// chat process of its own its socket. Its hooks get the chat's handle, never the chat.
+// and asks the rest of its kind through its SpecialPort: in a chat process its socket (a test's chat
+// in its own process: a loopback, server/testing/in-process-chats.ts). Its hooks get the chat's handle, never the chat.
 
 /** The server's side of a special kind. */
 export interface SpecialHost {

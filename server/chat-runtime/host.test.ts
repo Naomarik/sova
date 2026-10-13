@@ -34,6 +34,9 @@ const { Link, awaitFrame } = await import("./link");
 const { disposeAllChats, serverToolSpec, setSpecialSpec, specialSpecOf } = await import("../chat-manager");
 const { canonicalPath } = await import("../paths");
 const { readInflight } = await import("./inflight");
+// The writer lock's start time as on Linux (/proc); on macOS none, so no `ps` is spawned (the unit tier forbids it).
+const { procStart, setProcStartForTest } = await import("./writer-lock");
+setProcStartForTest((pid) => procStart(pid, "linux"));
 
 after(async () => {
   await disposeAllChats();

@@ -31,9 +31,11 @@ export interface ProcTable {
 /** Run a program to completion by argv, synchronously (tests fake it). */
 export type SyncExec = (file: string, args: string[]) => { code: number; stdout: string };
 
+/** In the C locale and UTC: `ps`'s lstart is local time, and processes that compare it (a chat process
+    and its server) may run under different time zones. */
 export const realSyncExec: SyncExec = (file, args) => {
   try {
-    const stdout = execFileSync(file, args, { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C" } });
+    const stdout = execFileSync(file, args, { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C", TZ: "UTC" } });
     return { code: 0, stdout };
   } catch (err) {
     const e = err as { status?: number | null; stdout?: string };

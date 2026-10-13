@@ -10,6 +10,7 @@ import { acquireChat, type ChatClient, type ChatSession, disposeHeldChat, heldCh
 import { ChatHandle, chatHandle, deliverServerToolCall, fileHookCtx, serverSpecials, setChatRouter, setSpecialsHere, type SpecialHost, specialHostOf } from "../chat-handle";
 import { type CallCtx, runMethod } from "../chat-runtime/methods";
 import { LiveMirror } from "../chat-runtime/mirror";
+import { procStart, setProcStartForTest } from "../chat-runtime/writer-lock";
 
 /** The controller epoch of calls in one process: one controller, always current. */
 const EPOCH = 1;
@@ -145,3 +146,5 @@ export function installInProcessChats(): void {
   });
 }
 installInProcessChats();
+// A chat's writer lock reads its start time as on Linux (/proc); on macOS none, so a unit test spawns no `ps`.
+setProcStartForTest((pid) => procStart(pid, "linux"));

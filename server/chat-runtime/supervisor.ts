@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DetachedDriver, envFileKeeps, realExec, SystemdDriver, type Driver, type Exec, type UnitStatus } from "../project-services/drivers";
-import { realSyncExec, type SyncExec } from "../project-services/proctable";
+import { type ProcTable, realSyncExec, type SyncExec } from "../project-services/proctable";
 import { stateHash } from "../project-services/store";
 import type { ExitCause } from "../../shared/chat-runtime-wire";
 import { stateRoot } from "../state-root";
@@ -100,8 +100,8 @@ export function chatDriver(config: Pick<SupervisorConfig, "slice" | "driver"> = 
 
 /** Once, at a server's start: workers an older server ran as its own detached children (records under
     `chats/children/`, prefix `sova-chatw-<hash>-`) are stopped, and the place removed. What it stopped. */
-export async function sweepOldChildren(root = join(chatsRoot(), "children"), hash = stateHash()): Promise<string[]> {
-  const driver = new DetachedDriver(CHAT_STOP_SEC * 1000, { restart: false, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs") });
+export async function sweepOldChildren(root = join(chatsRoot(), "children"), hash = stateHash(), table?: ProcTable): Promise<string[]> {
+  const driver = new DetachedDriver(CHAT_STOP_SEC * 1000, { restart: false, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs"), ...(table ? { table } : {}) });
   const units = await driver.units(`sova-chatw-${hash}-`).catch(() => [] as string[]);
   for (const unit of units) await driver.stop(unit).catch(() => {});
   rmSync(root, { recursive: true, force: true });

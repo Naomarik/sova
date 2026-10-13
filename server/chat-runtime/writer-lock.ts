@@ -44,6 +44,12 @@ export function procStart(pid: number, platform: NodeJS.Platform = process.platf
   }
 }
 
+let startOf: (pid: number) => number | string | null = (pid) => procStart(pid);
+/** Tests: where start times come from (unit tests spawn no `ps`); null: the platform's own. */
+export function setProcStartForTest(fn: ((pid: number) => number | string | null) | null): void {
+  startOf = fn ?? ((pid) => procStart(pid));
+}
+
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -54,10 +60,10 @@ function alive(pid: number): boolean {
 }
 
 /** Whether the process a lock names still runs (the same process, not a reused pid). */
-export function holderAlive(info: Pick<WriterLockInfo, "pid" | "start">, startOf: (pid: number) => number | string | null = procStart): boolean {
+export function holderAlive(info: Pick<WriterLockInfo, "pid" | "start">, start: (pid: number) => number | string | null = startOf): boolean {
   if (!alive(info.pid)) return false;
   if (info.start === null) return true;
-  const now = startOf(info.pid);
+  const now = start(info.pid);
   return now === null || now === info.start;
 }
 
@@ -95,7 +101,7 @@ export function takeWriterLock(path: string, opts: { unit?: string | null; dir?:
   const dir = opts.dir ?? locksDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = lockFileOf(path, dir);
-  const info: WriterLockInfo = { pid: process.pid, start: procStart(process.pid), at: Date.now(), unit: opts.unit ?? null, path };
+  const info: WriterLockInfo = { pid: process.pid, start: startOf(process.pid), at: Date.now(), unit: opts.unit ?? null, path };
   for (let attempt = 0; ; attempt++) {
     let fd: number;
     try {

@@ -63,43 +63,106 @@ describe("reply timing (§app.insights/reply-timing)", () => {
     assert.equal(rec.endMs, 2650);
   });
 
-  test("R1: a request sent again before any part (a rate-limit retry after a delay) restarts the wait at the last send", () => {
+  test("R1: a request sent again before any part (a rate-limit retry after a delay) keeps the first send: the wait includes the retry", () => {
     const r = rig();
     r.turn();
     r.wait(100);
     r.request();
+    const sent = r.now();
     r.start(); // a provider whose message starts before its response
     r.wait(5000); // 429, cooldown
     r.request();
-    const resent = r.now();
     r.wait(300);
     r.piece({ kind: "thinking.start", index: 0 });
     r.wait(1000);
     r.piece({ kind: "thinking.end", index: 0 });
     const m = measured(r.end());
-    assert.equal(m.sentAt, resent);
-    assert.equal(m.firstAt - m.sentAt, 300);
+    assert.equal(m.sentAt, sent);
+    assert.equal(m.firstAt - m.sentAt, 5300);
   });
 
-  test("R1: pi's auto-retry: the errored attempt writes nothing, and the retried reply's wait is its own request's", () => {
+  test("R1: pi's auto-retry: the errored attempt writes nothing, and the retried reply's wait runs from the first attempt's send", () => {
+    let t = 0;
+    const timer = new ReplyTimer(() => t);
+    const feed = (e: Record<string, unknown>) => timer.observe({ frame, ...e } as unknown as HarnessEvent);
+    const reply = (stop: string) => ({ provider: "zai", model: "glm-5.3", stop, output: stop === "error" ? 0 : 300 });
+    feed({ type: "turn.start" });
+    feed({ type: "request.start", at: 0 });
+    feed({ type: "message.start", role: "assistant", handle: {} });
+    assert.equal(skipped(feed({ type: "message.end", role: "assistant", handle: {}, reply: reply("error") })), "errored");
+    feed({ type: "retry.start" });
+    feed({ type: "run.end" });
+    t = 5000;
+    feed({ type: "turn.start" });
+    feed({ type: "request.start", at: 5000 });
+    feed({ type: "message.start", role: "assistant", handle: {} });
+    t = 6000;
+    feed({ type: "message.update", role: "assistant", handle: {}, stream: { kind: "text", index: 0, delta: "ok" } });
+    const m = measured(feed({ type: "message.end", role: "assistant", handle: {}, reply: reply("stop") }));
+    const rec = perfRecordOf(m, { sid: "s", entryId: "e", device: null, producer: "p" });
+    assert.equal(rec.ttftMs, 6000);
+    feed({ type: "retry.end" });
+    feed({ type: "run.end" });
+  });
+
+  test("R1: an ordinary next turn after a measured reply never inherits an old send", () => {
     const r = rig();
     r.turn();
     r.request();
     r.start();
-    r.wait(800);
-    assert.equal(skipped(r.end({ stop: "error", output: 0 })), "errored");
-    r.feed({ type: "retry.start" });
-    r.wait(4000); // pi's retry delay
-    r.turn();
-    r.wait(50);
-    r.request();
-    r.wait(120);
-    r.start();
-    r.wait(30);
-    r.piece({ kind: "text", index: 0, delta: "ok" });
+    r.wait(400);
+    r.piece({ kind: "text", index: 0, delta: "x" });
     r.wait(1000);
+    measured(r.end({ stop: "toolUse" }));
+    r.wait(3000); // the tool runs
+    r.turn();
+    r.wait(200);
+    r.request();
+    const sent = r.now();
+    r.start();
+    r.wait(250);
+    r.piece({ kind: "text", index: 0, delta: "y" });
     const m = measured(r.end());
-    assert.equal(m.firstAt - m.sentAt, 150);
+    assert.equal(m.sentAt, sent);
+    assert.equal(m.firstAt - m.sentAt, 250);
+    // A next prompt after a run whose attempt failed with no retry starts afresh too.
+    r.turn();
+    r.request();
+    r.start();
+    assert.equal(skipped(r.end({ stop: "error" })), "errored");
+    r.feed({ type: "run.end" });
+    r.wait(10_000);
+    r.turn();
+    r.request();
+    const fresh = r.now();
+    r.start();
+    r.wait(100);
+    r.piece({ kind: "text", index: 0, delta: "z" });
+    assert.equal(measured(r.end()).sentAt, fresh);
+  });
+
+  test("R1: a retry that gives up: the next prompt's wait is its own", () => {
+    const r = rig();
+    r.turn();
+    r.request();
+    r.start();
+    assert.equal(skipped(r.end({ stop: "error" })), "errored");
+    r.feed({ type: "retry.start" });
+    r.feed({ type: "run.end" });
+    r.turn();
+    r.request();
+    r.start();
+    assert.equal(skipped(r.end({ stop: "error" })), "errored");
+    r.feed({ type: "retry.end" });
+    r.feed({ type: "run.end" });
+    r.wait(60_000);
+    r.turn();
+    r.request();
+    const fresh = r.now();
+    r.start();
+    r.wait(100);
+    r.piece({ kind: "text", index: 0, delta: "z" });
+    assert.equal(measured(r.end()).sentAt, fresh);
   });
 
   test("R1: a start heard outside a request's wait (a cache warm) is never a reply's", () => {

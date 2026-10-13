@@ -3,12 +3,13 @@
 // Pure: no I/O, the clock injected; the chat (server/chat-manager.ts) feeds it every event and writes
 // the record (server/perf-record.ts) for a reply it measured.
 //
-// - The wait for the first token runs from `request.start` (the agent's own request going out, after any
-//   wait for a provider slot) to the reply's first part event of any kind. A second `request.start`
-//   before the first part (a request sent again after a rate limit) moves the start: the wait is the
-//   last send's. One heard outside a request's wait (a cache warm reusing past options, while idle or
-//   streaming) is never a reply's: `turn.start` drops a pending one, and one after the first part is
-//   ignored.
+// - The wait for the first token runs from the reply's FIRST `request.start` (the agent's own request
+//   going out, after any wait for a provider slot) to its first part event of any kind, so it includes
+//   the provider's retries: a request sent again before any part keeps the earlier start, and an
+//   attempt that errors hands its start on to pi's auto-retry (`retry.start` … a new turn and request)
+//   until a reply is measured or the retry ends. One heard outside a request's wait (a cache warm
+//   reusing past options, while idle or streaming) is never a reply's: with no retry pending,
+//   `turn.start` and a run's end drop a pending start, and one after the first part is ignored.
 // - Each part (thinking, text, tool call) is timed from its start to its last characters, per content
 //   index; parts of a kind are summed. Its end event closes it only when no characters came (Claude's
 //   hidden thinking): pi-ai's openai-completions adapter (zai, deepseek, ollama-cloud) sends every
@@ -99,6 +100,8 @@ export function reasoningOf(summary: HarnessReplySummary, thinking: PerfWindow):
 
 export class ReplyTimer {
   private pendingSentAt: number | undefined;
+  /** pi's auto-retry is under way (retry.start … retry.end): the failed attempt's start carries over. */
+  private retrying = false;
   private compacting = false;
   private cur: Current | undefined;
 
@@ -108,14 +111,22 @@ export class ReplyTimer {
   observe(event: HarnessEvent): ReplyOutcome | null {
     switch (event.type) {
       case "turn.start":
-        // A start heard before the turn (a cache warm while idle) is no request of this turn.
-        this.pendingSentAt = undefined;
+        // A start heard before the turn (a cache warm while idle) is no request of this turn; a retried
+        // attempt's start is.
+        if (!this.retrying) this.pendingSentAt = undefined;
         return null;
       case "request.start":
-        if (!this.cur) this.pendingSentAt = event.at;
-        // Sent again before any part arrived (a rate-limit retry): the wait is the last send's.
-        else if (this.cur.firstAt === undefined) this.cur.sentAt = event.at;
+        // The earliest send counts: a request sent again (a rate-limit retry, pi's auto-retry) waits on.
+        if (!this.cur) this.pendingSentAt ??= event.at;
+        else if (this.cur.firstAt === undefined) this.cur.sentAt ??= event.at;
         // After the first part: not this reply's request (a cache warm), ignored.
+        return null;
+      case "retry.start":
+        this.retrying = true;
+        return null;
+      case "retry.end":
+        // pi ends a retry after the retried reply's end, or when it gives up or is cancelled.
+        this.retrying = false;
         return null;
       case "compaction.start":
         this.compacting = true;
@@ -125,7 +136,7 @@ export class ReplyTimer {
         return null;
       case "run.end":
       case "run.settled":
-        this.pendingSentAt = undefined;
+        if (!this.retrying) this.pendingSentAt = undefined;
         this.cur = undefined;
         return null;
       case "message.start":
@@ -141,9 +152,19 @@ export class ReplyTimer {
       case "message.update":
         if (event.role === "assistant" && event.stream && this.cur) this.piece(this.cur, event.stream.kind, event.stream.index);
         return null;
-      case "message.end":
+      case "message.end": {
         if (event.role !== "assistant") return null;
-        return this.end(event.reply);
+        const sentAt = this.cur?.sentAt;
+        const outcome = this.end(event.reply);
+        // A failed attempt's start waits for pi's retry (dropped at the run's end if none comes).
+        if ("skipped" in outcome && outcome.skipped === "errored" && sentAt !== undefined)
+          this.pendingSentAt = this.pendingSentAt === undefined ? sentAt : Math.min(this.pendingSentAt, sentAt);
+        if ("measured" in outcome) {
+          this.pendingSentAt = undefined;
+          this.retrying = false;
+        }
+        return outcome;
+      }
       default:
         return null;
     }

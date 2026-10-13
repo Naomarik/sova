@@ -2,7 +2,7 @@
 // tab (#/agents/performance), its address and the pure shaping of what the usage helper answers.
 // The speed rule itself is shared/usage/perf.ts's. Nothing here touches the DOM.
 
-import { PERF_EFFORT_ORDER, PERF_MIN_RANGE, type PerfBin, type PerfFigure, type PerfFigures, type PerfModelRow, type ReplyTiming, replySpeeds } from "../../shared/usage/perf";
+import { PERF_EFFORT_ORDER, PERF_MIN_RANGE, type PerfBin, type PerfFigure, type PerfFigures, type PerfModelRow, type ReplyTiming, didThink, replySpeeds } from "../../shared/usage/perf";
 import { type CostsQuery, costsSearch, parseCostsQuery } from "./cost-history";
 import { tokens } from "./project-overseer-view";
 
@@ -61,7 +61,7 @@ export function replyCardLines(t: ReplyTiming): ReplyCardLine[] {
   if (t.effort) lines.push({ label: "Effort", value: t.effort });
   lines.push({ label: "Overall", value: sp.overall !== undefined ? tpsWord(sp.overall) : msWord(t.thinkingMs + t.replyMs) });
   lines.push({ label: "Tokens", value: tokens(t.output) });
-  if (t.thinkingMs > 0) lines.push({ label: "Thinking", value: sp.thinking !== undefined ? tpsWord(sp.thinking) : msWord(t.thinkingMs) });
+  if (didThink(t)) lines.push({ label: "Thinking", value: sp.thinking !== undefined ? tpsWord(sp.thinking) : msWord(t.thinkingMs) });
   lines.push({ label: "Reply", value: sp.reply !== undefined ? tpsWord(sp.reply) : msWord(t.replyMs) });
   lines.push({ label: "First token", value: `after ${msWord(t.ttftMs)}` });
   return lines;

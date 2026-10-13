@@ -50,6 +50,8 @@ import "../agents-board.css";
 import { ActionMenu } from "./ActionMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
+import { PerformanceTab } from "./PerformanceTab";
+import { perfHref } from "../lib/perf";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./SelectionToolbar";
 import { sessionHref } from "./Sidebar";
@@ -633,18 +635,22 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   );
 }
 
-/** The Costs tab's filter when you last left it, for this tab's life: Board → Costs brings it back. */
+/** The Costs and Performance tabs' filters when you last left them, for this tab's life: Board → Costs brings it back. */
 let lastCosts: CostsQuery = DEFAULT_COSTS_QUERY;
+let lastPerf: CostsQuery = DEFAULT_COSTS_QUERY;
 
-/** Board and Costs. Tabs switch views and the address says which; the tab bar is the skill's
-    (Left/Right move along it and wrap, Home/End jump, Enter or Space selects). */
-function AgentsTabs(props: { costs: boolean }) {
+type AgentsTab = "board" | "costs" | "performance";
+
+/** Board, Costs and Performance. Tabs switch views and the address says which; the tab bar is the
+    skill's (Left/Right move along it and wrap, Home/End jump, Enter or Space selects). */
+function AgentsTabs(props: { tab: AgentsTab }) {
   const tabs = [
     { id: "board", label: "Board", href: () => agentsHref() },
     { id: "costs", label: "Costs", href: () => costsHref(lastCosts) },
+    { id: "performance", label: "Performance", href: () => perfHref(lastPerf) },
   ] as const;
   const els: HTMLButtonElement[] = [];
-  const selected = (id: string) => (id === "costs") === props.costs;
+  const selected = (id: string) => id === props.tab;
   const onKey = (e: KeyboardEvent, i: number) => {
     const last = tabs.length - 1;
     const next = e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
@@ -692,12 +698,17 @@ export function AgentsView(props: {
   detailsPath: string | null;
   onOpenDetails(path: string): void;
   onOpenAgents(path: string): void;
-  /** The Costs tab's query, when `#/agents/costs` is the address; null on the board. */
+  /** The Costs tab's query, when `#/agents/costs` is the address; null elsewhere. */
   costs: CostsQuery | null;
+  /** The Performance tab's query, when `#/agents/performance` is the address; null elsewhere. */
+  performance: CostsQuery | null;
 }) {
-  const onCosts = () => props.costs !== null;
-  // Back on Costs from the board, the filter you left it with.
+  /** Off the board: Costs or Performance. The board's polls and its head line rest there. */
+  const onCosts = () => props.costs !== null || props.performance !== null;
+  const tab = (): AgentsTab => (props.costs ? "costs" : props.performance ? "performance" : "board");
+  // Back on a tab from the board, the filter you left it with.
   createEffect(() => props.costs && (lastCosts = props.costs));
+  createEffect(() => props.performance && (lastPerf = props.performance));
   const [costsTick, setCostsTick] = createSignal(0);
   const [filter, setFilter] = createSignal<BoardFilter | null>(null);
   const [query, setQuery] = createSignal("");
@@ -864,7 +875,7 @@ export function AgentsView(props: {
   return (
     <InsightsPage
       title="Agents"
-      meta={onCosts() && meta() ? <span title={metaTitle()}>{meta()}</span> : undefined}
+      meta={props.costs !== null && meta() ? <span title={metaTitle()}>{meta()}</span> : undefined}
       refreshLabel="Refresh Agents"
       onRefresh={() => {
         props.agents.refetch();
@@ -882,8 +893,9 @@ export function AgentsView(props: {
       titleRef={props.titleRef}
       class="agents-page"
     >
-      <AgentsTabs costs={onCosts()} />
+      <AgentsTabs tab={tab()} />
       <Show when={props.costs}>{(q) => <CostsTab query={q()} sessions={props.sessions} now={props.now} tick={costsTick()} />}</Show>
+      <Show when={props.performance}>{(q) => <PerformanceTab query={q()} now={props.now} tick={costsTick()} />}</Show>
       <Show when={!onCosts()}>
       <div class="agents-tabpanel" id="agents-tabpanel" role="tabpanel" aria-labelledby="agents-tab-board">
       <Show when={props.sessions} fallback={<ListSkeleton groups={1} rows={3} />}>

@@ -45,8 +45,7 @@ import { Banner, Icon } from "./ui";
 const COSTS_POLL_MS = 60_000;
 
 /** Change the filter: the address is the filter, replaced so the picking adds no history entry. */
-const go = (q: CostsQuery) => {
-  const href = costsHref(q);
+const goTo = (href: string) => {
   if (location.hash !== href) location.replace(href);
 };
 
@@ -100,7 +99,7 @@ export function CostsTab(props: { query: CostsQuery; sessions: SessionSummary[] 
 
   return (
     <div class="costs" id="agents-tabpanel" role="tabpanel" aria-labelledby="agents-tab-costs">
-      <CostsBar query={props.query} answer={poll.data()} />
+      <CostsBar query={props.query} facets={poll.data()?.facets} href={costsHref} />
       <Show when={poll.error()}>
         {(message) => (
           <Banner
@@ -212,9 +211,11 @@ function PricesLine(props: { info: PricesInfo; now: number }) {
   );
 }
 
-/** Range chips, then the provider and model pickers. */
-function CostsBar(props: { query: CostsQuery; answer: UsageCosts | undefined }) {
-  const choices = createMemo(() => facetChoices(props.answer?.facets));
+/** Range chips, then the provider and model pickers: the Costs tab's, and the Performance tab's
+    with its own address (`href`) and the providers and models its answer offers (`facets`). */
+export function CostsBar(props: { query: CostsQuery; facets: UsageCosts["facets"] | undefined; href(q: CostsQuery): string }) {
+  const go = (q: CostsQuery) => goTo(props.href(q));
+  const choices = createMemo(() => facetChoices(props.facets));
   const providers = createMemo(() => providerChoices(choices(), props.query));
   const models = createMemo(() => modelChoices(choices(), props.query));
   return (

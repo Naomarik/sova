@@ -112,17 +112,17 @@ export async function currentGeneration(o: { repo?: string; root?: string; env?:
       if (id === "unknown") throw new Error("this checkout's build is unknown");
       const dir = generationDir(id, root);
       if (isComplete(dir)) {
-        await ensureDeps(repo, root, dir);
-        log(`chats run code ${id} (reused ${dir}, ${Date.now() - t0} ms)`);
+        const deps = await ensureDeps(repo, root, dir);
+        log(`chats run code ${id} (reused ${dir}, ${Date.now() - t0} ms${depsNote(deps)})`);
       } else {
-        await makeGeneration(repo, root, id, dir);
+        const deps = await makeGeneration(repo, root, id, dir);
         // Written to while copied: the copy may hold another tree than its id says. Once more, else no copy.
         if ((await buildId(repo, env)) !== id) {
           await rm(dir, { recursive: true, force: true });
           if (attempt >= 1) throw new Error("the checkout kept changing while its code was copied");
           continue;
         }
-        log(`chats run code ${id} (copied to ${dir} in ${Date.now() - t0} ms)`);
+        log(`chats run code ${id} (copied to ${dir} in ${Date.now() - t0} ms${depsNote(deps)})`);
       }
       current = { id, dir, live: false };
       break;
@@ -158,7 +158,12 @@ async function publish(tmp: string, dir: string): Promise<void> {
   }
 }
 
-async function makeGeneration(repo: string, root: string, id: string, dir: string): Promise<void> {
+/** How a copy's shared node_modules came to be: there already, hardlinked, or copied in full (another filesystem). */
+type Deps = "reused" | "linked" | "copied";
+const depsNote = (d: Deps) =>
+  d === "copied" ? "; node_modules copied in full, not hardlinked: the code root is on another filesystem than the checkout (SOVA_CHAT_CODE_ROOT on the checkout's filesystem avoids it)" : "";
+
+async function makeGeneration(repo: string, root: string, id: string, dir: string): Promise<Deps> {
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (existsSync(dir)) await rm(dir, { recursive: true, force: true }); // half-made: rebuilt
   const tmp = tmpIn(root);
@@ -168,8 +173,9 @@ async function makeGeneration(repo: string, root: string, id: string, dir: strin
     const lock = await lockHash(join(tmp, "pnpm-lock.yaml"));
     if (lock) await symlink(join("..", DEPS, lock, "node_modules"), join(tmp, "node_modules"));
     writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ id, lock, at: new Date().toISOString() })}\n`, { mode: 0o444 });
-    if (lock) await depsSnapshot(repo, root, lock);
+    const deps = lock ? await depsSnapshot(repo, root, lock) : "reused";
     await publish(tmp, dir);
+    return deps;
   } catch (err) {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
     throw err;
@@ -209,7 +215,7 @@ async function lockHash(file: string): Promise<string | null> {
 }
 
 /** Copy the tree `from` to `to`: each file hardlinked (cloned, else copied, across filesystems), each link as it is. */
-async function linkTree(from: string, to: string): Promise<void> {
+async function linkTree(from: string, to: string): Promise<"linked" | "copied"> {
   let crossDevice = false;
   const walk = async (src: string, dst: string): Promise<void> => {
     await mkdir(dst);
@@ -238,6 +244,7 @@ async function linkTree(from: string, to: string): Promise<void> {
     await Promise.all(Array.from({ length: Math.min(8, entries.length) }, one));
   };
   await walk(from, to);
+  return crossDevice ? "copied" : "linked";
 }
 
 /**
@@ -246,9 +253,9 @@ async function linkTree(from: string, to: string): Promise<void> {
  * copied. Guarded against a `pnpm install` running meanwhile: the checkout's lockfile must read `lock`
  * before and after the copy (one retry).
  */
-async function depsSnapshot(repo: string, root: string, lock: string): Promise<void> {
+async function depsSnapshot(repo: string, root: string, lock: string): Promise<Deps> {
   const dir = join(root, DEPS, lock);
-  if (isComplete(dir)) return;
+  if (isComplete(dir)) return "reused";
   const src = join(repo, "node_modules");
   if (!existsSync(src)) throw new Error(`the checkout has no node_modules`);
   await mkdir(join(root, DEPS), { recursive: true, mode: 0o700 });
@@ -257,11 +264,11 @@ async function depsSnapshot(repo: string, root: string, lock: string): Promise<v
     const tmp = tmpIn(join(root, DEPS));
     await mkdir(tmp);
     try {
-      await linkTree(src, join(tmp, "node_modules"));
+      const how = await linkTree(src, join(tmp, "node_modules"));
       if ((await lockHash(join(repo, "pnpm-lock.yaml"))) !== lock) throw new Error("the checkout's lockfile changed during the copy of its node_modules");
       writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ lock, at: new Date().toISOString() })}\n`);
       await publish(tmp, dir);
-      return;
+      return how;
     } catch (err) {
       await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
       if (attempt >= 1) throw err;
@@ -270,9 +277,9 @@ async function depsSnapshot(repo: string, root: string, lock: string): Promise<v
 }
 
 /** A reused copy whose shared dependencies were collected (or never finished) gets them again. */
-async function ensureDeps(repo: string, root: string, dir: string): Promise<void> {
+async function ensureDeps(repo: string, root: string, dir: string): Promise<Deps> {
   const lock = depsOf(dir);
-  if (lock && !isComplete(join(root, DEPS, lock))) await depsSnapshot(repo, root, lock);
+  return lock && !isComplete(join(root, DEPS, lock)) ? depsSnapshot(repo, root, lock) : "reused";
 }
 
 /** The lockfile hash a copy's `node_modules` link names, or null. */

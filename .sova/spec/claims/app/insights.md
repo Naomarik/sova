@@ -550,8 +550,12 @@ older one, one from the terminal, one that errored) looks exactly as it did: no 
   only where the split is real, the thinking and tool-call parts when any) when that reply was measured: on
   `GET /api/transcript` (one lookup in the timing store, §app.insights/reply-timing, per load) and
   on the chat's hello and appends (the chat's own lookup: one load through the server when the chat
-  opens, plus each reply it measures; a pane whose hello went out before that load arrived gets its
-  hello again with the facts). A live reply's wire-2 `message.end` carries the same `reply`
+  opens, plus each reply it measures; a pane that attaches while that load is on its way gets its
+  one hello when it arrives, whether it brought timings, none or failed; one still waiting after
+  1.5 seconds gets its hello then, and again with the facts if they come); and on `/ws/watch`'s snapshot, history and appends
+  (one lookup when the watch starts, asked again when an appended reply has no timing yet), so
+  every view of a chat shows the card, read-only ones included (a session open in the terminal, a
+  chat that can't be opened, a pi worker's pane). A live reply's wire-2 `message.end` carries the same `reply`
   when it finished and was measured. An unmeasured reply carries none; wire 1 never carries it, and
   its frames and rows stay byte for byte.
 

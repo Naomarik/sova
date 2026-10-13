@@ -20,6 +20,7 @@ import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 import { wireOf } from "./wire-rows";
+import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
 import type { WireVersion } from "../shared/protocol";
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
@@ -114,6 +115,8 @@ function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersio
     ask.tail && !ask.pull ? (json) => sendRaw(ws, json) : undefined,
     ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
     wire,
+    // Wire 2 on a pi session file: replies carry their measured timing, as on REST and /ws/chat.
+    wire === 2 && format === "pi" && !normalize ? () => replyTimingsOf(sessionIdOfPath(path)) : undefined,
   );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);

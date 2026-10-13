@@ -15,10 +15,10 @@ The server runs on Bun: the installer downloads the version Sova pins into the i
 and checks its checksum. Then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 ```
 
-Until the first release is tagged, this builds Sova's `master` branch in `~/.local/share/sova`,
+This builds Sova's newest stable release (the `stable` tag) in `~/.local/share/sova`,
 creates `~/.local/bin/sova`, and adds **Sova** to your app launcher: on Linux
 `~/.local/share/applications/sova.desktop` with its icon in
 `~/.local/share/icons/hicolor/512x512/apps/sova.png`, on macOS `~/Applications/Sova.app`
@@ -71,7 +71,7 @@ extension (`--no-extensions` skips them); it writes no settings, models, auth or
 doesn't install the optional pi configuration. It installs a login service only if you ask
 (`--service`, or yes at its prompt; see [running as a service](running-as-a-service.md)).
 The whole script is one function called on its last line, so a download cut short runs nothing.
-You can [inspect the script](https://github.com/Naomarik/sova/blob/master/scripts/install.sh)
+You can [inspect the script](https://github.com/Naomarik/sova/blob/stable/scripts/install.sh)
 before running it. Its `--dir` and `--bin` flags select different install and launcher
 directories, and `--port <n>` the port `sova` (and the service) serves on.
 
@@ -145,8 +145,8 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 
 ## Reinstall or remove
 
-Running the install command again updates to master's latest commit (or the latest of the
-`SOVA_REF` you set). An install already at that commit isn't rebuilt;
+Running the install command again updates to the newest stable release (or the latest of the
+`SOVA_REF` you set; `SOVA_REF=v0.2.0` stays on that release). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent

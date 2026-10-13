@@ -9,9 +9,12 @@
 //   last send's. One heard outside a request's wait (a cache warm reusing past options, while idle or
 //   streaming) is never a reply's: `turn.start` drops a pending one, and one after the first part is
 //   ignored.
-// - Each part (thinking, text, tool call) is timed from its start to its end, per content index; parts of
-//   a kind are summed. A part whose characters arrive with no start opens at its first characters; one
-//   still open at the reply's end closes there.
+// - Each part (thinking, text, tool call) is timed from its start to its last characters, per content
+//   index; parts of a kind are summed. Its end event closes it only when no characters came (Claude's
+//   hidden thinking): pi-ai's openai-completions adapter (zai, deepseek, ollama-cloud) sends every
+//   part's end at the stream's end, which would stretch a thinking part over the reply text after it.
+//   A part whose characters arrive with no start opens at its first characters; one still open at the
+//   reply's end closes at its last characters, else there.
 // - Only a finished reply (stop, length, toolUse) is measured. Every skip is an explicit branch with its
 //   own reason (ReplySkip).
 import type { HarnessEvent, HarnessReplySummary } from "../shared/harness";
@@ -64,12 +67,19 @@ const PART_OF: Record<string, Part> = {
   "tool-call": "tool",
 };
 
+/** A part being written: since `at`, its characters last at `last`. */
+interface OpenPart {
+  part: Part;
+  at: number;
+  last?: number;
+}
+
 interface Current {
   sentAt?: number;
   firstAt?: number;
   /** Began while a compaction ran. */
   compaction: boolean;
-  open: Map<string, { part: Part; at: number }>;
+  open: Map<string, OpenPart>;
   windows: Record<Part, PerfWindow>;
 }
 
@@ -152,13 +162,16 @@ export class ReplyTimer {
       return;
     }
     // A start, or characters with no start seen: the window opens now (a second start keeps the first).
-    if (!cur.open.has(key)) cur.open.set(key, { part, at: t });
+    let open = cur.open.get(key);
+    if (!open) cur.open.set(key, (open = { part, at: t }));
+    if (!kind.endsWith(".start")) open.last = t;
   }
 
-  private close(cur: Current, key: string, open: { part: Part; at: number }, t: number): void {
+  /** Close a part at its last characters, or at `t` when it had none. */
+  private close(cur: Current, key: string, open: OpenPart, t: number): void {
     cur.open.delete(key);
     const w = cur.windows[open.part];
-    w.ms += Math.max(0, t - open.at);
+    w.ms += Math.max(0, (open.last ?? t) - open.at);
     w.n++;
   }
 

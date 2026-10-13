@@ -90,8 +90,6 @@ import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
 const GUARD_POLL_MS = 3000;
-/** How long a chat's bind waits for its measured replies before its first hello (they land later anyway). */
-const REPLY_TIMINGS_WAIT_MS = 1000;
 const PERF_KINDS_SET: ReadonlySet<string> = new Set(["main", "worker", "overseer"]);
 /** The entry a message was written as, or null. */
 const safeId = (harness: HarnessSession, message: unknown): string | null => {
@@ -936,6 +934,10 @@ class ChatSession {
       plus each reply measured here. A wire-2 row's `reply` fact reads it. */
   private replyTimings = new Map<string, ReplyTiming>();
   private storedTimings: ReplyLookup | null = null;
+  /** The stored timings are on their way (loadReplyTimings). */
+  private timingsLoading = false;
+  /** Wire-2 panes greeted while they were. */
+  private readonly greetedEarly = new Set<ChatClient>();
   private readonly replyLookup: ReplyLookup = (entryId) => this.replyTimings.get(entryId) ?? this.storedTimings?.(entryId);
   private streamGuardOff: (() => void) | null = null;
   /** This runtime's last stream-guard trip (server/stream-guard.ts); cleared when a run starts. */
@@ -1731,7 +1733,7 @@ class ChatSession {
     );
     this.unsubscribe?.();
     this.replyTimer = new ReplyTimer();
-    const timingsLoaded = this.loadReplyTimings();
+    void this.loadReplyTimings();
     // Through the driving session: one pi listener, registered here, after the stream guard and the
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
     this.unsubscribe = harness.subscribe((event) => {
@@ -1852,8 +1854,6 @@ class ChatSession {
     this.modeState = chatModeOf(harness.state.branch());
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
     await this.syncModePrompt();
-    // A first hello with the measured replies' facts, if the store answers soon; later, they still land.
-    await Promise.race([timingsLoaded, new Promise<void>((r) => setTimeout(r, REPLY_TIMINGS_WAIT_MS).unref?.())]);
   }
 
   /** This session's measured replies from the store (server/reply-facts.ts), merged under the ones
@@ -1861,13 +1861,23 @@ class ChatSession {
   private async loadReplyTimings(): Promise<void> {
     const fresh = (this.replyTimings = new Map());
     this.storedTimings = null;
+    this.greetedEarly.clear();
+    this.timingsLoading = true;
     try {
+      // In a chat process the server answers once this chat's open is done: a pane that attaches
+      // before then gets its hello again with the facts (greetedEarly).
       const got = await replyTimingsOf(this.harness.id);
       // A later bind started its own load: this one's answer is for a session no longer here.
-      if (!got || this.disposed || this.replyTimings !== fresh) return;
+      if (this.replyTimings !== fresh) return;
+      this.timingsLoading = false;
+      const early = [...this.greetedEarly];
+      this.greetedEarly.clear();
+      if (!got || this.disposed) return;
       this.storedTimings = got.get;
+      for (const c of early) if (this.clients.has(c)) this.greet(c);
     } catch {
       // no facts: rows look as they always did
+      if (this.replyTimings === fresh) this.timingsLoading = false;
     }
   }
 
@@ -2475,6 +2485,14 @@ class ChatSession {
 
   attach(client: ChatClient): void {
     this.clients.add(client);
+    this.greet(client);
+    // Its rows went out before this session's stored reply timings arrived: it gets them in a
+    // second hello when they do (loadReplyTimings).
+    if (this.timingsLoading && client.wire === 2) this.greetedEarly.add(client);
+  }
+
+  /** A client's hello and the state its first paint needs, in one synchronous step (attach). */
+  private greet(client: ChatClient): void {
     const hello = this.hello(client.wire === 2);
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.

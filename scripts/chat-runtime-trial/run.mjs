@@ -2151,10 +2151,10 @@ async function t25() {
   relink(rootReal, clone);
   try {
     // The copies go on the checkout's filesystem (hardlinked node_modules, cloned files), never in the
-    // scratch on tmpfs (~350 MB a copy there). The only place there the sandbox can write is the
-    // worktree: its .cache, which Git ignores and bun test never walks (a hidden directory). This
-    // server's alone, so it collects there (SOVA_CHAT_CODE_GC=on); removed at the end.
-    const codeDir = join(ROOT, ".cache", "chat-runtime-trial", `t25-code-${tag}`);
+    // scratch on tmpfs (~350 MB a copy there): in the worktree's node_modules, which Git ignores, bun
+    // test never walks and the sandbox can write (the copy of node_modules skips it). This server's
+    // alone, so it collects there (SOVA_CHAT_CODE_GC=on); removed at the end.
+    const codeDir = join(ROOT, "node_modules", ".cache", `sova-chat-code-${tag}`);
     rmSync(codeDir, { recursive: true, force: true });
     const codes = () => {
       try {
@@ -2346,7 +2346,7 @@ async function t25() {
     await teardown();
   } finally {
     relink(clone, rootReal);
-    rmSync(join(ROOT, ".cache", "chat-runtime-trial", `t25-code-${tag}`), { recursive: true, force: true });
+    rmSync(join(ROOT, "node_modules", ".cache", `sova-chat-code-${tag}`), { recursive: true, force: true });
   }
   await boot();
 }

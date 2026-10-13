@@ -508,8 +508,8 @@ export type { SessionMarks, SpecialKind } from "./chat-manager";
  */
 export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
   if (router) {
-    // A chat a previous server left running is taken back before anything decides where it runs.
-    await router.ready();
+    // The router waits for this chat's own take-back, if a previous server left it running, before it
+    // decides where it runs.
     if (!heldChat(path)) {
       const remote = await router.acquire(path, force);
       if (remote) return remote;

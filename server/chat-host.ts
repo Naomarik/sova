@@ -68,6 +68,7 @@ import { bootBuildChecked } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
+import { subagentSessionRefusal } from "./session-guards";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot, stateRoot } from "./state-root";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
@@ -144,6 +145,9 @@ export class ChatHostRouter {
   private readonly sup: ChatSupervisor;
   private readonly rollout: Rollout<Link>;
   private readyP: Promise<void> = Promise.resolve();
+  /** Each chat a previous server left running, by session file: its take-back (known once the
+      supervisor has adopted them). */
+  private takingBack: Promise<Map<string, Promise<void>>> = Promise.resolve(new Map());
   private readonly connect: typeof connectLink;
   private readonly out: () => boolean;
 
@@ -402,11 +406,15 @@ export class ChatHostRouter {
 
   /** Take back what a previous server left running (before any chat socket is served). */
   start(): void {
+    let found!: (m: Map<string, Promise<void>>) => void;
+    this.takingBack = new Promise((r) => (found = r));
     this.readyP = (async () => {
       // Workers a previous server ran as its children ended with it (a crash, a SIGKILL: stopped now).
       for (const rec of await this.childSup.stopAll()) log(`worker chat ${rec.chatId}: left by the previous server; stopped`);
-      const { adopted } = await this.sup.adopt();
-      await Promise.all(adopted.map((rec) => this.takeBack(rec)));
+      const { adopted } = await this.sup.adopt().catch((err) => (found(new Map()), Promise.reject(err)));
+      const each = new Map(adopted.map((rec) => [rec.sessionPath, this.takeBack(rec)] as const));
+      found(each);
+      await Promise.all(each.values());
       this.workers.settleBoot();
       this.sup.watch(2_000);
       this.childSup.watch(2_000);
@@ -452,9 +460,14 @@ export class ChatHostRouter {
   ready(): Promise<void> {
     return Promise.race([this.readyP, new Promise<void>((r) => setTimeout(r, READY_WAIT_MS))]);
   }
-  /** The take-back itself (each chat has a minute to answer), bounded only against a hang. */
-  private takenBack(): Promise<void> {
-    return Promise.race([this.readyP, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
+  /** The take-back itself (each chat has a minute to answer), bounded only against a hang: of every
+      chat, or with `path` of that chat's only (none when no process of it was left running). */
+  private async takenBack(path?: string): Promise<void> {
+    const hang = new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.());
+    if (path === undefined) return Promise.race([this.readyP, hang]);
+    const each = await Promise.race([this.takingBack, hang.then(() => null)]);
+    const mine = each?.get(path);
+    if (mine) await Promise.race([mine, hang]);
   }
   get(path: string): ChatHandle | undefined {
     const h = this.remotes.get(path);
@@ -465,11 +478,13 @@ export class ChatHostRouter {
   }
 
   async acquire(path: string, force: boolean): Promise<ChatHandle | null> {
-    // A worker chat's own file is never opened as a chat here (the in-process open refuses it).
-    if (this.workerPaths.has(path)) return null;
+    // A worker's or hidden chat's own file is never opened as a chat (the subagent-session refusal),
+    // permanently: a browser never retries it.
+    const s = await getSessionSummary(path).catch(() => null);
+    if (this.workerPaths.has(path) || s?.workerSession) throw new ConfigError(subagentSessionRefusal(s?.title ?? "This session"), s?.cwd ?? "");
     // A chat a previous server left running is this one's once it is taken back: never started anew
-    // meanwhile, however long the take-back takes (a browser's connect waits only READY_WAIT_MS).
-    await this.takenBack();
+    // meanwhile, however long its take-back takes. A chat with no process left opens at once.
+    await this.takenBack(path);
     const open = this.remotes.get(path);
     if (open && !open.closed) {
       // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
@@ -724,7 +739,6 @@ export function startChatHost(): void {
     // Chats a previous server started are taken back even with the switch off now: never orphaned.
     router = new ChatHostRouter(nextEpoch(), await serverBuild());
     router.start();
-    await router.ready();
   })().catch((err) => log(`start failed: ${err instanceof Error ? err.message : String(err)}`));
   // Every parent chat in this process starts its workers here, once the router is up.
   setWorkerHostSource((parent) => {
@@ -753,7 +767,7 @@ export function startChatHost(): void {
     };
   });
   setChatRouter({
-    ready: () => Promise.race([boot, new Promise<void>((r) => setTimeout(r, 2 * READY_WAIT_MS))]),
+    ready: () => Promise.race([boot.then(() => router?.ready()), new Promise<void>((r) => setTimeout(r, 2 * READY_WAIT_MS))]),
     get: (path) => router?.get(path),
     all: () => router?.all() ?? [],
     // Opening waits for the router itself (the server's build can take seconds to compute): a chat is

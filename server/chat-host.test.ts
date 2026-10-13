@@ -270,6 +270,42 @@ test("opening a chat while the next server is still taking chats back waits for 
   }
 });
 
+test("while another chat's take-back is slow, a chat with no process left opens at once; the taken-back one waits for its own", async () => {
+  const t = setup();
+  const kept = session();
+  await t.router.acquire(kept.path, false);
+  t.router.detach();
+  const slow = t.driver.started[0]!.env.SOVA_CHAT_SOCK;
+  const later = (sock: string) => (sock === slow ? new Promise((r) => setTimeout(r, 1_500)) : Promise.resolve());
+  const next = new ChatHostRouter(++epoch, "b1", {
+    driver: t.driver,
+    connect: ((sock: string, opts: never) => later(sock).then(() => t.connect(sock, opts))) as never,
+    out: () => true,
+    supervisor: t.supervisor,
+  });
+  try {
+    next.start();
+    let back = false;
+    const keptOpen = next.acquire(kept.path, false).then((h) => ((back = true), h));
+    const fresh = await next.acquire(session().path, false);
+    assert.equal(fresh?.where, "process");
+    assert.equal(back, false, "opened before the other chat was taken back");
+    assert.equal((await keptOpen)?.where, "process", "the surviving process");
+    assert.equal(t.driver.started.length, 2, "one new unit, never a second for the surviving chat");
+  } finally {
+    next.detach();
+  }
+});
+
+test("a worker's own session file is refused for good with the subagent-session text, with the switch on or off", async () => {
+  for (const out of [true, false]) {
+    const t = setup({ out });
+    const s = session({ extra: [{ type: "custom", customType: "subagents-worker-session", id: "w1", parentId: "a1", timestamp: "2026-10-12T00:00:03.000Z", data: {} }] });
+    await assert.rejects(t.router.acquire(s.path, false), (e: Error) => e instanceof ConfigError && /is a subagent's own session; act on the session that runs it\.$/.test(e.message));
+    assert.equal(t.driver.started.length, 0);
+  }
+});
+
 test("a chat whose folder is gone is refused before any process, and remembered until the folder is back", async () => {
   const t = setup();
   const gone = join(agentDir, "gone");

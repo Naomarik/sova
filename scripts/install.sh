@@ -663,6 +663,8 @@ DESKTOP
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<!-- The window is the browser's: no Dock icon of its own while sova app starts it. -->
 	<key>LSUIElement</key><true/>
+	<!-- The executable is a script: without this macOS starts it, and the browser it execs, under Rosetta. -->
+	<key>LSArchitecturePriority</key><array><string>arm64</string></array>
 </dict>
 </plist>
 PLIST

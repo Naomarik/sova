@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVis } from "../../parse";
-import { PREVIEWS } from "./previews.fixture";
+import { PREVIEWS, ROWS } from "./previews.fixture";
 import { BLOCKS, MAX_BLOCKS, MAX_DEPTH, MAX_ROWS, SYNONYMS, TAUGHT, type WBlock, type WireframeSpec } from "./parse";
 
 const parse = (body: string) => {
@@ -191,8 +191,8 @@ test("wireframe: soft problems draw with a warning", () => {
   const w = (body: string) => parse(body).warnings;
   assert.deepEqual(w('button "Pay"\n  text "under a button"'), ["2: a button holds no blocks; drawn after it"]);
   assert.deepEqual(top(parse('button "Pay"\n  text "under a button"').spec), [["button", ["Pay"]], ["text", ["under a button"]]]);
-  assert.deepEqual(w('button "Pay" hint'), ['1: ignored "hint" (after the texts: a tone, on, wide)']);
-  assert.deepEqual(w('chart "x" radar'), ['1: ignored "radar" (after the texts: a tone, on, wide, bar line pie)']);
+  assert.deepEqual(w('button "Pay" hint'), ['1: ignored "hint" (after the texts: a tone, on, wide, right, grow)']);
+  assert.deepEqual(w('chart "x" radar'), ['1: ignored "radar" (after the texts: a tone, on, wide, right, grow, bar line pie)']);
   assert.deepEqual(w('device: tv\ntext "x"'), ["1: device: is phone or desktop; drew phone"]);
   assert.deepEqual(w('layout: grid\ntext "x"'), ['1: unknown setting "layout:", ignored (this kind takes title: caption: device:)']);
   assert.deepEqual(w('title: A\ntitle: B\ntext "x"'), ['2: "title:" is set twice; the first is kept']);
@@ -329,4 +329,120 @@ test("wireframe: a comma inside parentheses doesn't split a tab, a column or a r
     ["tabs", [], { items: ["All", "Open (new, reopened)", "Closed"] }, { current: 0 }],
     ["table", [], { items: ["Name", "Size (KB, raw)"] }, [["item", ["report.pdf", "120 (compressed, 80)"]], ["item", ["a (b", "c)"]]]],
   ]);
+});
+
+/** A block's row words only: what settleRows leaves on it, children included. */
+const placed = (b: WBlock): unknown[] => [
+  b.type,
+  ...(["right", "grow", "wide", "end", "content", "align", "shares", "share"] as const).filter((k) => b[k] !== undefined).map((k) => ({ [k]: b[k] })),
+  ...(b.children.length ? [b.children.map(placed)] : []),
+];
+const rows = (body: string) => ok(body).screens[0]!.blocks.map(placed);
+
+test("wireframe rows: right starts a row's right group, grow takes the rest; either lays the row out by content", () => {
+  assert.deepEqual(rows('row\n  search "Search orders" grow\n  button "Filter"\n  button "Export" right\n  button "New" accent'), [
+    ["row", { content: true }, [["search", { grow: true }], ["button"], ["button", { right: true }], ["button"]]],
+  ]);
+  // Synonyms: end and trailing are right; fill, expand, stretch and flex are grow.
+  for (const w of ["end", "trailing", "RIGHT"]) assert.deepEqual(rows(`row\n  text "a"\n  button "b" ${w}`), [["row", { content: true }, [["text"], ["button", { right: true }]]]], w);
+  for (const w of ["fill", "expand", "stretch", "flex", "grow"]) assert.deepEqual(rows(`row\n  input "a" ${w}\n  button "b"`), [["row", { content: true }, [["input", { grow: true }], ["button"]]]], w);
+  // A row without them is as before: no flags at all.
+  assert.deepEqual(rows('row\n  card "A" wide\n  button "B"'), [["row", [["card", { wide: true }], ["button"]]]]);
+});
+
+test("wireframe rows: only the first right in a row counts; wide is grow in a row laid out by content, and wide with grow is grow", () => {
+  assert.deepEqual(rows('row\n  button "A" right\n  button "B" right\n  button "C" end'), [["row", { content: true }, [["button", { right: true }], ["button"], ["button"]]]]);
+  assert.deepEqual(rows('row\n  col "Details" wide\n  button "Save" right'), [["row", { content: true }, [["col", { grow: true }], ["button", { right: true }]]]]);
+  assert.deepEqual(rows('row\n  search "Find" wide grow\n  button "Go"'), [["row", { content: true }, [["search", { grow: true }], ["button"]]]]);
+});
+
+test("wireframe rows: a line of only placement words under a block applies to it", () => {
+  assert.deepEqual(rows('row\n  search "Find"\n    grow\n  button "Go"\n    right accent\nrow\n  bottom\n  input "Code"\n  button "Apply"'), [
+    ["row", { content: true }, [["search", { grow: true }], ["button", { right: true }]]],
+    ["row", { align: "bottom" }, [["input"], ["button"]]],
+  ]);
+  // middle and bottom are a row's: on another block they are stray words, with a warning.
+  assert.deepEqual(parse('button "Pay"\n  bottom').warnings, ['2: ignored "bottom" (after the texts: a tone, on, wide, right, grow)']);
+  assert.deepEqual(parse('button "Pay" middle').warnings, ['1: ignored "middle" (after the texts: a tone, on, wide, right, grow)']);
+});
+
+test("wireframe rows: a spacer in a row pushes the blocks after it right; a trailing one is dropped; outside a row it is a divider", () => {
+  assert.deepEqual(rows('row\n  button "Delete" error\n  spacer\n  button "Cancel"\n  button "Save" accent'), [
+    ["row", { content: true }, [["button"], ["button", { right: true }], ["button"]]],
+  ]);
+  assert.deepEqual(rows('row\n  button "A"\n  button "B"\n  spacer'), [["row", [["button"], ["button"]]]]);
+  assert.deepEqual(rows('row\n  spacer\n  link "Skip"'), [["row", { content: true }, [["link", { right: true }]]]]);
+  assert.deepEqual(rows('text "a"\nspacer\ntext "b"'), [["text"], ["divider"], ["text"]]);
+  // A spacer after the right group has begun changes nothing.
+  assert.deepEqual(rows('row\n  text "a"\n  button "b" right\n  spacer\n  button "c"'), [["row", { content: true }, [["text"], ["button", { right: true }], ["button"]]]]);
+});
+
+test("wireframe rows: row right packs its blocks at its end, and starts its parent row's right group", () => {
+  assert.deepEqual(rows('modal "Delete project?"\n  text "This can\'t be undone."\n  row right\n    button "Cancel"\n    button "Delete" error'), [
+    ["modal", [["text"], ["row", { right: true }, { end: true }, { content: true }, [["button"], ["button"]]]]],
+  ]);
+  assert.deepEqual(rows('row middle\n  link "Back"\n  row right\n    button "Save draft"\n    button "Continue" accent'), [
+    ["row", { content: true }, { align: "middle" }, [["link"], ["row", { right: true }, { end: true }, { content: true }, [["button"], ["button"]]]]],
+  ]);
+});
+
+test("wireframe rows: outside a row, right is kept on the page and in a card, col, modal, sheet or sidebar; grow is ignored there, silently", () => {
+  assert.deepEqual(rows('card "Sign in"\n  input "Email" grow\n  link "Forgot password?" right\nbutton "Save" right\ncol\n  text "x" trailing'), [
+    ["card", [["input"], ["link", { right: true }]]],
+    ["button", { right: true }],
+    ["col", [["text", { right: true }]]],
+  ]);
+  // Blocks that place their own blocks, and the page's chrome, ignore both.
+  assert.deepEqual(rows('header "Inbox" right\n  icon "search" right\nheading "Projects"\n  button "New" right\ngrid\n  card "A" right grow\nlist\n  item "x"\n    badge "New" right\ntabbar "A, B" right'), [
+    ["header", [["icon"]]],
+    ["heading", [["button"]]],
+    ["grid", [["card"]]],
+    ["list", [["item", [["badge"]]]]],
+    ["tabbar"],
+  ]);
+  // A row among an item's blocks keeps the item's layout: its row words mean nothing there either.
+  assert.deepEqual(rows('list\n  item "x"\n    row right middle\n      button "A" grow\n      button "B" right'), [["list", [["item", [["row", [["button"], ["button"]]]]]]]]);
+});
+
+test("wireframe rows: middle and bottom line a row's blocks up; the later wins; left and center stay silent", () => {
+  assert.deepEqual(rows('row middle\n  avatar "Ana"\n  text "Due Friday"\nrow bottom middle\n  text "a"\n  text "b"'), [
+    ["row", { align: "middle" }, [["avatar"], ["text"]]],
+    ["row", { align: "middle" }, [["text"], ["text"]]],
+  ]);
+  assert.deepEqual(rows('button "Save" left\ntext "x" center\nrow center\n  text "a"'), [["button"], ["text"], ["row", [["text"]]]]);
+});
+
+test("wireframe rows: shares on the row's line give each block its share; they must match the blocks and be 1 to 6", () => {
+  assert.deepEqual(rows('row 1:3:2\n  sidebar\n  list\n  col\nrow 2:1 middle\n  card "Form" wide\n  card "Summary"'), [
+    ["row", { shares: [1, 3, 2] }, [["sidebar", { share: 1 }], ["list", { share: 3 }], ["col", { share: 2 }]]],
+    ["row", { align: "middle" }, { shares: [2, 1] }, [["card", { share: 2 }], ["card", { share: 1 }]]],
+  ]);
+  const w = (body: string) => parse(body).warnings;
+  assert.deepEqual(w('row 1:2\n  text "a"\n  text "b"\n  text "c"'), ["1: row 1:2: 2 shares for 3 blocks; drew the row without them"]);
+  assert.deepEqual(rows('row 1:2:3\n  text "a"\n  text "b"\n  text "c"'), [["row", { shares: [1, 2, 3] }, [["text", { share: 1 }], ["text", { share: 2 }], ["text", { share: 3 }]]]]);
+  assert.deepEqual(w('row 1:7\n  text "a"\n  text "b"'), ["1: row 1:7: each share is a whole number from 1 to 6; drew the row without them"]);
+  assert.deepEqual(w('row 0:1\n  text "a"\n  text "b"'), ["1: row 0:1: each share is a whole number from 1 to 6; drew the row without them"]);
+  assert.deepEqual(parse('row 1:2\n  text "a"\n  text "b"\n  text "c"').spec.screens[0]!.blocks.map(placed), [["row", [["text"], ["text"], ["text"]]]]);
+  // A share is no text: an unquoted ratio on another block is its text, as before.
+  assert.deepEqual(top(ok("text 1:2")), [["text", ["1:2"]]]);
+});
+
+test("wireframe rows: shares win over right and grow, with a warning; a row right among the blocks keeps its own blocks at its end", () => {
+  const { spec, warnings } = parse('row 1:2\n  search "Find" grow\n  button "Go" right\nrow 1:1 right\n  text "a"\n  text "b"\nrow 1:1\n  text "Total"\n  row right\n    button "Pay" accent');
+  assert.deepEqual(warnings, ['1: row 1:2: its shares win; "right" and "grow" ignored', '4: row 1:1: its shares win; "right" ignored']);
+  assert.deepEqual(spec.screens[0]!.blocks.map(placed), [
+    ["row", { shares: [1, 2] }, [["search", { share: 1 }], ["button", { share: 2 }]]],
+    ["row", { shares: [1, 1] }, [["text", { share: 1 }], ["text", { share: 1 }]]],
+    ["row", { shares: [1, 1] }, [["text", { share: 1 }], ["row", { end: true }, { content: true }, { share: 1 }, [["button"]]]]],
+  ]);
+});
+
+test("wireframe rows: the fixtures draw without warnings; a fence without the row words carries none of their fields", () => {
+  for (const [name, body] of Object.entries(ROWS)) assert.deepEqual(parse(body).warnings, [], name);
+  const flat = (bs: WBlock[]): WBlock[] => bs.flatMap((b) => [b, ...flat(b.children)]);
+  const fields = ["right", "grow", "end", "content", "align", "shares", "share"];
+  for (const body of [PREVIEWS, 'row\n  card "A" wide\n  button "B"\nrow\n  text "a"\n  divider\n  text "b"\ncard "C"\n  button "Go" left']) {
+    const blocks = ok(body).screens.flatMap((s) => flat(s.blocks));
+    assert.deepEqual(blocks.flatMap((b) => fields.filter((k) => k in b)), []);
+  }
 });

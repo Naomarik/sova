@@ -40,6 +40,7 @@ const { WorkerFeed } = await import("../../chat-runtime/worker-feed");
 const { drainQueueThenAbort, setWorkerSpec } = await import("../../chat-manager");
 const { markOwned } = await import("../../write-guard");
 const { addWebSession } = await import("../../web-sessions");
+const { UserTurns } = await import("../../user-turns");
 
 after(async () => {
   await disposeAllChats();
@@ -166,6 +167,42 @@ describe("an idle queued hand-off whose turn fails", () => {
     assert.equal(err[0]!.message, refusal);
     assert.equal(err[0]!.clientId, undefined, "a turn failure, not a hand-off failure naming the send");
     assert.ok(!log.some((m) => m.type === "queue_item_gone" && m.reason === "failed"), "the item was handed over: no failed departure");
+  });
+});
+
+describe("an idle composer steer starts a turn exactly as an idle prompt does", () => {
+  /** Two messages typed back to back on an idle chat, as `type` frames: what the server made of them. */
+  async function twoTyped(type: "prompt" | "steer") {
+    const { chat, model, client, log } = await openChat();
+    const turns = new UserTurns();
+    turns.watch(chat.harness);
+    chat.harness.subscribe((e) => void turns.observe(e));
+    chat.userTurns = turns;
+    let attended: boolean | undefined;
+    const release = model.hold();
+    model.reply(() => void (attended = turns.attended()));
+    chat.handle(client as never, { type, text: "first", clientId: "c1" });
+    const starting = chat.turnStarting;
+    // The second leaves before the first's run has begun (pi still awaiting its input handlers).
+    chat.handle(client as never, { type, text: "second", clientId: "c2" });
+    await until(() => model.calls.length >= 1, "the first turn's call");
+    release();
+    await idle(chat);
+    const users = model.calls.flatMap((c) => ((c.context as { messages: { role: string; content: unknown }[] }).messages).filter((m) => m.role === "user"));
+    const texts = [...new Set(users.map((m) => (Array.isArray(m.content) ? (m.content as { text?: string }[]).map((b) => b.text ?? "").join("") : String(m.content))))];
+    return {
+      acks: log.filter((m) => m.type === "send_ack").map((m) => [(m as { clientId: string }).clientId, (m as { queued: boolean }).queued]),
+      starting,
+      attended,
+      errors: errors(log).map((e) => e.message),
+      reached: ["first", "second"].filter((t) => texts.includes(t)),
+    };
+  }
+
+  test("the same accept path: acked, held while the turn starts, the user's turn, nothing refused", async () => {
+    const prompt = await twoTyped("prompt");
+    assert.deepEqual(prompt, { acks: [["c1", false], ["c2", true]], starting: true, attended: true, errors: [], reached: ["first", "second"] });
+    assert.deepEqual(await twoTyped("steer"), prompt);
   });
 });
 

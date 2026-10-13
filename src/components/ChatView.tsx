@@ -55,6 +55,7 @@ import {
   type LiveUserState,
 } from "../lib/live";
 import { appendItems } from "../lib/explain";
+import { sendFrame } from "../lib/send-frame";
 import { codeFailure, codeView, type CodeControl, type CodeView } from "../lib/code-state";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
@@ -1630,8 +1631,10 @@ export function ChatView(props: {
   // outside a workspace has nobody to tell — the prop is simply absent there.
   createEffect(() => props.onTurnError?.(turnError()));
 
-  /** `confirm`: the Overseer's confirm card click (that card's tool call id); never set by typing. */
-  const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string) => {
+  /** `running`: a reply runs, as this tab sees it. `confirm`: the Overseer's confirm card click (that
+      card's tool call id); never set by typing. `typed`: the composer's own message, always a steer
+      (sendFrame), so a quick second message lands with the first even before this tab sees the run. */
+  const send = (text: string, running: boolean, attachments: UploadResult[], confirm?: string, typed = false) => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
     // spending it on a refusal, and never picks another model for you.
@@ -1646,9 +1649,9 @@ export function ChatView(props: {
     // are still two messages — which is what makes removing the middle one of three possible.
     // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
     const compact = compactCommand(text);
-    if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
+    if (compact) return sendCompact(text, compact.instructions, running, attachments.length > 0);
     const clientId = newClientId();
-    if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
+    if (!socket.send(sendFrame(text, clientId, { typed, ...(confirm ? { confirm } : {}) }))) return false;
     unacked.sent(clientId, text);
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
@@ -2101,7 +2104,7 @@ export function ChatView(props: {
         sandbox={sandboxControl}
         onPlaybooks={() => setShowPlaybooks(true)}
         undo={undoControl}
-        onSend={send}
+        onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
         onDraft={setHasDraft}
         onAbort={abort}

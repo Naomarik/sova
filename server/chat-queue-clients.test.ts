@@ -30,6 +30,7 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { playbookTurnText } = await import("../src/lib/playbooks");
 const { HANDED_REFUSAL } = await import("./queue");
+const { sendFrame } = await import("../src/lib/send-frame");
 
 after(async () => {
   await disposeAllChats();
@@ -198,6 +199,28 @@ describe("the queue, seen by two tabs on one chat", () => {
     const refused = mine.find((m) => m.type === "queue_remove_refused") as Extract<ChatServerMessage, { type: "queue_remove_refused" }>;
     assert.deepEqual([refused.reason, refused.message], ["internal", HANDED_REFUSAL]);
     assert.deepEqual([...piSession(chat).getSteeringMessages()], ["one more thing", "and another"], "nothing was taken out of pi");
+  });
+
+  test("a composer message sent while this tab still shows the chat idle, the server already busy, is a STEER (the quick second message)", async () => {
+    // The tab learns a run started from the run's own events, so a second message typed right after
+    // the first can leave while it still shows idle. The composer's frame never depends on that.
+    const { chat, me, mine } = await twoClients();
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
+    mine.length = 0;
+    chat.handle(me, sendFrame("and one more thing", "q2", { typed: true }));
+    const ack = mine.find((m) => m.type === "send_ack") as Extract<ChatServerMessage, { type: "send_ack" }>;
+    assert.deepEqual(ack, { type: "send_ack", clientId: "q2", queued: true });
+    assert.deepEqual(chat.queue.snapshot().map((i) => [i.id, i.kind]), [["q2", "steer"]], "a steer, landing with the others at the agent's next step");
+  });
+
+  test("a playbook (or a card's confirm click) sent while busy is still a follow-up: only the composer's typed message steers", async () => {
+    const { chat, me } = await twoClients();
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
+    const text = playbookTurnText({ title: "Brandmaker", dir: "/abs/playbooks/brandmaker", body: "# Brandmaker\n/skill:x $1\n" }, "Acme");
+    chat.handle(me, sendFrame(text, "pb", { typed: false }));
+    assert.deepEqual(sendFrame("c_1 a: Start", "cf", { typed: true, confirm: "c_1" }), { type: "prompt", text: "c_1 a: Start", clientId: "cf", confirm: "c_1" });
+    await until(() => chat.queue.snapshot().some((i) => i.id === "pb"));
+    assert.equal(chat.queue.snapshot().find((i) => i.id === "pb")?.kind, "followUp");
   });
 
   test("a playbook sent mid-turn is a FOLLOW-UP behind the turn, never a steer into it", async () => {

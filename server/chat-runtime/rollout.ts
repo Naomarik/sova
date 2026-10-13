@@ -98,6 +98,7 @@ export class Rollout<L = unknown> {
     const drained = await this.deps.drain(chatId).catch(() => ({ ok: false }));
     if (!drained.ok) {
       // No longer quiet: the replacement goes, and the chat asks again at its next quiet moment.
+      this.log(`${chatId}: not quiet any more (a reply started); the replacement goes, and the chat asks again`);
       sup.unexpectExit(chatId);
       await sup.stopUnit(rep.unit);
       this.deps.setCode(chatId, "older");

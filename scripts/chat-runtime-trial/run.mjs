@@ -2644,6 +2644,8 @@ async function tstopchats() {
       return { code: e.status ?? -1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` };
     }
   };
+  // What the mid-reply chat's file held just before the stop: the reopened history holds at least that.
+  const lHeld = entries(L.path).filter((e) => e.type === "message").length;
   const first = stop();
   R.note(`tstopchats: stop-chats said: ${first.out.trim().split("\n").slice(-6).join(" | ").slice(0, 400)}`);
   R.check(first.code === 0 && /\d+ chat process(es)? stopped/.test(first.out), `tstopchats: stop-chats ran and stopped chat processes (exit ${first.code})`);
@@ -2680,7 +2682,6 @@ async function tstopchats() {
   R.check(!mockLog(mock.log).some((e) => /stopped unexpectedly and cut off your last turn/.test(e.userText ?? "")), "tstopchats (mid-reply): no crash-resume text reached the model");
   const resumed = resumeDecisions(L.path).filter((a) => a.outcome === "ok" || /resumed/.test(JSON.stringify(a)));
   R.check(resumed.length === 0, `tstopchats (mid-reply): no auto_resume resumed it (${fmtDecisions(resumeDecisions(L.path))})`);
-  const before = entries(L.path).filter((e) => e.type === "message").length;
   const l2 = await chat(c, L.path, 60000);
   await sleep(1500);
   const unexpected = l2.got.filter((m) => /stopped unexpectedly/i.test(JSON.stringify(m)));
@@ -2688,7 +2689,7 @@ async function tstopchats() {
   await turn({ path: L.path, s: l2 }, "say ok after stop-chats");
   const lpid = chatPid(L.path);
   const msgs = entries(L.path).filter((e) => e.type === "message");
-  R.check(lpid && lpid !== pids["mid-reply"] && msgs.length > before && userEntriesWith(L.path, "[long 80 #tsc]") === 1, `tstopchats (mid-reply): it reopens on demand in a new process with its history (${pids["mid-reply"]} → ${lpid || "none"}; ${before} → ${msgs.length} messages; the first prompt there once)`);
+  R.check(lpid && lpid !== pids["mid-reply"] && msgs.length >= lHeld && userEntriesWith(L.path, "[long 80 #tsc]") === 1, `tstopchats (mid-reply): it reopens on demand in a new process with its history (${pids["mid-reply"]} → ${lpid || "none"}; ${lHeld} messages before the stop, ${msgs.length} now; the original prompt there ${userEntriesWith(L.path, "[long 80 #tsc]")}×)`);
   l2.close();
   await sleep(3000);
   R.check(deaths(L.path).length === 0 && resumeDecisions(L.path).filter((a) => a.outcome === "ok").length === 0 && userEntriesWith(L.path, CRASH_RESUME_TEXT) === 0, "tstopchats (mid-reply): still no death or resume after it reopened");

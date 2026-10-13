@@ -34,6 +34,8 @@ export const KNOBS = {
   build: "SOVA_BUILD",
   /** A chat process whose build equals this exits 3 before hello (the rollout failure case). */
   failBoot: "SOVA_CHAT_TEST_FAIL_BOOT",
+  /** A chat process whose build equals this refuses every open (a broken deploy that boots; T27 part 3). */
+  failOpen: "SOVA_CHAT_TEST_FAIL_OPEN",
   /** "live": chats run from the checkout, no copy of the code (every check but t25). */
   code: "SOVA_CHAT_CODE",
   /** Where a server copies its code; set, it turns the copy on for that check. */

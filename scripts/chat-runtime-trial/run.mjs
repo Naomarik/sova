@@ -78,7 +78,8 @@
 //               reaches it; a restart moves quiet chats one at a time; a worker of an older chat runs
 //               the current copy; unused copies go; new code that fails to boot halts the rollout
 //     t27       Part B/C B1: a broken deploy: no last good copy refuses with the reason; else a new chat
-//               opens on the last good copy with the failure banner
+//               opens on the last good copy with the failure banner; a reload whose open fails (C refuses
+//               opens: SOVA_CHAT_TEST_FAIL_OPEN) starts the chat again on the code it ran before
 //     trestart  Part C C1 (--mode unit): with a reply and a worker running, the operator's confirmed Apply on
 //               a scratch project's slot 0 adopting the trial's stand-in unit is not refused as busy and
 //               restarts the server within seconds; chats and worker keep their processes, nothing resumed
@@ -2397,9 +2398,33 @@ async function t27() {
     R.check(codeFrames(Y.s).includes("failed"), `t27(2): it shows the failure banner (code frames ${JSON.stringify(codeFrames(Y.s))})`);
     R.check(chatPid(X.path) === pidX, `t27(2): the chat already on A keeps its process (${pidX} → ${chatPid(X.path)})`);
     Y.s.close();
-    // (3)
-    if (KNOBS.failOpen) R.note("t27(3): not written yet: the knob that fails an open exists, the steps don't");
-    else R.note("t27(3): not run: no knob fails a replacement's open (asked of core)");
+    // (3) A reload whose open fails: new code C boots but refuses every open (SOVA_CHAT_TEST_FAIL_OPEN). The
+    // rollout moves the quiet chat X (on A) toward C; C's open fails, and X starts again on the code it ran
+    // before, A, with the failure shown; no death, and it answers.
+    const genC = next("C");
+    const logFile = join(scratch, `server-${n}.log`);
+    const logFrom = existsSync(logFile) ? readFileSync(logFile, "utf8").length : 0;
+    const xid = entries(X.path)[0]?.id ?? "";
+    await restart({ [KNOBS.failBoot]: "", [KNOBS.failOpen]: genC });
+    const X3 = await chat(c, X.path, 60000);
+    const pidX3 = chatPid(X.path);
+    const tried = () => {
+      const log = existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "";
+      return log.split("\n").filter((l) => xid && l.includes(xid) && /chat-rollout|reload/i.test(l));
+    };
+    await waitFor(() => codeFrames(X3).includes("failed") || tried().some((l) => /could not|fail|previous|last good/i.test(l)), 90000);
+    await sleep(3000);
+    R.note(`t27(3): X's rollout lines: ${tried().map((l) => l.slice(0, 200)).join(" | ") || "none"}`);
+    R.check(tried().length > 0 || codeFrames(X3).length > 0, `t27(3): the rollout tried to move the quiet chat to C (code frames ${JSON.stringify(codeFrames(X3))})`);
+    const X4 = await chat(c, X.path, 60000).catch(() => null);
+    const Xo = { path: X.path, s: X4 ?? X3 };
+    await turn(Xo, "say ok after a failed open");
+    const recX = record(X.path);
+    R.check(recX?.build === genA && chatPid(X.path), `t27(3): after C's open failed, X runs on the code it ran before, A (build ${recX?.build}, pid ${pidX} → ${pidX3} → ${chatPid(X.path) || "none"})`);
+    R.check([...codeFrames(X3), ...(X4 ? codeFrames(X4) : [])].includes("failed"), `t27(3): X's pane shows the failure (code frames ${JSON.stringify([...codeFrames(X3), ...(X4 ? codeFrames(X4) : [])])})`);
+    R.check(deaths(X.path).length === 0, `t27(3): no death recorded for X (${deaths(X.path).length})`);
+    X3.close();
+    X4?.close?.();
   } finally {
     await teardown();
     rmSync(codeDir, { recursive: true, force: true });

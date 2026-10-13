@@ -68,3 +68,64 @@ test("refresh: rows that don't land (the branch moved) never run the hook; the c
   assert.equal(ran, false);
   v.dispose();
 });
+
+// §chat.transcript/instant-open: rows painted from the file, then a hello that continues after them.
+const branch: TranscriptItem[] = [
+  { id: "u1", kind: "user", text: "q1" } as TranscriptItem,
+  row("a1:0"),
+  { id: "u2", kind: "user", text: "q2" } as TranscriptItem,
+  row("a2:0", "reply"),
+];
+const fileRows = (n: number): TranscriptRows => ({ items: branch.slice(0, n), older: 0, olderSummary: summarize([]) });
+
+function fresh() {
+  return solid.createRoot((dispose) => {
+    const [items, setItems] = solid.createSignal<TranscriptItem[] | null>(null);
+    const rows = createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false });
+    return { rows, items, dispose };
+  });
+}
+
+test("paint, then a hello after its last row: every painted row keeps its object, the hello's rows follow", () => {
+  const v = fresh();
+  assert.equal(v.rows.paint(fileRows(3)), true);
+  const painted = v.items()!;
+  v.rows.hello({ items: branch.slice(3).map((it) => ({ ...it })), older: 3, olderSummary: summarize(branch.slice(0, 3)), after: "u2" });
+  const list = v.items()!;
+  assert.deepEqual(list.map((it) => it.id), ["u1", "a1:0", "u2", "a2:0"]);
+  assert.ok(painted.every((it, i) => list[i] === it), "the painted rows' elements are kept");
+  assert.equal(v.rows.whole(), true);
+  v.dispose();
+});
+
+test("a hello after the last row with nothing new leaves the very same list (nothing re-renders)", () => {
+  const v = fresh();
+  v.rows.paint(fileRows(4));
+  const painted = v.items();
+  v.rows.hello({ items: [], older: 4, olderSummary: summarize(branch), after: "a2:0" });
+  assert.equal(v.items(), painted);
+  v.dispose();
+});
+
+test("a file read that lands after the hello is ignored", () => {
+  const v = fresh();
+  v.rows.hello({ items: branch, older: 0, olderSummary: summarize([]) });
+  const shown = v.items();
+  assert.equal(v.rows.paint(fileRows(2)), false);
+  assert.equal(v.items(), shown);
+  v.dispose();
+});
+
+test("a hello after a row the list doesn't hold leaves the list alone and reads the file's newest rows again", async () => {
+  const asked = serve({ items: branch, older: 0, olderSummary: summarize([]) });
+  const v = fresh();
+  v.rows.paint(fileRows(2));
+  const painted = v.items();
+  v.rows.hello({ items: [branch[3]!], older: 3, olderSummary: summarize(branch.slice(0, 3)), after: "u2" });
+  assert.equal(v.items(), painted, "the hello's rows alone are not shown");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(asked.some((u) => u.includes("/api/transcript") && u.includes("tail=1")), asked.join(" "));
+  assert.deepEqual(v.items()!.map((it) => it.id), ["u1", "a1:0", "u2", "a2:0"]);
+  assert.equal(v.items()![0], painted![0], "rows still the same keep their objects");
+  v.dispose();
+});

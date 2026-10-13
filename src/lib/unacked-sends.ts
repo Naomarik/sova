@@ -8,14 +8,19 @@
  */
 export class UnackedSends {
   private readonly texts = new Map<string, string>();
+  /** The connection each send went out on (lib/chat-wait `conn`). */
+  private readonly conns = new Map<string, number>();
 
-  sent(clientId: string, text: string): void {
+  sent(clientId: string, text: string, conn = 0): void {
     this.texts.set(clientId, text);
+    this.conns.set(clientId, conn);
   }
 
   /** Acknowledged, refused or gone from the queue: no longer this pane's to hand back. */
   settled(clientId: string | undefined): void {
-    if (clientId) this.texts.delete(clientId);
+    if (!clientId) return;
+    this.texts.delete(clientId);
+    this.conns.delete(clientId);
   }
 
   /** A refusal naming it: its text, once (`handedBack` remembers it), else null. */
@@ -23,6 +28,7 @@ export class UnackedSends {
     const text = clientId ? this.texts.get(clientId) : undefined;
     if (!clientId || text === undefined) return null;
     this.texts.delete(clientId);
+    this.conns.delete(clientId);
     if (handedBack.has(clientId)) return null;
     handedBack.add(clientId);
     return text;
@@ -37,6 +43,22 @@ export class UnackedSends {
       out.push(text);
     }
     this.texts.clear();
+    this.conns.clear();
+    return out;
+  }
+
+  /** Connection `conn` ended before its chat's hello: the texts sent on it alone, oldest first, each
+      once. Sends made on an earlier connection stay: that chat may have taken them. */
+  takeFrom(conn: number, handedBack: Set<string>): string[] {
+    const out: string[] = [];
+    for (const [id, text] of [...this.texts]) {
+      if (this.conns.get(id) !== conn) continue;
+      this.texts.delete(id);
+      this.conns.delete(id);
+      if (handedBack.has(id)) continue;
+      handedBack.add(id);
+      out.push(text);
+    }
     return out;
   }
 }

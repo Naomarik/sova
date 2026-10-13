@@ -26,6 +26,9 @@ const { FakeDriver } = await import("./chat-runtime/fake-driver");
 const { ChatSupervisor } = await import("./chat-runtime/supervisor");
 const { activeConfigFailure, BusyError, ConfigError, disposeAllChats, serverToolSpec } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
+// Start times as on Linux (/proc); on macOS none (no ps spawned: the unit tier forbids it), so locks read by pid alone.
+const { procStart, setProcStartForTest } = await import("./chat-runtime/writer-lock");
+setProcStartForTest((pid) => procStart(pid, "linux"));
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { LINK_MEMBER_ENTRY } = await import("../shared/mesh-links");
 

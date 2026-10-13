@@ -37,8 +37,8 @@ export interface RolloutDeps<L = unknown> {
   setCode(chatId: string, state: "reloading" | "failed" | "older", detail?: string): void;
   /** The last lines of the replacement's log, for a failed boot's reason. */
   logTail?(unit: string): Promise<string[]>;
-  /** The chat could not open in its replacement, and its old process is gone: the router keeps it in
-      the server's process from now on (inprocOnly) and lets go of its remote handle. Never a death. */
+  /** The chat could not open in its replacement, and its old process is gone: the router lets go of
+      its handle and starts it again on the code it ran before, showing why. Never a death. */
   onReloadOpenFailed?(chatId: string, sessionPath: string, reason: string): void;
   /** The code a replacement starts on (the current generation's id), for the halt record and its log. */
   codeId?: () => string;
@@ -111,13 +111,13 @@ export class Rollout<L = unknown> {
       await this.deps.open(chatId, rep, ready.link);
     } catch (err) {
       // The old process is gone: the replacement goes too, as an expected end (no death, no resume),
-      // its record and own pid only once its unit is stopped, and the chat opens in the server next,
+      // its record and own pid only once its unit is stopped, and the chat starts again on its old code,
       // once the replacement's writer lock is free.
       const reason = `the chat did not open on the new code: ${(err as Error).message}`;
       await sup.stop(chatId, "reload");
       if (!(await sup.waitUnlocked(rep.sessionPath))) this.log(`${chatId}: the replacement's writer lock is still held`);
       this.deps.onReloadOpenFailed?.(chatId, rep.sessionPath, reason);
-      // The chat now opens in the server, on its code: "failed" is the rollout's halt record only, never its badge.
+      // The chat starts again on the code it ran before (the router shows why): "failed" here is the rollout's halt record only.
       return this.fail(chatId, null, reason, false);
     }
     this.log(`${chatId}: reloaded into ${rep.unit}`);

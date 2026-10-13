@@ -582,9 +582,11 @@ test("once at start, an older server's worker children are stopped by their reco
   const rec = { pid: 4_194_000, startedAt: 1 };
   writeFileSync(join(root, "procs", "sova-chatw-h1-w1.json"), JSON.stringify(rec));
   writeFileSync(join(root, "procs", "sova-chatw-other-w2.json"), JSON.stringify(rec));
-  assert.deepEqual(await sweepOldChildren(root, "h1"), ["sova-chatw-h1-w1"]);
+  // No process lives (a fake table: a unit test spawns no ps).
+  const table = { kind: "ps" as const, sessions: false, list: () => [], get: () => null, startOf: () => null };
+  assert.deepEqual(await sweepOldChildren(root, "h1", table), ["sova-chatw-h1-w1"]);
   assert.equal(existsSync(root), false, "the place is gone, so the next start sweeps nothing");
-  assert.deepEqual(await sweepOldChildren(root, "h1"), []);
+  assert.deepEqual(await sweepOldChildren(root, "h1", table), []);
 });
 
 test("the chat env: the server's minus the deny list, Sova's bun and the resolved claude first on PATH", () => {
@@ -616,8 +618,9 @@ test("the socket lives under the state root, or in the runtime dir when that pat
   assert.equal(chatSocketPath("abc", { root: "/a/chats" }), `/a/chats/s/${abc}.sock`);
   assert.equal(chatSocketPath("abc", { root: "/a/chats", suffix: "-r2" }), `/a/chats/s/${abc}-r2.sock`);
   const deep = `/${"d".repeat(120)}/chats`;
-  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: "/run/user/1000", hash: "h1" }), `/run/user/1000/sova-chats-h1/${abc}.sock`);
-  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: undefined, tmp: "/tmp", hash: "h1" }), `/tmp/sova-chats-h1/${abc}.sock`);
+  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: "/run/user/1000", hash: "h1", platform: "linux" }), `/run/user/1000/sova-chats-h1/${abc}.sock`);
+  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: undefined, tmp: "/tmp", hash: "h1", platform: "linux" }), `/tmp/sova-chats-h1/${abc}.sock`);
+  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: "/run/user/1000", hash: "h1", platform: "darwin" }), `/private/tmp/sova-chats-h1/${abc}.sock`);
   // Two session ids made in the same millisecond (UUIDv7: the same first 12 characters) get sockets of their own.
   assert.notEqual(chatSocketPath("0199bbbb-0000-7000-8000-000000000001", { root: "/a/chats" }), chatSocketPath("0199bbbb-0000-7000-8000-000000000002", { root: "/a/chats" }));
 });
@@ -683,8 +686,10 @@ test("a recorded pid that is no chat process (dead, or reused by another program
   const claimed: number[] = [];
   claimRecordedChats((pid) => (claimed.push(pid), () => {}), () => reg, (pid) => pid !== a.pid);
   assert.deepEqual(claimed, []);
-  assert.equal(chatProcessAlive(process.pid), process.platform !== "linux", "this test process is alive but no chat process");
-  assert.equal(chatProcessAlive(2 ** 22 + 7), false, "no such process");
+  // Its command, read as the platform reads it (macOS's ps injected: a unit test spawns none).
+  const notChat = () => ({ code: 0, stdout: "bun test server/chat-runtime/supervisor.test.ts\n" });
+  assert.equal(chatProcessAlive(process.pid, process.platform === "linux" ? "linux" : "darwin", notChat), false, "this test process is alive but no chat process");
+  assert.equal(chatProcessAlive(2 ** 22 + 7, "darwin", notChat), false, "no such process");
 });
 
 test("a chat whose main process came after the start stopped waiting is recorded and own once it is seen", async () => {

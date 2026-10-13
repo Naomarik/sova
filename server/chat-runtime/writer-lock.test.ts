@@ -6,11 +6,16 @@ import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { holderAlive, lockFileOf, procStart, readLock, releaseLockOf, takeWriterLock, WriterLockHeld } from "./writer-lock";
+import { holderAlive, lockFileOf, procStart, readLock, releaseLockOf, setProcStartForTest, takeWriterLock, WriterLockHeld } from "./writer-lock";
 
 const dir = mkdtempSync(join(tmpdir(), "wlock-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const DEAD_PID = 0x3ffffff; // above any pid_max: never a live process
+// Start times from a fake table: a unit test spawns no `ps` (macOS reads it there). This process
+// started at "S1"; the platform's own reads are tested below, injected.
+let selfStart = "S1";
+setProcStartForTest((pid) => (pid === process.pid ? selfStart : null));
+after(() => setProcStartForTest(null));
 
 test("held while taken, by anyone; free once released", () => {
   const lock = takeWriterLock("/s/a.jsonl", { dir, unit: "sova-chat-x-a" });
@@ -35,13 +40,16 @@ test("a dead holder's lock is taken over", () => {
 });
 
 test("a reused pid is not the holder (its start time differs)", () => {
-  const start = procStart(process.pid)!;
-  assert.notEqual(start, null);
-  const other = typeof start === "number" ? start + 1 : `${start} (another)`;
-  writeFileSync(lockFileOf("/s/d.jsonl", dir), JSON.stringify({ pid: process.pid, start: other, at: 1, unit: null, path: "/s/d.jsonl" }));
+  writeFileSync(lockFileOf("/s/d.jsonl", dir), JSON.stringify({ pid: process.pid, start: "S0", at: 1, unit: null, path: "/s/d.jsonl" }));
   const lock = takeWriterLock("/s/d.jsonl", { dir });
-  assert.equal(readLock("/s/d.jsonl", dir)?.start, start);
+  assert.equal(readLock("/s/d.jsonl", dir)?.start, selfStart);
   lock.release();
+  selfStart = "S1";
+});
+
+test("on Linux a process's start time is /proc's clock ticks", { skip: process.platform !== "linux" ? "no /proc" : false }, () => {
+  assert.equal(typeof procStart(process.pid, "linux"), "number");
+  assert.equal(procStart(DEAD_PID, "linux"), null);
 });
 
 test("a release leaves a lock someone else holds now", () => {

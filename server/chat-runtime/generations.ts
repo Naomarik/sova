@@ -406,6 +406,82 @@ export async function collectGenerations(
   return removed;
 }
 
+/** The processes running now, as far as a copy's use goes: their command lines, and their working folders. */
+export interface ProcScan {
+  commands: string[];
+  cwds: string[];
+}
+
+const run = (file: string, args: string[], timeoutMs = 10_000): Promise<{ code: number; stdout: string; missing: boolean; timedOut: boolean }> =>
+  new Promise((done) =>
+    execFile(file, args, { encoding: "utf8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
+      const e = err as (NodeJS.ErrnoException & { code?: string | number; killed?: boolean }) | null;
+      done({ code: e ? (typeof e.code === "number" ? e.code : 1) : 0, stdout: stdout ?? "", missing: e?.code === "ENOENT", timedOut: !!e?.killed });
+    }),
+  );
+
+/** /proc as the Linux scan reads it (tests: a fake one). */
+export interface ProcFs {
+  list(): Promise<string[]>;
+  cmdline(pid: string): Promise<string>;
+  cwd(pid: string): Promise<string>;
+}
+const realProcFs: ProcFs = {
+  list: () => readdir("/proc"),
+  cmdline: (pid) => readFile(`/proc/${pid}/cmdline`, "utf8"),
+  cwd: (pid) => readlink(`/proc/${pid}/cwd`),
+};
+
+/**
+ * Every process's command line and working folder. Linux: /proc (a pid that ended or isn't readable,
+ * another user's, is skipped; /proc not listable fails the scan). macOS: `ps -axww -o command=` and
+ * `lsof -a -d cwd -Fn -u <uid>` (partial output from a refused pid is used; ps or lsof missing, failing
+ * with nothing printed, or past 10 s fails the scan). Elsewhere: no scan.
+ */
+export async function scanProcesses(platform: NodeJS.Platform = process.platform, proc: ProcFs = realProcFs, exec: typeof run = run): Promise<ProcScan> {
+  if (platform === "linux") {
+    const pids = (await proc.list()).filter((n) => /^\d+$/.test(n));
+    const out: ProcScan = { commands: [], cwds: [] };
+    for (const pid of pids) {
+      const cmd = await proc.cmdline(pid).catch(() => null);
+      if (cmd) out.commands.push(cmd.split("\0").join(" "));
+      const cwd = await proc.cwd(pid).catch(() => null);
+      if (cwd) out.cwds.push(cwd);
+    }
+    return out;
+  }
+  if (platform === "darwin") {
+    const ps = await exec("ps", ["-axww", "-o", "command="]);
+    if (ps.missing || ps.timedOut || (ps.code !== 0 && !ps.stdout)) throw new Error(`ps ${ps.missing ? "is missing" : ps.timedOut ? "timed out" : `failed (${ps.code})`}`);
+    const lsof = await exec("lsof", ["-a", "-d", "cwd", "-Fn", "-u", String(process.getuid?.() ?? "")]);
+    if (lsof.missing || lsof.timedOut || (lsof.code !== 0 && !lsof.stdout)) throw new Error(`lsof ${lsof.missing ? "is missing" : lsof.timedOut ? "timed out" : `failed (${lsof.code})`}`);
+    return {
+      commands: ps.stdout.split("\n").filter(Boolean),
+      cwds: lsof.stdout.split("\n").flatMap((l) => (l.startsWith("n") ? [l.slice(1)] : [])),
+    };
+  }
+  throw new Error(`no process scan on ${platform}`);
+}
+
+/** The copies under `root` a running process uses: its command line names a path inside one (`/<n>/`), or
+    its working folder is inside one (by real path, or by the `/<n>` segment, so a linked root matches). */
+export async function copiesRunning(scan: ProcScan, root: string): Promise<string[]> {
+  let names: string[];
+  try {
+    names = (await readdir(root)).filter((n) => n !== DEPS && n !== GOOD && !n.startsWith(".tmp-"));
+  } catch {
+    return [];
+  }
+  const realRoot = await realpath(root).catch(() => resolve(root));
+  const cwds = await Promise.all(scan.cwds.map((c) => realpath(c).catch(() => c)));
+  return names.filter((n) => {
+    const seg = `/${n}/`;
+    if (scan.commands.some((c) => c.includes(seg))) return true;
+    const inCopy = join(realRoot, n);
+    return cwds.some((c) => c === inCopy || c.startsWith(`${inCopy}/`) || c.includes(seg) || c.endsWith(`/${n}`));
+  });
+}
+
 /** The grace before an unused copy goes: `SOVA_CHAT_CODE_GRACE_MIN` (fractional minutes; tests and trials), else 10 min. */
 function graceOf(env: NodeJS.ProcessEnv): number {
   const v = env.SOVA_CHAT_CODE_GRACE_MIN?.trim();
@@ -419,7 +495,10 @@ function graceOf(env: NodeJS.ProcessEnv): number {
  * copies of its own to collect, but older copies under the root still go. `collect` runs one more
  * (the rollout's, after a run of reloads); `stop` ends the hourly one.
  */
-export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: string; env?: NodeJS.ProcessEnv; everyMs?: number; log?: (line: string) => void } = {}): { collect: () => Promise<void>; stop: () => void } {
+export function startGenerationGc(
+  inUse: () => Iterable<string>,
+  o: { root?: string; env?: NodeJS.ProcessEnv; everyMs?: number; log?: (line: string) => void; scan?: () => Promise<ProcScan> } = {},
+): { collect: () => Promise<void>; stop: () => void } {
   const log = o.log ?? ((l: string) => console.log(`[chat-code] ${l}`));
   // A root set by SOVA_CHAT_CODE_ROOT may be shared by several servers (trials): what one keeps is not
   // what the others' chats run, so none of them collects there; the trial removes its scratch root.
@@ -431,12 +510,23 @@ export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: str
   }
   let running: Promise<void> | null = null;
   const once = async () => {
+    const root = o.root ?? codeRoot(env);
+    // What runs now, read right before the collection (never cached): a process the supervisor lost
+    // track of (a stop that failed) still keeps the copy it runs. Unsure, nothing goes.
+    let scan: ProcScan;
+    try {
+      scan = await (o.scan ?? scanProcesses)();
+    } catch (err) {
+      log(`unused code is not collected now: ownership uncertain (${(err as Error).message})`);
+      return;
+    }
     try {
       const keep = new Set(inUse());
       if (current) keep.add(current.id);
+      for (const n of await copiesRunning(scan, root)) keep.add(n);
       const kept: string[] = [];
       const own = current ? basename(current.dir) : null;
-      const gone = await collectGenerations(keep, { root: o.root ?? codeRoot(env), graceMs: graceOf(env), kept: (n, why) => void (n !== own && kept.push(`${n} (${why})`)) });
+      const gone = await collectGenerations(keep, { root, graceMs: graceOf(env), kept: (n, why) => void (n !== own && kept.push(`${n} (${why})`)) });
       if (gone.length) log(`removed unused code: ${gone.join(", ")}`);
       if (kept.length) log(`kept older code: ${kept.join(", ")}`);
     } catch (err) {

@@ -373,6 +373,27 @@ test("a chat whose folder is gone is refused before any process, and remembered 
   t.router.detach();
 });
 
+test("a chat starting again on its previous code after a failed open keeps that code in use until it has started", async () => {
+  const t = setup({ build: "g2", gen: { id: "g2", dir: "/copies/g2", live: false } });
+  const priv = t.router as unknown as {
+    builds: Map<string, string>;
+    startOnce: (path: string) => Promise<unknown>;
+    rollout: { deps: { onReloadOpenFailed(id: string, path: string, reason: string): void } };
+  };
+  let started!: () => void;
+  priv.startOnce = () => new Promise<void>((r) => (started = r));
+  priv.builds.set("c1", "g1");
+  try {
+    priv.rollout.deps.onReloadOpenFailed("c1", "/s/c1.jsonl", "the chat did not open on the new code");
+    assert.ok(t.router.buildsInUse().includes("g1"), "between the forget and the new record: kept");
+    started();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.ok(!t.router.buildsInUse().includes("g1"), "started (its record names it from now on): no longer held here");
+  } finally {
+    t.router.detach();
+  }
+});
+
 test("a take-back that fails starts no collection of unused code (a chat it missed may run from one), yet opens go on", async () => {
   const t = setup();
   const next = new ChatHostRouter(++epoch, "g1", { driver: t.driver, connect: t.connect, supervisor: t.supervisor, gen: { id: "g1", dir: "/copies/g1", live: false } });

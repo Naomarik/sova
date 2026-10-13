@@ -117,6 +117,9 @@ export class ChatHostRouter {
   private readonly codeFor = new Map<string, string>();
   /** The code each chat's process runs (its record's build), by chat id: a failed reload's way back. */
   private readonly builds = new Map<string, string>();
+  /** A chat starting again on the code it ran before, after its open on new code failed: that code is
+      in use from the forget until its new record is written (never collected in between). */
+  private readonly restarting = new Map<string, string>();
   private readonly settings: ChatRuntimeSettings;
   private readonly sup: ChatSupervisor;
   private readonly rollout: Rollout<Link>;
@@ -239,7 +242,10 @@ export class ChatHostRouter {
         const before = this.builds.get(id);
         this.forget(path);
         log(`${path}: ${reason}; it starts again on ${before ?? "the code it ran before"}`);
-        void this.startOnce(path, true, { code: before, why: reason }).catch((err) => log(`${path}: it did not start again (${err instanceof Error ? err.message : String(err)})`));
+        if (before) this.restarting.set(id, before);
+        void this.startOnce(path, true, { code: before, why: reason })
+          .catch((err) => log(`${path}: it did not start again (${err instanceof Error ? err.message : String(err)})`))
+          .finally(() => this.restarting.delete(id));
       },
     });
     onLinksNotified((ids) => {
@@ -391,7 +397,7 @@ export class ChatHostRouter {
 
   /** The code every chat and worker process still runs (never collected). */
   buildsInUse(): string[] {
-    return this.sup.list().flatMap((r) => (r.build ? [r.build] : []));
+    return [...this.sup.list().flatMap((r) => (r.build ? [r.build] : [])), ...this.restarting.values()];
   }
 
   /** Take back what a previous server left running (before any chat socket is served). */

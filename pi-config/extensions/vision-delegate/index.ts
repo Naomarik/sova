@@ -38,7 +38,7 @@ import {
 	type ImageBlock,
 } from "./describe.ts";
 import { globallyEnabled, readPolicy } from "../model-policy/policy.ts";
-import { describeSkipped, pickVisionModel, readUsage, type PickableModel, type VisionPick } from "./picker.ts";
+import { describeSkipped, pickVisionModel, readUsage, usageCacheFile, type PickableModel, type VisionPick } from "./picker.ts";
 import { loadSettings } from "./settings.ts";
 
 class DelegationError extends Error {}
@@ -68,7 +68,7 @@ async function delegate(ctx: ExtensionContext, agentDir: string, images: ImageBl
 	const settings = loadSettings(agentDir);
 	// Re-read per call: the usage cache is refreshed out-of-band every ~3 minutes.
 	const policy = readPolicy();
-	const pick = pickVisionModel(settings, (provider, id) => ctx.modelRegistry.find(provider, id), readUsage(), (ref) =>
+	const pick = pickVisionModel(settings, (provider, id) => ctx.modelRegistry.find(provider, id), readUsage(usageCacheFile(agentDir)), (ref) =>
 		globallyEnabled(policy, "pi", ref),
 	);
 	if (!pick.model) {

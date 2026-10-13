@@ -1,6 +1,6 @@
 // The tools a held chat declares to its model now (§chat.transcript/setup-card-tools): GET
 // /api/sessions/tools (shared/protocol.ts SessionTools), the setup card's Tools group. Read from the chat's
-// driving session (`harness.declaredTools()`), never cached: the card reads it again whenever the chat's
+// handle (`declaredTools()`, server/chat-handle.ts), never cached: the card reads it again whenever the chat's
 // model or modes change, and each read is a list already in memory.
 //
 // On a Claude Code model the same tools reach the model through the provider's MCP facade, which names
@@ -8,7 +8,7 @@
 // server never imports claude-code beyond its listed exceptions, so the prefix is kept here and pinned by
 // session-tools.test.ts against that file's text).
 import type { SessionTool, SessionTools } from "../shared/protocol";
-import { heldChat } from "./chat-manager";
+import { chatHandle } from "./chat-handle";
 import { CLAUDE_CODE_PROVIDER } from "./models";
 import { estimateTokens } from "./session-setup";
 import { getSessionSummary } from "./sessions-index";
@@ -28,7 +28,7 @@ export function toolTokens(description: string, parameters: unknown): number {
 export interface ToolsDeps {
   now?: () => number;
   summary?: typeof getSessionSummary;
-  held?: typeof heldChat;
+  held?: typeof chatHandle;
 }
 
 /** The held chat's declared tools, or the sentence saying why they aren't listed. */
@@ -37,10 +37,10 @@ export async function getSessionTools(path: string, deps: ToolsDeps = {}): Promi
   const s = await (deps.summary ?? getSessionSummary)(path).catch(() => null);
   if (s?.live) return { state: "unavailable", reason: IN_TERMINAL, checkedAt: now() };
   if (s && (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession)) return { state: "unavailable", reason: SPECIAL, checkedAt: now() };
-  const chat = (deps.held ?? heldChat)(path);
+  const chat = (deps.held ?? chatHandle)(path);
   if (!chat) return { state: "unavailable", reason: NOT_HELD, checkedAt: now() };
-  const claude = chat.harness.model()?.provider === CLAUDE_CODE_PROVIDER;
-  const tools: SessionTool[] = chat.harness.declaredTools().map((t) => ({
+  const claude = chat.mirror.model?.provider === CLAUDE_CODE_PROVIDER;
+  const tools: SessionTool[] = (await chat.declaredTools()).map((t) => ({
     name: t.name,
     callName: claude ? `${CLAUDE_MCP_TOOL_PREFIX}${t.name}` : t.name,
     description: t.description,

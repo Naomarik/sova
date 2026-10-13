@@ -2,7 +2,7 @@
 //
 // What is real: Pi's interactive TUI, overlay/focus/hide handling, confirm dialog, extension
 // editor, key decoding through a terminal (tmux pane), resize, startup/shutdown, the subagents
-// extension (index.ts) and the claude-code extension's validate/prepare/permission handler.
+// extension (index.ts), a claude-code spawn included (it runs as a pi worker on a Claude model).
 // What is fake: every worker (no child process, no model), and the parent model provider
 // (points at 127.0.0.1:9, so any turn fails locally; every attempt is counted).
 //
@@ -12,7 +12,7 @@
 // Cleanup signals only the exact pane PID recorded at start and kills only that private server.
 //
 // Usage: node tests/team-ui-smoke.mjs [--phase agents|team|all] [--keep] [--source <extensions dir>]
-// --source loads subagents/ and claude-code/ from another tree (e.g. a frozen snapshot) instead
+// --source loads subagents/ from another tree (e.g. a frozen snapshot) instead
 // of this repo; the Pi runtime is always the installed one.
 // Exit: 0 all requested checks passed; 1 a check failed; 2 harness passed but /team checks are
 // BLOCKED because the team API/workspace is not implemented yet (never reported as a pass).
@@ -42,7 +42,6 @@ const socket = path.join(tmp, "tmux.sock");
 const session = "pi-team-ui";
 const target = `${session}:0.0`;
 const eventsFile = path.join(tmp, "events.jsonl");
-const claudeRoot = path.join(source, "claude-code");
 
 // ── generated wrapper extension (temp dir only; nothing is written to the repo) ────────────
 fs.writeFileSync(
@@ -54,8 +53,6 @@ fs.writeFileSync(
 	`import fs from "node:fs";
 import path from "node:path";
 import { registerSubagents } from ${JSON.stringify(path.join(subRoot, "index.ts"))};
-import { registerClaudeCode } from ${JSON.stringify(path.join(claudeRoot, "index.ts"))};
-import { BACKEND_REGISTER_EVENT } from ${JSON.stringify(path.join(subRoot, "contracts.ts"))};
 
 const TMP = ${JSON.stringify(tmp)};
 const CONTROL = ${JSON.stringify(dirs.control)};
@@ -66,7 +63,6 @@ export default function harness(pi: any) {
 	const tools = new Map<string, any>();
 	const commands = new Map<string, any>();
 	const workers = new Map<string, any>();
-	const backendsSeen = new Set<string>();
 	let ctx: any;
 	let poll: ReturnType<typeof setInterval> | undefined;
 
@@ -108,7 +104,6 @@ export default function harness(pi: any) {
 			async kill(reason?: string) {
 				log("kill", { id: this.id, reason: reason ?? null });
 				if (this.isFinished()) return;
-				this.permissionAbort?.abort();
 				this.status = "killed"; this.processAlive = false; this.endedAt = Date.now();
 				handlers.onChange(); handlers.onExit(this); closed();
 			},
@@ -116,15 +111,6 @@ export default function harness(pi: any) {
 			settle(outcome: string) {
 				this.status = "waiting"; this.taskOutcome = outcome; this.output = this.name + " " + outcome;
 				this.push(outcome === "success" ? "assistant" : "error", this.output); handlers.onSettled(this);
-			},
-			async permission() {
-				if (typeof options.onPermission !== "function") return log("permissionDecision", { id: this.id, behavior: "no-handler" });
-				this.permissionAbort = new AbortController();
-				const decision = await options.onPermission({
-					requestId: "harness-" + Date.now(), toolName: "Write", workerId: this.id, workerName: this.name, cwd: this.cwd,
-					input: { file_path: path.join(TMP, "never-written.txt"), content: "HARNESS" },
-				}, this.permissionAbort.signal);
-				log("permissionDecision", { id: this.id, behavior: decision.behavior });
 			},
 		};
 		workers.set(w.id, w);
@@ -146,26 +132,8 @@ export default function harness(pi: any) {
 	} });
 	registerSubagents(subPi, (o: any, h: any) => fakeWorker("pi", o, h));
 
-	// Claude: real validate/prepare/permission queue/dialog events; only create() is replaced.
-	const wrapped = new WeakMap<object, any>();
-	const claudeEvents = {
-		on: (n: string, f: any) => pi.events.on(n, f),
-		emit: (n: string, d: any) => {
-			if (n === BACKEND_REGISTER_EVENT && d?.id === "claude-code") {
-				backendsSeen.add(d.id);
-				if (!wrapped.has(d)) wrapped.set(d, { ...d, listModels: undefined, create: (o: any, h: any) => fakeWorker("claude-code", o, h) });
-				d = wrapped.get(d);
-			}
-			return pi.events.emit(n, d);
-		},
-	};
-	registerClaudeCode(new Proxy(pi, { get(t: any, k) {
-		if (k === "events") return claudeEvents;
-		const v = Reflect.get(t, k); return typeof v === "function" ? v.bind(t) : v;
-	} }));
-
 	const ops: Record<string, (a: any) => unknown> = {
-		ping: () => ({ commands: pi.getCommands().map((c: any) => c.name), tools: [...tools.keys()], backends: [...backendsSeen], mode: ctx?.mode }),
+		ping: () => ({ commands: pi.getCommands().map((c: any) => c.name), tools: [...tools.keys()], mode: ctx?.mode }),
 		tool: async (a) => {
 			const def = tools.get(a.name);
 			if (!def) throw new Error("tool not registered: " + a.name);
@@ -181,7 +149,6 @@ export default function harness(pi: any) {
 		},
 		workers: () => [...workers.values()].map((w) => ({ id: w.id, name: w.name, backend: w.backend, status: w.status, task: w.task, steerCount: w.steerCount })),
 		settle: (a) => { workers.get(a.id).settle(a.outcome ?? "success"); return true; },
-		permission: (a) => { void workers.get(a.id).permission().catch((e: unknown) => log("permissionError", { id: a.id, error: String(e) })); return true; },
 	};
 	const handle = async (file: string) => {
 		const n = file.slice(4, -5);
@@ -343,7 +310,6 @@ async function check(id, description, fn) {
 const blocked = (id, description, reason) => results.push({ id, status: "BLOCKED", description, detail: reason });
 
 const AGENTS_HEADER = / Runs \(\d+\)/;
-const PERMISSION = /Claude worker permission/;
 
 async function agentsPhase() {
 	await check("A1", "fake workers spawn through the real agent_spawn tool; footer status shows them", async () => {
@@ -353,13 +319,13 @@ async function agentsPhase() {
 				agents: [
 					{ name: "alpha", prompt: "HARNESS alpha", tools: [], wake: false },
 					{ name: "beta", prompt: "HARNESS beta", tools: [], wake: false },
-					{ name: "gamma", backend: "claude-code", prompt: "HARNESS gamma", wake: false, backendOptions: { permissionMode: "manual" } },
+					{ name: "gamma", backend: "claude-code", prompt: "HARNESS gamma", wake: false },
 				],
 			},
 		});
 		const ids = r.details.spawned.map((s) => s.id);
 		assert.equal(ids.length, 3);
-		assert.equal(r.details.spawned[2].backend, "claude-code");
+		assert.equal(r.details.spawned[2].backend, "pi", "a claude-code spawn runs as a pi worker");
 		await until((s) => /3 working/.test(s), "footer status");
 		return ids.join(",");
 	});
@@ -397,26 +363,6 @@ async function agentsPhase() {
 		await until((x) => AGENTS_HEADER.test(x), "workspace restored after cancel");
 		await delay(200);
 		assert.equal(count("steer"), before, "cancelled editor must not steer");
-	});
-
-	await check("A5", "real Claude permission handler hides the workspace, dialog owns keys, workspace refocuses", async () => {
-		await control("permission", { id: byName.gamma.id });
-		const s = await until((x) => PERMISSION.test(x), "permission dialog");
-		assert.doesNotMatch(s, AGENTS_HEADER, "workspace must not cover the permission dialog");
-		assert.match(s, new RegExp(byName.gamma.id));
-		// Default selection is Yes. If `j` leaked to the hidden workspace, Enter would allow.
-		keys("j");
-		await delay(120);
-		keys("Enter");
-		await until((x) => AGENTS_HEADER.test(x) && !PERMISSION.test(x), "workspace restored after dialog");
-		await until(() => count("permissionDecision") === 1, "permission decision", 3000).catch(() => {});
-		const d = events().find((e) => e.kind === "permissionDecision");
-		assert.equal(d?.behavior, "deny", "keys must go to the dialog, not the hidden workspace");
-		assert.equal(fs.existsSync(path.join(tmp, "never-written.txt")), false);
-		keys("f");
-		await until((x) => /Follow up: /.test(x), "workspace owns keys after dialog");
-		keys("Escape");
-		await until((x) => AGENTS_HEADER.test(x), "workspace back");
 	});
 
 	await check("A6", "workspace survives terminal resize (small, narrow, restore)", async () => {
@@ -480,7 +426,7 @@ async function teamPhase() {
 				objective: "HARNESS_OBJECTIVE",
 				members: [
 					{ role: "builder", prompt: "HARNESS build", ownedPaths: ["src/owned-a"], tools: [], wake: false },
-					{ role: "reviewer", backend: "claude-code", prompt: "HARNESS review", wake: false, backendOptions: { permissionMode: "manual" } },
+					{ role: "reviewer", backend: "claude-code", prompt: "HARNESS review", wake: false },
 				],
 			},
 		});
@@ -552,23 +498,6 @@ async function teamPhase() {
 			assert.equal(count("steer"), before);
 		});
 
-		await check("B8", "Claude permission dialog uncovers from /team and returns focus", async () => {
-			const before = count("permissionDecision");
-			await control("permission", { id: member.reviewer });
-			const s = await until((x) => PERMISSION.test(x), "permission over team");
-			assert.ok(!TEAM_VIEW(s), "team workspace hidden while dialog is open");
-			keys("j");
-			await delay(120);
-			keys("Enter");
-			await until((x) => TEAM_VIEW(x) && !PERMISSION.test(x), "team workspace restored");
-			await until(() => count("permissionDecision") > before, "decision", 3000).catch(() => {});
-			assert.equal(events().filter((e) => e.kind === "permissionDecision").at(-1)?.behavior, "deny");
-			keys("f");
-			await until((x) => /Follow up/i.test(x), "team workspace owns keys after dialog");
-			keys("Escape");
-			await until(TEAM_VIEW, "back");
-		});
-
 		await check("B9", "x x stops exactly the selected member", async () => {
 			const kills = count("kill");
 			keys("x");
@@ -590,7 +519,7 @@ async function teamPhase() {
 			}
 			tmux("resize-window", "-t", session, "-x", "120", "-y", "40");
 			keys("q");
-			await until((s) => !PERMISSION.test(s) && !AGENTS_HEADER.test(s), "closed");
+			await until((s) => !AGENTS_HEADER.test(s), "closed");
 		});
 	}
 
@@ -621,7 +550,6 @@ try {
 		assert.equal(info.mode, "tui");
 		assert.ok(info.commands.includes("agents"));
 		assert.ok(info.tools.includes("agent_spawn"));
-		assert.ok(info.backends.includes("claude-code"), "real claude-code registration wrapped");
 		return `pid ${panePid}`;
 	});
 	if (phase !== "team") await agentsPhase();

@@ -22,9 +22,8 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | Session hooks | `mode/index.ts` | `before_agent_start` injects the block. `tool_call`/`tool_result` run the census. Worker modes are published on an event. |
 | The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. At the first call after the session's last edit it runs `census --changed --related` once and adds one line, `Unread § your change landed in`, naming the foreign § the session's own files landed in that it hasn't `read` (`specReads` over its shell commands), at most 5 marked read first, the rest named. |
 | Forbidden writes | `mode/spec-guard.ts` (`SpecWriteGuard`) | It says so, in the same digest, when the current spec is written by hand, or when commits that a draft's evidence names are rewritten. |
-| pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker. Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
+| pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker, a Claude Code worker included (it is a pi worker on the Claude Code provider). Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
 | Worker brief | `subagents/spec-brief.ts` | A fixed excerpt of `spec-mode.md` for a code-writing worker whose prompt doesn't already carry the spec block. Each rule is found by an anchor and quoted whole, so the brief is generated, never hand-copied. |
-| Claude Code worker checks | `claude-code/spec-hooks.ts` | The worker half of the guard for Claude Code workers. `UserPromptSubmit` marks the turn's baseline and `PostToolUse` runs the census step. Each hook is a fresh process, so state lives in one file per Claude session. |
 | Merge note | `worktrees/spec.ts` | When a worktree merge is recorded, it adds the landing's warnings to the merge note: changed files no claim maps, draft records left behind, hand-resolved §, orphaned evidence. This applies in any project with a spec, mode on or off. |
 | Spec writer setting | `mode/spec.ts`, `server/spec-settings.ts` | Which worker (backend · model · effort) writes draft claims and evidence while spec is on. The legacy file is `<agent dir>/mode-spec.json`; Sova's Settings → Subagents now edits it per profile. `null` means the session writes the spec itself. |
 | The tools | `spec/core/*.mjs` | Read-only `sova-spec.mjs`, `sova-spec-draft.mjs` (drafts, evidence, promotion, `merge-manifest`), the review and assessment companions, and the modules they load. |
@@ -68,8 +67,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    code-writing worker gets these:
    - its mode prompt: the spec block plus `SPEC_WORKER_NOTE`, or, when that prompt doesn't carry the
      block, the generated brief;
-   - its census: `spec-worker.ts` for a pi worker, or `spec-hooks.ts` through `--settings` for a Claude
-     Code worker.
+   - its census: `spec-worker.ts` (every worker is a pi worker, a Claude Code one included).
    - a finished code-writing worker's completion ends with one line naming the § its own changes landed
      in.
 7. **Merge.** A recorded worktree merge names the changed files no claim maps and any draft records

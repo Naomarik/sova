@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import type { CodingStartInput, ItemCodeInput } from "../shared/project-overseer";
 import type { IdeaUpdate } from "./overseer-ideas";
-import { BusyError } from "./chat-manager";
+import { BusyError } from "./chat-handle";
 import { OrgError } from "./org-error";
 import { archivedOverseerRefusal, engineOrThrow, operatorEnvelopeOf } from "./projects/spaces";
 import { gapsOf } from "./projects/contributions";

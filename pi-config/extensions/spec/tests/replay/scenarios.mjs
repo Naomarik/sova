@@ -503,24 +503,6 @@ async function piSession(ctx, repo, steps) {
   return notes;
 }
 
-async function claudeSession(ctx, repo, steps) {
-  const h = await ctx.module("claude-code/spec-hooks.ts");
-  const stateDir = ctx.ws.dir("hook-state");
-  const o = { core: ctx.tools.core, stateDir };
-  const ev = (extra) => ({ session_id: "replay", prompt_id: "p1", cwd: repo.root, ...extra });
-  await h.runHook("turn", ev({ hook_event_name: "UserPromptSubmit" }), o);
-  const notes = [];
-  for (const s of steps) {
-    const tool_name = s.kind === "bash" ? "Bash" : s.kind === "read" ? "Read" : "Edit";
-    const tool_input = s.kind === "bash" ? { command: s.command } : { file_path: join(repo.root, s.path) };
-    await h.runHook("pre", ev({ hook_event_name: "PreToolUse", tool_name, tool_input }), o);
-    s.effect?.(repo);
-    const out = await h.runHook("post", ev({ hook_event_name: "PostToolUse", tool_name, tool_input, tool_response: { stdout: "" } }), o);
-    notes.push(out?.hookSpecificOutput?.additionalContext ?? "");
-  }
-  return notes;
-}
-
 /**
  * One hook's session, run in fresh repositories until two runs give the same notes (paths aside), at most 5. The
  * hooks bound each git and census call with a timeout (TOOL_TIMEOUT_MS) and add an "incomplete check" note when
@@ -542,7 +524,8 @@ async function stableSession(ctx, hook, run) {
 
 export async function hookNoise(ctx) {
   const rows = [];
-  for (const [hook, run] of [["pi", piSession], ["claude", claudeSession]]) {
+  // A Claude Code worker is a pi worker (the pi census): there is no Claude hook of its own to replay.
+  for (const [hook, run] of [["pi", piSession]]) {
     const { repo, steps, notes } = await stableSession(ctx, hook, run);
     const c = classify(notes, repo.root);
     const f = flagged(notes);

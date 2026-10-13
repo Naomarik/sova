@@ -43,7 +43,7 @@ describe("claude one-shot in flight", () => {
 
   test("counted from the spawn, still counted after a timeout's kill, ended at the exit", async () => {
     const f = lingering();
-    const run = claudeRun(["-p"], "q", { spawn: f.spawn, agentDir: () => dir }, 30, fail);
+    const run = claudeRun(["-p"], "q", { claudeBin: "claude", spawn: f.spawn, agentDir: () => dir }, 30, fail);
     await new Promise((r) => setImmediate(r));
     assert.equal(snapshot().active, base + 1);
     assert.equal(snapshot().approximate >= 1, true);
@@ -58,7 +58,7 @@ describe("claude one-shot in flight", () => {
   test("an abort is the same: the call ends at the exit", async () => {
     const f = lingering();
     const ac = new AbortController();
-    const run = claudeRun(["-p"], "q", { spawn: f.spawn, agentDir: () => dir }, 10_000, fail, ac.signal);
+    const run = claudeRun(["-p"], "q", { claudeBin: "claude", spawn: f.spawn, agentDir: () => dir }, 10_000, fail, ac.signal);
     await new Promise((r) => setImmediate(r));
     ac.abort();
     await assert.rejects(run);

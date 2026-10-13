@@ -9,11 +9,8 @@
  * directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` unless that names an added login's directory) is
  * the implicit login `default`: never stored,
  * never moved, never written here. Claude Code stays the only program that signs in, refreshes
- * and signs out. The one token this file reads is a login's short-lived ACCESS token, for a worker
- * confined by the sandbox (confined-launch.ts), which cannot read the login's hidden credentials
- * itself (`accessTokenFor`): never the refresh token, and nowhere else. On macOS a login's
- * credentials may live in the keychain instead of the file (./keychain.ts): its signed-in time and
- * a confined worker's token are read there when the file is missing.
+ * and signs out; this file reads no token. On macOS a login's credentials may live in the keychain
+ * instead of the file (./keychain.ts): its signed-in time is read there when the file is missing.
  *
  * Node built-ins only: Sova's server imports this file directly (server/claude-accounts.ts), so
  * it must never import the pi runtime or another pi-config module (./keychain.ts, built-ins only
@@ -30,13 +27,14 @@
  * hand-picks under `.sova-picks/` (a picked login is never returned for idleness), and the
  * borrow requests (`claude-pool/wants/`) a spawn with no usable login writes and waits on.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { keychainItemMtime, readKeychainCredentials, type KeychainOptions } from "./keychain.ts";
-import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "./fixed-settings.ts";
+import { keychainItemMtime, type KeychainOptions } from "./keychain.ts";
+import { FIXED_CLAUDE_ENV } from "./fixed-settings.ts";
+import { claudeExecutable } from "./claude-executable.ts";
 
 export const ACCOUNTS_FILE_NAME = "claude-accounts.json";
 export const ACCOUNTS_STATE_FILE_NAME = "claude-accounts-state.json";
@@ -487,11 +485,11 @@ export function readIdentityFile(file: string): ClaudeLoginIdentity | null {
 	return Object.keys(identity).length ? identity : null;
 }
 /** `claude auth status --json` for a directory: the fallback identity (no account uuid there). */
-export function readIdentityFromStatus(dir: string, executable = "claude", timeoutMs = 10_000): ClaudeLoginIdentity | null {
+export function readIdentityFromStatus(dir: string, executable?: string, timeoutMs = 10_000): ClaudeLoginIdentity | null {
 	try {
 		const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_CONFIG_DIR: dir };
 		delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-		const out = spawnSync(executable, ["auth", "status", "--json"], { env, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "ignore"] });
+		const out = spawnSync(executable ?? claudeExecutable(), ["auth", "status", "--json"], { env, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "ignore"] });
 		const json = JSON.parse(out.stdout || "null");
 		if (!json?.loggedIn) return null;
 		const identity: ClaudeLoginIdentity = {};
@@ -532,107 +530,6 @@ export function credentialsMtime(dir: string, options: KeychainOptions & { fresh
  */
 export function claudeConfigDirEnv(dir: string, env: NodeJS.ProcessEnv = process.env, agentDir?: string): string | undefined {
 	return ownClaudeConfigDir(env, agentDir) === undefined && path.resolve(dir) === path.join(os.homedir(), ".claude") ? undefined : dir;
-}
-
-/** A login's access token as a confined worker is handed it: never the refresh token. */
-export interface ClaudeAccessToken { token: string; expiresAt?: number }
-/** A launch refreshes its login first when the access token has less than this left. */
-export const TOKEN_REFRESH_MARGIN_MS = 60 * 60_000;
-/**
- * The access token of the login directory `dir` (`.credentials.json` `claudeAiOauth.accessToken`
- * and its `expiresAt`), or undefined. Only the access token leaves this function: the refresh token
- * (the whole account) is never returned or kept. No file (macOS keeps credentials in the keychain)
- * is undefined too, and a confined launch then refuses.
- */
-export function accessTokenFor(dir: string): ClaudeAccessToken | undefined {
-	let oauth: any;
-	try { oauth = JSON.parse(fs.readFileSync(path.join(dir, ".credentials.json"), "utf8"))?.claudeAiOauth; } catch { return undefined; }
-	return accessTokenOf(oauth);
-}
-function accessTokenOf(oauth: any): ClaudeAccessToken | undefined {
-	const token = oauth?.accessToken;
-	if (typeof token !== "string" || !token || /[\s\x00-\x1f\x7f]/.test(token)) return undefined;
-	return { token, ...(typeof oauth.expiresAt === "number" && Number.isFinite(oauth.expiresAt) ? { expiresAt: oauth.expiresAt } : {}) };
-}
-/**
- * The unconfined run that lets Claude Code refresh a login's token without a model call: the
- * discovery argv (transport.ts buildDiscoveryArgv, pinned equal in the tests) and one `initialize`,
- * then EOF. Probed with CLI 2.1.282: an expired token is refreshed; one with hours left is not (the
- * CLI refreshes only near expiry), and `claude auth status` refreshes nothing.
- */
-export const REFRESH_ARGV = [
-	"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-	"--tools", "", "--setting-sources", "", "--settings", fixedSettingsJson(), "--strict-mcp-config",
-	"--permission-mode", "dontAsk", "--permission-prompts", "none",
-] as const;
-export type RefreshImpl = (dir: string) => Promise<boolean>;
-/**
- * Run Claude Code unconfined on the login directory `dir` so it refreshes the token it keeps there.
- * Resolves true once `initialize` was answered, false on a failure or after `timeoutMs`; the process
- * is always ended. Leased like model discovery, so the login never leaves under it.
- */
-export function refreshLogin(dir: string, options: { executable?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv; logins?: ClaudeLogins; platform?: NodeJS.Platform } = {}): Promise<boolean> {
-	return new Promise((resolve) => {
-		const env: NodeJS.ProcessEnv = { ...claudeBaseEnv(options.env ?? process.env), CLAUDE_CONFIG_DIR: dir };
-		// On macOS CLAUDE_CONFIG_DIR names the keychain item: Claude Code's own login is renewed without it (./keychain.ts).
-		if ((options.platform ?? process.platform) === "darwin" && claudeConfigDirEnv(dir, options.env ?? process.env) === undefined) delete env.CLAUDE_CONFIG_DIR;
-		delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-		let child: ReturnType<typeof spawn>;
-		try {
-			child = spawn(options.executable ?? "claude", [...REFRESH_ARGV], { env, cwd: dir, stdio: ["pipe", "pipe", "ignore"], detached: process.platform !== "win32" });
-		} catch { resolve(false); return; }
-		options.logins?.leaseChild({ CLAUDE_CONFIG_DIR: dir }, child);
-		let done = false;
-		let buffer = "";
-		const finish = (ok: boolean) => {
-			if (done) return;
-			done = true; clearTimeout(timer);
-			try { child.stdin?.end(); } catch { /* gone */ }
-			// Give it the EOF grace to write the refreshed credentials, then make sure it is gone.
-			const kill = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* gone */ } }, 5_000);
-			kill.unref?.();
-			child.once("exit", () => { clearTimeout(kill); resolve(ok); });
-			if (child.exitCode !== null || child.signalCode !== null) { clearTimeout(kill); resolve(ok); }
-		};
-		const timer = setTimeout(() => finish(false), options.timeoutMs ?? 30_000);
-		child.on("error", () => { if (!done) { done = true; clearTimeout(timer); resolve(false); } });
-		child.stdin?.on("error", () => { /* the exit settles it */ });
-		child.stdout?.on("data", (chunk: Buffer) => {
-			buffer += chunk.toString("utf8");
-			let index: number;
-			while ((index = buffer.indexOf("\n")) >= 0) {
-				const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
-				try {
-					const e = JSON.parse(line);
-					if (e?.type === "control_response" && e.response?.request_id === "refresh") finish(e.response.subtype === "success");
-				} catch { /* not a frame */ }
-			}
-			if (buffer.length > 4 * 1024 * 1024) buffer = "";
-		});
-		child.once("exit", () => { if (!done) { done = true; clearTimeout(timer); resolve(false); } });
-		try { child.stdin?.write(JSON.stringify({ type: "control_request", request_id: "refresh", request: { subtype: "initialize" } }) + "\n"); } catch { finish(false); }
-	});
-}
-/**
- * The access token a confined launch hands over, read again at every launch: when it has under
- * TOKEN_REFRESH_MARGIN_MS left (or `force`, after a 401), the login is refreshed first by an
- * unconfined run (`refresh`, default refreshLogin), then read again. Undefined when the login has no
- * readable access token.
- */
-export async function freshAccessToken(dir: string, options: { force?: boolean; now?: () => number; refresh?: RefreshImpl; keychain?: KeychainOptions } = {}): Promise<ClaudeAccessToken | undefined> {
-	const now = options.now ?? Date.now;
-	const before = await currentAccessToken(dir, options.keychain);
-	const due = !before || before.expiresAt === undefined || before.expiresAt - now() < TOKEN_REFRESH_MARGIN_MS;
-	if (!options.force && !due) return before;
-	try { await (options.refresh ?? refreshLogin)(dir); } catch { /* read what is there */ }
-	return (await currentAccessToken(dir, options.keychain)) ?? before;
-}
-/** accessTokenFor; on macOS, with no file, the access token in the login's keychain item, read afresh (nothing else of it is kept). */
-async function currentAccessToken(dir: string, keychain: KeychainOptions = {}): Promise<ClaudeAccessToken | undefined> {
-	const fromFile = accessTokenFor(dir);
-	if (fromFile || (keychain.platform ?? process.platform) !== "darwin" || fs.existsSync(path.join(dir, ".credentials.json"))) return fromFile;
-	const item = await readKeychainCredentials(claudeConfigDirEnv(dir, keychain.env), keychain);
-	return accessTokenOf((item as { claudeAiOauth?: unknown } | undefined)?.claudeAiOauth);
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import { sourceOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
+import { trialActWait } from "./chat-handle";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { parseModePatch } from "./mode-state";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
@@ -91,7 +92,7 @@ export interface OverseerToolHost extends IdeaToolHost {
   checks?(path: string): ReadinessChecks | undefined;
   /** A hosted chat's live-pending dialogs and queue; null when this server doesn't hold it. */
   held(path: string): { streaming: boolean; queued: number; dialogs: { id: string; method: string; title: string; message?: string; options?: string[] }[] } | null;
-  answerDialog(path: string, dialogId: string, value: unknown, answer: string): void;
+  answerDialog(path: string, dialogId: string, value: unknown, answer: string): unknown;
   /** Open (or reuse) this server's runtime for a session, as a browser's chat socket would. */
   open(path: string): Promise<void>;
   setModel(path: string, ref: string): Promise<void>;
@@ -649,6 +650,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           under = await covering(name, params);
           if (!under) throw new Refusal(UNATTENDED_REFUSAL);
         }
+        await trialActWait("before", name, toolCallId, signal);
         const out = await run(params, toolCallId, { signal, ctx });
         if (under) {
           host.used?.(under.id, name, under.sessions, toolCallId);
@@ -657,6 +659,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         // No contact in the log (§app.overseer/org-projection): a contact argument is `[contact]`, and any value on a roster too.
         const c = contactRedactor();
         logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: c.deep(loggedArgs(name, params)), outcome: "ok", ...(under ? { under: under.id } : {}) });
+        await trialActWait("after", name, toolCallId, signal);
         return out;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1507,7 +1510,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           value = yes;
           shown = yes ? "Yes" : "No";
         }
-        host.answerDialog(s.path, d.id, value, shown);
+        await host.answerDialog(s.path, d.id, value, shown);
         return { content: text(`Answered "${cut(d.title, 100)}" in ${link(s)}: ${shown}.`), details: { id: s.id, dialog: d.id, answer: shown } };
       }),
     },

@@ -12,7 +12,7 @@
 // Parsers: resource-monitor-proc.ts. CPU fold, joins, sid memory: resource-monitor-attrib.ts.
 // Ring, rollups, disk log: resource-monitor-history.ts.
 
-import { closeSync, openSync, readdirSync, readFileSync, readSync as readFd } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync as readFd } from "node:fs";
 import { readFile, readlink } from "node:fs/promises";
 import { availableParallelism, freemem, loadavg, platform, totalmem } from "node:os";
 import { join } from "node:path";
@@ -27,7 +27,6 @@ import type {
 import {
   attribute, cpuKey, foldCpu, SidMemory, type AttribProc, type CpuPrev, type HostedInfo, type Owner, type WorkerInfo,
 } from "./resource-monitor-attrib";
-import { canonicalPath } from "./paths";
 import { toolCtx } from "./harness/pi/tools";
 import { MonitorLog, MonitorRing, Rollup, type TickPoint } from "./resource-monitor-history";
 import {
@@ -63,6 +62,31 @@ function providerIdsOf(sessionId: string): string[] {
   }
   return ids;
 }
+/** What this process reports of a session it hosts (a chat process puts it in its mirror). */
+export function hostedFacts(path: string): { title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number } | null {
+  const h = hosted.get(path);
+  return h ? { ...(h.title ? { title: h.title } : {}), workers: h.workers, toolsRunning: h.toolsRunning, lastToolEnd: h.lastToolEnd } : null;
+}
+
+/** The chats this server runs in processes of their own, as their mirrors report them (server/chat-host.ts). */
+interface RemoteHosted {
+  sessionId: string;
+  cwd?: string;
+  title?: string;
+  workers: WorkerInfo[];
+  toolsRunning: number;
+  lastToolEnd: number;
+  pid: number;
+  /** A worker chat's process (al_3 stage 4): whose worker it is. Charged to that parent and worker,
+      never a session of its own. */
+  worker?: { parentPath: string; parentSessionId: string; workerId: string };
+}
+const remoteHosted = new Map<string, RemoteHosted>();
+export function setRemoteHosted(path: string, entry: RemoteHosted | null): void {
+  if (entry) remoteHosted.set(path, entry);
+  else remoteHosted.delete(path);
+}
+
 /** Per hosted runtime: re-ask its subagents extension for its workers. */
 const workerRequesters = new Map<string, { token: object; ask: () => void }>();
 
@@ -153,8 +177,6 @@ export interface MonitorOptions {
   cgroupRoot?: string;
   /** Where the 30s log goes (<stateRoot>/monitor). */
   logDir: string;
-  /** Live records dir (pi worker pid → its session file). */
-  liveDir?: string;
   intervalMs?: number;
   serverPid?: number;
   clkTck?: number;
@@ -189,9 +211,6 @@ interface ProcState {
   swapBytes?: number;
   swapAt: number;
   stat: ProcStat;
-  liveRecordChecked?: boolean;
-  /** From its live record: the pi worker's own session file. */
-  liveFile?: string;
 }
 
 const BATCH = 48;
@@ -225,6 +244,7 @@ const readSync = (p: string): string | null => {
 };
 const readAsync = (p: string, enc: BufferEncoding = "latin1") => readFile(p, enc).catch(() => null);
 const round1 = (n: number) => Math.round(n * 10) / 10;
+const pidList = (text: string) => text.split("\n").filter(Boolean).map(Number).filter((n) => n > 0);
 
 export class ResourceMonitor {
   readonly procRoot: string;
@@ -234,7 +254,6 @@ export class ResourceMonitor {
   readonly clkTck: number;
   private readonly now: () => number;
   private readonly log: MonitorLog;
-  private readonly liveDir?: string;
   private readonly hostedOf: () => HostedInfo[];
   private readonly plat: string;
   readonly ring = new MonitorRing(720);
@@ -242,6 +261,14 @@ export class ResourceMonitor {
 
   scope: MonitorScope = "none";
   private cgroupDir?: string;
+  /** The server's own cgroup path (relative to the cgroup root). */
+  private serverCgroup?: string;
+  /** This tick's processes listed outside the server's unit or tree: chats in processes (units) of their own. */
+  private outside: ReadonlySet<number> = new Set();
+  /** This tick's processes in a chat's unit → that chat's process. */
+  private unitOf: ReadonlyMap<number, number> = new Map();
+  /** Each chat process's own unit cgroup (null: none), read once per process. */
+  private chatCgroups = new Map<number, string | null>();
   private unitName?: string;
   private bootMs = 0;
   private pageSize = 4096;
@@ -263,8 +290,6 @@ export class ResourceMonitor {
   private tickMs: number[] = [];
   private startedAt = 0;
   private lastRotate = 0;
-  private liveNames = new Map<number, string>();
-  private liveNamesAt = 0;
   private treeDeepAt = 0;
   private lastPiWorkerMiss = 0;
   private snap: MonitorSnapshot | null = null;
@@ -281,7 +306,6 @@ export class ResourceMonitor {
     this.clkTck = opts.clkTck ?? 100;
     this.now = opts.now ?? Date.now;
     this.log = new MonitorLog(opts.logDir);
-    this.liveDir = opts.liveDir;
     this.plat = opts.platform ?? platform();
     this.titleOf = opts.titleOf;
     this.idleEvery = Math.max(1, Math.round(opts.idleEvery ?? IDLE_EVERY));
@@ -292,8 +316,17 @@ export class ResourceMonitor {
         workers: h.workers, providerIds: h.providerIds,
         toolInWindow: h.toolsRunning > 0 || h.lastToolEnd >= this.prevAt,
       }));
+      for (const [path, r] of remoteHosted) {
+        if (hosted.has(path)) continue;
+        out.push({
+          path, sessionId: r.sessionId, ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.title ? { title: r.title } : {}),
+          workers: r.workers, providerIds: providerIdsOf(r.sessionId), pid: r.pid,
+          toolInWindow: !r.worker && (r.toolsRunning > 0 || r.lastToolEnd >= this.prevAt),
+          ...(r.worker ? { worker: { parentPath: r.worker.parentPath, workerId: r.worker.workerId } } : {}),
+        });
+      }
       for (const c of held?.() ?? []) {
-        if (hosted.has(c.path)) continue;
+        if (hosted.has(c.path) || remoteHosted.has(c.path)) continue;
         out.push({ path: c.path, sessionId: c.sessionId, ...(c.cwd ? { cwd: c.cwd } : {}), workers: [], providerIds: providerIdsOf(c.sessionId), toolInWindow: false });
       }
       return out;
@@ -321,6 +354,7 @@ export class ResourceMonitor {
     this.bootMs = (parseBootTime(readSync(join(this.procRoot, "stat")) ?? "") ?? 0) * 1000;
     const cg = parseSelfCgroup(readSync(join(this.procRoot, String(this.serverPid), "cgroup")) ?? "");
     const dir = cg ? join(this.cgroupRoot, cg.path) : undefined;
+    this.serverCgroup = cg?.path;
     // Only the unit's own main process may speak for the unit: a dev server started from a shell
     // inside the unit (an agent's tool) inherits its cgroup, and must not claim its processes.
     // systemd puts SYSTEMD_EXEC_PID=<main pid> in the unit's exec environment and children inherit
@@ -383,17 +417,53 @@ export class ResourceMonitor {
     return this.procRoot + "/" + pid;
   }
 
-  /** The processes to measure this tick: the unit's cgroup, else the server's tree. */
+  /** The processes to measure this tick: the unit's cgroup, else the server's tree; then each chat
+      process outside them (a chat in a unit of its own, §app/chat-processes) with its whole unit. */
   private async listPids(): Promise<number[]> {
-    if (this.scope === "unit") {
-      const text = readSync(join(this.cgroupDir!, "cgroup.procs"));
-      if (text !== null) return text.split("\n").filter(Boolean).map(Number).filter((n) => n > 0);
-    }
-    // Tree: each process's main-thread children every tick; every 30s every thread's (a JVM or
-    // a browser forks from other threads), so a missed child is found within 30s.
     const deep = this.now() - this.treeDeepAt >= 30_000;
     if (deep) this.treeDeepAt = this.now();
-    const out: number[] = [this.serverPid];
+    let out: number[] | null = null;
+    if (this.scope === "unit") {
+      const text = readSync(join(this.cgroupDir!, "cgroup.procs"));
+      if (text !== null) out = pidList(text);
+    }
+    out ??= await this.tree([this.serverPid], deep);
+    const seen = new Set(out);
+    const outside = new Set<number>();
+    const unitOf = new Map<number, number>();
+    const roots: number[] = [];
+    const chats = new Set<number>();
+    for (const h of this.hostedOf()) {
+      if (!h.pid || seen.has(h.pid)) continue;
+      // A chat in a unit of its own: that unit's whole cgroup. Else (a child, or no unit) its process tree.
+      let unit = this.chatCgroups.get(h.pid);
+      if (unit === undefined) {
+        const cg = parseSelfCgroup(readSync(join(this.pidDir(h.pid), "cgroup")) ?? "");
+        unit = cg?.unit && cg.path !== this.serverCgroup ? cg.path : null;
+        this.chatCgroups.set(h.pid, unit);
+      }
+      chats.add(h.pid);
+      const text = unit ? readSync(join(this.cgroupRoot, unit, "cgroup.procs")) : null;
+      if (text === null) {
+        roots.push(h.pid);
+        continue;
+      }
+      for (const pid of pidList(text)) {
+        unitOf.set(pid, h.pid);
+        if (!seen.has(pid)) { seen.add(pid); outside.add(pid); out.push(pid); }
+      }
+    }
+    if (roots.length) for (const pid of await this.tree(roots, deep)) if (!seen.has(pid)) { seen.add(pid); outside.add(pid); out.push(pid); }
+    this.outside = outside;
+    this.unitOf = unitOf;
+    for (const pid of this.chatCgroups.keys()) if (!chats.has(pid)) this.chatCgroups.delete(pid);
+    return out;
+  }
+
+  /** `roots` and their descendants: each process's main-thread children every tick; every 30s every
+      thread's (a JVM or a browser forks from other threads), so a missed child is found within 30s. */
+  private async tree(roots: number[], deep: boolean): Promise<number[]> {
+    const out: number[] = [...roots];
     const seen = new Set(out);
     for (let i = 0; i < out.length; i++) {
       const pid = out[i]!;
@@ -562,10 +632,9 @@ export class ResourceMonitor {
       const hostedNow = this.hostedOf();
       const byPid = new Map<number, AttribProc>();
       for (const p of live.values()) byPid.set(p.stat.pid, { stat: p.stat, argv: p.argv, env: p.env, ...(p.cwd ? { cwd: p.cwd } : {}) });
-      const liveRecordPids = this.liveRecordPids(live, hostedNow, at);
       const { owners, inTree } = attribute({
-        procs: byPid, serverPid: this.serverPid, hosted: hostedNow, liveRecordPids, sids: this.sids,
-        serverEnv: this.serverEnv,
+        procs: byPid, serverPid: this.serverPid, hosted: hostedNow, sids: this.sids,
+        serverEnv: this.serverEnv, unitOf: this.unitOf,
       });
       this.sids.learn(byPid, owners, at);
       // Unowned worker-looking children: a pid the runtime has not published yet; ask again
@@ -627,46 +696,6 @@ export class ResourceMonitor {
     }
   }
 
-  /** pi worker pid → its session file, from the live records' names (`p<pid>-*.json`), read
-      only for pi processes nothing else matched, once per process. */
-  private liveRecordPids(live: ReadonlyMap<string, ProcState>, hostedNow: readonly HostedInfo[], at: number): Map<number, string> {
-    const out = new Map<number, string>();
-    if (!this.liveDir) return out;
-    const known = new Set(hostedNow.flatMap((h) => h.workers.map((w) => w.pid)).filter(Boolean));
-    const wanted = [...live.values()].filter((p) => p.argv.kind === "pi-worker" && !known.has(p.stat.pid));
-    if (!wanted.length) return out;
-    if (at - this.liveNamesAt >= 30_000) {
-      this.liveNamesAt = at;
-      this.liveNames.clear();
-      try {
-        for (const name of readdirSync(this.liveDir)) {
-          const m = /^p(\d+)-.*\.json$/.exec(name);
-          if (m) this.liveNames.set(Number(m[1]), name);
-        }
-      } catch { /* no live dir */ }
-    }
-    for (const p of wanted) {
-      const cached = p.liveFile;
-      if (cached) {
-        out.set(p.stat.pid, cached);
-        continue;
-      }
-      if (p.liveRecordChecked) continue;
-      const name = this.liveNames.get(p.stat.pid);
-      if (!name) continue;
-      p.liveRecordChecked = true;
-      try {
-        const rec = JSON.parse(readFileSync(join(this.liveDir, name), "utf8")) as { session?: { sessionFile?: unknown; pid?: unknown } };
-        if (rec.session?.pid === p.stat.pid && typeof rec.session.sessionFile === "string") {
-          const file = canonicalPath(rec.session.sessionFile);
-          p.liveFile = file;
-          out.set(p.stat.pid, file);
-        }
-      } catch { /* mid-write or malformed */ }
-    }
-    return out;
-  }
-
   private hostNumbers(): MonitorSnapshot["host"] {
     const proc = this.scope !== "none";
     const mi = proc ? parseMeminfo(readSync(join(this.procRoot, "meminfo")) ?? "") : new Map<string, number>();
@@ -725,7 +754,8 @@ export class ResourceMonitor {
     loopMs: { p50: number; p99: number; max: number };
   }): MonitorSnapshot {
     const { at, live, fold, owners, inTree, hostedNow, pct } = t;
-    const hostedBy = new Map(hostedNow.map((h) => [h.path, h]));
+    // A worker chat's entry is charged to its parent (attribution), never a session row of its own.
+    const hostedBy = new Map(hostedNow.filter((h) => !h.worker).map((h) => [h.path, h]));
     const procs: MonitorProc[] = [];
     let server: ProcState | undefined;
     let serverKidsPct = 0;
@@ -765,7 +795,7 @@ export class ResourceMonitor {
     const escaped: MonitorProc[] = [];
     const unattributed: MonitorProc[] = [];
     for (const p of procs) {
-      const isEscaped = this.scope === "unit" && !inTree.has(p.pid);
+      const isEscaped = this.scope === "unit" && !inTree.has(p.pid) && !this.outside.has(p.pid);
       if (isEscaped) escaped.push(p);
       if (p.sessionPath) {
         const s = accOf(p.sessionPath);

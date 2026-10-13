@@ -228,9 +228,8 @@ writer**).
     nor Claude Code workers' hooks run the assessment companion, capture a task
     baseline or write a receipt, and none of them has an assessment tool. An
     assessment is an explicit `sova-spec-assess.mjs prepare <name> --base <known rev>`,
-    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`). A spawned
-    worker's `SOVA_SPEC_OWNER_SESSION`/`SOVA_SPEC_WORKER_ID`/`SOVA_SPEC_TEAM_ID` are
-    there for a caller to pass as `--attribution-json`. Receipts and task entries
+    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`); attribution is
+    only what its caller passes as `--attribution-json`. Receipts and task entries
     left by the earlier automatic observer stay as they are; an old native hook state
     keeps its assessment fields unchanged and ignored, while its census fields
     update as usual.
@@ -545,9 +544,11 @@ transcripts carry the mode, never the routing.
   is still running joins it rather than restarting it, so a notice the probe
   owes (entering delegate announces fallbacks) is never dropped. pi models come from
   the session's model registry (with each model's supported thinking levels);
-  Claude models from the `claude-code` backend's `listModels` through the
-  `subagents:backend-discover` contract (a ~1–3 s `claude` initialize call,
-  cached 60 s, 15 s timeout). No worker starts at load or in normal mode.
+  Claude models from Sova's Claude catalog (`claudeOffer()` in
+  `claude-code/catalog.ts`, the list `agent_models` gives, with each model's
+  efforts), since the `claude-code` backend is built into the subagents
+  extension and never registers: no `claude` process, never "not loaded". No
+  worker starts at load or in normal mode.
 - A backend that answers and doesn't list the model, or lists it without that
   effort, makes the tuple unavailable (efforts are never clamped silently). A
   model's efforts are what the backend reported, cut to what the backend accepts
@@ -555,17 +556,15 @@ transcripts carry the mode, never the routing.
   too); nothing usable reported — no list, `[]`, or only efforts the backend
   would refuse — means unconstrained. A
   backend that isn't loaded at all counts as unavailable too — `agent_spawn`
-  would refuse it.
-- **Except a Claude alias the CLI's list omits.** The `claude` initialize model
-  list is remote and account-gated, and alternates within minutes between a
-  shape that carries `opus[1m]` / `claude-fable-5-1[1m]` and one that does not,
-  while the CLI accepts a valid alias at runtime either way (verified on
-  2.1.280). So a shape-valid Claude model (an alias: no `/`, no leading `-`)
-  missing from a successful list is "not verified" and stays in use, exactly
-  like a failed discovery; only a shape-invalid id is refused. pi's registry is
-  local and reliable, so a pi model it doesn't list stays unavailable.
-- **A failed discovery is not absence.** CLI missing, timed out, logged out:
-  the tuple stays in use, "not verified", and spawn has the final word. If a
+  would refuse it (claude-code never is: it is built in).
+- **Except a Claude model the catalog doesn't know.** A model can ship before
+  the catalog lists it, so a shape-valid Claude id (no `/`, no leading `-`, no
+  whitespace) missing from the catalog is "not verified" and stays in use,
+  exactly like a failed discovery; only a shape-invalid id is refused. pi's
+  registry is local and reliable, so a pi model it doesn't list stays
+  unavailable.
+- **A failed discovery is not absence.** A registry that throws, a backend that
+  timed out: the tuple stays in use, "not verified", and spawn has the final word. If a
   spawn then fails on model availability, the prompt says to retry once with
   that profile's fallback and say so, and otherwise ask.
 - The **policy** is re-read per turn: a model or provider it keeps from

@@ -15,7 +15,7 @@ import { matchesKey, type TUI, truncateToWidth, visibleWidth } from "@earendil-w
 import * as fsSync from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ClaudeLogins, DEFAULT_LOGIN_ID, planLabel, recordedLogin } from "../claude-code/accounts.ts";
+import { ClaudeLogins, DEFAULT_LOGIN_ID, defaultAgentDir, planLabel, recordedLogin } from "../claude-code/accounts.ts";
 import { type CacheFile, type ClaudeData, describeErrors, errMessage, firstReadyLogin, refreshCache, type Window } from "./fetch";
 import { ollamaCompact, ollamaDetail } from "./ollama-presentation.ts";
 
@@ -387,7 +387,7 @@ function readGitBranch(cwd: string): string | null {
 
 /** compaction.enabled from global + (trusted) project settings, default true, as pi's SettingsManager. */
 function readAutoCompact(cwd: string, projectTrusted: boolean): boolean {
-	const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(HOME, ".pi/agent");
+	const agentDir = defaultAgentDir();
 	const global = readJsonSync(path.join(agentDir, "settings.json"))?.compaction?.enabled;
 	const project = projectTrusted ? readJsonSync(path.join(cwd, ".pi/settings.json"))?.compaction?.enabled : undefined;
 	const enabled = typeof project === "boolean" ? project : global;

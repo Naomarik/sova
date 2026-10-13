@@ -19,6 +19,7 @@ mkdirSync(cwd, { recursive: true });
 const sessionsDir = join(agentDir, "sessions", "--summary-chat--");
 mkdirSync(sessionsDir, { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats, heldChatState } = await import("./chat-manager");

@@ -64,7 +64,7 @@ before(async () => {
   writeDef(defOf());
   git(["init", "-q", "-b", "main"]);
   commit(".gitignore", "");
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50, selfCheckout: () => self, hostBusy: () => null });
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50, selfCheckout: () => self });
 });
 
 after(async () => {

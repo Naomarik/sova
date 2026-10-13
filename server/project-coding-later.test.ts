@@ -21,6 +21,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
 writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 buildApp({ extensionEntriesOf: async () => [] });
 const orgs = await import("./orgs");

@@ -73,6 +73,7 @@ writeFileSync(
 mkdirSync(join(agentDir, "prompts"), { recursive: true });
 writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a session\n---\nCreate one empty session titled $1.\n");
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
 const { parseModeRequest } = await import("./mode-state");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");
@@ -236,6 +237,18 @@ describe("per-turn caps follow the user's messages", () => {
     const reborn = new TurnLimits(overseerTurnFile());
     assert.equal(reborn.count("create"), 1);
     assert.notEqual(reborn.take("create", caps), null);
+  });
+});
+
+describe("a brief's key (§app.chat-processes/server-messages)", () => {
+  test("a retry of the brief not yet sent is the same message; once sent, the same blockers later are a new one", () => {
+    const { key, sent } = overseer.briefKeyForTest;
+    sent();
+    const first = key("d1", 1000);
+    assert.equal(key("d1", 21_000), first, "the next check retries the same brief");
+    assert.notEqual(key("d2", 21_000), first, "other blockers, another brief");
+    sent();
+    assert.notEqual(key("d1", 7_200_000), first, "the same blockers briefed again later: a new key, whatever the chat remembers");
   });
 });
 
@@ -1161,5 +1174,13 @@ describe("write and edit run only in a turn the user started (§app.overseer/too
       ["edit", { path: settings }, "refused", STATE_WRITE_REFUSAL],
     ]);
     assert.doesNotMatch(JSON.stringify(writes()), /9:00/, "no content in the log");
+  });
+});
+
+describe("the Overseer's memory (§chat.memory/overseer)", () => {
+  test("its runtime runs the same memory engine as a chat's, bound to its own chat", async () => {
+    const chat = await overseerChat();
+    assert.equal(chat.memoryAvailable(), true, "the engine's recall tools are registered");
+    assert.ok(chat.memoryHost(), "the engine's host is the chat's own");
   });
 });

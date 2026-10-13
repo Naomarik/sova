@@ -17,7 +17,6 @@
  */
 import type { Worker } from "./contracts.ts";
 import {
-	LEGACY_REGISTRY_ENTRY_TYPE,
 	WORKER_MANIFEST_ENTRY_TYPE,
 	refFromIdentity,
 	taskPreview,
@@ -29,8 +28,6 @@ import {
 } from "./worker-transcript.ts";
 
 export { WORKER_MANIFEST_ENTRY_TYPE };
-/** The hosted-only record this one replaced; still folded by readWorkerManifests, never written. */
-export const WORKER_REGISTRY_ENTRY_TYPE = LEGACY_REGISTRY_ENTRY_TYPE;
 
 /** What resume needs to start the worker again; written once, at publication. */
 export interface WorkerLaunchSpec {
@@ -52,6 +49,12 @@ export interface WorkerLaunchSpec {
 }
 
 type Append = (customType: string, data: WorkerManifestRecord) => void;
+
+/** The key (and final entry id) of the run a worker chat just settled (chat-worker.ts), written with the settle. */
+const settleField = (worker: Worker, field: "settleKey" | "settleEntryId"): string | undefined => {
+	const value = (worker as { settleKey?: unknown; settleEntryId?: unknown })[field];
+	return typeof value === "string" && value ? value : undefined;
+};
 /** A worker's lifetime usage (any base carried over a resume included). */
 type UsageOf = (worker: Worker) => TokenCounts;
 interface Tracked { identity: string; busy: boolean; finished: boolean }
@@ -149,6 +152,8 @@ export class WorkerRegistryRecorder {
 			status: "waiting",
 			...(worker.taskOutcome ? { taskOutcome: worker.taskOutcome } : {}),
 			settledAt: Date.now(),
+			...(settleField(worker, "settleKey") ? { settleKey: settleField(worker, "settleKey") } : {}),
+			...(settleField(worker, "settleEntryId") ? { settleEntryId: settleField(worker, "settleEntryId") } : {}),
 			usageSnapshot: this.snapshot(worker),
 		});
 	}
@@ -172,14 +177,28 @@ export class WorkerRegistryRecorder {
 	/**
 	 * A restored worker came back idle (agent_resume): clears its ending in the fold. `modes` are the
 	 * ones this start gave it (the parent's current ones), replacing its first start's, empty included.
+	 * `continued` is a resume that could not reopen its session (an older Claude Code worker): its new
+	 * spawn spec and launch replace the old ones, and the old session is kept as `continuedFrom`.
 	 */
-	resumed(worker: Worker, modes?: readonly string[]): void {
+	resumed(worker: Worker, modes?: readonly string[], continued?: { launch?: WorkerLaunchSpec; from: NonNullable<Fields["continuedFrom"]> }): void {
 		const { key, ref } = identity(worker);
 		this.tracked.set(worker.id, { identity: key, busy: false, finished: false });
-		this.write(worker, { resumedAt: Date.now(), status: "waiting", ...(ref ? { ref } : {}), ...(modes ? { modes: [...modes] } : {}) });
+		this.write(worker, {
+			resumedAt: Date.now(), status: "waiting", ...(ref ? { ref } : {}), ...(modes ? { modes: [...modes] } : {}),
+			...(continued ? {
+				spec: {
+					cwd: worker.cwd,
+					...(worker.model === undefined ? {} : { model: worker.model }),
+					...(worker.effort === undefined ? {} : { effort: worker.effort }),
+					...(continued.launch?.tools ? { tools: [...continued.launch.tools] } : {}),
+				} as Fields["spec"],
+				...(continued.launch ? { launch: continued.launch as unknown as Record<string, unknown> } : {}),
+				continuedFrom: continued.from,
+			} : {}),
+		});
 	}
 
-	/** Re-adopted workers were recorded by an earlier instance; continue from their last identity. */
+	/** Reattached workers were recorded by an earlier instance; continue from their last identity. */
 	resume(worker: Worker): void {
 		if (this.tracked.has(worker.id)) return;
 		this.tracked.set(worker.id, { identity: identity(worker).key, busy: !worker.isSettled(), finished: false });

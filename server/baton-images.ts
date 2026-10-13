@@ -8,7 +8,7 @@ import { findTmpImagePaths } from "../shared/tmp-paths";
 import { sessionAttachmentsDir, sniffImageMime } from "./attachments";
 import { batonById, sessionPathOf } from "./baton";
 import { readBatonSettings } from "./baton-settings";
-import { getModelRuntime, heldChat } from "./chat-manager";
+import { chatHandle, getModelRuntime } from "./chat-handle";
 import { readBranch } from "./harness/pi/reader";
 import { stateRoot } from "./state-root";
 import { loadDefaults } from "./web-defaults";
@@ -429,8 +429,7 @@ export function branchModelRef(branch: readonly HEntry[]): string | null {
  */
 export async function sessionSeesImages(row: BatonSession, dir: string, branch?: readonly HEntry[]): Promise<boolean> {
   const path = sessionPathOf(dir, row);
-  const held = heldChat(path);
-  const model = held?.harness.model();
+  const model = chatHandle(path)?.mirror.model;
   if (model) return model.images;
   const b = branch ?? (await readBranch(path).catch(() => []));
   const ref = branchModelRef(b) ?? row.model ?? loadDefaults().model ?? null;

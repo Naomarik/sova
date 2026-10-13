@@ -24,6 +24,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { Hono } = await import("hono");
 // fd and rg in-process (server/search-tools-fake.ts; overseer-file-tools.integration.test.ts runs the real ones).
 (await import("./overseer-file-tools")).setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
@@ -48,6 +49,7 @@ const { registerProjectOverseerRoutes } = await import("./project-overseer-route
 const { registerProjectRoutes } = await import("./projects/routes");
 const { registerDecisionRoutes } = await import("./decisions-routes");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { specialHostOf } = await import("./chat-handle");
 const { settled } = await import("./workspace-git");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
@@ -610,9 +612,9 @@ describe("archive a project (§app.organizations/archive)", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     await setProjectArchived(project.id, true);
     const chat = await acquireChat(path);
-    assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");
+    assert.equal(specialHostOf("project-overseer")!.composerClosed!(path), "Old Site is archived. Unarchive it to use its overseer.");
     await setProjectArchived(project.id, false);
-    assert.equal(chat.specialEntry?.composerClosed?.(path), null);
+    assert.equal(specialHostOf("project-overseer")!.composerClosed!(path), null);
   });
 });
 

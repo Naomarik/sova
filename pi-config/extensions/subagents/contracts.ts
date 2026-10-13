@@ -57,7 +57,10 @@ export interface Worker {
 	 * Termination contract: whenClosed resolves (and isFinished() becomes true)
 	 * only after the owned process is confirmed gone. kill()/dispose() should
 	 * resolve at that point too, but the manager does not rely on it: it releases
-	 * ownership (live-cap slot, shutdown disposal) only at whenClosed.
+	 * ownership (live-cap slot, shutdown disposal) only at whenClosed. A worker
+	 * whose process the host keeps (a chat worker, chat-worker.ts) resolves
+	 * whenClosed on dispose() once it lets go: its process runs on, and the next
+	 * manager picks it back up.
 	 */
 	kill(reason?: string): Promise<void>;
 	dispose(): Promise<void>;

@@ -25,11 +25,11 @@ runs it through npx), curl, and unzip or python3. The installer downloads the Bu
 tested on into its own folder.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 ```
 
-Until the first release is tagged, this installs the `master` branch; running it again updates to
-master's latest commit.
+This installs the newest stable release; running it again updates to the newest stable release
+then (or the latest of the `SOVA_REF` you set: `| SOVA_REF=v0.2.0 bash` stays on one release).
 
 Then click **Sova** in your app launcher (or run `sova open`): it starts the server if it isn't
 running and opens **http://127.0.0.1:4800** already unlocked, in a window of its own when Chrome,
@@ -49,8 +49,8 @@ your existing pi provider login.
   [Delegate](pi-config/extensions/mode/README.md) and [workers](pi-config/extensions/subagents/README.md).
 - **Agree on the plan before anything gets built.** With align on, the agent records each agreement
   as an alignment: findings, approach, rejected alternatives, and open questions with its
-  recommendations. An experimental adversarial review (Settings → Experimental) has a fresh,
-  read-only reviewer check the plan and the finished diff.
+  recommendations. An optional adversarial review (Settings → Alignment) has a fresh,
+  read-only reviewer check the plan and the diff of risky work.
 - **Work in worktrees. Review changes as steps.** A session tracks the git worktrees it works in;
   ask it to create, attach, detach, or merge one, and each merge lands as a card. The changes viewer
   shows what a session or worktree changed, read-only, as numbered steps, each with the agent's
@@ -72,7 +72,7 @@ your existing pi provider login.
   [targets](pi-config/extensions/remote/README.md); a usage page and a resource monitor
   that charges load to the session that caused it; model rules (which models this machine and its
   subagents may use, and how many requests each provider runs at once); and local voice input (set
-  up in Settings → Voice).
+  up in Settings → Voice); and a memory minor mode that lets a long chat outgrow its context.
 - **Beyond one machine (preview).** The [mesh](docs/mesh.md) lists and drives sessions on every Sova
   host on your tailnet from any one page; every host in a mesh must be reachable by the same
   devices. Organizations ask the people you work with through their own links, and keep what they

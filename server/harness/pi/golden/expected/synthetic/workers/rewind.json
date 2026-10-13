@@ -17,7 +17,7 @@
         "type": "sova-rewind",
         "data": {
           "targetId": "o0000002",
-          "fromLeafId": "o000000d"
+          "fromLeafId": "o000000c"
         }
       }
     ]
@@ -95,14 +95,6 @@
     "marks": []
   },
   "o000000c": {
-    "outcome": {
-      "ok": false,
-      "reason": "not_on_branch",
-      "message": "That input is not on this chat's current branch anymore."
-    },
-    "marks": []
-  },
-  "o000000d": {
     "outcome": {
       "ok": false,
       "reason": "not_on_branch",

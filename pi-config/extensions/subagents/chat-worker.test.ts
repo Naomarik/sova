@@ -600,6 +600,45 @@ test("a death while a steer awaits its acceptance leaves that steer to its send'
 	await h.worker.dispose();
 });
 
+test("a steer that ran on an unkeyed feed is never reported as never run after its worker moves to keyed code and dies", async () => {
+	const h = make({}, {}, undefined, "legacy");
+	await boot(h);
+	h_start(h);
+	assert.equal((await h.worker.steer("go on")).ok, true);
+	// Delivered on the unkeyed feed: the text match begins its run.
+	userMessage(h, "go on");
+	assistant(h, "went on");
+	settleRun(h);
+	assert.equal(h.counts.snapshots.at(-1)!.finalOutput, "went on");
+	// The worker reloads onto code with keys (a new process, keys: true), then dies mid-run.
+	h.host.newProcess(h.chatId());
+	h.host.state(h.chatId(), { keys: true });
+	h.host.end(h.chatId(), { cause: "died", detail: "This worker's process stopped unexpectedly (signal KILL)", resuming: true });
+	assert.ok(!h.worker.transcript.some((t) => /accepted but never ran/.test(t.text)), JSON.stringify(h.worker.transcript.map((t) => t.text)));
+	await h.worker.dispose();
+});
+
+test("a keyed steer delivered after its worker's feed turned unkeyed is never reported as never run when keyed code later dies", async () => {
+	const h = make({}, {}, undefined, "keyed");
+	await boot(h);
+	h_start(h);
+	assert.equal((await h.worker.steer("go on")).ok, true);
+	// A process on code from before keys takes over (its state names none) and runs the steer, matched by its text.
+	h.host.newProcess(h.chatId());
+	h.host.state(h.chatId(), { keys: undefined });
+	h.feed = "legacy";
+	userMessage(h, "go on");
+	assistant(h, "went on");
+	settleRun(h);
+	assert.equal(h.counts.snapshots.at(-1)!.finalOutput, "went on");
+	// Keyed code again, then a death: the steer that ran is not reported.
+	h.host.newProcess(h.chatId());
+	h.host.state(h.chatId(), { keys: true });
+	h.host.end(h.chatId(), { cause: "died", detail: "This worker's process stopped unexpectedly (signal KILL)", resuming: true });
+	assert.ok(!h.worker.transcript.some((t) => /accepted but never ran/.test(t.text)), JSON.stringify(h.worker.transcript.map((t) => t.text)));
+	await h.worker.dispose();
+});
+
 test("an unkeyed feed's process death keeps today's report: no never-ran line", async () => {
 	const h = make({}, {}, undefined, "legacy");
 	await boot(h);

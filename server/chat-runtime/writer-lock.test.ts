@@ -2,7 +2,7 @@
 // held against everyone (this process too), a dead or reused holder's lock is taken over, and a
 // release never removes a lock taken over since.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -78,4 +78,24 @@ test("on macOS a process's start time is ps's lstart (the detached driver's cloc
   // A lock file written so is read back as it was.
   writeFileSync(lockFileOf("/s/f.jsonl", dir), JSON.stringify({ pid: DEAD_PID, start: "Mon Oct 13 02:00:01 2026", at: 1, unit: null, path: "/s/f.jsonl" }));
   assert.equal(readLock("/s/f.jsonl", dir)?.start, "Mon Oct 13 02:00:01 2026");
+});
+
+test("a lock is published whole: a failed write publishes none; one left unreadable by a crash is taken over once 10 s old, refused before", () => {
+  // The write fails (here: something in the way of its temporary file): no lock, and the next take works.
+  const blocker = `${lockFileOf("/s/g.jsonl", dir)}.${process.pid}.tmp`;
+  mkdirSync(blocker);
+  assert.throws(() => takeWriterLock("/s/g.jsonl", { dir }));
+  assert.equal(existsSync(lockFileOf("/s/g.jsonl", dir)), false, "nothing published");
+  rmSync(blocker, { recursive: true });
+  takeWriterLock("/s/g.jsonl", { dir }).release();
+  assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith(".tmp")), [], "no temporary file left");
+  // Empty, as an older process's crash between create and write leaves it: held while fresh, taken over once old.
+  const file = lockFileOf("/s/h.jsonl", dir);
+  writeFileSync(file, "");
+  assert.throws(() => takeWriterLock("/s/h.jsonl", { dir }), (e) => e instanceof WriterLockHeld && e.holder.pid === 0);
+  const old = (Date.now() - 11_000) / 1000;
+  utimesSync(file, old, old);
+  const lock = takeWriterLock("/s/h.jsonl", { dir });
+  assert.equal(readLock("/s/h.jsonl", dir)?.pid, process.pid);
+  lock.release();
 });

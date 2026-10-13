@@ -1,13 +1,14 @@
 // One writer per session file (al_3 stage 2): whichever process hosts a chat (a chat process, or the
 // server for a chat in its own process) holds a lock file for it while the chat is open, so a chat
 // is never hosted twice: a spawn for a path the server holds fails safe, and so does the reverse.
-// The lock is `<state root>/chats/locks/<sha256(path)[0..16]>.lock`, created O_EXCL, holding
+// The lock is `<state root>/chats/locks/<sha256(path)[0..16]>.lock`, published whole by a hard link
+// (EEXIST: held), holding
 // `{pid, start, at, unit, path}`; `start` is the process's start time (field 22 of /proc/<pid>/stat
 // on Linux, `ps -o lstart=` elsewhere: the clock the detached driver records), so a reused pid never
 // reads as the holder. A lock whose process is gone is
 // stale: it is taken over.
 import { createHash } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { psTable, realSyncExec, type SyncExec } from "../project-services/proctable";
 import { chatStateRoot } from "../state-root";
@@ -92,6 +93,18 @@ export function releaseLockOf(path: string, holder: Pick<WriterLockInfo, "pid" |
   return true;
 }
 
+/** An unreadable lock this old is a crash's leftover (an older process died between creating it and
+    writing it); younger, it may be a holder mid-write: held. */
+const UNREADABLE_STALE_MS = 10_000;
+
+function unreadableAndOld(file: string): boolean {
+  try {
+    return Date.now() - statSync(file).mtimeMs >= UNREADABLE_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
 export interface WriterLock {
   readonly info: WriterLockInfo;
   /** Let go of it (once; a lock taken over since is left alone). */
@@ -107,24 +120,32 @@ export function takeWriterLock(path: string, opts: { unit?: string | null; dir?:
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = lockFileOf(path, dir);
   const info: WriterLockInfo = { pid: process.pid, start: startOf(process.pid), at: Date.now(), unit: opts.unit ?? null, path };
-  for (let attempt = 0; ; attempt++) {
-    let fd: number;
+  // Published whole: written to a file of this process's own, then linked into place (EEXIST if held).
+  // A leftover of that name (a crash after its link) may be another lock's other name: unlinked, never written through.
+  const tmp = `${file}.${process.pid}.tmp`;
+  const dropTmp = () => {
     try {
-      fd = openSync(file, "wx", 0o600);
+      rmSync(tmp, { force: true });
+    } catch {
+      // not a file: the write below fails and says so
+    }
+  };
+  for (let attempt = 0; ; attempt++) {
+    dropTmp();
+    try {
+      writeFileSync(tmp, JSON.stringify(info), { mode: 0o600, flag: "wx" });
+      linkSync(tmp, file);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       const held = readLock(path, dir);
-      // Unreadable: a holder mid-write. Its own process is alive (it just created it): held.
-      if (held && !holderAlive(held) && attempt === 0) {
+      // Unreadable and fresh: an older process mid-write (it created the file before writing): held.
+      if ((held ? !holderAlive(held) : unreadableAndOld(file)) && attempt === 0) {
         rmSync(file, { force: true });
         continue;
       }
       throw new WriterLockHeld(held ?? { pid: 0, start: null, at: 0, unit: null, path });
-    }
-    try {
-      writeSync(fd, JSON.stringify(info));
     } finally {
-      closeSync(fd);
+      dropTmp();
     }
     let released = false;
     return {

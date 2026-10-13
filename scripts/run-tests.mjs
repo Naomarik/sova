@@ -43,7 +43,8 @@
 // falls back to KNOWN_SLOW, then to its alphabetical place. The run ends with the 10 slowest files.
 // Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
 // process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -211,6 +212,20 @@ function changedOnly(files, base) {
 // The temp dir every test file shares (server/test-ports.ts keeps its cross-process port locks there):
 // this runner's own, before each runtime gives the files a throwaway TMPDIR. An outer runner's wins.
 process.env.SOVA_TEST_SHARED_TMP ||= os.tmpdir();
+
+// The chat processes a test's server starts (§app/chat-processes) run as units in a slice of this run's
+// own, never the live sova-chats.slice, and the slice is stopped when the run ends (its exit, which the
+// signal handlers reach too): a server stop leaves its chats running, by design, so nothing else would.
+// An outer run's test slice is kept (a run inside a test); any other inherited slice is not. No dash in
+// its name: systemd nests a dashed slice under parents (sova.slice, …) that would stay behind.
+if (!/^sova_test_[A-Za-z0-9_]+\.slice$/.test(process.env.SOVA_CHAT_SLICE ?? "")) {
+  const slice = `sova_test_${process.pid}_${randomBytes(3).toString("hex")}.slice`;
+  process.env.SOVA_CHAT_SLICE = slice;
+  process.on("exit", () => {
+    // No user manager (macOS, a container): nothing to stop.
+    spawnSync("systemctl", ["--user", "stop", slice], { stdio: "ignore", timeout: 60_000 });
+  });
+}
 
 if (runtime === "node") {
   // A pass still running after NODE_PASS_LIMIT_MS is stuck (seen: a file whose tests all reported

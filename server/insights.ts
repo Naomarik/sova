@@ -59,7 +59,7 @@ import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
-import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
+import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). The one writer is the shared usage cache: through
@@ -639,7 +639,7 @@ function lastKnown(p: UsageProvider): UsageProvider {
 
 const TEAM_ENTRY = "subagents-team-v1";
 /** The durable per-worker records the protocol fold reads (readWorkerManifests). */
-const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE, LEGACY_REGISTRY_ENTRY_TYPE]);
+const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE]);
 /** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
 const EXPLAIN_ENTRY = "explain-doc";
 const TEAM_ID = /^team_\d+$/;

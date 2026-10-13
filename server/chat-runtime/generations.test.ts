@@ -236,6 +236,22 @@ test("no collection on a root set by SOVA_CHAT_CODE_ROOT, which other servers ma
   assert.match(lines.join("\n"), /not collected under SOVA_CHAT_CODE_ROOT \(\/shared\)/);
 });
 
+test("SOVA_CHAT_CODE_GC=on: a root set by SOVA_CHAT_CODE_ROOT that is this server's alone is collected", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-old" }), log: quiet });
+    await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
+    age(old.dir, 60 * 60_000);
+    const gc = startGenerationGc(() => [], { env: { SOVA_CHAT_CODE_ROOT: root, SOVA_CHAT_CODE_GC: "on" }, log: quiet });
+    await gc.collect();
+    gc.stop();
+    assert.ok(!existsSync(old.dir));
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
 test("a build id that is no directory name is hashed", () => {
   assert.equal(generationDir("abc+12345678", "/r"), "/r/abc+12345678");
   assert.match(generationDir("../x", "/r"), /^\/r\/h-[0-9a-f]{16}$/);

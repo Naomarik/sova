@@ -2026,11 +2026,14 @@
         "src/lib/older-rows-view.browser.test.ts",
         "server/ws.test.ts",
         "server/tail-hello.test.ts",
-        "server/tail-hello.integration.test.ts"
+        "server/tail-hello.integration.test.ts",
+        "src/lib/unacked-sends.ts",
+        "src/lib/unacked-sends.test.ts",
+        "scripts/e2e/instant-open.mjs"
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-13T15:33Z"
+        "at": "2026-10-13T18:51Z"
       },
       "evidence": "verified"
     },

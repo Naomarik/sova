@@ -85,13 +85,13 @@ async function setup(o: { build?: string; serverBuild?: string; settings?: Parti
   const exits: ExitCause[] = [];
   const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: o.build ?? "b1", startedAt: 1, exit: (c) => exits.push(c), log: o.log ?? quiet, tickMs: 60_000 });
   const settings = { ...DEFAULT_RUNTIME_SETTINGS, ...o.settings };
-  const connect = (since: number | null = null, build = o.serverBuild ?? o.build ?? "b1", proto = o.proto ?? CHAT_WIRE_PROTO) => {
+  const connect = (since: number | null = null, build = o.serverBuild ?? o.build ?? "b1", proto = o.proto ?? CHAT_WIRE_PROTO, serverPid = 1) => {
     const [a, b] = pair();
     const runtimeEnd = new Link(a as never, { log: quiet });
     const server = new Link(b as never, { log: quiet });
     const e = ++epoch;
     runtimeEnd.peerProto = proto; // as serveLink sets it from the control
-    host.onControl(runtimeEnd, { t: "control", proto, epoch: e, serverPid: 1, serverStartedAt: 1, build, since, settings });
+    host.onControl(runtimeEnd, { t: "control", proto, epoch: e, serverPid, serverStartedAt: 1, build, since, settings });
     return { server, runtimeEnd, epoch: e, drop: () => (a.destroy(), b.destroy()) };
   };
   const ctl = connect();
@@ -511,6 +511,46 @@ test("code: Reload now while quiet, then a reply before its drain: refused, the 
   tick();
   await settle();
   assert.deepEqual(reloads, [{ t: "reload.request", auto: false }, { t: "reload.request", auto: false }]);
+});
+
+test("code: a reload, or its failure, ends with the server that ran it: the next server sees plain older code and asks again", async () => {
+  const t = await setup({ build: "a", serverBuild: "b" });
+  const check = () => (t.host as unknown as { check(): void }).check();
+  t.ctl.server.send({ t: "push", kind: "code", state: "reloading" });
+  await settle();
+  // The same server's link coming back: its reload still runs.
+  t.ctl.drop();
+  await settle();
+  const same = t.connect(null, "b");
+  const sameStates = collect(same.server, "state");
+  const sameReloads = collect(same.server, "reload.request");
+  await settle();
+  check();
+  await settle();
+  assert.equal(sameStates.at(-1)?.mirror.code.state, "reloading");
+  assert.equal(sameReloads.length, 0);
+  // The server restarts mid-reload: the next one (another pid) sees older code, and nobody attached, so it is asked at once.
+  same.drop();
+  await settle();
+  const next = t.connect(null, "b", undefined, 2);
+  const nextStates = collect(next.server, "state");
+  const nextReloads = collect(next.server, "reload.request");
+  await settle();
+  check();
+  await settle();
+  assert.equal(nextStates.at(-1)?.mirror.code.state, "older");
+  assert.deepEqual(nextReloads, [{ t: "reload.request", auto: true }]);
+  // That reload fails; the server after it starts clean too.
+  next.server.send({ t: "push", kind: "code", state: "failed", detail: "boom" });
+  await settle();
+  next.drop();
+  await settle();
+  const third = t.connect(null, "b", undefined, 3);
+  const thirdStates = collect(third.server, "state");
+  await settle();
+  check();
+  await settle();
+  assert.equal(thirdStates.at(-1)?.mirror.code.state, "older");
 });
 
 test("code: workers in processes of their own never hold a reload (they're reattached); another backend's working worker does; idle stop waits for both", async () => {

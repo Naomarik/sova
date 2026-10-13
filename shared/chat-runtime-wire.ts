@@ -338,7 +338,7 @@ export type WorkerHostWire =
   | { t: "wk.watch"; chatId: string; cursor: WorkerCursor | null }
   | { t: "wk.unwatch"; chatId: string }
   | { t: "wk.result"; id: string; ok: true; result: unknown }
-  | { t: "wk.result"; id: string; ok: false; error: { message: string } }
+  | { t: "wk.result"; id: string; ok: false; error: { message: string; code?: string } }
   | { t: "wk.feed"; chatId: string; frame: WorkerFeedFrame };
 
 export type ChatWireFrame =

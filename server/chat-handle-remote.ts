@@ -6,7 +6,7 @@
 // browser frames pass through unparsed. Its server-hosted tools run here and its asks are answered
 // from this server's own sources.
 import { randomUUID } from "node:crypto";
-import type { ChatCall, ChatId, ChatMethod, ChatMethods, ChatReply, ServerToolCall } from "../shared/chat-runtime";
+import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type ChatReply, noAnswer, type ServerToolCall } from "../shared/chat-runtime";
 import type { ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
 import type { ChatClientMessage } from "../shared/protocol";
@@ -136,7 +136,7 @@ export class RemoteChatHandle extends ChatHandle {
       p.resend = false;
       if (!link.send({ t: "call", call: p.call })) {
         this.pending.delete(id);
-        p.reject(new Error(UNREACHABLE));
+        p.reject(noAnswer(UNREACHABLE));
       }
     }
     this.relinked?.resolve();
@@ -214,11 +214,11 @@ export class RemoteChatHandle extends ChatHandle {
   }
 
   private failPending(): void {
-    for (const p of this.pending.values()) p.reject(new Error(UNREACHABLE));
+    for (const p of this.pending.values()) p.reject(noAnswer(UNREACHABLE));
     this.pending.clear();
-    for (const b of this.backs.values()) b.reject(new Error(UNREACHABLE));
+    for (const b of this.backs.values()) b.reject(noAnswer(UNREACHABLE));
     this.backs.clear();
-    this.relinked?.reject(new Error(UNREACHABLE));
+    this.relinked?.reject(noAnswer(UNREACHABLE));
     this.relinked = null;
   }
 
@@ -231,9 +231,9 @@ export class RemoteChatHandle extends ChatHandle {
         continue;
       }
       this.pending.delete(id);
-      p.reject(new Error(UNREACHABLE));
+      p.reject(noAnswer(UNREACHABLE));
     }
-    for (const b of this.backs.values()) b.reject(new Error(UNREACHABLE));
+    for (const b of this.backs.values()) b.reject(noAnswer(UNREACHABLE));
     this.backs.clear();
     // Those kept for a resend fail too unless the link is back in time.
     if ([...this.pending.values()].some((p) => p.resend)) void this.waitRelink().catch(() => this.failPending());
@@ -253,7 +253,7 @@ export class RemoteChatHandle extends ChatHandle {
       const promise = new Promise<void>((res, rej) => ((resolve = res), (reject = rej)));
       const timer = setTimeout(() => {
         if (this.relinked?.promise === promise) this.relinked = null;
-        reject(new Error(UNREACHABLE));
+        reject(noAnswer(UNREACHABLE));
       }, RELINK_WAIT_MS);
       timer.unref?.();
       void promise.then(
@@ -305,13 +305,13 @@ export class RemoteChatHandle extends ChatHandle {
     // A chat whose link is down while its handle lives (reconnecting, a reload's swap) is waited for.
     if (!this.link.isOpen && !this.ended) await this.waitRelink();
     // A handle that ended (the process died, exited or was let go) takes no command: the next open starts afresh.
-    if (!this.link.isOpen || this.ended) throw new Error(UNREACHABLE);
+    if (!this.link.isOpen || this.ended) throw noAnswer(UNREACHABLE);
     const call: ChatCall<M> = { id: `${this.epoch}:${++this.calls}`, epoch: this.epoch, chatId: this.chatId, method, args };
     return new Promise((resolve, reject) => {
       this.pending.set(call.id, { call: call as ChatCall, resend: false, resolve: resolve as (v: unknown) => void, reject });
       if (!this.link.send({ t: "call", call: call as ChatCall })) {
         this.pending.delete(call.id);
-        reject(new Error(UNREACHABLE));
+        reject(noAnswer(UNREACHABLE));
       }
     });
   }
@@ -424,7 +424,7 @@ export class RemoteChatHandle extends ChatHandle {
           this.backs.set(id, { resolve, reject });
           if (!link.send({ t: "tool.back", id, effectId: call.effectId, ...frame } as FrameOf<"tool.back">)) {
             this.backs.delete(id);
-            reject(new Error(UNREACHABLE));
+            reject(noAnswer(UNREACHABLE));
           }
         });
       const outcome = await deliverServerToolCall(call, {

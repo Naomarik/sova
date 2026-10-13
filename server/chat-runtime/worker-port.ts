@@ -6,7 +6,7 @@
 // server for serverToolWaitMs an op fails with NOT_RUN_NO_SERVER.
 import type { FrameOf } from "../../shared/chat-runtime-wire";
 import { NOT_RUN_NO_SERVER } from "../../shared/chat-runtime-wire";
-import type { WorkerCursor, WorkerFeedFrame, WorkerHost, WorkerRef, WorkerStart } from "../../shared/chat-runtime";
+import { noAnswer, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerRef, type WorkerStart } from "../../shared/chat-runtime";
 import type { Link } from "./link";
 
 /** The protocol that carries worker chats and the worker host. */
@@ -83,7 +83,7 @@ export class LinkWorkerHost {
     p.timer = setTimeout(() => {
       if (this.ops.get(p.id) !== p) return;
       this.ops.delete(p.id);
-      p.reject(new Error(NOT_RUN_NO_SERVER));
+      p.reject(noAnswer(NOT_RUN_NO_SERVER));
     }, this.waitMs());
     p.timer.unref?.();
   }
@@ -103,7 +103,7 @@ export class LinkWorkerHost {
     this.ops.delete(f.id);
     if (p.timer) clearTimeout(p.timer);
     if (f.ok) p.resolve(f.result);
-    else p.reject(new Error(f.error.message));
+    else p.reject(Object.assign(new Error(f.error.message), f.error.code ? { code: f.error.code } : {}));
   }
 
   private feed(f: FrameOf<"wk.feed">): void {

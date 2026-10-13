@@ -7,7 +7,7 @@
 // each recorded process is.
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { WorkerCursor, WorkerFeedFrame, WorkerHost, WorkerKind, WorkerRef, WorkerSpec, WorkerStart, WorkerState } from "../shared/chat-runtime";
+import { isNoAnswer, NO_ANSWER, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSpec, type WorkerStart, type WorkerState } from "../shared/chat-runtime";
 import type { FrameOf } from "../shared/chat-runtime-wire";
 import { CRASH_RESUME_TEXT } from "./auto-resume";
 import { acquireChatHandle } from "./chat-handle";
@@ -655,7 +655,10 @@ export class WorkerRegistry {
     };
     void run().then(
       (result) => parent.sendWorker({ t: "wk.result", id: f.id, ok: true, result: result ?? null }),
-      (err) => parent.sendWorker({ t: "wk.result", id: f.id, ok: false, error: { message: err instanceof Error ? err.message : String(err) } }),
+      (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        parent.sendWorker({ t: "wk.result", id: f.id, ok: false, error: { message, ...(isNoAnswer(err) ? { code: NO_ANSWER } : {}) } });
+      },
     );
   }
 

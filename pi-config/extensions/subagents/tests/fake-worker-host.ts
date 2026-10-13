@@ -42,7 +42,7 @@ export interface FakeWorkerHostOptions {
 	/** Make a start throw (after recording it), e.g. the server's "Workers need Bun …". */
 	failStart?: (req: WorkerStart) => string | undefined;
 	/** Make a send throw (after recording it). */
-	failSend?: (chatId: string, input: SendInput) => string | undefined;
+	failSend?: (chatId: string, input: SendInput) => string | Error | undefined;
 	/** Settle the task right after a start with this final text (no scripting needed). */
 	autoReply?: (req: WorkerStart) => string | undefined;
 }
@@ -122,7 +122,7 @@ export class FakeWorkerHost implements WorkerHost {
 		if (w.ref.state === "ended") throw new Error(`${w.ref.workerId} has ended`);
 		w.sends.push(input);
 		const failed = this.options.failSend?.(chatId, input);
-		if (failed) throw new Error(failed);
+		if (failed) throw typeof failed === "string" ? new Error(failed) : failed;
 		if (w.ref.state === "idle") w.ref.state = "open";
 		return { queued: w.state.status === "running" };
 	}

@@ -10,7 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ChatWorker, lastSettledRun, sessionDirName, workerStartOf } from "./chat-worker.ts";
 import type { SpawnOptions } from "./runner.ts";
-import type { WorkerHost, WorkerRef } from "./worker-host.ts";
+import { noAnswer, type WorkerHost, type WorkerRef } from "./worker-host.ts";
 import { FakeWorkerHost, type FakeWorkerHostOptions } from "./tests/fake-worker-host.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
 
@@ -246,7 +246,7 @@ test("a rejected steer reports ok:false and changes nothing (its marker rolled b
 test("a steer the server never answers leaves the worker running and unstopped, reports delivery unknown, and sends nothing again", async () => {
 	let down = true;
 	const NO_SERVER = "The Sova server isn't answering, so this action didn't run. Try it again in a minute.";
-	const h = make({}, { failSend: () => (down ? NO_SERVER : undefined) });
+	const h = make({}, { failSend: () => (down ? noAnswer(NO_SERVER) : undefined) });
 	await boot(h);
 	assistant(h, "working");
 	const r = await h.worker.steer("new plan");
@@ -277,7 +277,7 @@ test("a steer the server never answers leaves the worker running and unstopped, 
 });
 
 test("an idle worker whose steer goes unanswered stays waiting with its last outcome", async () => {
-	const h = make({}, { failSend: () => "The Sova server isn't answering, so this action didn't run. Try it again in a minute." });
+	const h = make({}, { failSend: () => noAnswer("The Sova server isn't answering, so this action didn't run. Try it again in a minute.") });
 	await boot(h);
 	assistant(h, "answer");
 	settle(h);

@@ -14,7 +14,7 @@
 //   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
 //   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
-//   restart-check         is a restart needed? prints the systemctl restart line when one is (busy sessions never hold it)
+//   restart-check         is a restart needed? prints the restart line when one is (systemctl; macOS launchctl kickstart; busy sessions never hold it)
 //   report                the round report's skeleton
 //
 // Exit 0: go. Exit 1: something to act on or decide. Exit 2: couldn't tell; fail closed.
@@ -569,6 +569,7 @@ class Round {
     this.healthUrl = process.env.SOVA_ROUND_HEALTH_URL || "http://127.0.0.1:4800/api/health";
     this.floorOverride = Number(process.env.SOVA_ROUND_FLOOR_MS) || 0;
     this.lockPollMs = Number(process.env.SOVA_ROUND_LOCK_POLL_MS) || 5000;
+    this.platform = process.env.SOVA_ROUND_PLATFORM || process.platform;
     this.settings = this.readSettings();
     this.mask = maskerOf(this.settings.names);
     this.now = Date.now();
@@ -1300,7 +1301,9 @@ class Round {
     this.event("restart-check", { pending });
     this.saveState();
     if (!pending) return { exit: 0, lines: [needLine, "No restart pending."], next: "round.mjs report" };
-    const lines = [needLine, "Restart the live server (chats, workers and replies run on through it):", `systemctl --user restart ${unit}`, "If it fails, ask the user to restart; never another way."];
+    // macOS: the unit is a launchd agent whose label is the unit's name without .service (as self-host's launchdTargetOf).
+    const restart = this.platform === "darwin" ? `launchctl kickstart -k gui/${process.getuid()}/${unit.replace(/\.service$/, "")}` : `systemctl --user restart ${unit}`;
+    const lines = [needLine, "Restart the live server (chats, workers and replies run on through it):", restart, "If it fails, ask the user to restart; never another way."];
     return { exit: 0, lines, next: "that call, then the report; the next start confirms the head it came back on" };
   }
 

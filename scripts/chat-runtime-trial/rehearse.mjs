@@ -84,14 +84,30 @@ const lockTo = (() => {
     return "";
   }
 })();
-const lockDiffers = lockFrom !== lockTo;
-if (lockDiffers && !argv.includes("--allow-lock-diff")) refuse(`pnpm-lock.yaml differs between ${FROM} (the checkout's node_modules) and ${TO}: F would run on master's dependencies. Install F's after the switch, or pass --allow-lock-diff to go on and note it`);
+const depsOf = (text) => {
+  try {
+    const j = JSON.parse(text);
+    return JSON.stringify(["dependencies", "devDependencies", "optionalDependencies"].map((k) => Object.entries(j[k] ?? {}).sort()));
+  } catch {
+    return "unreadable";
+  }
+};
+const pkgFrom = existsSync(join(checkout, "package.json")) ? depsOf(readFileSync(join(checkout, "package.json"), "utf8")) : "missing";
+const pkgTo = (() => {
+  try {
+    return depsOf(execFileSync("git", ["-C", REPO, "show", `${TO}:package.json`], { encoding: "utf8" }));
+  } catch {
+    return "missing";
+  }
+})();
+const lockDiffers = lockFrom !== lockTo || pkgFrom !== pkgTo;
+if (lockDiffers && !argv.includes("--allow-lock-diff")) refuse(`${lockFrom !== lockTo ? "pnpm-lock.yaml" : "package.json's dependencies"} differ between ${FROM} (the checkout's node_modules) and ${TO}: F would run on master's dependencies. Install F's after the switch, or pass --allow-lock-diff to go on and note it`);
 writeFileSync(join(R, "rehearsal-used"), `${new Date().toISOString()} ${VARIANT} ${FROM} → ${toRev}\n`);
 
 const Rec = recorder(join(R, `rehearsal-${VARIANT}.json`));
 const RUN_START = Date.now();
 console.log(`rehearse: ${VARIANT}, ${FROM} → ${toRev}, scratch ${R}`);
-if (lockDiffers) Rec.note(`pnpm-lock.yaml differs between ${FROM} and ${toRev}: F runs on ${FROM}'s node_modules (--allow-lock-diff)`);
+if (lockDiffers) Rec.note(`the lockfile or package.json's dependencies differ between ${FROM} and ${toRev}: F runs on ${FROM}'s node_modules (--allow-lock-diff)`);
 
 // ── the session file, read as the trial does ─────────────────────────────────────────────────────────
 const lines = (f) => {

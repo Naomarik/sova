@@ -637,7 +637,10 @@ async function t4() {
     if (chatPid(B.path) !== pidB) break;
     await sleep(500);
   }
-  R.check(mockLog(mock.log).some((e) => e.event === "done" && e.tag === bTag) && turnAssistants(B.path, `[long 30 #${bTag}]`).length === 1, "t4: B's reply ran to its end, never cut by a reload");
+  // The mock's "done" comes as the stream ends; the chat writes its assistant entry a moment later.
+  await waitFor(() => turnAssistants(B.path, `[long 30 #${bTag}]`).length > 0, 10000, 200);
+  const bMsgs = turnAssistants(B.path, `[long 30 #${bTag}]`);
+  R.check(mockLog(mock.log).some((e) => e.event === "done" && e.tag === bTag) && !mockLog(mock.log).some((e) => e.event === "cut-off" && e.tag === bTag) && bMsgs.length === 1 && bMsgs[0].stopReason !== "aborted", `t4: B's reply ran to its end, never cut by a reload (assistant entries ${bMsgs.map((m) => m.stopReason).join(", ") || "none"})`);
   await waitReloaded(B.path, pidB);
   const recB = record(B.path);
   R.check(chatPid(B.path) && chatPid(B.path) !== pidB && recB?.build === "trial-b", `t4: B (Reload now while busy) reloaded at its quiet moment (pid ${pidB} → ${chatPid(B.path)}, build ${recB?.build})`);

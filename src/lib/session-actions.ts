@@ -1,5 +1,5 @@
-// One-session writes that more than one surface offers (the sidebar's selection toolbar, the
-// session pane, the Agents board): the request, and the one sentence it ends with.
+// One-session writes that more than one surface offers (the session pane, the Agents board): the
+// request, and the one sentence it ends with.
 
 import type { SessionSummary } from "../../shared/protocol";
 import { setSessionArchived, setSessionTitle } from "./api";

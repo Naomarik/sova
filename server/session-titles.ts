@@ -33,7 +33,7 @@ export function cleanSessionTitle(raw: unknown): string | null {
 }
 
 /**
- * One stored title and who set it (§app.session-list/selecting-several-sessions). The file is
+ * One stored title and who set it. The file is
  * version 2: `titles[id]` is a bare string — a title stored before provenance existed, which
  * counts as explicit — or `{title, by, at}`. Only `by: "auto"` may ever be replaced by Sova's own
  * namer (server/session-autotitle.ts); every other title is explicit.

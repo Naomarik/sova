@@ -516,8 +516,19 @@ export class DetachedDriver implements Driver {
     if ((r.clock ?? "procfs") === this.table.kind && this.table.startOf(r.pid) !== r.start) return false;
     return this.table.sessions ? e.sid === r.pid : e.pgid === r.pid;
   }
-  private members(leader: number): number[] {
-    return unitMembers(this.table.list(), leader, this.table.sessions);
+  /** The recorded leader's pid is held by a later process (another start, or not leading a unit of
+      its own for a record from another table): nothing of the unit is left there to signal. A leader
+      that is gone isn't reused: a pid is never given out while its session or group still lives, so
+      what is left of the unit is its own. */
+  private reused(r: Pick<ProcRecord, "pid" | "start" | "clock">): boolean {
+    const e = this.table.get(r.pid);
+    if (!e || e.zombie) return false;
+    if ((r.clock ?? "procfs") === this.table.kind && r.start) return this.table.startOf(r.pid) !== r.start;
+    return !(this.table.sessions ? e.sid === r.pid : e.pgid === r.pid);
+  }
+  /** The unit's live processes; none when its pid is now someone else's. */
+  private members(r: Pick<ProcRecord, "pid" | "start" | "clock">): number[] {
+    return this.reused(r) ? [] : unitMembers(this.table.list(), r.pid, this.table.sessions);
   }
   async available() {
     if (process.platform === "win32") return { ok: false, detail: "detached sessions need a Unix host" };
@@ -616,7 +627,7 @@ export class DetachedDriver implements Driver {
         continue;
       }
       // What is left of its session goes first, as systemd's restart stops the whole unit.
-      if (this.members(r.pid).length) await this.killSession(r.pid);
+      if (this.members(r).length) await this.killSession(r);
       try {
         await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} });
         did.push(`${unit}: started again`);
@@ -630,10 +641,11 @@ export class DetachedDriver implements Driver {
   async adopt(): Promise<void> {
     if ((await this.units("")).length) this.watchUnits();
   }
-  /** TERM to every process of the unit, then KILL to what is left after the grace. */
-  private async killSession(leader: number): Promise<void> {
+  /** TERM to every process of the unit, then KILL to what is left after the grace (each read checks
+      the pid is still the unit's). */
+  private async killSession(r: Pick<ProcRecord, "pid" | "start" | "clock">): Promise<void> {
     const send = (sig: NodeJS.Signals) => {
-      for (const pid of this.members(leader))
+      for (const pid of this.members(r))
         try {
           process.kill(pid, sig);
         } catch {
@@ -643,17 +655,17 @@ export class DetachedDriver implements Driver {
     send("SIGTERM");
     const until = Date.now() + this.stopGraceMs;
     while (Date.now() < until) {
-      if (!this.members(leader).length) return;
+      if (!this.members(r).length) return;
       await sleep(100);
     }
     send("SIGKILL");
-    for (let i = 0; i < 50 && this.members(leader).length; i++) await sleep(100);
+    for (let i = 0; i < 50 && this.members(r).length; i++) await sleep(100);
   }
   async stop(unit: string) {
     this.stopping.add(unit);
     try {
       const r = this.rec(unit);
-      if (r && this.members(r.pid).length) await this.killSession(r.pid);
+      if (r && this.members(r).length) await this.killSession(r);
       rmSync(this.recFile(unit), { force: true });
       this.down.delete(unit);
       this.starts.delete(unit);
@@ -690,11 +702,11 @@ export class DetachedDriver implements Driver {
       const e = this.table.get(pid);
       return !!e && !e.zombie && e.sid === r.pid;
     }
-    return this.members(r.pid).includes(pid);
+    return this.members(r).includes(pid);
   }
   pids(unit: string) {
     const r = this.rec(unit);
-    return r ? this.members(r.pid) : [];
+    return r ? this.members(r) : [];
   }
   async logs(unit: string, lines: number, _sinceMs?: number) {
     return tailLines(this.logFile(unit), lines);
@@ -714,23 +726,25 @@ export class DetachedDriver implements Driver {
         closeSync(fd);
         return done({ code: null, timedOut: false, ms: Date.now() - t0, launchError: message });
       }
+      // The run's leader, as the unit records are: a later process on its pid is never signalled.
+      const own = child.pid ? { pid: child.pid, start: this.table.startOf(child.pid) ?? "", clock: this.table.kind } : null;
       let timedOut = false;
       let aborted = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        if (child.pid) void this.killSession(child.pid);
+        if (own) void this.killSession(own);
       }, spec.timeoutSec * 1000);
       const onAbort = () => {
         aborted = true;
-        if (child.pid) void this.killSession(child.pid);
+        if (own) void this.killSession(own);
       };
       if (spec.signal?.aborted) onAbort();
       else spec.signal?.addEventListener("abort", onAbort, { once: true });
       // The run's memory: the largest resident total of its session's processes, sampled.
       let peak: number | null = null;
       const sample = () => {
-        if (!child.pid) return;
-        const now = rssOf(this.members(child.pid));
+        if (!own) return;
+        const now = rssOf(this.members(own));
         if (now !== null) peak = Math.max(peak ?? 0, now);
       };
       const sampler = setInterval(sample, 200);
@@ -752,10 +766,9 @@ export class DetachedDriver implements Driver {
         stopWatching();
         closeSync(fd);
         // A hook leaves nothing behind (§app.project-services/supervisor): its session goes with it.
-        const pid = child.pid;
-        const leftover = pid ? this.members(pid).length : 0;
+        const leftover = own ? this.members(own).length : 0;
         const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, peakBytes: peak, ...(leftover ? { leftover } : {}), ...(aborted ? { aborted } : {}) });
-        if (pid && leftover) void this.killSession(pid).then(finish);
+        if (own && leftover) void this.killSession(own).then(finish);
         else finish();
       });
     });

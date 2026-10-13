@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { DetachedDriver } from "./drivers";
-import { psTable, realSyncExec } from "./proctable";
+import { type ProcEntry, type ProcTable, psTable, realSyncExec } from "./proctable";
 import { procsDir } from "./store";
 
 /** A process's group, and whether it is gone (no such process, or a zombie not reaped yet): /proc on Linux, else `ps`. */
@@ -164,4 +164,33 @@ test("the detached driver's restart watch: a crash is started again; a clean exi
   assert.equal(st.state, "failed");
   assert.equal(st.detail, "start limit hit");
   await d.stop(loop);
+});
+
+test("detached restart watch: a failed unit whose pid is now someone else's (another start) is started again without signalling that process", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-reuse-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const procs = join(root, "procs");
+  mkdirSync(procs, { recursive: true });
+  writeFileSync(join(procs, "u-reused.json"), JSON.stringify({ pid: 4242, start: "S0", clock: "ps", argv: ["true"], cwd: root, env: {}, at: "" }));
+  const entries: ProcEntry[] = [
+    { pid: 4242, ppid: 1, pgid: 4242, sid: null, zombie: false },
+    { pid: 4243, ppid: 4242, pgid: 4242, sid: null, zombie: false },
+  ];
+  const table: ProcTable = { kind: "ps", sessions: false, list: () => entries, get: (pid) => entries.find((e) => e.pid === pid) ?? null, startOf: (pid) => (pid === 4242 ? "S9" : null) };
+  // Signals are recorded, never sent (the pids are made up).
+  const sent: number[] = [];
+  const realKill = process.kill;
+  process.kill = ((pid: number) => (sent.push(pid), entries.splice(0), true)) as typeof process.kill;
+  const d = new DetachedDriver(200, { table, restart: true, restartMs: 100, procsDir: () => procs, logsDir: () => join(root, "logs") });
+  let did: string[];
+  try {
+    await d.tick();
+    await sleep(150);
+    did = await d.tick();
+  } finally {
+    process.kill = realKill;
+  }
+  assert.deepEqual(did, ["u-reused: started again"]);
+  assert.deepEqual(sent, [], "nothing signalled at the reused pid");
+  await d.stop("u-reused");
 });

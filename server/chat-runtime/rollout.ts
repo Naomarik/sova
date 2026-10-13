@@ -40,6 +40,10 @@ export interface RolloutDeps<L = unknown> {
   /** The chat could not open in its replacement, and its old process is gone: the router keeps it in
       the server's process from now on (inprocOnly) and lets go of its remote handle. Never a death. */
   onReloadOpenFailed?(chatId: string, sessionPath: string, reason: string): void;
+  /** The code a replacement starts on (the current generation's id), for the halt record and its log. */
+  codeId?: () => string;
+  /** Runs once the queue is empty after a reload that moved a chat: unused code generations are collected. */
+  collect?: () => Promise<unknown>;
   readyTimeoutMs?: number;
   log?: (line: string) => void;
 }
@@ -49,6 +53,8 @@ export type ReloadOutcome = "reloaded" | "refused" | "failed" | "halted" | "gone
 export class Rollout<L = unknown> {
   private chain: Promise<unknown> = Promise.resolve();
   private queued = new Map<string, Promise<ReloadOutcome>>();
+  /** A chat moved onto new code since the last collection. */
+  private moved = false;
   /** Why automatic reloads stopped for this server's life, once one failed. */
   halted: string | null = null;
   private readonly log: (line: string) => void;
@@ -63,7 +69,14 @@ export class Rollout<L = unknown> {
     const run = this.chain.then(() => this.reload(chatId, opts.auto));
     this.queued.set(chatId, run);
     this.chain = run.catch(() => undefined);
-    void run.finally(() => this.queued.delete(chatId)).catch(() => undefined);
+    const settled = (outcome: ReloadOutcome | null) => {
+      this.queued.delete(chatId);
+      if (outcome === "reloaded") this.moved = true;
+      if (this.queued.size || !this.moved || !this.deps.collect) return;
+      this.moved = false;
+      void this.deps.collect().catch((err) => this.log(`collecting unused code failed: ${(err as Error).message}`));
+    };
+    void run.then(settled, () => settled(null));
     return run;
   }
 
@@ -117,8 +130,9 @@ export class Rollout<L = unknown> {
       if (tail?.length) reason = `${error}: ${tail.at(-1)}`;
       await this.deps.supervisor.stopUnit(rep.unit);
     }
-    this.halted ??= `${chatId}: ${reason}`;
-    this.log(`${chatId}: could not start on new code (${reason}); automatic reloads stop until the server restarts`);
+    const code = rep?.build ?? this.deps.codeId?.();
+    this.halted ??= `${chatId}: ${code ? `(${code}) ` : ""}${reason}`;
+    this.log(`${chatId}: could not start on new code${code ? ` (${code})` : ""}: ${reason}; automatic reloads stop until the server restarts`);
     if (shown) this.deps.setCode(chatId, "failed", reason);
     return "failed";
   }

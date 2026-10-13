@@ -121,6 +121,26 @@ test("reloads run one at a time; a second request for the same chat joins the fi
   assert.deepEqual(order, ["ready a", "ready b"]);
 });
 
+test("the halt names the new code; unused code is collected once a run of reloads that moved a chat ends", async () => {
+  const lines: string[] = [];
+  let collected = 0;
+  let boots = 0;
+  const { r } = make({
+    waitReady: async () => (boots++ === 2 ? { ok: false, error: "exit 3" } : { ok: true }),
+    codeId: () => "gen-b",
+    collect: async () => void collected++,
+    log: (l) => lines.push(l),
+  });
+  await Promise.all([r.request("a", { auto: true }), r.request("b", { auto: true })]);
+  await new Promise((done) => setTimeout(done, 0));
+  assert.equal(collected, 1, "once, after the run of two");
+  assert.equal(await r.request("a", { auto: false }), "failed");
+  await new Promise((done) => setTimeout(done, 0));
+  assert.equal(collected, 1, "nothing moved: nothing to collect");
+  assert.ok(lines.some((l) => l.startsWith("a: could not start on new code (gen-b): exit 3")), lines.join("\n"));
+  assert.match(r.halted!, /^a: \(gen-b\) exit 3/);
+});
+
 test("a chat with no process is gone", async () => {
   const { r } = make();
   assert.equal(await r.request("zz", { auto: true }), "gone");

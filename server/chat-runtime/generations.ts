@@ -1,0 +1,385 @@
+import { execFile } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { constants, existsSync, readFileSync, readlinkSync, renameSync, writeFileSync } from "node:fs";
+import { chmod, copyFile, link, lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { buildCommit, realMachine } from "../mesh/details-collect";
+import { chatsRoot } from "./supervisor";
+
+/**
+ * Per-chat fixed code (§app.chat-processes/code-generations, al_3 stage 5): a server start copies its
+ * checkout's code (tracked files, and untracked ones Git does not ignore) to `<code root>/<id>`,
+ * read-only, with `node_modules` a link to one hardlinked copy per lockfile; every chat process it
+ * starts runs that copy, so nothing later written to the checkout reaches a running chat. Copies no
+ * chat uses are collected. When no copy can be made, chats run from the checkout as before.
+ */
+
+const REPO = resolve(import.meta.dirname, "..", "..");
+const DEPS = "deps";
+const COMPLETE = ".complete";
+const GOOD = "good";
+/** A copy younger than this is never collected: a server may be about to start a chat on it. */
+export const GC_GRACE_MS = 10 * 60_000;
+
+export interface Generation {
+  /** The build every chat on this copy reports (SOVA_CHAT_BUILD). */
+  id: string;
+  /** Where its chat processes run from. */
+  dir: string;
+  /** True: the checkout itself (no copy was made; `why` says why). */
+  live: boolean;
+  why?: string;
+}
+
+/** Where the copies live: `SOVA_CHAT_CODE_ROOT`, else `<state root>/chats/code`. */
+export const codeRoot = (env: NodeJS.ProcessEnv = process.env): string => env.SOVA_CHAT_CODE_ROOT?.trim() || join(chatsRoot(), "code");
+
+/** A build id as a directory name: kept when it is one already (a commit, `commit+digest`), else hashed. */
+export function generationDir(id: string, root = codeRoot()): string {
+  const name = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$/.test(id) && id !== DEPS && id !== GOOD ? id : `h-${createHash("sha256").update(id).digest("hex").slice(0, 16)}`;
+  return join(root, name);
+}
+
+const git = (repo: string, args: string[], maxBuffer = 256 * 1024 * 1024): Promise<Buffer> =>
+  new Promise((done, fail) =>
+    execFile("git", args, { cwd: repo, encoding: "buffer", maxBuffer, timeout: 30_000 }, (err, out) => (err ? fail(err) : done(out))),
+  );
+const nulList = (b: Buffer): string[] => b.toString("utf8").split("\0").filter(Boolean);
+
+/**
+ * The build of `repo`'s code (moved from chat-host's serverBuild): `SOVA_BUILD` when set (tests); else
+ * the commit (a deploy's BUILD_COMMIT, or HEAD) when `git status` shows nothing, untracked files
+ * included; else `commit+<sha8 of the diff against HEAD and each untracked, not-ignored file's path and
+ * bytes>`; "unknown" when nothing says.
+ */
+export async function buildId(repo = REPO, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  if (env.SOVA_BUILD) return env.SOVA_BUILD;
+  const commit = buildCommit(realMachine, repo);
+  if (!commit) return "unknown";
+  let status: Buffer;
+  try {
+    status = await git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  } catch {
+    return commit; // no Git here (a deploy's copy): the stamp is all there is
+  }
+  if (!status.length) return commit;
+  try {
+    const h = createHash("sha256");
+    h.update(await git(repo, ["diff", "HEAD", "--no-ext-diff", "--binary"]));
+    for (const path of nulList(await git(repo, ["ls-files", "-z", "--others", "--exclude-standard"])).sort()) {
+      h.update(`\0${path}\0`);
+      h.update(await readFile(join(repo, path)).catch(() => Buffer.alloc(0)));
+    }
+    return `${commit}+${h.digest("hex").slice(0, 8)}`;
+  } catch {
+    return "unknown";
+  }
+}
+
+let current: Generation | null = null;
+
+/** The checkout itself as the generation (no copy), with the reason. */
+export async function liveGeneration(why: string, o: { repo?: string; env?: NodeJS.ProcessEnv } = {}): Promise<Generation> {
+  const repo = o.repo ?? REPO;
+  return { id: await buildId(repo, o.env), dir: repo, live: true, why };
+}
+
+/** For `GET /api/health`'s chatHost (§app.server-runtime/health): fixed short words only. */
+export function generationHealth(): { code: "copy" | "live"; codeWhy?: string } | null {
+  if (!current) return null;
+  if (!current.live) return { code: "copy" };
+  return { code: "live", codeWhy: current.why === "test switch" ? "test switch" : "copy failed" };
+}
+
+/**
+ * Make, or reuse, the generation of `repo`'s current code under `root`. Never throws: on any failure
+ * the checkout itself, with the reason logged once. `SOVA_CHAT_CODE=live` (tests) skips the copy.
+ */
+export async function currentGeneration(o: { repo?: string; root?: string; env?: NodeJS.ProcessEnv; log?: (line: string) => void } = {}): Promise<Generation> {
+  const repo = o.repo ?? REPO;
+  const env = o.env ?? process.env;
+  const log = o.log ?? ((l: string) => console.log(`[chat-code] ${l}`));
+  if (env.SOVA_CHAT_CODE?.trim() === "live") {
+    current = await liveGeneration("test switch", { repo, env });
+    return current;
+  }
+  const root = o.root ?? codeRoot(env);
+  const t0 = Date.now();
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const id = await buildId(repo, env);
+      if (id === "unknown") throw new Error("this checkout's build is unknown");
+      const dir = generationDir(id, root);
+      if (isComplete(dir)) {
+        await ensureDeps(repo, root, dir);
+        log(`chats run code ${id} (reused ${dir}, ${Date.now() - t0} ms)`);
+      } else {
+        await makeGeneration(repo, root, id, dir);
+        // Written to while copied: the copy may hold another tree than its id says. Once more, else no copy.
+        if ((await buildId(repo, env)) !== id) {
+          await rm(dir, { recursive: true, force: true });
+          if (attempt >= 1) throw new Error("the checkout kept changing while its code was copied");
+          continue;
+        }
+        log(`chats run code ${id} (copied to ${dir} in ${Date.now() - t0} ms)`);
+      }
+      current = { id, dir, live: false };
+      break;
+    }
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    log(`chats run from the checkout itself: no copy of its code could be made (${why})`);
+    current = await liveGeneration(why, { repo, env }).catch(() => ({ id: "unknown", dir: repo, live: true, why }));
+  }
+  return current;
+}
+
+const isComplete = (dir: string) => existsSync(join(dir, COMPLETE));
+const tmpIn = (root: string) => join(root, `.tmp-${randomBytes(6).toString("hex")}`);
+
+/** Move a finished copy into place; another server that made the same copy first wins, and ours goes. */
+async function publish(tmp: string, dir: string): Promise<void> {
+  try {
+    renameSync(tmp, dir);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if ((code === "ENOTEMPTY" || code === "EEXIST") && isComplete(dir)) {
+      await rm(tmp, { recursive: true, force: true });
+      return;
+    }
+    if ((code === "ENOTEMPTY" || code === "EEXIST") && !isComplete(dir)) {
+      // A half-made copy (a server died writing it): replaced.
+      await rm(dir, { recursive: true, force: true });
+      renameSync(tmp, dir);
+      return;
+    }
+    throw err;
+  }
+}
+
+async function makeGeneration(repo: string, root: string, id: string, dir: string): Promise<void> {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  if (existsSync(dir)) await rm(dir, { recursive: true, force: true }); // half-made: rebuilt
+  const tmp = tmpIn(root);
+  try {
+    const files = nulList(await git(repo, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]));
+    await copyFiles(repo, tmp, files);
+    const lock = await lockHash(join(tmp, "pnpm-lock.yaml"));
+    if (lock) await symlink(join("..", DEPS, lock, "node_modules"), join(tmp, "node_modules"));
+    writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ id, lock, at: new Date().toISOString() })}\n`, { mode: 0o444 });
+    if (lock) await depsSnapshot(repo, root, lock);
+    await publish(tmp, dir);
+  } catch (err) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
+}
+
+/** Copy `files` (paths relative to `from`) to `to`, cloned where the filesystem can, then read-only. */
+async function copyFiles(from: string, to: string, files: string[]): Promise<void> {
+  const made = new Set<string>();
+  const dirOf = async (p: string) => {
+    const d = dirname(p);
+    if (made.has(d)) return;
+    await mkdir(d, { recursive: true });
+    made.add(d);
+  };
+  let next = 0;
+  const one = async (rel: string) => {
+    const src = join(from, rel);
+    const st = await lstat(src).catch(() => null);
+    if (!st) return; // deleted in the tree, not yet in the index: not part of this code
+    const dst = join(to, rel);
+    await dirOf(dst);
+    if (st.isSymbolicLink()) return void (await symlink(await readlink(src), dst));
+    if (!st.isFile()) return;
+    await copyFile(src, dst, constants.COPYFILE_FICLONE);
+    await chmod(dst, st.mode & 0o111 ? 0o555 : 0o444);
+  };
+  const worker = async () => {
+    while (next < files.length) await one(files[next++]!);
+  };
+  await Promise.all(Array.from({ length: 32 }, worker));
+}
+
+async function lockHash(file: string): Promise<string | null> {
+  const b = await readFile(file).catch(() => null);
+  return b ? createHash("sha256").update(b).digest("hex").slice(0, 16) : null;
+}
+
+/** Copy the tree `from` to `to`: each file hardlinked (cloned, else copied, across filesystems), each link as it is. */
+async function linkTree(from: string, to: string): Promise<void> {
+  let crossDevice = false;
+  const walk = async (src: string, dst: string): Promise<void> => {
+    await mkdir(dst);
+    const entries = await readdir(src, { withFileTypes: true });
+    let next = 0;
+    const one = async () => {
+      while (next < entries.length) {
+        const e = entries[next++]!;
+        const s = join(src, e.name);
+        const d = join(dst, e.name);
+        if (e.isDirectory()) await walk(s, d);
+        else if (e.isSymbolicLink()) await symlink(await readlink(s), d);
+        else if (e.isFile()) {
+          if (!crossDevice)
+            try {
+              await link(s, d);
+              continue;
+            } catch (err) {
+              if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+              crossDevice = true;
+            }
+          await copyFile(s, d, constants.COPYFILE_FICLONE);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, entries.length) }, one));
+  };
+  await walk(from, to);
+}
+
+/**
+ * The shared dependencies of every copy with lockfile `lock`: the checkout's `node_modules`, hardlinked
+ * (pnpm replaces files rather than writing them in place, so the inodes keep what they held), else
+ * copied. Guarded against a `pnpm install` running meanwhile: the checkout's lockfile must read `lock`
+ * before and after the copy (one retry).
+ */
+async function depsSnapshot(repo: string, root: string, lock: string): Promise<void> {
+  const dir = join(root, DEPS, lock);
+  if (isComplete(dir)) return;
+  const src = join(repo, "node_modules");
+  if (!existsSync(src)) throw new Error(`the checkout has no node_modules`);
+  await mkdir(join(root, DEPS), { recursive: true, mode: 0o700 });
+  for (let attempt = 0; ; attempt++) {
+    if ((await lockHash(join(repo, "pnpm-lock.yaml"))) !== lock) throw new Error("the checkout's lockfile changed since its code was copied");
+    const tmp = tmpIn(join(root, DEPS));
+    await mkdir(tmp);
+    try {
+      await linkTree(src, join(tmp, "node_modules"));
+      if ((await lockHash(join(repo, "pnpm-lock.yaml"))) !== lock) throw new Error("the checkout's lockfile changed during the copy of its node_modules");
+      writeFileSync(join(tmp, COMPLETE), `${JSON.stringify({ lock, at: new Date().toISOString() })}\n`);
+      await publish(tmp, dir);
+      return;
+    } catch (err) {
+      await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+      if (attempt >= 1) throw err;
+    }
+  }
+}
+
+/** A reused copy whose shared dependencies were collected (or never finished) gets them again. */
+async function ensureDeps(repo: string, root: string, dir: string): Promise<void> {
+  const lock = depsOf(dir);
+  if (lock && !isComplete(join(root, DEPS, lock))) await depsSnapshot(repo, root, lock);
+}
+
+/** The lockfile hash a copy's `node_modules` link names, or null. */
+function depsOf(dir: string): string | null {
+  try {
+    const m = /(?:^|\/)deps\/([0-9a-f]+)\/node_modules$/.exec(readlinkSync(join(dir, "node_modules")));
+    return m ? m[1]! : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The newest code a chat process booted and opened on (kept by every collection). */
+export function noteGood(id: string, root = codeRoot()): void {
+  try {
+    if (lastGood(root) === id) return;
+    writeFileSync(join(root, GOOD), `${id}\n`);
+  } catch {
+    // no copies here (the checkout runs): nothing to keep
+  }
+}
+export function lastGood(root = codeRoot()): string | null {
+  try {
+    return readFileSync(join(root, GOOD), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remove the copies nobody uses: not named in `keep` (the current generation, every build a chat or
+ * worker process still runs), not `lastGood`, and older than `graceMs`; then the shared dependencies
+ * no remaining copy links, and leftovers of copies never finished. Returns what it removed.
+ */
+export async function collectGenerations(keep: Set<string>, o: { root?: string; graceMs?: number; now?: () => number } = {}): Promise<string[]> {
+  const root = o.root ?? codeRoot();
+  const grace = o.graceMs ?? GC_GRACE_MS;
+  const now = (o.now ?? Date.now)();
+  const keptDirs = new Set([...keep, ...(lastGood(root) ? [lastGood(root)!] : [])].map((id) => generationDir(id, root)));
+  const young = async (p: string) => {
+    const st = await stat(p).catch(() => null);
+    return !st || now - st.mtimeMs < grace;
+  };
+  const removed: string[] = [];
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch {
+    return removed;
+  }
+  const remaining: string[] = [];
+  for (const n of names) {
+    if (n === DEPS || n === GOOD) continue;
+    const p = join(root, n);
+    if (keptDirs.has(p) || (await young(p))) {
+      if (!n.startsWith(".tmp-")) remaining.push(p);
+      continue;
+    }
+    await rm(p, { recursive: true, force: true });
+    removed.push(n);
+  }
+  const used = new Set(remaining.map(depsOf).filter((l): l is string => !!l));
+  for (const n of await readdir(join(root, DEPS)).catch(() => [] as string[])) {
+    const p = join(root, DEPS, n);
+    if (used.has(n) || (await young(p))) continue;
+    await rm(p, { recursive: true, force: true });
+    removed.push(`${DEPS}/${n}`);
+  }
+  return removed;
+}
+
+/**
+ * Collect now and every hour (the server: once its chats are taken back). `inUse` names every build a
+ * chat or worker process still runs; the current generation is always kept. A live fallback has no
+ * copies of its own to collect, but older copies under the root still go. `collect` runs one more
+ * (the rollout's, after a run of reloads); `stop` ends the hourly one.
+ */
+export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: string; everyMs?: number; log?: (line: string) => void } = {}): { collect: () => Promise<void>; stop: () => void } {
+  const log = o.log ?? ((l: string) => console.log(`[chat-code] ${l}`));
+  let running: Promise<void> | null = null;
+  const once = async () => {
+    try {
+      const keep = new Set(inUse());
+      if (current) keep.add(current.id);
+      const gone = await collectGenerations(keep, { root: o.root });
+      if (gone.length) log(`removed unused code: ${gone.join(", ")}`);
+    } catch (err) {
+      log(`collecting unused code failed: ${(err as Error).message}`);
+    }
+  };
+  // One at a time: a request during a collection waits for it, then runs its own.
+  const run = (): Promise<void> => {
+    const next = (running ?? Promise.resolve()).then(once);
+    const mine = next.finally(() => {
+      if (running === mine) running = null;
+    });
+    running = mine;
+    return mine;
+  };
+  void run();
+  const timer = setInterval(() => void run(), o.everyMs ?? 60 * 60_000);
+  timer.unref?.();
+  return { collect: run, stop: () => clearInterval(timer) };
+}
+
+/** Tests: forget the current generation. */
+export function resetGenerations(): void {
+  current = null;
+}
+/** The generation this server's chats start on (null before currentGeneration ran). */
+export const currentGenerationOf = (): Generation | null => current;

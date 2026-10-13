@@ -59,13 +59,18 @@ decimal string on Headscale.
   `--clear` removes it. Example: `SOVA_SYNC_LOGIN_KINDS=api-keys` on one host (an API-keys-only host).
 - **Runtime**: Sova runs on Bun (the image copies `bun` from `oven/bun:<the version mise.toml pins>`)
   through `scripts/start-server.sh`; `lab sova-env <node> SOVA_RUNTIME=node` + `lab sova-restart <node>`
-  runs that host on Node.
+  runs that host on Node, with no chats or workers (§app.server-runtime/choice): they run only on the server's
+  own Bun, so every chat open there is refused ("Chats need Bun to run Sova's chat runtime") and its
+  `/api/health` says `chatHost.bun: false`.
 - **Home** `/root` (volume): the Claude store simulator uses `/root/.claude-lab`
   (`SOVA_SYNC_CLAUDE_DIR`), never `/root/.claude`.
 - **Listeners**: Sova's main listener stays on `127.0.0.1:4800`. The laptop reaches it through a
   socat forwarder on `:4900`, published on `127.0.0.1:489x`, so the laptop browser acts as that
   host's local user. The tailnet reaches it through `tailscale serve :8443`, which is what the front
   door uses. The peer listener is mesh-core's, bound to the tailnet IPs on `:4801`.
+- **PID 1** is docker-init (compose `init: true` on every Sova container): it reaps the detached chat processes a
+  restarted Sova leaves to it. The entrypoint records the server's pid in `/run/lab/sova.pid`, and `sova-restart` /
+  `sova-stop` signal that pid alone, so a restart never touches the chats.
 - **Privileges**: `NET_ADMIN` and `/dev/net/tun` are for tailscaled and the entrypoint's iptables
   only. Sova itself runs with `net_admin`/`net_raw` dropped from its bounding set (`setpriv`).
 
@@ -276,6 +281,23 @@ The harnesses:
   the socket as the accept process's uid, proving another key, is refused and flagged. The accept process's uid
   reaches neither Sova's loopback port, the tailnet nor the lab network. Killing it drops both channels at once and
   closes the port (no fallback); restarted, plain comes back. Stop Relaying ends everything.
+
+- **m9-chat-runtime** (its own milestone, beside m9-internet-relay; runs on `plain`; takes the LOCK; spends about
+  15 short glm-5.3 turns; leaves sova.env cleared, every chat process stopped, settings.json as found, and plain
+  recreated from its image when step 6 changed `/sova`; the sessions it made stay on plain's agent volume): Sova
+  deployed fresh from `git archive`, end to end on its chat runtime (§app/chat-processes). Health says Bun, the
+  detached chat host (the image has no systemd, so the server's own probe picks it; no systemd-in-container image is
+  built) and the code chats run (`M9_CODE=copy` asserts the copy across filesystems: node_modules copied in full).
+  The lab token signs in. Three chats each run in a process of their own (setsid, Bun, a socket under the state
+  root); /btw, /explain and /compact-handoff each in a hidden chat process, settling once. `lab sova-restart` while a
+  reply runs a slow command and a worker sleeps: every chat and the worker keep their process (now PID 1's), the
+  reply runs to its end with no "continue", the worker's result reaches its parent once. New code (`M9_NEXT=<B>`, a
+  descendant of the image's commit with its lockfile) is unpacked over `/sova` (the files B removed deleted first,
+  both page builds, BUILD_COMMIT last) and `lab sova-restart`ed: the attached chat shows older code, the quiet ones
+  reload one at a time, Reload now moves the attached one. `scripts/stop-chats.ts` with Sova stopped ends every chat
+  process; with `SOVA_CHAT_IDLE_MIN=0.5` and Sova stopped, chats exit by themselves after their idle time; no zombie
+  either way. A container restart is a reboot: nothing survives, chats reopen with their history, and no continue
+  or crash resume is sent.
 
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,

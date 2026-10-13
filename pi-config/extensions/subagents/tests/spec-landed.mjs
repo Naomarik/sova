@@ -2,8 +2,8 @@
 // the worker's own changes landed in (pi and claude-code workers alike); a worker that changed nothing, a
 // read-only worker and a spec-off session get no such line, and another process's commit in the worker's
 // tree is not the worker's. Fake workers (no processes, no model) run the real worker half of the census
-// around their work: a pi worker mode/spec-worker.ts's handlers, a Claude worker claude-code/spec-hooks.ts's
-// runHook; the parent is the real subagents extension. Scratch Git projects; the real spec tools.
+// around their work, mode/spec-worker.ts's handlers (a claude-code worker is a pi worker on the Claude Code
+// provider, so the same); the parent is the real subagents extension. Scratch Git projects; the real spec tools.
 // Run: node tests/spec-landed.mjs [--json]
 import "../../claude-code/tests/hermetic-env.mjs";
 import assert from "node:assert/strict";
@@ -24,9 +24,7 @@ const CORE = fs.realpathSync(path.resolve(root, "../spec/core"));
 
 const { registerSubagents } = await jiti.import(path.join(root, "index.ts"));
 const { MODE_STATE_EVENT } = await jiti.import(path.join(root, "../mode/state.ts"));
-const { BACKEND_REGISTER_EVENT } = await jiti.import(path.join(root, "contracts.ts"));
 const { default: specWorker } = await jiti.import(path.join(root, "../mode/spec-worker.ts"));
-const { runHook } = await jiti.import(path.join(root, "../claude-code/spec-hooks.ts"));
 
 /** The line the parent gets: "landed in", naming the §. */
 const LANDED = /landed in/i;
@@ -94,23 +92,6 @@ function piWorkerHooks(options) {
 		end: () => on.get("agent_settled")?.({}, ctx),
 	};
 }
-/** A Claude worker's hooks, run as Claude would, on the hook state dir its settings name. */
-function claudeWorkerHooks(options, sessionId, stateDir) {
-	const o = { core: CORE, stateDir };
-	let seq = 0;
-	const ev = (extra) => ({ session_id: sessionId, prompt_id: "p1", cwd: options.cwd, ...extra });
-	return {
-		start: () => runHook("turn", ev({ hook_event_name: "UserPromptSubmit" }), o),
-		call: async (command, effect) => {
-			const call = { tool_name: "Bash", tool_use_id: `toolu_${++seq}`, tool_input: { command } };
-			await runHook("pre", ev({ hook_event_name: "PreToolUse", ...call }), o);
-			effect();
-			await runHook("post", ev({ hook_event_name: "PostToolUse", ...call, tool_response: {} }), o);
-		},
-		end: () => undefined,
-	};
-}
-
 /** A worker double: settle() is its run ending; output is its final answer; hooks are its census half. */
 function fakeWorker(options, handlers, extra = {}) {
 	return {
@@ -146,19 +127,6 @@ function harness(cwd) {
 		workers.push(w);
 		return w;
 	}, { policyFile: path.join(scratch, "no-policy.json"), agentDir });
-	bus.emit(BACKEND_REGISTER_EVENT, {
-		version: 1, id: "claude-code", validate() {}, prepare: (spec) => ({ model: spec.model ?? "claude-sonnet-5-5", backendOptions: { permissionMode: "default" } }),
-		create: (options, handlers) => {
-			const sessionId = `cc-${n}-${workers.length}`;
-			// Its hooks' state dir, as the settings the spawn built name it (none: no hooks run, as for a worker without them).
-			const command = options.settingsJson ? JSON.parse(options.settingsJson).hooks?.PostToolUse?.at(-1)?.hooks?.[0]?.command : undefined;
-			const stateDir = command?.match(/--state (\S+)/)?.[1]?.replace(/^'|'$/g, "");
-			const w = fakeWorker(options, handlers, { sessionId, isFinished() { return this.status === "killed"; }, isSettled() { return this.status !== "running"; } });
-			w.hooks = stateDir ? claudeWorkerHooks(options, sessionId, stateDir) : { start() {}, call: async (_c, effect) => effect(), end() {} };
-			workers.push(w);
-			return w;
-		},
-	});
 	return {
 		bus, workers, messages, ctx,
 		call: (name, params = {}) => tools.get(name).execute("test", params, undefined, () => {}, ctx),
@@ -177,7 +145,7 @@ async function completionsAfter(h, count, ms) {
 const results = [];
 /**
  * One case: spawn; `before` (another process) runs after the worker started; the worker makes its `calls`
- * through its hooks (pi spec-worker or Claude hooks); settle; count the parent's landed lines.
+ * through its hooks (spec-worker's); settle; count the parent's landed lines.
  */
 async function run(label, { spec = true, params = {}, before = () => {}, calls = [], wait = false, again, expect, names = [], absent = [] }) {
 	const cwd = project();

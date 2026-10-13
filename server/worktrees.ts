@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
-import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
+import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shared/protocol";
 import { headerOf } from "./harness/pi/reader";
 import { resolveSessionPath } from "./paths";
@@ -688,7 +688,7 @@ export function candidatesOf(text: string): SessionCandidates {
     if (!line.trim()) continue;
     const isHeader = first;
     first = false;
-    if (!isHeader && !line.includes(WORKER_MANIFEST_ENTRY_TYPE) && !line.includes(LEGACY_REGISTRY_ENTRY_TYPE)) continue;
+    if (!isHeader && !line.includes(WORKER_MANIFEST_ENTRY_TYPE)) continue;
     let v: unknown;
     try {
       v = JSON.parse(line);

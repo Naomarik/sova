@@ -240,8 +240,8 @@ test("workerSession: a file its owner names as a worker is flagged in the list a
   const ID_O = "01234567-89ab-7cde-8f01-2345678900a2";
   const worker = session(ID_W, "worker task");
   const owner = session(ID_O, "owner thread");
-  const registry = JSON.stringify({ type: "custom", customType: "subagents-worker-registry", data: { v: 1, backendSessionId: ID_W } });
-  appendFileSync(owner, `${registry}\n`);
+  const completion = JSON.stringify({ type: "custom_message", customType: "subagent-complete", display: true, content: `### ag_01 (worker) — done\nSession: ${ID_W}\nModel: m\nthe answer` });
+  appendFileSync(owner, `${completion}\n`);
 
   const byId = new Map((await listSessions()).map((s) => [s.id, s]));
   assert.equal(byId.get(ID_W)?.workerSession, true);

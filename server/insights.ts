@@ -43,7 +43,7 @@ import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, su
 import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
-import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
+import { isOwnPid, readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills, skillLinesOf } from "./skills";
@@ -59,7 +59,7 @@ import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
-import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
+import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
 // docs/insights-research.md "Data sources"). The one writer is the shared usage cache: through
@@ -639,7 +639,7 @@ function lastKnown(p: UsageProvider): UsageProvider {
 
 const TEAM_ENTRY = "subagents-team-v1";
 /** The durable per-worker records the protocol fold reads (readWorkerManifests). */
-const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE, LEGACY_REGISTRY_ENTRY_TYPE]);
+const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE]);
 /** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
 const EXPLAIN_ENTRY = "explain-doc";
 const TEAM_ID = /^team_\d+$/;
@@ -1104,7 +1104,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
   const presence = isRec(rec.presence) ? rec.presence : undefined;
   const heartbeat = num(rec.heartbeat) ?? 0;
   const age = Date.now() - heartbeat;
-  const workers = decodeWorkers(presence, pid === process.pid);
+  const workers = decodeWorkers(presence, isOwnPid(pid));
   const wc = isRec(presence?.workerCounts) ? presence.workerCounts : null;
   const workerCounts = wc
     ? { total: count(wc.total), working: count(wc.working), waiting: count(wc.waiting), done: count(wc.done), error: count(wc.error), killed: count(wc.killed) }
@@ -1127,7 +1127,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
     pid,
     mode: str(session.mode) ?? null,
     fresh: age <= FRESH_MS && age >= -FUTURE_SLACK_MS,
-    embedded: pid === process.pid,
+    embedded: isOwnPid(pid),
     state: sessionState(presence, session),
     workerCounts,
     workers,
@@ -1272,7 +1272,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const resolveWindow = await sharedWorkerWindowResolver();
   const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active, resolveWindow);
   const workers = live
-    ? withWorkerContext(decodeWorkers(presence, live.pid === process.pid), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
+    ? withWorkerContext(decodeWorkers(presence, isOwnPid(live.pid)), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
     : restored && restored.workers.length > 0 ? restored.workers : null;
   // The record lists at most 40 of the workers it counts: the pane offers the rest on request.
   const counted = live ? workerCountsOf(live.rec)?.total : undefined;

@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { HEntry, SessionStateWriter, StateKind, ToolSpec } from "../shared/harness";
-import { createSessionFile, toolStateWriter } from "./harness/pi/state";
-import { toolCtx, toPiTool } from "./harness/pi/tools";
+import type { RunStartAnswer, ServerToolDecl } from "../shared/chat-runtime";
+import type { EntryId, HEntry, StateKind, ToolSpec } from "../shared/harness";
+import { createSessionFile } from "./harness/pi/state";
 import { BATON, BATON_DECISION, BATON_DONE, BATON_EFFECT_KINDS, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
   abilitiesOf,
@@ -24,15 +24,16 @@ import { confirmFileTool, FILE_TOOLS, FILES_ON, inspectFilesTool, noteRunModel }
 import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
 import { areaKeyOf, decisionProvenance, ownerAreaChoices, pickOwnerArea, quoteCheckOf, type DecisionDisposition } from "./decisions";
 import type { Provenance } from "./org-history-capture";
-import { OWNER_AREA_NONE } from "../shared/decisions";
+import { OWNER_AREA_NONE, prepareOwnerArea } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
 import type { QuoteCheck } from "../shared/org-history";
 import { handoffChosen } from "./baton-guards";
 import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
-import { authorNotes, labelAuthors, streamingText } from "./baton-view";
+import { authorNotes, labelAuthors } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChat, BusyError, type ChatSession, RefusedError, registerSpecialLoadout, type SessionMarks } from "./chat-manager";
+import { acquireChatHandle, BusyError, type ChatHandle, chatHandle, chatsReady, declOfTool, RefusedError, registerSpecialHost, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
+import { UNREACHABLE } from "./chat-handle-remote";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
@@ -46,7 +47,7 @@ import { refreshShare, streamShare } from "./share/hub";
 import { addWebSession } from "./web-sessions";
 import { loadDefaults } from "./web-defaults";
 import { markOwned } from "./write-guard";
-import { redactPhrases, secretPhrases } from "./baton-view";
+import { batonContextPhrases, redactContext } from "./baton-view";
 
 /**
  * The baton runtime (§app.baton/goal-and-loadout, /hand-off): what a baton session file opens with.
@@ -73,7 +74,13 @@ export const LOADOUT_TOOLS = [...BATON_TOOLS, READ_LINK_TOOL, ...FILE_TOOLS, WRA
     file intake `inspect_files` and `confirm_file` (§app.baton/files). */
 export function activeBatonTools(sessionId: string): string[] {
   const row = batonById(sessionId)?.row;
-  return [...BATON_TOOLS, ...(row && abilitiesOf(row).readLinks ? [READ_LINK_TOOL] : []), ...(row && takesFiles(row) ? FILE_TOOLS : [])];
+  return [
+    ...BATON_TOOLS,
+    ...(row && abilitiesOf(row).readLinks ? [READ_LINK_TOOL] : []),
+    ...(row && takesFiles(row) ? FILE_TOOLS : []),
+    // Test only: the chat-runtime trial's slow served tool stays callable (SOVA_CHAT_TEST_SERVED=1).
+    ...(process.env.SOVA_CHAT_TEST_SERVED === "1" ? ["trial_served_sleep"] : []),
+  ];
 }
 
 const NO_BROWSE = "You cannot read files, run commands or browse.";
@@ -143,35 +150,35 @@ export function ownerAreaSchema(roster: readonly Person[]) {
 }
 
 /**
+ * Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself): the run
+ * it stopped (its run.start's number; null when none had started), and whether it is still stopping
+ * it. That run's own settle is never the reply's end, whenever it arrives (a chat in its own process
+ * may tell it after the stop's answer); a settle while the stop runs is not either.
+ */
+const stopping = new Map<string, { run: number | null; active: boolean }>();
+/** The number of each baton chat's run in progress (its run.start's), by path. */
+const runOfChat = new Map<string, number>();
+
+/**
  * Stop the reply being written, for an operator's move that can't wait (Take back, a hand-off, an
  * offer, someone leaving; §app.baton/hand-off "at any time"). Nothing queued behind the reply is
  * dropped: every message still waiting enters the transcript as its sender's, after the stopped
  * reply and before the move's entry, with no reply of its own (counted when it was accepted), so
- * whoever holds the baton next reads it and the model sees it with the next turn. A queue wake
- * could start another run as this one settles, so it checks again, a few times at most.
+ * whoever holds the baton next reads it and the model sees it with the next turn (the chat's
+ * interruptKeepingQueued, which checks again as a queue wake may start another run).
  */
-/** Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself). */
-const stopping = new Set<string>();
-
-async function interruptReply(chat: ChatSession): Promise<void> {
-  const since = chat.leafId();
-  const kept = [];
-  for (let i = 0; i < 3 && (chat.harness.isRunning() || chat.isCompacting() || chat.turnStarting); i++) {
-    // A turn that is starting (a message just handed over) can't be aborted until its run begins.
-    await chat.whenStarted();
-    kept.push(...(await chat.stopRun(() => true)));
-  }
-  chat.enterQueued(kept, since);
+async function interruptReply(chat: ChatHandle): Promise<void> {
+  await chat.interruptKeepingQueued();
 }
 
-export { LIMIT_QUESTION };
+export { LIMIT_QUESTION, redactContext };
 
 /**
  * While a tool of the session runs, the extension's own writer writes its transcript entries
  * (the statechart's `baton-entry` effects of that step run inside the call, before it returns).
  */
-const toolAppend = new Map<string, SessionStateWriter>();
-async function inTool<T>(sessionId: string, state: SessionStateWriter, f: () => Promise<T>): Promise<T> {
+const toolAppend = new Map<string, BatonWriter>();
+async function inTool<T>(sessionId: string, state: BatonWriter, f: () => Promise<T>): Promise<T> {
   toolAppend.set(sessionId, state);
   try {
     return await f();
@@ -188,8 +195,22 @@ async function modelAct(sessionId: string, event: string, payload: Record<string
   if (!out.taken) throw new Error(out.refusal?.sentence ?? "That can't be done now.");
 }
 
-/** The tools, bound to one session. `state` is the extension's own writer (`toolStateWriter`). */
-export function batonTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {
+/** How a baton tool writes into its chat: within the run of the tool, through the special extension's
+    own writer (entry_appended fires, so share pages refresh), wherever the chat runs. */
+export interface BatonWriter {
+  append<T>(kind: StateKind<T>, data: T): EntryId | Promise<EntryId>;
+}
+/** The writer of the served call this code runs inside (§app.harness/session-special). */
+export const runWriter: BatonWriter = {
+  append(kind, data) {
+    const run = serverToolCall();
+    if (!run) throw new Error("A baton tool writes only within its own call.");
+    return run.chat.append(kind, data, { announce: true });
+  },
+};
+
+/** The tools, bound to one session. `state`: how they write (the run's writer; a test's own). */
+export function batonTools(sessionId: string, state: BatonWriter = runWriter): ToolSpec[] {
   const hit = batonById(sessionId);
   const roster = hit ? readRoster(hit.row.orgId) : [];
   const [handTo, goalDone, ...rest] = conversationTools(sessionId, state);
@@ -240,7 +261,7 @@ export function dispositionOf(params: Record<string, unknown>): DecisionDisposit
 
 /** record_decision, its owner areas listed as the roster has them now (the call itself always
     checks the roster as it is then). */
-export function recordDecisionTool(sessionId: string, state: SessionStateWriter, roster: readonly Person[]): ToolSpec {
+export function recordDecisionTool(sessionId: string, state: BatonWriter, roster: readonly Person[]): ToolSpec {
   return {
     name: "record_decision",
     label: "Record decision",
@@ -266,12 +287,10 @@ export function recordDecisionTool(sessionId: string, state: SessionStateWriter,
     ) as any,
     // Before pi's schema check: a case or spacing variant becomes the roster's spelling, and an
     // unknown value is refused with every choice named (the enum's own error names none).
-    prepareArguments(args: unknown) {
-      const hit = batonById(sessionId);
-      if (!hit || typeof args !== "object" || args === null) return args as any;
-      const owner = pickOwnerArea(readRoster(hit.row.orgId), (args as { ownerArea?: unknown }).ownerArea);
-      if (!owner.ok) throw new Error(owner.error);
-      return { ...(args as object), ownerArea: owner.ownerArea } as any;
+    // A rule the chat runs itself, from the declaration's own enum (shared/decisions.ts).
+    prepareRule: "owner-area",
+    prepareArguments(this: ToolSpec, args: unknown) {
+      return prepareOwnerArea(this.parameters, args) as any;
     },
     async execute(_id, params: any, _signal, _update, ctx) {
       const hit = batonById(sessionId);
@@ -298,7 +317,7 @@ export function recordDecisionTool(sessionId: string, state: SessionStateWriter,
       const entry: BatonDecisionData = { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by, ...(name ? { name } : {}), ...(disposition ?? {}) };
       // The marker's own id (the writer's answer; the leaf only when the harness doesn't say): two decisions
       // in one message are two markers, so two decisions.
-      const marker = state.append(BATON_DECISION, entry) || ctx?.leafId() || `${Date.now()}`;
+      const marker = (await state.append(BATON_DECISION, entry)) || ctx?.leafId() || `${Date.now()}`;
       const branch = ctx?.branch() ?? [];
       const entryId = quoteEntryOf(branch, marker);
       const byId = new Map<string, HEntry>();
@@ -325,7 +344,7 @@ const RECORDED_WORDS: Record<QuoteCheck, string> = {
 };
 
 /** hand_to, goal_done, propose_roster_edit and the wrap-up's tool. */
-function conversationTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {
+function conversationTools(sessionId: string, state: BatonWriter): ToolSpec[] {
   return [
     {
       name: "hand_to",
@@ -357,7 +376,7 @@ function conversationTools(sessionId: string, state: SessionStateWriter): ToolSp
         // The move's transcript entry, numbered as the statechart numbered it.
         const after = batonById(sessionId)!.row;
         const h = after.handoffs[after.handoffs.length - 1]!;
-        state.append(BATON_HANDOFF, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
+        await state.append(BATON_HANDOFF, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
         refreshShare(sessionId);
         return { ...say(`Handed to ${nameOf(row.orgId, h.to)}. Your turn has ended.`), terminate: true };
       },
@@ -441,54 +460,26 @@ function batchEndsTurn(branch: readonly HEntry[]): boolean {
   return false;
 }
 
-/** The text of the people's messages in a model context (the conversation's own words). */
-const userTexts = (messages: readonly unknown[]): string[] =>
-  messages.flatMap((m) => {
-    const msg = m as { role?: string; content?: unknown };
-    if (msg.role !== "user") return [];
-    return [typeof msg.content === "string" ? msg.content : Array.isArray(msg.content) ? msg.content.map((b: any) => (b?.type === "text" ? String(b.text ?? "") : "")).join("") : ""];
-  });
-
 /** The holder's profile phrases that are secrets in this model context: none that is ordinary
     vocabulary (a name, role, decision area, the title, or what someone wrote here). */
 export function holderPhrases(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">, messages: readonly unknown[]): string[] {
-  if (!row.holder || row.holder === OPERATOR) return [];
-  const roster = readRoster(row.orgId);
-  const holder = roster.find((p) => p.id === row.holder);
-  return holder ? secretPhrases(profileRedactTexts(holder), [...publicTerms(roster), row.publicTitle, ...userTexts(messages)]) : [];
+  return batonContextPhrases(holderPack(row), messages);
 }
 
-/** Redact message text for the model's own context: secrets everywhere, and the holder's profile
-    phrases from the model's own earlier replies. What people wrote reaches it as they wrote it. */
-export function redactContext<M>(messages: M[], phrases: readonly string[]): M[] {
-  const secrets = serverRedactor();
-  const redactMsgs = redactExtensionMessages(messages, secrets);
-  if (!phrases.length) return redactMsgs;
-  let changed = redactMsgs !== messages;
-  const out = redactMsgs.map((m) => {
-    const msg = m as { role?: string; content?: unknown };
-    if (msg.role !== "assistant") return m;
-    if (typeof msg.content === "string") {
-      const t = redactPhrases(msg.content, phrases);
-      if (t === msg.content) return m;
-      changed = true;
-      return { ...msg, content: t } as M;
-    }
-    if (!Array.isArray(msg.content)) return m;
-    let hit = false;
-    const content = msg.content.map((b: any) => {
-      if (b?.type !== "text" || typeof b.text !== "string") return b;
-      const t = redactPhrases(b.text, phrases);
-      if (t === b.text) return b;
-      hit = true;
-      return { ...b, text: t };
-    });
-    if (!hit) return m;
-    changed = true;
-    return { ...msg, content } as M;
-  });
-  return changed ? out : messages;
+/** What a run's context hook needs to know of the holder (RunStartAnswer.baton, minus the names). */
+function holderPack(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">): { holderTexts: string[]; vocabulary: string[] } {
+  if (!row.holder || row.holder === OPERATOR) return { holderTexts: [], vocabulary: [] };
+  const roster = readRoster(row.orgId);
+  const holder = roster.find((p) => p.id === row.holder);
+  return holder ? { holderTexts: profileRedactTexts(holder), vocabulary: [...publicTerms(roster), row.publicTitle] } : { holderTexts: [], vocabulary: [] };
 }
+
+/** A baton chat's context pack for one run (§app.harness/session-special): the names its authors go
+    by, its holder, and the holder's phrases that are secrets here, as data the chat's context hook reads. */
+export function batonPack(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">): NonNullable<RunStartAnswer["baton"]> {
+  return { names: namesOf(row.orgId), holder: row.holder ?? null, ...holderPack(row) };
+}
+
 
 // ---- the baton statechart's effects, facts and wrap-up (registered on every org's engine) -----------------------
 
@@ -497,26 +488,26 @@ type BatonEntry = { kind: StateKind<any>; data: Record<string, unknown> };
 const waitingEntries = new Map<string, BatonEntry[]>();
 
 /** Whether the transcript already has the entry an effect writes (a re-run after a restart writes nothing twice). */
-function hasEntry(chat: ChatSession, key: string): boolean {
-  const file = chat.state.file();
-  return BATON_EFFECT_KINDS.some((k) => file.written(k).some((r) => (r.data as { key?: unknown } | null | undefined)?.key === key));
+async function hasEntry(chat: ChatHandle, key: string): Promise<boolean> {
+  return (await chat.fileState(BATON_EFFECT_KINDS)).some((data) => (data as { key?: unknown } | null | undefined)?.key === key);
 }
 
 /** Write a transcript entry the statechart asked for: through the running tool, now, or once the run settles. */
 async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
   const inTurn = toolAppend.get(sessionId);
-  if (inTurn) return void inTurn.append(entry.kind, entry.data);
+  if (inTurn) return void (await inTurn.append(entry.kind, entry.data));
   const hit = batonById(sessionId);
   if (!hit) return;
   const path = sessionPathOf(hit.dir, hit.row);
-  const chat = await acquireChat(path);
-  if (typeof entry.data.key === "string" && hasEntry(chat, entry.data.key)) return;
+  const chat = await acquireChatHandle(path);
+  if (typeof entry.data.key === "string" && (await hasEntry(chat, entry.data.key))) return;
   const waiting = waitingEntries.get(path);
   if (waiting) return void waiting.push(entry);
   try {
-    chat.appendStateRow(entry.kind, entry.data);
+    await chat.appendStateRow(entry.kind, entry.data);
   } catch (err) {
-    if (err instanceof BusyError) waitingEntries.set(path, [entry]);
+    // Refused for now, or its process is reconnecting: written when it settles or is linked again.
+    if (err instanceof BusyError || (err instanceof Error && err.message === UNREACHABLE)) waitingEntries.set(path, [entry]);
     else throw err;
   }
 }
@@ -525,10 +516,10 @@ async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
 export async function flushEntries(path: string): Promise<void> {
   const waiting = waitingEntries.get(path);
   if (!waiting) return;
-  const chat = await acquireChat(path);
-  if (chat.harness.isRunning() || chat.isCompacting()) return; // the next settle writes them
+  const chat = await acquireChatHandle(path);
+  if (chat.mirror.running || chat.mirror.compacting) return; // the next settle writes them
   waitingEntries.delete(path);
-  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendStateRow(e.kind, e.data);
+  for (const e of waiting) if (typeof e.data.key !== "string" || !(await hasEntry(chat, e.data.key))) await chat.appendStateRow(e.kind, e.data);
 }
 
 /** The statechart's `baton-entry` as the transcript's custom entry. */
@@ -627,16 +618,18 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     const sessionId = sidOfEffect(e);
     const hit = batonById(sessionId);
     if (!hit) return {};
-    const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+    const chat = await acquireChatHandle(sessionPathOf(hit.dir, hit.row));
     // The stopped run's own end is not the reply's end yet: the messages queued behind it are written
     // first, then the statechart hears it ended and makes the move it held (its entry comes after them).
-    stopping.add(sessionId);
+    const stop = { run: runOfChat.get(chat.path) ?? null, active: true };
+    stopping.set(sessionId, stop);
     try {
       await interruptReply(chat);
     } finally {
-      stopping.delete(sessionId);
+      stop.active = false;
+      if (stop.run === null && stopping.get(sessionId) === stop) stopping.delete(sessionId);
     }
-    if (!chat.harness.isRunning() && !chat.turnStarting) await replyFact(sessionId, "reply/ended");
+    if (!chat.mirror.running && !chat.mirror.starting) await replyFact(sessionId, "reply/ended");
     return {};
   });
 
@@ -651,8 +644,12 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
   host.invocations.register("sova/wrapup", {
     start(inv, report) {
       const sessionId = sidOfEffect({ sessionId: inv.sessionId } as Effect);
-      void runWrapup(sessionId, activeBatonTools(sessionId))
-        .then((out) => report(out.error ? "stopped" : "finished", out.error, { applied: out.applied, refused: out.refused }))
+      void runWrapup(sessionId, activeBatonTools(sessionId), inv.invokeId)
+        .then((out) => {
+          // Cut off by this server's stop while it runs on in its own process: the next server picks it up.
+          if (out.cutOff) return;
+          report(out.error ? "stopped" : "finished", out.error, { applied: out.applied, refused: out.refused });
+        })
         .catch((err) => report("stopped", err instanceof Error ? err.message : String(err)));
     },
     stop() {},
@@ -660,10 +657,15 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
 
   // After a restart no reply runs: every session whose statechart still says one does hears it ended, cold ones
   // included, on this very host (it may not be registered as open yet while its opened hooks run; a reply left
-  // "starting" would stay so forever, its lease never lapsing: F-049/F-050).
+  // "starting" would stay so forever, its lease never lapsing: F-049/F-050). A reply still running in its
+  // chat's own process is spared: its own end ends it (§app.chat-processes/special-kinds).
   void (async () => {
+    await chatsReady();
     for (const s of host.sessions("baton")) {
       if (!s.running || !s.data.reply || s.data.reply === "idle") continue;
+      const hit = batonById(sidOfEffect({ sessionId: s.id } as Effect));
+      const chat = hit ? chatHandle(sessionPathOf(hit.dir, hit.row)) : undefined;
+      if (chat?.where === "process" && (chat.mirror.running || chat.mirror.starting)) continue;
       const out = await host.act(s.id, "reply/ended", {}, { by: "system" } as unknown as Envelope);
       if (!out.taken) console.warn(`[baton] ${orgId}: ending the reply cut off in ${s.id}: ${out.refusal?.sentence ?? "not taken"}`);
     }
@@ -695,114 +697,147 @@ onOrgChange((_orgId, change) => {
 
 
 const isBatonMarked = (s: SessionMarks) => s.state.file().has(BATON);
+/** Baton chats whose reply is being written: from the run's first event (or its first text) to its settle. */
+const writing = new Set<string>();
 
-registerSpecialLoadout({
+/** The owner areas each baton chat's record_decision offers now (its schema's enum, as JSON). */
+const offered = new Map<string, string>();
+const EVERY_MESSAGE = "Every message in a baton session is someone's: it can't be rewound or regenerated.";
+
+/** The served tools of one open, their declarations. */
+function batonDecls(path: string, sessionId: string): ServerToolDecl[] {
+  const tools = [...batonTools(sessionId), readLinkTool(sessionId), inspectFilesTool(sessionId), confirmFileTool(sessionId)];
+  serveTools(path, tools);
+  return tools.map(declOfTool);
+}
+
+/** A run's prompt options (§app.baton/goal-and-loadout): its own system prompt, nothing of the operator's setup. */
+function batonPrompt(sessionId: string, photos: boolean): RunStartAnswer["prompt"] {
+  return { customPrompt: wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId, undefined, photos), appendSystemPrompt: "", contextFiles: [], skills: [], cwd: "(none)" };
+}
+
+registerSpecialHost({
   kind: "baton",
   // The org's workspace repo on THIS host: a restored clone lives elsewhere than the header's cwd.
   cwd: (path) => batonOfPath(path)?.dir ?? null,
   // The marker AND a registry row in an attached org: a copy of the file anywhere else (a fork, a
   // detached org) opens as an ordinary session.
   matches: (sm, path) => isBatonMarked(sm) && !!batonOfPath(path),
-  async loadout(path) {
+  async spec(path) {
     const hit = batonOfPath(path);
     if (!hit) throw new Error("Not a registered baton session.");
     const sessionId = hit.row.sessionId;
     const defaults = loadDefaults();
+    offered.set(path, JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum));
     return {
-      resourceLoaderOptions: {
-        noExtensions: true,
-        noSkills: true,
-        noPromptTemplates: true,
-        noThemes: true,
-        noContextFiles: true,
-        // Not the operator's APPEND_SYSTEM.md: nothing of their own setup reaches an outsider's model.
-        appendSystemPromptOverride: () => [],
-        extensionFactories: [
-          {
-            name: "sova-baton",
-            factory: (pi) => {
-              const state = toolStateWriter(pi);
-              for (const t of batonTools(sessionId, state)) pi.registerTool(toPiTool(t));
-              pi.registerTool(toPiTool(readLinkTool(sessionId)));
-              pi.registerTool(toPiTool(inspectFilesTool(sessionId)));
-              pi.registerTool(toPiTool(confirmFileTool(sessionId)));
-              let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
-              pi.on("before_agent_start", (event, ctx) => {
-                // The owner areas follow the roster: a change reaches the schema at the next run
-                // (§app.requirements/owner-area). Re-registering refreshes the tool registry, which
-                // re-activates every allowed tool, so the conversation's own set is restored.
-                if (!wrapupActive(sessionId)) {
-                  const roster = readRoster(hit.row.orgId);
-                  const now = JSON.stringify(ownerAreaSchema(roster).enum);
-                  if (now !== offered) {
-                    offered = now;
-                    pi.registerTool(toPiTool(recordDecisionTool(sessionId, state, roster)));
-                  }
-                  // Its abilities as they are now: the operator may have changed them since the last run.
-                  pi.setActiveTools(activeBatonTools(sessionId));
-                }
-                const o = event.systemPromptOptions;
-                // Photos as this run can take them: on in Settings, and its model sees images.
-                const photos = readBatonSettings().photos.enabled && !!ctx?.model?.input?.includes("image");
-                // inspect_files shows an image only to a model that sees images.
-                noteRunModel(sessionId, !!ctx?.model?.input?.includes("image"));
-                o.customPrompt = wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId, undefined, photos);
-                o.appendSystemPrompt = "";
-                o.contextFiles = [];
-                o.skills = [];
-                o.cwd = "(none)";
-              });
-              pi.on("context", (event, ctx) => {
-                const row = batonById(sessionId)?.row;
-                const redacted = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
-                // Who wrote each message, added after the redaction (names are no secret).
-                const branch = ctx ? toolCtx(ctx).branch() : [];
-                const messages = row ? labelAuthors(redacted, authorNotes(branch, namesOf(row.orgId), row.holder), event.messages) : redacted;
-                return messages === event.messages ? undefined : { messages };
-              });
-            },
-          },
-        ],
-      },
-      tools: [...LOADOUT_TOOLS],
+      kind: "baton",
+      extension: "sova-baton",
+      cwd: hit.dir,
+      // Its tools' state lives in this server: served, run through the chat's loopback.
+      tools: batonDecls(path, sessionId),
+      customTools: [],
+      allow: [...LOADOUT_TOOLS],
+      // Not the operator's APPEND_SYSTEM.md: nothing of their own setup reaches an outsider's model.
+      loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, append: "none" },
       model: hit.row.model ?? defaults.model ?? null,
       thinking: hit.row.thinking ?? defaults.thinking ?? null,
+      replyText: true,
+      hooks: {},
+      context: "baton",
+      refuses: { mode: "A baton session has no mode.", rewind: EVERY_MESSAGE, regenerate: EVERY_MESSAGE },
+      clientSend: true,
+      composerClosed: null,
+      start: { prompt: batonPrompt(sessionId, false), baton: batonPack(hit.row) },
     };
+  },
+  async adopt(path) {
+    const hit = batonOfPath(path);
+    if (!hit) return;
+    offered.set(path, JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum));
+    batonDecls(path, hit.row.sessionId);
+  },
+  async runStart(path, _ctx, { images }) {
+    const hit = batonOfPath(path);
+    if (!hit) throw new Error("Not a registered baton session.");
+    const sessionId = hit.row.sessionId;
+    const answer: RunStartAnswer = { prompt: {} };
+    if (!wrapupActive(sessionId)) {
+      // The owner areas follow the roster: a change reaches the schema at the next run
+      // (§app.requirements/owner-area). Re-registering refreshes the tool registry, which
+      // re-activates every allowed tool, so the conversation's own set is restored.
+      const roster = readRoster(hit.row.orgId);
+      const now = JSON.stringify(ownerAreaSchema(roster).enum);
+      if (now !== offered.get(path)) {
+        offered.set(path, now);
+        const t = recordDecisionTool(sessionId, runWriter, roster);
+        serveTools(path, [t]);
+        answer.reregister = [declOfTool(t)];
+      }
+      // Its abilities as they are now: the operator may have changed them since the last run.
+      answer.activeTools = activeBatonTools(sessionId);
+    }
+    // Photos as this run can take them: on in Settings, and its model sees images.
+    const photos = readBatonSettings().photos.enabled && images;
+    // inspect_files shows an image only to a model that sees images.
+    noteRunModel(sessionId, images);
+    answer.prompt = batonPrompt(sessionId, photos);
+    const row = batonById(sessionId)?.row;
+    if (row) answer.baton = batonPack(row);
+    return answer;
   },
   async opened(chat) {
     // The wrap-up's tool is in the allowlist, and active only during the wrap-up turn; read_link
     // only while the session can read links.
-    chat.harness.setActiveTools(activeBatonTools(chat.harness.id));
+    await chat.setActiveTools(activeBatonTools(chat.mirror.sessionId));
   },
-  watchSession(session, path) {
+  runEvent(path, e, n) {
     const sessionId = batonOfPath(path)?.row.sessionId;
     if (!sessionId) return;
-    let writing = false;
-    session.subscribe((e) => {
-      // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
-      // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
-      // is being written, so its end renews the lease and applies what waited for it.
-      if (e.type === "run.start" && !wrapupActive(sessionId) && !writing) {
-        writing = true;
-        void replyFact(sessionId, "reply/writing");
-      }
-      if (e.type === "message.update" && e.role === "assistant") {
-        if (!wrapupActive(sessionId)) {
-          streamShare(sessionId, streamingText(e.handle));
-          if (!writing) {
-            writing = true;
-            void replyFact(sessionId, "reply/writing");
-          }
+    if (e.type === "run.start") runOfChat.set(path, n);
+    // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
+    // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
+    // is being written, so its end renews the lease and applies what waited for it.
+    if (e.type === "run.start" && !wrapupActive(sessionId) && !writing.has(path)) {
+      writing.add(path);
+      void replyFact(sessionId, "reply/writing");
+    }
+    if (e.type === "reply.text") {
+      if (!wrapupActive(sessionId)) {
+        streamShare(sessionId, e.text);
+        if (!writing.has(path)) {
+          writing.add(path);
+          void replyFact(sessionId, "reply/writing");
         }
-      } else if (e.type === "message.end" || e.type === "run.settled" || e.type === "entry.appended") refreshShare(sessionId);
-      if (e.type === "run.settled") {
-        writing = false;
-        // Entries that arrived mid-run (the transcript takes none then).
-        setTimeout(() => void flushEntries(path).catch(() => {}), 0);
-        // The reply's end: the statechart renews the lease, applies a move held for it, the budget stop, the wrap-up.
-        if (!wrapupActive(sessionId) && !stopping.has(sessionId)) void replyFact(sessionId, "reply/ended");
       }
-    });
+    } else if (e.type === "message.end" || e.type === "run.settled" || e.type === "entry.appended") refreshShare(sessionId);
+    if (e.type === "run.settled") {
+      writing.delete(path);
+      const run = runOfChat.get(path) ?? null;
+      runOfChat.delete(path);
+      // Entries that arrived mid-run (the transcript takes none then).
+      setTimeout(() => void flushEntries(path).catch(() => {}), 0);
+      // A stopped run's own end: the stop reports the reply's end itself.
+      const stop = stopping.get(sessionId);
+      const stopped = !!stop && (stop.active || (stop.run !== null && stop.run === run));
+      if (stop && !stop.active && stop.run === run) stopping.delete(sessionId);
+      // The reply's end: the statechart renews the lease, applies a move held for it, the budget stop, the wrap-up.
+      if (!wrapupActive(sessionId) && !stopped) void replyFact(sessionId, "reply/ended");
+    }
+  },
+  closed(path) {
+    offered.delete(path);
+    runOfChat.delete(path);
+  },
+  // Its chat's process is linked again: the entries that waited for it are written.
+  relinked(path) {
+    void flushEntries(path).catch(() => {});
+  },
+  // Its chat's process died mid-reply: the reply ended for the statechart, once, unless a stop reports it.
+  died(path) {
+    const sessionId = batonOfPath(path)?.row.sessionId;
+    runOfChat.delete(path);
+    if (!sessionId || !writing.delete(path)) return;
+    if (!wrapupActive(sessionId) && !stopping.get(sessionId)?.active) void replyFact(sessionId, "reply/ended");
   },
   clientSend(path, msg) {
     const hit = batonOfPath(path);
@@ -819,18 +854,13 @@ registerSpecialLoadout({
       throw err;
     }
     // Its reply started with the accepted message (the statechart's reply region).
-    // The runtime refused the message after all: it neither counts nor clears Needs you.
-    return {
-      by: OPERATOR,
-      undo: () => {
-        undoNote(sessionId);
-        void replyFact(sessionId, "reply/ended");
-      },
-      ...(inlined.images.length ? { text: inlined.text, images: inlined.images } : {}),
-    };
+    return { by: OPERATOR, ...(inlined.images.length ? { text: inlined.text, images: inlined.images } : {}) };
   },
-  refuses(gesture) {
-    if (gesture === "mode") return "A baton session has no mode.";
-    return "Every message in a baton session is someone's: it can't be rewound or regenerated.";
+  // The runtime refused the message after all: it neither counts nor clears Needs you.
+  clientSendRefused(path) {
+    const sessionId = batonOfPath(path)?.row.sessionId;
+    if (!sessionId) return;
+    undoNote(sessionId);
+    void replyFact(sessionId, "reply/ended");
   },
 });

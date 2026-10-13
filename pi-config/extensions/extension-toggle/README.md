@@ -14,7 +14,8 @@ Run `/reload` once after installation (see below for why that matters).
 
 Opens a `SettingsList` of every discovered extension with an on/off toggle:
 
-- **Local global** — entries in `~/.pi/agent/extensions/`
+- **Local global** — entries in the agent dir's `extensions/` (`~/.pi/agent`, or
+  `$PI_CODING_AGENT_DIR` when set)
 - **Project-local** — entries in `<project>/.pi/extensions/` (only when the
   project is trusted)
 - **Packages** — every extension file inside each `npm:` / `git:` / local-path

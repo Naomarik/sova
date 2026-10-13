@@ -5,9 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import * as catalog from "./catalog.ts";
 import * as shim from "./context-window.ts";
-import { registerClaudeCode } from "./index.ts";
 import { refreshClaudeModels, STATIC_MODELS } from "./provider/index.ts";
-import { BACKEND_REGISTER_EVENT } from "../subagents/contracts.ts";
+import { registerSubagents } from "../subagents/index.ts";
 
 const catalogShape = () => catalog.claudeOffer().map((m) => [m.id, m.name]);
 
@@ -37,13 +36,20 @@ test("agent_models lists the catalog and never runs the CLI (a `claude` on PATH 
 	const path = process.env.PATH;
 	process.env.PATH = `${dir}:${path}`;
 	t.after(() => { process.env.PATH = path; });
-	const registrations: any[] = [];
+	// claude-code is the subagents manager's built-in backend (a pi worker on this provider): its
+	// agent_models rows are the catalog.
+	const tools = new Map<string, any>();
 	const hooks = new Map<string, Function>();
-	const events = { on() { return () => {}; }, emit(name: string, d: any) { if (name === BACKEND_REGISTER_EVENT) registrations.push(d); } };
-	registerClaudeCode({ events, registerFlag() {}, getFlag: () => undefined, registerProvider() {}, unregisterProvider() {}, on: (name: string, hook: Function) => hooks.set(name, hook) } as any);
-	t.after(async () => { await hooks.get("session_shutdown")?.(); });
-	const listed = await registrations[0].listModels({}, undefined);
-	assert.deepEqual(listed.map((m: any) => [m.id, m.name]), catalogShape());
+	const events = { on() { return () => {}; }, emit() {} };
+	registerSubagents({
+		events, registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand() {}, registerShortcut() {}, appendEntry() {},
+		on: (name: string, hook: Function) => hooks.set(name, hook), getActiveTools: () => [], sendMessage() {}, sendUserMessage() {},
+	} as any, undefined, { policyFile: join(dir, "no-policy.json"), agentDir: dir });
+	t.after(async () => { await hooks.get("session_shutdown")?.({}, ctx); });
+	const ctx: any = { cwd: dir, mode: "rpc", hasUI: false, ui: { setStatus() {}, notify() {} }, sessionManager: { getEntries: () => [] }, modelRegistry: { getAvailable: () => [] } };
+	const result = await tools.get("agent_models").execute("t", { backend: "claude-code", limit: 100 }, undefined, () => {}, ctx);
+	const listed = result.details.models;
+	assert.deepEqual(listed.map((m: any) => [m.id, m.name]).sort(), catalogShape().sort());
 	assert.deepEqual(listed.find((m: any) => m.id === "claude-haiku-4-5").efforts, undefined, "Haiku takes no effort");
 	const { existsSync } = await import("node:fs");
 	assert.equal(existsSync(marker), false, "no claude process ran");

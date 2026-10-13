@@ -16,7 +16,6 @@ import { restoreActive as restoreSandbox } from "../../pi-config/extensions/sand
 import { FORK_CACHE_ENTRY, inheritedCacheKey } from "../../pi-config/extensions/subagents/fork/cache.ts";
 import { restorePick } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { WORKER_SESSION_ENTRY } from "../../pi-config/extensions/subagents/worker-mark.ts";
-import { LEGACY_REGISTRY_ENTRY_TYPE } from "../../pi-config/extensions/subagents/worker-transcript.ts";
 import { restoreActive as restoreWorktrees } from "../../pi-config/extensions/worktrees/state.ts";
 import { BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY } from "../../shared/baton";
 import type { StateKind, StateView } from "../../shared/harness";
@@ -44,7 +43,7 @@ import { PROJECT_OVERSEER_ENTRY } from "../../shared/project-overseer";
 import { loadoutOnBranch, LOADOUT_ENTRY, normalizeLoadout } from "../session-loadout";
 import { profileOnBranch } from "../session-profile";
 import { fixtureSets, REPO } from "./pi/golden/golden";
-import { completionHeaderRef, entryFacts, WORKER_REGISTRY_TYPE, WORKER_SESSION_MARKER } from "../worker-sessions";
+import { completionHeaderRef, entryFacts, WORKER_SESSION_MARKER } from "../worker-sessions";
 import { activeBranch, historyOf, parseLines, toHEntry, type Entry } from "./pi/reader";
 import { stateViewOf } from "./pi/state";
 import {
@@ -78,7 +77,6 @@ import {
   SESSION_SENT,
   STATE_KINDS,
   SUBAGENT_PROFILE,
-  WORKER_REGISTRY,
   WORKER_SESSION,
   WORKTREES,
 } from "./state-kinds";
@@ -119,11 +117,6 @@ function workerFactsRef(e: any): { self: boolean; refs: string[] } {
   const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
   if (!e || typeof e !== "object") return none;
   if (e.type === "custom" && e.customType === "subagents-worker-session") return { self: true, refs: [] };
-  if (e.type === "custom" && e.customType === "subagents-worker-registry") {
-    const d = e.data;
-    if (!d || typeof d !== "object") return none;
-    return { self: false, refs: [d.backendSessionFile, d.backendSessionId].filter(nonEmpty).map((s) => s.trim()) };
-  }
   if (e.type === "custom_message" && e.customType === "subagent-complete") {
     const c = e.content;
     const text = typeof c === "string" ? c : Array.isArray(c) ? c.filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string").map((b) => b.text).join("") : "";
@@ -302,7 +295,6 @@ const SAMPLES: Record<string, unknown[]> = {
   "align-doc": [{ doc: { title: "T", markdown: "m", questions: [] } }, null, "x"],
   "topic-outline": [{ v: 1 }],
   "subagents-worker-session": [{ v: 1 }, { v: 1, workerId: "ag_02", teamId: "team_01", role: "dev" }, null],
-  "subagents-worker-registry": [{ v: 1, backendSessionFile: "/s/a.jsonl", backendSessionId: "id-1" }, { backendSessionId: " id-2 " }, { backendSessionFile: "/s/b.jsonl" }, { backendSessionFile: "" }, null, "x"],
 };
 const TYPES = Object.keys(SAMPLES);
 
@@ -510,7 +502,6 @@ describe("the state kind registry", () => {
       "sova-session-sent sova branch-list",
       "sova-topic-delivered sova write-only",
       "subagent-profile extension:subagents newest-on-branch",
-      "subagents-worker-registry extension:subagents file-list",
       "subagents-worker-session extension:subagents presence",
       "worktrees extension:worktrees newest-on-branch",
     ]);
@@ -530,8 +521,6 @@ describe("the state kind registry", () => {
     assert.equal(ALIGN_DOC.type, ALIGN_ENTRY_TYPE);
     assert.equal(WORKER_SESSION.type, WORKER_SESSION_ENTRY);
     assert.equal(WORKER_SESSION.type, WORKER_SESSION_MARKER);
-    assert.equal(WORKER_REGISTRY.type, LEGACY_REGISTRY_ENTRY_TYPE);
-    assert.equal(WORKER_REGISTRY.type, WORKER_REGISTRY_TYPE);
   });
 
   test("kinds are frozen", () => {

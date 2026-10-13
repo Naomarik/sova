@@ -6,6 +6,7 @@ import * as path from "node:path";
 import {
 	applyToggle,
 	computeEnabled,
+	defaultAgentDir,
 	expandEntry,
 	globToRegExp,
 	listExtensions,
@@ -197,4 +198,12 @@ test("manifestExtensionFiles and expandEntry on real package layouts", () => {
 	fs.writeFileSync(path.join(dir, "src", "skip.ts"), "");
 	assert.deepEqual(manifestExtensionFiles(dir), ["src/a.ts"]);
 	assert.deepEqual(expandEntry(dir, "src"), ["src/a.ts", "src/skip.ts"]);
+});
+
+test("defaultAgentDir: PI_CODING_AGENT_DIR with a leading ~ expanded, else ~/.pi/agent", () => {
+	const home = os.homedir();
+	assert.equal(defaultAgentDir({}), path.join(home, ".pi", "agent"));
+	assert.equal(defaultAgentDir({ PI_CODING_AGENT_DIR: "/x/agent" }), "/x/agent");
+	assert.equal(defaultAgentDir({ PI_CODING_AGENT_DIR: "~/a" }), path.join(home, "a"));
+	assert.equal(defaultAgentDir({ PI_CODING_AGENT_DIR: "~" }), home);
 });

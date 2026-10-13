@@ -307,7 +307,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "semantic",
     relies: "The resource loader's appendSystemPromptOverride parts are read when the base system prompt is rebuilt, which setActiveToolsByName(getActiveToolNames()) does; a run alone keeps the prompt it was built with.",
     pi: ["AgentSession.setActiveToolsByName", "AgentSession._rebuildSystemPrompt", "DefaultResourceLoader.appendSystemPromptOverride"],
-    where: [{ file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.refreshSystemPrompt" }, { file: "server/overseer.ts", symbol: "LivePrompt.rebase" }],
+    where: [{ file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.refreshSystemPrompt" }, { file: CM, symbol: "hearRuns" }],
     canary: "P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads the loader's appendSystemPrompt parts",
     retireWhen: "pi adds a public refreshSystemPrompt(), or re-reads the parts at each run",
   },
@@ -360,6 +360,17 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [{ file: "pi-config/extensions/link/index.ts", symbol: "join" }],
     canary: "P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not",
     retireWhen: "pi offers a documented hook for changing the tool set before a run's next request",
+  },
+  {
+    id: "P24",
+    name: "own-code-discovery",
+    kind: "monkey-patch",
+    relies:
+      "DefaultResourceLoader takes the extensions it discovers only from its package manager's resolve() (reload and loadCurrentExtensionSet), so rewriting the paths resolve() answers on DefaultPackageManager.prototype loads the same extensions, with pi's own enabled flags, metadata and trust, from the rewritten paths; additionalExtensionPaths never pass through resolve().",
+    pi: ["DefaultPackageManager.resolve", "DefaultResourceLoader.reload", "DefaultResourceLoader.loadCurrentExtensionSet", "createAgentSessionServices"],
+    where: [{ file: "server/harness/pi/own-code.ts", symbol: "patchResolve" }, { file: "server/harness/pi/own-code.ts", symbol: "installOwnCode" }],
+    canary: "P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy",
+    retireWhen: "pi's loader takes a path-mapping hook for discovered extensions",
   },
   {
     id: "T1",

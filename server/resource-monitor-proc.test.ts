@@ -93,7 +93,7 @@ test("cmdline: NUL-separated argv, and a retitled process's padded title", () =>
 
 describe("classifyArgv", () => {
   const c = (...argv: string[]) => classifyArgv(argv);
-  test("pi worker (retitled)", () => assert.deepEqual(c("pi"), { kind: "pi-worker", cmd: "pi" }));
+  test("pi is no worker of its own any more: just a process", () => assert.deepEqual(c("pi"), { kind: "other", cmd: "pi" }));
   test("claude: worker or provider by argv alone is 'claude-worker', with its session uuid", () => {
     const uuid = "0287676D-8cba-4b8c-81a0-cf8a90cdd413";
     const r = c("claude", "-p", "--input-format", "stream-json", "--resume", uuid, "--settings", "{}", "--model", "opus[1m]");
@@ -103,9 +103,6 @@ describe("classifyArgv", () => {
     const fresh = c("claude", "-p", "--model", "haiku");
     assert.equal(fresh.claudeSession, undefined);
     assert.equal(c("claude", "-p", "--session-id", "not-a-uuid").claudeSession, undefined);
-  });
-  test("member-mcp helper", () => {
-    assert.deepEqual(c("/usr/bin/node", "/home/u/sova/pi-config/extensions/subagents/member-mcp.ts"), { kind: "member-mcp", cmd: "node member-mcp.ts" });
   });
   test("node: interpreter flags skipped, tsx named, paths shortened", () => {
     assert.equal(c("/x/bin/node", "--import", "tsx", "server/index.ts").cmd, "node server/index.ts");

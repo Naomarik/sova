@@ -15,10 +15,12 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { acquireChatHandle } = await import("./chat-handle");
 const { settled } = await import("./workspace-git");
 
 after(async () => {
@@ -26,6 +28,8 @@ after(async () => {
   await settled(join(root, "ws"));
 });
 
+/** Runs inside each stub model call, while its run is in progress. */
+let duringCall: (() => void) | undefined;
 /** Every request the stub model got. */
 const contexts: { systemPrompt?: string; messages: { role: string; content: unknown }[] }[] = [];
 const TEST_MODEL = {
@@ -42,6 +46,7 @@ function stub(chat: Awaited<ReturnType<typeof acquireChat>>): void {
   session.agent.getApiKey = async () => "stub";
   session.agent.streamFunction = async (_model: unknown, context: (typeof contexts)[number]) => {
     contexts.push(context);
+    duringCall?.();
     const message = {
       role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), content: [{ type: "text", text: "ok" }], stopReason: "stop",
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -93,4 +98,25 @@ test("the prompt is byte-identical across runs and runtimes after a change of li
   await piSession(chat).prompt("after a restart");
   assert.equal(systemOf(contexts.at(-1)!), opening);
   assert.doesNotMatch(noteOf(contexts.at(-1)!), /\[changed\]/);
+});
+
+test("a look's message names the run it starts (its run tag); the next run, an operator's, is no look", async () => {
+  const org = await orgs.createOrg({ name: "Tags", dir: join(root, "ws-tags") });
+  mkdirSync(join(root, "proj-tags"));
+  const project = await orgs.addProject(org.id, { name: "Tagged", root: join(root, "proj-tags") });
+  const { path } = await po.ensureProjectOverseer(project.id);
+  stub(await acquireChat(path));
+  const h = await acquireChatHandle(path);
+  const seen: (string | undefined)[] = [];
+  duringCall = () => seen.push(po.lookRunForTest(project.id));
+  try {
+    const look = await h.send({ text: "look now", origin: "server", track: true, runTag: "look:run-7" });
+    assert.deepEqual(await h.turnEnd(look), { ok: true });
+    assert.equal(po.lookRunForTest(project.id), undefined, "the look's run is over");
+    const mine = await h.send({ text: "and you?", origin: "client", track: true });
+    assert.deepEqual(await h.turnEnd(mine), { ok: true });
+    assert.deepEqual(seen, ["run-7", undefined]);
+  } finally {
+    duringCall = undefined;
+  }
 });

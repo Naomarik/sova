@@ -29,6 +29,7 @@ import type { VerbActOutcome } from "./project-services/engine";
 import { READ_VERBS } from "../shared/project-contract";
 import { copyIntoWorktree, deleteFile, fileListLine, namedFileRows } from "./project-files-tool";
 import { FileRefusal } from "./project-files";
+import { trialActWait } from "./chat-handle";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -308,13 +309,14 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   const p = host.paths;
 
   function act(name: string, run: (params: any, toolCallId: string) => Promise<Out>, counts: PoLimitKind | undefined = COUNTS[name]) {
-    return async (toolCallId: string, params: any): Promise<Out> => {
+    return async (toolCallId: string, params: any, signal?: AbortSignal): Promise<Out> => {
       const log = (outcome: "ok" | "partial" | "refused" | "error", error?: string, note?: string) =>
         // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews).
         logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
       try {
         const refused = operatorOnlyRefusal(name, host.attended());
         if (refused) throw new Refusal(refused);
+        await trialActWait("before", name, toolCallId, signal);
         const { partial, refused: said, ...out } = await run(params ?? {}, toolCallId);
         // A one-line result for the project page's activity list (a promotion's commit, a session's branch).
         const note = (out.details as { note?: unknown } | null)?.note;
@@ -322,6 +324,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (said) log("refused", said);
         else if (partial) log("partial", partial, typeof note === "string" ? note : undefined);
         else log("ok", undefined, typeof note === "string" ? note : undefined);
+        await trialActWait("after", name, toolCallId, signal);
         return out;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

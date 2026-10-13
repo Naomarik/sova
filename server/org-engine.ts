@@ -122,6 +122,9 @@ export function setOrgClockForTest(fn: (() => number) | null): void {
 
 /** Open the org's engine (once; a second call waits for the first). */
 export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
+  // One statechart engine per org, the server's (§app.chat-processes/special-kinds): a chat process
+  // (its unit named in SOVA_CHAT_UNIT) never opens one, so no act runs twice.
+  if (process.env.SOVA_CHAT_UNIT) throw new Error("An organization's engine opens only in the Sova server.");
   const have = hosts.get(opts.orgId);
   if (have) return have;
   const pending = opening.get(opts.orgId);

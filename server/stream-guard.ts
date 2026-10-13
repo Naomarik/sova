@@ -1,5 +1,5 @@
 import type { HarnessSession } from "../shared/harness";
-import type { SpecialKind } from "./chat-manager";
+import type { SpecialKind } from "./chat-handle";
 
 /**
  * The runaway-stream guard (§chat.transcript/runaway-stream): every hosted runtime's turn is

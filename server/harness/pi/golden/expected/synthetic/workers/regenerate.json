@@ -119,16 +119,6 @@
     "userId": "o0000002",
     "text": "Start a team"
   },
-  "o000000d": {
-    "ok": true,
-    "userId": "o0000002",
-    "text": "Start a team"
-  },
-  "o000000d:0": {
-    "ok": true,
-    "userId": "o0000002",
-    "text": "Start a team"
-  },
   "no-such-entry": {
     "ok": false,
     "reason": "not_on_branch",

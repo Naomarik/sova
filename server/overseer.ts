@@ -76,7 +76,7 @@ import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, RULE_ENTRY, type RuleEntry, sessionsText } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
-import { RESUME_DELAY_MS, type ResumeDeps, resumeInterrupted, runLedger } from "./auto-resume";
+import { RESUME_DELAY_MS, type ResumeDeps, resumeInterrupted } from "./auto-resume";
 import { schedulesForWire } from "./schedules";
 import { overseerFileTools, ownStateRoots } from "./overseer-file-tools";
 import { OverseerGuard } from "./overseer-deny";
@@ -1278,27 +1278,14 @@ export const countStarted = (path: string): void => host.started(path, true);
 export const briefOverseer = (body: string): Promise<void> => sendBrief(body);
 
 /**
- * Resume the runs the last stop cut off (§app.overseer/auto-resume), once, a few seconds after
- * start: read and empty the ledger now, before this process starts runs of its own.
- */
-export function startAutoResume(): void {
-  const runs = runLedger.takeInterrupted();
-  if (!runs.size) return;
-  const timer = setTimeout(() => {
-    void resumeInterrupted(runs, resumeDeps()).catch((err) => console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)));
-  }, RESUME_DELAY_MS);
-  timer.unref();
-}
-
-/**
  * A chat in a process of its own died with a run in flight (§app.chat-processes/crash): resume it
- * once, a few seconds later, under the same gates as a restart's resume. Its next run is marked a
+ * once, a few seconds later (§app.overseer/auto-resume). Its next run is marked a
  * resume in the chat's own process (`before`), which the send then opens.
  */
 export function resumeCrashedChat(path: string, since: number, before: (path: string) => Promise<void>): void {
   const timer = setTimeout(() => {
     const deps = resumeDeps();
-    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text, key) => (await before(p), deps.prompt(p, text, key)) }, { markResuming: () => {} }, "crash").catch((err) =>
+    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text, key) => (await before(p), deps.prompt(p, text, key)) }).catch((err) =>
       console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)),
     );
   }, RESUME_DELAY_MS);

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
@@ -103,17 +102,17 @@ export function setLinkToken(token: string | null): void {
   linkToken = token;
 }
 
-/** Where a chat's runs in flight are recorded, for resuming what a stop cuts off: the server's run
-    ledger (§app.overseer/auto-resume), unless the process hosting the chat records its own (a chat
-    process's in-flight marker, §app.chat-processes/crash). */
+/** Where a chat's runs in flight are recorded, for resuming what a death cuts off: the chat process's
+    in-flight marker (§app.chat-processes/crash). Unset (the server's own process): nowhere. */
 export interface RunRecorder {
   started(path: string): void;
   settled(path: string): void;
   markResuming(path: string): void;
 }
-let runRecorder: RunRecorder = runLedger;
+const NO_RECORDER: RunRecorder = { started() {}, settled() {}, markResuming() {} };
+let runRecorder: RunRecorder = NO_RECORDER;
 export function setRunRecorder(r: RunRecorder | null): void {
-  runRecorder = r ?? runLedger;
+  runRecorder = r ?? NO_RECORDER;
 }
 /**
  * An ordinary chat's server-hosted tools in a chat process of its own (§app/chat-processes): the

@@ -9,7 +9,10 @@ dir=$2
 here=$(cd "$(dirname "$0")/../.." && pwd)
 [ -e "$dir" ] && { echo "snapshot: $dir exists" >&2; exit 2; }
 mkdir -p "$dir"
-git -C "$here" archive "$rev" | tar -x -C "$dir"
+# Through a file, not a pipe: sh has no pipefail, and a failing archive must stop here (GNU tar and bsdtar alike).
+git -C "$here" archive -o "$dir.tar" "$rev"
+tar -x -f "$dir.tar" -C "$dir"
+rm -f "$dir.tar"
 ln -s "$here/node_modules" "$dir/node_modules"
 git -C "$here" rev-parse "$rev" > "$dir/.trial-rev"
 echo "$here" > "$dir/.trial-repo"

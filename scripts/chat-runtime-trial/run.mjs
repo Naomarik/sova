@@ -78,6 +78,8 @@
 //     t25       code generations: a chat runs its own copy of the code; an edit to the checkout never
 //               reaches it; a restart moves quiet chats one at a time; a worker of an older chat runs
 //               the current copy; unused copies go; new code that fails to boot halts the rollout
+//     tserverless  Part B 5e(a): with the server stopped for good, a quiet chat exits after the (shortened)
+//               idle time, one mid-reply runs on until its reply ends; the next server sees no death
 //     hermetic  hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
 //               claude-code-cli, a restart and every page's GET read or write nothing in its ~/.pi/agent,
 //               ~/.claude, ~/.codex (bar the Overseer redactor reading four home secrets to mask them) and
@@ -103,7 +105,7 @@
 // Writes <scratch>/results.json (every check, pass/fail, details) and keeps server-*.log and
 // mock.jsonl beside it. Exit 0 when every check passed, 1 when one failed, 2 on a setup problem.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -129,24 +131,33 @@ import {
   tokenOf,
   userBus,
 } from "./lib.mjs";
-import { alive, cgroupOf, cmdOf, niceOf, tree, withEnv } from "./procs.mjs";
+import { alive, ancestors, cgroupOf, cmdOf, darwin, info, niceOf, tree, withEnv } from "./procs.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t22", "t23", "t24", "t25", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21loff", "t22", "t23", "t24", "t25", "tserverless", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
 const checks = asked.length && !asked.includes("all") ? asked : [...ALL, ...(opt("model") ? ["real"] : [])];
 const tag = `${process.pid}`;
 const mode = opt("mode", userBus() ? "unit" : "child");
-const driver = opt("driver", mode === "unit" ? "systemd" : "detached");
+// darwin: chats on the detached driver whatever the server's mode (no systemd; the server's unit is a launchd
+// stand-in, lib.mjs launchdStandIn).
+const driver = opt("driver", mode === "unit" && !darwin ? "systemd" : "detached");
 if (driver === "systemd" && !userBus()) (console.error("--driver systemd needs the systemd user manager (none answers here)"), process.exit(2));
 const fixedPort = opt("port") ? Number(opt("port")) : null;
-const scratch = opt("scratch", join(process.env.TMPDIR || tmpdir(), `chat-runtime-trial-${tag}`));
+// darwin: a short real path (/var is a link to /private/var, and deep /private/var/folders paths overrun the
+// 104-byte limit of a unix socket path).
+const scratch = opt("scratch", darwin ? `/private/tmp/sova-t-${tag}` : join(process.env.TMPDIR || tmpdir(), `chat-runtime-trial-${tag}`));
+if (darwin) {
+  // An ssh or Terminal shell has 256 open files; a server and its chats need more (raise it: ulimit -n 8192).
+  const nofile = Number(execFileSync("sh", ["-c", "ulimit -n"], { encoding: "utf8" }).trim());
+  if (!(nofile >= 8192)) (console.error(`ulimit -n is ${nofile}: run \`ulimit -n 8192\` first (scripts/chat-runtime-trial/mac/run-mac.sh does)`), process.exit(2));
+}
 // No dash before the tag: a dash nests a slice under its prefix (sova-chats-test-1.slice sits inside
 // sova-chats.slice); this one is a top-level slice of its own.
 const slice = opt("slice", `sovatrial${tag}.slice`);
@@ -329,9 +340,21 @@ function noResume(path, label) {
   R.check(!inLedger(path), `${label}: runs-in-flight.json does not list the chat`);
   R.check(resumeDecisions(path).length === 0, `${label}: no auto-resume decision about the chat (${fmtDecisions(resumeDecisions(path))})`);
 }
+/** darwin (no cgroups): `pid` is apart from the server: not its descendant, nor in its process group or
+    session, so a stop of the server's launchd job (which signals its group) never reaches it. */
+function apartFromServer(pid, label, what = "the chat") {
+  const me = info(pid);
+  const sv = info(srv.pid());
+  R.check(me && sv && !ancestors(pid).includes(sv.pid) && me.pgid !== sv.pgid && me.sid !== sv.sid, `${label}: ${what} is apart from the server (pid ${pid} pgid ${me?.pgid} sess ${me?.sid}; server ${sv?.pid} pgid ${sv?.pgid} sess ${sv?.sid})`);
+}
 function sameProcess(path, pid1, label) {
   const pid2 = chatPid(path);
   R.check(pid1 && pid2 === pid1, `${label}: the chat process survived the restart (pid ${pid1} → ${pid2 || "none"})`);
+  if (darwin && pid1) {
+    apartFromServer(pid1, label);
+    const sock = record(path)?.sock;
+    if (sock) R.check(Buffer.byteLength(sock) < 104, `${label}: the chat's socket path fits a unix socket (${Buffer.byteLength(sock)} bytes < 104: ${sock})`);
+  }
   if (driver === "systemd" && pid1) {
     const cg = (() => {
       try {
@@ -1379,6 +1402,7 @@ async function t17(claude = false) {
     } catch {}
     R.check(cg.includes(`/${slice}/`), `${label}: the worker's cgroup is under the stand-in slice (${cg})`);
   }
+  if (darwin && wpid) apartFromServer(wpid, label, "the worker");
   if (!claude) R.check(askedBy(wpid).some((e) => e.tag === "t17w"), `${label}: the worker's model call comes from the worker's own process (${wpid})`);
   noRpc(label);
   s.close();
@@ -2166,6 +2190,23 @@ async function t25() {
     const pidA = chatPid(A.path);
     const gen1 = record(A.path)?.build;
     R.check(gen1 && genOf(pidA) === gen1 && existsSync(join(codeDir, gen1, ".complete")), `t25(a): the chat runs from <code root>/<id> (${runsFrom(pidA) || "no main.ts"}; build ${gen1})`);
+    // The copy's files as made (its directories stay writable, so the copy can go): checked again after
+    // chats have run on it, at (c).
+    const filesOf = (dir) => {
+      const out = [];
+      const walk = (d, rel) => {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+          if (!rel && e.name === "node_modules") continue;
+          if (e.isDirectory()) walk(join(d, e.name), `${rel}${e.name}/`);
+          else out.push(`${rel}${e.name}`);
+        }
+      };
+      try {
+        walk(dir, "");
+      } catch {}
+      return new Set(out);
+    };
+    const gen1Files = filesOf(join(codeDir, gen1));
     R.check(marksBy(pidA, m0).join() === "GEN-MARK-one", `t25(a): its extensions are the copy's (markers ${marksBy(pidA, m0).join(", ") || "none"})`);
     R.check(counts.length && Math.max(...counts) === 1, `t25(f): its model call was counted once on the llm feed (exact counts ${counts.join(", ") || "none"})`);
 
@@ -2186,6 +2227,8 @@ async function t25() {
     B.s.close();
     C.s.close();
 
+    const grown = [...filesOf(join(codeDir, gen1))].filter((p) => !gen1Files.has(p));
+    R.check(gen1Files.size > 0 && grown.length === 0, `t25: no file appeared in the copy while chats ran on it (${gen1Files.size} files; new: ${grown.slice(0, 8).join(", ") || "none"}${grown.length > 8 ? ` +${grown.length - 8}` : ""})`);
     // (c), (g): A stays attached (it waits for its dwell), B and C are quiet and unattended.
     const r0 = rollLines().length;
     await restart();
@@ -2311,6 +2354,44 @@ async function t25() {
   await boot();
 }
 
+// Tserverless (Part B 5e(a)): chats with no server. Idle-stop shortened (SOVA_CHAT_IDLE_MIN=0.05). The
+// server stops for good, chats left running (systemctl stop of its unit, or a launchd bootout on darwin);
+// a quiet chat with no controller then exits by itself after the idle time, a chat mid-reply keeps
+// running until its reply ends, and the next server reads each end as orderly: no death, no resume, and
+// the chat reopens on attach.
+async function tserverless() {
+  await teardown();
+  await boot({ idleMs: 3000 });
+  const Q = await newChat();
+  await turn(Q, "say ok");
+  const L = await newChat();
+  prompt(L.s, "[long 60 #tsl] a long reply");
+  await L.s.until(delta(/part 3\//), 30000, "L streams");
+  const pq = chatPid(Q.path);
+  const pl = chatPid(L.path);
+  Q.s.close();
+  L.s.close();
+  await srv.down();
+  R.note(`tserverless: the server stopped; quiet chat ${pq}, chat mid-reply ${pl}`);
+  await sleep(8000);
+  R.check(alive(pl), `tserverless: a chat mid-reply keeps running with no server (${pl})`);
+  const quietGone = await waitFor(() => !alive(pq), 60000);
+  R.check(quietGone, `tserverless: a quiet chat with no server exited by itself after the idle time (${pq})`);
+  const longGone = await waitFor(() => !alive(pl), 90000);
+  R.check(longGone && mockLog(mock.log).some((e) => e.event === "done" && e.tag === "tsl"), `tserverless: the chat mid-reply finished its reply, then exited (${pl}: ${alive(pl) ? "still running" : "gone"})`);
+  srv.up();
+  await healthy(base);
+  await sleep(3000);
+  R.check(deaths(Q.path).length === 0 && deaths(L.path).length === 0, `tserverless: the next server reads both ends as orderly, not deaths (${deaths(Q.path).length + deaths(L.path).length} deaths)`);
+  R.check(resumeDecisions(Q.path).length === 0 && resumeDecisions(L.path).length === 0 && userEntriesWith(L.path, RESUME_TEXT) + userEntriesWith(L.path, CRASH_RESUME_TEXT) === 0, "tserverless: nothing is resumed");
+  const q2 = await chat(c, Q.path, 60000);
+  await turn({ path: Q.path, s: q2 }, "say ok again");
+  R.check(chatPid(Q.path) && chatPid(Q.path) !== pq, `tserverless: the quiet chat reopens on attach in a new process (${pq} → ${chatPid(Q.path)})`);
+  q2.close();
+  await teardown();
+  await boot();
+}
+
 // hermetic: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
 // ~/.claude.json and ~/.codex hold decoy files, and its ~/.local/bin/claude (also last on PATH) is a
 // decoy claude that logs each call. Through ordinary chats, a pi worker, a claude-code worker, /btw, a
@@ -2346,22 +2427,40 @@ async function hermetic() {
   // with the step running when it arrived (inotify gives no pid).
   const { spawn } = await import("node:child_process");
   const watched = [...decoys.map((d) => join(home, d)), join(home, ".claude.json")];
-  const ino = spawn("inotifywait", ["-m", "-r", "-e", "open,access,modify,close_write,create,delete,moved_to,moved_from,attrib", "--format", "%w%f|%e", ...watched], { stdio: ["ignore", "pipe", "pipe"] });
+  // darwin has no inotify (fs_usage needs root): there a listing of the tripwire home (names, sizes,
+  // mtimes) before and after the run shows writes; reads go unseen, and the result says so.
+  const listing = () => {
+    const out = new Map();
+    const walk = (p) => {
+      let st;
+      try {
+        st = statSync(p);
+      } catch {
+        return;
+      }
+      out.set(p.replace(`${home}/`, "~/"), `${st.size} ${st.mtimeMs}`);
+      if (st.isDirectory()) for (const n of readdirSync(p)) walk(join(p, n));
+    };
+    for (const w of watched) walk(w);
+    return out;
+  };
+  const before = darwin ? listing() : null;
+  const ino = darwin ? null : spawn("inotifywait", ["-m", "-r", "-e", "open,access,modify,close_write,create,delete,moved_to,moved_from,attrib", "--format", "%w%f|%e", ...watched], { stdio: ["ignore", "pipe", "pipe"] });
   let step = "setup";
   const hits = [];
-  ino.stdout.on("data", (d) => {
+  ino?.stdout.on("data", (d) => {
     for (const l of String(d).split("\n").filter(Boolean)) {
       const [file, ev] = l.split("|");
       hits.push({ file: file.replace(`${home}/`, "~/"), ev, step });
     }
   });
-  const ready = await new Promise((ok) => {
+  const ready = darwin || (await new Promise((ok) => {
     let err = "";
     ino.stderr.on("data", (d) => ((err += String(d)), /Watches established/.test(err) && ok(true)));
     ino.once("exit", () => ok(false));
     setTimeout(() => ok(false), 10000);
-  });
-  if (!R.check(ready, "hermetic: the inotify watch on the tripwire home is up")) return;
+  }));
+  if (!R.check(ready, darwin ? "hermetic: the tripwire home's listing is taken (darwin: no inotify)" : "hermetic: the inotify watch on the tripwire home is up")) return;
   // Mise's shims find their tools through HOME: name the installs directly.
   const bins = [process.execPath, (() => {
     try {
@@ -2422,7 +2521,13 @@ async function hermetic() {
     step = "after";
     await sleep(5000);
   } finally {
-    ino.kill("SIGTERM");
+    ino?.kill("SIGTERM");
+  }
+  if (darwin) {
+    const after = listing();
+    for (const [p, v] of after) if (before.get(p) !== v) hits.push({ file: p, ev: before.has(p) ? "MODIFY" : "CREATE", step: "the run (darwin listing)" });
+    for (const p of before.keys()) if (!after.has(p)) hits.push({ file: p, ev: "DELETE", step: "the run (darwin listing)" });
+    R.note("hermetic: darwin compares listings, so only writes are seen; a read of a decoy goes unnoticed");
   }
   const write = (h) => !/^(OPEN|ACCESS|CLOSE_NOWRITE)/.test(h.ev.replace(/,ISDIR/, ""));
   const allowed = (h) => !write(h) && REDACTOR_HOME.has(h.file) && h.step === REDACTOR_STEP;
@@ -2458,7 +2563,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t22, t23, t24, t25, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l: () => t21l(), t21loff: () => t21l(false), t22, t23, t24, t25, tserverless, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

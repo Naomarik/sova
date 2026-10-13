@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket } from "ws";
-import { ancestors, table, withEnv } from "./procs.mjs";
+import { ancestors, darwin, table, withEnv } from "./procs.mjs";
 
 // The tree the server runs from: this checkout, or CHAT_TRIAL_ROOT (a snapshot of a commit, so a trial
 // never boots a tree that others are editing).
@@ -174,6 +174,7 @@ export { sc, show };
  * tree it runs from (default ROOT; T25 runs a git clone it edits).
  */
 export function server({ tag, env, mode = "unit", log, root = ROOT }) {
+  if (mode === "unit" && darwin) return launchdStandIn({ label: `test.sova-s5-${tag}`, env, log, root });
   env = { ...env };
   const unit = `sova-trial-server-${tag}.service`;
   const start = join(root, "scripts", "start-server.sh");
@@ -222,6 +223,72 @@ export function server({ tag, env, mode = "unit", log, root = ROOT }) {
         await down();
         up();
       }
+    },
+  };
+}
+
+/** launchctl in the user's GUI domain. */
+const lc = (...a) => execFileSync("launchctl", a, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * darwin's stand-in for the server unit: a launchd agent of our own label (test.sova-s5-<tag>, never the
+ * live install's), set up as the live agent is (KeepAlive on a failed exit, ExitTimeOut 30, 8192 files,
+ * Interactive). `restart()` is `launchctl kickstart -k`; `down()` boots it out. Its plist lives beside
+ * its log, in the scratch dir.
+ */
+export function launchdStandIn({ label, env, log, root = ROOT }) {
+  env = { ...env };
+  const domain = `gui/${process.getuid()}`;
+  const plist = log.replace(/\.log$/, "") + `.${label}.plist`;
+  const start = join(root, "scripts", "start-server.sh");
+  const write = () =>
+    writeFileSync(
+      plist,
+      `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n` +
+        `<key>Label</key><string>${xml(label)}</string>\n<key>ProgramArguments</key><array><string>${xml(start)}</string></array>\n` +
+        `<key>WorkingDirectory</key><string>${xml(root)}</string>\n<key>EnvironmentVariables</key><dict>${Object.entries(env).map(([k, v]) => `<key>${xml(k)}</key><string>${xml(v)}</string>`).join("")}</dict>\n` +
+        `<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n<key>ExitTimeOut</key><integer>30</integer><key>ProcessType</key><string>Interactive</string>\n` +
+        `<key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>8192</integer></dict><key>HardResourceLimits</key><dict><key>NumberOfFiles</key><integer>8192</integer></dict>\n` +
+        `<key>StandardOutPath</key><string>${xml(log)}</string><key>StandardErrorPath</key><string>${xml(log)}</string>\n</dict></plist>\n`,
+    );
+  const loaded = () => {
+    try {
+      lc("print", `${domain}/${label}`);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const up = () => {
+    write();
+    lc("bootstrap", domain, plist);
+  };
+  const down = async () => {
+    if (!loaded()) return;
+    try {
+      lc("bootout", `${domain}/${label}`);
+    } catch {}
+    for (let i = 0; i < 70 && loaded(); i++) await sleep(500);
+  };
+  return {
+    unit: label,
+    up,
+    down,
+    pid: () => {
+      try {
+        return Number(/\bpid = (\d+)/.exec(lc("print", `${domain}/${label}`))?.[1] ?? 0);
+      } catch {
+        return 0;
+      }
+    },
+    cgroup: () => "",
+    async restart(changes) {
+      if (changes) {
+        Object.assign(env, changes);
+        await down();
+        up();
+      } else lc("kickstart", "-k", `${domain}/${label}`);
     },
   };
 }

@@ -4,9 +4,10 @@
 # extensions into pi's agent directory and, if you want one, install a login service. Safe to
 # pipe from curl:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash
 #
-# That installs the ref below (master until the first release is tagged); SOVA_REF picks another.
+# That installs the newest stable release (the `stable` tag); SOVA_REF picks another tag, branch or
+# commit, and a re-run installs the latest of whatever ref it names.
 #
 # The whole script is one function, main, called on its last line: bash reads all of it before any
 # of it runs, so a download cut short runs nothing.
@@ -67,11 +68,11 @@ set -euo pipefail
 main() {
 
 repo=${SOVA_REPO:-https://github.com/Naomarik/sova.git}
-# RELEASE: in the commit a release tag points at, set this default to that tag (and replace vNEXT
-# in docs/public-links.md with it), so the installer fetched from the tag installs the tag. Point
-# the install command in README.md, docs/getting-started.md and site/src/content/docs/install.md
-# at the tag's script, and set `release` in site/src/data/site.ts. Until then it is master.
-ref=${SOVA_REF:-master}
+# RELEASE: the default is `stable`, the one tag that moves: each release points it at its own
+# numbered tag (vX.Y.Z), and numbered tags never move. So the installer fetched from any ref, a
+# numbered tag's included, installs whatever `stable` points at when it runs; pinning a release
+# takes SOVA_REF=vX.Y.Z. Nothing here changes per release (.sova/playbooks/release/PLAYBOOK.md).
+ref=${SOVA_REF:-stable}
 dir=${SOVA_DIR:-$HOME/.local/share/sova}
 bindir=${SOVA_BIN:-$HOME/.local/bin}
 tty=${SOVA_TTY:-/dev/tty}

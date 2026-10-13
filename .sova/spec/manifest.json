@@ -17575,7 +17575,8 @@
         "§app.installer/portable",
         "§app.installer/bun",
         "§app.access/token",
-        "§app.access/callers"
+        "§app.access/callers",
+        "§app.installer/ref"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -17604,7 +17605,9 @@
         "§chat.subagent-profiles/menu",
         "§app.overseer/hosting",
         "§app.overseer/quick-actions",
-        "§app.project-overseer/coding-mode"
+        "§app.project-overseer/coding-mode",
+        "§chat/memory",
+        "§chat.mode-menu/memory-panel"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -17855,7 +17858,11 @@
         "scripts/install.test.sh",
         "scripts/install.integration.test.ts",
         "site/src/data/site.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_2 go-ahead)",
+        "at": "2026-10-13T13:02Z"
+      }
     },
     "§app.org-history/actors": {
       "kind": "behavior",

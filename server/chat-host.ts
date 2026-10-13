@@ -420,16 +420,21 @@ export class ChatHostRouter {
     this.readyP = (async () => {
       // Workers a previous server ran as its children ended with it (a crash, a SIGKILL: stopped now).
       for (const rec of await this.childSup.stopAll()) log(`worker chat ${rec.chatId}: left by the previous server; stopped`);
-      const { adopted } = await this.sup.adopt().catch((err) => (found(new Map()), Promise.reject(err)));
+      const { adopted } = await this.sup.adopt();
       const each = new Map(adopted.map((rec) => [rec.sessionPath, this.takeBack(rec)] as const));
       found(each);
       await Promise.all(each.values());
       this.workers.settleBoot();
-      this.sup.watch(2_000);
-      this.childSup.watch(2_000);
-      // Copies no chat runs any more go: after the take-back, so a surviving chat's copy is known.
-      if (this.gen) this.gc = startGenerationGc(() => this.buildsInUse());
-    })().catch((err) => log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`));
+    })()
+      .catch((err) => log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        // Whatever the take-back did: no open waits on it any more, deaths are watched, and copies no
+        // chat runs any more go (after it, so a surviving chat's copy is known).
+        found(new Map());
+        this.sup.watch(2_000);
+        this.childSup.watch(2_000);
+        if (this.gen) this.gc = startGenerationGc(() => this.buildsInUse());
+      });
   }
 
   private async takeBack(rec: ChatRecord): Promise<void> {

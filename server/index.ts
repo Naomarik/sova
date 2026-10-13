@@ -26,7 +26,6 @@ import { pruneVisitorLogs } from "./visitor-identity";
 import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onReceiverIdle, warmChatRuntime } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
-import { LIVE_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { cappedWebSocket } from "./runtime-quirks";
 import { decodeWorkers, teamDuties, invalidateUsageMemo, recordUsage, usageRefreshBusy } from "./insights";
@@ -210,7 +209,6 @@ configureSessionFeed({ list: listSessions });
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({
   own: { snapshot: llmSnapshot, subscribe: onLlmChange },
-  liveDir: LIVE_DIR,
   mesh: {
     // A dial-out pairing has no URL to open a feed to (§mesh/lan): its count isn't shown here.
     // `url` names the peer's entry; the feed opens at its verified address (§mesh/peers).

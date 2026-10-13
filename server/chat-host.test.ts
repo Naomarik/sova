@@ -219,6 +219,30 @@ test("a chat process's model calls are counted once in the server (its producer 
   assert.equal(snapshot().active, own.active);
 });
 
+test("B6: a worker's and a hidden chat's model calls, reported with their state over the link, are in this server's own count", async () => {
+  const { snapshot } = await import("../pi-config/extensions/llm-inflight/tracker.ts");
+  const { hostCount } = await import("./llm-inflight");
+  const t = setup();
+  const parent = session();
+  const before = hostCount(snapshot(), Date.now()).count;
+  const r = t.router as unknown as { hooks: { state(h: unknown): void; exit(h: unknown, cause: string): void }; remotes: Map<string, unknown> };
+  const handles: unknown[] = [];
+  for (const [i, kind] of (["pi", "btw"] as const).entries()) {
+    const spec = { kind, parent: { sessionId: parent.id, path: parent.path, workerId: `ag_0${i + 1}` }, cwd, model: null, thinking: null, builtins: null, extensions: [], flags: {}, appendSystemPrompt: null, env: {}, agentDir: null, lowered: true as const };
+    const ref = await t.router.workers.start({ key: `b6:${kind}`, spec: spec as never, session: { new: { dir: join(agentDir, "sessions", "--b6--") } }, task: null });
+    const h = r.remotes.get(ref.sessionFile)!;
+    assert.ok(h, `${kind}: its process's handle`);
+    const llm = { ...snapshot(), producer: `b6-${kind}`, pid: 5000 + i, folded: [], active: 1, approximate: 0, claudeTurns: 0, degraded: false };
+    (h as { mirror: object }).mirror = { ...(h as { mirror: object }).mirror, llm };
+    r.hooks.state(h);
+    handles.push(h);
+  }
+  assert.equal(hostCount(snapshot(), Date.now()).count, before + 2, "each counted once");
+  t.router.detach();
+  for (const h of handles) r.hooks.exit(h, "idle");
+  assert.equal(hostCount(snapshot(), Date.now()).count, before);
+});
+
 test("after a restart, a taken-back chat's server-hosted tools run here: a call queued while no server was there, and a new one", async () => {
   process.env.SOVA_CHAT_TEST_SERVED = "1";
   after(() => void delete process.env.SOVA_CHAT_TEST_SERVED);

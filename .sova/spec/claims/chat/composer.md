@@ -220,16 +220,18 @@ are kept, and what the foot and its model indicator show.
 
 ## §chat.composer/disabled-states — Disabled states
 
-While the composer can't send (the session is open in a TUI, the socket is connecting or dropped,
-or a model switch is pending), the reason goes in `.composer-reason` and the control is disabled.
-The reason is one line, per
-the skill's copy ladder.
+While the composer can't send (the session is open in a TUI, the chat is connecting or starting,
+the socket dropped, or a model switch is pending), the reason goes in `.composer-reason` and the
+control is disabled. The reason is one line, per
+the skill's copy ladder. While the chat is connecting, starting or reconnecting, the reason there is
+for assistive technology only (visually hidden): what the eye reads is the note floating over the
+transcript's end (§chat.transcript/instant-open), so nothing is added to the composer.
 
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
-| Chat socket connecting (first connect) | enabled (typing is fine) | Send and Stop `aria-disabled` | `clock` — "Connecting…" |
-| Chat socket dropped | enabled | Send and Stop `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
+| Chat connecting or starting (first connect, until this connection's `hello`) | enabled (typing is fine) | Send `aria-disabled` until the `hello`, Stop until the socket is open; the model, mode, sandbox and login controls too | `clock` — "Connecting to chat…" (hidden; shown as the floating note) |
+| Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 
@@ -238,10 +240,10 @@ in a TUI, and works in every other row above, because dictating is typing. On it
 `aria-disabled` only where the browser can't record (not a secure context, or no microphone API),
 with that reason in its `title` rather than in `.composer-reason`.
 
-The first connect's "Connecting…" reason (the socket's first connect, or the session's list not
-here yet) fades in after a short delay, about 300 ms, so a quick switch never flashes it; under
-reduced motion it appears after the same delay without the fade. "Reconnecting" and every other
-reason show at once, and the controls are disabled from the first frame either way.
+The first connect's "Connecting to chat…" note (the socket's first connect, the chat starting, or
+the session's list not here yet) fades in after a short delay, about 300 ms, so a quick switch never
+flashes it; under reduced motion it appears after the same delay without the fade. "Reconnecting"
+and every other reason show at once, and the controls are disabled from the first frame either way.
 
 Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
 (§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
@@ -563,7 +565,7 @@ indicator's rule for omitting the segment applies. A remembered mode
 says nothing about when a switch applies: until the socket's `mode` message the trigger makes no
 "applies after this turn" promise and the menu shows neither the mid-turn nor the can't-switch
 banner. A remembered running turn shows as one (Steer, Stop, the run status, and the sidebar's
-Busy mark stays on), but until the socket is open Send and Stop are both `aria-disabled` with the
-"Connecting…" reason, so nothing goes into a closed socket, and it counts as no turn starting (no
-list refresh). Answering an alignment card, "Switching model…" and the other pending states still
+Busy mark stays on), but until the socket is open Send and Stop are both `aria-disabled` (Send until
+the chat's `hello`) with the "Connecting to chat…" reason, so nothing goes into a closed socket or
+a chat still starting, and it counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
 wait for the socket's own word.

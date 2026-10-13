@@ -31,7 +31,8 @@ export interface Generation {
   why?: string;
 }
 
-/** Where the copies live: `SOVA_CHAT_CODE_ROOT`, else `<state root>/chats/code`. */
+/** Where this server puts the copies: `SOVA_CHAT_CODE_ROOT` (trials only; never a chat process's own
+    variable, which is SOVA_CHAT_COPIES_ROOT), else `<state root>/chats/code`. */
 export const codeRoot = (env: NodeJS.ProcessEnv = process.env): string => env.SOVA_CHAT_CODE_ROOT?.trim() || join(chatsRoot(), "code");
 
 /** A build id as a directory name: kept when it is one already (a commit, `commit+digest`), else hashed. */
@@ -333,6 +334,9 @@ export async function collectGenerations(keep: Set<string>, o: { root?: string; 
     await rm(p, { recursive: true, force: true });
     removed.push(n);
   }
+  // A copy still being made (`.tmp-*`) links no deps yet: on a root shared with another server, its deps
+  // could go here before it is published. Only a shared root has that race, and none is collected
+  // (startGenerationGc); here a young deps snapshot is kept anyway.
   const used = new Set(remaining.map(depsOf).filter((l): l is string => !!l));
   for (const n of await readdir(join(root, DEPS)).catch(() => [] as string[])) {
     const p = join(root, DEPS, n);
@@ -349,8 +353,14 @@ export async function collectGenerations(keep: Set<string>, o: { root?: string; 
  * copies of its own to collect, but older copies under the root still go. `collect` runs one more
  * (the rollout's, after a run of reloads); `stop` ends the hourly one.
  */
-export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: string; everyMs?: number; log?: (line: string) => void } = {}): { collect: () => Promise<void>; stop: () => void } {
+export function startGenerationGc(inUse: () => Iterable<string>, o: { root?: string; env?: NodeJS.ProcessEnv; everyMs?: number; log?: (line: string) => void } = {}): { collect: () => Promise<void>; stop: () => void } {
   const log = o.log ?? ((l: string) => console.log(`[chat-code] ${l}`));
+  // A root set by SOVA_CHAT_CODE_ROOT may be shared by several servers (trials): what one keeps is not
+  // what the others' chats run, so none of them collects there; the trial removes its scratch root.
+  if (!o.root && (o.env ?? process.env).SOVA_CHAT_CODE_ROOT?.trim()) {
+    log(`unused code is not collected under SOVA_CHAT_CODE_ROOT (${codeRoot(o.env)}), a root other servers may share`);
+    return { collect: async () => {}, stop: () => {} };
+  }
   let running: Promise<void> | null = null;
   const once = async () => {
     try {

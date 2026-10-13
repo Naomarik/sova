@@ -29,10 +29,6 @@ import { isLegacyClaudeId, resolveLegacyClaude } from "../../../pi-config/extens
 
 export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinition } from "./extension-types";
 
-// A chat process on a code generation discovers Sova's extensions in its own copy, for every services
-// build here, the warm-up's included (§app.chat-processes/code-generations). The server: nothing.
-installOwnCode();
-
 /**
  * The extension flags a runtime starts with, by meaning; Sova decides each value (server/chat-manager.ts
  * sessionFlags), this file names them.
@@ -145,7 +141,9 @@ export function getModelRuntime(): Promise<ModelRuntime> {
 async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions) {
   // Its workers and tool commands start below the server (§app.load-priority/workers).
   installWorkerNice();
-  // A worker's listed extensions from this chat process's own code (§app.chat-processes/code-generations).
+  // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
+  // listed alike (§app.chat-processes/code-generations). The server: nothing.
+  installOwnCode();
   const resourceLoaderOptions = ownCodeLoader(loader);
   const services = await createAgentSessionServices({
     cwd,
@@ -171,6 +169,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  */
 export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[]): Promise<void> {
   try {
+    installOwnCode();
     // The provider flag alone: the throwaway session needs nothing else, and the link flags would
     // read the access token, which throws (and logs its problem again) when the token file is damaged.
     const services = await createAgentSessionServices({

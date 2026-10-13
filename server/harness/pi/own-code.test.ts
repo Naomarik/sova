@@ -26,7 +26,7 @@ const mine = (name: string) => join(own, "pi-config", "extensions", name, "index
 test("the mapping applies only in a chat process whose code is not the checkout", () => {
   assert.equal(ownCodeOf({}, own), null);
   assert.equal(ownCodeOf({ SOVA_CHAT_LIVE_ROOT: live }, live), null, "the checkout itself (the server, a live fallback)");
-  assert.deepEqual(ownCodeOf({ SOVA_CHAT_LIVE_ROOT: live, SOVA_CHAT_CODE_ROOT: codeRoot }, own), o);
+  assert.deepEqual(ownCodeOf({ SOVA_CHAT_LIVE_ROOT: live, SOVA_CHAT_COPIES_ROOT: codeRoot }, own), o);
 });
 
 test("a Sova pi-config path, the checkout's or another copy's, re-rooted in the own copy; anything else left alone", () => {

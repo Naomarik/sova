@@ -26,6 +26,8 @@ files=(
   "$@"
 )
 echo "mac/unit.sh: $(uname -sm), $(sw_vers -productVersion 2>/dev/null || echo '?'), commit $(git rev-parse --short HEAD 2>/dev/null || cat .trial-rev 2>/dev/null || echo '?'), TMPDIR $TMPDIR"
+# mise is not always on a login PATH: its usual install place, then its shims.
+command -v mise >/dev/null 2>&1 || export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 if command -v mise >/dev/null 2>&1; then
   mise exec bun@1.4.2 -- node scripts/run-tests.mjs --runtime bun "${files[@]}"
 else

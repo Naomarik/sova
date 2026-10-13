@@ -509,46 +509,71 @@ export class ChatHostRouter {
       const age = recentForeignWriteAgeSec(path);
       if (age !== null) throw new BusyError(`modified ${age}s ago by a process we can't identify`, "recent");
     }
-    let rec: ChatRecord;
     try {
-      rec = await this.sup.start({ chatId: summary.id, sessionPath: path, cwd: summary.cwd ?? REPO });
+      return await this.startProcess(
+        this.sup,
+        { chatId: summary.id, sessionPath: path, cwd: summary.cwd ?? REPO },
+        // A special or powers chat needs a chat process that speaks proto 2 (an older one opens it as ordinary).
+        kind ? 2 : 0,
+        (link, rec) => this.openOn(link, path, rec.chatId, force, kind, special),
+        async (h) => {
+          // Its kind's every-open hook (the Overseer's mode, a baton's abilities), before anyone has it.
+          const opened = kindOfMirror(h.mirror);
+          if (opened && opened !== "powers") await specialHostOf(opened)?.opened?.(h);
+          this.pushSpecial(h);
+        },
+        // A refusal (busy, recent, config) is the caller's, as in-process; the process exits by itself.
+        (err) => err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError,
+      );
     } catch (err) {
-      log(`${path}: could not start its process (${err instanceof Error ? err.message : String(err)}); it runs in the server until it restarts`);
+      // A config failure is remembered here too: the next open answers from it, with no process.
+      if (err instanceof ConfigError) recordConfigFailure(path, err);
+      if (err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError) throw err;
+      const what = err instanceof NoProcess ? "could not start its process" : "did not open in its process";
+      log(`${path}: ${what} (${err instanceof Error ? err.message : String(err)}); it runs in the server until it restarts`);
       this.inprocOnly.add(path);
       return null;
+    }
+  }
+
+  /** One start path for every chat process, a chat's and a worker's: start → connect → hello (at least
+      protocol `minProto`, its boot waited out) → open → adopt (→ `adopted`). A process that didn't start
+      or answer throws NoProcess, the supervisor told. A failed open closes the link, expects the exit,
+      stops the process unless `exitsItself(err)`, and throws its own error. */
+  private async startProcess(
+    sup: ChatSupervisor,
+    at: { chatId: string; sessionPath: string; cwd: string },
+    minProto: number,
+    open: (link: Link, rec: ChatRecord) => Promise<ChatRuntimeMirror>,
+    adopted?: (h: RemoteChatHandle) => Promise<void>,
+    exitsItself: (err: unknown) => boolean = () => false,
+  ): Promise<RemoteChatHandle> {
+    let rec: ChatRecord;
+    try {
+      rec = await sup.start(at);
+    } catch (err) {
+      throw new NoProcess(err instanceof Error ? err.message : String(err));
     }
     let link: Link;
     try {
       const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
       link = c.link;
-      this.sup.noteConnected(rec.chatId);
-      // A special or powers chat needs a chat process that speaks proto 2 (an older one opens it as ordinary).
-      if (kind && c.hello.proto < 2) throw new Error(`its process speaks protocol ${c.hello.proto}, below 2`);
+      sup.noteConnected(rec.chatId);
+      if (c.hello.proto < minProto) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${minProto}`);
       if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
     } catch (err) {
-      await this.sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
-      this.inprocOnly.add(path);
-      return null;
+      await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
+      throw new NoProcess(err instanceof Error ? err.message : String(err));
     }
     try {
-      const mirror = await this.openOn(link, path, rec.chatId, force, kind, special);
-      const h = this.adoptHandle(rec, link, mirror);
-      // Its kind's every-open hook (the Overseer's mode, a baton's abilities), before anyone has it.
-      const opened = kindOfMirror(mirror);
-      if (opened && opened !== "powers") await specialHostOf(opened)?.opened?.(h);
-      this.pushSpecial(h);
+      const h = this.adoptHandle(rec, link, await open(link, rec));
+      await adopted?.(h);
       return h;
     } catch (err) {
-      // A refusal (busy, recent, config) is the caller's, as in-process; the process exits by itself.
-      this.sup.expectExit(rec.chatId, "refused");
+      sup.expectExit(rec.chatId, "refused");
       link.close();
-      // A config failure is remembered here too: the next open answers from it, with no process.
-      if (err instanceof ConfigError) recordConfigFailure(path, err);
-      if (err instanceof BusyError || err instanceof ConfigError || err instanceof RefusedError) throw err;
-      log(`${path}: did not open in its process (${err instanceof Error ? err.message : String(err)}); it runs in the server until it restarts`);
-      await this.sup.stop(rec.chatId, "refused").catch(() => {});
-      this.inprocOnly.add(path);
-      return null;
+      if (!exitsItself(err)) await sup.stop(rec.chatId, "refused").catch(() => {});
+      throw err;
     }
   }
 
@@ -575,7 +600,11 @@ export class ChatHostRouter {
       this.placed.set(rec.chatId, placement);
       this.workerPaths.add(rec.path);
       try {
-        return { handle: await this.openWorker(placement === "unit" ? this.sup : this.childSup, rec), placement };
+        // Opened as its loadout says, with no foreign-write guard (the registry wrote its file and is
+        // its only opener); a failed open (a model that can not be set, a refusal) fails the start.
+        const sup = placement === "unit" ? this.sup : this.childSup;
+        const at = { chatId: rec.chatId, sessionPath: rec.path, cwd: rec.spec.cwd };
+        return { handle: await this.startProcess(sup, at, WORKER_PROTO, (link) => this.openOn(link, rec.path, rec.chatId, true, null, undefined, rec.spec)), placement };
       } catch (err) {
         const why = err instanceof Error ? err.message : String(err);
         if (placement === "unit" && err instanceof NoProcess) {
@@ -587,38 +616,6 @@ export class ChatHostRouter {
         this.workerPaths.delete(rec.path);
         throw err instanceof NoProcess ? new Error(`The worker's process did not start: ${why}`) : err;
       }
-    }
-  }
-
-  private async openWorker(sup: ChatSupervisor, w: WorkerRecord): Promise<RemoteChatHandle> {
-    let rec: ChatRecord;
-    try {
-      rec = await sup.start({ chatId: w.chatId, sessionPath: w.path, cwd: w.spec.cwd });
-    } catch (err) {
-      throw new NoProcess(err instanceof Error ? err.message : String(err));
-    }
-    let link: Link;
-    try {
-      const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
-      link = c.link;
-      sup.noteConnected(rec.chatId);
-      if (c.hello.proto < WORKER_PROTO) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${WORKER_PROTO}`);
-      if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
-    } catch (err) {
-      await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
-      throw new NoProcess(err instanceof Error ? err.message : String(err));
-    }
-    try {
-      // The registry wrote its file and is its only opener: no foreign-write guard (the seed or the
-      // last run reads as "recent" to it).
-      const mirror = await this.openOn(link, w.path, w.chatId, true, null, undefined, w.spec);
-      return this.adoptHandle(rec, link, mirror);
-    } catch (err) {
-      // The open itself failed (a model that can't be set, a refusal): the start fails with its reason.
-      sup.expectExit(rec.chatId, "refused");
-      link.close();
-      await sup.stop(rec.chatId, "refused").catch(() => {});
-      throw err;
     }
   }
 

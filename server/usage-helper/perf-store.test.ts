@@ -19,7 +19,10 @@ function store() {
 }
 let n = 0;
 const rec = (o: Record<string, unknown> = {}) =>
-  JSON.stringify({ key: `k${++n}`, ts: NOW - 3600_000, sid: "s1", entryId: `e${n}`, provider: "zai", model: "glm-5.3", effort: "high", ttftMs: 800, thinkingMs: 2000, replyMs: 3000, output: 900, reasoning: 300, ...o });
+  JSON.stringify({
+    v: 1, key: `k${++n}`, ts: NOW - 3600_000, device: null, producer: "p1", sid: "s1", entryId: `e${n}`, provider: "zai", model: "glm-5.3", effort: "high", stop: "stop",
+    sentAt: NOW - 3700_000, ttftMs: 800, thinkingMs: 2000, replyMs: 3000, thinking: { ms: 2000, n: 1 }, text: { ms: 3000, n: 1 }, tool: { ms: 0, n: 0 }, endMs: 5800, output: 900, reasoning: 300, ...o,
+  });
 const put = (root: string, day: string, file: string, lines: string[]) => {
   mkdirSync(join(root, day), { recursive: true });
   appendFileSync(join(root, day, file), lines.map((l) => `${l}\n`).join(""));
@@ -29,7 +32,9 @@ test("a line that isn't a finished reply's record is skipped", () => {
   assert.equal(parsePerfLine("not json"), null);
   assert.equal(parsePerfLine(rec({ entryId: undefined })), null);
   assert.equal(parsePerfLine(rec({ stop: "error" })), null);
+  assert.equal(parsePerfLine(rec({ v: 2 })), null);
   assert.equal(parsePerfLine(rec({ output: "x" })), null);
+  assert.equal(parsePerfLine(rec({ stop: "aborted" })), null);
   assert.equal(parsePerfLine(rec({ reasoning: 0 }))!.timing.reasoning, undefined, "a 0 count with a thinking window is not reported");
   assert.equal(parsePerfLine(rec())!.timing.reasoning, 300);
 });

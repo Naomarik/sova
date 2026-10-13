@@ -3,6 +3,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import type { UsageDevice, UsageRange } from "../../shared/usage/wire";
 import type { ReplyTiming, UsagePerformance } from "../../shared/usage/perf";
+import { parsePerfRecordLine } from "../perf-record";
 import { normalizeTiming, performanceRows, type PerfSample } from "./perf";
 import { displayModel, modelFilterKey, validZone } from "./query";
 
@@ -39,42 +40,18 @@ const DAY_MS = 86_400_000;
 const FULL_SWEEP_MS = 60_000;
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
-const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
-const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
-
 /**
- * A store line as the reader keeps it, or null when it isn't a finished reply's record. The one place
- * that reads the record's fields (the record's contract is its writer's).
+ * A store line as the reader keeps it, or null when it isn't a finished reply's record (the record's
+ * contract and strict parse are its writer's, server/perf-record.ts).
  */
 export function parsePerfLine(line: string): PerfStored | null {
-  let r: Record<string, any>;
-  try {
-    r = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (!r || typeof r !== "object") return null;
-  const key = str(r.key);
-  const ts = num(r.ts);
-  const sid = str(r.sid);
-  const entryId = str(r.entryId);
-  const provider = str(r.provider);
-  const model = str(r.model);
-  if (!key || ts === undefined || !sid || !entryId || !provider || !model) return null;
-  if (r.stop !== undefined && r.stop !== "ok" && r.stop !== "stop" && r.stop !== "toolUse" && r.stop !== "length") return null;
-  const ttftMs = num(r.ttftMs);
-  const thinkingMs = num(r.thinkingMs) ?? 0;
-  const replyMs = num(r.replyMs);
-  const output = num(r.output);
-  if (ttftMs === undefined || replyMs === undefined || output === undefined) return null;
-  const timing: ReplyTiming = { ttftMs, thinkingMs, replyMs, output };
-  const effort = str(r.effort);
-  if (effort) timing.effort = effort;
-  const reasoning = num(r.reasoning);
-  if (reasoning !== undefined) timing.reasoning = reasoning;
-  const out: PerfStored = { key, ts, sid, entryId, provider, model, timing: normalizeTiming(timing) };
-  const responseModel = str(r.responseModel);
-  if (responseModel) out.responseModel = responseModel;
+  const r = parsePerfRecordLine(line);
+  if (!r) return null;
+  const timing: ReplyTiming = { ttftMs: r.ttftMs, thinkingMs: r.thinkingMs, replyMs: r.replyMs, output: r.output };
+  if (r.effort !== undefined) timing.effort = r.effort;
+  if (r.reasoning !== undefined) timing.reasoning = r.reasoning;
+  const out: PerfStored = { key: r.key, ts: r.ts, sid: r.sid, entryId: r.entryId, provider: r.provider, model: r.model, timing: normalizeTiming(timing) };
+  if (r.responseModel !== undefined) out.responseModel = r.responseModel;
   return out;
 }
 

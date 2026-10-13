@@ -42,6 +42,7 @@ export type {
   WorkerStart,
   WorkerState,
 } from "../pi-config/extensions/subagents/worker-host";
+export { isNoAnswer, NO_ANSWER, noAnswer } from "../pi-config/extensions/subagents/worker-host";
 
 /** A hosted chat's id across the boundary: its session file's canonical path. */
 export type ChatId = string;

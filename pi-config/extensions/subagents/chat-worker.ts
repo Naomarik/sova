@@ -11,7 +11,7 @@ import type { SteerMode, Worker } from "./contracts.ts";
 import { type Delivery, type FoldHandlers, WorkerFold } from "./fold.ts";
 import type { SpawnOptions } from "./runner.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
-import type { WorkerFeedFrame, WorkerHost, WorkerKind, WorkerRef, WorkerSession, WorkerStart, WorkerState } from "./worker-host.ts";
+import { isNoAnswer, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSession, type WorkerStart, type WorkerState } from "./worker-host.ts";
 
 /** The parent a worker belongs to: its session, and the key prefix its starts and sends carry. */
 export interface WorkerParent {
@@ -303,7 +303,7 @@ export class ChatWorker extends WorkerFold {
 			const reason = err instanceof Error ? err.message : String(err);
 			// The server never answered: delivery unknown (the worker is not stopped for it). Anything
 			// else is the worker's refusal.
-			if (/isn't answering|not reachable/.test(reason)) return { ok: false, unknown: true, reason: "Sova's server didn't answer within a minute" };
+			if (isNoAnswer(err)) return { ok: false, unknown: true, reason: "Sova's server didn't answer within a minute" };
 			return { ok: false, reason };
 		}
 	}

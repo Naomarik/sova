@@ -143,5 +143,12 @@ export const WORKER_FEED_EVENTS = [
 /** pi's built-in tools: a worker's `builtins` list keeps those it names and excludes the rest. */
 export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
 
+/** The `code` a WorkerHost call's error carries when nobody answered it (the server, or the worker's
+    process): its outcome is unknown, and the worker is not stopped for it. */
+export const NO_ANSWER = "no-answer";
+/** `message` as an Error carrying NO_ANSWER. */
+export const noAnswer = (message: string): Error => Object.assign(new Error(message), { code: NO_ANSWER });
+export const isNoAnswer = (err: unknown): boolean => (err as { code?: unknown } | null)?.code === NO_ANSWER;
+
 /** What a worker start or a team tool answers where no Sova server hosts the session (the pi TUI). */
 export const NO_WORKER_HOST = "needs Sova's chat runtime";

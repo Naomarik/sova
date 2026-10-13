@@ -221,7 +221,7 @@ try {
     assert(held.sendEnabledAt !== null, "Send never enabled");
     // helloAt is stamped in Node when CDP reports the frame, after the page already has it: allow that lag.
     assert(held.sendEnabledAt >= ws.helloAt - 25, `Send enabled ${ws.helloAt - held.sendEnabledAt} ms before the hello`);
-    assert(held.rowsAt !== null && held.rowsAt >= ws.helloAt, "rows came from the hello");
+    assert(held.rowsAt !== null && held.rowsAt >= ws.helloAt - 25, "rows came from the hello");
   });
 } finally {
   await browser.close().catch(() => {});

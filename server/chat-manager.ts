@@ -3270,7 +3270,9 @@ class ChatSession {
     }
   }
 
-  /** An idle note's rows, once its entry is known (after holdForEntryId's flush, queued before this). */
+  /** An idle note's rows, once its entry is known (after holdForEntryId's flush, queued before this).
+      The pane renders an idle note only from this append (its message_end makes no row of a note), so
+      a client that one day also rows the message_end would show it twice. */
   private appendIdleNote(message: unknown, noteType: string): void {
     queueMicrotask(() => {
       try {

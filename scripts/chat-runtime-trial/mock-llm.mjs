@@ -40,7 +40,7 @@
 //   [handoff S]  /compact-handoff's child (or any prompt asking for a <handoff> block): S parts
 //              (default 5), then "<handoff>HANDOFF-NOTE</handoff>"
 //   [btw #tag]  "BTW-ANSWER tag"
-// Every log line names the caller's pid (`pid`, from /proc: the process whose socket made the
+// Every log line names the caller's pid (`pid`, from /proc or lsof, procs.mjs: the process whose socket made the
 // request; 0 when it can't be found), so a trial can tell which chat process asked.
 //   [compact]  (pi's compaction request, by its prompt's shape) a summary streamed
 //              over 15 steps, ending "COMPACT-SUMMARY"
@@ -50,8 +50,9 @@
 //              so a message the server writes (a look, a brief, an explorer's seed) can be scripted
 //   anything else: "ok"
 // A request whose newest message is a tool result gets the scenario's closing text.
-import { appendFileSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { socketOwner } from "./procs.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -65,40 +66,11 @@ const step = Number(opt("step", "500"));
 const textOf = (content) =>
   typeof content === "string" ? content : Array.isArray(content) ? content.map((p) => p?.text ?? "").join("") : "";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The pid whose TCP socket has local port `port` and talks to this mock (0 if unknown). */
+const callerPid = (port) => socketOwner(port, server.address().port);
 let n = 0;
 const TAGGED = /\[(long|bash|big|call|served|served-late|served-quick|spawn|spawn-claude|ask|explain|handoff|btw)\b/;
 
-/** The pid whose TCP socket has local port `port` and talks to this mock (Linux /proc; 0 if unknown). */
-function callerPid(port) {
-  const hex = (p) => p.toString(16).toUpperCase().padStart(4, "0");
-  let inode = "";
-  for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
-    try {
-      for (const line of readFileSync(table, "utf8").split("\n").slice(1)) {
-        const f = line.trim().split(/\s+/);
-        if (f.length > 9 && f[1].endsWith(`:${hex(port)}`) && f[2].endsWith(`:${hex(server.address().port)}`)) inode = f[9];
-      }
-    } catch {}
-    if (inode) break;
-  }
-  if (!inode) return 0;
-  const want = `socket:[${inode}]`;
-  for (const d of readdirSync("/proc")) {
-    if (!/^\d+$/.test(d)) continue;
-    let fds = [];
-    try {
-      fds = readdirSync(`/proc/${d}/fd`);
-    } catch {
-      continue;
-    }
-    for (const fd of fds) {
-      try {
-        if (readlinkSync(`/proc/${d}/fd/${fd}`) === want) return Number(d);
-      } catch {}
-    }
-  }
-  return 0;
-}
 
 /** Every [call NAME {json}] in text, in order; a call's arguments may hold further tags (skipped). */
 function parseCalls(text) {

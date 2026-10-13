@@ -129,6 +129,7 @@ import {
   tokenOf,
   userBus,
 } from "./lib.mjs";
+import { alive, cgroupOf, cmdOf, niceOf, tree, withEnv } from "./procs.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -187,32 +188,11 @@ const allRecords = (agentDir = agent) =>
   });
 /** The supervisor's record of this chat: {chatId, sessionPath, unit, pid, startedAt, build, sock, epoch}. */
 const record = (path, agentDir = agent) => allRecords(agentDir).find((r) => baseName(r.sessionPath) === baseName(path)) ?? null;
-const alive = (pid) => !!pid && existsSync(`/proc/${pid}`) && !readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.startsWith("Z");
 /** The chat's process now: its record's pid when that process lives. */
 const chatPid = (path, agentDir) => {
   const r = record(path, agentDir);
   return r && alive(r.pid) ? r.pid : 0;
 };
-/** pid and every descendant, with each one's command line. */
-function tree(pid) {
-  const parent = new Map();
-  for (const d of readdirSync("/proc")) {
-    if (!/^\d+$/.test(d)) continue;
-    try {
-      const stat = readFileSync(`/proc/${d}/stat`, "utf8");
-      parent.set(Number(d), Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]));
-    } catch {}
-  }
-  const out = [pid];
-  for (let i = 0; i < out.length; i++) for (const [c, p] of parent) if (p === out[i]) out.push(c);
-  return out.map((p) => {
-    let cmd = "";
-    try {
-      cmd = readFileSync(`/proc/${p}/cmdline`, "utf8").replace(/\0/g, " ").trim();
-    } catch {}
-    return { pid: p, cmd };
-  });
-}
 /** The session file's entries. */
 const entries = (path) => readLines(path);
 /** Assistant messages after the user message holding `marker` (that turn's), with their stop reasons. */
@@ -355,7 +335,7 @@ function sameProcess(path, pid1, label) {
   if (driver === "systemd" && pid1) {
     const cg = (() => {
       try {
-        return readFileSync(`/proc/${pid1}/cgroup`, "utf8").trim();
+        return cgroupOf(pid1);
       } catch {
         return "";
       }
@@ -867,7 +847,7 @@ async function t6() {
     for (const [label, p] of kinds.slice(0, 4)) {
       const cg = (() => {
         try {
-          return readFileSync(`/proc/${chatPid(p)}/cgroup`, "utf8").trim();
+          return cgroupOf(chatPid(p));
         } catch {
           return "";
         }
@@ -1330,30 +1310,10 @@ async function workerOf(parentPath, pred = () => true, ms = 60000) {
 /** A worker record whose session file holds `marker` (its task's tag). */
 const workerWith = (parentPath, marker, ms) => workerOf(parentPath, (r) => existsSync(r.path) && readFileSync(r.path, "utf8").includes(marker), ms);
 /** Every `pi --mode rpc` process of this trial (its environment names the scratch agent dir): stage 4 has none. */
-function rpcProcs() {
-  const out = [];
-  for (const d of readdirSync("/proc")) {
-    if (!/^\d+$/.test(d)) continue;
-    try {
-      const cmd = readFileSync(`/proc/${d}/cmdline`, "utf8").replace(/\0/g, " ");
-      if (!/--mode rpc/.test(cmd)) continue;
-      if (readFileSync(`/proc/${d}/environ`, "utf8").split("\0").includes(`PI_CODING_AGENT_DIR=${agent}`)) out.push(Number(d));
-    } catch {}
-  }
-  return out;
-}
+const rpcProcs = () => withEnv("PI_CODING_AGENT_DIR").filter((p) => p.value === agent && /--mode rpc/.test(p.cmd)).map((p) => p.pid);
 const noRpc = (label) => R.check(rpcProcs().length === 0, `${label}: no \`pi --mode rpc\` process of this trial exists (${rpcProcs().join(", ") || "none"})`);
 /** The mock's requests made by process `pid` (the mock names each caller). */
 const askedBy = (pid) => mockLog(mock.log).filter((e) => e.scenario && e.pid === pid);
-/** The process's nice value (/proc/<pid>/stat field 19). */
-const niceOf = (pid) => {
-  try {
-    const s = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return Number(s.slice(s.lastIndexOf(")") + 2).split(" ")[16]);
-  } catch {
-    return null;
-  }
-};
 /** Entries of the parent's file that hold `marker` and are not the parent's own words (its prompt,
     its tool calls, their results): a completion, a wake, a delivered question. */
 const deliveredTo = (path, marker) =>
@@ -1415,7 +1375,7 @@ async function t17(claude = false) {
     R.check(unit && unit !== record(path)?.unit, `${label}: the worker is a unit of its own (${unit})`);
     let cg = "";
     try {
-      cg = readFileSync(`/proc/${wpid}/cgroup`, "utf8").trim();
+      cg = cgroupOf(wpid);
     } catch {}
     R.check(cg.includes(`/${slice}/`), `${label}: the worker's cgroup is under the stand-in slice (${cg})`);
   }
@@ -2165,7 +2125,7 @@ async function t25() {
     };
     const runsFrom = (pid) => {
       try {
-        return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").find((a) => a.endsWith("server/chat-runtime/main.ts")) ?? "";
+        return /\S*server\/chat-runtime\/main\.ts/.exec(cmdOf(pid))?.[0] ?? "";
       } catch {
         return "";
       }

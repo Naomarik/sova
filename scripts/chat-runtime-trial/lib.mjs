@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket } from "ws";
+import { ancestors, table, withEnv } from "./procs.mjs";
 
 // The tree the server runs from: this checkout, or CHAT_TRIAL_ROOT (a snapshot of a commit, so a trial
 // never boots a tree that others are editing).
@@ -356,27 +357,11 @@ export function chatUnits(slice) {
     tools and fake claudes) and, unless `mock` is false, the mock LLM logging there. Never this process or its ancestors. */
 export function strays(root, { mock: withMock = true } = {}) {
   const under = (v) => v === root || v.startsWith(root.endsWith("/") ? root : `${root}/`);
-  const mine = new Set();
-  for (let p = process.pid; p > 1; ) {
-    mine.add(p);
-    try {
-      const st = readFileSync(`/proc/${p}/stat`, "utf8");
-      p = Number(st.slice(st.lastIndexOf(")") + 2).split(" ")[1]);
-    } catch {
-      break;
-    }
-  }
-  const out = [];
-  for (const d of readdirSync("/proc")) {
-    if (!/^\d+$/.test(d) || mine.has(Number(d))) continue;
-    try {
-      const env = readFileSync(`/proc/${d}/environ`, "utf8").split("\0");
-      const cmd = readFileSync(`/proc/${d}/cmdline`, "utf8").split("\0");
-      const agent = env.find((e) => e.startsWith("PI_CODING_AGENT_DIR="))?.slice("PI_CODING_AGENT_DIR=".length);
-      const mock = withMock && cmd.some((a) => a.endsWith("mock-llm.mjs")) && cmd.some(under);
-      if ((agent && under(agent)) || mock) out.push({ pid: Number(d), cmd: cmd.join(" ").trim() });
-    } catch {}
-  }
+  const mine = new Set([process.pid, ...ancestors(process.pid)]);
+  const out = withEnv("PI_CODING_AGENT_DIR").filter((p) => !mine.has(p.pid) && under(p.value)).map((p) => ({ pid: p.pid, cmd: p.cmd }));
+  if (withMock)
+    for (const p of table())
+      if (!mine.has(p.pid) && !out.some((o) => o.pid === p.pid) && /mock-llm\.mjs/.test(p.cmd) && p.cmd.split(" ").some(under)) out.push({ pid: p.pid, cmd: p.cmd });
   return out;
 }
 

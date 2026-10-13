@@ -34,7 +34,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:46Z"
+        "at": "2026-10-13T12:56Z"
       }
     },
     "§app.chat-processes/code-pickup": {
@@ -125,7 +125,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T05:11Z"
+        "at": "2026-10-13T12:56Z"
       }
     },
     "§app.chat-processes/server-actions": {
@@ -276,7 +276,9 @@
         "server/chat-runtime/main.ts",
         "shared/chat-runtime-wire.test.ts",
         "server/chat-runtime/supervisor.ts",
-        "server/chat-runtime/supervisor.test.ts"
+        "server/chat-runtime/supervisor.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts"
       ],
       "requires": [
         "§app/chat-processes"
@@ -352,7 +354,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T05:15Z"
+        "at": "2026-10-13T12:56Z"
       },
       "evidence": "verified"
     },
@@ -997,7 +999,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T02:21Z"
+        "at": "2026-10-13T12:56Z"
       },
       "evidence": "verified"
     },
@@ -3125,11 +3127,35 @@
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "server/worker-sessions.ts",
+        "server/insights.ts",
+        "server/worktrees.ts",
+        "server/harness/pi/fork.ts",
+        "server/harness/state-kinds.ts",
+        "pi-config/extensions/subagents/worker-transcript.test.ts",
+        "server/worker-sessions.test.ts",
+        "server/harness/pi/golden/expected/synthetic/workers/align-scan.json",
+        "server/harness/pi/golden/expected/synthetic/workers/attention-turn.json",
+        "server/harness/pi/golden/expected/synthetic/workers/fork.json",
+        "server/harness/pi/golden/expected/synthetic/workers/insights-facts.json",
+        "server/harness/pi/golden/expected/synthetic/workers/overseer-folds.json",
+        "server/harness/pi/golden/expected/synthetic/workers/reader.json",
+        "server/harness/pi/golden/expected/synthetic/workers/readiness-scan.json",
+        "server/harness/pi/golden/expected/synthetic/workers/regenerate.json",
+        "server/harness/pi/golden/expected/synthetic/workers/rewind.json",
+        "server/harness/pi/golden/expected/synthetic/workers/rows-each.json",
+        "server/harness/pi/golden/expected/synthetic/workers/rows.json",
+        "server/harness/pi/golden/expected/synthetic/workers/share-view.json",
+        "server/harness/pi/golden/expected/synthetic/workers/tail-turn.json",
+        "server/harness/pi/golden/expected/synthetic/workers/tail.json",
+        "server/harness/pi/golden/expected/synthetic/workers/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/workers/watch.json",
+        "server/harness/pi/golden/fixtures/synthetic/workers.jsonl"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T12:56Z"
       }
     },
     "§app/sessions-extension": {
@@ -14671,12 +14697,15 @@
         "agents/server/overview.md",
         "agents/testing/overview.md",
         "CONTRIBUTING.md",
-        "scripts/dev-server.integration.test.ts"
+        "scripts/dev-server.integration.test.ts",
+        "server/chat-runtime/bun.ts",
+        "server/chat-host.ts",
+        "docs/running-as-a-service.md"
       ],
       "requires": [],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T03:55Z"
+        "at": "2026-10-13T12:56Z"
       }
     },
     "§app.server-runtime/fallback": {
@@ -14714,7 +14743,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:46Z"
+        "at": "2026-10-13T12:56Z"
       }
     },
     "§app/server-runtime": {
@@ -18504,14 +18533,16 @@
       "code": [
         "pi-config/extensions/subagents/runner.ts",
         "pi-config/extensions/subagents/README.md",
-        "server/chat-runtime/bun.ts"
+        "server/chat-runtime/bun.ts",
+        "server/chat-runtime/worker-feed.test.ts",
+        "server/chat-host.ts"
       ],
       "requires": [
         "§app.server-runtime/choice"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-13T12:56Z"
       }
     },
     "§app.worker-restore/failure-reason": {

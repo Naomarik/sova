@@ -15,8 +15,9 @@ is declared by that backend's adapter (§app.worker-restore/transcript-protocol)
 
 The parent session keeps a durable record of **every worker it starts**, on every backend and wherever its chat process runs. It lives in the parent's own session file as
 `subagents-worker-manifest` custom entries (version `v: 1`), so it survives whatever the process
-does. One fold reads it for every consumer, newest-wins per field and one worker id at a time. The
-same fold also reads the older `subagents-worker-registry` entries, which were written only for hosted workers before this change (nothing writes them any more: the detached host that did is gone).
+does. One fold reads it for every consumer, newest-wins per field and one worker id at a time. Only
+those entries are read: the older `subagents-worker-registry` entries, once written for hosted workers, are not
+read anywhere, so a session file that has only those shows no record for that worker.
 
 - **What it holds**: the worker id, backend, group, name; the spawn spec (cwd, model, effort,
   task preview and length, wake, sandbox on/off, and the spec as given — including whether it ran

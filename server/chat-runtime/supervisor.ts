@@ -97,6 +97,16 @@ export function chatDriver(config: Pick<SupervisorConfig, "slice" | "driver"> = 
   return new SystemdDriver(exec, { slice: config.slice, timeoutStopSec: CHAT_STOP_SEC, restart: false, envFile: (unit) => join(envDir(), `${unit}.env`) });
 }
 
+/** Once, at a server's start: workers an older server ran as its own detached children (records under
+    `chats/children/`, prefix `sova-chatw-<hash>-`) are stopped, and the place removed. What it stopped. */
+export async function sweepOldChildren(root = join(chatsRoot(), "children"), hash = stateHash()): Promise<string[]> {
+  const driver = new DetachedDriver(CHAT_STOP_SEC * 1000, { restart: false, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs") });
+  const units = await driver.units(`sova-chatw-${hash}-`).catch(() => [] as string[]);
+  for (const unit of units) await driver.stop(unit).catch(() => {});
+  rmSync(root, { recursive: true, force: true });
+  return units;
+}
+
 // ---- socket path and epoch ----------------------------------------------------------------------
 
 /**

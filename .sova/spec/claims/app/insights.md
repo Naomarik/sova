@@ -532,12 +532,17 @@ resting the mouse on the head opens it, and the time is a button that opens it o
 keeps it open until a press elsewhere, Escape or a second tap.** A reply with no measurement (an
 older one, one from the terminal, one that errored) looks exactly as it did: no card and no button.
 
-- **The card.** Its lines, in order: Effort (left out when not recorded); Overall, the overall speed
-  (every output token over the thinking, text and tool-call writing time); Tokens, every output
-  token; Thinking (only when it thought); Reply; First token, the wait for the first token. Where the
-  provider counts thinking tokens, Thinking and Reply are speeds, else times; a reply that wrote
-  tool calls shows its reply time, never a reply-text speed. Nothing is estimated: a speed shows
-  only when its part has at least 100 tokens over at least 1 second, and its time shows instead.
+- **The card.** First Effort (left out when not recorded). Then the headline: the overall speed
+  (every output token over the thinking, text and tool-call writing time) as one large number, with
+  every output token and that writing time under it. A reply too short for an overall speed leads
+  with its writing time instead, labelled as a time ("Written in"), never under a speed's label; the
+  line under it says it wrote too few tokens for a speed when it wrote fewer than 100, else that it
+  was too quick for one (under 1 second). Then, under a divider, the reply's parts in the order they
+  happened: First token, the wait for the first token; Thinking (only when it thought); Reply.
+  Where the provider counts thinking tokens, Thinking and Reply are speeds, else times; a reply
+  that wrote tool calls shows its reply time, never a reply-text speed. Nothing is estimated: a
+  speed shows only when its part has at least 100 tokens over at least 1 second, and its time shows
+  instead. A screen reader hears the card as one line, in the same order.
 - **A live reply.** A reply that just finished in front of you gets its card at once: its head shows
   the time it ended, and the card opens before the transcript is read again.
 - **Where it comes from.** On wire 2 (§app.harness/wire), an assistant reply's first row carries
@@ -558,32 +563,66 @@ often and how long it thought, from the timing store (§app.insights/reply-timin
 
 - **Route and controls.** `#/agents/performance`, never read as a team key. The Costs tab's
   controls: range chips `7d` · `30d` · `All` (30d by default) and the Provider and Model filters,
-  kept in the URL; they apply to everything on the tab.
-- **Rows.** One row per provider and model, most replies first: replies measured and how often it
-  thought; overall speed (median, average and the 10–90% range); reply speed, where the reply text
-  can be split out (no tool calls; thinking absent or counted); thinking speed; thinking time per
-  reply, over the replies that thought only; the wait for the first token (median and slow case,
-  the 90th percentile); and a spread chart. Opening a row lists one line per effort level that ran:
-  replies and how often it thought, thinking time per reply (median, average, 10–90% range),
-  thinking tokens per reply, overall speed and the wait for the first token; under them, per level,
-  a spread chart of thinking time and one of overall speed.
-- **Few replies.** A figure resting on fewer than 5 replies shows its median and its count, no range
-  and no chart. A figure no reply can give shows a dash and why: "Provider doesn't count thinking
-  tokens", "Every reply wrote tool calls" (a reply speed), "No reply thought" (a thinking figure of
-  a group none of whose replies thought), "No reply long enough yet". Speeds count only parts with
-  at least 100 tokens over at least 1 second; times count every finished reply.
+  kept in the URL; they apply to everything on the tab. Beside the By model card's title, a Sort
+  menu: Most replies (the default), Fastest (highest median overall speed first) or Quickest first
+  token (lowest median wait first). A model with no such figure sorts after those with one; ties
+  fall to most replies, then provider and model. The sort is kept in the URL too (`sort=fastest`,
+  `sort=first-token`, left out for the default), and coming back from Board restores the tab's last
+  range, filters and sort.
+- **Rows.** One row per provider and model, in five columns, one sentence under the card's title
+  explaining them once: the model (its name, then its provider and reply count); overall speed, the
+  headline (every output token over thinking and writing time), set larger than the rest; reply
+  speed, where the reply text can be split out (no tool calls; thinking absent or counted);
+  thinking, the thinking time per reply over the replies that thought; and the wait for the first
+  token. Each cell is the median and at most one short muted line: under overall speed, a thin bar
+  from the 10th to the 90th percentile with a mark at the median, every row on one scale (0 to the
+  highest 90th percentile among the rows shown), and the average beside it; under reply speed, its
+  10–90% range; under thinking, how many of the replies thought; under first token, the slow case
+  (the 90th percentile).
+- **Opening a row** (the chevron on its name; on a phone, a full-width Show Effort Levels button)
+  shows an Effort levels panel under it. First, the model's thinking speed in one line. Then one
+  line per effort level that ran, in five columns: the level; its replies and how many thought;
+  thinking time per reply (median, then average and 10–90% range); thinking tokens per reply; and
+  overall speed. Then a level switch, All levels (the default) and each level, each with its reply
+  count, left out when the model ran at one level; picking a level marks its line with the
+  selected-row tint and as current, and closing the row picks All levels again. Then two spread
+  charts for the picked level, thinking time per reply and overall speed, side by side from 768px
+  of pane width and stacked under it. Each chart leads with its median, 10–90% range and count, then draws one bar per band
+  of values (up to 12; a bar's height is its share of the fullest band), a median line and a 10–90%
+  bracket, its axis labelled with the lowest value, the median and the highest. A bar's band and
+  count is its accessible name, shown when it is hovered or focused, and the bars are reached with
+  the keyboard. A chart's axis is the whole model's, and every level is binned on the model's
+  bands, so picking another level moves the bars without re-scaling, and two levels with the same
+  spread draw the same heights.
+- **Few replies.** Every figure, bar, range, chart and count is gated on that figure's own count
+  (the replies it rests on), never on the row's reply total. A figure resting on fewer than 5 shows
+  its median and that count (how many were long enough for a speed, how many thought, how many
+  replies), with no bar and no range. Each chart is shown or replaced on its own: a replaced chart
+  is one short line, its median and its count, then that a chart needs 5 and, at a single level,
+  that All levels pools them; a thinking chart where no reply thought says so instead. If neither
+  of the model's two chart figures reaches 5, there is no switch and no chart area, only one
+  sentence giving the larger of their two counts. A figure no reply can give shows a dash and a
+  2–3 word reason, its full sentence for a screen reader: the provider doesn't count thinking
+  tokens; every reply wrote tool calls (a reply speed); no reply thought (a thinking figure of a
+  group none of whose replies thought); no reply long enough yet. Speeds count only parts with at
+  least 100 tokens over at least 1 second; times count every finished reply.
 - **Where it comes from.** `GET /api/usage/performance` (range `7d`|`30d`|`all`, provider and model
   filters, time zone; main listener only) answers from the usage helper, relayed unparsed: one row
   per provider and model as the Costs tab names it (most replies first), each opening into one line
   per effort level that ran, every figure counting this device's measured replies whose local day
   falls in the range. Each figure gives its reply count, median and mean; from 5 replies also its
-  10th and 90th percentile and log-spaced bins (at most 12). `since` is the first measured reply on
-  this device, null before any.
+  10th and 90th percentile and log-spaced bins (at most 12); an effort level's bins are its
+  model's bands, so they line up. `since` is the first measured reply on this device, null before
+  any.
 - **Says what it counts.** The tab says it counts this device only and since when replies were
-  measured. Before the first measured reply it says speeds appear as models answer.
+  measured, that a range needs 5 replies, and what a speed needs. Before the first measured reply
+  it says speeds appear as models answer.
 - **When the helper is down** the tab says the counter isn't running yet and that nothing was lost,
   as the Costs tab does.
-- Works at phone widths: tables stack under 560px of page width.
+- **Phone.** Under 560px of page width each model is a card with no sideways scrolling: its name,
+  provider and reply count; the overall speed as the headline with its bar across the card; reply
+  speed, thinking and first token side by side, each with its line; then Show Effort Levels.
+  Opened, the effort lines read as a short list, the switch wraps, and the two charts stack.
 
 ## §app.insights/usage-resend — What re-sending a conversation's history cost
 

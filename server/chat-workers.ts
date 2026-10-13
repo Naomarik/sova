@@ -98,9 +98,14 @@ function sizeOf(path: string): number {
 
 /** Whether a user message holding `task.text` was written to session file `path` after `task.from`. */
 function sessionHolds(path: string, task: { text: string; from: number }): boolean {
+  // An empty task matches any message: never taken for one. A file shorter than at the start was
+  // rewritten: what follows `from` is no record of this start (the key still dedupes on a live process).
+  if (!task.text.trim()) return false;
   let tail: string;
   try {
-    tail = readFileSync(path).subarray(task.from).toString("utf8");
+    const bytes = readFileSync(path);
+    if (bytes.length < task.from) return false;
+    tail = bytes.subarray(task.from).toString("utf8");
   } catch {
     return false;
   }

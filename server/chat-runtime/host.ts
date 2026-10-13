@@ -194,6 +194,8 @@ export class ChatRuntimeHost {
   private poke: NodeJS.Timeout | null = null;
   private readonly ticker: NodeJS.Timeout;
   private closing = false;
+  /** Why it closes, once it does. */
+  private closingFor: ExitCause | null = null;
   /** The chat is being reopened in place (reacquire with force): its close is not this process's end. */
   private reopening = false;
   private readonly recorder: InflightRecorder;
@@ -628,6 +630,9 @@ export class ChatRuntimeHost {
 
   private async runCall(link: Link, call: ChatCall): Promise<void> {
     if (call.epoch !== this.epoch) return void link.send({ t: "reply", reply: { id: call.id, ok: false, error: { message: "stale controller" } } });
+    // Its chat already closed for a reload: unanswered, so the server's handle sends it to the replacement
+    // (or, for a command it can't send twice, fails it as unreachable when this link ends), never "closed".
+    if (this.closingFor === "reload" && (!this.chat || this.chat.disposed)) return;
     const chat = this.chat;
     if (!chat || chat.disposed) return void link.send({ t: "reply", reply: { id: call.id, ok: false, error: { message: "This chat is closed." } } });
     let reply: FrameOf<"reply">["reply"];
@@ -999,6 +1004,7 @@ export class ChatRuntimeHost {
   async close(cause: ExitCause, opts: { dispose: boolean; message?: string }): Promise<void> {
     if (this.closing) return;
     this.closing = true;
+    this.closingFor = cause;
     this.setState("closing");
     clearInterval(this.ticker);
     const chat = this.chat;

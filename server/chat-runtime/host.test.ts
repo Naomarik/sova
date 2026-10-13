@@ -657,6 +657,17 @@ test("code: Reload now pressed while an automatic reload is under way stands: re
   assert.deepEqual(reloads, [{ t: "reload.request", auto: true }, { t: "reload.request", auto: false }]);
 });
 
+test("a call that reaches a process closing for a reload goes unanswered, so the handle sends it to the replacement (never 'This chat is closed.')", async () => {
+  const t = await setup();
+  const replies = collect(t.ctl.server, "reply");
+  // Closing for a reload: its chat is disposed before it says it exits.
+  void t.host.close("reload", { dispose: true });
+  await settle(150);
+  t.ctl.server.send({ t: "call", call: { id: "late", epoch: t.ctl.epoch, chatId: t.path, method: "reacquire", args: { force: false } } as never });
+  await settle(150);
+  assert.deepEqual(replies.filter((r) => r.reply.id === "late"), [], "no answer: the handle resends it to the replacement");
+});
+
 test("code: workers in processes of their own never hold a reload (they're reattached); another backend's working worker does; idle stop waits for both", async () => {
   /** This process's live record for the chat, with one worker of `backend` working. */
   const liveRecord = (t: { path: string; id: string }, backend: string) =>

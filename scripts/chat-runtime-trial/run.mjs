@@ -68,8 +68,10 @@
 //               session, the note is saved, it compacts, the fork's usage is under the parent
 //     t21l      browser-drive F10/F11: an idle parent's /btw row reaches the open pane live; an idle
 //               parent's process restart leaves the pane no "not reachable" alert
-//     t21r      F14: a prompt sent as a rollout reload begins (pane attached) runs once or is refused back to
-//               the pane, never lost
+//     t21r      F15: a prompt sent as a Reload now's replacement starts makes the drain refuse; the Reload now
+//               stays pending and reloads as the reply ends
+//     t21rx     F14/F15: Reload now and a prompt at once, either order: refused back by clientId and run once
+//               when sent again, or taken first and reloaded at the reply's end; never lost or doubled
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
 //     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
 //               it ends
@@ -150,7 +152,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1893,14 +1895,22 @@ async function t21l() {
   }
 }
 
-// T21r (F14, F15, a rollout reload): a pane attached to an idle chat on older code (set up so the automatic
-// reload can't move it first: see the setup below); Reload now, and at once
-// a prompt, which lands in the reload's window. F14: it is never lost in silence: it runs once, or the pane
-// gets it back (refused, naming it). F15: the reload completes either way. If the drain won the race (the
-// prompt refused back), at once; if the prompt was taken first, the drain is refused ("not quiet any more"
-// in the server log) and the Reload now stays pending: the chat reloads as that reply ends, within seconds,
-// never after the attached pane's 5-min dwell.
-async function t21r() {
+// T21r (F15) and T21rx (F14 and F15, either order): a pane attached to an idle chat on older code (set up so
+// the automatic reload can't move it first: see the setup below), Reload now, and a prompt.
+// t21r: the prompt is sent as the pane hears "reloading" (the rollout starting the replacement), before the
+//   drain, which waits for the replacement: the drain finds the chat busy and is refused ("not quiet any
+//   more"), the Reload now stays pending and the chat reloads as that reply ends, within seconds, never after
+//   the attached pane's 5-min dwell. (A prompt before Reload now would only make it pending, with no drain.)
+// t21rx: Reload now and the prompt at once, either order valid, the one that happened printed:
+//   (a) the drain wins: the closing process refuses the prompt back to its pane (an error, code refused,
+//       naming its clientId), the old process never ran it, the chat reloads, and the prompt, sent again
+//       as the page does from the restored draft, runs once on the new process;
+//   (b) the prompt wins: as t21r.
+//   Lost (neither refused nor run), run twice, or no reload fails. (The refusal on a reload's close has no
+//   unit test: F14's covers an operator close.)
+async function t21r(variant = "f15") {
+  const label = variant === "f15" ? "t21r" : "t21rx";
+  const text = `say hi DURING-RELOAD ${label}`;
   await teardown();
   await boot({ build: "trial-a" });
   const first = await newChat();
@@ -1918,24 +1928,24 @@ async function t21r() {
   let pid1 = 0;
   let logFrom = 0;
   for (const [k, build] of [[1, "trial-b"], [2, "trial-c"]]) {
-    prompt(s, `[long 40 #t21rh${k}] hold the chat across the restart`);
+    prompt(s, `[long 40 #${label}h${k}] hold the chat across the restart`);
     await s.until(delta(/part 2\//), 30000, "the holding reply streams");
     pid1 = chatPid(path);
     logFrom = logLen();
     s.close();
     await restart({ [KNOBS.build]: build });
     p = await chat(c, path, 60000);
-    await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === `t21rh${k}`), 60000);
+    await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === `${label}h${k}`), 60000);
     await sleep(1500);
     // Held: the same process, its record still on the build before this restart's, and no reload of it logged since the offset.
     const since = readFileSync(logFile, "utf8").slice(logFrom).split("\n").filter((l) => l.includes(sid));
     const moved = chatPid(path) !== pid1 || record(path)?.build === build || since.some((l) => /reloading|reloaded into/.test(l));
     if (!moved) break;
-    R.note(`t21r: setup ${k}: the chat reloaded by itself before Reload now (pid ${pid1} → ${chatPid(path)}); again on new code`);
+    R.note(`${label}: setup ${k}: the chat reloaded by itself before Reload now (pid ${pid1} → ${chatPid(path)}); again on new code`);
     s = p;
     p = null;
   }
-  if (!R.check(p, p ? `t21r: setup held: the chat is on the old build (${record(path)?.build}), quiet, its pane attached, not reloaded before Reload now` : "t21r: setup race: auto-reloaded before Reload now (twice)")) {
+  if (!R.check(p, p ? `${label}: setup held: the chat is on the old build (${record(path)?.build}), quiet, its pane attached, not reloaded before Reload now` : `${label}: setup race: auto-reloaded before Reload now (twice)`)) {
     await teardown();
     await boot();
     return;
@@ -1943,37 +1953,52 @@ async function t21r() {
   const from = p.got.length;
   // The window under test: from just before the restart that made the chat older (its reload lines).
   const chatLog = () => (existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "").split("\n").filter((l) => sid && l.includes(sid));
-  // F15's window: after the reload is asked for (the rollout says "reloading" as it starts the replacement)
-  // and before its drain, which waits for the replacement to be ready. A prompt sent there makes the chat
-  // busy before the drain, so the drain is refused. (A prompt before Reload now leaves Reload now merely
-  // pending, with no drain; one at once leaves the order to timing: the drain may win, F14's other branch.)
   p.send({ type: "reload_code" });
-  const reloadingSeen = await p.until((m) => m.type === "code" && m.state === "reloading", 15000, "the reloading state", from).then(() => true, () => false);
-  const cid = prompt(p, "say hi DURING-RELOAD t21r");
-  R.note(`t21r: the prompt was sent ${reloadingSeen ? "as the pane heard 'reloading' (the replacement starting)" : "after 15 s with no 'reloading' frame"}`);
+  if (variant === "f15") {
+    const reloadingSeen = await p.until((m) => m.type === "code" && m.state === "reloading", 15000, "the reloading state", from).then(() => true, () => false);
+    R.note(`${label}: the prompt is sent ${reloadingSeen ? "as the pane heard 'reloading' (the replacement starting)" : "after 15 s with no 'reloading' frame"}`);
+  }
+  const cid = prompt(p, text);
   // When the prompt's reply ended (if it ran) and when the chat moved to a new process.
   let tEnd = 0;
   let tRel = 0;
   const t0 = Date.now();
   while (Date.now() - t0 < 90000 && !(tRel && (tEnd || refusedFor(p.got.slice(from), cid)))) {
-    if (!tEnd && turnAssistants(path, "DURING-RELOAD t21r").length) tEnd = Date.now();
+    if (!tEnd && turnAssistants(path, text).length) tEnd = Date.now();
     if (!tRel && chatPid(path) && chatPid(path) !== pid1) tRel = Date.now();
     await sleep(250);
   }
   const p2 = await chat(c, path, 60000);
   await sleep(5000);
   const refusal = refusedFor([...p.got.slice(from), ...p2.got], cid);
-  const ran = userEntriesWith(path, "DURING-RELOAD t21r");
-  const asked = mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes("DURING-RELOAD t21r")).length;
+  const ran = userEntriesWith(path, text);
+  const askedOf = () => mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes(text));
+  const asked = askedOf().length;
   const lines = chatLog();
-  R.note(`t21r: the chat's rollout lines: ${lines.map((l) => l.slice(0, 160)).join(" | ") || "none"}`);
-  R.check(chatPid(path) && chatPid(path) !== pid1 && lines.some((l) => /reloaded into/.test(l)), `t21r (F15): the chat reloaded (pid ${pid1} → ${chatPid(path)}; 'reloaded into' in the log: ${lines.some((l) => /reloaded into/.test(l))})`);
-  R.check((ran === 1 && asked === 1 && !refusal) || (ran === 0 && asked === 0 && refusal), `t21r (F14): a prompt sent as the reload began ran once or was refused back to the pane, never lost (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${ran}×, the model asked ${asked}×`})`);
-  if (ran === 1 && !refusal) {
+  R.note(`${label}: the chat's rollout lines: ${lines.map((l) => l.slice(0, 160)).join(" | ") || "none"}`);
+  R.check(chatPid(path) && chatPid(path) !== pid1 && lines.some((l) => /reloaded into/.test(l)), `${label} (F15): the chat reloaded (pid ${pid1} → ${chatPid(path)}; 'reloaded into' in the log: ${lines.some((l) => /reloaded into/.test(l))})`);
+  const promptWon = ran === 1 && !refusal;
+  const drainWon = !!refusal;
+  if (variant === "either") R.note(`${label}: order: ${drainWon ? "(a) the drain won: the prompt came back refused" : promptWon ? "(b) the prompt won: it was taken first" : "neither: the prompt was neither refused nor run once"}`);
+  R.check((promptWon && asked === 1) || (drainWon && ran === 0 && asked === 0), `${label} (F14): a prompt sent as the reload began ran once or was refused back to the pane, never lost or doubled (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${ran}×, the model asked ${asked}×`})`);
+  if (promptWon) {
     const notQuiet = lines.some((l) => /not quiet any more/.test(l));
-    R.check(notQuiet, `t21r (F15): the prompt was taken first: the drain was refused and logged ('not quiet any more': ${notQuiet})`);
-    R.check(tEnd && tRel && tRel - tEnd <= 15000, `t21r (F15): the pending Reload now reloaded as the reply ended, no 5-min dwell (${tEnd && tRel ? `${Math.round((tRel - tEnd) / 1000)} s after the reply's end` : `reply end ${tEnd ? "seen" : "not seen"}, reload ${tRel ? "seen" : "not seen"} within 90 s`})`);
-  } else R.check(false, "t21r (F15): not exercised: the drain won the race (the prompt came back refused, F14's branch); the prompt is sent on the 'reloading' frame so the drain should find the chat busy");
+    R.check(notQuiet, `${label} (F15): the prompt was taken first: the drain was refused and logged ('not quiet any more': ${notQuiet})`);
+    R.check(tEnd && tRel && tRel - tEnd <= 15000, `${label} (F15): the pending Reload now reloaded as the reply ended, no 5-min dwell (${tEnd && tRel ? `${Math.round((tRel - tEnd) / 1000)} s after the reply's end` : `reply end ${tEnd ? "seen" : "not seen"}, reload ${tRel ? "seen" : "not seen"} within 90 s`})`);
+  } else if (variant === "f15") R.check(false, `${label} (F15): not exercised: the drain won the race (the prompt came back refused, F14's branch); the prompt is sent on the 'reloading' frame so the drain should find the chat busy`);
+  else if (drainWon) {
+    // (a): the refusal names the prompt, and the old process never ran it; the page sends it again from the
+    // restored draft, and it runs once, on the new process.
+    R.check(refusal.code === "refused" && (refusal.clientId === cid || JSON.stringify(refusal).includes(cid)), `${label} (F14): the closing process refused the prompt back to its pane by clientId (${JSON.stringify(refusal).slice(0, 120)})`);
+    const newPid = chatPid(path);
+    const before = askedOf().length;
+    const f2 = p2.got.length;
+    prompt(p2, text);
+    await p2.until(isEvent("run.settled"), 60000, "the re-sent prompt settles", f2).catch(() => null);
+    await sleep(1000);
+    const again = askedOf().slice(before);
+    R.check(userEntriesWith(path, text) === 1 && again.length === 1 && again[0].pid === newPid, `${label} (F14): sent again from the restored draft, it runs once, on the new process (in the file ${userEntriesWith(path, text)}×; asked ${again.length}× by ${again.map((e) => e.pid).join(", ") || "none"}, new process ${newPid})`);
+  }
   p.close();
   p2.close();
   await teardown();
@@ -2942,7 +2967,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

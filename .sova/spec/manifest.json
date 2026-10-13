@@ -524,15 +524,21 @@
         "server/chat-runtime/host.ts",
         "server/app.ts",
         "server/chat-manager.ts",
-        "server/usage-helper/perf-store.test.ts"
+        "server/usage-helper/perf-store.test.ts",
+        "server/watch.ts",
+        "server/watch.test.ts",
+        "server/ws.ts",
+        "server/chat-runtime/host.test.ts",
+        "server/chat-runtime/main.integration.test.ts",
+        "server/harness/pi/wire-compat.test.ts"
       ],
       "requires": [
         "§app.insights/reply-timing",
         "§app.harness/wire"
       ],
       "agreed": {
-        "by": "Omar (al_2 go-ahead)",
-        "at": "2026-10-13T18:44Z"
+        "by": "Omar (perf-measurement fix brief)",
+        "at": "2026-10-13T19:52Z"
       }
     },
     "§app.insights/sidebar-foot": {

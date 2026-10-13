@@ -1893,7 +1893,8 @@ async function t21l() {
   }
 }
 
-// T21r (F14, F15, a rollout reload): a pane attached to an idle chat on older code; Reload now, and at once
+// T21r (F14, F15, a rollout reload): a pane attached to an idle chat on older code (set up so the automatic
+// reload can't move it first: see the setup below); Reload now, and at once
 // a prompt, which lands in the reload's window. F14: it is never lost in silence: it runs once, or the pane
 // gets it back (refused, naming it). F15: the reload completes either way. If the drain won the race (the
 // prompt refused back), at once; if the prompt was taken first, the drain is refused ("not quiet any more"
@@ -1902,16 +1903,43 @@ async function t21l() {
 async function t21r() {
   await teardown();
   await boot({ build: "trial-a" });
-  const { path, s } = await newChat();
-  await turn({ path, s }, "say ok");
-  const pid1 = chatPid(path);
-  s.close();
-  await restart({ [KNOBS.build]: "trial-b" });
-  const p = await chat(c, path);
-  const from = p.got.length;
+  const first = await newChat();
+  const path = first.path;
+  await turn(first, "say ok");
   const logFile = join(scratch, `server-${n}.log`);
-  const logFrom = existsSync(logFile) ? readFileSync(logFile, "utf8").length : 0;
+  const logLen = () => (existsSync(logFile) ? readFileSync(logFile, "utf8").length : 0);
   const sid = entries(path)[0]?.id ?? "";
+  // Setup: the chat older than the server, quiet, a pane attached. An unattended quiet chat reloads by
+  // itself at once after a restart (that raced Reload now before), so a long reply holds it busy across the
+  // restart and the pane reattaches while it runs; once the reply ends, the attached pane makes the
+  // automatic rule wait its 5-min dwell. If the chat moved anyway, the setup is redone on new code.
+  let s = first.s;
+  let p = null;
+  let pid1 = 0;
+  let logFrom = 0;
+  for (const [k, build] of [[1, "trial-b"], [2, "trial-c"]]) {
+    prompt(s, `[long 40 #t21rh${k}] hold the chat across the restart`);
+    await s.until(delta(/part 2\//), 30000, "the holding reply streams");
+    pid1 = chatPid(path);
+    logFrom = logLen();
+    s.close();
+    await restart({ [KNOBS.build]: build });
+    p = await chat(c, path, 60000);
+    await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === `t21rh${k}`), 60000);
+    await sleep(1500);
+    const moved = chatPid(path) !== pid1 || readFileSync(logFile, "utf8").slice(logFrom).split("\n").some((l) => l.includes(sid) && /reloading/.test(l));
+    if (!moved) break;
+    R.note(`t21r: setup ${k}: the chat reloaded by itself before Reload now (pid ${pid1} → ${chatPid(path)}); again on new code`);
+    s = p;
+    p = null;
+  }
+  if (!R.check(p, "t21r: setup: the chat is older, quiet, its pane attached, and has not moved before Reload now")) {
+    await teardown();
+    await boot();
+    return;
+  }
+  const from = p.got.length;
+  // The window under test: from just before the restart that made the chat older (its reload lines).
   const chatLog = () => (existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "").split("\n").filter((l) => sid && l.includes(sid));
   p.send({ type: "reload_code" });
   const cid = prompt(p, "say hi DURING-RELOAD t21r");

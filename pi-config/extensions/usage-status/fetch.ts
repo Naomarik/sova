@@ -19,17 +19,17 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ClaudeLogins, DEFAULT_LOGIN_ID, claudeConfigDirEnv } from "../claude-code/accounts.ts";
+import { ClaudeLogins, DEFAULT_LOGIN_ID, claudeConfigDirEnv, defaultAgentDir } from "../claude-code/accounts.ts";
 import { readKeychainCredentials, type KeychainOptions } from "../claude-code/keychain.ts";
 import { parseActivity, parseCredits, parseReading, parseEndpoint, nonnegative, type OllamaActivity, type OllamaCredits, type OllamaReading, type OllamaEndpoint } from "./ollama.ts";
 
 export { parseActivity, parseCredits, parseReading } from "./ollama.ts";
 
 const HOME = os.homedir();
-const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
-const CODEX_AUTH = path.join(HOME, ".codex/auth.json");
 /** pi's agent dir: $PI_CODING_AGENT_DIR when set (as pi itself resolves it), else ~/.pi/agent. */
-const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(HOME, ".pi/agent");
+const AGENT_DIR = defaultAgentDir();
+const PI_AUTH = path.join(AGENT_DIR, "auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
+const CODEX_AUTH = path.join(HOME, ".codex/auth.json");
 export const CACHE_DIR = path.join(AGENT_DIR, "cache");
 export const CACHE_FILE = path.join(CACHE_DIR, "usage-status.json");
 const LOCK_FILE = `${CACHE_FILE}.lock`;

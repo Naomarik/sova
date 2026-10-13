@@ -90,6 +90,18 @@ test("a chat asking again the moment its refused reload says older gets a reload
   assert.equal(await again, "reloaded");
 });
 
+test("a Reload now that joins a chat's queued automatic reload makes it a Reload now: the halt after another chat's failure doesn't skip it", async () => {
+  let boots = 0;
+  const { r, calls } = make({ waitReady: async () => (boots++ === 0 ? { ok: false, error: "no hello in 30 s" } : { ok: true }) });
+  const first = r.request("a", { auto: true }); // fails to boot: the automatic rollout halts
+  const queued = r.request("b", { auto: true }); // queued behind it, automatic
+  const pressed = r.request("b", { auto: false }); // the pane's Reload now joins it
+  assert.equal(await first, "failed");
+  assert.equal(await queued, "reloaded");
+  assert.equal(await pressed, "reloaded");
+  assert.ok(calls.includes("start-rep b"));
+});
+
 test("a replacement that fails to boot halts the automatic rollout; Reload Now still tries", async () => {
   let boots = 0;
   const { r, calls, codes } = make({ waitReady: async () => (boots++ === 0 ? { ok: false, error: "no hello in 30 s" } : { ok: true }) });

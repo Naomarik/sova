@@ -73,6 +73,9 @@
 //     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
 //               it ends
 //     stage 5 (stage5-design.md):
+//     t25       code generations: a chat runs its own copy of the code; an edit to the checkout never
+//               reaches it; a restart moves quiet chats one at a time; a worker of an older chat runs
+//               the current copy; unused copies go; new code that fails to boot halts the rollout
 //     hermetic  hermeticity: with HOME a tripwire home, chats, workers (pi, claude-code), /btw, a parent on
 //               claude-code-cli, a restart and every page's GET read or write nothing in its ~/.pi/agent,
 //               ~/.claude, ~/.codex (bar the Overseer redactor reading four home secrets to mask them) and
@@ -98,13 +101,14 @@
 // Writes <scratch>/results.json (every check, pass/fail, details) and keeps server-*.log and
 // mock.jsonl beside it. Exit 0 when every check passed, 1 when one failed, 2 on a setup problem.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CRASH_RESUME_TEXT,
   KNOBS,
   RESUME_TEXT,
+  ROOT,
   assistantTexts,
   buildAgentDir,
   chat,
@@ -129,7 +133,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t22", "t23", "t24", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t22", "t23", "t24", "t25", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -248,8 +252,8 @@ async function boot(o = {}) {
   // A share listener of its own on loopback, so a trial can post as a baton's participant.
   const sharePort = await freePort();
   const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
-  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build ?? "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
-  const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`) });
+  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
+  const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`), root: o.root });
   s.up();
   await healthy(url);
   const cl = client(url, tokenOf(o.agent ?? agent));
@@ -2010,6 +2014,212 @@ async function t24() {
 
 // ── stage 5 (stage5-design.md) ──────────────────────────────────────────────────────────────────
 
+// T25 (stage5-design.md §A-3, G-tests): per-chat code generations. The server runs from a scratch git
+// clone of the trial's commit, so the clone can be edited while chats run. A marker in a tool
+// description of a pi-config extension (look_at_image's, vision-delegate) shows which code a chat's
+// extensions came from: the mock logs the markers each request's tools carry.
+//   (a) a chat's process runs from <code root>/<id>; (f) its model call is counted once on the llm feed;
+//   (b) the clone edited, no restart: a runtime rebuild (a mode switch) in the running chat and a new
+//       chat both keep the old marker;
+//   (c) a restart on the edited clone: two quiet unattended chats reload one after the other (the
+//       rollout log), each then shows the new marker and no badge; (g) a worker spawned meanwhile by
+//       an attached chat still on the older code runs on the current one, its extensions mapped there;
+//   (e) once no record names the first generation it is collected;
+//   (d) a restart whose new code fails to boot (SOVA_CHAT_TEST_FAIL_BOOT=<its id>): the first
+//       replacement fails, the rollout halts, the next chat is never tried, every chat keeps its
+//       process, one shows "failed"; (e) the generation those chats run is kept meanwhile.
+const T25_FILE = "pi-config/extensions/vision-delegate/index.ts";
+const T25_ANCHOR = '"Ask a vision model about an image file on disk';
+async function t25() {
+  // The clone, at the commit the trial runs (a snapshot's .trial-rev), from the repository it came from.
+  const src = existsSync(join(ROOT, ".trial-repo")) ? readFileSync(join(ROOT, ".trial-repo"), "utf8").trim() : ROOT;
+  const rev = existsSync(join(ROOT, ".trial-rev")) ? readFileSync(join(ROOT, ".trial-rev"), "utf8").trim() : execFileSync("git", ["-C", ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const clone = join(scratch, "t25-clone");
+  rmSync(clone, { recursive: true, force: true });
+  const git = (...a) => execFileSync("git", ["-C", clone, "-c", "user.name=trial", "-c", "user.email=trial@example.invalid", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  execFileSync("git", ["clone", "-q", "--no-checkout", src, clone], { stdio: "pipe" });
+  git("checkout", "-q", "--detach", rev);
+  symlinkSync(realpathSync(join(ROOT, "node_modules")), join(clone, "node_modules"));
+  const mark = (m, commit) => {
+    const f = join(clone, T25_FILE);
+    const text = readFileSync(f, "utf8").replace(/"GEN-MARK-\w+ /, '"');
+    if (!text.includes(T25_ANCHOR)) throw new Error(`${T25_FILE} no longer holds ${T25_ANCHOR}`);
+    writeFileSync(f, text.replace(T25_ANCHOR, `"GEN-MARK-${m} ${T25_ANCHOR.slice(1)}`));
+    if (commit) git("commit", "-q", "-am", `trial: GEN-MARK-${m}`);
+  };
+  mark("one", true);
+  // The agent dir's links into pi-config name the clone's for this check (put back at its end).
+  const relink = (from, to) => {
+    for (const d of [agent, join(agent, "extensions")])
+      for (const name of readdirSync(d)) {
+        const p = join(d, name);
+        let target;
+        try {
+          target = readlinkSync(p);
+        } catch {
+          continue;
+        }
+        if (!target.startsWith(`${from}/pi-config/`)) continue;
+        unlinkSync(p);
+        symlinkSync(to + target.slice(from.length), p);
+      }
+  };
+  const rootReal = realpathSync(ROOT);
+  relink(rootReal, clone);
+  try {
+    const codeDir = join(sova, "chats", "code");
+    const codes = () => {
+      try {
+        return readdirSync(codeDir).join(", ");
+      } catch {
+        return "no code root";
+      }
+    };
+    const runsFrom = (pid) => {
+      try {
+        return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").find((a) => a.endsWith("server/chat-runtime/main.ts")) ?? "";
+      } catch {
+        return "";
+      }
+    };
+    const genOf = (pid) => /\/chats\/code\/([^/]+)\/server\/chat-runtime\/main\.ts$/.exec(runsFrom(pid))?.[1] ?? null;
+    /** Markers the mock saw in the tools of requests made by `pid` (since mock log line `from`). */
+    const marksBy = (pid, from = 0) => [...new Set(mockLog(mock.log).slice(from).filter((e) => e.scenario && e.pid === pid).flatMap((e) => e.marks ?? []))];
+    const rollLines = () => {
+      try {
+        return readFileSync(join(scratch, `server-${n}.log`), "utf8").split("\n").filter((l) => l.includes("[chat-rollout]"));
+      } catch {
+        return [];
+      }
+    };
+    const waitMoved = (path, oldPid, ms = 90000) => waitFor(() => chatPid(path) && chatPid(path) !== oldPid, ms);
+    const grace = { SOVA_CHAT_CODE_GRACE_MIN: "0.05" };
+    await teardown();
+    await boot({ root: clone, build: null, extra: grace });
+    const health = await c.api("/api/health");
+    R.check(health?.chatHost?.code === "copy", `t25: the server's chats run from a copy of its code (health chatHost ${JSON.stringify(health?.chatHost)?.slice(0, 160)})`);
+
+    // (a), (f)
+    const feed = c.socket("/ws/watch?feed=llm");
+    await feed.opened;
+    const A = await newChat();
+    const m0 = mockLog(mock.log).length;
+    prompt(A.s, "[long 16 #t25f] a reply");
+    await A.s.until(delta(/part 6\//), 30000, "A streams");
+    const exact = (m) => (m.local?.count ?? 0) - (m.local?.approximate ?? 0);
+    const counts = feed.got.filter((m) => m.type === "llm_local").map(exact);
+    await settled(A.s, 0, 60000);
+    feed.close();
+    const pidA = chatPid(A.path);
+    const gen1 = record(A.path)?.build;
+    R.check(gen1 && genOf(pidA) === gen1 && existsSync(join(codeDir, gen1, ".complete")), `t25(a): the chat runs from <code root>/<id> (${runsFrom(pidA) || "no main.ts"}; build ${gen1})`);
+    R.check(marksBy(pidA, m0).join() === "GEN-MARK-one", `t25(a): its extensions are the copy's (markers ${marksBy(pidA, m0).join(", ") || "none"})`);
+    R.check(counts.length && Math.max(...counts) === 1, `t25(f): its model call was counted once on the llm feed (exact counts ${counts.join(", ") || "none"})`);
+
+    // (b)
+    mark("two", false);
+    const m1 = mockLog(mock.log).length;
+    const switched = await post(`/api/mode?path=${encodeURIComponent(A.path)}`, { mode: "delegate" }).then(() => "ok", (e) => String(e.message ?? e));
+    await turn(A, "say ok after the mode switch");
+    R.check(chatPid(A.path) === pidA && marksBy(pidA, m1).join() === "GEN-MARK-one", `t25(b): a runtime rebuild (mode switch ${switched}) in the running chat keeps the old code (markers ${marksBy(pidA, m1).join(", ") || "none"})`);
+    await post(`/api/mode?path=${encodeURIComponent(A.path)}`, { mode: "normal" }).catch(() => {});
+    const B = await newChat();
+    await turn(B, "say ok");
+    const pidB = chatPid(B.path);
+    R.check(record(B.path)?.build === gen1 && marksBy(pidB, m1).join() === "GEN-MARK-one", `t25(b): a chat started after the edit starts on the server's code, not the clone's (build ${record(B.path)?.build}, markers ${marksBy(pidB, m1).join(", ") || "none"})`);
+    const C = await newChat();
+    await turn(C, "say ok");
+    const pidC = chatPid(C.path);
+    B.s.close();
+    C.s.close();
+
+    // (c), (g): A stays attached (it waits for its dwell), B and C are quiet and unattended.
+    const r0 = rollLines().length;
+    await restart();
+    // A's page comes straight back, as a browser does: attached, it waits for its dwell.
+    A.s.close();
+    const A2 = await chat(c, A.path);
+    await waitFor(() => record(B.path)?.build && record(B.path).build !== gen1, 120000);
+    const gen2 = record(B.path)?.build;
+    await waitMoved(C.path, pidC);
+    await sleep(3000);
+    const lines = rollLines().slice(r0);
+    R.note(`t25(c): rollout log: ${lines.map((l) => l.replace(/.*\[chat-rollout\] /, "")).join(" | ")}`);
+    // One at a time: each "reloading" is followed by its own end before the next "reloading".
+    let open = null;
+    let overlap = false;
+    for (const l of lines) {
+      const m = /\] (\S+): (reloading|reloaded|could not start)/.exec(l);
+      if (!m) continue;
+      if (m[2] === "reloading") {
+        if (open) overlap = true;
+        open = m[1];
+      } else if (open === m[1]) open = null;
+    }
+    const reloaded = lines.filter((l) => / reloaded into /.test(l)).length;
+    // Each end has its start in the log (else "never overlapping" would hold for want of starts).
+    const starts = lines.filter((l) => /: reloading/.test(l)).length;
+    const ends = reloaded + lines.filter((l) => /could not start/.test(l)).length;
+    R.check(gen2 && gen2 !== gen1 && reloaded >= 2 && starts === ends && !overlap, `t25(c): two quiet chats reloaded one after the other, never overlapping (${reloaded} reloads, ${starts} starts for ${ends} ends, onto ${gen2})`);
+    const pidB2 = chatPid(B.path);
+    const pidC2 = chatPid(C.path);
+    const m2 = mockLog(mock.log).length;
+    const B2 = await chat(c, B.path);
+    const C2 = await chat(c, C.path);
+    await turn({ path: B.path, s: B2 }, "say ok on new code");
+    await turn({ path: C.path, s: C2 }, "say ok on new code");
+    await sleep(1000);
+    R.check(genOf(pidB2) === gen2 && genOf(pidC2) === gen2 && marksBy(pidB2, m2).join() === "GEN-MARK-two" && marksBy(pidC2, m2).join() === "GEN-MARK-two", `t25(c): each reloaded chat runs the new code (markers B ${marksBy(pidB2, m2).join(",") || "none"}, C ${marksBy(pidC2, m2).join(",") || "none"})`);
+    R.check([...codeMsgs(B2), ...codeMsgs(C2)].every((m) => m.state !== "older"), "t25(c): neither shows the older-code badge");
+    B2.close();
+    C2.close();
+    // (g): A, attached through the restart, is still on gen1; its worker starts on gen2.
+    R.check(chatPid(A.path) === pidA && record(A.path)?.build === gen1, `t25(g): the attached chat is still on the older code (${record(A.path)?.build})`);
+    const m3 = mockLog(mock.log).length;
+    // A worker with a Sova extension named (through the agent dir's link, so the clone's pi-config): it
+    // must load from the worker's own copy.
+    const vd = join(agent, "extensions", "vision-delegate", "index.ts");
+    prompt(A2, `[call agent_spawn ${JSON.stringify({ prompt: "[long 6 #t25g] worker", model: "trial/m1", name: "trial-t25g", extensions: [vd] })}]`);
+    const w = await workerWith(A.path, "#t25g");
+    const wpid = w && (await waitFor(() => chatPid(w.path), 30000), chatPid(w.path));
+    await waitFor(() => mockLog(mock.log).slice(m3).some((e) => e.tag === "t25g"), 60000);
+    R.check(wpid && genOf(wpid) === gen2, `t25(g): the worker runs on the current code (${runsFrom(wpid) || "no process"})`);
+    R.check(wpid && marksBy(wpid, m3).join() === "GEN-MARK-two", `t25(g): the worker's extensions are mapped to that code (markers ${marksBy(wpid, m3).join(", ") || "none"})`);
+    R.check((await workerDone(A2, "trial-t25g"))?.outcome === "success", "t25(g): the worker ran to its end");
+
+    // (e): A reloads (Reload now) onto gen2; then no record names gen1, and the collection after the
+    // rollout's batch removes it.
+    A2.send({ type: "reload_code" });
+    await waitMoved(A.path, pidA);
+    await waitFor(() => !existsSync(join(codeDir, gen1)), 60000);
+    R.check(!existsSync(join(codeDir, gen1)) && existsSync(join(codeDir, gen2)), `t25(e): the first generation was collected once no chat ran it (${codes()})`);
+    A2.close();
+
+    // (d): new code that fails to boot. Its id is the clone's next one: committed, so the commit.
+    mark("three", true);
+    const gen3 = git("rev-parse", "HEAD");
+    const pids = { A: chatPid(A.path), B: chatPid(B.path), C: chatPid(C.path) };
+    const r1 = rollLines().length;
+    await restart({ [KNOBS.failBoot]: gen3 });
+    await sleep(45000);
+    const dl = rollLines().slice(r1).map((l) => l.replace(/.*\[chat-rollout\] /, ""));
+    R.note(`t25(d): rollout log: ${dl.join(" | ")}`);
+    const tried = dl.filter((l) => /: reloading/.test(l)).length;
+    R.check(tried === 1 && !dl.some((l) => / reloaded into /.test(l)) && dl.some((l) => l.includes(`could not start on new code (${gen3})`)), `t25(d): the first replacement failed, the rollout halted, no other chat was tried (${tried} tried)`);
+    R.check(chatPid(A.path) === pids.A && chatPid(B.path) === pids.B && chatPid(C.path) === pids.C, `t25(d): every chat keeps its process (${JSON.stringify(pids)} → A ${chatPid(A.path)}, B ${chatPid(B.path)}, C ${chatPid(C.path)})`);
+    const panes = await Promise.all([A, B, C].map((x) => chat(c, x.path)));
+    await sleep(2000);
+    const states = panes.map((p) => codeMsgs(p).at(-1)?.state);
+    R.check(states.filter((x) => x === "failed").length === 1 && states.every((x) => x === "older" || x === "failed"), `t25(d): one chat shows "failed", the others "older" (${states.join(", ")})`);
+    for (const p of panes) p.close();
+    R.check(existsSync(join(codeDir, gen2)), `t25(e): the generation the chats run is kept while the new code fails (${codes()})`);
+    await teardown();
+  } finally {
+    relink(clone, rootReal);
+  }
+  await boot();
+}
+
 // hermetic: hermeticity. The server runs with HOME set to a tripwire home: its ~/.pi/agent, ~/.claude,
 // ~/.claude.json and ~/.codex hold decoy files, and its ~/.local/bin/claude (also last on PATH) is a
 // decoy claude that logs each call. Through ordinary chats, a pi worker, a claude-code worker, /btw, a
@@ -2157,7 +2367,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t22, t23, t24, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t22, t23, t24, t25, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

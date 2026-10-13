@@ -65,8 +65,7 @@ A worker may start only in the session's own cwd (or below it), or inside one of
 **active** worktrees; any other cwd is refused at spawn with a message naming the session's
 worktrees. The check is one gate every start goes through: `agent_spawn`, `team_create`,
 `team_add`, a team successor and `agent_resume`, for pi and Claude Code workers alike. A remote
-session is not checked (its worker cwds are paths on the target). A hosted worker adopted after a
-restart is kept even if its cwd is no longer allowed: `agent_list` flags it "outside this
+session is not checked (its worker cwds are paths on the target). A worker the parent picks back up after a reload or a server restart is kept even if its cwd is no longer allowed: `agent_list` flags it "outside this
 session's worktrees", and nothing kills it.
 
 A **pi** worker started inside an active worktree writes only inside that worktree (and its git

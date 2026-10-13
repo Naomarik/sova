@@ -191,8 +191,7 @@ driving session or pi's agent session. The handle is what a chat in a process of
 like to the server (`shared/chat-runtime.ts`): commands that are calls with ids, answered with a
 result or a typed refusal (busy, refused, config) that is thrown again as the error class the chat
 threw; a state mirror read without asking; lifecycle events numbered for a reader that missed some;
-and browser frames passed through. The handle has two forms. A chat in the server's process (every
-chat with `SOVA_CHAT_HOST` off, and a worker's own session file and the hidden chats always) runs a command as the chat's own method
+and browser frames passed through. The handle has two forms. A chat in the server's process (every chat with `SOVA_CHAT_HOST` off but workers and hidden chats, which are always chat processes of their own) runs a command as the chat's own method
 at once, and the mirror reads the chat as it is. A chat in a process of its own (§app/chat-processes)
 gets each command over its socket and answers it there, a refusal as the same typed refusal; the
 mirror is the copy the chat last sent, which it sends before answering a command that changed it;

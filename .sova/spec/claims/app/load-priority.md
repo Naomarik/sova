@@ -12,9 +12,7 @@ work that is slow on an idle machine.
 In a session the server hosts, these start at the worker niceness, 10 unless configured, and
 everything they start inherits it:
 
-- every worker the subagents extension starts, pi or Claude Code, whether the server spawns it
-  directly or through its detached host, and every later launch of the same worker (a resume, a
-  move to another login, a failover);
+- every worker the subagents extension starts, pi or Claude Code, and every hidden chat (`/explain`, `/compact-handoff`, `/btw`): its chat process starts at the worker niceness, as a unit of its own (`Nice=`) or as the server's child, and so does every later start of the same worker (a resume, a reopen after its idle stop, a crash continue, a code reload, a move to another login, a failover);
 - every tool command: the agent's `bash` calls, sandboxed or not, and the user's own `!` commands.
 
 The server itself, and the commands it runs for its own views and bookkeeping (git, listings,
@@ -28,4 +26,4 @@ environment variable `SOVA_WORKER_NICE`, when it holds such a value in the serve
 takes its place. A worker reads it when it starts; the agent's `bash` reads it when the session's
 runtime is built (or the sandbox is turned on or off), a `!` command when it runs.
 
-pi outside Sova (the TUI) is unchanged: its workers and tool commands keep its own priority.
+pi outside Sova (the TUI) is unchanged: its tool commands keep its own priority.

@@ -225,13 +225,15 @@ on. `claude auth` and
 
 Every `claude` process Sova starts runs the same Claude program, found from Sova's own environment,
 never from the folder a chat or worker works in: the chat provider's child, model discovery, a
-login's sign-in check, and the server's own runs (decisions, session titles,
+login's sign-in check, the topic outline's Claude Code summarizer, and the server's own runs (decisions, session titles,
 `claude --version`, signing a login in). The server looks it up on first use: the first `claude` on
 its own `PATH` (absolute directories only); a version-manager shim found there (mise) is resolved
 once to the program it stands for, asked from the server's own folder, else from Sova's own tree;
 with no `claude` on `PATH`, `~/.local/bin/claude`, where Claude Code's installer puts it. Every
 spawn is given that absolute path, kept while it stays executable, so a project whose `mise.toml`
-or `PATH` shim names another `claude`, or none, changes nothing. The path is kept as found, not
+or `PATH` shim names another `claude`, or none, changes nothing. A `claudeBin` set in
+topic-outline.json still overrides it for the summarizer; without one, nothing runs
+`~/.local/bin/claude` directly. The path is kept as found, not
 followed through its link, so a Claude Code update that moves the link reaches the next launch.
 When no Claude program is found, the launch fails with "Claude program not found", naming the
 `PATH` directories and the location it looked in; a chat shows that as its turn's error. A caller

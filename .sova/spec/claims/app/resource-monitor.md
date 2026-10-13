@@ -79,7 +79,7 @@ says that it isn't.
 - **Joins, strongest first** (`MonitorVia`). Exact: the subagents runtime's own worker pid,
   published in process on the `subagents:workers-snapshot` event and **never written to disk**
   (`worker-pid`); a `claude --resume` / `--session-id` uuid — a worker's session id, or a hosted
-  session's Claude Code provider (`session-id`); a pi worker's own live record (`live-record`); a
+  session's Claude Code provider (`session-id`); a
   team member's env (`PI_SUBAGENTS_TEAM_MEMBER`, on the member and everything it starts; `team-env`); the environment the agent itself puts on its tool
   children — pi's bash tool sets `PI_SESSION_FILE`, Claude Code sets `CLAUDE_CODE_SESSION_ID` and
   `CLAUDE_PID` — read once per process, ignoring values the server inherited itself (`env`); anything below a charged process
@@ -91,15 +91,23 @@ says that it isn't.
   exited between two ticks (seen only through the server's `cutime`), charged to the one hosted
   session that was running a tool in that window, else to nobody (`exited-tools`); and a process
   whose cwd lies in exactly one hosted session's cwd (`cwd`).
-- **A chat in a process of its own** (§app/chat-processes) is not under the server: its process and
-  everything it starts are charged to its session through that process's pid (`descendant`), and
-  its workers, title and tool activity come from what the chat process reports to the server.
+- **A chat in a process of its own** (§app/chat-processes) is not under the server. It is measured
+  all the same: a chat in a unit of its own with that unit's whole cgroup, so what it started and
+  then lost (a `setsid`'d, reparented dev server) is still its; a chat that is the server's child,
+  or has no unit, with its process tree. What it measures is charged to its session through that
+  process's pid (`descendant`), never counted as escaped from the server's unit, and its workers,
+  title and tool activity come from what the chat process reports to the server. A **worker's or
+  hidden chat's** process is charged to its parent session as that worker, never as a session of
+  its own: the process itself by its pid (`worker-pid`), its Claude Code CLI by the chat's provider
+  session ids (`session-id`), the rest of its unit or tree through it (`descendant`), and a process
+  carrying its session file by that (`env`). The `cwd` heuristic never matches a worker's chat.
 - **A worker row** shows its **whole subtree's** CPU% and memory, and opens to its heaviest
   descendants by short command (`java … clojure.main`).
-- **What is left over is named, not dropped.** `unownedWorkers` are workers whose session no join
-  found; `unattributed` are server descendants charged to nobody (an esbuild, a git probe); and,
+- **What is left over is named, not dropped.** `unownedWorkers` are worker-looking children of the
+  server (a Claude Code CLI) that no join tied to a session; `unattributed` are server descendants charged to nobody (an esbuild, a git probe); and,
   under a systemd unit, `escaped` are the unit's processes no longer under the server (a
-  Playwright browser, a dev server, a benchmark run), each charged by sid memory or cwd where that
+  Playwright browser, a dev server, a benchmark run; a chat's own unit is not the server's, so
+  nothing in it is escaped), each charged by sid memory or cwd where that
   can say.
 - **The limits are said.** Short-lived processes are visible only through their parent's CPU,
   never by name, unless a tick caught them alive; a process reaped by the subreaper after it
@@ -174,7 +182,8 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
 "Should not cause any additional strain on resources."
 
 - **Per tick, only cheap reads:** `/proc/<pid>/stat` for the measured processes plus a few cgroup,
-  pressure and loadavg files. **Never** `smaps` or PSS. In tree scope each tick follows each
+  pressure and loadavg files, and each chat process's unit's `cgroup.procs` (its cgroup path read
+  once per process). **Never** `smaps` or PSS. In tree scope each tick follows each
   process's main-thread `children` file, and every 30s every thread's, for children forked off
   the main thread.
 - **Nothing is read twice that needn't be.** Processes are keyed by `(pid, starttime)`. A new pid

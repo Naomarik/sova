@@ -7,9 +7,7 @@ switch is read once at start and is off by default. With it off, or on a host wh
 (not Linux, no systemd user manager answering, the server on Node), every chat runs in the server's
 process as before, and `GET /api/health` says which and why (§app.server-runtime/health).
 
-Every chat goes out except these, which stay in the server's process whatever the switch says: a
-worker's own session file, and the hidden chats (`/btw`, `/explain`, a compaction's hand-off). The
-Overseer, a project overseer, a baton session (its wrap-up included) and a chat whose profile grants
+Every chat goes out. Workers and the hidden chats (`/btw`, `/explain`, a compaction's hand-off) are chat processes whatever the switch says (§app.chat-processes/workers), and a worker's own session file is never opened as a chat anywhere else. The Overseer, a project overseer, a baton session (its wrap-up included) and a chat whose profile grants
 powers go out like any other (§app.chat-processes/special-kinds); a link member or a fan-out member
 does too. A chat the
 server could not start in a process of its own (the unit didn't start or never answered) runs in
@@ -24,7 +22,7 @@ workers, dialogs and refusals. What differs is what survives a server restart
 ## §app.chat-processes/survives-restart — A server restart leaves the chat running
 
 - **Nothing is stopped.** When the server stops, a chat in its own process is not aborted, its
-  reply keeps streaming, its workers keep working, and its tools keep running. The server only
+  reply keeps streaming, its workers keep working in processes of their own (§app.chat-processes/workers), and its tools keep running. The server only
   says goodbye on the chat's socket. Its run is never recorded as cut off, so no "The Sova server
   restarted…" message follows (§app.overseer/auto-resume).
 - **The next server takes it back.** At start, before it accepts any chat connection, the server
@@ -151,7 +149,7 @@ open dialog, working worker or server action) is asked to close after 30 minutes
 still quiet with nobody attached, and refuses otherwise, which restarts the clock. A chat that
 accepts but has not exited 30 s later is stopped. An idle stop is not a death and never gets a
 "continue". The chat stays closed until someone opens it, which starts a new process in under a
-second. Idle workers end with the process and are restored as records (§app.worker-restore/restore).
+second. Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
 
 ## §app.chat-processes/code-pickup — Picking up new code
 
@@ -159,7 +157,9 @@ Each chat's process carries the build of the server that started it: the commit,
 uncommitted changes when the tree is dirty (`SOVA_BUILD` overrides it for tests; an unknown build
 means no badge). A chat whose build differs from the server's, both known, is on older code. It asks
 to reload at a quiet moment: when nobody is attached, or after 5 minutes quiet. "Reload Now" asks at
-once when the chat is quiet, else when its reply ends; working workers still hold it. Reloads run one
+once when the chat is quiet, else when its reply ends. Its workers don't hold a reload: they run in
+processes of their own, keep working through it and are reattached (§app.chat-processes/workers);
+only a working worker of another backend, which runs inside the chat's process, still holds it. Reloads run one
 at a time. The server first starts a replacement process and waits up to 30 s for it to boot; only
 then does it ask the old process to close. The old process refuses if it is no longer quiet; the
 replacement is then stopped, and the reload is tried again later. On close, the chat reopens in the
@@ -175,7 +175,7 @@ A chat running in its own process on older code than its server says so in its h
 moment.") and a ghost `Reload Now` button beside it, in the chat's own head and in its workspace
 pane's. On a chat head narrower than 720px the button is its refresh icon, a 44px target, with
 its words as its name and tooltip, so the head's share and details buttons stay in view. Pressed while a reply runs, the button reads `Reloads after this reply` (`Reloads when its
-workers finish` when only its workers are working) and the reload waits for that moment; it never
+workers finish` when only another backend's workers, which run inside the chat's process, are working) and the reload waits for that moment; it never
 cuts a reply off. While the chat reloads, the chip reads `Reloading`; the pane then reconnects
 quietly, the draft kept, and on the current code the chip and the button are gone. If the new code
 fails to start, the chat keeps running on older code: the chip stays `On older code`, and a warning
@@ -224,3 +224,87 @@ dropped link or a server restart, the chat answers it as it did the first time a
 turn, and the turn it started can be waited for again for an hour. A command to a chat whose process
 is reconnecting or being replaced by a reload waits up to 15 s for it before it fails as
 unreachable; a chat whose process ended starts a new one at the next open.
+
+## §app.chat-processes/workers — Workers and hidden chats in chat processes
+
+Every worker a chat starts runs as a chat process of its own: an `agent_spawn` worker (Delegate's
+included), a team member, coordinator, monitor or successor, and a resumed worker. So does every
+hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side thread. The server
+starts each from the loadout its parent computed (model, effort, tools, extensions, flags, system
+prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
+added (no profile, mode menu, memory, topics, links, Sova-served tools or session powers), and
+opens it the way it opens any chat. The parent never starts a worker's process and never talks to
+it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
+passes its events back. A worker never runs inside the server's process.
+
+- **Where it runs.** On a server started with `SOVA_CHAT_HOST=out` on Linux, each is a transient
+  unit of its own in the chats' slice. A server restart leaves it running, and the next server takes
+  it back. Anywhere else (the switch off, not Linux, no systemd user manager answering), and for a
+  worker whose unit failed to start (logged), it is a detached child of the server. The server
+  stops such children when it stops, as before, and stops what a server that died left running at
+  its next start. Either way it is lowered to the worker niceness (§app.load-priority/workers).
+  Workers run on Bun: the server's own runtime, else `$SOVA_BUN`, else `bun` on the server's
+  `PATH`; with none, a start is refused with "Workers need Bun to run Sova's chat runtime". A chat
+  outside Sova (pi on its own, with no worker host) starts no worker: a spawn fails with "A worker
+  needs Sova's chat runtime".
+- **A parent's reload keeps its workers.** A parent's reload, mode switch, crash or code reload
+  never stops its workers. When the parent's chat opens again it reattaches every worker of its
+  that still runs: `agent_list` and the pane show it with its live status, its transcript so far
+  comes from its file, and a run that finished while the parent was away is announced to the parent
+  once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
+  reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
+  within 10 seconds, the server opens the parent chat once so that it takes the report.
+- **Across a server restart.** A task, steer, follow-up, abort or kill the parent sends while no
+  server is connected waits for the next server, up to a minute, and is delivered once; after that
+  it fails with "The Sova server isn't answering". The worker is never stopped for it: a steer or
+  follow-up that fails so reports its delivery unknown (the server may have taken it before it
+  stopped answering), is not sent again, and leaves the worker's current task as it was, with one
+  error line in its transcript that says the message may not have been delivered and the worker
+  was not stopped. The parent's view of each worker's events picks
+  up where it left off.
+- **A chat's own workers only.** A chat lists, steers, aborts, stops and follows only its own
+  workers (worker ids repeat in every session): a start that names another parent session is
+  refused, and any other request about another session's worker fails with "No worker chat <id> for
+  this session." A worker whose task is not accepted when it starts is stopped, and the start fails
+  with the reason.
+- **Trust.** A worker trusts its project's local files as every Sova chat does.
+- **Archiving or deleting the parent** stops its workers.
+- **Idle workers.** A waiting worker's process stops after the idle-stop time like any chat's
+  (§app.chat-processes/idle-stop). It is still listed waiting and still takes a live slot, and its
+  next instruction reopens it in a new process, under its recorded loadout.
+- **Team mailboxes are kept.** A team's mailbox lives under the parent session's teams directory
+  and is kept across reloads and restarts: a reattached or resumed member keeps its inbox, requests a
+  member wrote while its parent was away are handled once the parent is back, and pending wake
+  nudges are kept, held or not, and fire after a reload.
+- **Extension sources.** Each worker loads its usual extensions plus those `agent_spawn`'s `extensions` names. Every extension Sova ships, and every local path, loads with no install step. An outside `npm:` or `git:` source that isn't installed (or whose installed copy doesn't match its pinned version) is refused at spawn with one line: "<source> isn't installed: install it first (`pi install <source>`)".
+- **Hidden chats.** An `/explain` or hand-off fork still running when its parent reloads is
+  reattached and settles when it finishes; it reads interrupted only when its chat is gone (the
+  server stopped it, or it died for good). `/btw`'s side thread survives a parent reload.
+- **Not ordinary chats.** A worker's or hidden chat's session file stays out of the session list,
+  is never opened as a chat anywhere else (the subagent-session refusal), and its transcript stays
+  readable.
+- **Counted once.** Each model call of a worker or hidden chat, `/btw`'s included, is counted once,
+  in the process that makes it, and attributed to its parent session and worker id, in the usage
+  ledger and in the in-flight counts.
+
+
+## §app.chat-processes/worker-crash — When a worker's process dies
+
+A worker's or hidden chat's process that dies (a crash, a kill by a signal, a non-zero exit, or a
+process that stops answering and is stopped by the server) with a run in flight, that run not
+itself a resume, is reopened once in a new process where it ran before, and sent "This chat's
+process stopped unexpectedly and cut off your last turn. Continue where you left off.", under the
+same setting as a chat's crash resume (§app.overseer/auto-resume). Each decision is logged in the overseer's action
+log as a chat's is (`auto_resume`, naming the worker's file, its parent's file and its worker id):
+resumed, or why not (the setting off, already a resume, no run in flight, or the reopen failed). Its transcript in the parent
+shows "Process stopped unexpectedly (…); continuing once", and it stays running. Otherwise (it was
+idle, or it dies again in that resumed run) it ends: its status is error, with the error "This
+worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by
+"Last output: …" with its log's last 20 lines, at most 2 KB, the newest kept. No second continue is
+sent.
+
+A server restart is never a death, nor is a stop the server asked for (idle, a code reload, an
+archive, a kill): nothing is reported and nothing is resumed. A switch-off server that stops its
+worker children when it stops records them as stopped by the server; their parents list them
+restored, interrupted when they were mid-run, and only those worker ends are hidden from attention
+in the restart's window (§app.overseer/attention-digest).

@@ -238,11 +238,12 @@ export class ChatRuntimeHost {
     this.epoch = control.epoch;
     this.settings = control.settings;
     const life = `${control.serverPid}:${control.serverStartedAt}`;
-    if (this.serverLife !== null && this.serverLife !== life && this.codeSaid) {
-      // The last server's reload (or failure) ends with it: this one sees older code and asks by its own rules.
-      this.codeSaid = null;
+    if (this.serverLife !== null && this.serverLife !== life) {
+      // The last server's reload (asked for, running or failed) ends with it: this one sees older
+      // code and is asked by its own rules; a Reload now still stands.
       this.reloadAsked = false;
       if (this.reloadNowWanted) this.reloadPending = true;
+      this.codeSaid = null;
       this.codeChanged();
     }
     this.serverLife = life;

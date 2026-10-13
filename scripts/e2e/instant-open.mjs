@@ -219,7 +219,8 @@ try {
     assert(ws.hello.after === null && ws.hello.items > 0, `hello ${JSON.stringify(ws.hello)}`);
     assert(held.sendDisabledSeen, "Send was never aria-disabled while the chat started");
     assert(held.sendEnabledAt !== null, "Send never enabled");
-    assert(held.sendEnabledAt >= ws.helloAt, `Send enabled ${ws.helloAt - held.sendEnabledAt} ms before the hello`);
+    // helloAt is stamped in Node when CDP reports the frame, after the page already has it: allow that lag.
+    assert(held.sendEnabledAt >= ws.helloAt - 25, `Send enabled ${ws.helloAt - held.sendEnabledAt} ms before the hello`);
     assert(held.rowsAt !== null && held.rowsAt >= ws.helloAt, "rows came from the hello");
   });
 } finally {

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import type { ReplyTiming } from "../shared/harness-wire";
 import type { ChatServerMessage, TranscriptItem, V1EventFrame } from "../shared/protocol";
 import { fromV1 } from "../shared/wire-v1";
-import { sessionIdOfPath } from "./reply-facts";
+import { replyTimingsOf, sessionIdOfPath, setReplyTimingsSource } from "./reply-facts";
 import { onWire, rowFor, rowsFor } from "./wire-rows";
 
 const timing: ReplyTiming = { effort: "high", ttftMs: 900, thinkingMs: 1200, replyMs: 3000, output: 640, reasoning: 200 };
@@ -45,4 +45,23 @@ test("a message_end's timing tag: in wire 2's message.end when the reply ended o
 
 test("a session file's id", () => {
   assert.equal(sessionIdOfPath("/x/2026-10-13T10-00-00-000Z_0198abcd-1234.jsonl"), "0198abcd-1234");
+});
+
+test("a session's lookup comes from the process's source (a chat process asks the server); none reads as no facts", async () => {
+  const asked: string[] = [];
+  setReplyTimingsSource(async (sid) => (asked.push(sid), sid === "s1" ? { v: "1.1", timings: { a1: timing } } : null));
+  try {
+    const got = await replyTimingsOf("s1");
+    assert.equal(got?.v, "1.1");
+    assert.deepEqual(got?.get("a1"), timing);
+    assert.equal(got?.get("toString"), undefined);
+    assert.equal(await replyTimingsOf("s2"), null);
+    setReplyTimingsSource(async () => {
+      throw new Error("down");
+    });
+    assert.equal(await replyTimingsOf("s1"), null);
+    assert.deepEqual(asked, ["s1", "s2"]);
+  } finally {
+    setReplyTimingsSource(null);
+  }
 });

@@ -70,21 +70,52 @@ export function logBins(sorted: readonly number[]): PerfBin[] {
   return bins;
 }
 
-/** One figure over its values: median and mean always; a range and bins from PERF_MIN_RANGE values. */
-export function figure(values: number[], unsupported?: string): PerfFigure {
+/**
+ * Values counted into given bins' bands (their lo and hi, their counts ignored): an effort level's
+ * values on its model's bands, so every level's bars line up on the model's axis and two levels with
+ * the same spread draw the same heights. A value at or under the first band's lo falls in it; one
+ * at or over the last band's hi, in the last.
+ */
+export function binsOn(edges: readonly PerfBin[], sorted: readonly number[]): PerfBin[] {
+  const bins = edges.map((b) => ({ lo: b.lo, hi: b.hi, n: 0 }));
+  if (!bins.length) return bins;
+  for (const v of sorted) {
+    let i = bins.length - 1;
+    while (i > 0 && v < bins[i]!.lo) i--;
+    bins[i]!.n++;
+  }
+  return bins;
+}
+
+/** One figure over its values: median and mean always; a range and bins from PERF_MIN_RANGE values.
+    `edges`, when given, are the bands its bins use (binsOn); otherwise its own log-spaced ones. */
+export function figure(values: number[], unsupported?: string, edges?: readonly PerfBin[]): PerfFigure {
   if (!values.length) return unsupported ? { n: 0, unsupported } : { n: 0 };
   const sorted = values.slice().sort((a, b) => a - b);
   const out: PerfFigure = { n: sorted.length, median: percentile(sorted, 0.5), mean: sorted.reduce((s, v) => s + v, 0) / sorted.length };
   if (sorted.length >= PERF_MIN_RANGE) {
     out.p10 = percentile(sorted, 0.1);
     out.p90 = percentile(sorted, 0.9);
-    out.bins = logBins(sorted);
+    out.bins = edges?.length ? binsOn(edges, sorted) : logBins(sorted);
   }
   return out;
 }
 
-/** A group's figures (shared/usage/perf.ts PerfFigures) over its replies' timings. */
-export function figuresOf(timings: readonly ReplyTiming[]): PerfFigures {
+/** The figures that carry bins, by name: the bands an effort level's figures are counted on. */
+export type PerfBands = Partial<Record<"overall" | "reply" | "thinkingTps" | "thinkingMs" | "thinkingTokens" | "ttft", readonly PerfBin[]>>;
+
+const bandsOf = (f: PerfFigures): PerfBands => ({
+  overall: f.overall.bins,
+  reply: f.reply.bins,
+  thinkingTps: f.thinkingTps.bins,
+  thinkingMs: f.thinkingMs.bins,
+  thinkingTokens: f.thinkingTokens.bins,
+  ttft: f.ttft.bins,
+});
+
+/** A group's figures (shared/usage/perf.ts PerfFigures) over its replies' timings; `bands`, the bins
+    each figure is counted on (an effort level's: its model's). */
+export function figuresOf(timings: readonly ReplyTiming[], bands: PerfBands = {}): PerfFigures {
   const overall: number[] = [];
   const reply: number[] = [];
   const thinkingTps: number[] = [];
@@ -117,13 +148,13 @@ export function figuresOf(timings: readonly ReplyTiming[]): PerfFigures {
   return {
     replies: timings.length,
     thought,
-    overall: figure(overall),
+    overall: figure(overall, undefined, bands.overall),
     // No reply could give a reply-text speed: every one wrote tool calls, or thought uncounted.
-    reply: figure(reply, split > 0 ? undefined : toolFree === 0 ? PERF_ALL_TOOLS : PERF_NO_SPLIT),
-    thinkingTps: figure(thinkingTps, noCount),
-    thinkingMs: figure(thinkingMs),
-    thinkingTokens: figure(thinkingTokens, noCount),
-    ttft: figure(ttft),
+    reply: figure(reply, split > 0 ? undefined : toolFree === 0 ? PERF_ALL_TOOLS : PERF_NO_SPLIT, bands.reply),
+    thinkingTps: figure(thinkingTps, noCount, bands.thinkingTps),
+    thinkingMs: figure(thinkingMs, undefined, bands.thinkingMs),
+    thinkingTokens: figure(thinkingTokens, noCount, bands.thinkingTokens),
+    ttft: figure(ttft, undefined, bands.ttft),
   };
 }
 
@@ -132,7 +163,8 @@ const effortRank = (e: string) => {
   return i < 0 ? PERF_EFFORT_ORDER.length : i;
 };
 
-/** One row per provider+model (most replies first), each with one line per effort level that ran. */
+/** One row per provider+model (most replies first), each with one line per effort level that ran,
+    every level's bins on its model's bands. */
 export function performanceRows(samples: readonly PerfSample[]): PerfModelRow[] {
   const groups = new Map<string, { provider: string; model: string; all: ReplyTiming[]; byEffort: Map<string, ReplyTiming[]> }>();
   for (const s of samples) {
@@ -147,10 +179,12 @@ export function performanceRows(samples: readonly PerfSample[]): PerfModelRow[] 
   }
   const rows: PerfModelRow[] = [];
   for (const g of groups.values()) {
+    const model = figuresOf(g.all);
+    const bands = bandsOf(model);
     const efforts: PerfEffortRow[] = [...g.byEffort.entries()]
       .sort(([a], [b]) => effortRank(a) - effortRank(b) || a.localeCompare(b))
-      .map(([effort, list]) => ({ effort, ...figuresOf(list) }));
-    rows.push({ provider: g.provider, model: g.model, ...figuresOf(g.all), efforts });
+      .map(([effort, list]) => ({ effort, ...figuresOf(list, bands) }));
+    rows.push({ provider: g.provider, model: g.model, ...model, efforts });
   }
   return rows.sort((a, b) => b.replies - a.replies || a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model));
 }

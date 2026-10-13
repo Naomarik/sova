@@ -51,7 +51,7 @@ import { ActionMenu } from "./ActionMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
 import { PerformanceTab } from "./PerformanceTab";
-import { perfHref } from "../lib/perf";
+import { DEFAULT_PERF_QUERY, type PerfQuery, perfHref } from "../lib/perf";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./SelectionToolbar";
 import { sessionHref } from "./Sidebar";
@@ -635,9 +635,9 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   );
 }
 
-/** The Costs and Performance tabs' filters when you last left them, for this tab's life: Board → Costs brings it back. */
+/** The Costs and Performance tabs' filters (and Performance's sort) when you last left them, for this tab's life: Board → Costs brings it back. */
 let lastCosts: CostsQuery = DEFAULT_COSTS_QUERY;
-let lastPerf: CostsQuery = DEFAULT_COSTS_QUERY;
+let lastPerf: PerfQuery = DEFAULT_PERF_QUERY;
 
 type AgentsTab = "board" | "costs" | "performance";
 
@@ -701,7 +701,7 @@ export function AgentsView(props: {
   /** The Costs tab's query, when `#/agents/costs` is the address; null elsewhere. */
   costs: CostsQuery | null;
   /** The Performance tab's query, when `#/agents/performance` is the address; null elsewhere. */
-  performance: CostsQuery | null;
+  performance: PerfQuery | null;
 }) {
   /** Off the board: Costs or Performance. The board's polls and its head line rest there. */
   const onCosts = () => props.costs !== null || props.performance !== null;

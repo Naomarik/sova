@@ -76,7 +76,8 @@ export interface PerfFigure {
   mean?: number;
   p10?: number;
   p90?: number;
-  /** Log-spaced, at most PERF_BINS, oldest-free: lowest first. */
+  /** Log-spaced, at most PERF_BINS, oldest-free: lowest first. An effort level's are its model's
+      bands (some may be empty), so its bars line up on the model's axis. */
   bins?: PerfBin[];
   unsupported?: string;
 }

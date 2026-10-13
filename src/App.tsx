@@ -34,6 +34,7 @@ import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRet
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
+import type { PerfQuery } from "./lib/perf";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -1127,7 +1128,7 @@ export function App() {
                     onOpenDetails={openDetailsFor}
                     onOpenAgents={openAgentsFor}
                     costs={(insightsRoute() as { costs?: CostsQuery } | null)?.costs ?? null}
-                    performance={(insightsRoute() as { performance?: CostsQuery } | null)?.performance ?? null}
+                    performance={(insightsRoute() as { performance?: PerfQuery } | null)?.performance ?? null}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}

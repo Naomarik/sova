@@ -933,7 +933,12 @@ export class ChatRuntimeHost {
   private reloadNow(client: ChatClient): void {
     const code = this.code();
     if (code.state === "current") return client.send({ type: "code", state: "current" } as ChatServerMessage);
-    if (code.state === "reloading") return client.send(codeMessage(code) as ChatServerMessage);
+    if (code.state === "reloading") {
+      // A reload is under way (an automatic one, say): the press stands, so if its drain is refused the
+      // chat asks again at its next quiet moment, never after the dwell.
+      this.reloadNowWanted = true;
+      return client.send(codeMessage(code) as ChatServerMessage);
+    }
     this.codeSaid = null; // failed: try again, as older
     this.reloadNowWanted = true;
     if (this.wasReloadQuiet && this.chat && this.quietOf(mirrorOf(this.chat), true)) this.requestReload(false);
@@ -946,6 +951,7 @@ export class ChatRuntimeHost {
   private requestReload(auto: boolean): void {
     if (!this.link?.isOpen || !this.link.compatible) return;
     this.reloadAsked = true;
+    this.log(`asking to reload (${auto ? "automatic" : "Reload now"})`);
     this.link.send({ t: "reload.request", auto });
   }
 

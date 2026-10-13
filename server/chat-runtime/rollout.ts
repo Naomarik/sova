@@ -65,7 +65,10 @@ export class Rollout<L = unknown> {
   /** A chat's `reload.request`: queued behind any reload in progress; one request per chat at a time. */
   request(chatId: string, opts: { auto: boolean }): Promise<ReloadOutcome> {
     const held = this.queued.get(chatId);
-    if (held) return held;
+    if (held) {
+      this.log(`${chatId}: asked again while its reload is under way: that one answers`);
+      return held;
+    }
     const run = this.chain.then(() => this.reload(chatId, opts.auto));
     this.queued.set(chatId, run);
     this.chain = run.catch(() => undefined);
@@ -83,7 +86,10 @@ export class Rollout<L = unknown> {
   private async reload(chatId: string, auto: boolean): Promise<ReloadOutcome> {
     const { supervisor: sup } = this.deps;
     if (auto && this.halted) return "halted";
-    if (!sup.record(chatId)) return "gone";
+    if (!sup.record(chatId)) {
+      this.log(`${chatId}: no reload: no process of it is recorded`);
+      return "gone";
+    }
     this.deps.setCode(chatId, "reloading");
     this.log(`${chatId}: reloading${this.deps.codeId ? ` onto ${this.deps.codeId()}` : ""}`);
     let rep: ChatRecord;

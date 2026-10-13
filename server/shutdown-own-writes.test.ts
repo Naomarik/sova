@@ -20,9 +20,14 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { markOwned, recentForeignWriteAgeSec } = await import("./write-guard");
+const { setProcStartForTest } = await import("./chat-runtime/writer-lock");
 
+// A held chat takes its writer lock, which reads this process's start time: from a fake, so a unit
+// test spawns no `ps` (macOS reads it there).
+setProcStartForTest((pid) => (pid === process.pid ? 1 : null));
 after(async () => {
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 1000))]);
+  setProcStartForTest(null);
 });
 
 const TEST_MODEL = {

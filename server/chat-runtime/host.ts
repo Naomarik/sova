@@ -405,6 +405,9 @@ export class ChatRuntimeHost {
     }
     this.wire(f.served);
     try {
+      // The broken-deploy trial's failed open (T27): this build refuses every open.
+      const failOpen = process.env.SOVA_CHAT_TEST_FAIL_OPEN;
+      if (failOpen && failOpen === this.o.build) throw new Error(`SOVA_CHAT_TEST_FAIL_OPEN=${failOpen}: failing the open on purpose`);
       const chat = await acquireChat(this.o.path, f.force);
       this.chat = chat;
       // A worker chat feeds its parent (through the server) from its first event.

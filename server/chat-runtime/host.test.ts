@@ -274,6 +274,21 @@ test("server-hosted tools: run by the server; unknown outcome after a drop; wait
   await assert.rejects(never, (e: Error) => e.message === NOT_RUN_NO_SERVER);
 });
 
+test("SOVA_CHAT_TEST_FAIL_OPEN=<build>: that build refuses every open, as a broken deploy's (T27)", async () => {
+  process.env.SOVA_CHAT_TEST_FAIL_OPEN = "bad";
+  try {
+    const t = await setup({ build: "bad", open: false });
+    const opened = awaitFrame(t.ctl.server, "opened", 5_000);
+    t.ctl.server.send({ t: "open", id: "o1", path: t.path, force: true, link: null, served: [] });
+    const f = await opened;
+    assert.equal(f.ok, false);
+    assert.match(JSON.stringify(f), /failing the open on purpose/);
+    t.ctl.server.close();
+  } finally {
+    delete process.env.SOVA_CHAT_TEST_FAIL_OPEN;
+  }
+});
+
 test("drain: refused with a pane attached for idle; otherwise the chat closes and says why", async () => {
   const t = await setup();
   t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });

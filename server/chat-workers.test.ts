@@ -177,6 +177,31 @@ describe("WorkerRegistry", () => {
     }
   });
 
+  test("a session file never stands for an empty task's delivery, nor one rewritten shorter since the start", async () => {
+    const userLine = (text: string) => `${JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text }], timestamp: Date.now() } })}\n`;
+    const sends = (h: FakeHandle[]) => h.flatMap((x) => x.calls).filter((c) => c.method === "send").length;
+    const recordOf = () => JSON.parse(readFileSync(join(dir, "workers", readdirSync(join(dir, "workers")).find((f) => f.endsWith(".json"))!), "utf8")) as WorkerRecord;
+    // Empty task: any user message would "hold" it.
+    {
+      void reg(fakeProcs({ holdSend: "before" }).procs).start(start("k", ""));
+      await new Promise((r) => setTimeout(r, 20));
+      appendFileSync(recordOf().path, userLine("something else"));
+      const { procs, handles } = fakeProcs();
+      await reg(procs).start(start("k", ""));
+      assert.equal(sends(handles), 1, "delivered");
+      rmSync(join(dir, "workers"), { recursive: true, force: true });
+    }
+    // Rewritten shorter than at the start: not consulted, delivered.
+    {
+      void reg(fakeProcs({ holdSend: "before" }).procs).start(start("k2"));
+      await new Promise((r) => setTimeout(r, 20));
+      writeFileSync(recordOf().path, "");
+      const { procs, handles } = fakeProcs();
+      await reg(procs).start(start("k2"));
+      assert.equal(sends(handles), 1, "delivered");
+    }
+  });
+
   test("a start asked again while its first is still in flight answers only once the task was taken", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

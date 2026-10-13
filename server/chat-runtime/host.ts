@@ -946,6 +946,12 @@ export class ChatRuntimeHost {
     clearInterval(this.ticker);
     const chat = this.chat;
     if (opts.dispose && chat && !chat.disposed) {
+      // Finish what was taken (F14): a command running (an idle chat runs `/btw` at once) and what
+      // it asked the server get a bounded moment, so its request reaches the server before the
+      // dispose cuts it off; prompts arriving meanwhile are refused (client.msg above).
+      const until = Date.now() + CLOSE_QUIESCE_MS;
+      while ((chat.turnStarting || this.workers.pending > 0) && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
+      if (chat.turnStarting || this.workers.pending > 0) this.log(`closing with ${chat.turnStarting ? "a command" : "nothing"} unfinished and ${this.workers.pending} request(s) to the server unanswered`);
       try {
         if (opts.message) await disposeHeldChat(chat.path, opts.message);
         else await chat.dispose();
@@ -977,6 +983,8 @@ export class ChatRuntimeHost {
   }
 }
 
+/** How long a closing chat lets a command it already took, and its requests to the server, finish. */
+const CLOSE_QUIESCE_MS = 3_000;
 /** How long a closing process waits, after its `exit`, for the server to close the link. */
 const EXIT_LINGER_MS = 2_000;
 

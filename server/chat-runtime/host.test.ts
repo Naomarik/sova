@@ -77,10 +77,10 @@ const quiet = () => {};
 let epoch = 100;
 
 /** A host for a fresh session, and a "server" linked to it as controller. */
-async function setup(o: { build?: string; serverBuild?: string; settings?: Partial<ChatRuntimeSettings>; open?: boolean; proto?: number; served?: ServerToolDecl[] } = {}) {
+async function setup(o: { build?: string; serverBuild?: string; settings?: Partial<ChatRuntimeSettings>; open?: boolean; proto?: number; served?: ServerToolDecl[]; log?: (line: string) => void } = {}) {
   const s = session();
   const exits: ExitCause[] = [];
-  const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: o.build ?? "b1", startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000 });
+  const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: o.build ?? "b1", startedAt: 1, exit: (c) => exits.push(c), log: o.log ?? quiet, tickMs: 60_000 });
   const settings = { ...DEFAULT_RUNTIME_SETTINGS, ...o.settings };
   const connect = (since: number | null = null, build = o.serverBuild ?? o.build ?? "b1", proto = o.proto ?? CHAT_WIRE_PROTO) => {
     const [a, b] = pair();
@@ -315,6 +315,42 @@ test("F14: a prompt that reaches a stopping chat goes back to its pane as a refu
   t.ctl.server.close();
   await settle();
   assert.deepEqual(t.exits, ["operator"]);
+});
+
+test("F14: an operator close lets what the chat already asked the server finish first (bounded), then disposes", async () => {
+  const t = await setup({ proto: CHAT_WIRE_PROTO });
+  const wk = collect(t.ctl.server, "wk");
+  const exits = collect(t.ctl.server, "exit");
+  // A command the chat took (an idle /btw) is mid-way: its question to its worker is on its way.
+  const workers = (t.host as unknown as { workers: { bind(p: { sessionId: string; path: string }): { send(id: string, i: unknown): Promise<unknown> } } }).workers;
+  const asked = workers.bind({ sessionId: t.id, path: t.path }).send("btw-chat", { text: "a side question" });
+  await settle();
+  assert.equal(wk.length, 1, "the request reached the server");
+  void t.host.close("operator", { dispose: true, message: "Reconnecting." });
+  await settle(200);
+  assert.equal(exits.length, 0, "not disposed while the server hasn't answered it");
+  assert.equal(t.host.hosting, true);
+  t.ctl.server.send({ t: "wk.result", id: wk[0]!.id, ok: true, result: { queued: false } });
+  assert.deepEqual(await asked, { queued: false });
+  await settle(200);
+  assert.deepEqual(exits.map((f) => f.cause), ["operator"]);
+  t.ctl.server.close();
+});
+
+test("F14: a request the server never answers holds the close only for the bound, and is logged", async () => {
+  const logs: string[] = [];
+  const t = await setup({ proto: CHAT_WIRE_PROTO, log: (l) => logs.push(l) });
+  const exits = collect(t.ctl.server, "exit");
+  const workers = (t.host as unknown as { workers: { bind(p: { sessionId: string; path: string }): { send(id: string, i: unknown): Promise<unknown> } } }).workers;
+  void workers.bind({ sessionId: t.id, path: t.path }).send("btw-chat", { text: "q" }).catch(() => {});
+  await settle();
+  const t0 = Date.now();
+  void t.host.close("operator", { dispose: true, message: "Reconnecting." });
+  await awaitFrame(t.ctl.server, "exit", 6_000);
+  assert.ok(Date.now() - t0 >= 2_900, "it waited the bound");
+  assert.equal(exits.length, 1);
+  assert.ok(logs.some((l) => /closing with .* 1 request\(s\) to the server unanswered/.test(l)), logs.join("\n"));
+  t.ctl.server.close();
 });
 
 test("code: older than the server's build shows the badge and asks for a reload once quiet and alone", async () => {

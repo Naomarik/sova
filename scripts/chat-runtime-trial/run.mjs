@@ -2660,7 +2660,38 @@ async function tstopchats() {
   await sleep(3000);
   const ds = [Q.path, L.path, P.path, ...(w ? [w.path] : [])].flatMap((p) => deaths(p));
   R.check(ds.length === 0, `tstopchats: the next server reads each stop as orderly, no death (${ds.length})`);
-  R.note(`tstopchats: resume decisions after the stop: quiet ${fmtDecisions(resumeDecisions(Q.path))}; mid-reply ${fmtDecisions(resumeDecisions(L.path))}`);
+  // The chat stopped mid-reply (the architect, from §app.chat-processes/crash, /supervision, /idle-stop and
+  // §app.overseer/auto-resume): an operator stop, announced, never a death, never resumed; it reopens on
+  // demand with its history. Its cut reply's partial text is whatever was written: no finish asserted.
+  const procLogOf = (path) => {
+    const sid = entries(path)[0]?.id ?? "";
+    const dir = join(sova, "chats", "logs");
+    try {
+      return readdirSync(dir).filter((f) => sid && f.includes(sid)).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+    } catch {
+      return "";
+    }
+  };
+  const lLog = procLogOf(L.path);
+  if (!R.check(/exit operator/.test(lLog), `tstopchats (mid-reply): its process announced an operator exit ('exit operator' in its log; last lines: ${lLog.trim().split("\n").slice(-3).join(" | ").slice(0, 200)})`))
+    R.note("tstopchats (mid-reply): no announced exit: a stop-chats stop that ends unannounced (killed past its grace) is a defect for the architect");
+  R.check(deaths(L.path).length === 0, `tstopchats (mid-reply): no entry for it in chats/deaths.jsonl (${deaths(L.path).length})`);
+  R.check(userEntriesWith(L.path, CRASH_RESUME_TEXT) === 0 && userEntriesWith(L.path, RESUME_TEXT) === 0, "tstopchats (mid-reply): no crash-resume or resume text in its session file");
+  R.check(!mockLog(mock.log).some((e) => /stopped unexpectedly and cut off your last turn/.test(e.userText ?? "")), "tstopchats (mid-reply): no crash-resume text reached the model");
+  const resumed = resumeDecisions(L.path).filter((a) => a.outcome === "ok" || /resumed/.test(JSON.stringify(a)));
+  R.check(resumed.length === 0, `tstopchats (mid-reply): no auto_resume resumed it (${fmtDecisions(resumeDecisions(L.path))})`);
+  const before = entries(L.path).filter((e) => e.type === "message").length;
+  const l2 = await chat(c, L.path, 60000);
+  await sleep(1500);
+  const unexpected = l2.got.filter((m) => /stopped unexpectedly/i.test(JSON.stringify(m)));
+  R.check(unexpected.length === 0, `tstopchats (mid-reply): its pane shows no 'stopped unexpectedly' (${unexpected.map((m) => JSON.stringify(m).slice(0, 120)).join(" | ") || "none"})`);
+  await turn({ path: L.path, s: l2 }, "say ok after stop-chats");
+  const lpid = chatPid(L.path);
+  const msgs = entries(L.path).filter((e) => e.type === "message");
+  R.check(lpid && lpid !== pids["mid-reply"] && msgs.length > before && userEntriesWith(L.path, "[long 80 #tsc]") === 1, `tstopchats (mid-reply): it reopens on demand in a new process with its history (${pids["mid-reply"]} → ${lpid || "none"}; ${before} → ${msgs.length} messages; the first prompt there once)`);
+  l2.close();
+  await sleep(3000);
+  R.check(deaths(L.path).length === 0 && resumeDecisions(L.path).filter((a) => a.outcome === "ok").length === 0 && userEntriesWith(L.path, CRASH_RESUME_TEXT) === 0, "tstopchats (mid-reply): still no death or resume after it reopened");
   const q2 = await chat(c, Q.path, 60000);
   await turn({ path: Q.path, s: q2 }, "say ok after stop-chats");
   R.check(chatPid(Q.path) && chatPid(Q.path) !== pids.quiet, `tstopchats: the quiet chat reopens on attach in a new process (${pids.quiet} → ${chatPid(Q.path)})`);

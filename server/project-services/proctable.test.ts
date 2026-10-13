@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hostPortOwner, lsofPortOwner, parseLsofListen, parsePs, psTable, unitMembers, type ProcEntry, type SyncExec } from "./proctable";
+import { hostPortOwner, lsofPortOwner, parseLsofListen, parsePs, procReadEnv, psTable, unitMembers, type ProcEntry, type SyncExec } from "./proctable";
 
 const e = (pid: number, ppid: number, pgid: number, sid: number | null = null, zombie = false): ProcEntry => ({ pid, ppid, pgid, sid, zombie });
 
@@ -81,4 +81,11 @@ test("lsof: the listener on loopback or any address and its cwd; none; no lsof i
   assert.equal(lsofPortOwner(8762, exec), "none");
   assert.equal(lsofPortOwner(8761, () => ({ code: 127, stdout: "" })), "unknown");
   assert.deepEqual(hostPortOwner(8761, "darwin", exec), { pid: 321, cwd: "/work/site" }, "off Linux, the port's owner comes from lsof");
+});
+
+test("process-table reads run in UTC and the C locale, whatever the caller's: a start time (ps lstart, local time) reads the same in a chat process and its server, and across a DST change", () => {
+  const env = procReadEnv({ TZ: "Europe/Berlin", LC_ALL: "de_DE.UTF-8", PATH: "/usr/bin" });
+  assert.equal(env.TZ, "UTC");
+  assert.equal(env.LC_ALL, "C");
+  assert.equal(env.PATH, "/usr/bin", "the rest is the caller's");
 });

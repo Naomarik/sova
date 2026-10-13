@@ -159,6 +159,8 @@ export class ChatRuntimeHost {
   /** The rollout's own word on this chat's code (reloading, failed), over what the builds say. */
   private codeSaid: { state: ChatCodeState["state"]; detail?: string } | null = null;
   private reloadPending = false;
+  /** A pane's "Reload now" stands until the chat reloads, fails or is current: a drain refused as busy re-arms it. */
+  private reloadNowWanted = false;
   private reloadAsked = false;
   private readonly ctx: CallCtx = { turns: new Map() };
   private readonly clients = new Map<string, ChatClient>();
@@ -376,6 +378,9 @@ export class ChatRuntimeHost {
     else if (f.kind === "code") {
       this.codeSaid = f.state === "reloading" || f.state === "failed" ? { state: f.state, ...(f.detail ? { detail: f.detail } : {}) } : null;
       if (f.state !== "reloading") this.reloadAsked = false;
+      if (f.state === "failed") this.reloadNowWanted = false;
+      // "older" after "reloading": the rollout's drain was refused (no longer quiet); Reload now asks again at the next quiet moment.
+      if (f.state === "older" && this.reloadNowWanted) this.reloadPending = true;
       this.codeChanged();
     }
   }
@@ -905,7 +910,7 @@ export class ChatRuntimeHost {
   }
 
   private codeChanged(): void {
-    if (this.code().state === "current") this.reloadPending = false;
+    if (this.code().state === "current") this.reloadPending = this.reloadNowWanted = false;
     if (this.chat && !this.chat.disposed && this.clients.size) this.chat.broadcast(codeMessage(this.code()) as ChatServerMessage);
     this.pokeSoon();
   }
@@ -916,6 +921,7 @@ export class ChatRuntimeHost {
     if (code.state === "current") return client.send({ type: "code", state: "current" } as ChatServerMessage);
     if (code.state === "reloading") return client.send(codeMessage(code) as ChatServerMessage);
     this.codeSaid = null; // failed: try again, as older
+    this.reloadNowWanted = true;
     if (this.wasReloadQuiet && this.chat && this.quietOf(mirrorOf(this.chat), true)) this.requestReload(false);
     else {
       this.reloadPending = true;
@@ -950,7 +956,14 @@ export class ChatRuntimeHost {
     const chat = this.chat;
     if (chat && !chat.disposed && !f.force) {
       const quiet = this.quietOf(mirrorOf(chat), f.reason === "reload");
-      if (!quiet) return void answer({ t: "drained", id: f.id, ok: false, why: "busy" });
+      if (!quiet) {
+        // A Reload now whose drain came after a reply started: it goes at the reply's end, the pane saying so.
+        if (f.reason === "reload" && this.reloadNowWanted && !this.reloadPending) {
+          this.reloadPending = true;
+          this.codeChanged();
+        }
+        return void answer({ t: "drained", id: f.id, ok: false, why: "busy" });
+      }
       if (f.reason === "idle" && this.clientCount() > 0) return void answer({ t: "drained", id: f.id, ok: false, why: "attached" });
     }
     answer({ t: "drained", id: f.id, ok: true });

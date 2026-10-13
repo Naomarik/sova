@@ -4,9 +4,9 @@ Every chat runs in a process of its own, outside the server: on Linux with a sys
 answering, a transient user service in a slice of its own; elsewhere (macOS, a Linux without one),
 a detached session the server records and supervises. Stopping or restarting the server does not
 stop it. There is no switch, and `GET /api/health` says which of the two this server uses
-(§app.server-runtime/health). Chat processes run on Bun, found as for workers when the server
-itself runs on Node; with no Bun anywhere, every chat open is refused with "Chats need Bun to run
-Sova's chat runtime", and the server still serves everything else.
+(§app.server-runtime/health). Chat processes run on the server's own Bun. A server on Node runs
+none: every chat open is refused with "Chats need Bun to run Sova's chat runtime", and the server
+still serves everything else.
 
 Every chat goes out. Workers and the hidden chats (`/btw`, `/explain`, a compaction's hand-off) are chat processes too (§app.chat-processes/workers), and a worker's own session file is never opened as a chat anywhere else. The Overseer, a project overseer, a baton session (its wrap-up included) and a chat whose profile grants
 powers go out like any other (§app.chat-processes/special-kinds); a link member or a fan-out member
@@ -114,7 +114,9 @@ it, and a command carrying another epoch is refused unrun. Each side speaks prot
 N-1. The kernel frames (hello, control, refuse, ping, drain, drained, exit, bye) never change, so
 any server can drain any chat; every other frame is additive, and a frame of an unknown type is
 ignored. Lifecycle events are numbered by the chat process and replayed from the last number the
-server saw, or reported as a gap. Browser frames pass through as the chat serialised them. A recorded chat process is taken
+server saw, or reported as a gap. A link that ends without the chat saying it exits is dialed again
+while the chat's process runs; one that ends within a second of being dialed again waits a second
+before the next dial, so a link that keeps ending at once never spins. Browser frames pass through as the chat serialised them. A recorded chat process is taken
 back only while its pid still runs `server/chat-runtime/main.ts` (read from `/proc` on Linux, from
 `ps` on macOS), never a pid another program reused.
 
@@ -124,7 +126,8 @@ A session file has one writer: the chat process holds a lock on it under the sta
 chat is open, naming its pid and start time (from `/proc` on Linux, `ps` on macOS). A lock whose
 process is gone, or whose pid now belongs to a later process, is taken over. A lock is published
 whole, never half-written; one left unreadable (by an older process that crashed while writing it)
-is taken over once it is 10 s old, and refused as held before that.
+is taken over once it is 10 s old, and refused as held before that. A lock its holder lets go of
+while it is being taken is taken: the take is never refused as held by a lock that is gone.
 
 ## §app.chat-processes/supervision — Who runs a chat's process
 
@@ -247,6 +250,12 @@ reaches a running chat process, not even when it rebuilds its session (a mode sw
 session, a fork); it reaches the chat only when the chat reloads onto a newer copy
 (§app.chat-processes/code-pickup).
 
+A deployed tree with no Git of its own (a `git archive` install stamped with `BUILD_COMMIT`: a VPS,
+a phone, a container) is copied the same way, its id being the stamped commit: every file in the
+tree except any `node_modules` (linked per lockfile as above), `.git`, the top-level `.bun`,
+`.accept`, `dist` and `dist-share`, and anything inside the agent dir, the state root or the
+copies root when they lie inside the tree, so no session, login or earlier copy goes into it.
+
 Sova's own extensions load from the chat's copy: an extension the agent dir links into a Sova
 checkout's `pi-config/`, or into another copy's, loads from the same place in the chat's copy, and
 extensions switched off with /extensions stay off. A Sova extension added to the checkout after
@@ -257,7 +266,7 @@ missing from its copy (renamed since its parent's copy was made) does not start,
 "<file> is not in this chat's code (<id>); reload the parent chat". Settings, models, skills,
 prompts, themes and the agent dir's other files are read live.
 
-When the copy can't be made (no Git, no space, no tree), chats run from the checkout as before;
+When the copy can't be made (a checkout whose Git fails, no space, no tree), chats run from the checkout as before;
 the server logs why once, and `GET /api/health` says so (§app.server-runtime/health). Copies no
 chat uses are removed at the server's start, after each run of reloads and every hour, once they
 are 10 minutes old; the current copy, the last copy a chat started and opened on, and any copy a
@@ -324,8 +333,8 @@ passes its events back. A worker never runs inside the server's process.
   it running, and the next server takes it back. A worker whose process doesn't start fails to
   start with the reason ("The worker's process did not start: …"); it never falls back to another
   place. It is lowered to the worker niceness (§app.load-priority/workers).
-  Workers run on Bun: the server's own runtime, else `$SOVA_BUN`, else `bun` on the server's
-  `PATH`; with none, a start is refused with "Workers need Bun to run Sova's chat runtime". A chat
+  Workers run on the server's own Bun; on a server running on Node a start is refused with
+  "Workers need Bun to run Sova's chat runtime". A chat
   outside Sova (pi on its own, with no worker host) starts no worker: a spawn fails with "A worker
   needs Sova's chat runtime".
 - **A parent's reload keeps its workers.** A parent's reload, mode switch, crash or code reload

@@ -932,7 +932,9 @@ locks the file for the moment it takes, so two processes recording at once never
 record, and a file whose size and time both still match opens
 for chat at once. A stat is recorded only where the write is certainly the server's: a file it
 just created, an entry a runtime it held just appended, and a stretch its write guard verified
-entry by entry as its own. A reply a server stop cuts off is one of these: the stop waits (a few
+entry by entry as its own. Each message a chat's run writes is recorded as soon as it is on disk,
+not only at the guard's next check, so a chat process that dies mid-run leaves its last messages
+known as the server's. A reply a server stop cuts off is one of these: the stop waits (a few
 seconds at most) for each abort to write it, and each chat records it as it closes, before its
 runtime finishes shutting down, so the next start can resume that chat (§app.overseer/auto-resume). Any later append by anyone breaks the match, and a TUI-live session is
 refused before this check. A missing or corrupt file means nothing is known to be the server's,

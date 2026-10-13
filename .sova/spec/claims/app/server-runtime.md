@@ -1,7 +1,9 @@
 # §app/server-runtime — The server's runtime: Bun, or Node on request
 
 Sova's server runs on Bun. It runs on Node only when the operator asks for it explicitly
-(§app.server-runtime/choice), and the test suite, both its tiers, follows the same switch. A launcher starts the
+(§app.server-runtime/choice), and the test suite, both its tiers, follows the same switch. A server
+on Node runs no chats and no workers, since they run on the server's own Bun: a host with chats runs
+on Bun. A launcher starts the
 server on that runtime; when Bun is wanted but missing or the server fails to start on it, that is
 an error, never a quiet start on Node (§app.server-runtime/fallback). The server says which
 runtime it is on in `GET /api/health` (§app.server-runtime/health). There is no picker in Settings
@@ -29,6 +31,10 @@ takes effect at the server's next start.
   wins over the environment; `pnpm run test:bun` runs Bun whatever the environment says.
 - The Bun binary is `$SOVA_BUN` when set, else `bun` on `PATH`, else what `mise which bun`
   answers. The Node binary the launcher uses is `$SOVA_NODE`, else `node` on `PATH`.
+- On Node the server serves everything but chats: every chat open is refused with "Chats need Bun
+  to run Sova's chat runtime" and every worker start with "Workers need Bun to run Sova's chat
+  runtime" (§app.server-runtime/pi-workers), whatever Bun the machine has. Node is for tooling and
+  tests; a host with chats runs on Bun.
 
 ## §app.server-runtime/fallback — No fallback to Node
 
@@ -41,7 +47,7 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 
 ## §app.server-runtime/pi-workers — Workers run on Sova's chat runtime on Bun, the same from every folder
 
-- Every worker (a subagent on any backend, a team member, a hidden chat) runs Sova's chat runtime (`server/chat-runtime/main.ts`, §app.chat-processes/workers) on the same Bun whatever folder it works in. The server finds that Bun once and keeps it for its lifetime: its own runtime when the server runs on Bun; otherwise `$SOVA_BUN`, else `bun` on the server's `PATH`, a version-manager shim there resolved from Sova's own folder. A server with no Bun at all starts no workers: each start is refused with "Workers need Bun to run Sova's chat runtime". Every other chat runs on that Bun too, and with none each open is refused with "Chats need Bun to run Sova's chat runtime" (§app/chat-processes).
+- Every worker (a subagent on any backend, a team member, a hidden chat) runs Sova's chat runtime (`server/chat-runtime/main.ts`, §app.chat-processes/workers) on the same Bun whatever folder it works in. That Bun is the server's own runtime. A server on Node starts no workers, whatever Bun the machine has: each start is refused with "Workers need Bun to run Sova's chat runtime". Every other chat runs on that Bun too, and with none each open is refused with "Chats need Bun to run Sova's chat runtime" (§app/chat-processes).
 - The worker's folder never decides which runtime runs: the chat process starts in Sova's own folder, so a project's version manager, `bunfig.toml` and `.env` never pick or configure it.
 - A change to any of this takes effect at the server's next start.
 
@@ -53,7 +59,8 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 runtime the choice asks for (`"node"` when its environment has `SOVA_RUNTIME=node`, else `"bun"`),
 read once at start. It also adds `chatHost: {driver}`: how chat processes run (§app/chat-processes),
 `"systemd"` (user units) or `"detached"` (sessions the server records), or `"starting"` before it
-is decided, with `bun: false` added when no Bun was found (every chat open is then refused); the
+is decided, with `bun: false` added when the server runs on Node (it has no Bun for chats, so every chat open
+is then refused); the
 full reason for the choice is in the server's log. Once decided, `chatHost` also has `code`:
 `"copy"` when chat processes run from a code generation (§app.chat-processes/code-generations),
 with `codeWhy` `full node_modules copy (another filesystem)` when its dependencies could not be

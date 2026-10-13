@@ -208,6 +208,26 @@ test("a server started from a chat's tools: once the chat's variables are delete
   assert.equal(ownCodeOf(server, "/anywhere"), null);
 });
 
+test("SOVA_CHAT_CODE_GRACE_MIN shortens the grace (trials)", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const old = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-old" }), log: quiet });
+    await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-cur" }), log: quiet });
+    age(old.dir, 2_000);
+    const keep = startGenerationGc(() => [], { root, env: { SOVA_CHAT_CODE_GRACE_MIN: "1" }, log: quiet });
+    await keep.collect();
+    keep.stop();
+    assert.ok(existsSync(old.dir), "2 s old, under 1 min: kept");
+    const gc = startGenerationGc(() => [], { root, env: { SOVA_CHAT_CODE_GRACE_MIN: "0.01" }, log: quiet });
+    await gc.collect();
+    gc.stop();
+    assert.ok(!existsSync(old.dir), "over 0.6 s: gone");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
 test("no collection on a root set by SOVA_CHAT_CODE_ROOT, which other servers may share", async () => {
   const lines: string[] = [];
   const gc = startGenerationGc(() => [], { env: { SOVA_CHAT_CODE_ROOT: "/shared" }, log: (l) => lines.push(l) });

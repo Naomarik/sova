@@ -20,7 +20,6 @@
  * them, so the fork keeps the parent's prompt cache; `./child.ts` (loaded last) sets them up and
  * blocks every call its `ForkPolicy` does not allow. See mirror.ts.
  */
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CLAUDE_FORK_ENV, encodeForkPoint, parentForkPoint, type ClaudeForkPoint } from "../../claude-code/provider/fork-point.ts";
 import { claudeCodeProviderLoad, rpcScopedModel } from "../runner.ts";
@@ -28,13 +27,13 @@ import {
 	NO_WORKER_HOST,
 	WORKER_HOST_DISCOVER_EVENT,
 	WORKER_HOST_EVENT,
-	type WorkerFeedFrame,
 	type WorkerHost,
 	type WorkerHostAnnouncement,
 	type WorkerKind,
 	type WorkerRef,
 	type WorkerState,
 } from "../worker-host.ts";
+import { fileMessages, type MessageLike, RunWatch, textOf } from "../run-watch.ts";
 import { FORK_POLICY_ENV, type ForkPolicy } from "./mirror.ts";
 
 export type BackgroundForkOutcome = "success" | "error" | "aborted";
@@ -148,45 +147,15 @@ export function workerHostOf(
 	};
 }
 
-/** The text of an assistant message's text parts (pi's wire shape: a string or a part list). */
-function textOf(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.filter((part): part is { type: "text"; text: string } => !!part && (part as { type?: string }).type === "text" && typeof (part as { text?: unknown }).text === "string")
-		.map((part) => part.text)
-		.join("\n");
-}
-
-interface AssistantLike {
-	role?: string;
-	content?: unknown;
-	stopReason?: string;
-	errorMessage?: string;
-	provider?: string;
-	model?: string;
-}
-
 /** The run's result as its session file holds it: the last assistant message. For a fork that settled while nobody watched. */
 export function forkResultFromFile(sessionFile: string, settled: WorkerState["lastSettled"]): BackgroundForkResult {
-	let last: AssistantLike | undefined;
+	let last: MessageLike | undefined;
 	let lastText = "";
-	try {
-		for (const line of readFileSync(sessionFile, "utf8").split("\n")) {
-			if (!line.includes('"assistant"')) continue;
-			let entry: { type?: string; message?: AssistantLike };
-			try {
-				entry = JSON.parse(line);
-			} catch {
-				continue;
-			}
-			if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-			last = entry.message;
-			const text = textOf(last.content).trim();
-			if (text) lastText = text;
-		}
-	} catch {
-		/* No file: no output. */
+	for (const e of fileMessages(sessionFile)) {
+		if (e.message.role !== "assistant") continue;
+		last = e.message;
+		const text = textOf(last.content).trim();
+		if (text) lastText = text;
 	}
 	const outcome = settled?.outcome ?? "error";
 	return {
@@ -198,31 +167,61 @@ export function forkResultFromFile(sessionFile: string, settled: WorkerState["la
 }
 
 /**
- * The fork's run, folded from its feed: the events a single-task worker needs (the runner's fold,
- * minus steers). Settles at `agent_settled`; a chat that ends first settles by its cause.
+ * The fork's one run, from its feed (RunWatch): settles at `agent_settled`, from its file when it
+ * settled while nobody watched, or by its cause when its chat ends first. Settles once.
  */
 class ForkWatch {
 	settled = false;
-	model?: string;
-	sessionId?: string;
-	sessionFile?: string;
-	private finalText = "";
-	private taskError: string | undefined;
-	private aborted = false;
 	private stopping = false;
-	private unwatch: (() => void) | undefined;
+	private readonly run: RunWatch;
+	private readonly name: string;
+	private readonly handlers: BackgroundForkHandlers;
 
-	constructor(
-		private readonly host: WorkerHost,
-		private readonly name: string,
-		private readonly handlers: BackgroundForkHandlers,
-	) {}
+	constructor(host: WorkerHost, name: string, handlers: BackgroundForkHandlers) {
+		this.name = name;
+		this.handlers = handlers;
+		this.run = new RunWatch(host, {
+			state: (state) => {
+				// Settled while nobody watched (or across a gap): the file has the answer.
+				if (!state.lastSettled || state.status === "running" || state.status === "starting" || !this.run.sessionFile) return;
+				const result = forkResultFromFile(this.run.sessionFile, state.lastSettled);
+				this.settle({ ...result, ...(result.model || this.model ? { model: result.model ?? this.model } : {}) });
+			},
+			ended: (frame) => {
+				const aborted = frame.cause === "killed" || this.stopping;
+				this.settle({
+					outcome: aborted ? "aborted" : "error",
+					...(aborted
+						? {}
+						: { error: frame.detail ?? (frame.cause === "server-stopped" ? `the ${this.name} worker was stopped with the server` : `the ${this.name} worker ended before it finished`) }),
+					finalOutput: this.run.run.text,
+					...(this.model ? { model: this.model } : {}),
+				});
+			},
+			settled: (run) => {
+				const outcome: BackgroundForkOutcome = run.aborted ? "aborted" : run.error ? "error" : "success";
+				this.settle({ outcome, ...(outcome === "error" ? { error: run.error } : {}), finalOutput: run.text, ...(this.model ? { model: this.model } : {}) });
+			},
+		});
+	}
+
+	get model(): string | undefined {
+		return this.run.model;
+	}
+	get sessionId(): string | undefined {
+		return this.run.sessionId;
+	}
+	get sessionFile(): string | undefined {
+		return this.run.sessionFile;
+	}
 
 	watch(ref: Pick<WorkerRef, "chatId" | "sessionId" | "sessionFile">): void {
-		this.sessionId = ref.sessionId;
-		this.sessionFile = ref.sessionFile;
-		if (this.settled) return;
-		this.unwatch = this.host.watch(ref.chatId, null, (frame) => this.frame(frame));
+		if (this.settled) {
+			this.run.sessionId = ref.sessionId;
+			this.run.sessionFile = ref.sessionFile;
+			return;
+		}
+		this.run.watch(ref);
 	}
 
 	markStopping(): void {
@@ -230,8 +229,7 @@ class ForkWatch {
 	}
 
 	detach(): void {
-		this.unwatch?.();
-		this.unwatch = undefined;
+		this.run.detach();
 	}
 
 	settle(result: BackgroundForkResult): void {
@@ -239,66 +237,6 @@ class ForkWatch {
 		this.settled = true;
 		this.detach();
 		this.handlers.onSettled(result);
-	}
-
-	private frame(frame: WorkerFeedFrame): void {
-		if (this.settled) return;
-		switch (frame.t) {
-			case "state": {
-				const state = frame.state;
-				this.sessionId = state.sessionId || this.sessionId;
-				this.sessionFile = state.sessionFile || this.sessionFile;
-				if (state.model) this.model = state.model;
-				// Settled while nobody watched (or across a gap): the file has the answer.
-				if (state.lastSettled && state.status !== "running" && state.status !== "starting" && this.sessionFile) {
-					const result = forkResultFromFile(this.sessionFile, state.lastSettled);
-					this.settle({ ...result, ...(result.model || this.model ? { model: result.model ?? this.model } : {}) });
-				}
-				return;
-			}
-			case "gap":
-				return; // A `state` follows.
-			case "ended":
-				if (frame.cause === "idle" || frame.cause === "reload" || frame.resuming) return; // Still its chat; a `state` follows.
-				this.settle({
-					outcome: frame.cause === "killed" || this.stopping ? "aborted" : "error",
-					...(frame.cause === "killed" || this.stopping
-						? {}
-						: { error: frame.detail ?? (frame.cause === "server-stopped" ? `the ${this.name} worker was stopped with the server` : `the ${this.name} worker ended before it finished`) }),
-					finalOutput: this.finalText,
-					...(this.model ? { model: this.model } : {}),
-				});
-				return;
-			case "event":
-				this.event(frame.event as { type?: string; [key: string]: unknown });
-				return;
-		}
-	}
-
-	private event(event: { type?: string; [key: string]: unknown }): void {
-		switch (event.type) {
-			case "message_end": {
-				const message = event.message as AssistantLike | undefined;
-				if (message?.role !== "assistant") return;
-				const text = textOf(message.content).trim();
-				if (text) this.finalText = text;
-				if (message.provider && message.model) this.model = `${message.provider}/${message.model}`;
-				if (message.errorMessage) this.taskError = String(message.errorMessage);
-				else if (message.stopReason === "error") this.taskError = "assistant turn failed (stopReason: error)";
-				else this.taskError = undefined;
-				this.aborted = message.stopReason === "aborted";
-				return;
-			}
-			case "auto_retry_end":
-				if (event.success === true) this.taskError = undefined;
-				else if (event.success === false) this.taskError ??= event.finalError ? String(event.finalError) : "auto-retry failed after transient errors";
-				return;
-			case "agent_settled": {
-				const outcome: BackgroundForkOutcome = this.aborted ? "aborted" : this.taskError ? "error" : "success";
-				this.settle({ outcome, ...(outcome === "error" ? { error: this.taskError } : {}), finalOutput: this.finalText, ...(this.model ? { model: this.model } : {}) });
-				return;
-			}
-		}
 	}
 }
 

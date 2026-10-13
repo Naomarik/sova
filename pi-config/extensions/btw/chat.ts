@@ -11,12 +11,13 @@
  * thread's prompt plus the aside instructions. The file lives in the thread's run directory (0700,
  * file 0600) and goes when the chat is stopped. Node built-ins and the host's types only.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WORKER_MARK_EXTENSION } from "../subagents/fork/background.ts";
 import { claudeCodeProviderLoad } from "../subagents/runner.ts";
-import type { WorkerFeedFrame, WorkerHost, WorkerRef } from "../subagents/worker-host.ts";
+import { lastExchange as fileExchange, RunWatch, type FeedEvent } from "../subagents/run-watch.ts";
+import type { WorkerHost, WorkerRef, WorkerState } from "../subagents/worker-host.ts";
 import { BTW_PROMPT_ENV } from "./child.ts";
 
 /** The btw chat's own extension, loaded last. */
@@ -56,7 +57,7 @@ export interface BtwAnswer {
 }
 
 /** A pi event the chat fed (the wire-1 shape of pi's rpc events). */
-export type BtwFeedEvent = { type?: string; [key: string]: unknown };
+export type BtwFeedEvent = FeedEvent;
 
 export interface BtwChatStart {
 	parent: { sessionId: string; path: string };
@@ -76,63 +77,45 @@ export interface BtwChatStart {
 	tools: string[];
 }
 
-function textOf(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.filter((part) => !!part && (part as { type?: string }).type === "text" && typeof (part as { text?: unknown }).text === "string")
-		.map((part) => (part as { text: string }).text)
-		.join("\n");
-}
-
 /** The last user question and assistant answer of a btw chat's session file, with the answer's entry id. */
-export function lastExchange(sessionFile: string): BtwAnswer | undefined {
-	let answer: BtwAnswer | undefined;
-	let question: string | undefined;
-	try {
-		for (const line of readFileSync(sessionFile, "utf8").split("\n")) {
-			if (!line.includes('"message"')) continue;
-			let entry: { type?: string; id?: string; message?: { role?: string; content?: unknown } };
-			try {
-				entry = JSON.parse(line);
-			} catch {
-				continue;
-			}
-			if (entry.type !== "message" || !entry.message) continue;
-			if (entry.message.role === "user") {
-				question = textOf(entry.message.content);
-				answer = undefined;
-			} else if (entry.message.role === "assistant") {
-				answer = { message: entry.message as BtwAssistant, ...(entry.id ? { entryId: entry.id } : {}), ...(question !== undefined ? { question } : {}) };
-			}
-		}
-	} catch {
-		return undefined;
-	}
-	return answer;
-}
+export const lastExchange = (sessionFile: string): BtwAnswer | undefined => fileExchange(sessionFile) as BtwAnswer | undefined;
 
 /** A btw chat, started or reattached. One question at a time. */
 export class BtwChat {
 	readonly mode: BtwChatMode;
-	sessionFile: string;
-	private unwatch: (() => void) | undefined;
-	private last: BtwAnswer | undefined;
-	private lastQuestion: string | undefined;
+	private readonly feed: RunWatch;
 	private sends = 0;
 	private waiter: { key: string | null; resolve: (answer: BtwAnswer) => void; reject: (error: Error) => void } | undefined;
 	private gone: Error | undefined;
 	/** A reattached chat's last exchange (`attach`). */
 	inFlight: Promise<BtwAnswer> | undefined;
 
-	private constructor(
-		private readonly host: WorkerHost,
-		readonly ref: Pick<WorkerRef, "chatId" | "sessionFile" | "workerId">,
-		private readonly runDir: string | undefined,
-		private readonly onEvent: ((event: BtwFeedEvent) => void) | undefined,
-	) {
+	private readonly host: WorkerHost;
+	readonly ref: Pick<WorkerRef, "chatId" | "sessionFile" | "workerId">;
+	private readonly runDir: string | undefined;
+	private readonly onEvent: ((event: BtwFeedEvent) => void) | undefined;
+
+	private constructor(host: WorkerHost, ref: Pick<WorkerRef, "chatId" | "sessionFile" | "workerId">, runDir: string | undefined, onEvent: ((event: BtwFeedEvent) => void) | undefined) {
+		this.host = host;
+		this.ref = ref;
+		this.runDir = runDir;
+		this.onEvent = onEvent;
 		this.mode = btwChatMode(ref.workerId) ?? "contextual";
-		this.sessionFile = ref.sessionFile;
+		this.feed = new RunWatch(host, {
+			state: (state) => this.state(state),
+			event: (event) => this.onEvent?.(event),
+			settled: (run) => this.settle(run.last as BtwAnswer | undefined),
+			ended: (frame) => {
+				this.gone = new Error(frame.cause === "killed" ? "BTW thread stopped." : `BTW thread ended: ${frame.detail ?? frame.cause}`);
+				this.detach();
+				this.fail(this.gone);
+			},
+		});
+		this.feed.sessionFile = ref.sessionFile;
+	}
+
+	get sessionFile(): string {
+		return this.feed.sessionFile ?? this.ref.sessionFile;
 	}
 
 	/** Start the chat: write the prompt file, start the hidden chat from the seed, idle. Throws what the host refuses. */
@@ -196,8 +179,7 @@ export class BtwChat {
 		const answered = new Promise<BtwAnswer>((resolve, reject) => {
 			this.waiter = { key, resolve, reject };
 		});
-		this.last = undefined;
-		this.lastQuestion = question;
+		this.feed.restart(question);
 		try {
 			await this.host.send(this.ref.chatId, { text: question, delivery: "prompt", key });
 		} catch (error) {
@@ -217,12 +199,11 @@ export class BtwChat {
 
 	/** Stop watching; the chat keeps running for the next session to reattach. */
 	detach(): void {
-		this.unwatch?.();
-		this.unwatch = undefined;
+		this.feed.detach();
 	}
 
 	private watch(): void {
-		this.unwatch = this.host.watch(this.ref.chatId, null, (frame) => this.frame(frame));
+		this.feed.watch(this.ref);
 	}
 
 	private settle(answer: BtwAnswer | undefined): void {
@@ -243,45 +224,14 @@ export class BtwChat {
 		waiter?.reject(error);
 	}
 
-	private frame(frame: WorkerFeedFrame): void {
-		switch (frame.t) {
-			case "state": {
-				const state = frame.state;
-				if (state.sessionFile) this.sessionFile = state.sessionFile;
-				const waiter = this.waiter;
-				if (!waiter || state.status === "running" || state.status === "starting") return;
-				// Reattached to an idle chat: its last answer is in the file (the caller records it once).
-				if (waiter.key === null) return this.settle(undefined);
-				// Settled while nobody watched (or across a gap): the file has the answer. The host names a
-				// settle by the send delivered before it, then `#<n-th settle in that process>`.
-				const settled = state.lastSettled?.key;
-				if (settled === waiter.key || settled?.startsWith(`${waiter.key}#`)) this.settle(lastExchange(this.sessionFile));
-				return;
-			}
-			case "gap":
-				return;
-			case "ended":
-				if (frame.cause === "idle" || frame.cause === "reload" || frame.resuming) return;
-				this.gone = new Error(frame.cause === "killed" ? "BTW thread stopped." : `BTW thread ended: ${frame.detail ?? frame.cause}`);
-				this.detach();
-				this.fail(this.gone);
-				return;
-			case "event": {
-				const event = frame.event as BtwFeedEvent;
-				if (event.type === "message_end") {
-					const message = event.message as { role?: string; content?: unknown } | undefined;
-					if (message?.role === "user") this.lastQuestion = textOf(message.content);
-					else if (message?.role === "assistant")
-						this.last = {
-							message: message as BtwAssistant,
-							...(typeof event.entryId === "string" ? { entryId: event.entryId } : {}),
-							...(this.lastQuestion !== undefined ? { question: this.lastQuestion } : {}),
-						};
-				}
-				this.onEvent?.(event);
-				if (event.type === "agent_settled") this.settle(this.last);
-				return;
-			}
-		}
+	private state(state: WorkerState): void {
+		const waiter = this.waiter;
+		if (!waiter || state.status === "running" || state.status === "starting") return;
+		// Reattached to an idle chat: its last answer is in the file (the caller records it once).
+		if (waiter.key === null) return this.settle(undefined);
+		// Settled while nobody watched (or across a gap): the file has the answer. The host names a
+		// settle by the send delivered before it, then `#<n-th settle in that process>`.
+		const settled = state.lastSettled?.key;
+		if (settled === waiter.key || settled?.startsWith(`${waiter.key}#`)) this.settle(lastExchange(this.sessionFile));
 	}
 }

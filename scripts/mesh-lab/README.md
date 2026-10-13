@@ -59,7 +59,9 @@ decimal string on Headscale.
   `--clear` removes it. Example: `SOVA_SYNC_LOGIN_KINDS=api-keys` on one host (an API-keys-only host).
 - **Runtime**: Sova runs on Bun (the image copies `bun` from `oven/bun:<the version mise.toml pins>`)
   through `scripts/start-server.sh`; `lab sova-env <node> SOVA_RUNTIME=node` + `lab sova-restart <node>`
-  runs that host on Node, with no chats or workers (§app.server-runtime/choice).
+  runs that host on Node, with no chats or workers (§app.server-runtime/choice): they run only on the server's
+  own Bun, so every chat open there is refused ("Chats need Bun to run Sova's chat runtime") and its
+  `/api/health` says `chatHost.bun: false`.
 - **Home** `/root` (volume): the Claude store simulator uses `/root/.claude-lab`
   (`SOVA_SYNC_CLAUDE_DIR`), never `/root/.claude`.
 - **Listeners**: Sova's main listener stays on `127.0.0.1:4800`. The laptop reaches it through a

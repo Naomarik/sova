@@ -59,12 +59,16 @@ import { MergeFollowUps } from "./merge-followup";
 import { configureReadiness } from "./merge-readiness";
 import { startSessionTags } from "./tags-backfill";
 import { addOwnPid, readLiveRecords } from "./live";
-import { claimRecordedChats } from "./chat-runtime/supervisor";
+import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
+// A server started from a chat's own tools (a hermetic server in a worktree) inherits that chat
+// process's own variables: never this server's (§app.chat-processes/supervision).
+const scrubbed = scrubChatProcessEnv();
+if (scrubbed.length) console.log(`[chat-host] ignoring a chat process's own variables in this server's environment: ${scrubbed.join(", ")}`);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
 const HOST = process.env.HOST || "127.0.0.1";

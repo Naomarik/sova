@@ -4,8 +4,7 @@
 // everything when the switch is off, runs in this process as before. Installed into chat-handle.ts as
 // its router (setChatRouter), so ws.ts and every caller of acquireChatHandle/chatHandle/chatHandles
 // reach a chat the same way wherever it runs.
-import { execFile } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -41,6 +40,7 @@ import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } f
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
 import { takeInflight } from "./chat-runtime/inflight";
+import { codeRoot, currentGeneration, type Generation, generationHealth, noteGood, startGenerationGc } from "./chat-runtime/generations";
 import { linkWaitReady, Rollout } from "./chat-runtime/rollout";
 import {
   type ChatDeath,
@@ -64,7 +64,6 @@ import { type Placement, type WorkerProcesses, type WorkerRecord, WorkerRegistry
 import { readWorkerNice } from "./process-priority";
 import type { Driver } from "./project-services/drivers";
 import { addOwnPid } from "./live";
-import { bootBuildChecked } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
@@ -86,9 +85,9 @@ export const chatHostStatus = (): ChatHost => host;
 
 /** The same for GET /api/health, which answers without sign-in: the mode and a fixed short reason,
     never a value from the environment or a probe's own text. */
-export function chatHostHealth(): { mode: "in" | "out"; why: string } {
+export function chatHostHealth(): { mode: "in" | "out"; why: string; code?: "copy" | "live"; codeWhy?: string } {
   const w = host.why;
-  if (host.mode === "out") return { mode: "out", why: /detached/.test(w) ? "test driver" : "systemd user units" };
+  if (host.mode === "out") return { mode: "out", why: /detached/.test(w) ? "test driver" : "systemd user units", ...generationHealth() };
   if (!w.startsWith("SOVA_CHAT_HOST=out")) return { mode: "in", why: /not started/.test(w) ? "starting" : "switch off" };
   if (/Linux-only/.test(w)) return { mode: "in", why: "not Linux" };
   if (/Bun/.test(w)) return { mode: "in", why: "server not on Bun" };
@@ -96,21 +95,6 @@ export function chatHostHealth(): { mode: "in" | "out"; why: string } {
 }
 
 const log = (line: string) => console.log(`[chat-host] ${line}`);
-
-/** This server's build (§app.chat-processes/code-pickup): SOVA_BUILD, else the boot commit plus a
-    digest of the uncommitted changes when the tree is dirty; "unknown" when neither says. */
-async function serverBuild(): Promise<string> {
-  if (process.env.SOVA_BUILD) return process.env.SOVA_BUILD;
-  const boot = await Promise.race([bootBuildChecked(), new Promise<null>((r) => setTimeout(() => r(null), 10_000))]);
-  if (!boot?.commit) return "unknown";
-  if (!boot.dirty) return boot.commit;
-  const diff = await new Promise<Buffer | null>((done) =>
-    execFile("git", ["diff", "HEAD", "--no-ext-diff", "--binary"], { cwd: REPO, encoding: "buffer", maxBuffer: 256 * 1024 * 1024, timeout: 10_000 }, (err, out) =>
-      done(err ? null : out),
-    ),
-  );
-  return diff ? `${boot.commit}+${createHash("sha256").update(diff).digest("hex").slice(0, 8)}` : "unknown";
-}
 
 /** What a test swaps (a fake driver, links over in-memory streams); the server uses the real ones. */
 export interface RouterDeps {
@@ -124,6 +108,8 @@ export interface RouterDeps {
   children?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix"> & { driver?: Driver };
   /** Where the worker registry keeps its records. */
   workersDir?: () => string;
+  /** The code generation chat processes start on (§app.chat-processes/code-generations); none: the checkout. */
+  gen?: Generation;
 }
 
 export class ChatHostRouter {
@@ -150,6 +136,9 @@ export class ChatHostRouter {
   private takingBack: Promise<Map<string, Promise<void>>> = Promise.resolve(new Map());
   private readonly connect: typeof connectLink;
   private readonly out: () => boolean;
+  private readonly gen: Generation | undefined;
+  /** Unused code generations collected (after the take-back, hourly, after a run of reloads). */
+  private gc: { collect: () => Promise<void>; stop: () => void } | null = null;
 
   constructor(
     private readonly epoch: number,
@@ -159,6 +148,10 @@ export class ChatHostRouter {
     const cfg = supervisorConfig();
     this.connect = deps.connect ?? connectLink;
     this.out = deps.out ?? (() => host.mode === "out");
+    this.gen = deps.gen;
+    // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
+    // reopen, a reload's replacement, a worker. One already running keeps its own.
+    const code = deps.gen?.dir ?? REPO;
     this.settings = { ...DEFAULT_RUNTIME_SETTINGS, idleStopMin: cfg.idleMs / 60_000 };
     // A worker chat's process gets its loadout's environment and agent dir, the server's state root
     // for its bookkeeping, Bun however the server runs, and the worker niceness.
@@ -166,7 +159,8 @@ export class ChatHostRouter {
       const w = this.workers?.record(c.chatId);
       const bun = w ? (chatBun() ?? process.execPath) : process.execPath;
       return {
-        argv: [bun, join(REPO, "server", "chat-runtime", "main.ts")],
+        argv: [bun, join(code, "server", "chat-runtime", "main.ts")],
+        workdir: code,
         env: chatEnv({
           serverEnv: process.env,
           bun,
@@ -181,6 +175,8 @@ export class ChatHostRouter {
             SOVA_CHAT_ID: c.chatId,
             SOVA_CHAT_UNIT: c.unit,
             SOVA_CHAT_BUILD: build,
+            SOVA_CHAT_LIVE_ROOT: REPO,
+            SOVA_CHAT_COPIES_ROOT: codeRoot(),
           },
         }),
         build,
@@ -234,6 +230,8 @@ export class ChatHostRouter {
     this.rollout = new Rollout<Link>({
       supervisor: this.sup,
       waitReady: linkWaitReady({ epoch, build, settings: this.settings }),
+      codeId: () => build,
+      collect: () => this.gc?.collect() ?? Promise.resolve(),
       drain: (id) => this.handleOf(id)?.drain("reload") ?? Promise.resolve({ ok: false }),
       open: async (id, rep, link) => {
         if (!link) throw new Error("no link to the replacement");
@@ -242,6 +240,7 @@ export class ChatHostRouter {
         const h = this.remotes.get(rep.sessionPath);
         if (h) h.repoint(link, { unit: rep.unit, pid: rep.pid ?? 0 }, mirror);
         else this.adoptHandle(rep, link, mirror);
+        this.good(rep);
       },
       setCode: (id, state, detail) => this.handleOf(id)?.pushCode(state, detail),
       onReloadOpenFailed: (id, path, reason) => {
@@ -404,6 +403,16 @@ export class ChatHostRouter {
     for (const h of this.remotes.values()) if (!h.closed) this.pushSpecial(h);
   }
 
+  /** A chat process booted and opened its chat on its code: that copy is the last known good one. */
+  private good(rec: ChatRecord): void {
+    if (this.gen && !this.gen.live) noteGood(rec.build ?? this.build);
+  }
+
+  /** The code every chat and worker process still runs (never collected). */
+  buildsInUse(): string[] {
+    return [...this.sup.list(), ...this.childSup.list()].flatMap((r) => (r.build ? [r.build] : []));
+  }
+
   /** Take back what a previous server left running (before any chat socket is served). */
   start(): void {
     let found!: (m: Map<string, Promise<void>>) => void;
@@ -418,6 +427,8 @@ export class ChatHostRouter {
       this.workers.settleBoot();
       this.sup.watch(2_000);
       this.childSup.watch(2_000);
+      // Copies no chat runs any more go: after the take-back, so a surviving chat's copy is known.
+      if (this.gen) this.gc = startGenerationGc(() => this.buildsInUse());
     })().catch((err) => log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
@@ -582,6 +593,7 @@ export class ChatHostRouter {
     }
     try {
       const h = this.adoptHandle(rec, link, await open(link, rec));
+      this.good(rec);
       await adopted?.(h);
       return h;
     } catch (err) {
@@ -737,7 +749,9 @@ export function startChatHost(): void {
     host = await chooseChatHost();
     log(`ordinary chats run ${host.mode === "out" ? "in processes of their own" : "in the server"}: ${host.why}`);
     // Chats a previous server started are taken back even with the switch off now: never orphaned.
-    router = new ChatHostRouter(nextEpoch(), await serverBuild());
+    // Chats start on this server's own copy of its code (made now, or reused).
+    const gen = await currentGeneration({ log });
+    router = new ChatHostRouter(nextEpoch(), gen.id, { gen });
     router.start();
   })().catch((err) => log(`start failed: ${err instanceof Error ? err.message : String(err)}`));
   // Every parent chat in this process starts its workers here, once the router is up.

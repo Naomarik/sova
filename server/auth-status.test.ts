@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { KEYCHAIN_FACTS_TTL_MS, ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth, resetAuthStatusCache, type AuthStatusPaths } from "./auth-status";
+import { KEYCHAIN_FACTS_TTL_MS, defaultAuthPaths, ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth, resetAuthStatusCache, type AuthStatusPaths } from "./auth-status";
 import { keychainService } from "../pi-config/extensions/claude-code/keychain.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-auth-status-test-"));
@@ -17,6 +17,17 @@ beforeEach(() => {
 });
 
 const paths: AuthStatusPaths = { claudeCreds: join(dir, "claude.json"), piAuth: join(dir, "pi.json"), codexAuth: join(dir, "codex.json") };
+test("pi's auth.json is the active agent dir's (PI_CODING_AGENT_DIR), never ~/.pi/agent's", () => {
+  const saved = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+  try {
+    assert.equal(defaultAuthPaths("/home/someone").piAuth, join(dir, "agent", "auth.json"));
+  } finally {
+    if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = saved;
+  }
+});
+
 const H = 3_600_000;
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 

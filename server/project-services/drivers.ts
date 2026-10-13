@@ -1,6 +1,7 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { setPriority } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
 
@@ -16,6 +17,8 @@ export interface UnitSpec {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  /** The niceness its processes start at (a worker chat's), else the caller's. */
+  nice?: number;
 }
 
 export type UnitState = "active" | "activating" | "inactive" | "failed" | "missing";
@@ -24,6 +27,8 @@ export interface UnitStatus {
   pid: number | null;
   /** The main process's exit status, when it ended. */
   exit?: number | null;
+  /** The signal that ended the main process (`SIGKILL`), when the driver saw it. */
+  signal?: string;
   detail?: string;
 }
 
@@ -88,15 +93,47 @@ export const realExec: Exec = (file, args, opts = {}) =>
 
 export const SLICE = "sova-services.slice";
 
+/** How a long-running unit is made, for a caller other than project services (the chat supervisor):
+    its slice, its stop grace, and `restart: false` for no `Restart=` (the caller decides restarts). */
+export interface SystemdUnitOptions {
+  slice?: string;
+  timeoutStopSec?: number;
+  restart?: boolean;
+  /** The unit's env goes in this file (mode 0600, written at start) as `EnvironmentFile=`, never in
+      systemd-run's argv, which every user on the host can read. */
+  envFile?: (unit: string) => string;
+}
+
+/** Whether an `EnvironmentFile=` can carry `name=value`: a variable name, and a value on one line. */
+export const envFileKeeps = (name: string, value: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !/[\n\r]/.test(value);
+
+/** An `EnvironmentFile=` body for `env`: one single-quoted assignment per line, double-quoted with
+    backslash escapes when the value holds a single quote. A name that is no variable name, or a value
+    with a line break, is left out (pure, for tests). */
+export function envFileText(env: Record<string, string>): string {
+  const lines: string[] = [];
+  for (const k of Object.keys(env).sort()) {
+    const v = env[k]!;
+    if (!envFileKeeps(k, v)) continue;
+    lines.push(v.includes("'") ? `${k}="${v.replace(/[\\"$`]/g, (c) => "\\" + c)}"` : `${k}='${v}'`);
+  }
+  return lines.length ? `${lines.join("\n")}\n` : "";
+}
+
 /** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
     not `--quiet`: its summary on exit carries the memory peak. A command named by a relative path
     (`.sova/bin/setup`) is made absolute against `cwd`: systemd-run resolves it against its own
     directory, not the unit's, and refuses to start the unit when it is not there. */
-export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }): string[] {
-  const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
+export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }, unitOpts: SystemdUnitOptions = {}): string[] {
+  const a = ["--user", `--unit=${spec.unit}`, `--slice=${unitOpts.slice ?? SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
   if (once) a.push("--wait", "--property=KillMode=control-group", `--property=RuntimeMaxSec=${once.timeoutSec}`);
-  else a.push("--property=KillMode=mixed", "--property=TimeoutStopSec=15", "--property=Restart=on-failure", "--property=RestartSec=2");
-  for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
+  else {
+    a.push("--property=KillMode=mixed", `--property=TimeoutStopSec=${unitOpts.timeoutStopSec ?? 15}`);
+    if (unitOpts.restart !== false) a.push("--property=Restart=on-failure", "--property=RestartSec=2");
+  }
+  if (spec.nice) a.push(`--property=Nice=${spec.nice}`);
+  if (unitOpts.envFile) a.push(`--property=EnvironmentFile=${unitOpts.envFile(spec.unit)}`);
+  else for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
   const [cmd, ...args] = spec.argv;
   a.push("--", ...(cmd !== undefined && cmd.includes("/") && !isAbsolute(cmd) ? [resolve(spec.cwd, cmd), ...args] : spec.argv));
   return a;
@@ -165,14 +202,22 @@ export class SystemdDriver implements Driver {
   readonly id = "systemd" as const;
   /** Per unit: the message of the last waited-for run systemd-run could not start, which its journal lacks. */
   private launchFailures = new Map<string, { at: number; lines: string[] }>();
-  constructor(private readonly exec: Exec = realExec) {}
+  constructor(
+    private readonly exec: Exec = realExec,
+    private readonly unitOpts: SystemdUnitOptions = {},
+  ) {}
   async available() {
     const r = await this.exec("systemctl", ["--user", "show", "--property=Version"], { timeoutMs: 5_000 });
     return r.code === 0 ? { ok: true, detail: `systemd user manager (${r.stdout.trim()})` } : { ok: false, detail: `no systemd user manager reachable: ${r.stderr.trim() || `exit ${r.code}`}` };
   }
   async start(spec: UnitSpec) {
     await this.exec("systemctl", ["--user", "reset-failed", `${spec.unit}.service`]);
-    const r = await this.exec("systemd-run", systemdRunArgv(spec));
+    if (this.unitOpts.envFile) {
+      const file = this.unitOpts.envFile(spec.unit);
+      mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+      writeFileSync(file, envFileText(spec.env), { mode: 0o600 });
+    }
+    const r = await this.exec("systemd-run", systemdRunArgv(spec, undefined, this.unitOpts));
     if (r.code !== 0) throw new DriverError(`systemd-run failed: ${r.stderr.trim() || `exit ${r.code}`}`);
   }
   async stop(unit: string) {
@@ -232,7 +277,7 @@ export class SystemdDriver implements Driver {
     };
     if (spec.signal?.aborted) onAbort();
     else spec.signal?.addEventListener("abort", onAbort, { once: true });
-    const r = await this.exec("systemd-run", systemdRunArgv(spec, { timeoutSec: spec.timeoutSec }), { timeoutMs: (spec.timeoutSec + 30) * 1000 });
+    const r = await this.exec("systemd-run", systemdRunArgv(spec, { timeoutSec: spec.timeoutSec }, this.unitOpts), { timeoutMs: (spec.timeoutSec + 30) * 1000 });
     spec.signal?.removeEventListener("abort", onAbort);
     const ms = Date.now() - t0;
     const timedOut = !aborted && ms >= spec.timeoutSec * 1000;
@@ -412,6 +457,9 @@ export interface DetachedOptions {
   restart?: boolean;
   /** The delay before such a start, and the watch's tick. */
   restartMs?: number;
+  /** Where unit records and logs live (default: project services' `procs/` and `logs/`). */
+  procsDir?: () => string;
+  logsDir?: () => string;
 }
 
 /** At most this many starts of one unit in RESTART_WINDOW_MS, then it stays failed (systemd's default burst). */
@@ -431,6 +479,7 @@ const RESTART_WINDOW_MS = 10_000;
 export class DetachedDriver implements Driver {
   readonly id = "detached" as const;
   private exits = new Map<string, number | null>();
+  private signals = new Map<string, string>();
   private readonly table: ProcTable;
   private readonly restartMs: number;
   private watch: NodeJS.Timeout | null = null;
@@ -448,8 +497,10 @@ export class DetachedDriver implements Driver {
     this.table = opts.table ?? hostProcTable();
     this.restartMs = opts.restartMs ?? 2_000;
   }
-  private recFile = (unit: string) => join(procsDir(), `${unit}.json`);
-  private logFile = (unit: string) => join(logsDir(), `${unit}.log`);
+  private procsDir = () => (this.opts.procsDir ?? procsDir)();
+  private logsDir = () => (this.opts.logsDir ?? logsDir)();
+  private recFile = (unit: string) => join(this.procsDir(), `${unit}.json`);
+  private logFile = (unit: string) => join(this.logsDir(), `${unit}.log`);
   private rec(unit: string): ProcRecord | null {
     try {
       return JSON.parse(readFileSync(this.recFile(unit), "utf8")) as ProcRecord;
@@ -465,16 +516,27 @@ export class DetachedDriver implements Driver {
     if ((r.clock ?? "procfs") === this.table.kind && this.table.startOf(r.pid) !== r.start) return false;
     return this.table.sessions ? e.sid === r.pid : e.pgid === r.pid;
   }
-  private members(leader: number): number[] {
-    return unitMembers(this.table.list(), leader, this.table.sessions);
+  /** The recorded leader's pid is held by a later process (another start, or not leading a unit of
+      its own for a record from another table): nothing of the unit is left there to signal. A leader
+      that is gone isn't reused: a pid is never given out while its session or group still lives, so
+      what is left of the unit is its own. */
+  private reused(r: Pick<ProcRecord, "pid" | "start" | "clock">): boolean {
+    const e = this.table.get(r.pid);
+    if (!e || e.zombie) return false;
+    if ((r.clock ?? "procfs") === this.table.kind && r.start) return this.table.startOf(r.pid) !== r.start;
+    return !(this.table.sessions ? e.sid === r.pid : e.pgid === r.pid);
+  }
+  /** The unit's live processes; none when its pid is now someone else's. */
+  private members(r: Pick<ProcRecord, "pid" | "start" | "clock">): number[] {
+    return this.reused(r) ? [] : unitMembers(this.table.list(), r.pid, this.table.sessions);
   }
   async available() {
     if (process.platform === "win32") return { ok: false, detail: "detached sessions need a Unix host" };
     return { ok: true, detail: `detached sessions, processes read from ${this.table.kind === "procfs" ? "/proc" : `ps${this.table.sessions ? "" : " (no session ids: process trees and groups)"}`}` };
   }
   private spawnUnit(spec: UnitSpec): Promise<ProcRecord> {
-    mkdirSync(procsDir(), { recursive: true });
-    mkdirSync(logsDir(), { recursive: true });
+    mkdirSync(this.procsDir(), { recursive: true });
+    mkdirSync(this.logsDir(), { recursive: true });
     const fd = openSync(this.logFile(spec.unit), "a");
     return new Promise((ok, fail) => {
       let child;
@@ -491,9 +553,21 @@ export class DetachedDriver implements Driver {
       child.once("spawn", () => {
         closeSync(fd);
         const pid = child.pid!;
+        // Lowered before it starts anything of its own (what it forks inherits the niceness).
+        if (spec.nice) {
+          try {
+            setPriority(pid, spec.nice);
+          } catch {
+            // not permitted: it runs at the caller's priority
+          }
+        }
         const rec: ProcRecord = { pid, start: this.table.startOf(pid) ?? "", clock: this.table.kind, argv: spec.argv, cwd: spec.cwd, env: spec.env, at: new Date().toISOString() };
         this.exits.delete(spec.unit);
-        child.once("exit", (code, sig) => this.exits.set(spec.unit, code ?? (sig ? 128 : null)));
+        this.signals.delete(spec.unit);
+        child.once("exit", (code, sig) => {
+          this.exits.set(spec.unit, code ?? (sig ? 128 : null));
+          if (sig) this.signals.set(spec.unit, sig);
+        });
         child.unref();
         ok(rec);
       });
@@ -553,7 +627,7 @@ export class DetachedDriver implements Driver {
         continue;
       }
       // What is left of its session goes first, as systemd's restart stops the whole unit.
-      if (this.members(r.pid).length) await this.killSession(r.pid);
+      if (this.members(r).length) await this.killSession(r);
       try {
         await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} });
         did.push(`${unit}: started again`);
@@ -567,10 +641,11 @@ export class DetachedDriver implements Driver {
   async adopt(): Promise<void> {
     if ((await this.units("")).length) this.watchUnits();
   }
-  /** TERM to every process of the unit, then KILL to what is left after the grace. */
-  private async killSession(leader: number): Promise<void> {
+  /** TERM to every process of the unit, then KILL to what is left after the grace (each read checks
+      the pid is still the unit's). */
+  private async killSession(r: Pick<ProcRecord, "pid" | "start" | "clock">): Promise<void> {
     const send = (sig: NodeJS.Signals) => {
-      for (const pid of this.members(leader))
+      for (const pid of this.members(r))
         try {
           process.kill(pid, sig);
         } catch {
@@ -580,17 +655,17 @@ export class DetachedDriver implements Driver {
     send("SIGTERM");
     const until = Date.now() + this.stopGraceMs;
     while (Date.now() < until) {
-      if (!this.members(leader).length) return;
+      if (!this.members(r).length) return;
       await sleep(100);
     }
     send("SIGKILL");
-    for (let i = 0; i < 50 && this.members(leader).length; i++) await sleep(100);
+    for (let i = 0; i < 50 && this.members(r).length; i++) await sleep(100);
   }
   async stop(unit: string) {
     this.stopping.add(unit);
     try {
       const r = this.rec(unit);
-      if (r && this.members(r.pid).length) await this.killSession(r.pid);
+      if (r && this.members(r).length) await this.killSession(r);
       rmSync(this.recFile(unit), { force: true });
       this.down.delete(unit);
       this.starts.delete(unit);
@@ -606,10 +681,12 @@ export class DetachedDriver implements Driver {
     const exit = this.exits.get(unit);
     // Waiting to be started again, as systemd's auto-restart.
     if (this.opts.restart && this.watch && r.env && exit !== 0 && !this.gaveUp.has(unit)) return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart" };
+    const signal = this.signals.get(unit);
     return {
       state: exit === 0 ? "inactive" : "failed",
       pid: null,
       ...(exit !== undefined ? { exit } : {}),
+      ...(signal ? { signal } : {}),
       detail: this.gaveUp.has(unit) ? "start limit hit" : exit === undefined ? "exited" : `exited with ${exit}`,
     };
   }
@@ -620,23 +697,23 @@ export class DetachedDriver implements Driver {
   }
   owns(unit: string, pid: number) {
     const r = this.rec(unit);
-    if (!r) return false;
+    if (!r || this.reused(r)) return false;
     if (this.table.sessions) {
       const e = this.table.get(pid);
       return !!e && !e.zombie && e.sid === r.pid;
     }
-    return this.members(r.pid).includes(pid);
+    return this.members(r).includes(pid);
   }
   pids(unit: string) {
     const r = this.rec(unit);
-    return r ? this.members(r.pid) : [];
+    return r ? this.members(r) : [];
   }
   async logs(unit: string, lines: number, _sinceMs?: number) {
     return tailLines(this.logFile(unit), lines);
   }
   async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
-    mkdirSync(logsDir(), { recursive: true });
+    mkdirSync(this.logsDir(), { recursive: true });
     // Each waited-for run's output starts fresh: its log is that run's alone.
     const fd = openSync(this.logFile(spec.unit), "w");
     return await new Promise<RunOnceResult>((done) => {
@@ -649,23 +726,25 @@ export class DetachedDriver implements Driver {
         closeSync(fd);
         return done({ code: null, timedOut: false, ms: Date.now() - t0, launchError: message });
       }
+      // The run's leader, as the unit records are: a later process on its pid is never signalled.
+      const own = child.pid ? { pid: child.pid, start: this.table.startOf(child.pid) ?? "", clock: this.table.kind } : null;
       let timedOut = false;
       let aborted = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        if (child.pid) void this.killSession(child.pid);
+        if (own) void this.killSession(own);
       }, spec.timeoutSec * 1000);
       const onAbort = () => {
         aborted = true;
-        if (child.pid) void this.killSession(child.pid);
+        if (own) void this.killSession(own);
       };
       if (spec.signal?.aborted) onAbort();
       else spec.signal?.addEventListener("abort", onAbort, { once: true });
       // The run's memory: the largest resident total of its session's processes, sampled.
       let peak: number | null = null;
       const sample = () => {
-        if (!child.pid) return;
-        const now = rssOf(this.members(child.pid));
+        if (!own) return;
+        const now = rssOf(this.members(own));
         if (now !== null) peak = Math.max(peak ?? 0, now);
       };
       const sampler = setInterval(sample, 200);
@@ -687,17 +766,16 @@ export class DetachedDriver implements Driver {
         stopWatching();
         closeSync(fd);
         // A hook leaves nothing behind (§app.project-services/supervisor): its session goes with it.
-        const pid = child.pid;
-        const leftover = pid ? this.members(pid).length : 0;
+        const leftover = own ? this.members(own).length : 0;
         const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, peakBytes: peak, ...(leftover ? { leftover } : {}), ...(aborted ? { aborted } : {}) });
-        if (pid && leftover) void this.killSession(pid).then(finish);
+        if (own && leftover) void this.killSession(own).then(finish);
         else finish();
       });
     });
   }
   async units(prefix: string) {
     try {
-      return readdirSync(procsDir())
+      return readdirSync(this.procsDir())
         .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
         .map((f) => f.slice(0, -5));
     } catch {

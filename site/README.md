@@ -39,9 +39,12 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
 
 ## What to update
 
-- **A new release:** `release` in `src/data/site.ts` sets the install command, the version pill
-  and the footer. Re-check every claim on the page against that tag, then update `verified`
-  (the revision and date the footer names).
+- **A new release:** set `release` in `src/data/site.ts` to the new numbered tag; it sets the
+  version pill, its release-page link and the footer. The install command, URL and script link
+  stay on `stable` (`installRef`), the tag each release moves to itself. Re-check every claim on
+  the page against the release commit, then update `verified` (the revision and date the footer
+  names). The repository's release playbook, `.sova/playbooks/release/PLAYBOOK.md`, runs this
+  and the deploy below.
 - **The design tokens:** re-copy `src/design/tokens.css` into `src/styles/tokens.css`; don't edit
   values here.
 - **The Vis page's examples:** after a change to an example (`scripts/vis-examples/examples.mjs`)

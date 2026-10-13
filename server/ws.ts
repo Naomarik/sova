@@ -6,7 +6,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
-import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
+import { acquireChatHandle, BusyError, ConfigError, type ChatClient } from "./chat-handle";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { trackViewer } from "./seen";
@@ -50,13 +50,14 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   const client: ChatClient = {
     send: (msg) => sendJson(ws, msg),
     sendRaw: (json) => sendRaw(ws, json),
+    close: (code, reason) => ws.close(code, reason),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
   };
   // Buffer messages that arrive while the runtime is still opening.
   const early: ChatClientMessage[] = [];
-  let chat: Awaited<ReturnType<typeof acquireChat>> | null = null;
+  let chat: Awaited<ReturnType<typeof acquireChatHandle>> | null = null;
   let gone = false;
   ws.on("message", (data) => {
     let msg: ChatClientMessage;
@@ -67,7 +68,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
-    if (chat) chat.handle(client, msg);
+    if (chat) chat.clientMessage(client, msg);
     else early.push(msg);
   });
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
@@ -82,7 +83,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   });
 
   try {
-    chat = await acquireChat(path, force);
+    chat = await acquireChatHandle(path, force);
   } catch (err) {
     // Three outcomes, three close codes, because the client's retry policy keys off them:
     // 4409 busy (another process owns it), 4422 config (permanent — do NOT reconnect), 4500
@@ -99,7 +100,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     return;
   }
   chat.attach(client);
-  for (const msg of early.splice(0)) chat.handle(client, msg);
+  for (const msg of early.splice(0)) chat.clientMessage(client, msg);
 }
 
 function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersion, normalize?: Normalize, format: Format = "pi"): void {

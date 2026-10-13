@@ -17,6 +17,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_SHARE_PUBLIC_URL;
 mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const { inspectFilesTool } = await import("./baton-files");

@@ -10,7 +10,7 @@ import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
-import type { RowFacts, SovaEvent } from "./harness-wire";
+import type { RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -71,8 +71,8 @@ export interface SessionSummary {
       the sidebar does not list it (src/lib/regions.ts `isMainThread`). True when the file itself
       carries the spawn marker pi-config's subagents extension writes into every pi worker
       (`subagents-worker-session`, server/worker-sessions.ts), when another session's file names it
-      as a worker (that owner's `subagents-worker-registry` entries, or the `Session:` line of its
-      inline `subagent-complete` message), or when a live record lists it as a running worker.
+      as a worker (the `Session:` line of its inline `subagent-complete` message), or when a live
+      record lists it as a running worker.
       NOT the same thing as `workers` above, which counts the subagents THIS session runs.
       Safe by absence: absent = a main thread, and an older server that never sends it hides
       nothing. */
@@ -598,7 +598,7 @@ export interface ExplanationInfo {
       run's final entry (same `id`) replaces it; never in SessionInsight.explanations or
       GET /api/explanations, which carry openable pages only. A finished entry has no status at
       all — there is no "done" value.
-      "interrupted": the run's parent stopped (a restart or /reload) before the run settled, and the
+      "interrupted": the run's worker stopped (the server stopped it, or it died) before the run settled, and the
       extension settled it at the session's next prompt. Always with `note` (a complete page was on
       disk anyway: it links) or `error` (no page). Rows, and SessionInsight.explanations when it has
       a page. */
@@ -2018,7 +2018,11 @@ export type ChatClientMessage =
   /** Remove ONE still-unsent message from this chat's outgoing queue, by its `QueueItem.id` —
       any position, including the middle, duplicates of the same text, and image-only sends.
       `id` is the client's request id, echoed in the reply. */
-  | { type: "queue_remove"; id: string; itemId: string };
+  | { type: "queue_remove"; id: string; itemId: string }
+  /** Reload this chat on its server's current code (§app.chat-processes/code-pickup, "Reload Now"):
+      at once when it is quiet, else at its next quiet moment (`code.pending`). A chat already on the
+      current code, or hosted in the server itself, answers the sender with `code{state:"current"}`. */
+  | { type: "reload_code" };
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the
@@ -2199,6 +2203,23 @@ export interface V2EventFrame {
   event: SovaEvent;
 }
 
+/** `hello.live`: the part of the run in flight that is not yet a row. Earlier messages of the same
+    run are rows already, never here. */
+export interface HelloLive {
+  /** The assistant message still streaming (not yet written): its parts so far, by index. */
+  message?: { model?: string; parts: SovaPart[] };
+  /** Tool calls of this run started and not ended, each with its latest output. */
+  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+}
+
+/**
+ * A chat process's code against its server's (the `code` message): "current" = the server's build;
+ * "older" = an older build, reloaded at its next quiet moment (`pending`: a Reload Now waits for
+ * the reply to finish); "reloading" = a replacement on the current code is starting; "failed" =
+ * the replacement didn't start, so the chat keeps running on older code (`detail`: why).
+ */
+export type ChatCodeState = "current" | "older" | "reloading" | "failed";
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -2213,7 +2234,14 @@ export type ChatServerMessage =
   /** `alignReview`: whether THIS chat's runtime runs with adversarial review (its `sova-align-launch`
       record, §chat.alignment-review/flag) — the card's review lines and buttons follow it, never the
       live setting. Absent from older servers: the web falls back to the saved setting. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean }
+  /** `live` (wire 2 only; absent when nothing streams and from older servers): what of the run in
+      flight is not yet a row, as of this hello, so a client that joins mid-reply shows it
+      (HelloLive). The first live event after the hello is the first one not folded into it. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive }
+  /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
+      hello when not current, and to every client on each change; none received = current. A chat
+      hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
+  | { type: "code"; state: ChatCodeState; pending?: boolean; detail?: string }
   /** The older rows of a `hello` with `older` (see HistoryMessage). After attach they come after
       `links`; after a rewind, regenerate or compaction, after the requester's `rewound`,
       `regenerated` or `compacted` (and a compaction's `queue`). */
@@ -4360,21 +4388,20 @@ export type MonitorScope = "unit" | "tree" | "none";
 
 /** How a process was charged to its session/worker, strongest first. Exact: `worker-pid` the
     runtime's in-process worker pid; `session-id` a `claude --resume/--session-id` uuid (a
-    worker's session id, or a hosted session's Claude Code provider); `live-record` a pi
-    worker's own live record; `team-env` a member-mcp helper's team env; `env` the
-    PI_SESSION_FILE pi's bash tool puts in its child's environment (a hosted session's or a pi
-    worker's tool child, and everything it started); `descendant` below a charged process;
+    worker's session id, or a hosted session's Claude Code provider); `team-env` a team member's env
+    (PI_SUBAGENTS_TEAM_MEMBER); `env` the PI_SESSION_FILE pi's bash tool puts in its child's
+    environment (a session's or a worker's tool child, and everything it started); `descendant` below a charged process;
     `sid` a session id (setsid group) already seen under a charged process (orphans, nohup,
     setsid). Heuristics, to be labelled as such: `exited-tools` CPU of the server's children
     that exited between two ticks, charged to the only hosted session running a tool then;
     `cwd` the process's cwd lies in exactly one hosted session's cwd. */
 export type MonitorVia =
-  | "worker-pid" | "session-id" | "live-record" | "team-env" | "env" | "descendant" | "sid"
+  | "worker-pid" | "session-id" | "team-env" | "env" | "descendant" | "sid"
   | "exited-tools" | "cwd";
 
 /** Coarse kind of a process from its argv, parsed once per process. */
 export type MonitorProcKind =
-  | "server" | "pi-worker" | "claude-worker" | "claude-provider" | "member-mcp"
+  | "server" | "claude-worker" | "claude-provider"
   | "node" | "java" | "python" | "browser" | "shell" | "build" | "other";
 
 /** Linux pressure-stall `some avg10` (and `full avg10` where it exists), in percent. */

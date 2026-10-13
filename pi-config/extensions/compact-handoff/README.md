@@ -5,7 +5,9 @@ summary would lose, and puts that note back right after the summary. `/compact-h
 stops a run.
 
 1. The command refuses while a turn, a compaction, queued messages or an earlier run are in
-   flight, or when the session has no conversation on disk yet. Otherwise it starts a background
+   flight, when the session has no conversation on disk yet, or when pi would have nothing to
+   compact yet (everything since the last compaction fits in `compaction.keepRecentTokens`, 20,000
+   tokens by default; `nothingToCompact` uses pi's own `findCutPoint`). Otherwise it starts a background
    fork through the shared fork core (`../subagents/fork/`, the same one /explain uses): the fork
    works in a copy of the session, on its warm prompt cache, under a read-only policy (read,
    search, a read-only shell line; no writes, no web), and is told to end its reply with the note
@@ -16,8 +18,11 @@ stops a run.
    folds (and says so). If the fork can't start, the command says so and does nothing else.
 2. Nothing of the fork's turn enters the session. The run's row is a hidden `compact-handoff-run`
    custom entry `{v: 1, id, status, at, focus?, path?, error?}`, appended at the start
-   (`running`) and again under the same id at the end (`saved`, `failed`, `cancelled`); a run its
-   session stopped is settled as `interrupted` at the next prompt. The TUI draws each entry as a
+   (`running`) and again under the same id at the end (`saved`, `failed`, `cancelled`). The fork is
+   a hidden chat of its own process (Sova's worker host): a `/reload` or a crash of the session
+   leaves it writing, and the reopened session watches it again and finishes the run. A run whose
+   fork's chat is gone (the server stopped it, or it died for good) is settled as `interrupted`
+   at the next prompt. The TUI draws each entry as a
    line; Sova renders the newest per id as one row.
 3. When the fork settles, the last `<handoff>` block of its final reply is the note. A failed or
    stopped fork, or no block, saves and compacts nothing. The note is written to
@@ -40,4 +45,6 @@ The extension writes the note itself on the machine running pi, never through th
 so a sandboxed session (agent dir read-only to tools) and a remote one (tools on the far host)
 save the same way.
 
-Tests: `node tests/run.mjs` (no pi session, no model, no child).
+Tests: `node tests/run.mjs` (no pi session, no model, no child) and `node tests/compact-turn.mjs`
+(a real pi session on a scripted provider and a fake fork: a short session is refused before any
+fork; a long one saves the note, compacts and brings the note back).

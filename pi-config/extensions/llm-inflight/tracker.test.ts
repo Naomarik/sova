@@ -11,7 +11,6 @@ import {
 	markCounting,
 	markDegraded,
 	MAX_FOLDED,
-	parseCounts,
 	setChildCounts,
 	snapshot,
 	subscribe,
@@ -122,15 +121,6 @@ test("degraded and Claude turns are reference counted", () => {
 	assert.deepEqual(counts(), zero);
 });
 
-test("parseCounts takes a child's report (object or JSON) and nothing else", () => {
-	assert.deepEqual(parseCounts('{"v":1,"active":3,"approximate":5,"claudeTurns":1,"degraded":true}'), { active: 3, approximate: 3, claudeTurns: 1, degraded: true });
-	assert.deepEqual(parseCounts({ v: 1, active: -1, approximate: "x" }), zero);
-	assert.equal(parseCounts('{"v":2,"active":1}'), undefined);
-	assert.equal(parseCounts("not json"), undefined);
-	assert.equal(parseCounts(undefined), undefined);
-	assert.equal(parseCounts("x".repeat(5000)), undefined);
-});
-
 test("one table per process, whichever copy of the module counts", async () => {
 	// A second copy of the file, as jiti loads one per extension (and Sova's server its own).
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-inflight-copy-"));
@@ -182,7 +172,7 @@ test("folded: every child producer counted here, transitively, so a reader never
 	assert.deepEqual(snapshot().folded, []);
 	// parent ← child (which itself folded a grandchild)
 	setChildCounts("w1", { active: 1, approximate: 0, claudeTurns: 0, degraded: false, producer: "child", folded: ["grandchild"] });
-	setChildCounts("w2", parseCounts(JSON.stringify({ v: 1, producer: "other", active: 1, approximate: 0, claudeTurns: 0, degraded: false, folded: ["bad id!", "grandchild"] })));
+	setChildCounts("w2", { producer: "other", active: 1, approximate: 0, claudeTurns: 0, degraded: false, folded: ["bad id!", "grandchild"] });
 	assert.deepEqual(snapshot().folded, ["child", "grandchild", "other"]);
 	assert.equal(snapshot().active, 2);
 	const many = Array.from({ length: 300 }, (_, i) => `p${i}`);
@@ -259,11 +249,6 @@ test("tokens: a child's ring is summed (aligned), replaced not added, and folded
 	assert.deepEqual(diff(base, ring(now).out).slice(57), [4, 10, 6], "a child that goes leaves its tokens until they age out");
 	assert.ok(ring(now + 60 * TOKEN_BUCKET_MS).out.every((n) => n === 0), "and then they are gone");
 	off();
-	// A detached child (retire: false): its tokens go with it, it reports them itself.
-	const b2 = ring(now).out;
-	setChildCounts("tok-b", { ...zero, producer: "tok-b", tokens: ringOf(s, { 59: 8 }) });
-	setChildCounts("tok-b", undefined, { retire: false });
-	assert.deepEqual(diff(b2, ring(now).out), new Array(60).fill(0));
 	// A child that reports no ring: the tokens are partial while it is summed.
 	setChildCounts("tok-c", { ...zero, producer: "tok-c" });
 	assert.equal(ring(now).partial, true);
@@ -286,5 +271,4 @@ test("tokens: a child past the folded cap is not summed, nor retired; reported r
 	assert.equal(parseTokenRing({ bucketMs: 60_000, end: 5, out: new Array(60).fill(0) }), undefined);
 	assert.equal(parseTokenRing({ bucketMs: 30_000, end: -1, out: new Array(60).fill(0) }), undefined);
 	assert.equal(parseTokenRing({ bucketMs: 30_000, end: 5, out: new Array(60).fill(1e12) })!.out[0], MAX_SLOT_TOKENS, "each slot capped");
-	assert.deepEqual(parseCounts(JSON.stringify({ v: 1, ...zero, tokens: ringOf(9, { 59: 3 }) }))!.tokens, ringOf(9, { 59: 3 }));
 });

@@ -2,7 +2,7 @@ import { open, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { HEntry } from "../shared/harness";
 import { lineEntry } from "./harness/pi/reader";
-import { WORKER_REGISTRY, WORKER_SESSION } from "./harness/state-kinds";
+import { WORKER_SESSION } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { type RawLiveRecord, readLiveRecords } from "./live";
 import { canonicalPath, sessionPathShape } from "./paths";
@@ -13,9 +13,8 @@ import { canonicalPath, sessionPathShape } from "./paths";
  *
  * 1. self: the worker's own file carries the spawn marker — a `custom` entry of type
  *    WORKER_SESSION_MARKER, appended by pi-config's subagents `worker-mark.ts` in every pi child.
- * 2. durable refs: another session's file names it — `custom` entries of type
- *    WORKER_REGISTRY_TYPE (`data.backendSessionFile` / `data.backendSessionId`, host transport), and
- *    the HEADER BLOCK of `custom_message` entries of type COMPLETION_TYPE (completionHeaderRef).
+ * 2. durable refs: another session's file names it — the HEADER BLOCK of `custom_message` entries
+ *    of type COMPLETION_TYPE (completionHeaderRef).
  * 3. live refs: `presence.workers[].sessionFile` (else `.sessionId`) of every live record,
  *    this server's own included — Sova-hosted sessions spawn workers too.
  *
@@ -28,13 +27,11 @@ import { canonicalPath, sessionPathShape } from "./paths";
 
 /** pi-config/extensions/subagents/worker-mark.ts. Renaming it there unhides every worker. */
 export const WORKER_SESSION_MARKER = "subagents-worker-session";
-/** pi-config/extensions/subagents/registry.ts WORKER_REGISTRY_ENTRY_TYPE. */
-export const WORKER_REGISTRY_TYPE = "subagents-worker-registry";
 /** pi-config/extensions/subagents/index.ts, the completion message the owner receives. */
 export const COMPLETION_TYPE = "subagent-complete";
 
 const CHUNK = 16 * 1024;
-const NEEDLES = [WORKER_SESSION_MARKER, WORKER_REGISTRY_TYPE, COMPLETION_TYPE].map((t) => Buffer.from(`"${t}"`));
+const NEEDLES = [WORKER_SESSION_MARKER, COMPLETION_TYPE].map((t) => Buffer.from(`"${t}"`));
 
 export interface ScanEntry {
   /** Byte offset just past the last COMPLETE line parsed. */
@@ -83,9 +80,7 @@ export function entryFacts(h: HEntry | null): { self: boolean; refs: string[] } 
   if (!h) return none;
   if (h.kind === "state") {
     const state = stateView([h]);
-    if (state.has(WORKER_SESSION)) return { self: true, refs: [] };
-    const d = state.latest(WORKER_REGISTRY)?.data;
-    return d ? { self: false, refs: [d.backendSessionFile, d.backendSessionId].filter(nonEmpty).map((s) => s.trim()) } : none;
+    return state.has(WORKER_SESSION) ? { self: true, refs: [] } : none;
   }
   if (h.kind === "note" && !h.inMessage && h.noteType === COMPLETION_TYPE) {
     const ref = completionHeaderRef(contentText(h.content));

@@ -80,15 +80,9 @@ test("composed member header is exact and deterministic", () => {
 	// A pi header never claims the worker cannot message; a none header never claims tools.
 	assert.doesNotMatch(pi, /cannot message/);
 	assert.doesNotMatch(alone, /team_msg/);
-	// A claude-code member has the same tools through the "team" MCP server: the header names the prefixed call names once, then reuses the pi text.
-	const mcp = composeMemberPrompt(team, { role: "dev", ownedPaths: [] }, [{ role: "lead", ownedPaths: ["src"], orchestrator: true }], "x", "creation", "mcp");
-	assert.equal(mcp.replace(/^Your team tools come from the "team" MCP server, so call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask; below they are named without the mcp__team__ prefix\.\n/m, ""), pi, "identical apart from the naming line");
-	assert.doesNotMatch(mcp, /mcp__team__team_roster|mcp__team__team_steer/);
-	const mcpLead = composeMemberPrompt(team, { role: "lead", ownedPaths: ["src"], orchestrator: true }, [{ role: "dev", ownedPaths: [] }], "x", "creation", "mcp");
-	assert.match(mcpLead, /^Your team tools come from the "team" MCP server, so call them as mcp__team__team_roster, mcp__team__team_steer, mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_ask; .*\nYou are this team's orchestrator: /m);
-	assert.equal(mcpLead.replace(/^Your team tools come from .*\n/m, ""), lead);
+	// A claude-code member is a pi worker on the Claude Code provider: the same member extension, the same header.
 	assert.equal(memberTooling("pi"), "pi");
-	assert.equal(memberTooling("claude-code"), "mcp");
+	assert.equal(memberTooling("claude-code"), "pi");
 	assert.equal(memberTooling("codex"), "none");
 });
 
@@ -105,11 +99,12 @@ test("orchestrator flag: pi or claude-code only, carried through prepare, persis
 	);
 	assert.throws(() => store.prepareCreate({ ...base, members: [{ role: "lead", prompt: "t", orchestrator: "yes" as any }] }), /must be a boolean/);
 	assert.equal(store.teamCounter, 0);
-	// A claude-code orchestrator is accepted (it gets the tools through the MCP server) and its header uses the prefixed names.
+	// A claude-code orchestrator is accepted (it loads the member extension like a pi member) and its header is a pi member's.
 	const claude = new TeamStore().prepareCreate({ ...base, defaults: { backend: "claude-code" }, members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "dev", prompt: "t" }] });
 	assert.deepEqual(claude.members.map((m) => [m.orchestrator, m.spec.backend]), [[true, "claude-code"], [false, "claude-code"]]);
-	assert.match(claude.members[0].spec.prompt, /mcp__team__team_roster.*\nYou are this team's orchestrator/);
-	assert.match(claude.members[1].spec.prompt, /mcp__team__team_msg.*\nTeam tools: team_msg/);
+	assert.match(claude.members[0].spec.prompt, /\nYou are this team's orchestrator/);
+	assert.match(claude.members[1].spec.prompt, /\nTeam tools: team_msg/);
+	assert.doesNotMatch(claude.members[0].spec.prompt + claude.members[1].spec.prompt, /mcp__team__/);
 	claude.release();
 	// An explicit pi member under Claude defaults is fine; the flag survives into the prepared member and its header.
 	const prepared = store.prepareCreate({
@@ -119,7 +114,7 @@ test("orchestrator flag: pi or claude-code only, carried through prepare, persis
 	assert.deepEqual(prepared.members.map((m) => [m.role, m.orchestrator, m.spec.backend]), [["lead", true, "pi"], ["dev", false, "claude-code"], ["qa", false, "pi"]]);
 	assert.match(prepared.members[0].spec.prompt, /Your role: lead \(orchestrator\)/);
 	assert.match(prepared.members[1].spec.prompt, /- lead \(orchestrator\): none declared/);
-	assert.match(prepared.members[1].spec.prompt, /mcp__team__team_msg.*\nTeam tools: team_msg/, "Claude member header names its MCP tools");
+	assert.match(prepared.members[1].spec.prompt, /\nTeam tools: team_msg/, "a Claude member's header is a pi member's");
 	assert.doesNotMatch(prepared.members[1].spec.prompt, /no tool to reply/);
 	assert.match(prepared.members[2].spec.prompt, /Team tools: team_msg/);
 	const members = prepared.members.map((m, i) => member(i + 1, { role: m.role, backend: m.spec.backend, ...(m.orchestrator ? { orchestrator: true } : {}) }));

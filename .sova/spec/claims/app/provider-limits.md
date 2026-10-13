@@ -32,9 +32,9 @@ and every process on the device reads and writes them the same way.
   extension beside its worker mark), and Sova's own pi one-shots (decisions and session titles).
   Compaction, branch summaries and cache warms are requests of the session that makes them.
 - For `claude-code`, a slot is one Claude Code model call of a chat session on the
-  Claude Code provider, or one Claude Code one-shot of Sova's (a decision or a session title).
-  Claude Code workers and the topic outline's Claude summarizer start the CLI themselves and are
-  not counted.
+  Claude Code provider (a Claude Code worker is one: a pi worker on that provider), or one Claude
+  Code one-shot of Sova's (a decision or a session title). The topic outline's Claude summarizer
+  starts the CLI itself and is not counted.
 - A request that already holds its provider's slot (a Sova one-shot passing through a runtime that
   also loads the extension) is not counted twice.
 

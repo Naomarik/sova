@@ -98,7 +98,7 @@ export const MONITOR_TOOLS = ["team_msg", "team_inbox", "team_roster", "wake_nud
 export const SUCCESSOR_TOOLS = ["team_ready"] as const;
 
 /**
- * The one list of member tools a member really has, shared by member.ts, member-mcp.ts and the
+ * The one list of member tools a member really has, shared by member.ts and the
  * team header. A monitor has MONITOR_TOOLS (no team_ask: it never reaches the operator);
  * everyone else has MEMBER_TOOLS, plus the orchestrator pair and the coordinator pair. Any
  * successor, a monitor's included, also has team_ready.
@@ -113,7 +113,7 @@ export function memberToolNames(me: { orchestrator?: boolean; duty?: MemberDuty;
 	];
 }
 
-/** Tool texts shared with member-mcp.ts, so a pi member and a Claude member read the same contract. */
+/** Member tool texts (member.ts): one contract for every member. */
 export const memberToolText = (me: MemberContext) => {
 	const who = `${me.role} (${me.workerId}) in ${me.teamId}`;
 	return {

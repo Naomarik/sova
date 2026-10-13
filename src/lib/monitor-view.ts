@@ -52,7 +52,6 @@ export const isHeuristic = (via: MonitorVia | undefined): boolean => via === "cw
 const VIA_WORDS: Record<MonitorVia, string> = {
   "worker-pid": "Worker process",
   "session-id": "Claude session id",
-  "live-record": "Worker's live record",
   "team-env": "Team member helper",
   env: "Started by the session's tool",
   descendant: "Started by a charged process",

@@ -103,7 +103,7 @@ images. There is no separate count: the summary has no image badge, and the body
   chip carries the state.
 - **Hide tool calls** still removes the whole card, images and all.
 - **Not these.** Images a result only names by path stay in the body's Attachments section
-  (§chat.images/path-attachments). A Claude Code worker's rows carry their tool results' images
+  (§chat.images/path-attachments). An older native Claude Code worker's rows carry their tool results' images
   the same way (§app.subagents-pane/claude-code-workers).
 
 **Alt text.** It's built from context, because pi stores no captions.

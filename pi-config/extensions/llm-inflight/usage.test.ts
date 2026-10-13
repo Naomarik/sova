@@ -187,7 +187,7 @@ test("claude-code-cli: once a bridge observer records it, the runtime leaves its
 	await rt.streamSimple(model, context, { sessionId: "sess-cc" }).result();
 	await tick();
 	assert.equal(read().length, 1, "no bridge yet: the runtime records it");
-	const o = createClaudeRequestObserver({ countRequests: false, usage: { bridge: true, model: "opus[1m]", fresh: true, baselineDir: tmp(), who: () => resolveUsageAttribution("sess-cc") } });
+	const o = createClaudeRequestObserver({ usage: { bridge: true, model: "opus[1m]", fresh: true, baselineDir: tmp(), who: () => resolveUsageAttribution("sess-cc") } });
 	o.frame({ type: "stream_event", session_id: "cc-1", parent_tool_use_id: null, event: { type: "message_start", message: { id: "msg_A", model: "claude-opus-5-5", usage: { input_tokens: 7, output_tokens: 1, cache_read_input_tokens: 100 } } } });
 	o.frame({ type: "stream_event", session_id: "cc-1", parent_tool_use_id: null, event: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 7, output_tokens: 12, cache_read_input_tokens: 100 } } });
 	o.frame({ type: "result", subtype: "success", session_id: "cc-1", modelUsage: { "claude-opus-5-5": { inputTokens: 9, outputTokens: 12, cacheReadInputTokens: 100, cacheCreationInputTokens: 0 } } });

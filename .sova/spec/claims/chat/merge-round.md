@@ -93,17 +93,17 @@ after each landing, since every other branch is then checked against the new mas
   the commit, file and line, never the matched value. A hit the user waives, asked again each time
   it recurs, is pushed by hand for that push only and named as waived in the report. Never
   `--force`, `--tags` or `--all`.
-- **Restart** when the live server's head lacks master's runtime code, whoever merged it: only when
-  every hosted session is idle, scheduled outside the server with `systemd-run` as the turn's last
-  call, and confirmed on the next round with the head it came back on. A restart another session
-  has claimed (its workers deploying) is left to it.
+- **Restart** when the live server's head lacks master's runtime code, whoever merged it, whatever the
+  other sessions are doing (a restart cuts no chat, worker or reply off, §app/chat-processes): the
+  line `restart-check` prints, run by the round's session, and confirmed on the next round with the
+  head it came back on. A restart another session has claimed is left to it.
 - **Always the user's call:** rewriting unpushed master to scrub a hit, each case (the old head kept
   first as a local `backstop/<what>-<sha>` branch; master made one new commit of the intended tree on
   origin/master with `commit-tree` and `update-ref`; proved a fast-forward of origin/master whose
   diff from the old head is only the intended change, with no scrubbed commit reachable and the
   leak scan, typecheck, build and census passing; the leak's branch never merged again; the backstop
   deleted when the user says). A branch is never scrubbed. Also the user's: waiving a hit, each
-  time it recurs; names origin already has in public; a restart while sessions are busy; any deploy
+  time it recurs; names origin already has in public; any deploy
   to a peer; landing a branch with no live owner (owner archived, or no session tracks its
   worktree) or an unconfirmed one. Everything else, a branch its owner calls
   ready and checked green, lands and pushes without asking.
@@ -111,8 +111,7 @@ after each landing, since every other branch is then checked against the new mas
   `update-ref` on it outside a scrub the user approved for that case; a private name written inline
   in a command; another session's project instance touched, or its worktree changed beyond the
   check's master merge (and a rebuilt `node_modules`), without its OK.
-- **The report** each round: shas merged, push result, restart state (with the busy
-  list), the branches with no live owner (each the first time it is the user's call), owners asked
+- **The report** each round: shas merged, push result, restart state, the branches with no live owner (each the first time it is the user's call), owners asked
   and their answers, anything handed back and why. A quiet round (nothing asked, checked, landed or
   pushed, and nothing new for the user) reports one line: "Nothing new on the merge board."
 
@@ -216,14 +215,11 @@ shell and under a timeout.
 - **`push`** refuses under the hold, when the main checkout isn't on master, and when master isn't a
   fast-forward of origin/master after a fetch. It runs `leak-scan.mjs` and, only when that exits 0,
   runs exactly `git push origin master`. It has no force, tags or all path.
-- **`restart-check`** reads the live records (`<agent dir>/sessions/live/`) of the server it runs
-  under, found through its process ancestry, else as the restart unit's main pid; only records whose
-  heartbeat is at most 30 seconds old count, and its own session's is left out. A session is busy
-  when a worker is working or its turn is in flight. Exit 0 means every one is idle, and only then
-  does it print the `systemd-run --user --on-active=30s systemctl --user restart <unit>` line; 1
-  lists the busy ones; 2 means it found no server or none of its records. It works out the restart
-  need first, as `start` does, and prints the line only when one is needed, or pending and it can't
-  tell. It never schedules or runs a restart itself.
+- **`restart-check`** works out the restart need, as `start` does, and when a restart is needed, or
+  pending and it can't tell, prints the restart line (`systemctl --user restart <unit>`; on macOS
+  `launchctl kickstart -k gui/<uid>/<label>`, the label the unit's name without `.service`), with no
+  regard to busy sessions: it reads no live records. Exit 0 either way; 2 only when the settings' restart unit
+  isn't a plain unit name. It never schedules or runs a restart itself.
 - **`report`** prints the round report's skeleton from the state, listing each branch with no live
   owner once per head (`For you, once (no live owner): …`). A quiet round prints only `Nothing new on
   the merge board.`
@@ -241,8 +237,8 @@ or the other sessions on a busy machine:
   `scripts/nice.mjs`, the same lowering `pnpm test` gets; a tree without that script runs it
   unchanged.
 - **The spec replay suite is a landing gate.** When the commits `check` would land touch
-  `pi-config/extensions/spec/core/`, `pi-config/extensions/mode/spec-guard.ts`,
-  `pi-config/extensions/claude-code/spec-hooks.ts` or `pi-config/extensions/spec/tests/replay/`,
+  `pi-config/extensions/spec/core/`, `pi-config/extensions/mode/spec-guard.ts` or
+  `pi-config/extensions/spec/tests/replay/`,
   and the branch's tree has `pi-config/extensions/spec/tests/replay/replay.test.mjs`, `check` runs
   `node --test tests/replay/*.test.mjs` in `pi-config/extensions/spec`, through `scripts/nice.mjs`
   and with `SOVA_SPEC_REPLAY=1`, as a step like the others (its log, its timeout); a failure or a

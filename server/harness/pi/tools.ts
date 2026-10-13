@@ -2,7 +2,8 @@
 // shape minus pi's types (TypeBox parameters, ExtensionContext), so the conversion is a spread: every
 // field (and marker, such as overseer-redact's REDACTING) reaches pi as written; only execute's context
 // is mapped. Hooks in Sova's own inline extensions read pi's context through `toolCtx` too.
-import type { ExtensionContext, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createEditToolDefinition, type ExtensionContext, type ExtensionToolContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { PrepareRule } from "../../../shared/chat-runtime";
 import type { HarnessNative, HookCtx, ToolSpec } from "../../../shared/harness";
 import { canonicalPath } from "../../paths";
 import { historyOf } from "./reader";
@@ -50,4 +51,24 @@ export function fromPiTool(def: ToolDefinition<any, any>): ToolSpec {
   const execute: ToolSpec["execute"] = (toolCallId, params, signal, onUpdate, ctx) =>
     def.execute(toolCallId, params, signal, onUpdate as never, ctx?.native as unknown as ExtensionToolContext);
   return { ...def, execute } as unknown as ToolSpec;
+}
+
+/**
+ * A pi tool definition the server builds and serves to a chat (the Overseer's and a project
+ * overseer's file tools, al_3 stage 3): its run gets no pi context (the tool reads none; a served run
+ * has none to give). A definition that rewrites its arguments names the rule the chat runs instead
+ * (`prepareRule`), since pi asks for the rewrite synchronously in the chat's process.
+ */
+export function fromPiToolDefinition(def: ToolDefinition<any, any>, prepareRule?: PrepareRule): ToolSpec {
+  if (def.prepareArguments && !prepareRule) throw new Error(`The tool ${def.name} rewrites its arguments: name the rule a chat runs for it.`);
+  const execute: ToolSpec["execute"] = (toolCallId, params, signal, onUpdate) => def.execute(toolCallId, params, signal, onUpdate as never, undefined as never);
+  return { ...def, execute, ...(def.prepareArguments ? { prepareRule } : {}) } as unknown as ToolSpec;
+}
+
+/** pi's edit tool's own argument rewrite (its legacy shapes: edits as a JSON string, one edit object),
+    as a pure function: the "pi-edit" rule. */
+const piEditPrepare = createEditToolDefinition(".").prepareArguments!;
+export function piPrepare(rule: "pi-edit"): (args: unknown) => unknown {
+  if (rule !== "pi-edit") throw new Error(`No pi rewrite named ${String(rule)}.`);
+  return (args) => piEditPrepare(args as never);
 }

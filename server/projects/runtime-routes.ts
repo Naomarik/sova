@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { BusyError } from "../chat-manager";
+import { BusyError } from "../chat-handle";
 import { OrgError } from "../org-error";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";

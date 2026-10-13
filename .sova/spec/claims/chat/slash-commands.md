@@ -6,7 +6,7 @@ pi's slash commands, offered while you type. The server sends the list once per 
 Sending `/name args` as a normal prompt runs the command.
 
 Owns: when the menu opens, its markup, filtering, keys and announcements, the flyout's Commands row,
-what a sent command leaves in the thread, the bare commands Sova answers itself, `/compact-handoff`,
+what a sent command leaves in the thread, the bare commands Sova answers itself, `/compact-handoff`, `/btw` and its side chat,
 the commands that need the terminal UI, and the terminal's own `/subagents` and palette. Not here:
 the composer it opens in (§chat/composer), the dialogs a command may raise
 (§app/extension-dialogs), and the session pane that `/agents` and `/tree` open (§app/subagents-pane).
@@ -214,9 +214,7 @@ answered by Sova itself and never sent.
     "Explain rows"), and so does `/compact-handoff`, whose `compact-handoff-run` row reads
     "Writing a handoff note" while its background fork writes and is replaced by the run's result
     (§chat.slash-commands/compact-handoff-row). Unlike the "Ran" row, it is persisted: a reload
-    mid-run shows it still running. A run the restart or `/reload` stopped stays running until the
-    session's next prompt or its next run of the same command (`/explain`, `/compact-handoff`),
-    which settles it as Interrupted (§chat.transcript/transcript-items, "Explain rows:
+    mid-run shows it still running. A run whose background chat is gone (the server stopped it, or its process died for good) stays running until the session's next prompt or its next run of the same command (`/explain`, `/compact-handoff`), which settles it as Interrupted; a `/reload` alone never interrupts one (§chat.transcript/transcript-items, "Explain rows:
     interrupted"; §chat.slash-commands/compact-handoff-row, "Interrupted").
 - **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
   isn't restored.
@@ -255,7 +253,10 @@ the same in the TUI and in Sova; `/compact` is unchanged.
 - **Refused while busy.** While a turn runs, a compaction runs, messages are queued or an earlier
   `/compact-handoff` is still under way (its note being written, or its compaction waiting), it
   does nothing and says why in a notification. A session with no conversation on disk yet has
-  nothing to hand off and is refused the same way.
+  nothing to hand off and is refused the same way. So is a session with nothing to compact yet:
+  everything since its last compaction still fits in the recent part a compaction keeps (pi's
+  `compaction.keepRecentTokens`, 20,000 tokens unless set), so a compaction would have nothing to
+  summarize. No fork starts, and the notification says nothing can be compacted yet.
 - **The note is written in a background fork.** Otherwise it starts a background fork of the
   session (§chat.session-fork/background): a hidden child with the whole conversation, on the
   session's warm prompt cache, that may only read (files, search, read-only shell; no writes, no
@@ -286,7 +287,7 @@ the same in the TUI and in Sova; `/compact` is unchanged.
   a topic delivery or a scheduled run reaches it meanwhile, the note is still saved the moment the
   fork settles, and the compaction waits for the next idle moment (the session settled, nothing
   queued). A prompt that starts in the instant before the compaction begins still wins: the
-  compaction waits for the next idle moment again.
+  compaction waits for the next idle moment again. A reload of the session while the fork writes doesn't stop it: the reopened session picks the run up, saves the note when the fork settles and compacts at the next idle moment.
 - **Cancel.** `/compact-handoff cancel` stops the fork (Esc and Stop don't reach it), or drops a
   compaction still waiting for an idle moment; the note, if already saved, stays saved. With
   nothing under way it says so.
@@ -326,10 +327,52 @@ where it was appended, as `/explain`'s do.
   note failed" with a `.chip-error` "Failed" chip and the reason; cancelled, "Handoff cancelled";
   interrupted, "Handoff interrupted" with a `.chip-warn` "Interrupted" chip. The compaction that
   follows is its own row.
-- **Interrupted.** A run its session stopped before it settled (a restart, a `/reload`) leaves its
-  running entry as the newest. Opening the session writes nothing, so the row still reads running
-  then; the session's next prompt, or its next `/compact-handoff`, appends the `interrupted`
-  entry, which replaces it.
+- **Interrupted.** A run whose fork's chat is gone before it settled (its process died for good, or was stopped) leaves its running entry as the newest. Opening the session writes nothing, so the row still reads running then; the session's next prompt, or its next `/compact-handoff`, appends the `interrupted` entry, which replaces it. A `/reload` of the session, its process's crash, or a server restart interrupts nothing: the fork keeps writing, the session watches it again when it opens, and the row settles when the fork finishes.
+
+## §chat.slash-commands/btw — /btw: a side conversation
+
+`/btw <question>` asks a side question without touching the conversation: the main thread's turn,
+context and queue are untouched, and the answer is recorded in the session as a `btw-note`, which
+the thread shows as a report row with the question and the answer (never model context of the
+main thread). It is an extension command (`pi-config/extensions/btw/`), offered in every chat's
+slash menu with its subcommands:
+
+- **`/btw <question>`** continues the side thread, which by default starts from the main thread's
+  conversation; `--save` is accepted and changes nothing in Sova (every answer is already a note).
+  Bare `/btw` asks for the question in a dialog ("BTW", "Ask a side question…"); an empty or
+  cancelled dialog asks nothing.
+- **`/btw:tangent [question]`** is the same without the main thread's conversation; switching
+  between a contextual thread and a tangent starts a new thread.
+- **`/btw:new [question]`** starts a fresh contextual thread; **`/btw:clear`** ends the thread.
+- **`/btw:inject [instructions]`** sends the whole thread (each question and answer) to the main
+  thread as your message, after a confirmation, and ends the thread; **`/btw:summarize
+  [instructions]`** sends a summary of it instead, confirming with the summary's text.
+- **`/btw:model <provider> <model> <api> | clear`** and **`/btw:thinking <level> | clear`** set or
+  clear the side thread's own model and thinking level (otherwise it uses the main thread's); bare,
+  each says what is in effect. A change takes effect at the next question, which continues the
+  same thread.
+
+The thread is the session's: its answers on the active branch (since the last `/btw:new`,
+`/btw:clear` or switch) are what the next question continues, after a reload or on another
+device alike. A failed question says why in a notification and keeps the thread.
+
+## §chat.slash-commands/btw-chat — /btw's side thread is a hidden chat
+
+The side thread runs as a hidden chat in a process of its own, started by Sova's worker host
+like any worker (§app.chat-processes/workers), never inside the main chat's process; its session
+is kept out of every session list. It starts from the main thread's conversation (none for a
+tangent) and the thread's earlier answers, with the read, bash, edit and write tools, no other
+extensions, the main thread's system prompt followed by the aside instructions, and the /btw
+model and thinking level. It is not sandboxed. Its model calls are counted like any chat's,
+under the main thread.
+
+The chat is kept between questions, so a follow-up continues it, and it outlives a reload, a
+crash or new code of the main chat: the reopened session picks the thread up again, and a
+question it was answering then is still answered and recorded once. A new thread, a cleared
+one, a switch between contextual and tangent, a model or thinking change, and navigating the
+session tree stop it; the next question starts a new one from the thread as recorded.
+`/btw:summarize` writes its summary in a second hidden chat with no tools and only the summary
+instructions, stopped when it answers.
 
 ## §chat.slash-commands/commands-that-need-the-terminal-ui — Commands that need the terminal UI
 

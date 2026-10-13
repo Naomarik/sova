@@ -1,4 +1,4 @@
-import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionState, type OwnerAreaChange, type Provenance, type ReconcileRun } from "../shared/decisions";
+import { areaKeyOf, OWNER_AREA_NONE, pickFromOwnerAreas, specSlug, type Conflict, type DecisionRow, type DecisionState, type OwnerAreaChange, type Provenance, type ReconcileRun } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
 import type { AttentionItem } from "../shared/protocol";
 import { readFileSync } from "node:fs";
@@ -165,28 +165,8 @@ export function readConflicts(orgId: string, projectId: string): Conflict[] {
 
 // ---- keys --------------------------------------------------------------------------------------------
 
-/** A spec ID segment: lowercase ASCII letters and single hyphens only (the § grammar allows no
-    digits), accents folded, ≤ `max` characters, cut at a word boundary; "" when nothing is left. */
-export function specSlug(text: string, max = 40): string {
-  const words = text
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
-  let out = "";
-  for (const w of words) {
-    const next = out ? `${out}-${w}` : w;
-    if (next.length > max) break;
-    out = next;
-  }
-  return out || (words[0] ?? "").slice(0, max);
-}
-
-/** The spec area a recorded area files under. */
-export const areaKeyOf = (area: string): string => specSlug(area, 40) || "general";
+// The pure keys live in shared/decisions.ts (a chat process folds owner areas too).
+export { areaKeyOf, specSlug };
 
 // ---- owner areas (§app.requirements/owner-area) --------------------------------------------------------
 
@@ -206,24 +186,12 @@ export function ownerAreaChoices(roster: readonly Person[]): string[] {
   return out;
 }
 
-const quoted = (xs: string[]) => xs.map((x) => `"${x}"`);
-const orList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
 
 /** An owner area as given (the model's, the operator's), against the roster as it is: a roster
     area with the same key, stored as the roster spells it, or "none"; else why not, naming every
     choice. */
 export function pickOwnerArea(roster: readonly Person[], value: unknown): { ok: true; ownerArea: string } | { ok: false; error: string } {
-  const choices = ownerAreaChoices(roster);
-  const given = typeof value === "string" ? value.trim() : "";
-  if (given) {
-    const k = areaKeyOf(given);
-    if (k === OWNER_AREA_NONE) return { ok: true, ownerArea: OWNER_AREA_NONE };
-    const hit = choices.find((a) => areaKeyOf(a) === k);
-    if (hit) return { ok: true, ownerArea: hit };
-  }
-  if (!choices.length) return { ok: false, error: `Give the owner area: "${OWNER_AREA_NONE}" (no one on the roster has a decision area yet).` };
-  const list = orList(quoted([...choices, OWNER_AREA_NONE]));
-  return { ok: false, error: given ? `"${given}" is not an owner area. Use one of: ${list}.` : `Give the owner area. Use one of: ${list}.` };
+  return pickFromOwnerAreas(ownerAreaChoices(roster), value);
 }
 
 /** The provenance a row carries into the spec. */

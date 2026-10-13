@@ -509,9 +509,8 @@ export class WebQueue {
       //
       // Every caller does `void this.pump()`, so an escaping rejection is an UNHANDLED REJECTION,
       // and Node's default since v15 (`--unhandled-rejections=throw`) TERMINATES THE PROCESS. For
-      // Sova that is the server: every chat session in it, and every hosted worker spawned by
-      // one — the worker-suicide hazard AGENTS.md documents for a server restart, reached
-      // here by a disk error instead. Measured, not reasoned: a synchronously throwing dep gave
+      // Sova that is the process hosting the chat (a chat process: the chat and its served calls),
+      // reached here by a disk error. Measured, not reasoned: a synchronously throwing dep gave
       // "caught by the caller of enqueue(): NO / unhandled rejections observed: 1".
       //
       // The reachable path today is `wake()` → `wakeQueuedRun` → `flushDeferredAppends()`, which

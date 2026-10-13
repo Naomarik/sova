@@ -21,8 +21,7 @@
     "{\"id\":\"o000000a\",\"kind\":\"report\",\"text\":\"Wrote 3 files.\",\"at\":\"2026-09-01T10:00:10.000Z\",\"report\":{\"source\":\"subagent-complete\",\"truncated\":false,\"agent\":{\"id\":\"ag_02\",\"name\":\"writer\",\"status\":\"done\",\"outcome\":\"success\"},\"body\":\"Wrote 3 files.\",\"preview\":\"Wrote 3 files.\"},\"meta\":{\"type\":\"custom_message\",\"customType\":\"subagent-complete\"}}"
   ],
   [],
-  [],
   [
-    "{\"id\":\"o000000d:0\",\"kind\":\"assistant-text\",\"text\":\"The team finished.\",\"at\":\"2026-09-01T10:00:13.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":9000,\"output\":400,\"cacheRead\":30000,\"cacheWrite\":0,\"totalTokens\":39400,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
+    "{\"id\":\"o000000c:0\",\"kind\":\"assistant-text\",\"text\":\"The team finished.\",\"at\":\"2026-09-01T10:00:12.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":9000,\"output\":400,\"cacheRead\":30000,\"cacheWrite\":0,\"totalTokens\":39400,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
   ]
 ]

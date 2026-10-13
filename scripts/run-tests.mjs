@@ -43,7 +43,8 @@
 // falls back to KNOWN_SLOW, then to its alphabetical place. The run ends with the 10 slowest files.
 // Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
 // process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -62,6 +63,7 @@ const GLOBS = [
   "scripts/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
+  "server/chat-runtime/*.test.ts",
   "server/projects/*.test.ts",
   "server/mesh/*.test.ts",
   "server/sync/*.test.ts",
@@ -79,6 +81,8 @@ const GLOBS = [
   "pi-config/extensions/model-levels/*.test.ts",
   // The Claude Code bridge's memory-view layout (pi-free, pure): a chat that stops caching its view fails here.
   "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
+  // Which Claude program every spawn runs (builtins only; the server imports it).
+  "pi-config/extensions/claude-code/claude-executable.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 /** Each tier's recorded wall times, and how many files it runs at once. */
@@ -110,6 +114,69 @@ const KNOWN_SLOW = [
   /^server\/project-services\/[^/]+\.integration\.test\.ts$/,
   /^server\/mesh\/lan-[^/]+\.test\.ts$/,
 ];
+
+/**
+ * The chat processes a test's server left on the detached driver (no user manager: macOS) under `root`,
+ * stopped before `root` goes: each one its record (`…/sova/chats/procs/*.json`) names, only while it is
+ * still that process (its start time, as the driver's own stop checks) and still Sova's chat runtime.
+ * Its session gets SIGTERM, then SIGKILL after 5 s. By records, never by name.
+ */
+function sweepDetachedChats(root) {
+  let recs = [];
+  try {
+    recs = fs.globSync("**/sova/chats/procs/*.json", { cwd: root });
+  } catch {
+    return;
+  }
+  if (!recs.length) return;
+  // A process's start time as the driver recorded it (server/project-services/proctable.ts, read here
+  // because plain node can't load that module): /proc's starttime, else ps's lstart.
+  const procfs = process.platform === "linux" && fs.existsSync(`/proc/${process.pid}/stat`);
+  const ps = (args) => {
+    try {
+      return execFileSync("ps", args, { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C", TZ: "UTC" } });
+    } catch {
+      return "";
+    }
+  };
+  const startOf = (pid) => {
+    if (!procfs) return ps(["-o", "lstart=", "-p", String(pid)]).trim().replace(/\s+/g, " ") || null;
+    try {
+      const st = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      return st.slice(st.lastIndexOf(")") + 2).split(" ")[19] ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const command = (pid) => {
+    try {
+      return procfs ? fs.readFileSync(`/proc/${pid}/cmdline`, "utf8") : ps(["-o", "command=", "-p", String(pid)]);
+    } catch {
+      return "";
+    }
+  };
+  const ours = [];
+  for (const f of recs) {
+    let r;
+    try {
+      r = JSON.parse(fs.readFileSync(path.join(root, f), "utf8"));
+    } catch {
+      continue;
+    }
+    if (!Number.isInteger(r?.pid) || r.pid <= 1 || !r.start || (r.clock ?? "procfs") !== (procfs ? "procfs" : "ps") || startOf(r.pid) !== r.start) continue;
+    if (command(r.pid).includes("server/chat-runtime/main.ts")) ours.push(r.pid);
+  }
+  const signal = (pid, sig) => {
+    try { process.kill(-pid, sig); } catch { try { process.kill(pid, sig); } catch { /* gone */ } }
+  };
+  const alive = (pid) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  for (const pid of ours) signal(pid, "SIGTERM");
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (const end = Date.now() + 5000; ours.some(alive) && Date.now() < end; ) Atomics.wait(pause, 0, 0, 100);
+  for (const pid of ours.filter(alive)) signal(pid, "SIGKILL");
+}
 
 /** rm -rf that survives read-only dirs a test left behind, and never throws. */
 function removeTree(dir) {
@@ -209,6 +276,20 @@ function changedOnly(files, base) {
 // this runner's own, before each runtime gives the files a throwaway TMPDIR. An outer runner's wins.
 process.env.SOVA_TEST_SHARED_TMP ||= os.tmpdir();
 
+// The chat processes a test's server starts (§app/chat-processes) run as units in a slice of this run's
+// own, never the live sova-chats.slice, and the slice is stopped when the run ends (its exit, which the
+// signal handlers reach too): a server stop leaves its chats running, by design, so nothing else would.
+// An outer run's test slice is kept (a run inside a test); any other inherited slice is not. No dash in
+// its name: systemd nests a dashed slice under parents (sova.slice, …) that would stay behind.
+if (!/^sova_test_[A-Za-z0-9_]+\.slice$/.test(process.env.SOVA_CHAT_SLICE ?? "")) {
+  const slice = `sova_test_${process.pid}_${randomBytes(3).toString("hex")}.slice`;
+  process.env.SOVA_CHAT_SLICE = slice;
+  process.on("exit", () => {
+    // No user manager (macOS, a container): nothing to stop.
+    spawnSync("systemctl", ["--user", "stop", slice], { stdio: "ignore", timeout: 60_000 });
+  });
+}
+
 if (runtime === "node") {
   // A pass still running after NODE_PASS_LIMIT_MS is stuck (seen: a file whose tests all reported
   // but whose process never exits, under heavy load): its whole process group is killed and the run
@@ -222,7 +303,10 @@ if (runtime === "node") {
   refuseTmpInRepo("/tmp");
   const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
   process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
-  process.on("exit", () => removeTree(tmp));
+  process.on("exit", () => {
+    sweepDetachedChats(tmp);
+    removeTree(tmp);
+  });
   process.env.SOVA_TEST_GUARD_DIR = fs.mkdtempSync(path.join(tmp, "guard-"));
   const limitMs = Number(process.env.NODE_PASS_LIMIT_MS) || 15 * 60_000;
   let failed = false;
@@ -321,6 +405,9 @@ function hermeticEnv() {
     SOVA_TEST_HOME: root,
     PATH: [path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
+    // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
+    // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
+    SOVA_CHAT_CODE: "live",
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,
@@ -342,25 +429,49 @@ const guardDir = fs.mkdtempSync(path.join(os.tmpdir(), "sova-test-guard-"));
 process.on("exit", () => removeTree(guardDir));
 const enforce = (process.env.SOVA_TEST_GUARD || "enforce") === "enforce";
 
+// Each file's bun runs in a process group of its own, killed whole: on FILE_LIMIT_MS, and when this
+// runner stops (a signal, its exit, or its parent gone: a wrapper's timeout killing only the runner left
+// a bun test running on, growing to ~100 GB). Its children (servers, workers a test starts) go with it.
+// A runner killed by SIGKILL can do none of this: each file's process then ends its own group once its
+// parent is no longer this runner (SOVA_TEST_RUNNER_PID, polled by test-tier-guard.mjs).
+const fileGroups = new Set();
+const killGroup = (pid) => {
+  try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ }
+};
+let groupGuard = false;
+function guardGroups() {
+  if (groupGuard) return;
+  groupGuard = true;
+  const killAll = () => { for (const pid of fileGroups) killGroup(pid); };
+  process.on("exit", killAll);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(sig, () => { killAll(); process.exit(130); });
+  const parent = process.ppid;
+  setInterval(() => { if (process.ppid !== parent) { killAll(); process.exit(1); } }, 2000).unref();
+}
+
 function runFile(file, extra) {
+  guardGroups();
   const { root, env } = hermeticEnv();
   const target = file.startsWith("/") || file.startsWith("./") ? file : `./${file}`;
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(bun, ["test", "--preload", PRELOAD, "--preload", GUARD, ...extra, ...bunFlags, target], { cwd: ROOT, env: { ...env, SOVA_TEST_FILE: file, SOVA_TEST_GUARD_DIR: guardDir }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bun, ["test", "--preload", PRELOAD, "--preload", GUARD, ...extra, ...bunFlags, target], { cwd: ROOT, env: { ...env, SOVA_TEST_FILE: file, SOVA_TEST_GUARD_DIR: guardDir, SOVA_TEST_RUNNER_PID: String(process.pid) }, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    if (child.pid) fileGroups.add(child.pid);
     let out = "";
     // A file still running after FILE_LIMIT_MS is stuck (a hang, or tests done with a handle left
     // open): killed and reported as a failure, so one file never stalls the run.
     const limit = setTimeout(() => {
       out += `run-tests: ${file} still running after ${FILE_LIMIT_MS / 1000} s; killed\n`;
-      child.kill("SIGKILL");
+      killGroup(child.pid);
     }, FILE_LIMIT_MS);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
     child.on("error", (err) => (out += `run-tests: could not start ${bun}: ${err.message}\n`));
     child.on("close", (code) => {
       clearTimeout(limit);
+      fileGroups.delete(child.pid);
       const ms = Date.now() - started;
+      sweepDetachedChats(root);
       removeTree(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
       // Enforced, a unit file that did what its tier refuses fails, even when its test caught the refusal.

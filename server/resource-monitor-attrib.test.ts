@@ -101,8 +101,8 @@ const hostedA = (over: Partial<HostedInfo> = {}): HostedInfo => ({
   path: "/s/a.jsonl", sessionId: "sess-a", cwd: "/work/a", workers: [], providerIds: [0, 1, 2].map((n) => claudeSessionId("sess-a", n)),
   toolInWindow: false, ...over,
 });
-const run = (procs: Map<number, AttribProc>, hosted: HostedInfo[], extra: { live?: Map<number, string>; sids?: SidMemory; serverEnv?: { sessionFile?: string } } = {}) =>
-  attribute({ procs, serverPid: SERVER, hosted, liveRecordPids: extra.live ?? new Map(), sids: extra.sids ?? new SidMemory(new Set([SERVER])),
+const run = (procs: Map<number, AttribProc>, hosted: HostedInfo[], extra: { sids?: SidMemory; serverEnv?: { sessionFile?: string } } = {}) =>
+  attribute({ procs, serverPid: SERVER, hosted, sids: extra.sids ?? new SidMemory(new Set([SERVER])),
     ...(extra.serverEnv ? { serverEnv: extra.serverEnv } : {}) });
 
 describe("attribute", () => {
@@ -117,6 +117,27 @@ describe("attribute", () => {
     assert.deepEqual(owners.get(200), { session: "/s/a.jsonl", worker: "ag_01", via: "worker-pid" });
     assert.deepEqual(owners.get(202), { session: "/s/a.jsonl", worker: "ag_01", via: "descendant" });
     assert.deepEqual([...inTree].sort(), [200, 201, 202]);
+  });
+
+  test("a worker chat's process (a unit, outside the server): it, its tools, its Claude CLI and its session file are its parent's worker", () => {
+    const workerChat = { path: "/s/w.jsonl", sessionId: "sess-w", cwd: "/work/a", workers: [], providerIds: [0, 1].map((n) => claudeSessionId("sess-w", n)),
+      toolInWindow: false, pid: 500, worker: { parentPath: "/s/a.jsonl", workerId: "ag_09" } } satisfies HostedInfo;
+    const procs = table(
+      proc(st(SERVER, 1), ["node", "server/index.ts"]),
+      proc(st(500, 1), ["bun", "server/chat-runtime/main.ts"]),
+      proc(st(501, 500), ["claude", "-p", "--session-id", claudeSessionId("sess-w", 1)]),
+      proc(st(502, 500), ["zsh", "-c", "make"]),
+      proc(st(600, 1, { sid: 600 }), ["bash"], { sessionFile: "/s/w.jsonl" }),
+      proc(st(700, 1, { sid: 700 }), ["make"], {}, "/work/a/sub"),
+    );
+    const { owners } = run(procs, [hostedA(), workerChat]);
+    const ag = { session: "/s/a.jsonl", worker: "ag_09" };
+    assert.deepEqual(owners.get(500), { ...ag, via: "worker-pid" });
+    assert.deepEqual(owners.get(501), { ...ag, via: "session-id" });
+    assert.deepEqual(owners.get(502), { ...ag, via: "descendant" });
+    assert.deepEqual(owners.get(600), { ...ag, via: "env" });
+    assert.ok(![...owners.values()].some((o) => o.session === "/s/w.jsonl"), "never a session of its own");
+    assert.deepEqual(owners.get(700), { session: "/s/a.jsonl", via: "cwd" }, "the cwd heuristic sees only the parent");
   });
 
   test("claude uuids: a worker's --resume id, and a hosted session's provider via claudeSessionId(id, n)", () => {
@@ -134,15 +155,9 @@ describe("attribute", () => {
     assert.deepEqual(owners.get(302), { worker: "unowned:302", via: "descendant" });
   });
 
-  test("pi worker via its live record's session file", () => {
-    const procs = table(proc(st(SERVER, 1)), proc(st(400, SERVER), ["pi"]));
-    const { owners } = run(procs, [hostedA({ workers: [{ id: "ag_03", sessionFile: "/s/worker.jsonl" }] })], { live: new Map([[400, "/s/worker.jsonl"]]) });
-    assert.deepEqual(owners.get(400), { session: "/s/a.jsonl", worker: "ag_03", via: "live-record" });
-  });
-
-  test("member-mcp team env: only when exactly one session has that worker id (and team)", () => {
+  test("team env: only when exactly one session has that worker id (and team)", () => {
     const team = { teamId: "team_01", workerId: "ag_04" };
-    const procs = table(proc(st(SERVER, 1)), proc(st(500, 1), ["node", "/x/subagents/member-mcp.ts"], { team }));
+    const procs = table(proc(st(SERVER, 1)), proc(st(500, 1), ["node", "/x/tool.mjs"], { team }));
     const b = { ...hostedA(), path: "/s/b.jsonl", sessionId: "sess-b", providerIds: [] };
     assert.deepEqual(run(procs, [hostedA({ workers: [{ id: "ag_04", teamId: "team_01" }] })]).owners.get(500),
       { session: "/s/a.jsonl", worker: "ag_04", via: "team-env" });

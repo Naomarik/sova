@@ -20,12 +20,14 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_SHARE_PUBLIC_URL;
 mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });
 
+await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const links = await import("./baton-links");
 const settings = await import("./baton-settings");
 const { LIMIT_QUESTION } = await import("./baton-loadout");
 const { acquireChat, BusyError, disposeAllChats } = await import("./chat-manager");
+const { specialHostOf } = await import("./chat-handle");
 const { createShareApp, tokenLimited, tokenWindowSize } = await import("./share/routes");
 const { opaqueSenders, sweepWatchers, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
@@ -155,15 +157,15 @@ describe("the share message route", () => {
     const c = await start(OPERATOR, { messagesMax: 1 });
     const chat = await acquireChat(c.path);
     fakeSdk(chat);
-    chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" });
+    specialHostOf("baton")!.clientSend!(c.path, { images: 0, text: "" });
     await assert.rejects(baton.handTo(c.sessionId, tony.id, "q", ""), /message limit/);
     await assert.rejects(baton.offerTo(c.sessionId, [tony.id, maria.id], "q", ""), /message limit/);
-    assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" }), /Extend it to write/);
+    assert.throws(() => specialHostOf("baton")!.clientSend!(c.path, { images: 0, text: "" }), /Extend it to write/);
     await assert.rejects(baton.extendBudget(c.sessionId, 0), /from 1 to/);
     await assert.rejects(baton.extendBudget(c.sessionId, 2.5), /whole number/);
     await assert.rejects(baton.extendBudget(c.sessionId, MESSAGES_CAP), (e: { status?: number; message: string }) => /at most/.test(e.message) && e.status === 400);
     assert.equal((await baton.extendBudget(c.sessionId, 5)).budget.messagesMax, 6);
-    assert.equal(chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" }).by, OPERATOR);
+    assert.equal(specialHostOf("baton")!.clientSend!(c.path, { images: 0, text: "" }).by, OPERATOR);
     await baton.closeBaton(c.sessionId);
     await assert.rejects(baton.extendBudget(c.sessionId, 5), /closed/);
   });
@@ -201,8 +203,9 @@ describe("the operator's composer in a baton session", () => {
       throw new BusyError("Someone else wrote this session.", "recent");
     };
     chat.handle(client, { type: "prompt", text: "hi", clientId: "i2" } as never);
-    chat.assertNoForeignWrites = guard;
+    // The kind attributes the message first (a server action), then the write guards refuse it.
     assert.ok(await until(() => sent.some((m) => m.type === "error")), `the refusal reached the composer: ${JSON.stringify(sent)}`);
+    chat.assertNoForeignWrites = guard;
     const row = rowOf(c.sessionId);
     assert.equal(row.budget.messagesUsed, 0);
     assert.equal(row.state, "needs-you");

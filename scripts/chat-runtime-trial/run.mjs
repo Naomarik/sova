@@ -1840,13 +1840,20 @@ async function t21l() {
     await sleep(5000);
     const btwX = `BTW-ANSWER ${label}x`;
     // F14: the question sent as the process stops is never lost in silence: either it is answered (once,
-    // shown live), or the pane gets it back (a refusal naming it, from which the page restores the draft).
+    // shown live), or the pane gets it back: a refusal naming it, or (the architect's ruling) no send_ack
+    // for it before an error:reloaded on the socket it was sent on, upon which ChatView restores every
+    // unacked send into the draft (its own unit test covers the restore; a socket can't see a draft).
+    // Acked and then lost, or answered twice, fails.
     const refusal = refusedFor([...s.got.slice(f1), ...s2.got], cidX);
+    const acked = s.got.slice(f1).some((m) => m.type === "send_ack" && m.clientId === cidX);
+    const reloadedOn = s.got.slice(f1).some((m) => m.type === "error" && m.code === "reloaded");
+    const restored = !acked && reloadedOn;
     const live = refusal ? null : await s2.until((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX), 60000, "the btw row after the exit").catch(() => null);
     await sleep(2000);
     const notes = entries(path).filter((e) => e.customType === "btw-note" && JSON.stringify(e).includes(btwX)).length;
     const shown = live || s.got.slice(f1).some((m) => m.type === "append" && JSON.stringify(m.items ?? []).includes(btwX));
-    R.check((notes === 1 && shown) || (notes === 0 && refusal), `${label} (F10/F14 across the exit): the /btw sent as the process stopped is answered once and shown live, or refused back to the pane (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${notes}×, ${shown ? "shown live" : "not shown"}; pane frames after the send: ${[...s.got.slice(f1), ...s2.got].map((m) => m.type + (m.code ? `:${m.code}` : "") + (m.type === "ui_request" ? `(${m.request?.method ?? "?"}: ${String(m.request?.title ?? m.request?.statusKey ?? m.request?.widgetKey ?? "").slice(0, 80)}${m.request?.fireAndForget ? ", fire-and-forget" : ""})` : m.type === "error" ? `(${String(m.message ?? "").slice(0, 100)})` : "")).join(",").slice(0, 1200)}`})`);
+    R.check((notes === 1 && shown) || (notes === 0 && (refusal || restored)), `${label} (F10/F14 across the exit): the /btw sent as the process stopped is answered once and shown live, refused back to the pane, or left unacked before error:reloaded (ChatView restores it) (${refusal ? `refused: ${JSON.stringify(refusal).slice(0, 120)}` : `in the file ${notes}×, ${shown ? "shown live" : "not shown"}, ${acked ? "acked" : "not acked"}, ${reloadedOn ? "error:reloaded" : "no error:reloaded"} on its socket; pane frames after the send: ${[...s.got.slice(f1), ...s2.got].map((m) => m.type + (m.code ? `:${m.code}` : "") + (m.type === "ui_request" ? `(${m.request?.method ?? "?"}: ${String(m.request?.title ?? m.request?.statusKey ?? m.request?.widgetKey ?? "").slice(0, 80)}${m.request?.fireAndForget ? ", fire-and-forget" : ""})` : m.type === "error" ? `(${String(m.message ?? "").slice(0, 100)})` : "")).join(",").slice(0, 1200)}`})`);
+    if (notes === 1 && restored) R.note(`${label} (F14): the /btw was answered and also left unacked before error:reloaded: ChatView restores a draft for a question already answered`);
     const bad = [...s.got.slice(f1), ...s2.got].filter(alert);
     R.check(chatPid(path) !== pid1 && bad.length === 0, `${label} (F11): after /btw and an exit of the idle parent's process the pane reconnects with no turn-error alert (pid ${pid1} → ${chatPid(path)}; ${bad.map((m) => JSON.stringify(m).slice(0, 160)).join(" | ") || "none"})`);
     await turn({ path, s: s2 }, "say ok after");

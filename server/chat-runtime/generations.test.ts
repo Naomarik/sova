@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ownCodeOf } from "../harness/pi/own-code";
-import { buildId, codeRoot, collectGenerations, currentGeneration, generationDir, generationHealth, lastGood, noteGood, resetGenerations, startGenerationGc } from "./generations";
+import { buildId, codeRoot, isGenerationComplete, collectGenerations, currentGeneration, generationDir, generationHealth, lastGood, noteGood, resetGenerations, startGenerationGc } from "./generations";
 import { chatsRoot, scrubChatProcessEnv } from "./supervisor";
 
 const quiet = () => {};
@@ -311,6 +311,23 @@ test("a copies root inside the checkout's node_modules is never copied into itse
     const deps = readlinkSync(join(gen.dir, "node_modules")).split("/")[2]!;
     assert.ok(existsSync(join(root, "deps", deps, "node_modules", "dep", "index.js")));
     assert.ok(!existsSync(join(root, "deps", deps, "node_modules", ".cache", "sova-chat-code-t")), "the root left out of its own snapshot");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    resetGenerations();
+  }
+});
+
+test("isGenerationComplete: a finished copy with its node_modules; not a half-made one, one whose node_modules went, or one never made", async () => {
+  const { base, repo, root } = checkout();
+  try {
+    const gen = await currentGeneration({ repo, root, env: env({ SOVA_BUILD: "gen-a" }), log: quiet });
+    assert.equal(isGenerationComplete("gen-a", root), true);
+    assert.equal(isGenerationComplete("gen-none", root), false);
+    const deps = readlinkSync(join(gen.dir, "node_modules")).split("/")[2]!;
+    rmSync(join(root, "deps", deps, ".complete"));
+    assert.equal(isGenerationComplete("gen-a", root), false, "its node_modules unfinished or gone");
+    rmSync(join(gen.dir, ".complete"));
+    assert.equal(isGenerationComplete("gen-a", root), false, "half-made");
   } finally {
     rmSync(base, { recursive: true, force: true });
     resetGenerations();

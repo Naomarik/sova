@@ -36,14 +36,14 @@ and the site's fonts and colour tokens.
 
 ## §site.docs/index — Sova docs (`/docs/`)
 
-The front page: what a mode is, a card per major and minor mode, and links to the feature and
-setup pages.
+The front page: what a mode is, a card per major and minor mode (a project's own modes as one),
+and links to the feature and setup pages.
 
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions, strict, the terminal's commands, what workers get, and the sessions
-that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
+the default for new sessions, strict, the terminal's commands, what workers get (spec, and each
+project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
@@ -53,7 +53,7 @@ teams, watching workers, and workers after a restart.
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
 What a subagent profile holds, how a chat picks one, editing them in Settings, switching a chat's
-profile after a usage limit, and Off.
+profile after a usage limit, and Off. A profile never turns on a project mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
@@ -103,12 +103,14 @@ switch applies, and where it is available.
 Writing a project's own minor mode: the `.sova/minor-modes/<id>/` folder and its `MODE.md`, which
 checkout a chat reads it from, the instructions and reference files, declaring a tool and the
 program it runs, approval and when it is asked again, the copy a chat keeps once a mode is on, what
-workers get, the menu's states, and one worked example of a mode with a tool.
+workers get, the menu's states, turning one on from a terminal, what makes a folder broken, and
+one worked example of a mode with a tool.
 
 ## §site.docs/worktrees-and-changes — Worktrees and changes (`/docs/worktrees-and-changes/`)
 
 How a session keeps track of the git worktrees it works in (where workers may start, merging and
-cleaning up), and how you read what changed as numbered steps.
+cleaning up, and the project modes a chat in a worktree reads), and how you read what changed as
+numbered steps.
 
 ## §site.docs/needs-you — Needs you (`/docs/needs-you/`)
 
@@ -122,7 +124,8 @@ and lands it.
 The session that reads every other session and acts on them through Sova: what it is, what it may
 do and when it asks first, its notes, ideas and to-dos, and its settings. Its news of branches
 ready to merge links to the Merge round, which in Sova's own repository picks those up by itself,
-asking each branch's owner first.
+asking each branch's owner first. Turning a project's own mode on for you counts as your approval
+of its tools.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
@@ -130,7 +133,8 @@ Running a playbook from the composer's Playbooks dialog; a project playbook's sc
 it, its triggers (times, intervals, `claude-limit-reset`, `merge-ready`) and their limits, how a
 `merge-ready` fire waits and collects branches, and approving or revoking it. Then the Merge round
 as the worked example: its schedule, the merge board, asking the owner, what comes to the user
-(branches with no live owner, once each) and the one-line quiet round.
+(branches with no live owner, once each) and the one-line quiet round. A schedule never turns on a
+project mode.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)
 

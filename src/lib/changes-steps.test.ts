@@ -297,6 +297,8 @@ test("commits: a step's commits are its hunks' together, no repeats, oldest firs
   // Other changes: format.ts's third hunk and README.md, whose history read failed.
   assert.deepEqual(plan.other?.commits, [sha("c")]);
   assert.equal(plan.other?.commitsUnknown, true);
+  assert.equal(plan.other?.commitsPending, undefined);
+  assert.ok(plan.steps.every((s) => !s.commitsPending));
 });
 
 test("commits: turn steps too; no origins (an uncommitted comparison) means none, never unknown", () => {
@@ -304,11 +306,12 @@ test("commits: turn steps too; no origins (an uncommitted comparison) means none
   assert.deepEqual(withOrigins.steps.map((s) => s.commits), [[sha("c")], [sha("a"), sha("b"), sha("d")]]);
   const plain = stepsFromTurns(turns, files, "/repo", "/repo");
   assert.ok([...plain.steps, plain.other!].every((s) => s.commits.length === 0 && !s.commitsUnknown));
-  // A file whose patch wasn't read with origins leaves its step's commits unknown.
+  assert.ok([...plain.steps, plain.other!].every((s) => !s.commitsPending));
+  // A file not read with origins yet leaves its step's commits pending, not unknown.
   const partial = stepOrigins([{ path: "src/dates.ts", hunkCommits: [[0]], commits: [{ sha: sha("c"), subject: "third", authorTime: 3_000 }] }]);
   const p = stepsFromTurns(turns, files, "/repo", "/repo", partial);
-  assert.deepEqual([p.steps[0]!.commits, p.steps[0]!.commitsUnknown], [[sha("c")], undefined]);
-  assert.equal(p.steps[1]!.commitsUnknown, true);
+  assert.deepEqual([p.steps[0]!.commits, p.steps[0]!.commitsUnknown, p.steps[0]!.commitsPending], [[sha("c")], undefined, undefined]);
+  assert.deepEqual([p.steps[1]!.commitsUnknown, p.steps[1]!.commitsPending], [undefined, true]);
 });
 
 test("stepOrigins: a read naming a commit it doesn't list is unknown; a read without origins is left out", () => {

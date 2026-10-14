@@ -63,8 +63,10 @@ export interface Step {
   source: "turn" | "agent" | "other";
   /** Commits that made this step's hunks (full ids), oldest first; empty without origins. */
   commits: string[];
-  /** Some of its hunks' commits couldn't be read (timed out, or that patch isn't loaded). */
+  /** A file of its hunks had its history read fail (timed out): "commits unknown". */
   commitsUnknown?: true;
+  /** A file of its hunks hasn't been read with origins yet: show no commit caption. */
+  commitsPending?: true;
   /** An agent step left holding nothing: everything it names is held by earlier steps
       (`heldBy`), or nothing it names is in this diff. */
   empty?: "taken" | "gone";
@@ -353,23 +355,25 @@ export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
 }
 
 /** A step's commits: its units' commits together, no repeats, oldest first (ties as first seen). */
-function commitsOf(hunks: HunkRef[], origins: StepOrigins | undefined): Pick<Step, "commits" | "commitsUnknown"> {
+function commitsOf(hunks: HunkRef[], origins: StepOrigins | undefined): Pick<Step, "commits" | "commitsUnknown" | "commitsPending"> {
   if (!origins) return { commits: [] };
   const seen: string[] = [];
   const add = (shas: readonly string[]) => {
     for (const sha of shas) if (!seen.includes(sha)) seen.push(sha);
   };
   let unknown = false;
+  let pending = false;
   for (const r of hunks) {
     const units = origins.files.get(r.path);
-    if (units === undefined || units === "unknown") unknown = true;
+    if (units === undefined) pending = true;
+    else if (units === "unknown") unknown = true;
     else if (r.hunk < 0) units.forEach(add);
     else if (r.hunk < units.length) add(units[r.hunk]!);
     else unknown = true;
   }
   const time = (sha: string) => origins.commits.get(sha)?.authorTime ?? Number.POSITIVE_INFINITY;
   const commits = seen.map((sha, i) => ({ sha, i })).sort((a, b) => time(a.sha) - time(b.sha) || a.i - b.i).map((c) => c.sha);
-  return unknown ? { commits, commitsUnknown: true } : { commits };
+  return { commits, ...(unknown ? { commitsUnknown: true as const } : {}), ...(pending ? { commitsPending: true as const } : {}) };
 }
 
 type Draft = { id: string; title: string; note?: string; hunks: HunkRef[]; source: Step["source"]; empty?: Step["empty"]; heldBy?: number[] };

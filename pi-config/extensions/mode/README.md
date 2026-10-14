@@ -699,7 +699,8 @@ product claim is §chat.mode-menu/project-modes.
   never turns a project mode on itself: it gets them from the session that started it. `toolsHash` covers the declared tools and the bytes of every `./` file
   they name, so editing the body or a reference file never asks again.
 - **Workers.** A mode with `workers: yes` is in the worker prompt after spec's block, from the
-  parent's snapshot, with its tools; a worker carries at most 8 modes, built-in and project.
+  parent's snapshot, with its tools when the worker has `bash` (none for a read-only worker; a
+  remote worker gets neither; the tools refuse in a worker as in the parent); a worker carries at most 8 modes, built-in and project.
 
 ## Workers
 

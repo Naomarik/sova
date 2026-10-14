@@ -165,9 +165,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   a `Live` chip. User messages are right-hand bubbles and each reply takes the column's width
   (§app.session-share/reading); neither is labelled with a name.
 - **Drawings.** A reply's `vis` fences draw as on the hand-off page (§app.baton/outsider-view),
-  plus `sequence` and `state`. `svg` draws as an image, which runs no script and fetches nothing;
-  `code` and `html` show as their source, escaped, under a caption. Any other kind, or one that
-  doesn't parse, is the one quiet line.
+  plus `sequence` and `state`. `svg` draws as a still image in the chat's figure (its title, the
+  drawing, its caption; no Source or Copy), at its own size, centred and shrunk only to fit the
+  column, in the page's colours and a sans-serif font, and it runs no script and fetches nothing
+  (§app.baton/outsider-view); `code` and `html` show as their source, escaped, under a caption.
+  Any other kind, or one that doesn't parse, is the one quiet line.
 - **Images** are thumbnails under their message's text, at most 320 by 240 pixels, each a link that
   opens the full image in a new tab.
 - The page reads the newest page first, from the top; **Show Earlier** reads the page before and

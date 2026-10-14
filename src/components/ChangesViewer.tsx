@@ -512,20 +512,11 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
                                 {s.n ? stepMark(s.n) : "·"}
                               </span>
                               <span class="changes-step-title">{s.title}</span>
-                              <Show when={s.buildsOn.length}>
-                                <span class="changes-step-builds text-caption text-muted">builds on {s.buildsOn.map(stepMark).join(" ")}</span>
-                              </Show>
                             </button>
                           </li>
                         )}
                       </For>
                     </ol>
-                    <Show when={p().unmatched.length}>
-                      <p class="changes-note text-caption text-muted">
-                        {p().unmatched.length === 1 ? "1 step the agent wrote names" : `${p().unmatched.length} steps the agent wrote name`} nothing in this diff:{" "}
-                        {p().unmatched.join("; ")}.
-                      </p>
-                    </Show>
                   </>
                 )}
               </Show>
@@ -817,25 +808,13 @@ function StepBody(props: {
 }) {
   return (
     <div class="changes-step">
-      <Show when={props.step.note || props.step.buildsOn.length || props.step.source === "other"}>
+      <Show when={props.step.note || props.step.source === "other"}>
         <div class="changes-step-about">
           <Show when={props.step.source === "other"}>
             <p class="text-caption text-muted">Hunks no step made: edits by hand, by other tools, or by another session.</p>
           </Show>
           <Show when={props.step.note}>
             <p>{props.step.note}</p>
-          </Show>
-          <Show when={props.step.buildsOn.length}>
-            <p class="changes-builds text-caption">
-              Builds on
-              <For each={props.step.buildsOn}>
-                {(n) => (
-                  <button type="button" class="changes-step-chip" aria-label={`Step ${n}`} title={`Show step ${n}`} onClick={() => props.onStep(n)}>
-                    {stepMark(n)}
-                  </button>
-                )}
-              </For>
-            </p>
           </Show>
         </div>
       </Show>

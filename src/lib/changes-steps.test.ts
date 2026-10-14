@@ -7,6 +7,7 @@ import {
   patchFacts,
   repoPath,
   stepHunksOf,
+  stepOrigins,
   stepsFromAgent,
   stepsFromTurns,
   stepTitle,
@@ -175,7 +176,7 @@ test("stepsFromTurns: every hunk in exactly one step, leftovers in Other changes
   assert.equal(stepHunksOf(plan.steps[1]!, "src/big.json"), null);
 });
 
-test("stepsFromTurns: a later turn that rewrote the same lines owns them; builds on follows shared files", () => {
+test("stepsFromTurns: a later turn that rewrote the same lines owns them", () => {
   const f: StepFile[] = [{ path: "a.ts", hunks: [hunk(5, ["const v = 3;"]), hunk(30, ["tail()"])] }];
   const t: Turn[] = [
     { id: "1", title: "First", edits: [{ path: "a.ts", added: ["const v = 2;", "tail()"], removed: [], ranges: [] }] },
@@ -183,7 +184,7 @@ test("stepsFromTurns: a later turn that rewrote the same lines owns them; builds
   ];
   const plan = stepsFromTurns(t, f, "/r", "/r");
   assert.deepEqual(plan.steps.map((s) => s.hunks.map((r) => r.hunk)), [[1], [0]]);
-  assert.deepEqual(plan.steps[1]!.buildsOn, [1]);
+  assert.ok(plan.steps.every((s) => !("buildsOn" in s)));
   assert.equal(plan.other, null);
 });
 
@@ -201,7 +202,16 @@ test("stepsFromTurns: a renamed file matches edits under its old path", () => {
   assert.equal(stepsFromTurns(t, f, "/r", "/r").steps.length, 1);
 });
 
-test("stepsFromAgent: first claim wins, header starts pick hunks, unmatched and Other reported, builds on renumbered", () => {
+test("stepsFromTurns: a file with no line changes is one unit, the last turn touching it takes it", () => {
+  const f: StepFile[] = [{ path: "new.ts", oldPath: "old.ts", hunks: [] }, { path: "empty.ts", hunks: [] }];
+  const t: Turn[] = [{ id: "1", title: "Move", edits: [{ path: "new.ts", added: ["x"], removed: [], ranges: [], whole: true }] }];
+  const plan = stepsFromTurns(t, f, "/r", "/r");
+  assert.deepEqual(plan.steps[0]?.hunks, [{ path: "new.ts", hunk: -1 }]);
+  assert.deepEqual(plan.other?.hunks, [{ path: "empty.ts", hunk: -1 }]);
+  assert.equal(stepHunksOf(plan.steps[0]!, "new.ts"), null);
+});
+
+test("stepsFromAgent: first claim wins, header starts pick hunks, every step keeps its number, old buildsOn ignored", () => {
   const plan = stepsFromAgent(
     [
       { title: "Helpers", hunks: [{ path: "src/dates.ts" }] },
@@ -212,13 +222,14 @@ test("stepsFromAgent: first claim wins, header starts pick hunks, unmatched and 
     files,
     "/repo",
   );
-  assert.deepEqual(plan.steps.map((s) => [s.n, s.title]), [[1, "Helpers"], [2, "Callers"], [3, "Imports"]]);
-  assert.deepEqual(plan.unmatched, ["Nothing real"]);
+  assert.deepEqual(plan.steps.map((s) => [s.n, s.title, s.empty]), [[1, "Helpers", undefined], [2, "Nothing real", "gone"], [3, "Callers", undefined], [4, "Imports", undefined]]);
+  assert.deepEqual(plan.steps[1]!.hunks, []);
+  assert.deepEqual(plan.steps[1]!.files, []);
   // dates.ts went to step 1 first; Callers keeps only the hunk that starts at line 20.
-  assert.deepEqual(plan.steps[1]!.hunks, [{ path: "src/format.ts", hunk: 1 }]);
-  assert.deepEqual(plan.steps[1]!.buildsOn, [1]);
-  assert.deepEqual(plan.steps[2]!.buildsOn, [2]);
-  assert.equal(plan.steps[2]!.note, "The top of format.ts.");
+  assert.deepEqual(plan.steps[2]!.hunks, [{ path: "src/format.ts", hunk: 1 }]);
+  assert.ok(plan.steps.every((s) => !("buildsOn" in s)));
+  assert.equal(plan.steps[3]!.note, "The top of format.ts.");
+  assert.deepEqual(plan.byFile["src/format.ts"], [3, 4]);
   assert.deepEqual(plan.other?.hunks.map((r) => `${r.path}#${r.hunk}`), ["src/format.ts#2", "README.md#0"]);
   const refs = everyRef(plan);
   assert.deepEqual([...refs].sort(), allHunks(files).sort());
@@ -228,5 +239,83 @@ test("stepsFromAgent: first claim wins, header starts pick hunks, unmatched and 
 test("stepsFromAgent: a start inside a hunk's range names it, one past its end does not", () => {
   const f: StepFile[] = [{ path: "a.ts", hunks: [hunk(10, ["x1", "x2", "x3"])] }];
   assert.equal(stepsFromAgent([{ title: "In", hunks: [{ path: "a.ts", newStart: 12 }] }], f, "/r").steps.length, 1);
-  assert.deepEqual(stepsFromAgent([{ title: "Out", hunks: [{ path: "a.ts", newStart: 13 }] }], f, "/r").unmatched, ["Out"]);
+  assert.equal(stepsFromAgent([{ title: "Out", hunks: [{ path: "a.ts", newStart: 13 }] }], f, "/r").steps[0]?.empty, "gone");
+});
+
+test("stepsFromAgent: a step naming only what earlier steps hold is empty, taken, naming them", () => {
+  const plan = stepsFromAgent(
+    [
+      { title: "Dates", hunks: [{ path: "src/dates.ts" }] },
+      { title: "Format", hunks: [{ path: "src/format.ts", newStart: 1 }] },
+      { title: "Again", hunks: [{ path: "src/format.ts", newStart: 1 }, { path: "src/dates.ts" }, { path: "src/missing.ts" }] },
+      { title: "Rest", hunks: [{ path: "src/format.ts" }, { path: "README.md" }, { path: "src/big.json" }] },
+    ],
+    files,
+    "/repo",
+  );
+  assert.deepEqual(plan.steps.map((s) => [s.n, s.empty, s.heldBy]), [[1, undefined, undefined], [2, undefined, undefined], [3, "taken", [1, 2]], [4, undefined, undefined]]);
+  assert.equal(plan.other, null);
+  assert.deepEqual(plan.byFile["src/format.ts"], [2, 4]);
+});
+
+test("stepsFromAgent: a file with no line changes is one unit any ref to it names, by either path", () => {
+  const f: StepFile[] = [{ path: "new.ts", oldPath: "old.ts", hunks: [] }, { path: "a.ts", hunks: [hunk(3, ["x"])] }];
+  const plan = stepsFromAgent([{ title: "Rename", hunks: [{ path: "old.ts", newStart: 9 }] }, { title: "Edit", hunks: [{ path: "a.ts" }] }], f, "/r");
+  assert.deepEqual(plan.steps[0]?.hunks, [{ path: "new.ts", hunk: -1 }]);
+  assert.equal(plan.other, null);
+});
+
+const sha = (c: string) => c.repeat(40);
+const origins = stepOrigins([
+  {
+    path: "src/format.ts",
+    hunkCommits: [[1], [0, 1], [2]],
+    commits: [
+      { sha: sha("a"), subject: "first", authorTime: 1_000 },
+      { sha: sha("b"), subject: "second", authorTime: 2_000 },
+      { sha: sha("c"), subject: "third", authorTime: 3_000 },
+    ],
+  },
+  { path: "src/dates.ts", hunkCommits: [[0]], commits: [{ sha: sha("c"), subject: "third", authorTime: 3_000 }] },
+  { path: "src/big.json", hunkCommits: [[0, 1]], commits: [{ sha: sha("d"), subject: "fourth", authorTime: 4_000 }, { sha: sha("a"), subject: "first", authorTime: 1_000 }] },
+  { path: "README.md", originsUnknown: true },
+]);
+
+test("commits: a step's commits are its hunks' together, no repeats, oldest first", () => {
+  const plan = stepsFromAgent(
+    [
+      { title: "Callers", hunks: [{ path: "src/format.ts", newStart: 20 }, { path: "src/dates.ts" }] },
+      { title: "Imports", hunks: [{ path: "src/format.ts", newStart: 1 }, { path: "src/big.json" }] },
+      { title: "Empty", hunks: [{ path: "src/format.ts", newStart: 1 }] },
+    ],
+    files,
+    "/repo",
+    origins,
+  );
+  assert.deepEqual(plan.steps.map((s) => s.commits), [[sha("a"), sha("b"), sha("c")], [sha("a"), sha("b"), sha("d")], []]);
+  assert.ok(plan.steps.every((s) => !s.commitsUnknown));
+  // Other changes: format.ts's third hunk and README.md, whose history read failed.
+  assert.deepEqual(plan.other?.commits, [sha("c")]);
+  assert.equal(plan.other?.commitsUnknown, true);
+});
+
+test("commits: turn steps too; no origins (an uncommitted comparison) means none, never unknown", () => {
+  const withOrigins = stepsFromTurns(turns, files, "/repo", "/repo", origins);
+  assert.deepEqual(withOrigins.steps.map((s) => s.commits), [[sha("c")], [sha("a"), sha("b"), sha("d")]]);
+  const plain = stepsFromTurns(turns, files, "/repo", "/repo");
+  assert.ok([...plain.steps, plain.other!].every((s) => s.commits.length === 0 && !s.commitsUnknown));
+  // A file whose patch wasn't read with origins leaves its step's commits unknown.
+  const partial = stepOrigins([{ path: "src/dates.ts", hunkCommits: [[0]], commits: [{ sha: sha("c"), subject: "third", authorTime: 3_000 }] }]);
+  const p = stepsFromTurns(turns, files, "/repo", "/repo", partial);
+  assert.deepEqual([p.steps[0]!.commits, p.steps[0]!.commitsUnknown], [[sha("c")], undefined]);
+  assert.equal(p.steps[1]!.commitsUnknown, true);
+});
+
+test("stepOrigins: a read naming a commit it doesn't list is unknown; a read without origins is left out", () => {
+  const o = stepOrigins([
+    { path: "x.ts", hunkCommits: [[3]], commits: [] },
+    { path: "y.ts" },
+  ]);
+  assert.equal(o.files.get("x.ts"), "unknown");
+  assert.equal(o.files.has("y.ts"), false);
 });

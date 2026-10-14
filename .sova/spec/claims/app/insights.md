@@ -474,6 +474,160 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
   or rewritten.
 
+## §app.insights/reply-timing — Measured reply timing: each reply's wait, thinking and reply time, recorded once
+
+**Every assistant reply in a chat Sova hosts (a main chat, a worker or team member at any depth, a
+hidden chat, the Overseer, a project overseer, a baton session; on pi providers and Claude Code
+alike) is timed as it streams, in the one chat loop every hosted chat runs, and a reply that
+finishes writes one timing record into a device store beside the usage ledger.** A session open in
+the terminal is never timed, and neither is a one-shot side call (a title, a decision, a summary, a
+topic outline, an image description, a cache warm, a compaction's summary).
+
+- **What is timed.** *Request sent*: when the agent's own model request goes out, after any wait
+  for a provider slot. The first send counts: a request sent again before any part arrived (after a
+  rate limit), and pi's automatic retry after a failed attempt, keep the first send's time until a
+  reply is measured or the retry ends. *Wait for first token*: from the reply's first send to the
+  first part of the reply of any kind (a thinking, text or tool-call part starting, or its first
+  characters), so it includes the provider's retries and the backoff between them. A send heard
+  outside a request's wait (a cache warm) is never a reply's. *Thinking time*: each
+  thinking part's window, from its start to its last characters (to its end when it streamed none,
+  as Claude's hidden thinking does), summed when thinking comes back later in the reply; a part's
+  end that a provider sends only when the whole reply ends never stretches it. *Reply time*: each
+  text and tool-call part's window, measured the same way. A reply *thought* when it wrote a thinking
+  part, however short that part's window (its characters can all arrive at once, and Claude's hidden
+  thinking can end as it starts); such a reply's output holds its thinking tokens. Times are taken
+  when the chat process hears each event; nothing is written per token.
+- **Which replies count.** Only a reply that finishes: it stopped, reached its length limit, or
+  asked for tools. A reply that errors or is stopped writes nothing. An automatic retry's failed
+  attempt writes nothing; the reply that finally succeeds is measured once, its wait running from
+  the first attempt's send. A reply
+  made while a compaction runs writes nothing. A Claude Code reply in which the CLI rejected a tool
+  call's arguments and asked the model again (§app.claude-code-provider/invalid-tool-input) writes
+  nothing: the rejected attempt's time is inside it. A Claude login failover inside a turn only
+  lengthens that reply's wait for its first token. A reply whose request start was not heard
+  writes nothing.
+- **The record.** Its key (the session and the entry the reply was written as), when it finished,
+  this device, the writing process, the session's kind (`main`, `worker`, `overseer`), the
+  provider, the model asked for and the model that answered, the effort level the reply was
+  requested at (`off` when none) and the provider-native level it ran at when the provider says,
+  how it ended, when the request went out, the wait for the first token, the thinking time and the
+  reply time (and within it the text and tool-call time), how many parts of each kind there were,
+  every output token, and the provider's thinking-token count only where it reports one. A count
+  the provider leaves out is absent, never 0; a 0 reported for a reply that had a thinking window
+  is recorded as absent too. No prompt or reply text is kept.
+- **Where.** `<agent dir>/usage/perf/v1/<UTC day>/<producer>.jsonl`: one file per chat process
+  and day, one writer per file, one appended line per reply, under the usage ledger's rules
+  (§app.insights/usage-ledger): a reader takes only terminated lines and deduplicates by key.
+  Writing never throws, and never fails or holds up a reply. Records are never pruned and outlive
+  their session (deleted or archived).
+- **Live.** The chat tags the reply's end with its timing as it goes out, so a client watching the
+  reply has it at once (§app.insights/reply-timing-hover).
+- **This device only.** Like the Costs tab, the store counts the replies of the chats this
+  device's server hosts; a chat a mesh peer hosts is timed on that peer.
+
+## §app.insights/reply-timing-hover — A reply's own timing, on its head
+
+**A measured reply's head (its model name and time) opens a card with that reply's own figures:
+resting the mouse on the head opens it, and the time is a button that opens it on a tap or Enter and
+keeps it open until a press elsewhere, Escape or a second tap.** A reply with no measurement (an
+older one, one from the terminal, one that errored) looks exactly as it did: no card and no button.
+
+- **The card.** First Effort (left out when not recorded). Then the headline: the overall speed
+  (every output token over the thinking, text and tool-call writing time) as one large number, with
+  every output token and that writing time under it. A reply too short for an overall speed leads
+  with its writing time instead, labelled as a time ("Written in"), never under a speed's label; the
+  line under it says it wrote too few tokens for a speed when it wrote fewer than 100, else that it
+  was too quick for one (under 1 second). Then, under a divider, the reply's parts in the order they
+  happened: First token, the wait for the first token; Thinking (only when it thought); Reply.
+  Where the provider counts thinking tokens, Thinking and Reply are speeds, else times; a reply
+  that wrote tool calls shows its reply time, never a reply-text speed. Nothing is estimated: a
+  speed shows only when its part has at least 100 tokens over at least 1 second, and its time shows
+  instead. A screen reader hears the card as one line, in the same order.
+- **A live reply.** A reply that just finished in front of you gets its card at once: its head shows
+  the time it ended, and the card opens before the transcript is read again.
+- **Where it comes from.** On wire 2 (§app.harness/wire), an assistant reply's first row carries
+  `reply` (a row fact: effort, the wait, thinking and reply time, output, the thinking-token count
+  only where the split is real, the thinking and tool-call parts when any) when that reply was measured: on
+  `GET /api/transcript` (one lookup in the timing store, §app.insights/reply-timing, per load) and
+  on the chat's hello and appends (the chat's own lookup: one load through the server when the chat
+  opens, plus each reply it measures; a pane that attaches while that load is on its way gets its
+  one hello when it arrives, whether it brought timings, none or failed; one still waiting after
+  1.5 seconds gets its hello then, and again with the facts if they come); and on `/ws/watch`'s snapshot, history and appends
+  (one lookup when the watch starts, asked again when an appended reply has no timing yet), so
+  every view of a chat shows the card, read-only ones included (a session open in the terminal, a
+  chat that can't be opened, a pi worker's pane). A live reply's wire-2 `message.end` carries the same `reply`
+  when it finished and was measured. An unmeasured reply carries none; wire 1 never carries it, and
+  its frames and rows stay byte for byte.
+
+## §app.insights/performance-tab — The Performance tab (`#/agents/performance`)
+
+**The Agents page's third tab, Performance, shows for each provider and model how fast this
+device's measured replies were and how long they thought, and for each effort level that ran how
+often and how long it thought, from the timing store (§app.insights/reply-timing).**
+
+- **Route and controls.** `#/agents/performance`, never read as a team key. The Costs tab's
+  controls: range chips `7d` · `30d` · `All` (30d by default) and the Provider and Model filters,
+  kept in the URL; they apply to everything on the tab. Beside the By model card's title, a Sort
+  menu: Most replies (the default), Fastest (highest median overall speed first) or Quickest first
+  token (lowest median wait first). A model with no such figure sorts after those with one; ties
+  fall to most replies, then provider and model. The sort is kept in the URL too (`sort=fastest`,
+  `sort=first-token`, left out for the default), and coming back from Board restores the tab's last
+  range, filters and sort.
+- **Rows.** One row per provider and model, in five columns, one sentence under the card's title
+  explaining them once: the model (its name, then its provider and reply count); overall speed, the
+  headline (every output token over thinking and writing time), set larger than the rest; reply
+  speed, where the reply text can be split out (no tool calls; thinking absent or counted);
+  thinking, the thinking time per reply over the replies that thought; and the wait for the first
+  token. Each cell is the median and at most one short muted line: under overall speed, a thin bar
+  from the 10th to the 90th percentile with a mark at the median, every row on one scale (0 to the
+  highest 90th percentile among the rows shown), and the average beside it; under reply speed, its
+  10–90% range; under thinking, how many of the replies thought; under first token, the slow case
+  (the 90th percentile).
+- **Opening a row** (the chevron on its name; on a phone, a full-width Show Effort Levels button)
+  shows an Effort levels panel under it. First, the model's thinking speed in one line. Then one
+  line per effort level that ran, in five columns: the level; its replies and how many thought;
+  thinking time per reply (median, then average and 10–90% range); thinking tokens per reply; and
+  overall speed. Then a level switch, All levels (the default) and each level, each with its reply
+  count, left out when the model ran at one level; picking a level marks its line with the
+  selected-row tint and as current, and closing the row picks All levels again. Then two spread
+  charts for the picked level, thinking time per reply and overall speed, side by side from 768px
+  of pane width and stacked under it. Each chart leads with its median, 10–90% range and count, then draws one bar per band
+  of values (up to 12; a bar's height is its share of the fullest band), a median line and a 10–90%
+  bracket, its axis labelled with the lowest value, the median and the highest. A bar's band and
+  count is its accessible name, shown when it is hovered or focused, and the bars are reached with
+  the keyboard. A chart's axis is the whole model's, and every level is binned on the model's
+  bands, so picking another level moves the bars without re-scaling, and two levels with the same
+  spread draw the same heights.
+- **Few replies.** Every figure, bar, range, chart and count is gated on that figure's own count
+  (the replies it rests on), never on the row's reply total. A figure resting on fewer than 5 shows
+  its median and that count (how many were long enough for a speed, how many thought, how many
+  replies), with no bar and no range. Each chart is shown or replaced on its own: a replaced chart
+  is one short line, its median and its count, then that a chart needs 5 and, at a single level,
+  that All levels pools them; a thinking chart where no reply thought says so instead. If neither
+  of the model's two chart figures reaches 5, there is no switch and no chart area, only one
+  sentence giving the larger of their two counts. A figure no reply can give shows a dash and a
+  2–3 word reason, its full sentence for a screen reader: the provider doesn't count thinking
+  tokens; every reply wrote tool calls (a reply speed); no reply thought (a thinking figure of a
+  group none of whose replies thought); no reply long enough yet. Speeds count only parts with at
+  least 100 tokens over at least 1 second; times count every finished reply.
+- **Where it comes from.** `GET /api/usage/performance` (range `7d`|`30d`|`all`, provider and model
+  filters, time zone; main listener only) answers from the usage helper, relayed unparsed: one row
+  per provider and model as the Costs tab names it (most replies first), each opening into one line
+  per effort level that ran, every figure counting this device's measured replies whose local day
+  falls in the range. Each figure gives its reply count, median and mean; from 5 replies also its
+  10th and 90th percentile and log-spaced bins (at most 12); an effort level's bins are its
+  model's bands, so they line up. `since` is the first measured reply on this device, null before
+  any.
+- **Says what it counts.** The tab says it counts this device only and since when replies were
+  measured, that a range needs 5 replies, and what a speed needs. Before the first measured reply
+  it says speeds appear as models answer.
+- **When the helper is down** the tab says the counter isn't running yet and that nothing was lost,
+  as the Costs tab does.
+- **Phone.** Under 560px of page width each model is a card with no sideways scrolling: its name,
+  provider and reply count; the overall speed as the headline with its bar across the card; reply
+  speed, thinking and first token side by side, each with its line; then Show Effort Levels.
+  Opened, the effort lines read as a short list, the switch wraps, and the two charts stack.
+
 ## §app.insights/usage-resend — What re-sending a conversation's history cost
 
 The usage helper answers, per conversation, what was spent re-sending its history to a new Claude
@@ -514,8 +668,9 @@ and neither does one whose launches were never recorded.
 
 ## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
 
-**The Agents page has two tabs, Board (the board as it was, §app.insights/team-cards) and Costs,
-which shows this device's spend at API prices from the usage ledger (§app.insights/usage-ledger).**
+**The Agents page's Costs tab (beside Board, §app.insights/team-cards, and Performance,
+§app.insights/performance-tab) shows this device's spend at API prices from the usage ledger
+(§app.insights/usage-ledger).**
 
 - **Route.** `#/agents/costs` opens the Costs tab; it is never read as a team key. The filters live
   in the URL, so a reload or a shared link keeps them.
@@ -676,9 +831,9 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
-- **Tabs (Agents).** Under the head the Agents page has two tabs, Board (everything this section
-  and §app.insights/team-cards describe) and Costs (§app.insights/cost-history), at `#/agents` and
-  `#/agents/costs`.
+- **Tabs (Agents).** Under the head the Agents page has three tabs, Board (everything this section
+  and §app.insights/team-cards describe), Costs (§app.insights/cost-history) and Performance
+  (§app.insights/performance-tab), at `#/agents`, `#/agents/costs` and `#/agents/performance`.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
   Working state, live sessions, this device's spend since local midnight at API prices, every
   call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
@@ -686,7 +841,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   unmerged branches among the worktrees read so far (left out before the first reading). The
   line's `title` says what each figure counts. It shows once at every width: on the Board tab
   only on the count line directly above the board (§app.insights/team-cards), never in the head;
-  on the Costs tab, which has no count line, in the head.
+  on the Costs and Performance tabs, which have no count line, in the head.
 - **Rows (Usage).** The Usage page lists provider types as separate `.card.usage-rows` surfaces in
   `.usage-groups`, with visible page-background spacing between types (§app.insights/usage-cards).
   Each row spans its provider surface, so a short row is never stretched to a taller neighbour's height. Its layout steps at 640px and 960px of the `insights` container

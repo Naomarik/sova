@@ -80,10 +80,10 @@ const quiet = () => {};
 let epoch = 100;
 
 /** A host for a fresh session, and a "server" linked to it as controller. */
-async function setup(o: { build?: string; serverBuild?: string; settings?: Partial<ChatRuntimeSettings>; open?: boolean; proto?: number; served?: ServerToolDecl[]; log?: (line: string) => void } = {}) {
+async function setup(o: { build?: string; serverBuild?: string; settings?: Partial<ChatRuntimeSettings>; open?: boolean; proto?: number; served?: ServerToolDecl[]; log?: (line: string) => void; askWithinMs?: number } = {}) {
   const s = session();
   const exits: ExitCause[] = [];
-  const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: o.build ?? "b1", startedAt: 1, exit: (c) => exits.push(c), log: o.log ?? quiet, tickMs: 60_000 });
+  const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: o.build ?? "b1", startedAt: 1, exit: (c) => exits.push(c), log: o.log ?? quiet, tickMs: 60_000, ...(o.askWithinMs ? { askWithinMs: o.askWithinMs } : {}) });
   const settings = { ...DEFAULT_RUNTIME_SETTINGS, ...o.settings };
   const connect = (since: number | null = null, build = o.serverBuild ?? o.build ?? "b1", proto = o.proto ?? CHAT_WIRE_PROTO, serverPid = 1) => {
     const [a, b] = pair();
@@ -95,6 +95,8 @@ async function setup(o: { build?: string; serverBuild?: string; settings?: Parti
     return { server, runtimeEnd, epoch: e, drop: () => (a.destroy(), b.destroy()) };
   };
   const ctl = connect();
+  // The chat's asks of its first controller, from its open on (its stored reply timings among them).
+  const asks = collect(ctl.server, "ask");
   if (o.open !== false) {
     const opened = awaitFrame(ctl.server, "opened", 5_000);
     ctl.server.send({ t: "open", id: "o1", path: s.path, force: true, link: null, served: o.served ?? [] });
@@ -108,7 +110,14 @@ async function setup(o: { build?: string; serverBuild?: string; settings?: Parti
     server.send({ t: "call", call: { id, epoch: e, chatId: s.path, method, args } as never });
     return (await got).reply;
   };
-  return { ...s, host, exits, ctl, connect, call };
+  /** Answer the chat's `reply.timings` ask (made as it opens) with `result`. */
+  const answerTimings = async (result: unknown) => {
+    for (let i = 0; i < 100 && !asks.some((a) => a.method === "reply.timings"); i++) await settle(5);
+    const ask = asks.find((a) => a.method === "reply.timings");
+    assert.ok(ask, "the chat asked for its reply timings");
+    ctl.server.send({ t: "answer", id: ask.id, ok: true, result });
+  };
+  return { ...s, host, exits, ctl, connect, call, asks, answerTimings };
 }
 
 /** Collect a link's frames of one type. */
@@ -159,6 +168,7 @@ test("a browser: the chat's frames for it, serialized, hello first; gone on deta
   const sends = collect(t.ctl.server, "client.send");
   const states = collect(t.ctl.server, "state");
   t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1", wire: 2 } });
+  await t.answerTimings(null);
   await settle(120);
   const first = JSON.parse(sends[0]!.json);
   assert.equal(first.type, "hello");
@@ -168,6 +178,33 @@ test("a browser: the chat's frames for it, serialized, hello first; gone on deta
   t.ctl.server.send({ t: "client.detach", clientId: "k1" });
   await settle(120);
   assert.equal(states.at(-1)?.mirror.quiet.clients, 0);
+});
+
+test("a cold wire-2 pane: its one hello waits for the stored reply timings and carries them; the code state follows it", async () => {
+  const t = await setup({ serverBuild: "b0" });
+  const sends = collect(t.ctl.server, "client.send");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1", wire: 2 } });
+  await settle(40);
+  assert.deepEqual(sends.map((s) => JSON.parse(s.json).type), [], "nothing before its hello");
+  const timing = { ttftMs: 800, replyMs: 2000, output: 300 };
+  await t.answerTimings({ v: "1.1", timings: { a1: timing } });
+  await settle(80);
+  const msgs = sends.map((s) => JSON.parse(s.json));
+  assert.equal(msgs[0].type, "hello");
+  assert.deepEqual(msgs[0].items.find((it: { id: string }) => it.id === "a1:0")?.facts?.reply, timing, "the first hello carries the reply facts");
+  assert.equal(msgs.filter((m) => m.type === "hello").length, 1, "one hello");
+  const code = msgs.findIndex((m) => m.type === "code");
+  assert.ok(code > 0, "the code state goes after the hello, which would clear it");
+});
+
+test("a cold wire-2 pane whose timings ask times out still gets its hello, once", async () => {
+  const t = await setup({ askWithinMs: 60 });
+  const sends = collect(t.ctl.server, "client.send");
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1", wire: 2 } });
+  await settle(250);
+  const hellos = sends.map((s) => JSON.parse(s.json)).filter((m) => m.type === "hello");
+  assert.equal(hellos.length, 1);
+  assert.equal(hellos[0].items.find((it: { id: string }) => it.id === "a1:0")?.facts?.reply, undefined);
 });
 
 test("a broker drop keeps the panes as orphans until a pane comes back (or the grace ends)", async () => {

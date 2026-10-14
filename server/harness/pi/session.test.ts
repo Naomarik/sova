@@ -5,10 +5,11 @@
 // user-message entry point once per agent. Uses a throwaway PI_CODING_AGENT_DIR with no credentials: no model
 // is ever called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import type { HarnessEvent } from "../../../shared/harness";
 import { piSession } from "./testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-harness-session-test-"));
@@ -22,7 +23,7 @@ mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, disposeAllChats } = await import("../../chat-manager");
 const { canonicalPath } = await import("../../paths");
-const { PiHarnessSession, harnessEventOf, isAlreadyProcessing, toolSource } = await import("./session");
+const { MEASUREMENT_INVALID_DIAGNOSTIC, PiHarnessSession, harnessEventOf, isAlreadyProcessing, replySummaryOf, toolSource } = await import("./session");
 const { watchUserMessages } = await import("./turns");
 
 after(async () => {
@@ -166,8 +167,10 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.deepEqual((update({ type: "toolcall_start", contentIndex: 2 }) as { stream?: unknown }).stream, { kind: "tool-call.start", index: 2 });
     assert.deepEqual((update({ type: "toolcall_delta", contentIndex: 2, delta: "  " }) as { stream?: unknown }).stream, { kind: "tool-call", index: 2, delta: "  " });
     assert.deepEqual((update({ type: "thinking_delta", delta: 7 }) as { stream?: unknown }).stream, { kind: "thinking", index: undefined, delta: "" });
-    for (const e of [{ type: "text_start", contentIndex: 0 }, { type: "toolcall_end", contentIndex: 2 }, undefined])
-      assert.ok(!("stream" in update(e)), JSON.stringify(e));
+    // Each part's start and end (reply timing, server/reply-timing.ts), with no characters.
+    for (const [pi, kind] of [["text_start", "text.start"], ["text_end", "text.end"], ["thinking_start", "thinking.start"], ["thinking_end", "thinking.end"], ["toolcall_end", "tool-call.end"]])
+      assert.deepEqual((update({ type: pi, contentIndex: 1, content: "x" }) as { stream?: unknown }).stream, { kind, index: 1 }, pi);
+    for (const e of [{ type: "start" }, { type: "done" }, { type: "constructor" }, undefined]) assert.ok(!("stream" in update(e)), JSON.stringify(e));
     const appended = harnessEventOf({ type: "entry_appended", entry: { type: "custom", id: "c1", parentId: null, customType: "k", data: 1 } });
     assert.ok(appended.type === "entry.appended" && appended.entry?.kind === "state");
     assert.equal(harnessEventOf({ type: "entry_appended" }).type, "other");
@@ -175,6 +178,64 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     for (const [pi, sova] of [["agent_start", "run.start"], ["agent_settled", "run.settled"], ["agent_end", "run.end"], ["turn_end", "turn.end"], ["tool_execution_end", "tool.end"]])
       assert.equal(harnessEventOf({ type: pi! }).type, sova);
     assert.deepEqual(harnessEventOf({ type: "agent_start" }).frame(), { type: "event", event: { type: "agent_start" } });
+  });
+
+  test("an assistant message's end carries its reply summary, in Sova's words, from pi's public fields", () => {
+    const message = {
+      role: "assistant",
+      content: [],
+      provider: "zai",
+      model: "glm-5.3",
+      responseModel: "glm-5.3-0901",
+      stopReason: "toolUse",
+      usage: { input: 9, output: 420, reasoning: 300, cacheRead: 0, cacheWrite: 0 },
+      thinkingLevel: "high",
+      providerThinkingLevel: "enabled",
+    };
+    const end = harnessEventOf({ type: "message_end", message });
+    assert.ok(end.type === "message.end");
+    assert.deepEqual(end.reply, { provider: "zai", model: "glm-5.3", stop: "toolUse", output: 420, responseModel: "glm-5.3-0901", reasoning: 300, effort: "high", providerEffort: "enabled" });
+    // No count reported: no reasoning (never a 0); an unknown stop is "other".
+    const bare = harnessEventOf({ type: "message_end", message: { role: "assistant", provider: "claude-code-cli", model: "opus", stopReason: "weird", usage: { output: 5 } } });
+    assert.deepEqual(bare.type === "message.end" && bare.reply, { provider: "claude-code-cli", model: "opus", stop: "other", output: 5 });
+    // A provider's measurement-invalid diagnostic names why.
+    const marked = harnessEventOf({
+      type: "message_end",
+      message: { ...message, diagnostics: [{ type: "claude-code.invalid-tool-input", timestamp: 1 }, { type: MEASUREMENT_INVALID_DIAGNOSTIC, timestamp: 2, details: { reason: "invalid-tool-retry" } }] },
+    });
+    assert.equal(marked.type === "message.end" && marked.reply?.invalid, "invalid-tool-retry");
+    // The claude-code provider writes the mark under the same name (pi-config can't import Sova's).
+    const provider = readFileSync(new URL("../../../pi-config/extensions/claude-code/provider/stream.ts", import.meta.url), "utf8");
+    assert.ok(provider.includes(`export const MEASUREMENT_INVALID_DIAGNOSTIC = "${MEASUREMENT_INVALID_DIAGNOSTIC}";`));
+    // Only an assistant message's end; never its start, a user's or a nameless one.
+    assert.ok(!("reply" in harnessEventOf({ type: "message_start", message })));
+    assert.ok(!("reply" in harnessEventOf({ type: "message_end", message: { role: "user", content: "x" } })));
+    assert.equal(replySummaryOf({ role: "assistant", usage: { output: 1 } }), undefined);
+  });
+
+  test("request.start: the agent's own request going out reaches every listener, through the onPayload its options carry (P25)", async () => {
+    const payloads: unknown[] = [];
+    const agent = {
+      streamFunction: (_m: unknown, _c: unknown, o?: { onPayload?: (p: unknown) => unknown }) => o?.onPayload?.("payload"),
+    };
+    const session = { subscribe: () => () => undefined, agent };
+    const h = new PiHarnessSession({ session, services: {} } as any);
+    const seen: HarnessEvent[] = [];
+    const offA = h.subscribe((e) => void seen.push(e));
+    const inner = agent.streamFunction;
+    const offB = h.subscribe((e) => void seen.push(e));
+    // The agent's own onPayload still runs, and its answer is the request's.
+    assert.equal(await agent.streamFunction(null, null, { onPayload: (p) => (payloads.push(p), "replaced") }), "replaced");
+    assert.deepEqual(payloads, ["payload"]);
+    assert.equal(seen.length, 2);
+    assert.ok(seen.every((e) => e.type === "request.start" && typeof e.at === "number"));
+    assert.equal(agent.streamFunction, inner, "wrapped once per function, however many listen");
+    offA();
+    offB();
+    agent.streamFunction(null, null, {});
+    assert.equal(seen.length, 2, "an unsubscribed listener hears nothing");
+    // A session without an agent (a test double) subscribes as before.
+    assert.doesNotThrow(() => new PiHarnessSession({ session: { subscribe: () => () => undefined }, services: {} } as any).subscribe(() => undefined)());
   });
 
   test("subscribe: one pi listener per call, in pi's order and tick", () => {

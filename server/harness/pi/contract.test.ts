@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P24 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P26 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
 import { patchResolve } from "./own-code.ts";
+import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
 import { PiHarnessSession } from "./session.ts";
 import { SendKeys } from "../../send-keys.ts";
@@ -874,9 +875,51 @@ return w + ":" + r.stopReason;`;
     }
   });
 
-  test("P25 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
+  test("P25 request-start: the agent hands its stream function options whose onPayload the provider calls once per request, before the reply starts; a wrapped one hears it", async () => {
+    const faux = createFauxCore({ provider: "probe", models: [{ id: "probe-1" }] });
+    faux.setResponses([fauxAssistantMessage([fauxText("one")]), fauxAssistantMessage([fauxText("two")])]);
+    const order: string[] = [];
+    const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+    runtime.registerProvider("probe", {
+      name: "Probe",
+      baseUrl: "http://127.0.0.1:9",
+      apiKey: "stub",
+      api: faux.api,
+      // A real provider calls options.onPayload just before it sends (pi-ai's api/*.js; the claude-code provider).
+      streamSimple: (model: any, context: any, options: any) => {
+        order.push(typeof options?.onPayload === "function" ? "provider: onPayload given" : "provider: no onPayload");
+        void options?.onPayload?.({}, model);
+        return faux.streamSimple(model, context, options);
+      },
+      models: [{ id: "probe-1", name: "Probe 1", input: ["text"], reasoning: false, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200_000, maxTokens: 4_000 }],
+    } as never);
+    const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir: dir,
+      modelRuntime: runtime,
+      model: runtime.getModel("probe", "probe-1"),
+      sessionManager: SessionManager.inMemory(cwd),
+      settingsManager: SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } } as never),
+      noTools: "builtin",
+    });
+    session.subscribe((e: any) => {
+      if (e.type === "message_start" && e.message?.role === "assistant") order.push("message_start");
+    });
+    const off = hearRequests(session.agent as never, () => order.push("heard"));
+    await session.prompt("first");
+    assert.deepEqual(order, ["provider: onPayload given", "heard", "message_start"], "fixed?: the agent no longer passes its onPayload through its stream function");
+    off();
+    order.length = 0;
+    await session.prompt("second");
+    assert.deepEqual(order, ["provider: onPayload given", "message_start"], "a removed listener hears nothing; the request still goes out");
+    session.dispose();
+  });
+
+  test("P26 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
     // A settings file pi really reads (and would write), in an agent dir of its own.
-    const agentDir = join(dir, "p25-agent");
+    const agentDir = join(dir, "p26-agent");
     mkdirSync(agentDir, { recursive: true });
     const settingsFile = join(agentDir, "settings.json");
     writeFileSync(settingsFile, `${JSON.stringify({ cacheWarming: "off", retry: { enabled: false } }, null, 2)}\n`);

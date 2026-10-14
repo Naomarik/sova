@@ -20,7 +20,9 @@ import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 import { wireOf } from "./wire-rows";
-import type { WireVersion } from "../shared/protocol";
+import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
+import { HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
+import { unsentRefusal } from "../shared/chat-runtime";
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
@@ -46,7 +48,14 @@ function sendRaw(ws: WebSocket, json: string): void {
     `prefetch` for a browser on this machine connecting directly: it may as well fetch it all). */
 type TailAsk = { tail: false } | { tail: true; pull: false } | { tail: true; pull: true; prefetch: boolean };
 
-async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion): Promise<void> {
+/** `?have=` on a `?tail=rest` chat socket: the last row the browser holds (§chat.transcript/instant-open);
+    anything empty or longer than HAVE_MAX_CHARS is ignored. */
+export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefined {
+  const have = params.get(HAVE_PARAM);
+  return ask.tail && ask.pull && have && have.length <= HAVE_MAX_CHARS ? have : undefined;
+}
+
+async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string): Promise<void> {
   const client: ChatClient = {
     send: (msg) => sendJson(ws, msg),
     sendRaw: (json) => sendRaw(ws, json),
@@ -54,6 +63,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
+    ...(have ? { have } : {}),
   };
   // Buffer messages that arrive while the runtime is still opening.
   const early: ChatClientMessage[] = [];
@@ -91,6 +101,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     const busy = err instanceof BusyError;
     const config = err instanceof ConfigError;
     const code = busy ? err.code : config ? "config" : "internal";
+    // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer.
+    for (const refusal of heldRefusals(early.splice(0))) client.send(refusal);
     client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
     ws.close(busy ? 4409 : config ? 4422 : 4500, busy ? "busy" : config ? "config" : "open failed");
     return;
@@ -101,6 +113,11 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   }
   chat.attach(client);
   for (const msg of early.splice(0)) chat.clientMessage(client, msg);
+}
+
+/** The refusals for messages a pane sent while its chat was opening, when it didn't open. */
+export function heldRefusals(held: readonly ChatClientMessage[]): ChatServerMessage[] {
+  return held.map(unsentRefusal).filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
 function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersion, normalize?: Normalize, format: Format = "pi"): void {
@@ -114,6 +131,8 @@ function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersio
     ask.tail && !ask.pull ? (json) => sendRaw(ws, json) : undefined,
     ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
     wire,
+    // Wire 2 on a pi session file: replies carry their measured timing, as on REST and /ws/chat.
+    wire === 2 && format === "pi" && !normalize ? () => replyTimingsOf(sessionIdOfPath(path)) : undefined,
   );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);
@@ -238,7 +257,7 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire).catch((err) => {
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail)).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });

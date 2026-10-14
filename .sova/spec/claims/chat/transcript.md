@@ -104,7 +104,8 @@ characters, and the extra width mostly goes to code, diffs, and tool output. Eve
 form), a Claude model by its catalog name, of the model that answered when the reply records it
 (§app.claude-code-provider/model-names, §app.claude-code-provider/model-identity), or `pi` when
 unknown. Consecutive assistant-text items in one turn share one head: render
-the head only on the first.
+the head only on the first. A measured reply's head opens its timing card, and its time is a
+button (§app.insights/reply-timing-hover); an unmeasured reply's head is as shown here.
 
 ```html
 <article class="message">
@@ -785,8 +786,10 @@ virtualized.
   the last visit, or before a reconnect or a rewind) stay, since they are that row's ancestors,
   unless their inputs disagree with what the `hello` says of the rows above it (then only its own
   rows stay). A turn-end reload fetches again the rows the list holds, from its first row to the
-  end; rows above them stay unfetched. Open cards, focus and a revealed action strip survive the
-  end of a turn, a reconnect and a rewind; only changed and new rows are built.
+  end; rows above them stay unfetched. A chat's `hello` that names the last row the view said it
+  holds (`after`, §chat.transcript/instant-open) carries only the rows after it: every row up to
+  that one stays, and the hello's rows follow it. Open cards, focus and a revealed action strip
+  survive the end of a turn, a reconnect and a rewind; only changed and new rows are built.
 - **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
   scrolled: at the end while following (and which row was last), else the row at the top of the
   view and its offset. So do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
@@ -893,7 +896,8 @@ like any tool card, onto what the recall returned.
 
 The sessions in the sidebar's Recent (§app.session-list/recent) are kept in memory, so opening
 any of them paints its rows in the first frame, including one this tab hasn't opened yet. The
-view then reconciles them with its own `hello` or snapshot (§chat.transcript/rendering).
+view then reconciles them with its own `hello` or snapshot (§chat.transcript/rendering); a chat's
+`hello` brings only the rows after the last one kept (§chat.transcript/instant-open).
 
 - **What is kept.** The sessions Recent lists with no search typed, the last 3 sessions opened
   (switching back to a session that isn't in Recent works as before), and every session a view
@@ -917,6 +921,48 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
   already found too big is not fetched again while the others are kept. Such a session opens
   the way any unkept one does: it lands at the end once its `hello` arrives.
 - **A reload keeps nothing.** Each page load fetches what Recent needs again.
+
+## §chat.transcript/instant-open — A chat opens on its saved rows while it starts
+
+Opening a chat shows its newest rows at once, read from its saved session file and scrolled to the
+end, whether or not its process is running; when it isn't, the process starts behind them
+(§app.chat-processes/idle-stop). The Overseer, a project overseer, a baton session, a chat whose
+profile grants powers and a peer's chat open this way too, a peer's through that peer. Views that
+only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
+unchanged.
+
+- **Rows from the file first.** A chat with no rows kept in the tab (§chat.transcript/recent-preload)
+  reads its newest rows with the read-only `GET /api/transcript` (the rows a `hello` carries,
+  §chat.transcript/rendering), paints them, then opens its socket. Rows kept in the tab paint at
+  once instead; the file is read first only when it changed after they were kept (its
+  `lastActiveAt`). A file read that fails opens the socket as before, and so does one that hasn't
+  answered within about 1.5 s: the socket then names no row, and rows the read brings after the
+  chat's `hello` are not shown.
+- **Nothing downloaded twice.** The socket names the last row the view holds
+  (`/ws/chat?…&have=<row id>`), and the chat's `hello` carries its state and only the rows after
+  that one (its `after` names it). Rows after it (a reply streaming, entries written between the
+  read and the connect) come from the chat itself. When that row isn't on the chat's branch (a
+  fork, a rewind), or lies above the first row of the usual `hello`, the `hello` is the usual one;
+  so is it from a server, peer or chat process on older code, which ignores the name. Either way the
+  rows on screen stay where they are: every row whose entry renders the same keeps its element
+  (§chat.transcript/rendering, "Refetches keep rows"), and nothing flickers, jumps or is redrawn.
+  A reconnect names the last row held the same way. A `hello` whose `after` the view doesn't hold
+  is not applied to the rows: the view reads the file's newest rows again instead.
+- **While it starts.** Typing works. Send and the model, mode, sandbox and login controls wait
+  until this connection's `hello` (`aria-disabled`, with the reason in `.composer-reason` for
+  assistive technology only). Nothing is added to the composer: a small note floats over the end
+  of the transcript, between its last row and the composer, taking no height: "Connecting to
+  chat…", after about 300 ms (so a chat already running never flashes it), or "Reconnecting. Your
+  draft is kept." at once while the connection retries. It goes when the chat is ready.
+- **Nothing typed or sent is lost, nor sent twice.** A message sent on a connection whose chat then
+  fails to open comes back to the composer: the server refuses each message it held for the chat
+  (`refused`), and the view hands back any sent on that connection it never had acknowledged when
+  the connection ends or reports an internal error before its `hello`. A message sent on an earlier
+  connection, after its `hello`, never comes back this way: that chat may have taken it.
+- **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
+  process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
+  can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
+  over them. A start that fails for now keeps them and retries.
 
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 

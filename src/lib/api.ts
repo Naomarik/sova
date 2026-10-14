@@ -104,6 +104,7 @@ import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartRe
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
@@ -621,7 +622,7 @@ export const approveProfile = (cwd: string, p: { id: string; grant: string[]; ov
   });
 export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
   request<ProfilesListing>("/api/profiles/hidden", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, hidden, ...(cwd ? { cwd } : {}) }) });
-/** A new session in `cwd` with a profile picked; nothing is sent (the shelf's Run and Start, the chip's Run Again). */
+/** A new session in `cwd` with a profile picked; nothing is sent (the chip's Run Again). */
 export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
   request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });
 
@@ -1325,6 +1326,8 @@ export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${enc
 
 /** One query of this device's usage, priced (`costsApiSearch` builds its parameters). */
 export const getUsageCosts = (search: string) => request<UsageCosts>(`/api/usage/costs?${search}`);
+/** Measured reply speeds and thinking times for the Performance tab (same parameters as the costs query). */
+export const getUsagePerformance = (search: string) => request<UsagePerformance>(`/api/usage/performance?${search}`);
 /** This device's spend since local midnight in `tz`: the Agents head's "$ today". */
 export const getUsageToday = (tz: string) => request<UsageToday>(`/api/usage/today?tz=${encodeURIComponent(tz)}`);
 /** One session's spend (a worker's sid: the worker's own and its workers'). */

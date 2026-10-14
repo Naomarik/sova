@@ -10,7 +10,7 @@ import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
-import type { RowFacts, SovaEvent, SovaPart } from "./harness-wire";
+import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -1970,7 +1970,11 @@ export interface SandboxApplyResult {
     newest rows first (`hello.older`, then `history`); `&tail=rest` for the newest rows alone, the
     older ones fetched over REST when wanted (`hello.older` and `olderSummary`, no `history`; see
     TranscriptRows). Without either, every message is as it always was. `&wire=2`: events and rows
-    on wire 2 (WireVersion). */
+    on wire 2 (WireVersion). `&have=<row id>` (with `&tail=rest` only): the last row the client
+    already holds, read from the session file (§chat.transcript/instant-open). The first hello then
+    carries only the rows after it, with `after` naming it, when that row is on the chat's branch
+    and no older than the usual hello's first row; otherwise the usual hello. A server or chat that
+    predates it ignores it. HAVE_MAX_CHARS bounds it; a longer one is ignored. */
 export type ChatClientMessage =
   /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
       is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
@@ -2187,11 +2191,18 @@ export interface SlashCommand {
 export type WireVersion = 1 | 2;
 export const WIRE_PARAM = "wire";
 
+/** `/ws/chat?have=<row id>`: the last row the client holds (see ChatClientMessage); longer is ignored. */
+export const HAVE_PARAM = "have";
+export const HAVE_MAX_CHARS = 200;
+
 /** A live event on wire 1: pi's event, passed through (see ChatServerMessage). */
 export interface V1EventFrame {
   type: "event";
   event: unknown;
   entryId?: string;
+  /** An assistant message_end's measured timing, tagged by the chat (shared/usage/perf.ts). Mapped
+      into wire 2's `message.end`; never sent on wire 1 (server/wire-rows.ts drops it). */
+  reply?: ReplyTiming;
 }
 
 /** A live event on wire 2, to a consumer that asked: one of the contract's events, the entry a
@@ -2237,7 +2248,10 @@ export type ChatServerMessage =
   /** `live` (wire 2 only; absent when nothing streams and from older servers): what of the run in
       flight is not yet a row, as of this hello, so a client that joins mid-reply shows it
       (HelloLive). The first live event after the hello is the first one not folded into it. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive }
+  /** `after` (only to a client that asked with `&have=`): the client's rows up to and including
+      this row are the branch's first `older` rows, and `items` are the rows after it (possibly
+      none); `olderSummary` sums up all `older` of them, the client's own included. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */

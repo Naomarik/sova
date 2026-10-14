@@ -19,7 +19,7 @@ import {
 	type Tool,
 	Type,
 } from "@earendil-works/pi-ai";
-import { dropPiPreamble, PI_STOCK_PREAMBLE, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
+import { dropPiPreamble, MEASUREMENT_INVALID_DIAGNOSTIC, PI_STOCK_PREAMBLE, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
 import { parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
 import { STATIC_MODELS, toProviderModel } from "./index.ts";
 
@@ -365,6 +365,10 @@ test("a rejected-only tool call and the CLI's valid retry stay one pi message, o
 		usage: { input: 6, output: 1224, cacheRead: 60000, cacheWrite: 800, cacheWrite1h: 800 },
 	});
 	assert.ok(!JSON.stringify(message.diagnostics).includes("Diagnostic only"), "the diagnostic kept argument text");
+	// The retry inside the message marks it as no measurement of one reply (a host's reply timing skips it).
+	const marks = (message.diagnostics ?? []).filter((d) => d.type === MEASUREMENT_INVALID_DIAGNOSTIC);
+	assert.equal(marks.length, 1);
+	assert.deepEqual(marks[0]!.details, { reason: "invalid-tool-retry" });
 	// Usage is the last CLI message's, its 1h split included: context fill reads 2 + 61500 + 1300.
 	assert.equal(message.usage.input, 2);
 	assert.equal(message.usage.cacheRead, 61500);

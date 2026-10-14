@@ -4,6 +4,28 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.3.2 — 2026-10-13
+
+A macOS fix on top of v0.3.1.
+
+- **Sova.app runs natively on Apple silicon.** macOS started the app, and the browser window it
+  opens, under Rosetta: the first launch took about 25 seconds, macOS warned that the app "will not
+  open in a future release of macOS", and the window was slower. Both now run natively. Re-run the
+  install command to get the fixed app entry. Intel Macs are not supported.
+
+Going back to `v0.3.1` (`SOVA_REF=v0.3.1`) changes no stored settings or sessions.
+
+## v0.3.1 — 2026-10-13
+
+A fix on top of v0.3.0.
+
+- **Delegate finds Claude Code workers again.** Since v0.3.0 the Delegate mode reported every
+  Claude Code profile as having no available worker, because it looked for Claude Code where it no
+  longer registers. It now reads the same Claude model list the model picker uses, so the Planning,
+  Investigation and Implementation profiles start their Claude Code workers as before.
+
+Going back to `v0.3.0` (`SOVA_REF=v0.3.0`) changes no stored settings or sessions.
+
 ## v0.3.0 — 2026-10-13
 
 Every chat now runs in a process of its own. 353 commits since v0.2.0. The highlights:

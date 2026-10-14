@@ -7,6 +7,8 @@
 
 import type { ChatServerMessage, TranscriptItem, V1EventFrame, V2EventFrame, WatchServerMessage, WireVersion } from "../shared/protocol";
 import { WIRE_PARAM } from "../shared/protocol";
+import { entryOfRow } from "../shared/row-counts";
+import type { ReplyTiming } from "../shared/usage/perf";
 import { factsFromMeta } from "../shared/wire-v1";
 import { v2Frames } from "./harness/pi/wire";
 
@@ -14,36 +16,61 @@ import { v2Frames } from "./harness/pi/wire";
 export const wireOf = (search: URLSearchParams | { get(name: string): string | null | undefined }): WireVersion =>
   search.get(WIRE_PARAM) === "2" ? 2 : 1;
 
-/** A row on `wire`: on wire 1 the row itself; on wire 2, a row with `meta` gets `facts` in its place. */
-export function rowFor(it: TranscriptItem, wire: WireVersion): TranscriptItem {
+/** A session's measured replies by the entry each was written as (server/reply-facts.ts). */
+export type ReplyLookup = (entryId: string) => ReplyTiming | undefined;
+
+/** A row's facts on wire 2: its meta's (factsFromMeta), plus an assistant reply's measured timing
+    (`reply`) when `replies` has one for its entry. */
+function factsOf(it: TranscriptItem, replies: ReplyLookup | undefined) {
+  const facts = factsFromMeta(it.meta);
+  // The lookup holds assistant replies' entries only: the entry's first row (the one with meta) gets it.
+  if (facts && replies) {
+    const t = replies(entryOfRow(it.id));
+    if (t) facts.reply = t;
+  }
+  return facts;
+}
+
+/** A row on `wire`: on wire 1 the row itself; on wire 2, a row with `meta` gets `facts` in its place
+    (with the reply's timing from `replies`, when given). */
+export function rowFor(it: TranscriptItem, wire: WireVersion, replies?: ReplyLookup): TranscriptItem {
   if (wire === 1 || it.meta === undefined) return it;
   const out: Record<string, unknown> = {};
   // for-in, not Object.entries: a row is a plain object, so the same own keys in the same order, unallocated.
   for (const k in it) {
-    if (k === "meta") out.facts = factsFromMeta(it.meta);
+    if (k === "meta") out.facts = factsOf(it, replies);
     else out[k] = it[k as keyof TranscriptItem];
   }
   return out as unknown as TranscriptItem;
 }
 
 /** Rows on `wire` (the same array on wire 1). */
-export const rowsFor = (items: TranscriptItem[], wire: WireVersion): TranscriptItem[] => (wire === 1 ? items : items.map((it) => rowFor(it, 2)));
+export const rowsFor = (items: TranscriptItem[], wire: WireVersion, replies?: ReplyLookup): TranscriptItem[] =>
+  wire === 1 ? items : items.map((it) => rowFor(it, 2, replies));
 
 type RowsMessage = { type: "hello" | "snapshot" | "append" | "history"; items: TranscriptItem[] };
 const ROWS_MESSAGES = new Set(["hello", "snapshot", "append", "history"]);
 
 /** A message's rows on `wire`: a hello, snapshot, append or history with its rows mapped (rowFor); any
     other message, and every message on wire 1, as it is. */
-export function withRows<M extends ChatServerMessage | WatchServerMessage>(msg: M, wire: WireVersion): M {
+export function withRows<M extends ChatServerMessage | WatchServerMessage>(msg: M, wire: WireVersion, replies?: ReplyLookup): M {
   if (wire === 1 || !ROWS_MESSAGES.has(msg.type)) return msg;
   const m = msg as unknown as RowsMessage;
-  return { ...msg, items: rowsFor(m.items, 2) };
+  return { ...msg, items: rowsFor(m.items, 2, replies) };
 }
 
 /** What a chat message is on `wire`: on wire 2 a live event is its wire-2 frames (none, one or more),
     any other message its rows mapped; on wire 1 the message itself. */
-export function onWire(msg: ChatServerMessage, wire: WireVersion): (ChatServerMessage | V2EventFrame)[] {
-  if (wire === 1) return [msg];
+export function onWire(msg: ChatServerMessage, wire: WireVersion, replies?: ReplyLookup): (ChatServerMessage | V2EventFrame)[] {
+  if (wire === 1) return [onWire1(msg)];
   if (msg.type === "event") return v2Frames(msg as V1EventFrame);
-  return [withRows(msg, 2)];
+  return [withRows(msg, 2, replies)];
+}
+
+/** A chat message on wire 1: an event frame without the `reply` timing the chat tags a message_end with
+    (wire 2 carries it in `message.end`; wire 1's frames stay as they always were); any other message as it is. */
+export function onWire1(msg: ChatServerMessage): ChatServerMessage {
+  if (msg.type !== "event" || (msg as V1EventFrame).reply === undefined) return msg;
+  const { reply: _reply, ...rest } = msg as V1EventFrame;
+  return rest as ChatServerMessage;
 }

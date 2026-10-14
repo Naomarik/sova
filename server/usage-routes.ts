@@ -23,6 +23,17 @@ export function registerUsageRoutes(app: Hono<any>): void {
       }),
     ),
   );
+  // The Performance tab (shared/usage/perf.ts): measured reply timing, same range and filter as Costs.
+  app.get("/api/usage/performance", async (c) =>
+    relay(
+      await askUsage("performance", {
+        range: c.req.query("range") ?? "30d",
+        provider: c.req.queries("provider") ?? [],
+        model: c.req.queries("model") ?? [],
+        tz: c.req.query("tz") ?? "UTC",
+      }),
+    ),
+  );
   app.get("/api/usage/today", async (c) => relay(await askUsage("today", { tz: c.req.query("tz") ?? "UTC" })));
   app.get("/api/usage/session", async (c) => {
     const sid = c.req.query("sid");

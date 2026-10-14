@@ -16,7 +16,8 @@ three things:
 - **command-line tools** of the project's own, which the agent can call while the mode is on.
 
 Every chat working in that project's checkout lists the project's modes in its mode menu, under
-**This project · {name}**. Only those files configure a mode: Sova's settings, `mode.json`,
+**This project · {name}**, read from the files each time you open the menu. Only those files
+configure a mode: Sova's settings, `mode.json`,
 profiles and automations never name one.
 
 A project mode **never turns itself on**. Only you turn one on, in that chat, from its mode menu or

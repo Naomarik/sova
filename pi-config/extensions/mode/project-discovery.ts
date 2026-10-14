@@ -5,14 +5,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	BUILTIN_MINOR_NAMES,
 	isProjectModeId,
 	ModeFileError,
 	parseModeFile,
+	PROJECT_MODE_BYTES_MAX,
 	PROJECT_MODE_ENTRY,
+	PROJECT_MODE_FILES_MAX,
 	PROJECT_MODE_ID_MAX,
 	PROJECT_MODES_DIR,
 	projectModeBlock,
@@ -46,22 +48,72 @@ export function checkoutRootOf(cwd: string): string | null {
 	}
 }
 
-/** sha256 of each tool file's bytes, keyed by its `./…` path; a file that can't be read is absent. */
-export function toolFileShas(dir: string, tools: readonly ProjectModeTool[]): Record<string, string> {
+/** A mode folder past PROJECT_MODE_FILES_MAX files or PROJECT_MODE_BYTES_MAX bytes. */
+export class ModeFolderTooLarge extends Error {}
+
+/**
+ * Every file in a mode folder but its top-level MODE.md, recursively (dotfiles included), as `./<path>` → sha256
+ * hex of its bytes. A symlink is hashed as its target path, never followed (the runner refuses one pointing out of
+ * the folder); anything that is neither a file, a directory nor a symlink is hashed by its kind. Throws
+ * ModeFolderTooLarge past the caps; an unreadable entry hashes as "unreadable".
+ */
+export function folderFileShas(dir: string): Record<string, string> {
 	const out: Record<string, string> = {};
-	for (const file of toolFiles(tools)) {
+	let count = 0;
+	let bytes = 0;
+	const walk = (rel: string): void => {
+		let names: string[];
 		try {
-			out[file] = sha256(readFileSync(join(dir, file.slice(2))));
+			names = readdirSync(join(dir, rel)).sort();
 		} catch {
-			// Missing: toolsHashInput writes "missing", and discovery reports the folder broken.
+			out[`./${rel}`] = "unreadable";
+			return;
 		}
-	}
+		for (const name of names) {
+			const child = rel === "" ? name : `${rel}/${name}`;
+			if (child === PROJECT_MODE_ENTRY) continue;
+			const path = join(dir, child);
+			let kind: string;
+			let size = 0;
+			try {
+				const st = lstatSync(path);
+				if (st.isDirectory()) {
+					walk(child);
+					continue;
+				}
+				kind = st.isSymbolicLink() ? "symlink" : st.isFile() ? "file" : "other";
+				size = st.size;
+			} catch {
+				out[`./${child}`] = "unreadable";
+				continue;
+			}
+			if (++count > PROJECT_MODE_FILES_MAX) throw new ModeFolderTooLarge(`the mode folder has more than ${PROJECT_MODE_FILES_MAX} files`);
+			bytes += size;
+			if (bytes > PROJECT_MODE_BYTES_MAX) throw new ModeFolderTooLarge(`the mode folder holds more than ${PROJECT_MODE_BYTES_MAX / (1024 * 1024)} MB`);
+			try {
+				out[`./${child}`] = kind === "file" ? sha256(readFileSync(path)) : kind === "symlink" ? `symlink:${sha256(readlinkSync(path))}` : "other";
+			} catch {
+				out[`./${child}`] = "unreadable";
+			}
+		}
+	};
+	walk("");
 	return out;
 }
 
-/** The approval hash of a mode's tools as they are on disk now; "" for a mode with no tools. */
+/**
+ * The approval hash of a mode's tools as they are on disk now: the declared tools and every file in the mode
+ * folder (toolsHashInput); "" for a mode with no tools. A folder past the caps hashes as "too-large", which no
+ * approval ever matches.
+ */
 export function toolsHashOf(dir: string, tools: readonly ProjectModeTool[]): string {
-	return tools.length === 0 ? "" : sha256(toolsHashInput(tools, toolFileShas(dir, tools)));
+	if (tools.length === 0) return "";
+	try {
+		return sha256(toolsHashInput(tools, folderFileShas(dir)));
+	} catch (error) {
+		if (error instanceof ModeFolderTooLarge) return "too-large";
+		throw error;
+	}
 }
 
 /** One mode folder read now: its snapshot, or the problem that makes it broken. */
@@ -80,9 +132,23 @@ export function readProjectMode(modesDir: string, id: string): ProjectModeSnapsh
 	}
 	try {
 		const parsed = parseModeFile(text);
-		const shas = toolFileShas(dir, parsed.tools);
-		const missing = toolFiles(parsed.tools).find((rel) => !(rel in shas) || !statSync(join(dir, rel.slice(2))).isFile());
+		const missing = toolFiles(parsed.tools).find((rel) => {
+			try {
+				return !statSync(join(dir, rel.slice(2))).isFile();
+			} catch {
+				return true;
+			}
+		});
 		if (missing) return { id, kind: "parse", path: file, error: `tool file ${missing} is not a file in the mode folder` };
+		let shas: Record<string, string> = {};
+		if (parsed.tools.length > 0) {
+			try {
+				shas = folderFileShas(dir);
+			} catch (error) {
+				if (error instanceof ModeFolderTooLarge) return { id, kind: "parse", path: dir, error: `${error.message}; a mode with tools is approved as its whole folder, so keep it small` };
+				throw error;
+			}
+		}
 		const kept = {
 			description: parsed.description,
 			workers: parsed.workers,

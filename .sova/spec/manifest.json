@@ -129,7 +129,9 @@
         "server/chat-handle-remote.ts",
         "scripts/chat-runtime-trial/run.mjs",
         "server/chat-runtime/trial-crash-idle.integration.test.ts",
-        "scripts/e2e/quiet-close.mjs"
+        "scripts/e2e/quiet-close.mjs",
+        "src/components/ChatView.tsx",
+        "src/lib/older-rows-view.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -137,8 +139,8 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:32Z"
+        "by": "user (al_1 go-ahead, revised)",
+        "at": "2026-10-14T22:01Z"
       },
       "evidence": "verified"
     },
@@ -2099,8 +2101,15 @@
         "server/index.ts",
         "server/app.ts",
         "shared/protocol.ts",
-        "src/components/InsightStrip.tsx"
-      ]
+        "src/components/InsightStrip.tsx",
+        "src/lib/older-rows-view.ts",
+        "src/lib/older-rows-view.browser.test.ts",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead, revised)",
+        "at": "2026-10-14T22:01Z"
+      }
     },
     "§chat.timeline/no-virtualization": {
       "kind": "behavior",
@@ -2233,8 +2242,8 @@
         "scripts/e2e/quiet-close.mjs"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:32Z"
+        "by": "user (al_1 go-ahead, revised)",
+        "at": "2026-10-14T22:01Z"
       },
       "evidence": "verified"
     },

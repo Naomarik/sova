@@ -624,6 +624,9 @@ async function t4() {
   await settled(A.s, 0, 60000);
   // Chat B: mid-reply at the restart, nobody attached: reloads by itself once the reply ends.
   const B = await newChat();
+  // Held open by the mock until Reload now has been answered: under load the restart and reattach
+  // outlasted the reply's 12 s, B (unattended) then reloaded by itself, and no "pending" came.
+  await mock.hold(bTag);
   prompt(B.s, `[long 30 #${bTag}] a long reply`);
   await B.s.until(delta(/part 3\//), 30000, "B streams");
   const pidA = chatPid(A.path);
@@ -647,7 +650,9 @@ async function t4() {
   const bf = b2.got.length;
   b2.send({ type: "reload_code" });
   const pend = await b2.until((m) => m.type === "code" && m.pending, 10000, "pending", bf).catch(() => null);
-  R.check(pend?.state === "older" && pend.pending === true, `t4: Reload now during a reply answers {older, pending} (${JSON.stringify(pend)})`);
+  const bEnded = mockLog(mock.log).some((e) => e.event === "done" && e.tag === bTag);
+  await mock.hold(bTag, false);
+  R.check(pend?.state === "older" && pend.pending === true, `t4: Reload now during a reply answers {older, pending} (${JSON.stringify(pend)}; reply ended first: ${bEnded}; B pid ${pidB} → ${chatPid(B.path)}; code frames ${JSON.stringify(codeMsgs(b2).slice(-3))})`);
   b2.close();
   // B must not reload while its reply runs.
   for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.event === "done" && e.tag === bTag); i++) {

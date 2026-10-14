@@ -52,8 +52,8 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
       const b = await body(c);
       const hash = opt(b.hash);
       if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
-      const out = await mergeRun(c.req.param("pid") ?? "", hash);
-      if (out.refused) return c.json({ error: `The merge was refused: ${out.refused}`, runtime: out.view }, 409, NO_STORE);
+      const out = await mergeRun(c.req.param("pid") ?? "", hash, { allowSavedSessions: b.allowSavedSessions === true });
+      if (out.refused) return c.json({ error: `The merge was refused: ${out.refused}`, runtime: out.view, ...(out.savedSessions ? { savedSessions: out.savedSessions } : {}) }, 409, NO_STORE);
       return c.json(out.view, 200, NO_STORE);
     }),
   );

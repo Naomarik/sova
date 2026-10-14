@@ -42,7 +42,12 @@ by argument list with no shell, locally only (a remote session refuses it).
   `main` in a repository without `master`) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
-  a fast-forward is done.
+  a fast-forward is done. Before merging it checks the history being merged for saved sessions and
+  refuses when it finds one, merging nothing; its answer tells the agent that this needs the saved
+  sessions cleaned out of the branch's history or the user's explicit go-ahead. A call with
+  `allowSavedSessions: true` always asks the user to confirm first, whether or not the sandbox is
+  on, naming the branch and saying the conversations will stay in the target's history; with no
+  one to ask, or declined, nothing is merged (§chat.saved-sessions/merge-guard).
 - **list**: the set with each worktree's status.
 
 `detach` and `merge` take the worktree's path or its branch name. Every answer lists the
@@ -219,7 +224,9 @@ no model call (`server/merge-readiness.ts`):
   three or more uncommitted files, the branch has no commit of its own yet, it **conflicts with
   its base** (the trial merge git already runs for an unmerged branch reports conflicts), a
   commit subject on the branch starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the
-  session's newest check run (a `bash` call running a test, typecheck or build) failed.
+  session's newest check run (a `bash` call running a test, typecheck or build) failed, or the
+  branch's history since its base carries a saved session (§chat.saved-sessions/merge-guard;
+  reason "In progress · saved sessions in its history").
 - **removed** — the worktree's folder is gone, and what its work came to is said plainly, never
   "in progress" or "active". It is **merged** instead, with the reason "Merged · cleaned up", when
   git still finds its branch in the repository's main branch (master, else main), by ancestry or

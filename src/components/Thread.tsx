@@ -751,11 +751,12 @@ export function HistoryItems(props: {
         setFirstId(idAt(i));
         if (i <= 0 && props.older?.left() === 0) setEdgeGone(true);
       }, hold);
-    // The build of the last rows above can come before anything says they are the last (rows kept
-    // from the last visit, built before this connection's hello): the line then goes when the
-    // hello says so, kept through its going as a build's is.
+    // The build of the last rows above can come before this connection says they are the last (rows
+    // kept from the last visit, built before the hello, or a chat closed while quiet that sends
+    // none): the line then goes once what is known says nothing is above (`known`: the hello's or
+    // paint's count, before them the one kept with the rows), kept through its going as a build's is.
     createEffect(() => {
-      if (edge() && !edgeGone() && start() === 0 && props.older?.left() === 0) untrack(() => scroller.prepend(() => setEdgeGone(true)));
+      if (edge() && !edgeGone() && start() === 0 && props.older?.known() === 0) untrack(() => scroller.prepend(() => setEdgeGone(true)));
     });
     let chunk = FIRST_CHUNK;
     let cancel: (() => void) | null = null;

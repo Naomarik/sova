@@ -202,9 +202,7 @@ async function open(viewport, { remote = false, lazyMs = 0 } = {}) {
   const page = await ctx.newPage();
   const cdpSession = await ctx.newCDPSession(page);
   await cdpSession.send("Emulation.setCPUThrottlingRate", { rate: 2 });
-  const list = await api("/api/sessions");
-  const session = (list.sessions ?? list).find((s) => s.id === ID);
-  assert(session, `the fixture ${ID} isn't listed by the server`);
+  const session = await listedFixture();
   await page.goto(`${BASE}/#/s/${encodeURIComponent(session.path)}`);
   await page.waitForFunction(() => document.querySelectorAll("#transcript .thread > .entry").length > 5, null, { timeout: 30000 });
   await settled(page);
@@ -215,6 +213,20 @@ async function open(viewport, { remote = false, lazyMs = 0 } = {}) {
   await page.waitForSelector("li.timeline-row[data-input] button.timeline-body", { timeout: 30000 });
   await settled(page);
   return { ctx, page };
+}
+/** The fixture's row in GET /api/sessions. The fixture is written from outside the server, and such
+    a change reaches a listing up to 1 s later (§app.session-list/listing-reuse: a listing started
+    before the write is shared for a second), so a first ask right after the write can miss it.
+    Asks again every 100 ms, for up to 5 s (the 1 s, plus a listing's own build on a cold server). */
+async function listedFixture() {
+  const until = Date.now() + 5000;
+  for (;;) {
+    const list = await api("/api/sessions");
+    const session = (list.sessions ?? list).find((s) => s.id === ID);
+    if (session) return session;
+    assert(Date.now() < until, `the fixture ${ID} isn't listed by the server 5 s after it was written`);
+    await sleep(100);
+  }
 }
 const rowsNow = (page) => page.evaluate(() => document.querySelectorAll("#transcript .thread > .entry").length);
 async function settled(page) {

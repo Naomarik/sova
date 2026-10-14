@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Target } from "./argv.ts";
-import { type ChannelLike, type ChannelState, Connection, type ConnectionDeps } from "./connection.ts";
+import { type ChannelLike, type ChannelState, Connection, type ConnectionDeps, preflightTimeoutMs } from "./connection.ts";
 import { type RunOptions, runArgv } from "./exec.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -110,6 +110,22 @@ test("the `channel` dep: omitted = the target's own, `false` = none, a factory =
 	assert.equal(new Connection(local, [local], undefined, { exec }).status().channelState, undefined);
 	const chan = fakeChannel();
 	assert.equal(new Connection(target, [target], undefined, { exec, channel: chan.factory }).status().channelState, "off");
+});
+
+test("the preflight's bound: 20 s, or the ssh hop's connectTimeoutS + 10 s (and named in the error)", async () => {
+	const seen: (number | undefined)[] = [];
+	const exec = async (_argv: readonly string[], o?: RunOptions) => (seen.push(o?.timeoutMs), { code: null, exitCode: null, stdout: Buffer.alloc(0), stderr: "", timedOut: true, aborted: false });
+	const plain: Target = { name: "t", kind: "ssh", ssh: { host: "example.invalid" } };
+	const slow: Target = { ...plain, name: "s", connectTimeoutS: 30 };
+	const box: Target = { name: "box", kind: "docker", docker: { container: "web" }, via: "s" };
+	assert.equal(preflightTimeoutMs(plain, [plain]), 20_000);
+	assert.equal(preflightTimeoutMs(slow, [slow]), 40_000);
+	assert.equal(preflightTimeoutMs(box, [slow, box]), 40_000);
+	await assert.rejects(new Connection(plain, [plain], undefined, { exec, channel: false }).preflight(), /no answer within 20s/);
+	await assert.rejects(new Connection(box, [slow, box], undefined, { exec, channel: false }).preflight(), /no answer within 40s/);
+	const c = new Connection(slow, [slow], undefined, { exec, channel: false });
+	await c.check();
+	assert.deepEqual(seen, [20_000, 40_000, 40_000], "preflight and /remote check both use it");
 });
 
 test("idleClose reaches the live channel and every channel opened after it", async () => {

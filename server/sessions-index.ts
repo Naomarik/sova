@@ -32,7 +32,8 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
-import { projectOverseerOfPath } from "./project-overseer-store";
+import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
+import { projectOverseerUnread } from "./project-overseer-unread";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
@@ -783,6 +784,14 @@ export function cachedTitleOf(path: string): string | undefined {
   return hit ? withTitle(hit.summary, memoSessionTitleRecords()).title : undefined;
 }
 
+/** A session's display title as the list shows it (its stored title, else its name or first message,
+    else "Untitled"), reading the file when its summary is not cached or is stale; undefined when the
+    file is not a session. */
+export async function displayTitleOf(path: string): Promise<string | undefined> {
+  const s = await summarize(path).catch(() => null);
+  return s ? withTitle(s, memoSessionTitleRecords()).title : undefined;
+}
+
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
 export function lastReplyAtOf(path: string): number | undefined {
   return cache.get(path)?.lastReply?.at;
@@ -845,6 +854,25 @@ function decisionFields(
     ...(workerSignals ? { workerSignals } : {}),
     ...(tags ? { tags } : {}),
   };
+}
+
+/**
+ * The one async overlay of a finished row: a project overseer's count of unseen replies
+ * (`unreadReplies`, §app.overseer/seen), on its current conversation only and only while `unread`
+ * is set. The list and every single-row refresh both end here, so a row never loses its count on a
+ * refresh. Each project's counter is kept between reads (server/project-overseer-unread), shared
+ * with the project overseer page: a rebuild re-reads only what the file gained.
+ */
+async function withUnreadReplies(row: SessionSummary): Promise<SessionSummary> {
+  const projectId = row.unread ? row.projectOverseer?.projectId : undefined;
+  if (!projectId) return row;
+  try {
+    if (readPoState({ projectId })?.current !== row.id) return row;
+    return { ...row, unreadReplies: await projectOverseerUnread(projectId, row.path, row.seenAt) };
+  } catch {
+    // An unreadable state or file: the count is unknown, and absent says so.
+    return row;
+  }
 }
 
 /** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
@@ -946,6 +974,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
     out.push(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row, previewLabels));
   }
   pruneReadiness(out);
+  for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   return out;
 }
@@ -989,7 +1018,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...fieldLookup()(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
-  return redactPreviewLinksDeep(readiness ? { ...row, readiness } : row);
+  return withUnreadReplies(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();
@@ -1073,7 +1102,8 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
   if (archived) {
-    await closeChat(s.path, "Session archived; its runtime was closed.");
+    // Its open tabs keep what they show and don't reconnect: a reconnect would start it again.
+    await closeChat(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
     sessionArchived(s.id);
   }
   return { ok: true, summary: { ...s, archived } };

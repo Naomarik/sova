@@ -6,10 +6,12 @@
 // so the socket can name the last row it holds (`have=`). A read that hangs must not keep the chat
 // from opening: past about 1.5 s the socket opens naming no row, the hello brings the rows, and Send
 // works once that hello has come. Two runs on a cold chat (its process stopped first):
-//   1. the read answered: /ws/chat opens at once after it, with `have=`; the hello says `after`.
-//   2. the read held unanswered (the route is never fulfilled): /ws/chat opens at ~1.5 s with no
-//      `have=`, the hello is a whole one, and Send (with text typed) stays aria-disabled until that
-//      hello and is enabled after it.
+//   1. the read answered: the chat opens asleep over those rows, no /ws/chat and Send usable (the
+//      server doesn't hold it, so reading it starts nothing); a wake (opening the mode menu) opens
+//      /ws/chat with `have=`, and the hello says `after`.
+//   2. the read held unanswered (the route is never fulfilled): no rows to show, so /ws/chat opens
+//      at ~1.5 s with no `have=`, the hello is a whole one, and Send (with text typed) stays
+//      aria-disabled until that hello and is enabled after it.
 //
 // Drives a hermetic server serving the built app, through the playwright skill's browser:
 //
@@ -144,8 +146,9 @@ const RECORDER = () => {
   requestAnimationFrame(tick);
 };
 
-/** Opens the chat cold in a fresh tab (nothing kept), the file read held or not; what happened. */
-async function openCold(hold) {
+/** Opens the chat cold in a fresh tab (nothing kept), the file read held or not; what happened.
+    `wake`: once Send is usable, wait, count the sockets, then open the mode menu (a wake). */
+async function openCold(hold, wake = false) {
   await makeCold();
   const ctx = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 820 } });
   await ctx.setExtraHTTPHeaders(tokenHeaders(AGENT));
@@ -179,6 +182,14 @@ async function openCold(hold) {
   await page.goto(`${BASE}/#/s/${target}`);
   await page.waitForFunction(() => window.__open?.sendEnabledAt !== null, null, { timeout: 30_000 }).catch(() => {});
   const rec = await page.evaluate(() => window.__open);
+  let beforeWake = null;
+  if (wake) {
+    await sleep(2_500);
+    beforeWake = seen.ws.length;
+    await page.getByRole("button", { name: /^Mode:/ }).first().click();
+    for (let i = 0; i < 100 && !seen.ws[0]?.helloAt; i++) await sleep(100);
+    await page.keyboard.press("Escape");
+  }
   await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
   // Leave no draft behind for the next run.
   await page.evaluate(() => {
@@ -189,19 +200,23 @@ async function openCold(hold) {
   });
   await sleep(300);
   await ctx.close();
-  if (process.env.SOVA_E2E_DEBUG) console.log(JSON.stringify({ t0, ...seen, ...rec }, null, 1));
-  return { t0, ...seen, ...rec };
+  if (process.env.SOVA_E2E_DEBUG) console.log(JSON.stringify({ t0, beforeWake, ...seen, ...rec }, null, 1));
+  return { t0, beforeWake, ...seen, ...rec };
 }
 
 try {
-  const answered = await openCold(false);
-  await check("an answered read: the socket opens right after it, naming the last row; the hello carries only what follows", () => {
+  const answered = await openCold(false, true);
+  await check("an answered read on a chat the server doesn't hold: its rows, Send usable, and no socket (reading it starts nothing)", () => {
+    assert(answered.readAt !== null && answered.rowsAt !== null, `read ${answered.readAt}, rows ${answered.rowsAt}`);
+    assert(answered.sendEnabledAt !== null, "Send never usable");
+    assert(answered.beforeWake === 0, `${answered.beforeWake} /ws/chat opened before any wake`);
+  });
+  await check("…a wake opens the socket naming the last row; the hello carries only what follows", () => {
     const ws = answered.ws[0];
-    assert(answered.readAt !== null && ws, `read ${answered.readAt}, sockets ${answered.ws.length}`);
+    assert(ws, "no /ws/chat after the wake");
     assert(ws.url.includes("&have="), `no have= in ${ws.url}`);
-    assert(ws.at - answered.t0 < WAIT_MS, `opened ${ws.at - answered.t0} ms after the open`);
     assert(ws.hello && ws.hello.after === "a11:0" && ws.hello.items === 0, `hello ${JSON.stringify(ws.hello)}`);
-    assert(answered.rowsAt !== null && answered.rowsAt < ws.helloAt, "rows were on screen before the hello");
+    assert(answered.rowsAt < ws.helloAt, "rows were on screen before the hello");
   });
 
   const held = await openCold(true);

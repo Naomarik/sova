@@ -925,8 +925,14 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
 ## §chat.transcript/instant-open — A chat opens on its saved rows while it starts
 
 Opening a chat shows its newest rows at once, read from its saved session file and scrolled to the
-end, whether or not its process is running; when it isn't, the process starts behind them
-(§app.chat-processes/idle-stop). The Overseer, a project overseer, a baton session, a chat whose
+end, whether or not its process is running. When it isn't (the list's row for it has no `chat`), an
+ordinary chat whose rows are on screen opens asleep, as a tab does after an idle stop ("A chat closed
+while its tab is open", below): opening it to read starts no process, whether by a click in the
+list, a reload, a tab the browser discarded coming back or a restored session, and the first send or
+other action starts it. Otherwise the process starts behind the rows (§app.chat-processes/idle-stop):
+the row isn't known within about 1.5 s, there are no rows to show (a new chat, a read that failed or
+hasn't answered), a terminal has it open, it is the Overseer, a project overseer or a baton
+session, or it is a forced reopen. The Overseer, a project overseer, a baton session, a chat whose
 profile grants powers and a peer's chat open this way too, a peer's through that peer. Views that
 only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
 unchanged.
@@ -959,6 +965,25 @@ unchanged.
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
   the connection ends or reports an internal error before its `hello`. A message sent on an earlier
   connection, after its `hello`, never comes back this way: that chat may have taken it.
+- **A chat closed while its tab is open.** When the chat's process closes for being quiet
+  (§app.chat-processes/idle-stop), a tab showing it keeps its rows, draft and composer and closes
+  its socket without reconnecting: no note shows and Send stays usable. Nothing the tab does on its
+  own starts the chat again, neither a reconnect nor a server restart. Sending does: the message
+  shows at once, the "Connecting to chat…" note floats meanwhile, and the message goes to the chat
+  once, when its `hello` comes. So does a change of model, thinking level, Claude login, mode or
+  sandbox, opening the mode menu, or a rewind, regenerate, Remove of a queued message or
+  `/compact`, each sent once the chat is ready.
+  When something else opens the chat meanwhile (another tab, a worker's report), the tab connects
+  to it. Reloading the page, or opening the chat again, opens it asleep the same way (above).
+  Archiving a chat tells its open tabs the same way (`closed`), so no tab reconnects and starts the
+  archived chat again; whatever the chat answered before it closed (a send it took) reaches the tab
+  first, so nothing it took comes back to the composer, and a server call it took is answered by it,
+  never failed as unreachable. The socket closes with a code the web app never retries (4422), so
+  a tab still on an older build, which doesn't know `closed`, stays down too. A person's own
+  action on a closed chat from anywhere else opens it the same way, never answering "open the chat
+  first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
+  pick, a restored worker's resume. What only reads it never opens it: its subagent profile
+  (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)

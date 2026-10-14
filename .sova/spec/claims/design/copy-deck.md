@@ -86,12 +86,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | No session selected (the overview) | Title: **Overview** (no count and no body line; the Sessions card has the count) · eyebrow `Start`, then action cards, title and line: `New Session` "Start a chat with pi in any folder or on any host." · last, eyebrow `Organizations`, a card titled `Organizations` "Keep each client's people, projects, and hand-off sessions together.", totals `Organizations` · `People` · `Projects` · `Open hand-offs` · `Needs you`, rows `{n} people · {n} projects · {n} open hand-offs` · `Needs you · {n}` · `Active {relative time}`, `View all {N}`; with no org, `Create Your First Organization` · a phone's list-head button to it: icon-only, `aria-label` and `title` "Overview" (§app.shell/overview) |
 | No session selected, Explanations card | section head: `Explanations` · card title `Explanations`, chip `{n}` · line `Latest · {topic} · {relative time}`, or "No explanations yet. Run `/explain` in a session to write one." (the page's own copy is §app.insights/explanations-page) |
 | Transcript load error (a watched TUI session) | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` · a chat that can't open says §app.shell's open-failure words instead |
-| New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · then the footnote: Your first message becomes its title. |
+| New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · the Saved sessions card (§design.copy-deck/saved-sessions) · then the footnote: Your first message becomes its title. |
 | New empty session, setup card figures | a file row or a section total: `{size} · {n} lines · ≈{tokens} tokens` (the token figure only when the server sent one) · under Context: "Loaded into the prompt." then, with token figures, "Token counts are estimates: 4 characters per token." · under Skills, with token figures: the same sentence after its note · commits: `{short oid} {subject} {age}` per row, or "The last commits couldn't be read." |
 | New empty session, setup card | `aria-label` "Session setup" · aggregate line `System context` with its figures, `title` "Everything pi loads into the prompt, plus the skills it offers." · in place of Context and Skills, a remote session: "Skills and context files are read on {target}, so they aren't listed here."; an unreadable folder: the server's sentence, e.g. "This session's folder no longer exists: {cwd}." · a failed request: "Couldn't read what pi loads here. {message}" · "Couldn't read this session's repository. {message}" |
 | New empty session, setup card Context | heading `Context · {n}` · roles "replaces the system prompt" · "appended to the system prompt" · none: "No context files. pi loads AGENTS.md or CLAUDE.md when a folder has one." (its note is in the figures row above) |
 | New empty session, setup card Skills | heading `Skills · {n}` · note "Offered to this session. A skill loads when it is used.", then "Skills an extension adds aren't listed." when Sova's own loader built the list, then the token sentence · none: "No skills offered to this session." (+ the same caveat, on the same condition) |
-| New empty session, setup card Repository | heading `Repository` · head `{branch}` · `{branch} · no commits yet` · `Detached at {oid}` · `Detached` · upstream `Level with {upstream}` · `{a} ahead, {b} behind {upstream}` · `{upstream} is gone`, `title` "Counted against the upstream as this repository last fetched it. Sova never fetches." · changes `Clean` · `{n} conflicted · {n} staged · {n} unstaged · {n} untracked` (non-zero only) · `At least {tallies}` · `Not fully read` · `+{added} −{removed}` · notes "Line counts stopped at the size limit. Paths past it say "not counted"." · "Counting lines took too long in this repository. Rows say "not counted"." · "Git couldn't count lines here. Rows say "not counted"." · "Git status was cut short, so these counts are lower bounds." · no repository: "{folder} isn't inside a git repository." · unavailable: the server's sentence |
+| New empty session, setup card Repository | heading `Repository` · head `{branch}` · `{branch} · no commits yet` · `Detached at {oid}` · `Detached` · upstream `Level with {upstream}` · `{a} ahead, {b} behind {upstream}` · `{upstream} is gone`, `title` "Counted against the upstream as this repository last fetched it. Sova doesn't fetch it." · changes `Clean` · `{n} conflicted · {n} staged · {n} unstaged · {n} untracked` (non-zero only) · `At least {tallies}` · `Not fully read` · `+{added} −{removed}` · notes "Line counts stopped at the size limit. Paths past it say "not counted"." · "Counting lines took too long in this repository. Rows say "not counted"." · "Git couldn't count lines here. Rows say "not counted"." · "Git status was cut short, so these counts are lower bounds." · no repository: "{folder} isn't inside a git repository." · unavailable: the server's sentence |
 | Archive button / toasts | icon only, `aria-label` and `title` "Archive Session" · "Unarchive Session" · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
 | Copy output button / toast | `Copy Output` · toast "Copied output." |
 | Unknown entry | Unrecognized entry `{raw.type}` · disclosure label "Raw entry" |
@@ -1201,3 +1201,64 @@ and `{k}` counts, `{main}` the repository's main branch.
 | Readiness reasons, folder gone (§chat.worktrees/readiness) | "Merged · cleaned up" · "Removed · not merged" · "Removed · no record of a merge" · "Removed · no commits" — the row's `title` words them as "{branch}: merged, cleaned up" / "{branch}: removed, not merged" |
 | sova_archive, per worktree (§app.overseer/tools) | "worktree {path}: removed; branch {branch} deleted (merged)" · "…; branch {branch} deleted (no commits of its own)" · "…; branch {branch} kept (merged by content)" · a folder already gone: "worktree {path}: already gone, dropped from git's list; …" · "worktree {path} ({branch}): kept, {reason}" with a reason from the row below, lower-cased first letter, no final period · "…: left, it belongs to session {id}" |
 | Reasons a tree stays (the server's) | "Not merged into {main}." · "Not on a branch." · "Locked." · "{n} uncommitted files: {first} and {n−1} more" (1: "1 uncommitted file: {first}") · "Session {name}'s folder is inside it." · "Session {name} tracks it and is open in a TUI." · "… and is running." · "… and has its sandbox on." · "A running process is inside it: {command} ({pid})." · "A live session under its .agent: {pid}." · "No longer in git's worktree list." · "Git refused: {git's first line}" · "Changed since the preview: {the new reason}" — `{name}` the session's title, else its short id |
+
+## §design.copy-deck/saved-sessions — Saved sessions (§chat/saved-sessions)
+
+`{title}` is a saved session's title, `{name}` who saved it (git's `user.name`), `{n}` a count or
+version, `{time}` a relative time, `{date}` a short date ("Oct 14"), `{size}` a size ("2.4 MB"),
+`{branch}` a branch (mono), `{remote}` a remote's name (mono), `{model}` a model's name.
+
+**Saving (Sharing tab and the dialog)**
+
+| Where | Copy |
+|---|---|
+| Sharing tab button | `Save Session` beside `Share Session` · disabled `title` "Only a session in a git repository can be saved." |
+| Slash command (§chat/slash-commands) | `/save` · description "Save this session so a colleague can continue it" |
+| Dialog title | "Save Session" · lede "Saved to this repository's `sova/saved-sessions` branch, which is never merged into main." |
+| Fields | `Title` · `Note for whoever opens it` (hint "Optional. Shown before they continue.") · `Branches it belongs to` (hint "Colleagues filter saved sessions by branch.", none: "Name at least one branch.") · `How much history`: `Whole conversation` · `Only what the agent sees now (since its last summary)` · `Trim long tool output` · `Include images` |
+| Cleaning card | heading `Cleaning` · "{n} secrets removed · {n} paths made portable · thinking left out" (zero parts left out) · "{n} possible secrets and {n} images to check" · all decided: "Everything is checked." · `Review` |
+| Review | heading "Check before saving" · lede "Sova removed every secret it knows. These might be secrets too, and it can't read text in images. Keep or remove each one." · a possible secret: the excerpt (mono, the match marked), under it "{where} · {why}" · an image: its thumbnail, "{where} · {size}" · per item `Keep` / `Remove` (a segmented pair) · `Remove All` · `Keep All` · `Done` |
+| Size | "Size after cleaning: {size}" · over 10 MB (warn): "That's large for a repository. A smaller choice above makes it lighter." · over 50 MB (error): "Over the 50 MB limit. Choose only what the agent sees now, or trim long tool output." |
+| Push | `Push so colleagues get it` · hint "Sends it to {remote}." · no remote: disabled, hint "This repository has no remote." |
+| Public warning (first push to a remote) | title "Push to {remote}?" · "If this repository is public, anyone can read this conversation, including what it read from files. Sova removed the secrets it knows; it can't judge the rest." · `Push` · `Not Now` |
+| Buttons | `Cancel` · `Save` (`Saving…`) · Save disabled `title`: "Decide every possible secret and image first." / "Name at least one branch." / "Over the 50 MB limit." |
+| Done (toast) | "Saved {title} (v{n})." · pushed: "Saved {title} (v{n}) and pushed it to {remote}." · push failed: "Saved {title} (v{n}) here. The push failed: {reason}" |
+| Failed | "Couldn't save this session. Nothing was written. {reason}" |
+| Conflict | title "{name} saved a newer version" · "{name} saved v{n} {time}. Save yours as a new copy, or replace theirs?" · `Save as New Copy` · `Replace Theirs` · `Cancel` |
+| Saved list | heading `Saved` · row "{title} · v{n} · {time}" then "Pushed" / "Not pushed", and for one this session started from "Continued from v{n}" · `Save Again` |
+
+**The new-session screen**
+
+| Where | Copy |
+|---|---|
+| Card (under the setup card) | `Saved sessions` · count line "{n} saved · {n} new · {n} updated · {n} can't be read" (parts at zero left out) · with a merged branch to prune, "· {n} branch merged" / "· {n} branches merged" · none: "No saved sessions yet" · list failed: "Couldn't read them" · on main: chip `In {main}` · accessible name "Saved sessions, {count line}" |
+| Window | title `Saved sessions` · lede "Continue one with its whole conversation, or start fresh in this session." · filter label `Branch`, options `All branches`, then each `{branch}` · `Close` |
+| Row | `{title}` · "{name} · {branches} · {time} · {size}" · badges `New` · `Updated` · `Preview` · `Continue` (`Continuing…`) · unreadable: "Can't be read: {reason}" |
+| Get | `Get Saved Sessions` · while it works `Getting…` · `title` "Fetches only the saved-sessions branch from {remote}. Nothing else changes." · done, nothing new: "No new saved sessions on {remote}." · offline: "Couldn't reach {remote}. Check the connection and try again." · sign-in: "{remote} refused the fetch. Check your git credentials." · none on the remote: "{remote} has no saved sessions yet." · other: "Couldn't get saved sessions. {reason}" |
+| None (a remote exists) | the window: "Nothing saved on this computer yet. Get Saved Sessions checks {remote}." and `Get Saved Sessions` |
+| Filtered to nothing | "No saved sessions on {branch}." |
+| List failed | "Couldn't read saved sessions. {reason}" |
+
+**Preview and Continue**
+
+| Where | Copy |
+|---|---|
+| Preview | title `{title}` · "Saved by {name} {date} · v{n} · {branches}" · "Model: {model}" · note heading `Note` · `Last messages`, rows `You` / `Agent` · `Teams and subagents` with "{role} · {how it ended}" and the task under it · none: no heading |
+| Won't fit | "Bigger than {model} can hold: it continues from its last summary." |
+| Trust | "Continue only sessions from people you trust. The agent takes what this conversation says as true." |
+| Model notice | the saved one: "Continues on {model}, the model it was saved with." · fallback: "{saved model} isn't available here, so it continues on {model}, your default. {reason}" |
+| Preview buttons | `Close` · `Continue` |
+| Continue failed | "Couldn't continue this saved session. Nothing changed. {reason}" · not blank: "This session already has messages. Start a new session to continue a saved one." |
+| Worktree offer | heading "Set up its branches?" · "It worked on these branches. Set up a worktree for each one you want; your folder stays on {branch}." · rows `{branch}` with "a local branch" / "from {remote}" / "already at {path}" / "not here" · `Set Up Worktrees` (`Setting Up…`) · `Skip` · done: "Set up {n} worktrees. The agent knows where they are." · failed row: "{branch}: {reason}" |
+| Continuation note (where the saved history ends, above the first new message) | heading "Continued from a saved session" · "{name} saved this {date} (v{n}). {note}" · "Teams and subagents it mentions ran on {name}'s computer and aren't here. You can't message or wait on them; start new ones if needed." then the summary rows · cut: "It was too big for {model}, so it starts from its last summary." · fallback: the model notice |
+
+**Saved sessions in main, and after a merge**
+
+| Where | Copy |
+|---|---|
+| Merge guard (the refusal, the server's sentence) | "This branch's history carries saved sessions: {branch} has {n} commits adding, changing or removing a saved conversation ({sha} {subject} ({paths}); …). Merging would put those conversations in the target's history, even ones a later commit deleted. Nothing was merged. This needs the saved sessions cleaned out of the branch's history (the work re-applied on a fresh branch), or the user's explicit go-ahead; if the user wants it merged anyway, the user is asked to confirm." (the `worktree` tool, to the agent; its override's confirm: title "Merge saved sessions into the target?", naming the branch and saying the conversations stay in the target's history) · Merge Branch and the project page's merge end instead "…Move the work to a branch without them, or press Merge Anyway." and show it with the override `Merge Anyway` |
+| On main (alert, at the top of the Saved sessions window) | title "Saved sessions are in {main}" · pushed: "{n} saved sessions were committed to {main}: {titles}. Anyone who can read {main} can read them." · not pushed yet: "{n} saved sessions were committed to {main}, not pushed yet: {titles}." · a row only in history: "{title}: in {main}'s unpushed history" (no Remove from Main for it) · `Remove from Main` · `Purge from History` (only while unpushed) · pushed: `Show Checklist` |
+| Remove from Main, done | "Removed them from {main} in one commit. They're still in its history: change any secret they held." |
+| Purge, confirm | "Rewrite {n} unpushed commits on {main} without these folders? The old head stays as {backup}." · `Purge` · `Cancel` · done: "Purged. The old head is kept as {backup}." |
+| Checklist (pushed) | "{main} was pushed with them, so Sova won't rewrite it." · "1. Change every secret they held." · "2. Tell colleagues." · "3. If the team agrees, rewrite {main} and force-push it by hand." · "4. Ask your code host to clear cached copies." |
+| After a branch merged (at the top of the Saved sessions window) | "{branch} is merged. Its {n} saved sessions are still kept." · `Delete Them` · `Keep` · confirm: title "Delete {n} saved sessions of {branch}?", body "{title} by {name}, … They leave the saved-sessions branch in a new commit, pushed to {remote}." (push off: "…in a new commit, on this computer only.") then "Git history keeps them.", buttons `Delete` (destructive) · `Cancel` · done: "Deleted {n} saved sessions of {branch}." |

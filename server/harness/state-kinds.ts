@@ -56,6 +56,7 @@ import {
   type OverseerDialogAnswerData,
   type OverseerSentMarkerData,
 } from "../../shared/protocol";
+import type { SavedLineage } from "../../shared/session-bundle";
 import { normalizeLoadout, type LoadoutEntryData } from "../session-loadout";
 
 const isRecord = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -254,13 +255,29 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
   return { v: 1, type: d.type, ...(size !== undefined ? { size } : {}), ...(typeof d.on === "boolean" ? { on: d.on } : {}) };
 });
 
+/** A session's record of a saved session it wrote or started from (§chat.saved-sessions/saved-list): every one
+    on the branch, oldest first; the newest names what a save again updates. */
+export const SAVED_LINEAGE = kind<SavedLineage>("sova-saved-lineage", "branch-list", (d) => {
+  if (!isRecord(d) || !filled(d.bundleId) || !/^[A-Za-z0-9_-]{1,64}$/.test(d.bundleId)) return null;
+  if (typeof d.rev !== "number" || !Number.isInteger(d.rev) || d.rev < 1) return null;
+  if (d.how !== "saved" && d.how !== "continued") return null;
+  return {
+    bundleId: d.bundleId,
+    rev: d.rev,
+    how: d.how,
+    at: typeof d.at === "string" ? d.at : "",
+    ...(typeof d.title === "string" ? { title: d.title } : {}),
+    ...(typeof d.pushed === "boolean" ? { pushed: d.pushed } : {}),
+  };
+});
+
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
-    MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
+    MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY, SAVED_LINEAGE,
   ].map((k) => [k.type, k as StateKind<unknown>]),
 );
 

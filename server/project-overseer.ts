@@ -38,7 +38,7 @@ import { workingSubagents } from "./live";
 import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
-import { gitRootOf, readWorktree } from "./project-worktrees";
+import { allowSavedSessionsOnce, gitRootOf, readWorktree, takeSavedSessionsOverride, takeSavedSessionsRefusal } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
@@ -73,7 +73,7 @@ import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
-import { OrgError } from "./org-error";
+import { OrgError, SavedSessionsMergeRefusal } from "./org-error";
 import {
   ceilingOf,
   contributedBlockers,
@@ -1013,11 +1013,21 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown, opts: { allowSavedSessions?: boolean } = {}): Promise<ProjectOverseerInfo> {
   projectOf(projectId);
+  // "Merge anyway" over saved sessions in the branch's history: for this one merge only.
+  if (opts.allowSavedSessions && typeof sessionId === "string") allowSavedSessionsOnce(sessionId);
+  try {
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
     // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
     await worktreeAct(projectId, sessionId, "build/merge");
+  } catch (err) {
+    const found = typeof sessionId === "string" ? takeSavedSessionsRefusal(sessionId) : undefined;
+    if (found && err instanceof OrgError) throw new SavedSessionsMergeRefusal(err.message, found);
+    throw err;
+  } finally {
+    if (typeof sessionId === "string") takeSavedSessionsOverride(sessionId);
+  }
   return projectOverseerInfo(projectId);
 }
 

@@ -222,8 +222,9 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
   }
 }
 
-/** A queued row's own states. `sending` = this tab sent it and the server hasn't said it queued. */
-export type QueuedState = "sending" | "queued" | "delivered";
+/** The states a row asks its Remove's reason in. A `sending` row draws no Remove at all
+    (live.ts `offersRemove`, §chat.transcript/a-queued-message), so it never asks. */
+export type QueuedState = "queued" | "delivered";
 
 /**
  * Once pi has queued work of its own beside a message, that message can never be taken back on its
@@ -237,9 +238,6 @@ export const SHARED_QUEUE_REASON = "pi queued work of its own alongside this mes
 export function queueRemoveReason(row: { state: QueuedState; pending: boolean; chat: boolean; sharedQueue?: boolean }): string | null {
   if (!row.chat) return "Only a chat open in Sova can remove a queued message.";
   if (row.sharedQueue) return SHARED_QUEUE_REASON;
-  // Truthful about what the server holds: until it acknowledges the message, removing it would
-  // be a claim about something that may not be in the queue yet.
-  if (row.state === "sending") return "Not queued yet. This can be removed once the server has it.";
   if (row.state === "delivered") return "Already sent. It can't be removed now.";
   if (row.pending) return "Removing…";
   return null;

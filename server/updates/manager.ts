@@ -190,7 +190,7 @@ export class UpdatesManager {
       this.job(); // records a finished job's outcome in updates.json
       const last = this.read().lastUpgrade;
       if (last && last.to === target.sha && last.outcome === "rolled-back") {
-        this.autoRefusal = `${target.label} didn't start the last time it was installed, so it isn't tried again automatically. Upgrade by hand to try it again.`;
+        this.autoRefusal = `${target.label} was put back last time, so it isn't installed again automatically. Upgrade by hand to try it again.`;
         this.deps.log(`[updates] automatic upgrade didn't start: ${this.autoRefusal}`);
       } else {
         try {

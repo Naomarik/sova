@@ -183,7 +183,7 @@ test("Upgrade automatically never reinstalls a version that was put back; one th
     const s = await x.m.state();
     if (outcome === "rolled-back") {
       assert.equal(x.launched.length, 0, "no unattended retry of a version that didn't start");
-      assert.equal(s.autoRefusal, "master didn't start the last time it was installed, so it isn't tried again automatically. Upgrade by hand to try it again.");
+      assert.equal(s.autoRefusal, "master was put back last time, so it isn't installed again automatically. Upgrade by hand to try it again.");
       assert.equal(s.available, true, "the button still offers it");
     } else {
       assert.equal(x.launched.length, 1, "a failure that changed nothing (a network error) is tried again");

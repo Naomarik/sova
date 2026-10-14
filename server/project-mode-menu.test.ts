@@ -26,7 +26,7 @@ const never = () => false;
 test("rows: every mode offered, off, with its command line and the hash an approval approves", () => {
   const l = listing([snap("plain"), snap("rel", { tools: [tool], toolsHash: H("a") })], [{ id: "Bad_Name", kind: "bad-id", path: "/repo/.sova/minor-modes/Bad_Name", error: "not a mode name" }]);
   const info = projectModesInfo(l, [], new Map(), never);
-  assert.deepEqual(info.projectModes, []);
+  assert.equal("projectModes" in info, false, "nothing on: absent, not empty");
   assert.deepEqual(info.project, { root: "/repo", name: "repo" });
   assert.deepEqual(info.projectMinors, [
     { id: "plain", description: "plain words", workers: false, tools: [], dir: "/repo/.sova/minor-modes/plain" },
@@ -51,8 +51,9 @@ test("rows: an on mode shows the copy it runs; changed when the files differ; re
   assert.equal(row("gone").description, "gone words");
 });
 
-test("rows: no checkout and nothing on is nothing at all", () => {
+test("rows: no rows and nothing on is nothing at all", () => {
   assert.deepEqual(projectModesInfo({ root: null, name: "", modes: [], problems: [] }, [], new Map(), never), {});
+  assert.deepEqual(projectModesInfo({ root: "/repo", name: "repo", modes: [], problems: [] }, [], new Map(), never), {}, "a checkout with no modes: the frame it always sent");
 });
 
 test("turn-on: unknown and broken refuse; tools need approval unless approved now, or by the Overseer", () => {

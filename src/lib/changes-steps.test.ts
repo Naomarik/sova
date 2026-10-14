@@ -325,6 +325,13 @@ test("stepOrigins: same-second commits keep each read's ancestors-first order, m
   const f: StepFile[] = ["y.ts", "x.ts", "z.ts"].map((path) => ({ path, hunks: [hunk(1, ["a"])] }));
   const plan = stepsFromAgent([{ title: "All", hunks: f.map((x) => ({ path: x.path })) }], f, "/r", o);
   assert.deepEqual(plan.steps[0]!.commits, [sha("9"), sha("f"), sha("e"), sha("0")]);
+  // Commits no list relates (different files) go by the comparison-wide history order when given.
+  const w = stepOrigins([
+    { path: "x.ts", hunkCommits: [[0]], commits: [{ sha: sha("1"), subject: "", authorTime: t, order: 2 }] },
+    { path: "y.ts", hunkCommits: [[0, 1]], commits: [{ sha: sha("2"), subject: "", authorTime: t, order: 0 }, { sha: sha("3"), subject: "", authorTime: t, order: 3 }] },
+    { path: "z.ts", hunkCommits: [[0]], commits: [{ sha: sha("0"), subject: "", authorTime: t, order: 1 }] },
+  ]);
+  assert.deepEqual([...w.rank].sort((a, b) => a[1] - b[1]).map(([s]) => s), [sha("2"), sha("0"), sha("1"), sha("3")]);
   // Lists that disagree (a cycle) still give every commit a place.
   const c = stepOrigins([
     { path: "a", hunkCommits: [[0, 1]], commits: [{ sha: sha("a"), subject: "", authorTime: 1 }, { sha: sha("b"), subject: "", authorTime: 2 }] },

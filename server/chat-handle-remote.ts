@@ -374,11 +374,11 @@ export class RemoteChatHandle extends ChatHandle {
   endPanes(message: string, code: "internal" | "reloaded" = "internal"): void {
     this.closePanes({ type: "error", code, message }, code === "internal" ? "chat process stopped" : "chat closed");
   }
-  /** The chat closed for being quiet (§app.chat-processes/idle-stop): each pane is told so, then its
-      socket closes. A pane that knows the word keeps what it shows and doesn't reconnect; one that
-      doesn't reconnects on the close, as it always did. The handle is done. */
-  closePanesQuietly(): void {
-    this.closePanes({ type: "closed", reason: "idle" }, "chat closed");
+  /** The chat closed for being quiet (§app.chat-processes/idle-stop) or was archived: each pane is
+      told so, then its socket closes. A pane that knows the word keeps what it shows and doesn't
+      reconnect; one that doesn't reconnects on the close, as it always did. The handle is done. */
+  closePanesQuietly(reason: "idle" | "archived"): void {
+    this.closePanes({ type: "closed", reason }, "chat closed");
   }
   private closePanes(last: ChatServerMessage, reason: string): void {
     this.ended = true;

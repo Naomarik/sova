@@ -245,6 +245,40 @@ test("idle stop: a quiet chat with a tab attached closes after the idle time; th
   t.router.detach();
 });
 
+test("archive: a tab on the chat is told it closed, never to reconnect (which would start the archived chat again)", async () => {
+  const t = setup({ later: true });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; code?: string; reason?: string }[] = [];
+  const closes: number[] = [];
+  h.attach({ wire: 2, send: (m) => void got.push(m as never), close: (code) => void closes.push(code ?? 0) });
+  for (let i = 0; i < 50 && !got.some((m) => m.type === "hello"); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.ok(got.some((m) => m.type === "hello"), "the tab had its hello");
+  // As archiveSession closes it (sessions-index.ts).
+  assert.equal(await t.router.close(s.path, "Session archived; its runtime was closed.", { quiet: "archived" }), true);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(t.exits, ["archived"]);
+  assert.deepEqual(got.filter((m) => m.type === "closed" || m.type === "error"), [{ type: "closed", reason: "archived" }], "no `reloaded`: a tab that reconnects reopens the chat");
+  assert.deepEqual(closes, [4500]);
+  assert.equal(t.router.get(s.path), undefined);
+  assert.equal(t.driver.started.length, 1);
+  t.router.detach();
+});
+
+test("a close for a cleared Overseer or a moved project still tells its tabs to reconnect (they reopen the chat)", async () => {
+  const t = setup({ later: true });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; code?: string }[] = [];
+  h.attach({ wire: 2, send: (m) => void got.push(m as never), close: () => {} });
+  for (let i = 0; i < 50 && !got.some((m) => m.type === "hello"); i++) await new Promise((r) => setTimeout(r, 20));
+  await t.router.close(s.path, "The Overseer was cleared. Opening the new conversation.");
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(got.some((m) => m.type === "error" && m.code === "reloaded"), "told to reconnect");
+  assert.ok(!got.some((m) => m.type === "closed"));
+  t.router.detach();
+});
+
 test("idle stop: a chat with a working worker, a tab attached or not, is never asked to close", async () => {
   let ahead = 0;
   const t = setup({ later: true, sup: { now: () => Date.now() + ahead, idleMs: 30 * 60_000, exitWaitMs: 50 } });

@@ -372,7 +372,7 @@ export class ChatHostRouter {
     const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
-    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title ?? "", kind === "powers");
+    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind === "powers");
     link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
@@ -461,7 +461,7 @@ export class ChatHostRouter {
         // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
         // chat declared them at its open).
         const kind = kindOfMirror(state.mirror);
-        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title ?? "", kind === "powers");
+        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title, kind === "powers");
         if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
         const h = this.adoptHandle(rec, link, state.mirror, held);
         this.pushSpecial(h);
@@ -519,7 +519,7 @@ export class ChatHostRouter {
         // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
         if (again === "reloaded") {
           const kind = kindOfMirror(open.mirror);
-          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "", kind === "powers");
+          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title, kind === "powers");
           if (kind && kind !== "powers") await adoptSpecial(kind, path);
         }
         return open;

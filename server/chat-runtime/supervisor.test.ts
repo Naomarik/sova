@@ -636,14 +636,16 @@ test("waitUnlocked: free at once, free after a while, or still held after 10 s",
   assert.ok(clock - t0 >= 10_000);
 });
 
-test("knobs: slice, test driver, idle minutes and the Claude cap from the server's env", () => {
-  assert.deepEqual(supervisorConfig({}), { slice: "sova-chats.slice", driver: "systemd", idleMs: 30 * 60_000, claudeIdleMax: 4 });
-  assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sovatest.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MIN: "0.05", SOVA_CHAT_CLAUDE_IDLE_MAX: "1" }), {
+test("knobs: slice, test driver, idle minutes, the Claude cap and the boot wait from the server's env", () => {
+  assert.deepEqual(supervisorConfig({}), { slice: "sova-chats.slice", driver: "systemd", idleMs: 30 * 60_000, claudeIdleMax: 4, bootMs: 30_000 });
+  assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sovatest.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MIN: "0.05", SOVA_CHAT_CLAUDE_IDLE_MAX: "1", SOVA_CHAT_BOOT_MS: "90000" }), {
     slice: "sovatest.slice",
     driver: "detached",
     idleMs: 3_000,
     claudeIdleMax: 1,
+    bootMs: 90_000,
   });
+  for (const bad of ["0", "-5", "1.5", "soon", " ", "1e5", "9007199254740993"]) assert.equal(supervisorConfig({ SOVA_CHAT_BOOT_MS: bad }).bootMs, 30_000, bad);
   assert.equal(supervisorConfig({ SOVA_CHAT_IDLE_MIN: "0" }).idleMs, 0);
   assert.equal(supervisorConfig({ SOVA_CHAT_IDLE_MIN: "soon" }).idleMs, 30 * 60_000);
   assert.equal(chatDriver({ slice: "x", driver: "detached" }).id, "detached");

@@ -288,8 +288,7 @@ export interface HarnessSession extends SessionRead {
   /** Re-read the agent's context from the session after writes outside a run. */
   refreshContext(): void;
   /** A note for the model, shown in the chat, that starts no turn (idle: written now). */
-  /** `display` false: the model reads it, the transcript shows no row. */
-  appendNote(noteType: string, text: string, display?: boolean): Promise<void>;
+  appendNote(noteType: string, text: string): Promise<void>;
 
   // ── attribution
   /** `claim` sees the input each user-message entry point hands the agent (prompt, steer, follow-up)

@@ -1,4 +1,3 @@
-import type { SavedSessionsInHistory } from "../shared/session-bundle";
 /** A refusal a route answers with its status and sentence (`code`: one the client acts on by name). Its
     own module, so the org engine's glue can throw it without importing server/orgs.ts. */
 export class OrgError extends Error {
@@ -11,16 +10,5 @@ export class OrgError extends Error {
     readonly tail?: string,
   ) {
     super(message);
-  }
-}
-
-/** Merge Branch refused because the branch's history carries saved sessions: the sentence, and the commits
-    found (the client offers Merge Anyway, which retries with allowSavedSessions). */
-export class SavedSessionsMergeRefusal extends OrgError {
-  constructor(
-    message: string,
-    readonly savedSessions: SavedSessionsInHistory,
-  ) {
-    super(message, 409);
   }
 }

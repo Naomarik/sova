@@ -140,7 +140,7 @@ test("statm: resident and shared pages; own memory is what is left (RssAnon); ma
 });
 
 test("Sova's own processes by argv: a chat's runtime and the usage helper", () => {
-  assert.equal(classifyArgv(["/home/u/.local/bin/bun", "/home/u/.local/state/sova/code/abc/server/chat-runtime/main.ts"]).kind, "sova-runtime");
+  assert.equal(classifyArgv(["/opt/bun/bin/bun", "/var/lib/sova/chats/code/abc/server/chat-runtime/main.ts"]).kind, "sova-runtime");
   assert.equal(classifyArgv(["bun", "server/chat-runtime/main.ts"]).kind, "sova-runtime");
   assert.equal(classifyArgv(["node", "--import", "tsx", "server/usage-helper/main.ts"]).kind, "sova-helper");
   assert.equal(classifyArgv(["bun", "server/index.ts"]).kind, "node");

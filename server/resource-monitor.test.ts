@@ -502,7 +502,7 @@ describe("sampler over a fixture /proc", () => {
     ].join("\n") + "\n";
     const args: Record<number, string> = {
       [SERVER]: "bun server/index.ts", 110: "bun /x/server/usage-helper/main.ts", 450: "bun /x/server/chat-runtime/main.ts",
-      451: `/Users/u/.local/bin/claude -p --session-id ${claudeSessionId("sess-a", 0)}`, 452: "zsh -c make", 999: "Safari",
+      451: `/usr/local/bin/claude -p --session-id ${claudeSessionId("sess-a", 0)}`, 452: "zsh -c make", 999: "Safari",
     };
     const ps = async (a: string[]) => {
       calls.push(a);

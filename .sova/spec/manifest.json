@@ -18327,6 +18327,7 @@
     "§site.docs/index": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/mode-menu",
         "§design.copy-deck/mode-menu",
         "§chat/alignment",
@@ -18339,7 +18340,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/index.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site.docs/install": {
       "kind": "behavior",
@@ -18394,7 +18399,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "at": "2026-10-14T12:38Z"
       }
     },
     "§site.docs/needs-you": {
@@ -18450,7 +18455,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "at": "2026-10-14T12:38Z"
       }
     },
     "§site.docs/phone": {
@@ -18479,6 +18484,7 @@
     "§site.docs/playbooks-and-schedules": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/playbooks",
         "§chat/schedules",
         "§chat.schedules/header",
@@ -18497,7 +18503,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "at": "2026-10-14T12:38Z"
       }
     },
     "§site.docs/project-modes": {
@@ -18516,7 +18522,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "at": "2026-10-14T12:38Z"
       },
       "evidence": "reviewed"
     },
@@ -18546,6 +18552,7 @@
     "§site.docs/subagent-profiles": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/subagent-profiles",
         "§chat.subagent-profiles/file",
         "§chat.subagent-profiles/off",
@@ -18563,7 +18570,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/subagent-profiles.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site.docs/vis": {
       "kind": "behavior",
@@ -18582,6 +18593,7 @@
     "§site.docs/worktrees-and-changes": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/worktrees",
         "§chat.worktrees/entry",
         "§chat.worktrees/tool",
@@ -18609,7 +18621,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/worktrees-and-changes.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site/docs": {
       "kind": "note",

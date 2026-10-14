@@ -37,7 +37,7 @@ type Handler = (event: unknown, ctx: unknown) => unknown;
 
 /** One extension instance on a fake pi, started in `cwd` with these flag values. */
 async function start(cwd: string, flags: Record<string, string>) {
-	const tools = new Map<string, { execute: (...a: unknown[]) => Promise<{ content: { text?: string }[] }> }>();
+	const tools = new Map<string, { execute: (...a: unknown[]) => Promise<{ content: { text?: string }[]; isError?: boolean }> }>();
 	const handlers = new Map<string, Handler[]>();
 	const listeners = new Map<string, ((d: unknown) => void)[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
@@ -64,10 +64,8 @@ async function start(cwd: string, flags: Record<string, string>) {
 	const sessionManager = { getBranch: () => entries, getSessionId: () => `s${Math.random().toString(36).slice(2)}`, getSessionFile: () => undefined };
 	const ctx = { cwd, hasUI: true, ui: { notify: (t: string) => notes.push(t), setStatus() {} }, sessionManager };
 	for (const h of handlers.get("session_start") ?? []) await h({ reason: "startup" }, ctx);
-	const run = async (name: string, params: object) => {
-		const r = await tools.get(name)!.execute("id", params, undefined, undefined, ctx);
-		return r.content.map((c) => c.text ?? "").join("");
-	};
+	const call = (name: string, params: object) => tools.get(name)!.execute("id", params, undefined, undefined, ctx);
+	const run = async (name: string, params: object) => (await call(name, params)).content.map((c) => c.text ?? "").join("");
 	let stopped = false;
 	const stop = async () => {
 		if (stopped) return;
@@ -75,7 +73,7 @@ async function start(cwd: string, flags: Record<string, string>) {
 		for (const h of handlers.get("session_shutdown") ?? []) await h({ reason: "quit" }, ctx);
 	};
 	started.push(stop);
-	return { tools, events, notes, entries, run, stop, emit: pi.events.emit, command: (a: string) => commands.get("sandbox")!.handler(a, ctx), last: () => events.at(-1)! };
+	return { tools, events, notes, entries, run, call, stop, emit: pi.events.emit, command: (a: string) => commands.get("sandbox")!.handler(a, ctx), last: () => events.at(-1)! };
 }
 
 function dirs() {
@@ -156,7 +154,12 @@ test("a worker started outside its parent's roots refuses every tool; inside, it
 	await inside.run("write", { path: "../up.txt", content: "up" });
 	assert.equal(readFileSync(join(a, "up.txt"), "utf8"), "up", "the parent's whole root is the worker's too");
 	await assert.rejects(inside.run("write", { path: join(b, "no.txt"), content: "x" }), /\[sandbox:/);
-	await assert.rejects(inside.run("bash", { command: `touch ${join(b, "no2.txt")}` }), /Read-only file system/);
+	// pi's bash returns a non-zero exit as an error result (isError), not a throw.
+	const touched = await inside.call("bash", { command: `touch ${join(b, "no2.txt")}` });
+	const touchedText = touched.content.map((c: { text?: string }) => c.text ?? "").join("");
+	assert.equal(touched.isError, true);
+	assert.match(touchedText, /\[sandbox: /);
+	assert.match(touchedText, /Read-only file system/);
 	assert.equal(existsSync(join(b, "no.txt")) || existsSync(join(b, "no2.txt")), false);
 	// Its own event narrows transitively: grandchildren get the same roots.
 	assert.deepEqual(JSON.parse(piFlags(inside.last(), { cwd: join(a, "sub") })["sandbox-parent"]!).writable, JSON.parse(flags["sandbox-parent"]!).writable);

@@ -4,19 +4,20 @@
 // workspace and PI_CODING_AGENT_DIR; no model is called.
 // sova_project_verbs against a real served project (up, down, share over a real port): project-overseer-tools-statecharts.integration.test.ts.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { PipelineInfo, PipelineTimeline } from "../shared/pipeline";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-statecharts-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");

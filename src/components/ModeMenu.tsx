@@ -162,7 +162,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   // A mode message that arrives later (a switch here or in another tab) is newer than the read: it wins.
   createEffect(on(() => current()?.projectMinors, () => setFreshProject(null), { defer: true }));
   const projectName = () => (freshProject() ?? current())?.project?.name;
-  const projectMinors = createMemo(() => [...((freshProject() ?? current())?.projectMinors ?? [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+  const projectMinors = createMemo(() => [...((freshProject() ?? current())?.projectMinors ?? [])].sort((a, b) => a.id.localeCompare(b.id, "en")));
   const projectOn = () => current()?.projectModes ?? [];
   const projectInfo = (id: string) => projectMinors().find((m) => m.id === id);
   const items = createMemo<Item[]>(() => {

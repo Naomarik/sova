@@ -3,17 +3,23 @@
 // that a replaced module keeps its export names, and that a stand-in takes whatever drawing code does to
 // it (construct, extend, call, read, iterate, print, await) quietly, recording each call. The plugin
 // itself is never installed here (it is process-wide): a fake register catches what it would answer.
+// headless-files.json is the snapshot of every file in the folders the stand-ins reach into (pi-tui's
+// dist/, pi's dist/modes/interactive/ and dist/utils/, marked's lib/), each marked stand-in or kept: a pi
+// that adds, drops or moves a file there fails here until a person classifies it (and changes
+// STANDIN_FILTER to match). PI_PACKAGE_DIR=<a pi-coding-agent dir> checks another pi (a pin bump);
+// SOVA_HEADLESS_FILES_OUT=<absolute path> writes the snapshot the filter gives today, for review.
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import { after, test } from "node:test";
 import { STANDIN_FILTER, installHeadless, standInCalls, standInSource } from "./headless";
-import { EXTENSION_DEPS, packageFrom } from "./own-code";
+import { packageFrom } from "./own-code";
+import { piPackageDir } from "./testing/load-pi";
 
-const REPO = resolve(import.meta.dirname, "../../..");
-const piDir = packageFrom(join(REPO, "server"), EXTENSION_DEPS[0])!;
+const piDir = piPackageDir;
 const tuiDir = packageFrom(piDir, "@earendil-works/pi-tui")!;
+const markedDir = packageFrom(tuiDir, "marked")!;
 const t = realpathSync(mkdtempSync(join(tmpdir(), "headless-")));
 after(() => rmSync(t, { recursive: true, force: true }));
 const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : e.name.endsWith(".js") ? [join(d, e.name)] : []));
@@ -31,12 +37,43 @@ installHeadless({ SOVA_STANDIN_LOG: log }, (f, l) => {
   load = l;
 });
 
-test("pi-tui's drawing modules are replaced, its text, key, colour and image helpers are not", () => {
-  const all = walk(join(tuiDir, "dist")).map((f) => relative(join(tuiDir, "dist"), f));
-  const replaced = matched(tuiDir, "@earendil-works/pi-tui");
-  const kept = all.filter((r) => !replaced.includes(r)).sort();
-  assert.deepEqual(kept, ["colors.js", "fuzzy.js", "index.js", "keybindings.js", "keys.js", "native-modifiers.js", "native-module-path.js", "native-platform.js", "oklab.js", "terminal-colors.js", "terminal-image.js", "utils.js"]);
-  for (const r of ["tui.js", "terminal.js", "components/text.js", "components/editor.js", "components/markdown.js"]) assert.ok(replaced.includes(r), r);
+type Mark = "stand-in" | "kept";
+interface Snapshot {
+  versions: Record<string, string>;
+  files: Record<string, Mark>;
+}
+/** The folders the stand-ins reach into: snapshot key prefix, real folder, and the path tail the filter sees. */
+const FOLDERS = [
+  { key: "pi-tui/dist", dir: join(tuiDir, "dist"), tail: "/@earendil-works/pi-tui/dist" },
+  { key: "pi-coding-agent/dist/modes/interactive", dir: join(piDir, "dist", "modes", "interactive"), tail: "/@earendil-works/pi-coding-agent/dist/modes/interactive" },
+  { key: "pi-coding-agent/dist/utils", dir: join(piDir, "dist", "utils"), tail: "/@earendil-works/pi-coding-agent/dist/utils" },
+  { key: "marked/lib", dir: join(markedDir, "lib"), tail: "/marked/lib" },
+];
+/** Every file of those folders (source maps and type declarations aside, which never load), as the filter marks it today. */
+function filesNow(): Record<string, Mark> {
+  const all = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? all(join(d, e.name)) : /\.(?:map|d\.ts)$/.test(e.name) ? [] : [join(d, e.name)]));
+  const out: Record<string, Mark> = {};
+  for (const f of FOLDERS) for (const file of all(f.dir).sort()) {
+    const rel = relative(f.dir, file);
+    out[`${f.key}/${rel}`] = STANDIN_FILTER.test(`${f.tail}/${rel}`) ? "stand-in" : "kept";
+  }
+  return out;
+}
+const version = (dir: string) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).version as string;
+
+test("every file where the stand-ins reach is one the snapshot classifies, and the filter treats it as classified", () => {
+  const now = filesNow();
+  const out = process.env.SOVA_HEADLESS_FILES_OUT;
+  if (out) writeFileSync(out, `${JSON.stringify({ versions: { "pi-coding-agent": version(piDir), "pi-tui": version(tuiDir), marked: version(markedDir) }, files: now }, null, 2)}\n`);
+  const snap = JSON.parse(readFileSync(join(import.meta.dirname, "headless-files.json"), "utf8")) as Snapshot;
+  const triage = `(pi ${version(piDir)}, pi-tui ${version(tuiDir)}, marked ${version(markedDir)}; the snapshot is of ${JSON.stringify(snap.versions)}): classify it in server/harness/pi/headless-files.json and make STANDIN_FILTER agree (QUIRKS.md P27)`;
+  assert.deepEqual(Object.keys(now).filter((k) => !(k in snap.files)), [], `a file the snapshot doesn't know ${triage}`);
+  assert.deepEqual(Object.keys(snap.files).filter((k) => !(k in now)), [], `a snapshot file that is gone or moved ${triage}`);
+  assert.deepEqual(Object.keys(now).filter((k) => now[k] !== snap.files[k]).map((k) => `${k}: filter says ${now[k]}, snapshot ${snap.files[k]}`), [], `the filter and the snapshot disagree ${triage}`);
+  // The snapshot itself: pi-tui's text, key and colour helpers and pi's theme are kept.
+  for (const k of ["utils.js", "keys.js", "keybindings.js", "fuzzy.js", "colors.js", "terminal-image.js", "index.js"]) assert.equal(snap.files[`pi-tui/dist/${k}`], "kept", k);
+  for (const k of Object.keys(snap.files).filter((k) => k.includes("/modes/interactive/theme/"))) assert.equal(snap.files[k], "kept", k);
+  for (const k of ["pi-tui/dist/tui.js", "pi-tui/dist/components/text.js", "marked/lib/marked.esm.js", "pi-coding-agent/dist/modes/interactive/interactive-mode.js", "pi-coding-agent/dist/utils/syntax-highlight.js"]) assert.equal(snap.files[k], "stand-in", k);
 });
 
 test("pi's terminal mode and highlighter are replaced; its theme, core, rpc mode and the rest are not", () => {
@@ -84,7 +121,12 @@ test("a stand-in takes what drawing code does to it, quietly, and records each c
       return this.render(80).join("\n");
     }
   }
+  const warns: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]) => void warns.push(a.join(" "));
+  after(() => void (console.warn = warn));
   const p = new Panel();
+  assert.deepEqual(warns, [], "constructing is quiet");
   assert.equal(p.own, 1, "a subclass keeps its own fields");
   assert.ok(p instanceof Widget);
   assert.equal(`${p.draw()}`, "", "a member's result prints as nothing");
@@ -95,6 +137,9 @@ test("a stand-in takes what drawing code does to it, quietly, and records each c
   assert.equal(typeof MARK, "function", "a constant is a stand-in too");
   m.default();
   assert.equal(typeof m.more, "number", "the star target here is real (the filter doesn't match it)");
+  console.warn = warn;
+  assert.equal(warns.length, 1, `one warning, for the first call that isn't a construct: ${warns.join(" | ")}`);
+  assert.match(warns[0]!, /drawing code was called in this chat: Widget#render\(\)/);
   const calls = standInCalls();
   for (const c of ["new Widget", "Widget#render()", "Widget#render().join()", "hint()", "default()"]) assert.ok(calls.has(c), `${c} recorded: ${[...calls.keys()].join(", ")}`);
   assert.equal(calls.get("hint()"), 3);

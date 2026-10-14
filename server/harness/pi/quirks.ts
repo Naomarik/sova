@@ -397,6 +397,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [{ file: "server/harness/pi/own-code.ts", symbol: "extensionDepDrift" }],
     canary: "P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own",
     retireWhen: "pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds",
+    note: "Covers pi-config's extensions only: npm and git package extensions resolve pi from their own node_modules, with their own copies.",
   },
   {
     id: "P27",

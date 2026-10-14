@@ -68,8 +68,14 @@ export function standInCalls(): ReadonlyMap<string, number> {
 
 function standIns(log: string | undefined): StandIns {
   const calls = new Map<string, number>();
+  let warned = false;
   const note = (what: string) => {
     const n = calls.get(what);
+    // Constructing is what loading pi and the extensions does; anything else means drawing code ran.
+    if (!warned && !what.startsWith("new ")) {
+      warned = true;
+      console.warn(`[headless] pi's terminal drawing code was called in this chat: ${what} (a stand-in answered, doing nothing; QUIRKS.md P27)`);
+    }
     if (n === undefined && calls.size >= MAX_CALLS) return;
     calls.set(what, (n ?? 0) + 1);
     if (n === undefined && log) appendFileSync(log, `call ${what}\n`);

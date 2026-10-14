@@ -104,7 +104,8 @@ characters, and the extra width mostly goes to code, diffs, and tool output. Eve
 form), a Claude model by its catalog name, of the model that answered when the reply records it
 (§app.claude-code-provider/model-names, §app.claude-code-provider/model-identity), or `pi` when
 unknown. Consecutive assistant-text items in one turn share one head: render
-the head only on the first.
+the head only on the first. A measured reply's head opens its timing card, and its time is a
+button (§app.insights/reply-timing-hover); an unmeasured reply's head is as shown here.
 
 ```html
 <article class="message">

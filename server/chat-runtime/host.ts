@@ -76,6 +76,7 @@ import { LinkWorkerHost, WORKER_PROTO } from "./worker-port";
 
 /** The provider and model runtime warm-up, once per process (main.ts awaits it before "ready"). */
 export { warmChatRuntime } from "../chat-manager";
+import { setReplyTimingsSource } from "../reply-facts";
 
 /** `globalThis[LINK_LIVE](sessionId)`: whether a session is in a live link (the link extension asks). */
 const LINK_LIVE = Symbol.for("sova:link-live");
@@ -134,13 +135,14 @@ export const REPLY_TEXT_EVERY_MS = 100;
 const SPECIAL_PROTO = 2;
 
 /** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
-type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton";
+type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings";
 const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   "project.note": null,
   "playbook.bundleFor": null,
   "playbook.reprime": null,
   links: [],
   singleton: null,
+  "reply.timings": null,
 };
 
 /** A call-back whose call is no longer pending (the link dropped, the call settled). */
@@ -461,6 +463,8 @@ export class ChatRuntimeHost {
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);
+    // A stage-2 server (proto 1) knows no such ask: it gets none, and the rows go without timings.
+    setReplyTimingsSource((sessionId) => (this.speaksSpecial() ? this.ask("reply.timings", { sessionId }) : Promise.resolve(null)));
     setCodeReload((client) => this.reloadNow(client));
     (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (sessionId: string) => this.liveIds.has(sessionId);
   }
@@ -668,13 +672,16 @@ export class ChatRuntimeHost {
       ...(f.client.tail ? { tail: f.client.tail } : {}),
       ...(f.client.pull ? { pull: f.client.pull } : {}),
       ...(f.client.pull && typeof f.client.have === "string" ? { have: f.client.have } : {}),
+      // After its hello, which starts the pane's account again (the hello may wait: ChatSession.attach).
+      greeted: () => {
+        const code = this.code();
+        if (code.state !== "current") client.send(codeMessage(code));
+      },
     };
     this.clients.set(f.clientId, client);
     // A pane is back: the orphans go, their dialogs stay (attach sends them again).
     if (this.orphaned) this.endOrphans(false);
     chat.attach(client);
-    const code = this.code();
-    if (code.state !== "current") client.send(codeMessage(code));
     this.pokeSoon();
   }
 

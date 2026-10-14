@@ -173,6 +173,8 @@ export function attachStreamGuard(
       args.set(e.index ?? -1, { chars: 0, run: 0 });
       return;
     }
+    // A part's start or end carries no characters.
+    if (!("delta" in e)) return;
     const delta = e.delta;
     output += delta.length;
     if (c.outputChars !== null && output > c.outputChars) return trip("output", `the reply passed ${n(c.outputChars)} characters`, output);

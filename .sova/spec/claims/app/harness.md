@@ -140,12 +140,16 @@ sockets already read as the visit's tab).
 - **Only a consumer that asks gets wire 2.** It gets each live event as
   `{type: "event", v: 2, event}`, with the entry a message was written as named inside its end,
   and each entry's first row with `facts` (a setting change, a context reset, a compaction's
-  figures, a reply's context fill, a tool result's tool and failure) and no `meta`. A consumer that
+  figures, a reply's context fill, a tool result's tool and failure, a measured reply's timing) and
+  no `meta`. A consumer that
   doesn't ask (an older bundle, a cached page, an older peer's page through this host's mesh proxy,
   a script) gets today's frames and rows byte for byte, and nothing it shows changes.
 - **One mapping, on both sides.** Every wire-2 event is a wire-1 event mapped by one pure function,
   and every row's facts are its wire-1 facts mapped by another (`fromV1` and `factsFromMeta`,
-  `shared/wire-v1.ts`); the server and the browser use the same two. A wire-1 event the live view
+  `shared/wire-v1.ts`); the server and the browser use the same two. The one exception is a measured
+  reply's timing (`reply`, §app.insights/reply-timing-hover), which comes from the reply-timing store
+  rather than from wire 1. It rides wire 2 only: on its entry's first row, and in the live reply's
+  `message.end`, where the chat tags the wire-1 frame and `fromV1` maps the tag. Wire 1 drops it. A wire-1 event the live view
   ignores maps to nothing.
 - **An older peer still reads.** A browser that asked for wire 2 and got wire 1 (an older server
   ignores the parameter) maps the frames and rows itself, through those same functions, and shows
@@ -184,7 +188,12 @@ lists the active and registered tools and the slash commands, reads its session'
 and hears the run's live events. The session looks pi up again at every call, so whatever pi
 session the chat's runtime holds at that moment, and any method replaced on it since, is the one
 used. Each pi event reaches the chat once, in pi's own listener, in the order and tick pi emits it,
-named in Sova's words and carrying the wire-1 frame the chat forwards. Moving the chat onto it
+named in Sova's words and carrying the wire-1 frame the chat forwards. Beside pi's events the session
+tells the chat, in the same listener, when the agent's own model request goes out (after any wait
+for a provider slot; never a side call's request); no wire carries that one. A finished assistant
+message's end carries what reply timing reads (§app.insights/reply-timing), in Sova's words: its
+provider and model, how it ended, its output and thinking-token counts as reported, the effort it
+was requested and run at, and whether a provider marked it as no measurement. Moving the chat onto it
 changes nothing a client, a session file or an extension sees: the session goldens
 (`server/harness/pi/golden/session/`, S1–S15) record each scenario's session file, pi's calls in
 order and the frames it exercises to two clients (a hello cut to its state and rows; a frame type no
@@ -291,8 +300,8 @@ The chat watches each session its runtime builds as a driving session (`HarnessS
 `shared/harness-session.ts`), and so does the runaway-stream guard (§chat.transcript/runaway-stream)
 it runs: neither reaches pi's session, and neither imports pi. The driving session's live events are
 in Sova's words, one per pi event in pi's own listener and tick. Such an event carries what these
-watchers read: a streaming reply's delta (a tool call starting, its argument characters, text or
-thinking) and the reply so far, whether a compaction is followed by a retry of the request, and a
+watchers read: a streaming reply's delta (a thinking, text or tool-call part starting or ending,
+a tool call's argument characters, text or thinking) and the reply so far, whether a compaction is followed by a retry of the request, and a
 custom message's note type, by which the Overseer's turns tell its own state notes from input.
 The Overseer, a project's overseer and a baton session (its wrap-up included) never hold the chat
 or its driving session: the chat tells their loadout what its runs do as data (`ChatRunEvent`,

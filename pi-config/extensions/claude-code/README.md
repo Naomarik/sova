@@ -167,6 +167,13 @@ A child that exits mid-turn, or fails its `initialize` handshake, ends the turn
 with an error followed by the last lines it wrote on stderr (at most 20 lines and
 2 KB, the newest kept), so the chat says why it died.
 
+When the CLI retries inside one message because the model's tool input was
+rejected as invalid, the provider marks that message: its `diagnostics` gains
+`{ type: "measurement-invalid", timestamp, details: { reason: "invalid-tool-retry" } }`
+(`MEASUREMENT_INVALID_DIAGNOSTIC` in `provider/stream.ts`). The message's timing
+covers the failed attempt too, so a host that times replies, such as Sova,
+records no measurement for it.
+
 ### Rebuild on divergence
 
 The bridge fingerprints the transcript prefix it has already sent. When pi's

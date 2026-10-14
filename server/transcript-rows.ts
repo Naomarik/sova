@@ -14,6 +14,7 @@ import { entryOfRow, summarize } from "../shared/row-counts";
 import { parsePiBranch } from "./harness/pi/reader";
 import { chunkStart, HISTORY_CHUNK_CHARS, rangeStart, TAIL_CHARS, TAIL_MIN_ROWS, tailStart } from "./tail-hello";
 import { rowsOf as historyRows } from "./transcript";
+import type { ReplyTimings } from "./reply-facts";
 import { rowFor } from "./wire-rows";
 
 /** One file's branch, normalized, with each row's JSON made once. */
@@ -27,6 +28,8 @@ export interface Rows {
   sizes: number[];
   /** Each row's JSON on wire 2, made on its first ask (a hole until then). */
   json2?: string[];
+  /** The measured replies' version (ReplyTimings.v) json2 was made with: another one makes it again. */
+  json2v?: string;
   /** Every entry id in the file (the header's included), and those on the active branch. */
   fileIds: Set<string>;
   branchIds: Set<string>;
@@ -76,8 +79,11 @@ export async function rowsOf(path: string): Promise<Rows> {
 
 /** Rows [from, end)'s JSON on `wire`. Wire 2's is made per row on its first ask, only for the rows an answer
     sends; a row without facts is the same on both wires. */
-function jsonOn(rows: Rows, wire: WireVersion, from: number, end: number): string[] {
+function jsonOn(rows: Rows, wire: WireVersion, from: number, end: number, replies: ReplyTimings | null = null): string[] {
   if (wire === 1) return rows.json.slice(from, end);
+  const v = replies?.v ?? "";
+  if (rows.json2 && rows.json2v !== v) rows.json2 = undefined;
+  rows.json2v = v;
   const json2 = (rows.json2 ??= new Array<string>(rows.items.length));
   const out: string[] = [];
   let made = 0;
@@ -85,7 +91,7 @@ function jsonOn(rows: Rows, wire: WireVersion, from: number, end: number): strin
     let s = json2[i];
     if (s === undefined) {
       const it = rows.items[i]!;
-      s = json2[i] = it.meta === undefined ? rows.json[i]! : JSON.stringify(rowFor(it, 2));
+      s = json2[i] = it.meta === undefined ? rows.json[i]! : JSON.stringify(rowFor(it, 2, replies?.get));
       made += s.length;
     }
     out.push(s);
@@ -147,6 +153,7 @@ export async function transcriptRows(
   q: RowsQuery,
   context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>,
   wire: WireVersion = 1,
+  replies: ReplyTimings | null = null,
 ): Promise<RowsAnswer> {
   const rows = await rowsOf(path);
   const moved = (why: string): RowsAnswer => ({ status: 409, error: `The branch moved: ${why}.`, code: "moved" });
@@ -173,7 +180,7 @@ export async function transcriptRows(
   // The fill, as the whole-branch response carries it, for the answers that reach the end.
   const ctx = q.tail || !q.before ? `,"context":${JSON.stringify(await context(rows.branch))}` : "";
   const summary = JSON.stringify(summarize(rows.items.slice(0, from)));
-  return { status: 200, body: `{"items":[${jsonOn(rows, wire, from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
+  return { status: 200, body: `{"items":[${jsonOn(rows, wire, from, end, replies).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
 }
 
 // ---- The light view: `view=light` ----------------------------------------------------------------
@@ -214,9 +221,14 @@ export function lightRow(it: TranscriptItem): TranscriptItem {
 }
 
 /** The whole branch, each row light (`view=light`), on `wire`, with the fill: `{ items, context }`. */
-export async function transcriptLight(path: string, context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>, wire: WireVersion = 1): Promise<string> {
+export async function transcriptLight(
+  path: string,
+  context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>,
+  wire: WireVersion = 1,
+  replies: ReplyTimings | null = null,
+): Promise<string> {
   const rows = await rowsOf(path);
-  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(it), wire)), context: await context(rows.branch) });
+  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(it), wire, replies?.get)), context: await context(rows.branch) });
 }
 
 /** Forget every parsed file (tests). */

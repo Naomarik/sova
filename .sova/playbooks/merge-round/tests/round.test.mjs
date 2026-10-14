@@ -379,7 +379,7 @@ test("note, ask and reply: never a busy owner, never twice in a row, never the s
   assert.equal((await run(["ask", "feat/clean", "topic=merge"])).code, 2, "a bare base name is not a topic queue_open made");
   const ask = await run(["ask", "feat/clean", `topic=${TOPIC}`]);
   assert.equal(ask.code, 0, ask.out);
-  assert.ok(ask.out.includes(`Is feat/clean ready to merge at its current head? Reply with queue_push, topic "${TOPIC}", text one line: READY feat/clean <the head sha you checked>, or NOT READY: <why>.`));
+  assert.ok(ask.out.includes(`Is feat/clean ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${TOPIC}", text one line: READY feat/clean <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it).`));
   assert.match(ask.out, /don't poll/);
   assert.ok(!ask.out.includes(head.slice(0, 7)), "the ask holds the head's sha");
   assert.equal(state().branches["feat/clean"].ask.topic, TOPIC);
@@ -936,7 +936,8 @@ test("b2: the board's newer reading beats an older note: idle and fresh, so ask 
   const ask = await run(["ask", branch, `topic=${TOPIC}`]);
   assert.equal(ask.code, 0, ask.out);
   assert.ok(ask.out.includes(`session_send to ${OWNER}:`), ask.out);
-  assert.ok(ask.out.includes(`Is ${branch} ready to merge at its current head? Reply with queue_push, topic "${TOPIC}"`), ask.out);
+  assert.ok(ask.out.includes(`Is ${branch} ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch;`), ask.out);
+  assert.ok(ask.out.includes(`Reply with queue_push, topic "${TOPIC}"`), ask.out);
   // A hand note newer than the board names the owner, and only that.
   assert.equal((await run(["note", branch, "owner=0199aaaa-other", "chip=ready", "idle=yes"])).code, 0);
   assert.equal(ownerOf(state().branches[branch]).owner, "0199aaaa-other");

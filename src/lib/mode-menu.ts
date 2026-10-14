@@ -153,5 +153,21 @@ export function commandLine(argv: readonly string[]): string {
 export function approvalLead(id: string, project: string | undefined, tools: readonly ProjectMinorTool[]): string {
   return `${id} comes from ${project ?? "this project"}'s files. Turning it on lets the model run ${tools.length === 1 ? "this tool" : `these ${tools.length} tools`} in this chat's folder.`;
 }
-export const APPROVAL_FOOT = "We ask again if its tools or the programs they run change.";
+/** What an approval covers: the tools and the whole folder, so any edit there asks again. */
+export const APPROVAL_FOOT = "Approval covers its tools and every file in this folder. We ask again when any of them changes.";
+
+/** The programs its tools start by bare name (node, python3, sh): this machine's own, outside the approval. */
+export function barePrograms(tools: readonly ProjectMinorTool[]): string[] {
+  return [...new Set(tools.map((t) => t.command[0] ?? "").filter((c) => c !== "" && !c.includes("/")))];
+}
+
+/** The sentence naming those programs, or null when every tool runs a file from the folder. */
+export function bareProgramsNote(tools: readonly ProjectMinorTool[]): string | null {
+  const names = barePrograms(tools);
+  if (names.length === 0) return null;
+  const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")}${names.length > 2 ? "," : ""} and ${names[names.length - 1]}`;
+  return names.length === 1
+    ? `${list} is this machine's own program, so the approval doesn't cover it.`
+    : `${list} are this machine's own programs, so the approval doesn't cover them.`;
+}
 export const APPROVE_LABEL = "Approve and Turn On";

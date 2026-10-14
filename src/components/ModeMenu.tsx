@@ -8,6 +8,7 @@ import {
   APPROVAL_FOOT,
   approvalLead,
   APPROVE_LABEL,
+  bareProgramsNote,
   commandLine,
   filterProfiles,
   FOOT_NOTE,
@@ -741,6 +742,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                 <p class="mode-menu-foot-line">
                   Runs from <span class="text-mono">{m().dir}</span>. {APPROVAL_FOOT}
                 </p>
+                <Show when={bareProgramsNote(m().tools)}>{(note) => <p class="mode-menu-foot-line">{note()}</p>}</Show>
                 <div class="button-row">
                   <button type="button" class="button button-primary button-sm" aria-disabled={busy() || !m().toolsHash ? "true" : undefined} onClick={approve}>
                     {busy() ? "Turning On…" : APPROVE_LABEL}

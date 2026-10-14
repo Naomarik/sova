@@ -238,8 +238,8 @@
         "§app.claude-code-provider/continuity"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T00:46Z"
+        "by": "user",
+        "at": "2026-10-14T08:51Z"
       }
     },
     "§app.chat-processes/survives-restart": {
@@ -576,7 +576,7 @@
       "requires": [
         "§app.insights/subagent-cards",
         "§app.subagents-pane/tabs",
-        "§app.session-list/selecting-several-sessions",
+        "§app.session-list/session-titles",
         "§chat.alignment/session-mark",
         "§chat.context-window/sidebar-ring"
       ],
@@ -586,7 +586,8 @@
         "src/lib/agents-board.ts",
         "src/lib/agents-board.test.ts",
         "src/components/AgentsView.tsx",
-        "src/agents-board.css"
+        "src/agents-board.css",
+        "src/components/TitleField.tsx"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -674,8 +675,8 @@
         "src/lib/readiness.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "omar (al_1 go-ahead)",
+        "at": "2026-10-13T21:40Z"
       }
     },
     "§app.session-list/archive-by-date": {
@@ -790,27 +791,18 @@
         "src/components/Sidebar.tsx",
         "src/lib/signals.ts",
         "src/lib/org-region.ts",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/text-entry.ts",
+        "src/lib/text-entry.test.ts"
       ]
     },
-    "§app.session-list/selecting-several-sessions": {
+    "§app.session-list/session-titles": {
       "kind": "behavior",
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/lib/session-selection.ts",
-        "src/lib/session-selection.test.ts",
-        "src/components/SelectionToolbar.tsx",
-        "src/components/Sidebar.tsx",
         "server/session-titles.ts",
-        "server/session-titles.test.ts",
-        "server/sessions-index.ts",
-        "server/index.ts",
-        "server/app.ts",
-        "server/overseer-tools.ts",
-        "shared/protocol.ts",
-        "src/lib/hold-select.ts",
-        "src/lib/hold-select.test.ts"
+        "server/session-titles.test.ts"
       ]
     },
     "§app.session-list/states": {
@@ -2535,11 +2527,12 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
-        "src/lib/session-selection.ts",
+        "src/lib/archive-block.ts",
         "src/lib/org-region.ts",
         "src/lib/readiness.ts",
         "src/lib/needs-you.ts",
-        "src/lib/signals.ts"
+        "src/lib/signals.ts",
+        "src/lib/overseer-menu.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -4146,13 +4139,22 @@
         "src/design/base.css",
         "src/components/ui.tsx",
         "src/lib/overseer.ts",
-        "src/lib/overseer.test.ts"
+        "src/lib/overseer.test.ts",
+        "src/lib/overseer-menu.ts",
+        "src/lib/overseer-menu.test.ts",
+        "src/components/ActionMenu.tsx"
       ],
       "requires": [
         "§app.session-list/search",
         "§app.session-list/spine",
-        "§app.overseer/seen"
-      ]
+        "§app.overseer/seen",
+        "§app.session-list/organizations",
+        "§design/menu-rows"
+      ],
+      "agreed": {
+        "by": "omar (al_2 go-ahead)",
+        "at": "2026-10-14T07:03Z"
+      }
     },
     "§app.overseer/hosting": {
       "kind": "behavior",
@@ -6808,9 +6810,6 @@
         "src/lib/home-sessions.ts",
         "src/lib/home-sessions.test.ts",
         "src/components/Groups.tsx",
-        "src/components/SelectionToolbar.tsx",
-        "src/lib/session-selection.ts",
-        "src/lib/session-selection.test.ts",
         "src/components/Sidebar.tsx",
         "server/worker-sessions.ts"
       ],
@@ -9230,7 +9229,7 @@
     "§app.session-list/auto-titles": {
       "kind": "behavior",
       "requires": [
-        "§app.session-list/selecting-several-sessions",
+        "§app.session-list/session-titles",
         "§app.settings-dialog/summaries",
         "§app.decisions/push",
         "§mesh.remote-sessions/list"
@@ -11839,7 +11838,6 @@
       "kind": "behavior",
       "requires": [
         "§app.session-list/groups",
-        "§app.session-list/selecting-several-sessions",
         "§app.session-list/regions-top-and-archive"
       ],
       "authority": "accepted",
@@ -11856,7 +11854,9 @@
         "src/design/base.css",
         "src/App.tsx",
         "src/lib/optimistic-archive.ts",
-        "src/lib/optimistic-archive.test.ts"
+        "src/lib/optimistic-archive.test.ts",
+        "src/lib/archive-block.ts",
+        "src/lib/archive-block.test.ts"
       ]
     },
     "§chat.markdown/vis-wireframe-items": {
@@ -14129,7 +14129,6 @@
         "src/lib/drag-archive.ts",
         "src/lib/drag-archive.test.ts",
         "src/lib/drag-overlay.ts",
-        "src/components/SelectionToolbar.tsx",
         "src/components/ChatView.tsx",
         "src/components/AgentsView.tsx",
         "src/components/SessionDetails.tsx"
@@ -18728,7 +18727,6 @@
         "src/lib/drag-archive.ts",
         "src/components/Sidebar.tsx",
         "src/lib/summary-diff.ts",
-        "src/components/SelectionToolbar.tsx",
         "server/build-loadout.ts"
       ],
       "requires": [

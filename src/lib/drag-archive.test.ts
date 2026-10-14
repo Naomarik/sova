@@ -4,9 +4,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { archiveDragOf, archivedDropToast, archivedProjectOf, archiveTileReason, blockedDropSentence, orgProjectOf, unarchivedProjectOf, unarchivedToast } from "./drag-archive";
-import type { SelectableSession } from "./session-selection";
+import type { ArchivableSession } from "./archive-block";
 
-const row = (over: Partial<SelectableSession> = {}): SelectableSession => ({
+const row = (over: Partial<ArchivableSession> = {}): ArchivableSession => ({
   path: "/s/1.jsonl",
   id: "id-1",
   title: "Fix the build",
@@ -26,7 +26,7 @@ test("an eligible row's Archive tile is open: no reason, no refusal", () => {
 
 test("a row already in the Archive region can't be archived again, and the tile says where it already is", () => {
   // Archived, even one that would be blocked if it weren't: it's already where the gesture goes.
-  const already: Partial<SelectableSession>[] = [{ archived: true }, { archived: true, origin: "external" }, { archived: true, busy: true }];
+  const already: Partial<ArchivableSession>[] = [{ archived: true }, { archived: true, origin: "external" }, { archived: true, busy: true }];
   // Archived and open in a TUI: on top while live, but archiving it again means nothing.
   already.push({ archived: true, live: { pid: 7, status: "idle" } });
   // External and not live: the Archive region lists it without an archived flag.
@@ -40,7 +40,7 @@ test("a row already in the Archive region can't be archived again, and the tile 
 });
 
 test("a blocked row's Archive tile shows archiveBlockReason's own words and refuses the drop", () => {
-  const cases: [Partial<SelectableSession>, string][] = [
+  const cases: [Partial<ArchivableSession>, string][] = [
     [{ live: { pid: 7, status: "idle" } }, "open in a TUI"],
     // Live wins: an external session open in a TUI is on top, and blocked for the TUI.
     [{ origin: "external", live: { pid: 7, status: "idle" } }, "open in a TUI"],

@@ -42,7 +42,7 @@ import { createPoll, type Poll } from "../lib/poll";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { hostOf } from "../lib/mesh";
 import { archiveSession, renameSession } from "../lib/session-actions";
-import { archiveBlockReason } from "../lib/session-selection";
+import { archiveBlockReason } from "../lib/archive-block";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { announce, copyText, home, localRunning, sessionContext, toast } from "../lib/ui-state";
@@ -54,7 +54,7 @@ import { CostsTab } from "./CostsTab";
 import { PerformanceTab } from "./PerformanceTab";
 import { DEFAULT_PERF_QUERY, type PerfQuery, perfHref } from "../lib/perf";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
-import { TitleField } from "./SelectionToolbar";
+import { TitleField } from "./TitleField";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
 

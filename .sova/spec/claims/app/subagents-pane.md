@@ -219,9 +219,7 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   Where on its first line, each count labelled under it. Before anything is spent the tab says
   "Nothing spent in this session yet." (the worker count still shows when there are workers);
   while the first load is out it shows a placeholder, never that line.
-- **Sharing** holds the Sharing section (§app.session-share/sheet), with **Save Session** beside
-  Share Session and, once the session has saved or was continued from a saved session, its Saved
-  list (§chat.saved-sessions/save-dialog, §chat.saved-sessions/saved-list). The pane reads the session's
+- **Sharing** holds the Sharing section (§app.session-share/sheet). The pane reads the session's
   shares once for it and for the tab's badge (`GET /api/session-shares?session=<id>`): at open, when
   the session changes, after the Share sheet changes something, and every 5 seconds while a share
   is live and the page is visible. A re-read updates the list in place: the placeholder shows only

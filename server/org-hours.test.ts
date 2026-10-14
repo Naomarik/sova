@@ -3,19 +3,20 @@
 // reaches them outside their hours waiting for their window (automatic and unattended ones; the operator's own
 // goes at once). Throwaway workspace; no model is called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { Person } from "../shared/orgs";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-org-hours-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");

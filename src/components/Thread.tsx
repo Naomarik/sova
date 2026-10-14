@@ -14,6 +14,7 @@ import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
+import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
@@ -729,12 +730,27 @@ export function HistoryItems(props: {
       if (rows().length > 0 && (id === null || !rowAt().has(id))) setFirstId(idAt(start()));
     });
   const built = createMemo(() => (start() === 0 ? rows() : rows().slice(start())));
+  /**
+   * Whether the older-edge line is at the top, settled before the first frame with rows, from those
+   * rows and what is known to be above them (lib/older-rows-view `known`): with older rows held or
+   * not yet fetched it is there from the first frame; a list that opens on the whole branch never
+   * has it, whatever is learned later. Appearing after the rows were painted, it pushed them down
+   * by its height for a frame. It goes only with the build of the last rows above (`buildFrom`).
+   */
+  const edge = createMemo<boolean | null>((prev) => prev ?? (rows().length > 0 ? (props.older?.known() ?? 0) > 0 || start() > 0 : null), null);
+  const [edgeGone, setEdgeGone] = createSignal(false);
   const indexOf = scroller ? createMemo(() => new Map(rows().map((r, i) => [r, i] as const))) : null;
   if (scroller) {
     const root = scroller.root();
     const ids = createMemo(() => rows().map((r) => (r.kind === "link" ? null : r.id)));
-    /** Builds from row `i` down, keeping the view where it is (`hold`: to the pixel while they draw). */
-    const buildFrom = (i: number, hold = false) => scroller.prepend(() => setFirstId(idAt(i)), hold);
+    /** Builds from row `i` down, keeping the view where it is (`hold`: to the pixel while they draw).
+        The build that reaches the top of the branch takes the older-edge line away with it, so the
+        view is kept through its going too. */
+    const buildFrom = (i: number, hold = false) =>
+      scroller.prepend(() => {
+        setFirstId(idAt(i));
+        if (i <= 0 && props.older?.left() === 0) setEdgeGone(true);
+      }, hold);
     let chunk = FIRST_CHUNK;
     let cancel: (() => void) | null = null;
     /** One chunk above the built rows, timed for the next one's size. */
@@ -797,12 +813,13 @@ export function HistoryItems(props: {
 
   return (
     <>
-      {/* Held while there are older rows to fetch, so its indicator appearing never moves the view;
-          the indicator (no text; its name is for screen readers) shows only while a fetch is slow,
-          a scroll-up chunk or a jump's range, and sticks to the top of the view so a jump from the
-          end sees it too. It goes with the fill's last build, not before: that build keeps the view
-          where it is (ScrollerApi.prepend), its going included. */}
-      <Show when={scroller && props.older && ((props.older.left() ?? 0) > 0 || start() > 0)}>
+      {/* Held while there are older rows to fetch, so its indicator appearing never moves the view
+          (`edge`: decided before the first frame); the indicator (no text; its name is for screen
+          readers) shows only while a fetch is slow, a scroll-up chunk or a jump's range, and sticks
+          to the top of the view so a jump from the end sees it too. It goes with the build of the
+          last rows above, not before: that build keeps the view where it is (ScrollerApi.prepend),
+          its going included. */}
+      <Show when={scroller && props.older && edge() && !edgeGone()}>
         <div class="older-edge" role="status">
           <Show when={props.older!.slow()}>
             <span class="older-edge-bar skeleton" role="img" aria-label="Loading older messages" />
@@ -1368,6 +1385,10 @@ export function LiveEntries(props: {
 export interface OlderRowsApi {
   /** How many; null until the view's hello or snapshot says. */
   left(): number | null;
+  /** How many as far as is known now: `left`, or before the hello or snapshot what was known with
+      the rows the view opened on (kept from the last visit or fetched ahead); null when nothing
+      says. Only for what the page lays out before the hello (the older-edge line), never a count. */
+  known(): number | null;
   /** The next chunk above, unless one is on its way. */
   more(): void;
   /** The rows down to a jump's target, in one request. */
@@ -1403,6 +1424,8 @@ function whenIdle(fn: () => void): () => void {
   return () => clearTimeout(id);
 }
 
+/** How long a build's anchor is kept for the next build above it (ThreadScroller `anchorOf`). */
+const PIN_MS = 2000;
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
 /** A jump's row is held until it has needed no correction for this many frames in a row... */
@@ -1551,8 +1574,10 @@ export function ThreadScroller(props: {
       held = null;
       return;
     }
-    const delta = offsetOf(held.row) - held.offset;
-    if (Math.abs(delta) >= 1) {
+    // Never under the reader's own scroll: writing the position stops a fling or a smooth scroll.
+    if (readerInput()) return;
+    const delta = anchorCorrection(held.offset, offsetOf(held.row), devicePixelRatio);
+    if (delta) {
       el.scrollTop += delta;
       if (held.jump) held.jump.moved = true;
     }
@@ -1888,18 +1913,41 @@ export function ThreadScroller(props: {
         })
       : null;
   onCleanup(() => measured?.disconnect());
+  /**
+   * The row the view holds through a build above it, and where it is to stay: the one its top is in
+   * (lib/scroll-anchor), where it is now. Or, when the last build's correction is the last thing
+   * that moved the view (`pinned`), that build's row and target again: the view can only scroll by
+   * whole device pixels, so each correction leaves the row up to half of one off its target, and
+   * measured afresh from where the last one left it, those remainders would add up chunk by chunk.
+   */
+  const anchorOf = (): { row: HTMLElement; top: number } | null => {
+    if (pinned && pinned.row.isConnected && el.scrollTop === pinned.at && performance.now() < pinned.until) return pinned;
+    const rows = el.querySelectorAll<HTMLElement>(".thread > .entry");
+    const i = anchorIndex(rows.length, (k) => rows[k]!.getBoundingClientRect(), el.getBoundingClientRect().top);
+    return i < 0 ? null : { row: rows[i]!, top: rows[i]!.getBoundingClientRect().top };
+  };
+  /** The last build's anchor and target, the scroll position it left, and until when it is kept: a
+      fill's next chunk comes within a moment. */
+  let pinned: { row: HTMLElement; top: number; at: number; until: number } | null = null;
   const api: ScrollerApi = {
     root: () => el,
     prepend(build, hold) {
-      const fromEnd = el.scrollHeight - el.scrollTop;
+      const anchor = anchorOf();
       build();
-      // The rows just added are above the view: not new content to follow. The view keeps its
-      // distance from the end, which at the bottom is the bottom. The browser's own scroll
-      // anchoring usually has done this already; then nothing is written, and a scroll under way
-      // carries on.
+      // The rows just added are above the view: not new content to follow. The view keeps the line
+      // it shows (and so its distance from the end, which at the bottom is the bottom): the row at
+      // its top is measured again and the view scrolled by exactly as far as it moved, never by a
+      // distance derived from `scrollHeight`, which is rounded to a whole pixel and left a
+      // different fraction behind at every build (a device pixel's step at a ratio like 1.25). The
+      // browser's own scroll anchoring usually has done this already; then nothing is written.
+      // Nor is anything under the reader's own scroll: a write would stop it.
       observer.takeRecords();
-      const want = el.scrollHeight - fromEnd;
-      if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
+      pinned = null;
+      if (anchor?.row.isConnected && !readerInput()) {
+        const delta = anchorCorrection(anchor.top, anchor.row.getBoundingClientRect().top, devicePixelRatio);
+        if (delta) el.scrollTop += delta;
+        pinned = { row: anchor.row, top: anchor.top, at: el.scrollTop, until: performance.now() + PIN_MS };
+      }
       const jump = held?.jump;
       if (!jump) {
         if (hold && !follow) holdView();

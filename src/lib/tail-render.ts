@@ -21,7 +21,7 @@ export const MAX_CHUNK = 200;
 /** Rows the idle fill builds on its own. Past this, older rows are built only as the view nears the
     top of the built rows or a jump needs them: a 5,000-row transcript would otherwise put every
     row in the page, and every update would pay for all of them. */
-export const MAX_BUILT_ROWS = 400;
+export const MAX_BUILT_ROWS = 200;
 
 /** The first row built with the hello, for a list of `n` rows. */
 export const initialStart = (n: number, tail = TAIL_ROWS): number => Math.max(0, n - tail);

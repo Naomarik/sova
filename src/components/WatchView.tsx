@@ -7,7 +7,7 @@ import { landExplainJump } from "../lib/jump";
 import { newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { hostOf, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, transcripts } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
@@ -67,7 +67,7 @@ export function WatchView(props: {
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
-  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: props.prefetch });
+  const olderRows = createOlderRows({ path: props.path, items, setItems, kept: () => keptOlder(cached, items()), prefetch: props.prefetch });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */

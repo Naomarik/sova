@@ -116,8 +116,9 @@ const ID = "01a0e2e0-0000-7000-8000-0000000015e7";
 const TURNS = 330;
 /** The jump targets, by turn: each is that turn's user row (a Timeline input row). */
 const NEAR = TURNS - 8;
-const FAR = TURNS - 150;
-const LAZY = TURNS - 110;
+/** Built by the idle fill (about 200 rows, two a turn), never drawn before the jump. */
+const FAR = TURNS - 85;
+const LAZY = TURNS - 60;
 const UNBUILT = 70;
 /** Turns whose reply is a table of long cells: one row of its markdown per table line, each
     wrapping to many lines, so its estimate is far under its real height. Right above FAR and UNBUILT. */

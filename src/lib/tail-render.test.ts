@@ -41,6 +41,28 @@ test("the idle fill stops at MAX_BUILT_ROWS built, or at the top of a shorter li
   assert.equal(fillStops(n, n - 100, 100), true, "the cap is a parameter");
 });
 
+test("the idle fill builds 200 rows on its own, from the 60 built with the hello, however small its chunks", () => {
+  assert.equal(MAX_BUILT_ROWS, 200);
+  const n = 5300;
+  /** Rows built when the fill stops, and how many chunks it took, at `chunk` rows a chunk. */
+  const fill = (chunk: number) => {
+    let start = initialStart(n);
+    let chunks = 0;
+    while (!fillStops(n, start)) {
+      start = chunkStart(start, chunk);
+      chunks++;
+    }
+    return { built: n - start, chunks };
+  };
+  // A browser under load: every chunk over budget, so each is the smallest there is.
+  const slow = fill(MIN_CHUNK);
+  assert.equal(slow.built, 200, "no row past the cap");
+  assert.equal(slow.chunks, (200 - TAIL_ROWS) / MIN_CHUNK, "28 chunks of 5, where 400 rows took 68");
+  assert.equal(fill(50).built, 210, "a chunk that crosses the cap is built whole");
+  assert.equal(fillStops(n, n - 200), true);
+  assert.equal(fillStops(n, n - 199), false);
+});
+
 test("the chunk size follows the budget, at most doubling or halving per step", () => {
   assert.equal(nextChunk(50, 6, 12), 100, "half the budget used: double");
   assert.equal(nextChunk(50, 12, 12), 50, "on budget: unchanged");

@@ -729,8 +729,8 @@
         "src/lib/readiness.test.ts"
       ],
       "agreed": {
-        "by": "omar (al_1 go-ahead)",
-        "at": "2026-10-13T21:40Z"
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
       }
     },
     "§app.session-list/archive-by-date": {
@@ -4245,8 +4245,8 @@
         "§design/menu-rows"
       ],
       "agreed": {
-        "by": "omar (al_2 go-ahead)",
-        "at": "2026-10-14T07:03Z"
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
       }
     },
     "§app.overseer/hosting": {
@@ -4403,9 +4403,16 @@
         "server/turn-error.test.ts",
         "src/lib/summary-diff.test.ts",
         "server/unread-replies.ts",
-        "server/unread-replies.test.ts"
+        "server/unread-replies.test.ts",
+        "server/project-overseer-unread.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-unread.integration.test.ts"
       ],
-      "requires": []
+      "requires": [],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
+      }
     },
     "§app.overseer/sent-marker": {
       "kind": "behavior",
@@ -6948,7 +6955,11 @@
         "server/session-feed.ts",
         "src/lib/built-once.ts",
         "src/lib/built-once.browser.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
+      }
     },
     "§app.project-overseer/coding-mode": {
       "kind": "behavior",

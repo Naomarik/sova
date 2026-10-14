@@ -1038,6 +1038,15 @@ itself.
   marks (§app.decisions/push). A worker's failure stays the digest's `worker-error`.
 - The Overseer's own unread assistant messages give the entry button's **unread count**, its only
   badge (§app.overseer/entry-button).
+- `SessionSummary.unreadReplies` is a project overseer's count of unseen replies, on its
+  **current** conversation's summary only, and only while `unread` is set: the finished replies
+  (not tool-use steps) on the conversation's active branch newer than its stamp, the same count as
+  the project overseer page's (`ProjectOverseerInfo.unread`, from one counter per project kept
+  between reads, so a list rebuild re-reads only what the file gained). Every summary the server
+  sends carries it, the session list's and each single-row refresh alike. Because `unread` follows
+  the last finished reply in file order and the count follows the active branch, `unread` with a
+  count of 0 can happen; absent means unknown. It feeds the Project overseers list's pill
+  (§app.overseer/entry-button).
 
 ## §app.overseer/navigation — Navigation
 
@@ -1193,11 +1202,20 @@ head's height, so a width change is no layout shift.
     organization shows "In {organization}" under its name; a standalone project shows its name
     alone. A project whose overseer hasn't started isn't listed, and nothing is started from this
     menu.
-  - At each row's right end, at most one state, in words, in this order: **Working** (the
-    overseer's Busy), else **Last turn failed**, else **New reply**: the same mark as the
-    project's eye on its heading (§app.session-list/organizations).
+  - At each row's right end, at most one state, in this order: **Working** (the overseer's
+    Busy), else **Last turn failed**, both in words, else the **new-reply count**: the same mark as
+    the project's eye on its heading (§app.session-list/organizations), which alone decides
+    whether the row has new replies. The count is a small accent number pill, the entry button's
+    own look (`.overseer-entry-count`, "99+" past 99): how many of the overseer's replies you
+    haven't seen since you last had its conversation open (its session's `unreadReplies`,
+    §app.overseer/seen, the count the project overseer page shows). It only labels the row: when
+    the count is missing or 0 while the row has new replies, the row says **New reply** in words
+    instead, so it never shows "0" and never looks read. The pill is `aria-hidden`; the row's
+    accessible name and `title` say it: "{project} · in {organization} · 3 new replies" (1: "1 new
+    reply"; no count: "New reply").
   - The overseer whose conversation is open is the **current** row: tinted and checked
-    (`menuitemradio`, `aria-checked="true"`), and it shows no "Last turn failed" or "New reply".
+    (`menuitemradio`, `aria-checked="true"`), and it shows no "Last turn failed" and no new-reply
+    count or words.
   - Picking a row opens that overseer's conversation (`#/s/<path>`, on the host that holds it) and
     closes the list.
   - The last row, after a separator, is **All Projects**, which opens the Projects page
@@ -1205,8 +1223,9 @@ head's height, so a width change is no layout shift.
   - The list ignores the search query and the host filter: it is built from every listed session
     and this computer's project list, never from the search hits.
 - **▾'s dot.** While any listed overseer has a new reply or a failed last turn (not for Working),
-  ▾ carries a small accent dot, and its accessible name says it in words: "Project overseers ·
-  2 with new replies", "Project overseers · 1 with a failed last turn", or both, joined by " · ".
+  ▾ carries a small accent dot (a dot, never a number), and its accessible name says it in words,
+  counting overseers: "Project overseers · 2 overseers with new replies" (1: "1 overseer with new
+  replies"), "Project overseers · 1 with a failed last turn", or both, joined by " · ".
 - **Keyboard.** Tab reaches the main part, then ▾. Enter or Space on ▾ opens the list with focus on
   its first row. Escape, or a click outside, closes it and returns focus to ▾; a click that lands
   on another control (a session row, say) leaves focus on that control.

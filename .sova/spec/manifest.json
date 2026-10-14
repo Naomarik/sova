@@ -1620,7 +1620,9 @@
         "shared/chat-runtime.ts",
         "server/overseer-memory.integration.test.ts",
         "server/overseer-runtime.test.ts",
-        "server/testing/overseer-memory.ts"
+        "server/testing/overseer-memory.ts",
+        "server/overseer-memory-claude.integration.test.ts",
+        "server/memory/overseer-outline.test.ts"
       ]
     },
     "§chat.memory/preparing": {

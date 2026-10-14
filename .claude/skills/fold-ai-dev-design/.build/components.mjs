@@ -20,6 +20,18 @@ export const COMPONENTS = [
 </div>
 <p class="text-muted">Small is allowed only inside an already-tapped context — a popover, a desktop table cell —
 never as the sole action on a touch surface.</p>` },
+      { id: 'split', name: 'Split', html: `
+<div class="button-row">
+  <div class="button-split">
+    <a class="button" href="#">Overseer</a>
+    <button class="button button-icon" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Project overseers">▾</button>
+  </div>
+  <div class="button-split">
+    <a class="button" href="#">Overseer</a>
+  </div>
+</div>
+<p class="text-muted">A main action and its ▾ menu, joined: one outline, a thin divider, two 44px targets. Without
+the menu the main part stands alone with both rounded ends.</p>` },
       { id: 'states', name: 'States', html: `{{STATE_MATRIX}}` },
     ],
     classes: [['.button','Base — 44px, 8px radius, 1.5px border','`--control-md` `--r-md` `--color-border-strong`'],
@@ -28,6 +40,7 @@ never as the sole action on a touch surface.</p>` },
               ['.button-ghost','Borderless, muted','Cancel and tertiary'],
               ['.button-sm / .button-lg','36px / 52px','Label size shifts with it'],
               ['.button-icon','Square 44px','Requires `aria-label`'],
+              ['.button-split','Joins a main `.button` and its ▾ `.button-icon`','One outline, `--stroke-thin` divider; neither part shrinks'],
               ['.button-row','Demo helper — wrapping row','Demo only'],
               ['.is-hover / .is-focus / .is-active / .is-disabled','Static states on `.button`','**Demo only** — production uses pseudo-classes']],
     tokens: [['--control-sm|md|lg','36 / 44 / 52px heights.'],
@@ -42,11 +55,13 @@ never as the sole action on a touch surface.</p>` },
       ['Destructive', `<button class="button button-destructive">Discard Run</button>`],
       ['Ghost', `<button class="button button-ghost">Cancel</button>`],
       ['Icon only', `<button class="button button-icon" aria-label="More actions">…</button>`],
+      ['Split', `<div class="button-split"><a class="button" href="…">Overseer</a><button class="button button-icon" aria-haspopup="menu" aria-expanded="false" aria-label="Project overseers">…</button></div>`],
     ],
     dos: [['Keep exactly one primary per view','two primaries mean the product has not decided what the user should do'],
           ['Name the object on a destructive action','"Discard" alone is a question, "Discard Run" is an answer'],
           ['Keep destructive out of the thumb arc beside primary','one mis-tap on a train should not throw work away']],
     donts: [['Fill a destructive button','it becomes the most inviting target on screen'],
+            ['Put the ▾ inside the main part of a split button','a button nested in a button or link loses its role and its own target'],
             ['Use `.button-sm` as the only action on a touch surface','36px is below the 44px minimum'],
             ['Ship the `.is-*` state helpers in production','they are documentation scaffolding; use the real pseudo-classes']],
   },

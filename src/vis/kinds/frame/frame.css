@@ -1,5 +1,10 @@
 /* `vis html` / `vis svg` frame. Owner: the free-form member. */
 .vis-frame { display: block; width: 100%; border: 0; background: transparent; }
+/* `vis svg` as a still image (share and owner pages): the frame's padding, natural size, centred,
+   shrunk only when the column is narrower. */
+.vis-svg-image { display: flex; justify-content: center; padding: var(--space-3); }
+.vis-svg-image img { display: block; max-width: 100%; height: auto; }
+@media (max-width: 420px) { .vis-svg-image { padding: var(--space-2); } }
 .vis-frame-failed {
   display: flex;
   align-items: center;

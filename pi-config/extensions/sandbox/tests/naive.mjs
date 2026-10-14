@@ -1,7 +1,8 @@
 // naive.mjs — proof that every escape case in the contract suite has teeth: run the same command
 // against the NAIVE profile `bwrap --ro-bind / / --dev /dev --proc /proc --bind <cwd> <cwd> -- bash -c <cmd>`
 // and assert the escape SUCCEEDS (host-side effect happens), so a green contract run is never a
-// vacuous pass. Evidence of this run is saved to NAIVE-RUN.txt in this directory.
+// vacuous pass. Evidence of this run is saved to out/NAIVE-RUN.txt
+// under this directory (gitignored, never committed: it holds dates, host details and home paths).
 //
 // This file deliberately imports nothing from the sandbox implementation and needs none of it to
 // exist. Seam-only properties (fail-closed, read-only level, run classification, unsupported
@@ -259,8 +260,10 @@ const header = [
 	"# classification, unsupported platform, proxy allowlist) have no naive counterpart by design.",
 	"",
 ];
-writeFileSync(path.join(TESTS_DIR, "NAIVE-RUN.txt"), `${header.join("\n")}${lines.join("\n")}\n`);
-orig(`wrote ${path.join(TESTS_DIR, "NAIVE-RUN.txt")}`);
+const RECORD = path.join(TESTS_DIR, "out", "NAIVE-RUN.txt");
+mkdirSync(path.dirname(RECORD), { recursive: true });
+writeFileSync(RECORD, `${header.join("\n")}${lines.join("\n")}\n`);
+orig(`wrote ${RECORD}`);
 process.exitCode = failures > 0 ? 1 : 0;
 
 function readFileSafe(p) {

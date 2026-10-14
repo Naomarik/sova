@@ -212,7 +212,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   a presence word when a page is open ("Viewing now", "Open in a tab") and "Opened {n}× · last
   {time}" or "Not opened yet". A stopped share says "Stopped". Each share has **Manage**; the
   section has **Share Session** (a link to the share page, §app.session-share/share-page) and a
-  link to `#/shares`. None: "Not shared with anyone."
+  link to `#/shares`. None: "Not shared with anyone." Beside Share Session sits **Save Session**,
+  which saves the session for colleagues rather than sharing it (§chat.saved-sessions/save-dialog),
+  with its Saved list under it (§chat.saved-sessions/saved-list).
 - **The Share sheet** is a dialog that becomes a sheet at folded width, and only manages a share:
   shares are created on the share page, whose create form holds:
   the public title (the session's title, editable, at most 120 characters, with a hint that the

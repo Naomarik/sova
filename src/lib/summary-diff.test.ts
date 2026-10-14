@@ -44,6 +44,7 @@ const full = (): Required<SessionSummary> => ({
   pendingDialogs: 1,
   seenAt: 10,
   unread: true,
+  unreadReplies: 3,
   signals: { at: 11, turnId: "e1", provider: "jev", stuck: { score: 2, confidence: 0.9 }, kinds: ["looping"] },
   workerSignals: { stuck: 1 },
   turnError: { message: "overloaded" },

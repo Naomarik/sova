@@ -38,7 +38,7 @@ import { workingSubagents } from "./live";
 import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
-import { allowSavedSessionsOnce, gitRootOf, readWorktree, takeSavedSessionsOverride, takeSavedSessionsRefusal } from "./project-worktrees";
+import { gitRootOf, readWorktree } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
@@ -69,11 +69,11 @@ import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
 import { joinedText, readBranch } from "./harness/pi/reader";
-import { UnreadReplies } from "./unread-replies";
+import { projectOverseerUnread } from "./project-overseer-unread";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
-import { OrgError, SavedSessionsMergeRefusal } from "./org-error";
+import { OrgError } from "./org-error";
 import {
   ceilingOf,
   contributedBlockers,
@@ -285,15 +285,6 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
 
 // ---- info ------------------------------------------------------------------------------------------
 
-/** Each project overseer's unread count, kept between polls (server/unread-replies). */
-const unread = new Map<string, UnreadReplies>();
-function unreadReplies(projectId: string, path: string, since: number | undefined): Promise<number> {
-  const key = projectId;
-  let counter = unread.get(key);
-  if (!counter) unread.set(key, (counter = new UnreadReplies()));
-  return counter.count(path, since);
-}
-
 function codingOf(projectId: string): { sessionId: string; path: string | null; running: boolean; createdAt: string; title?: string }[] {
   return readBuilds(projectId)
     .filter((s) => s.kind === "coding")
@@ -412,7 +403,7 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     busy: exists && path ? isSessionBusy(path) : false,
     lastRun: memo.lastRun,
     started,
-    unread: exists && path && !isViewing(st!.current) ? await unreadReplies(projectId, path, readSeen()[st!.current]) : 0,
+    unread: exists && path && !isViewing(st!.current) ? await projectOverseerUnread(projectId, path, readSeen()[st!.current]) : 0,
     usage: {
       allowance: allowanceUse(projectId, settings.caps),
       held: memo.held,
@@ -1013,21 +1004,11 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown, opts: { allowSavedSessions?: boolean } = {}): Promise<ProjectOverseerInfo> {
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
   projectOf(projectId);
-  // "Merge anyway" over saved sessions in the branch's history: for this one merge only.
-  if (opts.allowSavedSessions && typeof sessionId === "string") allowSavedSessionsOnce(sessionId);
-  try {
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
     // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
     await worktreeAct(projectId, sessionId, "build/merge");
-  } catch (err) {
-    const found = typeof sessionId === "string" ? takeSavedSessionsRefusal(sessionId) : undefined;
-    if (found && err instanceof OrgError) throw new SavedSessionsMergeRefusal(err.message, found);
-    throw err;
-  } finally {
-    if (typeof sessionId === "string") takeSavedSessionsOverride(sessionId);
-  }
   return projectOverseerInfo(projectId);
 }
 

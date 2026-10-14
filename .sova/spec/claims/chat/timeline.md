@@ -453,8 +453,11 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   the transcript on screen." A jump to a message older than the rows the transcript holds fetches
   every row down to it in one request and lands (§chat.transcript/rendering), with no toast: a slow
   fetch shows the transcript's top-edge bar. Below 1280 the pane still closes at once, so the
-  landing and the bar are in view. The line above is said when the branch has no such row. The fetch
-  starts at the click. The pane never waits on the whole transcript either: it reads every row of
+  landing and the bar are in view. The line above is said when the branch has no such row, and
+  when the rows down to it can't be fetched, so a jump lands or says so and never waits silently.
+  The fetch starts at the click. In a chat closed for being quiet, such a jump starts it
+  (§chat.transcript/instant-open); asked before the chat's `hello`, it waits for it about 1.5 s at
+  most, then fetches from the file. The pane never waits on the whole transcript either: it reads every row of
   the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
   report's body), a small fraction of the transcript's size, so on a slow link its list is there
   and a jump's fetch has the link to itself.

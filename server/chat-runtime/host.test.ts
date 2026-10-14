@@ -329,18 +329,14 @@ test("SOVA_CHAT_TEST_FAIL_OPEN=<build>: that build refuses every open, as a brok
   }
 });
 
-test("drain: refused with a pane attached for idle; otherwise the chat closes and says why", async () => {
+test("drain: a pane attached doesn't hold an idle close (§app.chat-processes/idle-stop); the chat closes and says why", async () => {
   const t = await setup();
   t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
   await settle();
-  const refused = awaitFrame(t.ctl.server, "drained", 2_000);
-  t.ctl.server.send({ t: "drain", id: "d1", reason: "idle", force: false });
-  assert.deepEqual(await refused, { t: "drained", id: "d1", ok: false, why: "attached" });
-  t.ctl.server.send({ t: "client.detach", clientId: "k1" });
   const ok = awaitFrame(t.ctl.server, "drained", 2_000);
   const exit = awaitFrame(t.ctl.server, "exit", 2_000);
-  t.ctl.server.send({ t: "drain", id: "d2", reason: "idle", force: false });
-  assert.deepEqual(await ok, { t: "drained", id: "d2", ok: true });
+  t.ctl.server.send({ t: "drain", id: "d1", reason: "idle", force: false });
+  assert.deepEqual(await ok, { t: "drained", id: "d1", ok: true });
   assert.deepEqual(await exit, { t: "exit", cause: "idle" });
   // It waits for the server to close the link (what a pane sent before then is refused back), then exits.
   assert.deepEqual(t.exits, []);
@@ -349,6 +345,47 @@ test("drain: refused with a pane attached for idle; otherwise the chat closes an
   assert.deepEqual(t.exits, ["idle"]);
   assert.equal(t.host.hosting, false);
   assert.equal(readInflight(t.id), null);
+});
+
+test("drain: a reply running or a message queued refuses an idle close, a pane attached or not; quiet again, it closes", async () => {
+  const t = await setup();
+  const states = collect(t.ctl.server, "state");
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  t.ctl.server.send({ t: "client.attach", clientId: "k1", client: { clientId: "k1" } });
+  await settle();
+  const chat = t.host.heldChat()!;
+  const harness = chat.harness as unknown as { isRunning(): boolean };
+  const running = harness.isRunning.bind(harness);
+  let drains = 0;
+  const drain = async () => {
+    const id = `d${++drains}`;
+    const got = awaitFrame(t.ctl.server, "drained", 2_000, (f) => f.id === id);
+    t.ctl.server.send({ t: "drain", id, reason: "idle", force: false });
+    return got;
+  };
+  // A reply running.
+  harness.isRunning = () => true;
+  tick();
+  await settle();
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a running reply is not quiet");
+  assert.deepEqual(await drain(), { t: "drained", id: "d1", ok: false, why: "busy" });
+  harness.isRunning = running;
+  // A message queued.
+  Object.defineProperty(chat.queue, "size", { get: () => 1, configurable: true });
+  tick();
+  await settle();
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a queued message is not quiet");
+  assert.deepEqual(await drain(), { t: "drained", id: "d2", ok: false, why: "busy" });
+  delete (chat.queue as unknown as { size?: number }).size;
+  tick();
+  await settle();
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, true);
+  assert.equal(states.at(-1)?.mirror.quiet.clients, 1, "the pane is still attached");
+  assert.deepEqual(t.exits, []);
+  assert.deepEqual(await drain(), { t: "drained", id: "d3", ok: true });
+  t.ctl.server.close();
+  await settle();
+  assert.deepEqual(t.exits, ["idle"]);
 });
 
 test("F14: a prompt that reaches a stopping chat goes back to its pane as a refusal naming it, never lost in silence", async () => {

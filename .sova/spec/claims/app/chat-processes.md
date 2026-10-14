@@ -155,6 +155,11 @@ nothing but the server ever starts a chat again.
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.
+- **No periodic collection.** A chat's process runs without Bun's periodic garbage collection timer
+  (`BUN_GC_TIMER_DISABLE=1` in its environment), so an idle chat spends less CPU; its memory still
+  comes back down after a big reply, through the collections its own allocations start. The
+  process deletes that variable from its own environment as it starts, so the programs its tools
+  run (a test runner, a hermetic server) keep their timer.
 - **Records and adoption.** Each chat is recorded under `<state root>/chats/registry/`. At a server
   start, before chat sockets are served, the server takes charge of the recorded chats whose unit is
   running. A recorded chat whose unit is gone is a death, and a unit with this server's prefix that
@@ -179,12 +184,18 @@ nothing but the server ever starts a chat again.
 
 ## §app.chat-processes/idle-stop — An idle chat process stops
 
-A chat's process with nobody attached and nothing in flight (no reply, compaction, queued message,
-open dialog, working worker or server action) is asked to close after 30 minutes like that
-(`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never). The chat checks again that it is
-still quiet with nobody attached, and refuses otherwise, which restarts the clock. A chat that
-accepts but has not exited 30 s later is stopped. An idle stop is not a death and never gets a
-"continue". The chat stays closed until someone opens it, which starts a new process: its `hello`
+A chat's process with nothing in flight (no reply, compaction, queued message, open dialog,
+working worker or server action) is asked to close after 30 minutes like that
+(`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
+has it open: an open tab doesn't keep it running. The chat checks again that it is still quiet,
+and refuses otherwise, which restarts the clock. A chat that accepts but has not exited 30 s later
+is stopped. An idle stop is not a death and never gets a "continue". A tab that had it open keeps
+its rows and draft and doesn't reconnect: its socket, a reconnect or a server restart never starts
+the chat again; only something that needs the chat does, such as sending from that tab
+(§chat.transcript/instant-open, "A chat closed while its tab is open"). The chat stays closed until
+someone sends to it or acts on it, a jump in its Timeline to a row its tab doesn't hold and
+scrolling back by hand for older rows included (opening it to read doesn't,
+§chat.transcript/instant-open), which starts a new process: its `hello`
 comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
 (median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
 (§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
@@ -279,6 +290,33 @@ chat or worker process still runs are always kept. A shared `node_modules` copy 
 last copy that uses it. No server removes copies under a place set with `SOVA_CHAT_CODE_ROOT`,
 which several servers may share, unless `SOVA_CHAT_CODE_GC=on` says the place is that server's
 alone (tests).
+
+## §app.chat-processes/extension-loading — Extensions load as plain modules
+
+A chat process loads Sova's own extensions (`pi-config/`) as plain modules, never through pi's
+translating fallback: every package they import (pi-coding-agent, pi-ai, pi-tui, typebox) resolves
+from the extensions in the chat's copy of the code to the very copy pi itself runs. So the
+extensions share one instance of each file they have in common, and a chat's first open on a new
+copy of the code (after a release, or after a reboot emptied the translation cache) is as quick as
+a later one. Sova's own dependencies name pi-ai, pi-tui and typebox at exactly the versions its
+pi-coding-agent depends on, so they move with every pi upgrade; a check fails when any of the four,
+resolved from the copy's extensions, is another copy than pi's own (another version included), another
+fails when an extension can't be imported without the fallback, and another when an extension loads
+a pi package Sova's dependencies don't name. Installed npm and git packages resolve pi from their own
+dependencies, with their own copies, and are outside these checks.
+
+## §app.chat-processes/no-terminal-drawing — No terminal drawing code in a chat process
+
+A chat process never loads pi's terminal drawing code: pi-tui's screen and components, pi's own
+terminal components, its syntax highlighter and its markdown and diagram renderers are quiet
+stand-ins there, which draw nothing and do nothing. Text measuring, truncation and wrapping, key
+matching and the colour theme stay pi's own, since extensions use them for status text. Nothing a
+person sees in Sova changes: an extension's terminal screens, widgets and footers were never shown
+in Sova. The terminal pi, the server and every process other than a chat's load the real code.
+A check fails when the stand-ins lack a name pi-tui exports, and another when pi adds, drops or
+moves a file in the folders the stand-ins reach into, until a person classifies it as a stand-in or
+kept. Tests log every call that reaches a stand-in; a chat process logs the first one that isn't a
+construction, once.
 
 ## §app.chat-processes/special-kinds — The Overseer, project overseers and batons in a chat process
 

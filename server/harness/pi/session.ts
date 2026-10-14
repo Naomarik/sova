@@ -455,8 +455,8 @@ export class PiHarnessSession implements HarnessSession {
     this.s.refreshContext();
   }
   /** P16: idle, appended at once with message_start and message_end, no turn. */
-  async appendNote(noteType: string, text: string, display = true): Promise<void> {
-    await this.s.sendCustomMessage({ customType: noteType, content: text, display }, { triggerTurn: false });
+  async appendNote(noteType: string, text: string): Promise<void> {
+    await this.s.sendCustomMessage({ customType: noteType, content: text, display: true }, { triggerTurn: false });
   }
 
   onUserMessage(claim: (input: unknown) => void): () => void {

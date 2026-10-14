@@ -124,16 +124,6 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		if (!ok) throw new Error("The user declined; nothing changed.");
 	}
 
-	/** The user's explicit go-ahead to merge a branch whose history carries saved sessions; throws otherwise. */
-	async function confirmSavedSessions(ctx: ExtensionContext, branch: string, target: string): Promise<void> {
-		if (!ctx.hasUI) throw new Error(`${branch}'s history carries saved sessions, and there is no one to ask; nothing was merged. Only the user can let saved conversations into ${target}.`);
-		const ok = await ctx.ui.confirm(
-			"Merge saved sessions into the target?",
-			`${branch}'s history carries saved Sova sessions. Merging it puts those conversations in ${target}'s history for good, even ones a later commit deleted, and anyone who can read ${target} can read them.`,
-		);
-		if (!ok) throw new Error("The user declined; nothing was merged.");
-	}
-
 	/** The spec report of a merge; best-effort, so a failure never fails the merge. */
 	async function reportOf(path: string, branch: string, before: string, after: string, branchSha: string, target: string): Promise<MergeSpecReport | undefined> {
 		const main = await defaultTarget(git, path).catch(() => undefined);
@@ -211,7 +201,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		name: "worktree",
 		label: "Worktree",
 		description:
-			"Manage the git worktrees this session works in. create {name, base?, path?} runs git worktree add -b feat/<name> (default path <parent of the main checkout>/.worktrees/<repo>-<name>, base the session cwd's HEAD); attach {path} tracks an existing worktree's top level (one another session created is fine); detach {path} stops tracking it (nothing is deleted); merge {path, target?, allowSavedSessions?} merges its branch into target (default master) where target is checked out and clean, else fast-forward only, and stops when the branch's history carries saved Sova sessions (allowSavedSessions asks the user to confirm before merging them); list shows the set. Workers may start only in the session cwd or inside an active tracked worktree.",
+			"Manage the git worktrees this session works in. create {name, base?, path?} runs git worktree add -b feat/<name> (default path <parent of the main checkout>/.worktrees/<repo>-<name>, base the session cwd's HEAD); attach {path} tracks an existing worktree's top level (one another session created is fine); detach {path} stops tracking it (nothing is deleted); merge {path, target?} merges its branch into target (default master) where target is checked out and clean, else fast-forward only; list shows the set. Workers may start only in the session cwd or inside an active tracked worktree.",
 		promptSnippet: "Create, attach, detach, merge and list this session's git worktrees",
 		promptGuidelines: [
 			"Use the worktree tool, not bash, to create or track a git worktree: workers may only start in this session's cwd or inside a worktree the session tracks.",
@@ -224,7 +214,6 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 				base: Type.Optional(Type.String({ description: "create: commit or branch to base on (default the session cwd's HEAD)." })),
 				path: Type.Optional(Type.String({ description: "create: where to put it; attach, detach, merge: the worktree (its path, or its branch name)." })),
 				target: Type.Optional(Type.String({ description: "merge: the branch to merge into (default master)." })),
-				allowSavedSessions: Type.Optional(Type.Boolean({ description: "merge: ask the user to confirm merging a branch whose history carries saved Sova sessions; it merges only if they accept. Only when the user asked for it." })),
 			},
 			{ additionalProperties: false },
 		),
@@ -275,10 +264,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (t.status !== "active") throw new Error(`${t.path} is ${statusText(t)}; only an active worktree is merged.`);
 						const target = params.target ?? (await defaultTarget(git, t.path)) ?? "master";
 						await approve(ctx, "Merge a worktree?", `Merge ${t.branch} (${t.path}) into ${target}.`);
-						// Merging saved conversations into the target's history is the user's call, never the model's:
-						// asked every time, sandbox or not, and refused with no one to ask.
-						if (params.allowSavedSessions) await confirmSavedSessions(ctx, t.branch, target);
-						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target, ...(params.allowSavedSessions ? { allowSavedSessions: true } : {}) });
+						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
 						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });
 						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha, target);
 						card({ ...m, how: "tool" });

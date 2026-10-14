@@ -102,8 +102,7 @@ dropped (and the view cut back to the lines before it). Summaries live beside th
 their saved prefixes); "Fork from here" copies the source chat's directory to the fork (when the
 source has one and the fork has none), and the fork keeps what still matches its own branch. Turning memory off keeps
 them, so turning it back on only summarizes what came after; deleting or archiving the chat deletes
-them. A saved session (§chat/saved-sessions) carries no memory directory: a session continued from
-one derives its log from the imported branch like any other chat and builds its own summaries.
+them.
 
 ## §chat.memory/tree — The summary tree and the view
 

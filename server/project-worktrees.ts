@@ -2,9 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { PromoteCommit } from "../shared/decisions";
-import type { SavedSessionsInHistory } from "../shared/session-bundle";
 import { type Git, probeMerge, runGit } from "../pi-config/extensions/worktrees/git.ts";
-import { savedSessionsRefusal, savedSessionsToMerge } from "../pi-config/extensions/worktrees/saved-sessions.ts";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 
 /**
@@ -224,10 +222,9 @@ async function inProgress(git: Git, dir: string): Promise<string | null> {
  * checkout, which must have `target` checked out, no tracked changes and nothing in progress, and
  * the worktree (when its folder is here) must have nothing uncommitted. A
  * fast-forward when possible, else a merge commit "Merge sova/<name>: <title>"; a conflict is
- * aborted and reported. Works with the worktree folder gone: only the branch is needed. A branch whose
- * history since the merge base carries a saved session's card is refused unless `allowSavedSessions`.
+ * aborted and reported. Works with the worktree folder gone: only the branch is needed.
  */
-export async function mergeBack(w: WorktreeRecord, root: string, title: string, git: Git = runGit, opts: { allowSavedSessions?: boolean } = {}): Promise<{ sha: string }> {
+export async function mergeBack(w: WorktreeRecord, root: string, title: string, git: Git = runGit): Promise<{ sha: string }> {
   const at = await git(["symbolic-ref", "--quiet", "--short", "HEAD"], root);
   if (at.code !== 0 || !at.stdout.trim()) throw new WorktreeRefusal(`The project root's checkout is on a detached HEAD, not ${w.target}. Check out ${w.target} there, then merge.`);
   const checkedOut = at.stdout.trim();
@@ -247,12 +244,6 @@ export async function mergeBack(w: WorktreeRecord, root: string, title: string, 
   const b = await branchSha(git, root, w.branch);
   if (!b) throw new WorktreeRefusal(`The branch ${w.branch} no longer exists.`);
   if ((await git(["merge-base", "--is-ancestor", b, "HEAD"], root)).code === 0) throw new WorktreeRefusal(`${w.branch} has nothing to merge into ${w.target}.`);
-  // A saved session's card anywhere in what the merge brings in (found by its marker, deleted ones too)
-  // stops it unless the operator said to merge anyway (§chat.saved-sessions/merge-guard).
-  if (!opts.allowSavedSessions) {
-    const found = await savedSessionsToMerge(git, root, b, "HEAD");
-    if (found.length) throw Object.assign(new WorktreeRefusal(savedSessionsRefusal(w.branch, found, "operator")), { savedSessions: { commits: found } satisfies SavedSessionsInHistory });
-  }
   const who = await git(["config", "user.email"], root);
   const id = who.code === 0 && who.stdout.trim() ? [] : SOVA_ID;
   const r = await git([...id, "-c", "commit.gpgsign=false", "merge", "--no-edit", "-m", `Merge ${w.branch}: ${title}`, "--", `refs/heads/${w.branch}`], root);
@@ -391,27 +382,4 @@ export async function commitSpec(snap: SpecSnapshot, message: string, git: Git =
   if (c.code !== 0) return { skipped: `Not committed: ${firstLine(c.stderr || c.stdout)}` };
   const sha = await git(["rev-parse", "HEAD"], snap.top);
   return { sha: sha.stdout.trim(), branch: snap.branch ?? "", files, message };
-}
-
-/** The saved sessions the last refused Merge Branch of a session found (the statechart's effect carries only
-    the sentence): noted by the effect, taken by the route that answers the refusal. */
-const savedRefusals = new Map<string, SavedSessionsInHistory>();
-export function noteSavedSessionsRefusal(sessionId: string, err: unknown): void {
-  const found = (err as { savedSessions?: SavedSessionsInHistory } | null)?.savedSessions;
-  if (found) savedRefusals.set(sessionId, found);
-}
-export function takeSavedSessionsRefusal(sessionId: string): SavedSessionsInHistory | undefined {
-  const found = savedRefusals.get(sessionId);
-  savedRefusals.delete(sessionId);
-  return found;
-}
-
-/** Merge Branch's "merge anyway" for a branch whose history carries saved sessions: set by the route for
-    the one merge it starts (the build statechart's effect carries no such flag), taken by that merge. */
-const savedOverride = new Set<string>();
-export function allowSavedSessionsOnce(sessionId: string): void {
-  savedOverride.add(sessionId);
-}
-export function takeSavedSessionsOverride(sessionId: string): boolean {
-  return savedOverride.delete(sessionId);
 }

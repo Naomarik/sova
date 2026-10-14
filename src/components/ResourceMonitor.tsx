@@ -17,13 +17,17 @@ import {
   isHeuristic,
   liveRows,
   livePids,
+  memoryParts,
+  memText,
   mergeHistory,
   meters,
   type MeterView,
+  type PartRow,
   momentText,
   MONITOR_POLL_MS,
   nearestIndex,
   type ProcRow,
+  readoutText,
   rowsAt,
   samplerLine,
   scopeLine,
@@ -174,6 +178,23 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
                 <div class="monitor-meters">
                   <For each={meters(s())}>{(m) => <Meter m={m} />}</For>
                 </div>
+                <Show when={memoryParts(s())}>
+                  {(parts) => (
+                    <dl class="monitor-parts" aria-label="Sova memory, split">
+                      <For each={parts()}>
+                        {(p) => (
+                          <div class="monitor-part">
+                            <dt class="monitor-part-label">{p.label}</dt>
+                            <dd class="monitor-part-value">{p.value}</dd>
+                            <Show when={p.context}>
+                              <dd class="monitor-part-context">{p.context}</dd>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </dl>
+                  )}
+                </Show>
                 <Show when={tab()}>{(line) => <p class="text-caption text-muted monitor-tab">{line()}</p>}</Show>
                 <Show when={s().scope !== "none"}>
                   <Chart points={points()} labels={labels()} now={now()} picked={picked()} onPick={setPickedAt} />
@@ -311,9 +332,7 @@ function Chart(props: { points: MonitorPoint[]; labels: MonitorHistory["groups"]
   const shown = () => props.picked ?? props.points[props.points.length - 1];
   const readout = () => {
     const p = shown();
-    if (!p) return "No samples yet in this window.";
-    const mem = p.anonBytes ?? p.rssBytes;
-    return `CPU ${cpuText(p.cpuPct)}${p.cpuPctMax ? ` (peak ${cpuText(p.cpuPctMax)})` : ""} · memory ${bytes(mem)} · load ${p.load1.toFixed(2)}`;
+    return p ? readoutText(p) : "No samples yet in this window.";
   };
   const crossX = () => {
     const i = pickedIndex();
@@ -395,7 +414,7 @@ function Chart(props: { points: MonitorPoint[]; labels: MonitorHistory["groups"]
         <Show when={model().memory.length}>
           <li>
             <span class="monitor-swatch monitor-swatch-mem" aria-hidden="true" />
-            Memory
+            Sova memory
           </li>
         </Show>
       </ul>
@@ -438,8 +457,8 @@ function MonitorTable(props: { rows: GroupRow[]; now: number; live: boolean; onO
               <tr class="monitor-row-group">
                 <th scope="row">
                   <div class="monitor-name">
-                    <Show when={g.procs.length && !g.workers.length} fallback={<span class="monitor-twist-space" aria-hidden="true" />}>
-                      <Twist open={isOpen(g.key)} label={g.label} onToggle={() => toggle(g.key)} />
+                    <Show when={g.parts?.length || (g.procs.length && !g.workers.length)} fallback={<span class="monitor-twist-space" aria-hidden="true" />}>
+                      <Twist open={isOpen(g.key)} label={g.label} what={g.parts?.length ? "parts" : "processes"} onToggle={() => toggle(g.key)} />
                     </Show>
                     <span class="monitor-label">{g.label}</span>
                     <Show when={g.sessionPath}>
@@ -457,18 +476,25 @@ function MonitorTable(props: { rows: GroupRow[]; now: number; live: boolean; onO
                   </Show>
                 </th>
                 <td class="monitor-num">{cpuText(g.cpuPct)}</td>
-                <td class="monitor-num">{bytes(g.rssBytes)}</td>
+                <td class="monitor-num">{memText(g.rssBytes)}</td>
                 <td class="monitor-num monitor-col-swap">{g.swapBytes === undefined ? "" : bytes(g.swapBytes)}</td>
               </tr>
-              {/* Without workers the group's processes hang off the group; with them, off a "Session's own tools" line. */}
-              <Show when={g.procs.length && !g.workers.length && isOpen(g.key)}>
-                <For each={g.procs}>{(p) => <ProcLine p={p} depth={1} />}</For>
+              {/* A split group opens to its parts (Sova runtime, Claude Code, Tools); a part with processes opens to them. */}
+              <Show when={g.parts?.length && isOpen(g.key)}>
+                <For each={g.parts}>
+                  {(part) => (
+                    <>
+                      <PartLine part={part} open={isOpen(part.key)} onToggle={() => toggle(part.key)} />
+                      <Show when={part.procs.length && isOpen(part.key)}>
+                        <For each={part.procs}>{(p) => <ProcLine p={p} depth={2} />}</For>
+                      </Show>
+                    </>
+                  )}
+                </For>
               </Show>
-              <Show when={g.procs.length && g.workers.length}>
-                <OwnRow g={g} open={isOpen(`${g.key}#own`)} onToggle={() => toggle(`${g.key}#own`)} />
-                <Show when={isOpen(`${g.key}#own`)}>
-                  <For each={g.procs}>{(p) => <ProcLine p={p} depth={2} />}</For>
-                </Show>
+              {/* Unsplit, the group's processes hang off the group (its workers, if any, stay listed below). */}
+              <Show when={!g.parts && g.procs.length && isOpen(g.key)}>
+                <For each={g.procs}>{(p) => <ProcLine p={p} depth={1} />}</For>
               </Show>
               <For each={g.workers}>
                 {(w) => (
@@ -490,13 +516,13 @@ function MonitorTable(props: { rows: GroupRow[]; now: number; live: boolean; onO
   );
 }
 
-function Twist(props: { open: boolean; label: string; onToggle(): void }) {
+function Twist(props: { open: boolean; label: string; what?: "parts" | "processes"; onToggle(): void }) {
   return (
     <button
       type="button"
       class="button button-icon monitor-twist"
       aria-expanded={props.open ? "true" : "false"}
-      aria-label={`${props.open ? "Hide" : "Show"} processes of ${props.label}`}
+      aria-label={`${props.open ? "Hide" : "Show"} ${props.what ?? "processes"} of ${props.label}`}
       onClick={() => props.onToggle()}
     >
       <Icon name={props.open ? "chevron-down" : "chevron-right"} small />
@@ -504,20 +530,23 @@ function Twist(props: { open: boolean; label: string; onToggle(): void }) {
   );
 }
 
-/** A session's own processes (hosted tools, its Claude Code provider), as one expandable line above its workers. */
-function OwnRow(props: { g: GroupRow; open: boolean; onToggle(): void }) {
-  const cpu = () => props.g.procs.reduce((n, p) => n + p.cpuPct, 0);
-  const rss = () => props.g.procs.reduce((n, p) => n + p.rssBytes, 0);
+/** One part of a group (Sova server, Usage helper; Sova runtime, Claude Code, Tools), expandable when it has processes. */
+function PartLine(props: { part: PartRow; open: boolean; onToggle(): void }) {
   return (
-    <tr class="monitor-row-worker">
+    <tr class="monitor-row-worker monitor-row-part">
       <th scope="row">
         <div class="monitor-name">
-          <Twist open={props.open} label={`${props.g.label}'s own tools`} onToggle={() => props.onToggle()} />
-          <span class="monitor-label">Session's own tools</span>
+          <Show when={props.part.procs.length} fallback={<span class="monitor-twist-space" aria-hidden="true" />}>
+            <Twist open={props.open} label={props.part.label} onToggle={() => props.onToggle()} />
+          </Show>
+          <span class="monitor-label">{props.part.label}</span>
         </div>
+        <Show when={props.part.caption}>
+          <div class="monitor-caption">{props.part.caption}</div>
+        </Show>
       </th>
-      <td class="monitor-num">{cpuText(cpu())}</td>
-      <td class="monitor-num">{bytes(rss())}</td>
+      <td class="monitor-num">{cpuText(props.part.cpuPct)}</td>
+      <td class="monitor-num">{memText(props.part.rssBytes)}</td>
       <td class="monitor-num monitor-col-swap" />
     </tr>
   );
@@ -525,7 +554,7 @@ function OwnRow(props: { g: GroupRow; open: boolean; onToggle(): void }) {
 
 function WorkerLine(props: { w: WorkerRow; now: number; live: boolean; open: boolean; onToggle(): void }) {
   const caption = () =>
-    [props.w.backend, statusText(props.w, props.now), props.w.procCount ? `${props.w.procCount} ${props.w.procCount === 1 ? "process" : "processes"}` : ""].filter(Boolean).join(" · ");
+    [props.w.backend, statusText(props.w, props.now), props.w.procCount ? `${props.w.procCount} ${props.w.procCount === 1 ? "process" : "processes"}` : "", props.w.split ?? ""].filter(Boolean).join(" · ");
   return (
     <tr class="monitor-row-worker">
       <th scope="row">
@@ -545,7 +574,7 @@ function WorkerLine(props: { w: WorkerRow; now: number; live: boolean; open: boo
         </Show>
       </th>
       <td class="monitor-num">{cpuText(props.w.cpuPct)}</td>
-      <td class="monitor-num">{bytes(props.w.rssBytes)}</td>
+      <td class="monitor-num">{memText(props.w.rssBytes)}</td>
       <td class="monitor-num monitor-col-swap">{props.w.swapBytes === undefined ? "" : bytes(props.w.swapBytes)}</td>
     </tr>
   );
@@ -574,7 +603,7 @@ function ProcLine(props: { p: ProcRow; depth: 1 | 2 }) {
         </Show>
       </th>
       <td class="monitor-num">{cpuText(props.p.cpuPct)}</td>
-      <td class="monitor-num">{bytes(props.p.rssBytes)}</td>
+      <td class="monitor-num">{memText(props.p.rssBytes)}</td>
       <td class="monitor-num monitor-col-swap" />
     </tr>
   );

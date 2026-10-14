@@ -3,7 +3,7 @@
 // goes back to the composer.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CONNECTING, errorHandsBack, NOT_CONNECTED, RECONNECTING, WAIT_START, waitOnHello, waitOnOpen, waitOnStatus, waitReason, type ChatWait } from "./chat-wait";
+import { CONNECTING, errorHandsBack, heldWhileAsleep, startsAsleep, NOT_CONNECTED, RECONNECTING, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "./chat-wait";
 import { UnackedSends } from "./unacked-sends";
 
 /** The first connection, open and helloed. */
@@ -103,4 +103,90 @@ test("a send made on the connection that fails before its hello comes back, once
   p.error();
   p.status("reconnecting");
   assert.deepEqual(p.draft, ["P"]);
+});
+
+// A chat closed while its tab is open (§chat.transcript/instant-open, §app.chat-processes/idle-stop).
+
+test("asleep: the view closed its socket and waits for nothing; Send is usable and no note shows", () => {
+  let w = waitOnSleep(helloed());
+  // The view's own close of its socket: still asleep, never Reconnecting, nothing handed back.
+  const closed = waitOnStatus(w, "closed", true);
+  assert.equal(closed.handBack, null);
+  w = closed.next;
+  assert.equal(w.asleep, true);
+  assert.equal(waitReason("closed", w), null, "Send usable");
+  assert.equal(waitReason("connecting", w), null);
+});
+
+test("waking: Connecting (never Reconnecting) until the woken connection's hello; then ready, nothing of it asleep", () => {
+  let w = waitOnStatus(waitOnSleep(helloed()), "closed", true).next;
+  w = waitOnWake(w);
+  w = waitOnStatus(w, "connecting", true).next;
+  assert.equal(waitReason("connecting", w), CONNECTING);
+  w = waitOnOpen(w);
+  assert.equal(waitReason("open", w), CONNECTING);
+  assert.equal(w.conn, 2, "its sends are the new connection's");
+  w = waitOnHello(w);
+  assert.equal(waitReason("open", w), null);
+  assert.deepEqual(w, { ready: true, lost: false, conn: 2, open: true });
+});
+
+test("waking: a woken connection that drops after it opened is a reconnect, and hands back its own unacknowledged sends", () => {
+  let w = waitOnOpen(waitOnWake(waitOnSleep(helloed())));
+  const ended = waitOnStatus(w, "reconnecting", true);
+  assert.equal(ended.handBack, w.conn);
+  w = ended.next;
+  assert.equal(waitReason("reconnecting", w), RECONNECTING);
+});
+
+test("WakeQueue: what the tab asked runs once, in order, at the woken chat's hello; never again at a later hello", () => {
+  const q = new WakeQueue();
+  const sent: string[] = [];
+  q.hold(() => sent.push("set_model"));
+  q.hold(() => sent.push("prompt: hi"), { id: "c1" });
+  assert.equal(q.size, 2);
+  assert.deepEqual(sent, [], "nothing goes before the hello");
+  q.flush();
+  assert.deepEqual(sent, ["set_model", "prompt: hi"]);
+  q.flush(); // a reconnect's hello
+  assert.deepEqual(sent, ["set_model", "prompt: hi"], "each once");
+  assert.equal(q.size, 0);
+});
+
+test("WakeQueue: giving up runs nothing and names each held send once", () => {
+  const q = new WakeQueue();
+  let ran = 0;
+  let told = 0;
+  q.hold(() => ran++, { id: "c1" });
+  q.hold(() => ran++, { dropped: () => told++ });
+  q.hold(() => ran++, { id: "c2" });
+  assert.deepEqual(q.drop(), ["c1", "c2"]);
+  assert.equal(told, 1, "a waiting act is told it won't run");
+  assert.deepEqual(q.drop(), []);
+  q.flush();
+  assert.equal(ran, 0);
+});
+
+test("heldWhileAsleep: the closed process still listed never wakes the tab; held again after it was seen gone, the tab connects", () => {
+  let seen = false;
+  let r = heldWhileAsleep(seen, true);
+  assert.deepEqual(r, { sawGone: false, connect: false }, "the list not yet refreshed: the old process");
+  r = heldWhileAsleep(r.sawGone, false);
+  assert.deepEqual(r, { sawGone: true, connect: false });
+  seen = r.sawGone;
+  r = heldWhileAsleep(seen, true);
+  assert.deepEqual(r, { sawGone: true, connect: true }, "someone else opened it");
+});
+
+test("startsAsleep: a chat the server doesn't hold opens asleep over its rows from the file; otherwise it connects as before", () => {
+  const ordinary = { special: false, force: false, rows: true };
+  assert.equal(startsAsleep({}, ordinary), true, "not held: reading it starts nothing");
+  assert.equal(startsAsleep({ chat: { model: null } }, ordinary), false, "held: connecting starts nothing either");
+  assert.equal(startsAsleep(undefined, ordinary), false, "its row not known yet");
+  assert.equal(startsAsleep({}, { ...ordinary, rows: false }), false, "nothing to show (a new chat, a failed read): the hello brings it");
+  assert.equal(startsAsleep({ live: { pid: 1 } }, ordinary), false, "open in a terminal: the refusal makes it read only");
+  assert.equal(startsAsleep({}, { ...ordinary, special: true }), false, "the Overseer, a project overseer");
+  assert.equal(startsAsleep({ baton: {} }, ordinary), false, "a baton session");
+  assert.equal(startsAsleep({ projectOverseer: {} }, ordinary), false);
+  assert.equal(startsAsleep({}, { ...ordinary, force: true }), false, "a forced reopen");
 });

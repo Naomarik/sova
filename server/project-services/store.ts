@@ -116,9 +116,10 @@ export const BLANK_LOCK_GRACE_MS = LOCK_WAIT_MS;
 
 const uniq = () => `${process.pid}.${randomBytes(4).toString("hex")}`;
 
-type Seen = { pid: number | null; dev: number; ino: number; mtimeMs: number };
+/** A lock file as read: its pid (null when it holds none) and its identity (device, inode, mtime in ns). */
+export type Seen = { pid: number | null; dev: bigint; ino: bigint; mtimeNs: bigint; mtimeMs: number };
 
-/** What a lock file holds, read through one descriptor so the pid and the inode belong together; null when it is gone. */
+/** What a lock file holds, read through one descriptor so the pid and the identity belong together; null when it is gone. */
 function readLock(file: string): Seen | null {
   let fd: number;
   try {
@@ -128,7 +129,7 @@ function readLock(file: string): Seen | null {
     throw err;
   }
   try {
-    const st = fstatSync(fd);
+    const st = fstatSync(fd, { bigint: true });
     let text = "";
     try {
       text = readFileSync(fd, "utf8").trim();
@@ -136,20 +137,20 @@ function readLock(file: string): Seen | null {
       /* unreadable: no pid */
     }
     const n = /^\d+$/.test(text) ? Number(text) : NaN;
-    return { pid: Number.isSafeInteger(n) && n > 0 ? n : null, dev: st.dev, ino: st.ino, mtimeMs: st.mtimeMs };
+    return { pid: Number.isSafeInteger(n) && n > 0 ? n : null, dev: st.dev, ino: st.ino, mtimeNs: st.mtimeNs, mtimeMs: Number(st.mtimeMs) };
   } finally {
     closeSync(fd);
   }
 }
 
 /** Put a file holding our pid at `file` only if nothing is there (a hard link never overwrites); the whole content is there from the first moment. */
-function linkLock(file: string): { dev: number; ino: number } | null {
+function linkLock(file: string): Seen | null {
   const tmp = `${file}.${uniq()}.new`;
   writeFileSync(tmp, String(process.pid));
   try {
-    const st = statSync(tmp);
+    const st = statSync(tmp, { bigint: true });
     linkSync(tmp, file);
-    return { dev: st.dev, ino: st.ino };
+    return { pid: process.pid, dev: st.dev, ino: st.ino, mtimeNs: st.mtimeNs, mtimeMs: Number(st.mtimeMs) };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") return null;
     throw err;
@@ -158,33 +159,39 @@ function linkLock(file: string): { dev: number; ino: number } | null {
   }
 }
 
-const same = (a: { dev: number; ino: number } | null, b: { dev: number; ino: number }) => !!a && a.dev === b.dev && a.ino === b.ino;
+/** The same lock file: identity and pid alike, so a new lock that reused a freed inode is never taken for the old one. */
+const same = (a: Seen | null, b: Seen) => !!a && a.dev === b.dev && a.ino === b.ino && a.mtimeNs === b.mtimeNs && a.pid === b.pid;
+
+/** Stale: its pid is dead, or it holds no pid and is older than `BLANK_LOCK_GRACE_MS`. */
+const stale = (s: Seen) => (s.pid !== null ? !alive(s.pid) : Date.now() - s.mtimeMs > BLANK_LOCK_GRACE_MS);
 
 /**
- * Move the stale lock `seen` out of the way, only if it is still the file at `file`. Takeovers go
- * one at a time through `<file>.takeover` (held for a few syscalls): without it, a caller that judged
- * the old lock stale could rename away the fresh lock another taker just linked in its place.
- * `heldBy` when another caller is taking over right now.
+ * Move the stale lock `seen` out of the way, only if the file at `file` is still that lock and is
+ * still stale now. Takeovers go one at a time through `<file>.takeover` (held for a few syscalls):
+ * without it, a caller that judged the old lock stale could rename away the fresh lock another taker
+ * just linked in its place. `heldBy` when another caller is taking over right now. Exported for tests.
  */
-function takeOver(file: string, seen: Seen): { heldBy: number } | null {
+export function takeOver(file: string, seen: Seen): { heldBy: number } | null {
   const guard = `${file}.takeover`;
   const g = linkLock(guard);
   if (!g) {
     const other = readLock(guard);
     // A guard is held only for a few syscalls: an old one is a crashed taker's debris.
-    if (other && Date.now() - other.mtimeMs > BLANK_LOCK_GRACE_MS) moveAside(guard, other);
+    const old = (s: Seen | null) => !!s && Date.now() - s.mtimeMs > BLANK_LOCK_GRACE_MS;
+    if (other && old(other)) moveAside(guard, (now) => same(now, other) && old(now));
     return { heldBy: other?.pid ?? -1 };
   }
   try {
-    if (same(readLock(file), seen)) moveAside(file, seen);
+    const now = readLock(file);
+    if (now && same(now, seen) && stale(now)) moveAside(file, (moved) => same(moved, now) && stale(moved!));
     return null;
   } finally {
     if (same(readLock(guard), g)) rmSync(guard, { force: true });
   }
 }
 
-/** Rename `file` aside and remove it, only if it is the inode in `seen`; another file found there is put back. */
-function moveAside(file: string, seen: { dev: number; ino: number }): void {
+/** Rename `file` aside and remove it when `ok` says what was moved may go; anything else is put back. */
+function moveAside(file: string, ok: (moved: Seen | null) => boolean): void {
   const aside = `${file}.stale.${uniq()}`;
   try {
     renameSync(file, aside);
@@ -192,7 +199,7 @@ function moveAside(file: string, seen: { dev: number; ino: number }): void {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return; // someone else moved it
     throw err;
   }
-  if (!same(readLock(aside), seen)) {
+  if (!ok(readLock(aside))) {
     try {
       linkSync(aside, file);
     } catch {
@@ -224,11 +231,8 @@ export function tryLock(file: string): { release: () => void } | { heldBy: numbe
     }
     const seen = readLock(file);
     if (!seen) continue; // released meanwhile
-    if (seen.pid !== null) {
-      if (alive(seen.pid)) return { heldBy: seen.pid };
-    } else if (Date.now() - seen.mtimeMs <= BLANK_LOCK_GRACE_MS) {
-      return { heldBy: -1 }; // being written by older code, or not yet stale debris
-    }
+    // A live pid holds it; so does one without a pid while young (being written by older code).
+    if (!stale(seen)) return { heldBy: seen.pid ?? -1 };
     const busy = takeOver(file, seen);
     if (busy) return busy;
   }

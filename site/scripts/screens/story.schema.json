@@ -876,13 +876,6 @@
                     "type": "string",
                     "minLength": 1
                   },
-                  "buildsOn": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
                   "files": {
                     "type": "array",
                     "minItems": 1,

@@ -69,9 +69,17 @@ The **changes viewer** shows what a session changed on disk. It only reads: it n
 
 The viewer tells the diff as numbered steps. Every hunk lands in exactly one step, or under **Other changes**, which comes last. A hunk is never split between steps.
 
-When the agent calls `show_changes`, it writes the steps itself: a title, an optional line on why, and which earlier steps each one builds on. It can't leave a hunk out. A diff with more than one hunk is refused without steps, and so are steps that leave a hunk unplaced; the refusal lists what's still missing so the agent can fix it in one retry.
+When the agent calls `show_changes`, it writes the steps itself: a title, an optional line on why, and the hunks each one holds. It can't leave a hunk out. A diff with more than one hunk is refused without steps, and so are steps that leave a hunk unplaced or only name hunks an earlier step already holds; the refusal lists what's still missing so the agent can fix it in one retry. A change of more than 3,000 files is refused too, and the agent narrows it to the paths you care about.
 
 Without the agent's steps, each turn that edited files is a step, titled from the message that started it. Edits made by hand or by another session go under Other changes.
+
+A file that was only renamed, only had its mode changed, or was added empty has no lines to show. It still counts as one change, listed in its step as "renamed, no line changes", "mode changed, no line changes" or "empty file".
+
+**Empty steps.** If one of the agent's steps ends up with nothing to show, it keeps its number and its place, greyed, with the reason under its title: an earlier step already holds those changes, or they're no longer in the diff (an older card, or uncommitted work that changed since). No later step is renumbered.
+
+**Commits.** On a branch or a merge, Sova works out from git history which commits each step's changes came from. The steps list shows them under each step, as "a1b2c3d · 1 commit" or "a1b2c3d → e4f5a6b · 3 commits", oldest first. The open step has a **From 3 commits** row, collapsed until you open it, which lists each commit with its short id, subject and how long ago it was made. Uncommitted changes have no commits, and a single commit's view names its commit in the header instead. If the history can't be read in time, the row says "commits unknown" and the diff still shows.
+
+**The agent's card.** The `show_changes` card appears as soon as the call finishes, while the agent is still replying. A branch card opens on exactly the diff the agent showed you, even after the branch moves on; a card for uncommitted changes shows what's on disk now. A card the agent limited to some paths opens limited to the same paths.
 
 ### Reading the diff
 

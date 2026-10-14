@@ -1821,7 +1821,7 @@ export interface ProjectMinorInfo {
   changed?: true;
   /** Has tools whose exact set (toolsHash) the user hasn't approved. */
   needsApproval?: true;
-  /** What an approval approves: the declared tools and the files they run. Absent: no tools. */
+  /** What an approval approves: the declared tools and every file in the mode's folder except MODE.md. Absent: no tools. */
   toolsHash?: string;
 }
 

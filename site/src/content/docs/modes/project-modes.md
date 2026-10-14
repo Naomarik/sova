@@ -16,13 +16,15 @@ three things:
 - **command-line tools** of the project's own, which the agent can call while the mode is on.
 
 Every chat working in that project's checkout lists the project's modes in its mode menu, under
-**This project · {name}**, read from the files each time you open the menu. Only those files
-configure a mode: Sova's settings, `mode.json`,
-profiles and automations never name one.
+**This project · {name}**, read from the files each time you open the menu. A menu that is already
+open doesn't follow a change to the files until you open it again. Only those files configure a
+mode: Sova's settings, `mode.json`, profiles and automations never name one, and Settings shows
+none.
 
-A project mode **never turns itself on**. Only you turn one on, in that chat, from its mode menu or
-`/mode`, or the Overseer when you ask it to. Save as default never saves a project mode, and a new
-chat starts with none of them on.
+A project mode **never turns itself on**. It is on only when someone turned it on in that chat: you,
+from its mode menu or `/mode`, or [the Overseer](/docs/overseer/). A mode file has no way to say
+"on by default". Save as default never saves a project mode, and neither a profile, an automation,
+a project's coding session nor `pi --minor` can turn one on.
 
 ## Where Sova looks
 
@@ -41,7 +43,8 @@ my-app/
 The checkout is the nearest folder at or above the chat's folder that holds `.git`, or the chat's
 folder itself when none does. This is **not** the main checkout that profiles and playbooks read: a
 chat in a worktree sees the modes on its own branch, so you can change a mode on a branch and try it
-there before it reaches anyone else. A chat on a remote machine has no project modes.
+there before it reaches anyone else. A chat on a remote machine has no project modes, and neither
+does the Overseer's own chat.
 
 The folder's name is the mode's id: lowercase letters, digits and hyphens, starting with a letter,
 at most 30 characters. It can't be the name of a built-in minor mode (`align`, `spec`, `vis`,
@@ -95,8 +98,8 @@ Each entry in `tools` has:
 
 A mode declares at most 16 tools. The agent sees each one as the mode's id, with hyphens turned
 into underscores, then two underscores and the tool's name: `release-check`'s `status` tool is
-`release_check__status`. So two modes' tools never collide, and none takes the name of a built-in
-tool.
+`release_check__status`. So two modes' tools never collide. While the mode is on the agent has its
+tools; turning it off takes them away from the agent's next run.
 
 When the agent calls a tool, Sova:
 
@@ -106,9 +109,10 @@ When the agent calls a tool, Sova:
 3. runs it in a process group of its own, stopped whole if it runs past its time limit or you
    stop the turn;
 4. returns its exit code, its standard output and its standard error to the agent, each cut at
-   256 KB.
+   256 KB with the cut marked.
 
-A `./` file that is a symlink leading out of the mode folder is refused. While the chat's
+A `./` file that is a symlink leading out of the mode folder, or any argument with a `/` in it that
+isn't a `./` path in the folder, is refused when the agent calls the tool, and nothing runs. While the chat's
 sandbox is on, project tools don't run at all: the sandbox confines only the
 chat's own tools, so the agent is told to ask you to turn the sandbox off.
 
@@ -116,11 +120,15 @@ chat's own tools, so the agent is told to ask you to turn the sandbox off.
 
 A mode with tools runs programs from the project's files, so it asks before you turn it on. In the
 menu its row reads **Asks before turning on: it runs {n} tool(s).** Turning it on opens a panel
-with each tool's name, description and command line, and where it runs from. **Approve and Turn
-On** approves exactly those tools and turns the mode on; **Cancel** changes nothing.
+with each tool's name, description and command line, where it runs from, and which bare programs
+it starts (`node`, `python3`, `sh`) are the machine's own and so not covered. **Approve and Turn
+On** approves exactly what the panel shows and turns the mode on; **Cancel** changes nothing.
+Turning a mode off never asks. If the mode's files change while the panel is open, the approval is
+refused and the panel shows the tools as they are now, for you to check again.
 
 Approval covers **everything in the mode's folder**: the tool declarations and every file in the
-folder, at any depth, hidden files included, except `MODE.md` itself. So a script that sources a
+folder, at any depth, hidden files included (a symlink counts as the file it points to), except
+`MODE.md` itself. So a script that sources a
 helper beside it, or a program that imports a sibling, can't change without asking. Sova asks again
 when any of that changes; editing the instructions in `MODE.md` never asks again, and a mode with
 no tools never asks at all. Keep a mode with tools small: a folder of more than 1000 files or 50 MB
@@ -138,38 +146,44 @@ run.** Turn the mode off and on to approve the new version.
 
 ## What a chat keeps
 
-When you turn a mode on, the chat saves a copy of its `MODE.md` (the description, instructions and
-tools) in its own history, and for a mode with tools a fingerprint of everything else in its folder. It works from that copy
-until you turn the mode off, through reloads, server restarts and compaction. It never reads
-`MODE.md` again for it.
+When you turn a mode on, the chat saves a copy of its `MODE.md` (the description, the `workers`
+setting, the instructions and the tools) in its own history, and for a mode with tools a fingerprint
+of everything else in its folder. It works from that copy until you turn the mode off, through
+reloads, resumes, server restarts and compaction. It never reads `MODE.md` again for it.
 
 So an edit to `MODE.md` doesn't reach a chat that already has the mode on. The row says **Changed
 since you turned it on.** Turn the mode off and on to load the changes. The other files in the folder
 aren't copied: the agent reads them when it needs them, so an edit to one reaches the chat right
 away. In a mode with tools, that edit also marks the mode changed and stops its tools until you
-approve it again (see above). If the mode's folder is deleted, the chat keeps its copy, and the row says **Removed from the
-project.**, until you turn it off.
+approve it again (see above). If the mode's folder is deleted, the chat keeps its copy, and the row
+says **Removed from the project.**, until you turn it off; then the row is gone. If its files turn
+broken while it is on, it stays on from its copy too, and the row says **Its files have a problem
+now**, with the problem.
 
-The instructions reach the agent the same way a built-in mode's do: turning a mode on in the middle
-of a chat adds a hidden note at your next message instead of rewriting the instructions the agent
-already has, so the provider's prompt cache holds. Its tools are added and removed like align's or
-codemode's.
+The instructions reach the agent the same way a built-in mode's do. A mode that was on when the
+chat started, or at its last compaction, is part of the agent's instructions. Turning one on in the
+middle of a chat sends its instructions as a hidden note at the next run, after the built-in modes'
+instructions, instead of rewriting the instructions the agent already has. A mode with tools also adds or removes them, like align
+or codemode, and a change to the agent's tools costs the provider's prompt cache.
 
 ## Workers
 
 A mode with `workers: yes` reaches every worker the chat starts while the mode is on, the way
 [spec](/docs/modes/spec/) does: the worker gets the chat's copy of the instructions, after spec's,
-and the mode's tools if it can run commands. A read-only worker, and a worker on a remote machine,
-gets the instructions without the tools. The tools refuse in a worker just as in the
-chat. A worker never reads the mode's folder. A worker gets at most 8 modes, built-in
-and project together. Its view in the Subagents pane lists the mode's id on its modes chip.
+and the mode's tools if it can run commands. A worker that can't run commands, and a worker on a
+remote machine, gets the instructions without the tools. The tools refuse in a worker just as in
+the chat: when the mode's files changed since you approved them, or while the worker's sandbox is
+on. A worker never reads the mode's folder, and never turns a project mode on itself. A worker gets
+at most 8 modes, built-in and project together. A later switch in the chat doesn't reach a running
+worker; a resumed worker takes the chat's modes as they are then. Its view in the Subagents pane lists the mode's id on its modes chip.
 
 ## From the terminal
 
 `/mode project:release-check on` and `/mode project:release-check off` turn a mode on and off, and
 `/mode project:release-check` toggles it. The bare id works too when no built-in mode has that
 name. The `/mode` palette lists the project's modes after the built-in ones, and `/mode status`
-lists each with its state.
+lists each with its state. `/mode default` never saves one, and `pi --minor` names only built-in
+modes. The terminal's status line shows the project modes that are on after the built-in ones.
 
 A mode with tools turns on from the terminal only if you've already approved that exact version of
 its tools, in a Sova chat's mode menu. The terminal never asks: otherwise it says to approve the mode

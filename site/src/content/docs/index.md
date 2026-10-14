@@ -25,6 +25,7 @@ commands.
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts before promoting them. |
 | [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself. |
 | [codemode](/docs/modes/codemode/) | Minor | The agent can run a short script that calls its other tools, several at once, and filters their output. |
+| [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions and command-line tools. None is on until you or the Overseer turn it on. |
 
 [Subagent profiles](/docs/subagent-profiles/) hold the models every subagent uses: Delegate's
 workers, team members, the spec writer and the reviewer. Each chat picks one in its mode menu.

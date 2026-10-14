@@ -164,7 +164,7 @@ A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sov
 own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTML or SVG never
 enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope), and the replies on share
 and owner pages, which draw `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps`, `wireframe`,
-`layers`, `state` and `sequence`, an `svg` as a static image, and an `html` in a frame only when the
+`layers`, `state` and `sequence`, an `svg` as a still image in the same figure, and an `html` in a frame only when the
 session allows it, with no Source or Copy, and show one quiet line instead of any other kind's or a
 broken block's source (§app.baton/outsider-view).
 

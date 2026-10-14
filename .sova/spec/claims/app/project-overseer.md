@@ -101,8 +101,8 @@ which is also its live view: its tool calls render as tool cards as they happen.
 ## §app.project-overseer/page — Its chat page
 
 The current conversation opens at `#/s/<path>` like any chat (the sidebar's eye on its project's
-heading, §app.session-list/organizations, or the project page's Open Overseer, which carries the
-same eye), but under a **head of
+heading, §app.session-list/organizations; its row in the Overseer split button's ▾ list,
+§app.overseer/entry-button; or the project page's Open Overseer, which carries the same eye), but under a **head of
 its own** in place of the session head, with its status in a short strip under it. A workspace pane
 keeps the pane head. Everything else of the chat is unchanged: the thread is its live view, the
 composer has no mode switch. A message the global Overseer sent it (§app.overseer/org-project-overseers)

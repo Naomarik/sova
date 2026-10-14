@@ -101,8 +101,8 @@ test("after a hold, the click and the context menu it produces are both suppress
 
 test("a LONG press is still a hold: its click is suppressed however long the finger stayed down", () => {
   // The bug this pins: with the window measured from the moment the hold fired, a 3s press had
-  // already "expired" by the time it was released, so the click reached the row and toggled the
-  // selection the hold had just made straight back off.
+  // already "expired" by the time it was released, so the click reached the row and opened the
+  // session under the gesture the hold had just started.
   const { gesture, tick } = rig();
   gesture.start({ x: 5, y: 5 });
   tick(HOLD_MS);

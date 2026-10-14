@@ -17,7 +17,7 @@ import type {
 } from "../../shared/protocol";
 import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
-import { tuiOnlyCommand } from "../lib/slash";
+import { tuiOnlyCommand, withSaveCommand } from "../lib/slash";
 import { UnackedSends } from "../lib/unacked-sends";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
@@ -101,6 +101,8 @@ import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
+import { bumpSaved, SaveSessionDialog } from "./SaveSessionDialog";
+import { ContinueOfferHost, SavedSessionsSection } from "./SavedSessions";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
@@ -452,6 +454,8 @@ export function ChatView(props: {
 
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
+  /** "/save" opened Save Session (§chat.saved-sessions/save-dialog). */
+  const [savingOpen, setSavingOpen] = createSignal(false);
   /** This chat's mode and how a switch applies to it, as the socket said (WS "mode"). */
   const [saidMode, setModeState] = createSignal<ModeState | null>(null);
   /** Whether this chat's runtime runs with adversarial review, as its hello said (§chat.alignment-review/flag);
@@ -2086,6 +2090,7 @@ export function ChatView(props: {
                         )}
                       </Show>
                       <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} />
+                      <Show when={props.summary?.()?.cwd}>{(cwd) => <SavedSessionsSection path={props.path} cwd={cwd()} />}</Show>
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>
@@ -2105,13 +2110,18 @@ export function ChatView(props: {
         <For each={errors()}>{(m) => <><TurnError message={m.message} /><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
+      <ContinueOfferHost path={props.path} />
+      <Show when={savingOpen()}>
+        <SaveSessionDialog path={props.path} onClose={() => setSavingOpen(false)} onSaved={bumpSaved} />
+      </Show>
       <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         readOnly={batonGate()}
-        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
+        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : props.projectOverseer ? commands() : withSaveCommand(commands())}
+        onSave={props.overseer || props.projectOverseer ? undefined : () => setSavingOpen(true)}
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}

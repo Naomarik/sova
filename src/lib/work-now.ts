@@ -106,12 +106,9 @@ export interface WorkNowView {
   /** The Agents row's word after the figure ("agents", "agent"); null while unknown, when the
       row reads the plain word "Agents". */
   rowWord: string | null;
-  /** The toolbar line's parts, 0s left out: each an icon and its figure. Empty: the line is omitted. */
+  /** The breakdown the sentence names, 0s left out: sessions, then subagents. Empty at 0 and while unknown. */
   parts: { kind: "sessions" | "subagents"; n: number; word: string }[];
-  /** The toolbar line's words, its title and aria-label: "2 sessions · 5 subagents working", a
-      floor's "At least …" and missing hosts included; "" with no parts. */
-  lineLabel: string;
-  /** The count's sentence: the toolbar line's name, the start of the row's and the tally's. */
+  /** The count's sentence: the start of the Agents row's name and the tally's. */
   sentence: string;
   /** The spine tally shows unless the count is a complete 0. */
   showTally: boolean;
@@ -128,7 +125,7 @@ export function workMissing(labels: readonly string[]): string {
 
 export function workNowView(w: WorkNow): WorkNowView {
   if (w.state === "unknown") {
-    return { state: "unknown", total: null, figure: "–", rowWord: null, parts: [], sentence: "Agents working now: not known yet", lineLabel: "", showTally: true };
+    return { state: "unknown", total: null, figure: "–", rowWord: null, parts: [], sentence: "Agents working now: not known yet", showTally: true };
   }
   const total = w.sessions + w.subagents;
   const parts: WorkNowView["parts"] = [];
@@ -142,9 +139,7 @@ export function workNowView(w: WorkNow): WorkNowView {
         : "No agents working now"
       : `${floor ? "At least " : ""}${total} ${plural(total, "agent", "agents")} working now: ${parts.map((p) => `${p.n} ${p.word}`).join(" and ")}`;
   const sentence = floor ? `${head}. ${workMissing(w.missing)}` : head;
-  const breakdown = parts.length ? `${floor ? "At least " : ""}${parts.map((p) => `${p.n} ${p.word}`).join(" · ")} working` : "";
-  const lineLabel = floor && breakdown ? `${breakdown}. ${workMissing(w.missing)}` : breakdown;
-  return { state: w.state, total, figure: `${total}`, rowWord: plural(total, "agent", "agents"), parts, sentence, lineLabel, showTally: floor || total > 0 };
+  return { state: w.state, total, figure: `${total}`, rowWord: plural(total, "agent", "agents"), parts, sentence, showTally: floor || total > 0 };
 }
 
 /** Sentences joined so each ends in exactly one full stop. */

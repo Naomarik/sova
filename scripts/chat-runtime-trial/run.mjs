@@ -706,15 +706,32 @@ async function t4fail() {
   const pidB = chatPid(B.path);
   A.s.close();
   B.s.close();
+  const logFile = join(scratch, `server-${n}.log`);
+  const logFrom = existsSync(logFile) ? readFileSync(logFile, "utf8").length : 0;
+  const ids = [entries(A.path)[0]?.id, entries(B.path)[0]?.id];
+  const rollout = () => (existsSync(logFile) ? readFileSync(logFile, "utf8").slice(logFrom) : "").split("\n").filter((l) => l.includes("[chat-rollout]"));
   await restart({ [KNOBS.build]: "trial-b", [KNOBS.failBoot]: "trial-b" });
-  await sleep(45000);
+  // The rollout's own verdicts, not a fixed sleep: one chat's replacement fails (its waitReady gives up
+  // only after readyTimeoutMs, 30 s), the other's automatic reload is skipped. Each starts only once the
+  // server took the chat back (up to 60 s, chat-host.ts takeBack). A fixed 45 s ran out under full load
+  // with neither verdict in (older, older). Bounded by those limits: 60 + 30 s, plus as much again.
+  const verdicts = () => {
+    const ls = rollout();
+    return { failed: ids.filter((id) => ls.some((l) => l.includes(`${id}: could not start on new code`))), halted: ids.filter((id) => ls.some((l) => l.includes(`${id}: no automatic reload`))) };
+  };
+  const t0 = Date.now();
+  const both = await waitFor(() => {
+    const v = verdicts();
+    return v.failed.length + v.halted.length >= 2;
+  }, 180000);
+  R.note(`t4fail: rollout verdicts ${both ? "in" : "not all in"} after ${Math.round((Date.now() - t0) / 1000)} s: ${JSON.stringify(verdicts())}`);
   const kept = [chatPid(A.path) === pidA, chatPid(B.path) === pidB];
   R.check(kept[0] && kept[1], `t4fail: both old processes are kept (A ${pidA} → ${chatPid(A.path)}, B ${pidB} → ${chatPid(B.path)})`);
   const a2 = await chat(c, A.path);
   const b2 = await chat(c, B.path);
   await sleep(2000);
   const states = [codeMsgs(a2).at(-1)?.state, codeMsgs(b2).at(-1)?.state];
-  R.check(states.includes("failed") && states.filter((x) => x === "failed").length === 1, `t4fail: exactly one chat shows "failed", the rollout halted before the other (${states.join(", ")})`);
+  R.check(states.includes("failed") && states.filter((x) => x === "failed").length === 1, `t4fail: exactly one chat shows "failed", the rollout halted before the other (${states.join(", ")}; rollout: ${JSON.stringify(rollout().slice(-6))})`);
   R.check(states.every((x) => x === "older" || x === "failed"), "t4fail: the other stays on older code");
   a2.close();
   b2.close();

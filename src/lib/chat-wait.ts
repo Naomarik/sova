@@ -126,3 +126,26 @@ export function heldWhileAsleep(sawGone: boolean, held: boolean): { sawGone: boo
   if (!held) return { sawGone: true, connect: false };
   return { sawGone, connect: sawGone };
 }
+
+/** What `startsAsleep` reads of the chat's list row (SessionSummary). */
+export interface RowOfChat {
+  chat?: unknown;
+  live?: unknown;
+  overseer?: unknown;
+  projectOverseer?: unknown;
+  baton?: unknown;
+}
+
+/**
+ * Whether a view opening this chat starts asleep (§chat.transcript/instant-open): the list says the
+ * server doesn't hold it (its row has no `chat`), and the view already shows its rows from the file.
+ * Opening it to read then starts no process; a send or another action wakes it, as after an idle
+ * stop. It connects as before when the row isn't known yet, when there are no rows to show (a new
+ * chat, a read that failed: the hello brings them), when a terminal has it open (the refusal turns
+ * it read only), for the Overseer, a project overseer and a baton session, and for a forced reopen.
+ */
+export function startsAsleep(row: RowOfChat | null | undefined, o: { special: boolean; force: boolean; rows: boolean }): boolean {
+  if (!row || !o.rows || o.special || o.force) return false;
+  if (row.overseer || row.projectOverseer || row.baton) return false;
+  return !row.live && !row.chat;
+}

@@ -65,6 +65,47 @@ export function parseStat(text: string): ProcStat | null {
   return s;
 }
 
+/** /proc/<pid>/statm's resident and shared pages. resident − shared is the process's own memory
+    (RssAnon: shared counts its file-backed and shmem pages), read with stat, never smaps. */
+export function parseStatm(text: string): { resident: number; shared: number } | null {
+  const f = text.trim().split(" ");
+  if (f.length < 3) return null;
+  const resident = Number(f[1]);
+  const shared = Number(f[2]);
+  return Number.isSafeInteger(resident) && Number.isSafeInteger(shared) && resident >= 0 && shared >= 0 ? { resident, shared } : null;
+}
+
+/** macOS `ps -o time=`: cumulative CPU time (`[[dd-]hh:]mm:ss[.cc]`), in centiseconds; null if not that. */
+export function parsePsCpu(text: string): number | null {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)(?:\.(\d{1,2}))?$/.exec(text.trim());
+  if (!m) return null;
+  const [, d, h, mi, se, cs] = m;
+  const sec = (Number(d ?? 0) * 24 + Number(h ?? 0)) * 3600 + Number(mi) * 60 + Number(se);
+  return sec * 100 + (cs ? Number(cs.padEnd(2, "0")) : 0);
+}
+
+/** One row of `ps -A -o pid=,ppid=,rss=,time=` (rss in kB, cpu in centiseconds). */
+export interface PsRow {
+  pid: number;
+  ppid: number;
+  rssKb: number;
+  cpu: number;
+}
+
+/** The whole `ps -A -o pid=,ppid=,rss=,time=` table, by pid; lines that don't read are dropped. */
+export function parsePsTable(text: string): Map<number, PsRow> {
+  const out = new Map<number, PsRow>();
+  for (const line of text.split("\n")) {
+    const f = line.trim().split(/\s+/);
+    if (f.length < 4) continue;
+    const pid = Number(f[0]), ppid = Number(f[1]), rssKb = Number(f[2]);
+    const cpu = parsePsCpu(f[3]!);
+    if (!(pid > 0) || !Number.isSafeInteger(ppid) || !Number.isSafeInteger(rssKb) || cpu === null) continue;
+    out.set(pid, { pid, ppid, rssKb, cpu });
+  }
+  return out;
+}
+
 /** VmSwap from /proc/<pid>/status, in bytes; 0 when absent (kernel threads, zombies). */
 export function parseStatusSwap(text: string): number {
   const m = /^VmSwap:\s+(\d+)\s*kB/m.exec(text);
@@ -252,7 +293,10 @@ export function classifyArgv(argv: string[], comm = ""): ArgvInfo {
     // tsx: node …/tsx/dist/cli.mjs server/index.ts → node tsx server/index.ts
     const shown = /\/tsx\/dist\/cli\.m?js$/.test(script) ? "tsx" : script ? shortArg(script) : "";
     const tail = i >= 0 ? argv.slice(i + 1).map(shortArg) : [];
-    const kind: MonitorProcKind = /^(vite|tsc|esbuild|rollup|webpack|eslint|biome|vitest|jest)(\.m?js)?$/.test(shown) ? "build" : "node";
+    // Sova's own: a chat's runtime and the server's usage helper, by their entry script.
+    const kind: MonitorProcKind = /(^|\/)chat-runtime\/main\.ts$/.test(script) ? "sova-runtime"
+      : /(^|\/)usage-helper\/main\.ts$/.test(script) ? "sova-helper"
+      : /^(vite|tsc|esbuild|rollup|webpack|eslint|biome|vitest|jest)(\.m?js)?$/.test(shown) ? "build" : "node";
     return { kind, cmd: cut([exe, ...(shown ? [shown] : []), ...tail].join(" ")) };
   }
   if (/^python[\d.]*$/.test(exe)) {

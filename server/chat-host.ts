@@ -293,6 +293,7 @@ export class ChatHostRouter {
         toolsRunning: m.monitor.toolsRunning,
         lastToolEnd: m.monitor.lastToolEnd,
         pid: h.at.pid,
+        ...(m.model?.provider ? { provider: m.model.provider } : {}),
         ...(w ? { worker: { parentPath: w.parent.path, parentSessionId: w.parent.sessionId, workerId: w.parent.workerId } } : {}),
       });
       if (w) this.workers.onState(h);

@@ -121,4 +121,27 @@ describe("sampler over the real /proc", { skip: !linux && "needs Linux /proc" },
     assert.ok(h2.points.some((p) => (p.workers[SESSION]?.ag_01?.[0] ?? 0) > 0), "history lost the worker's CPU");
     m.stop();
   });
+
+  test("own memory is the kernel's RssAnon (statm resident less shared), below RSS, and Sova's four parts add up", async () => {
+    const m = new ResourceMonitor({ logDir: join(root, "log-mem"), cgroupRoot: join(root, "no-cgroup"), eventLoop: false, hosted: () => [] });
+    await m.tick();
+    // A child that holds 64 MB of its own (touched) memory, beside its runtime's shared code.
+    const hog = node(`const b = Buffer.alloc(64 << 20, 1); globalThis.keep = b; setInterval(() => {}, 1e6);`);
+    const anonKb = () => Number(/^RssAnon:\s+(\d+)/m.exec(readFileSync(`/proc/${hog.pid}/status`, "utf8"))?.[1] ?? 0);
+    await until(() => anonKb() >= 64 * 1024, "the child's 64 MB to be resident");
+    await m.tick();
+    await m.tick(); // a pid first listed waits one tick
+    const s = m.snapshot()!;
+    const p = s.unattributed.procs.find((x) => x.pid === hog.pid);
+    assert.ok(p, `child not measured: ${JSON.stringify(s.unattributed.procs.map((x) => x.pid))}`);
+    const kernel = anonKb() * 1024;
+    assert.ok(Math.abs(p.privBytes! - kernel) <= kernel * 0.05, `own ${p.privBytes} vs RssAnon ${kernel}`);
+    assert.ok(p.privBytes! < p.rssBytes, "its runtime's shared code is not counted as its own");
+    const mem = s.memory!;
+    assert.equal(mem.backend.bytes + mem.runtime.bytes + mem.wrapped.bytes + mem.tools.bytes, mem.total);
+    assert.ok(mem.tools.bytes >= p.privBytes!, "the child is tools and work");
+    hog.kill("SIGKILL");
+    await exited(hog);
+    m.stop();
+  });
 });

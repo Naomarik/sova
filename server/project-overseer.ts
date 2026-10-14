@@ -69,7 +69,7 @@ import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
 import { joinedText, readBranch } from "./harness/pi/reader";
-import { UnreadReplies } from "./unread-replies";
+import { projectOverseerUnread } from "./project-overseer-unread";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
@@ -285,15 +285,6 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
 
 // ---- info ------------------------------------------------------------------------------------------
 
-/** Each project overseer's unread count, kept between polls (server/unread-replies). */
-const unread = new Map<string, UnreadReplies>();
-function unreadReplies(projectId: string, path: string, since: number | undefined): Promise<number> {
-  const key = projectId;
-  let counter = unread.get(key);
-  if (!counter) unread.set(key, (counter = new UnreadReplies()));
-  return counter.count(path, since);
-}
-
 function codingOf(projectId: string): { sessionId: string; path: string | null; running: boolean; createdAt: string; title?: string }[] {
   return readBuilds(projectId)
     .filter((s) => s.kind === "coding")
@@ -412,7 +403,7 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     busy: exists && path ? isSessionBusy(path) : false,
     lastRun: memo.lastRun,
     started,
-    unread: exists && path && !isViewing(st!.current) ? await unreadReplies(projectId, path, readSeen()[st!.current]) : 0,
+    unread: exists && path && !isViewing(st!.current) ? await projectOverseerUnread(projectId, path, readSeen()[st!.current]) : 0,
     usage: {
       allowance: allowanceUse(projectId, settings.caps),
       held: memo.held,

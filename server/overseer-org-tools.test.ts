@@ -14,6 +14,7 @@ import type { SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
 import { piSession } from "./harness/pi/testing/handle";
 import { scratchRoot } from "./test-scratch";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 // In no repository: the plain project folders below are themselves, so a coding session cuts no worktree.
 const root = scratchRoot("sova-oorg-");
@@ -22,7 +23,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { Hono } = await import("hono");

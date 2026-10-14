@@ -13,30 +13,49 @@
 // Live rows count as read: a chat left at the end while a turn ran, or with a message queued,
 // comes back at the end with no Jump to Latest (the running turn's rows and the queued message were
 // drawn when the reader left), while a turn that started and ended while away still stops at the
-// last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs: start the server
-// with `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` (the
-// Claude Code provider is always on; agents/extensions/claude-code/overview.md, "Testing Claude logins without Anthropic"). Without the fake they are skipped, never passed.
+// last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs (the Claude Code
+// provider is always on; agents/extensions/claude-code/overview.md, "Testing Claude logins without
+// Anthropic").
 //
-// Writes its fixtures into the hermetic agent dir and drives a hermetic server — `pnpm run
-// dev:hermetic` in THIS worktree, serving the built app (`pnpm run build` first) — through the
-// playwright skill's own browser.
+// By default it hosts its own server (scripts/e2e/self-hosted.mjs): a scratch agent dir built like
+// dev:hermetic's, a free port, the fake `claude` first on its PATH and a fixture login as
+// CLAUDE_CONFIG_DIR; stopped, with its chats, and removed at the end (or on Ctrl-C). Nothing to
+// start first but the build; the live checks then always run, and a server whose claude isn't the
+// fake fails them. It drives that server through the playwright skill's own browser.
 //
-//   pnpm run build && pnpm run dev:hermetic        # in one terminal
-//   pnpm run e2e:transcript-follow                  # in another
+//   pnpm run build && pnpm run e2e:transcript-follow
 //
-// Env: SOVA_E2E_PORT (default 4810); SOVA_E2E_AGENT, the server's agent dir when it isn't this
-// worktree's .agent; SOVA_E2E_CDP, a browser already running (CDP URL) instead of starting one.
+// Against a server already running instead (say `pnpm run dev:hermetic`, started with
+// `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` for the live
+// checks, which are skipped without the fake, never passed): SOVA_E2E_PORT=<its port>, and
+// SOVA_E2E_AGENT, its agent dir when it isn't this worktree's .agent. The fixtures go into that dir.
+//
+// Env: SOVA_E2E_CDP, a browser already running (CDP URL) instead of starting one.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
+import { whenListed } from "./listed.mjs";
+import { selfHosted } from "./self-hosted.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
-const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
-const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
+/** The server this run starts and stops itself, unless SOVA_E2E_PORT names one already running. */
+const SELF = process.env.SOVA_E2E_PORT ? null : await selfHosted({ fakeClaude: true, label: "e2e-follow" }).catch((err) => {
+  console.error(`self-hosted server: ${err.message}`);
+  process.exit(2);
+});
+// Its own token file, never a SOVA_TOKEN meant for another server.
+if (SELF) delete process.env.SOVA_TOKEN;
+const AGENT = SELF ? SELF.agent : resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
+const PORT = SELF ? SELF.port : Number(process.env.SOVA_E2E_PORT);
 const BASE = `http://127.0.0.1:${PORT}`;
+/** Before every exit: the self-hosted server, its chats and its dir go. */
+const exit = async (code) => {
+  await SELF?.stop();
+  process.exit(code);
+};
 const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
 
 let passed = 0;
@@ -70,14 +89,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---- preflight: the server is the hermetic one on AGENT ----
 try {
   const d = await api("/api/settings/decisions");
-  assert(d.file.startsWith(AGENT + "/"), `the server on ${PORT} writes ${d.file}, not into ${AGENT}: start this worktree's hermetic server (pnpm run dev:hermetic)`);
+  assert(d.file.startsWith(AGENT + "/"), `the server on ${PORT} writes ${d.file}, not into ${AGENT}: give its agent dir as SOVA_E2E_AGENT, or unset SOVA_E2E_PORT to host one`);
 } catch (err) {
   console.error(`preflight: ${err.message}`);
-  process.exit(2);
+  await exit(2);
 }
 if (!existsSync(join(SKILL, "node_modules", "playwright"))) {
   console.error(`preflight: no playwright in ${SKILL}/node_modules — run npm ci there, or symlink another checkout's`);
-  process.exit(2);
+  await exit(2);
 }
 
 // ---- the fixtures: long sessions ending in alignment cards (and one without) ----
@@ -162,13 +181,19 @@ const SESSIONS = [
 const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
 let cdpPort = null;
 let cdp = process.env.SOVA_E2E_CDP;
-if (!cdp) {
-  const started = execFileSync(join(SKILL, "start-browser.sh"), ["--headless"], { cwd: SKILL, stdio: ["ignore", "pipe", "pipe"] }).toString();
-  cdpPort = /PW_PORT=(\d+)/.exec(started)?.[1];
-  if (!cdpPort) throw new Error(`start-browser.sh printed no PW_PORT:\n${started}`);
-  cdp = `http://127.0.0.1:${cdpPort}`;
+let browser;
+try {
+  if (!cdp) {
+    const started = execFileSync(join(SKILL, "start-browser.sh"), ["--headless"], { cwd: SKILL, stdio: ["ignore", "pipe", "pipe"] }).toString();
+    cdpPort = /PW_PORT=(\d+)/.exec(started)?.[1];
+    if (!cdpPort) throw new Error(`start-browser.sh printed no PW_PORT:\n${started}`);
+    cdp = `http://127.0.0.1:${cdpPort}`;
+  }
+  browser = await chromium.connectOverCDP(cdp);
+} catch (err) {
+  console.error(`browser: ${err?.message ?? err}`);
+  await exit(2);
 }
-const browser = await chromium.connectOverCDP(cdp);
 
 /** Every frame, once that frame's own callbacks (the transcript's settle) have run: how far the
     view is from the end and whether Jump to Latest shows. Restarts for each new transcript. */
@@ -201,9 +226,7 @@ async function newPage() {
   await ctx.addInitScript(RECORDER);
   const page = await ctx.newPage();
   if (!paths.size) {
-    const list = await api("/api/sessions");
-    for (const s of list.sessions ?? list) if (SESSIONS.includes(s.id)) paths.set(s.id, s.path);
-    for (const id of SESSIONS) assert(paths.has(id), `the fixture ${id} isn't listed by the server`);
+    for (const [id, s] of await whenListed(api, SESSIONS)) paths.set(id, s.path);
   }
   return { ctx, page };
 }
@@ -331,7 +354,10 @@ try {
     "a turn started and ended while away: it stops at the last row read with Jump to Latest · 2 new",
   ];
   if (!/fake/i.test(fake.version ?? "")) {
-    for (const name of LIVE) skip(name, `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)}): start it with PATH="$(scripts/fake-claude-path.sh):$PATH" (see this file's head)`);
+    const why = `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)})`;
+    // A server of its own was started with the fake: anything else is a failure, never a skip.
+    if (SELF) for (const name of LIVE) await check(name, () => assert(false, why));
+    else for (const name of LIVE) skip(name, `${why}: start it with PATH="$(scripts/fake-claude-path.sh):$PATH" (see this file's head)`);
   } else {
     const liveCwd = join(AGENT, "e2e-follow-live-cwd");
     mkdirSync(liveCwd, { recursive: true });
@@ -360,12 +386,8 @@ try {
       }
       writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
       utimesSync(file, new Date(t0), new Date(t0));
-      for (let i = 0; i < 50; i++) {
-        const list = await api("/api/sessions");
-        if ((list.sessions ?? list).some((s) => s.path === file)) return file;
-        await sleep(300);
-      }
-      throw new Error(`the server never listed ${file}`);
+      await whenListed(api, [file], "path");
+      return file;
     };
     const openPath = async (page, path) => {
       const hash = `#/s/${encodeURIComponent(path)}`;
@@ -686,6 +708,7 @@ try {
       execFileSync(join(SKILL, "stop-browser.sh"), [], { cwd: SKILL, env: { ...process.env, PW_PORT: cdpPort }, stdio: "ignore" });
     } catch {}
   }
+  await SELF?.stop();
 }
 
 console.log(`\n${passed} passed, ${failures.length} failed${skipped.length ? `, ${skipped.length} skipped (not passed)` : ""}`);

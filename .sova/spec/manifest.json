@@ -16995,10 +16995,13 @@
         "server/harness-boundary.test.ts",
         "package.json",
         "AGENTS.md",
-        "agents/testing/overview.md"
+        "agents/testing/overview.md",
+        "server/testing/agent-dir.ts",
+        "server/outline-no-claude.test.ts"
       ],
       "requires": [
-        "§app.server-runtime/choice"
+        "§app.server-runtime/choice",
+        "§app.claude-code-provider/one-program"
       ]
     },
     "§app.session-share/reading": {

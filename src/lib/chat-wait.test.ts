@@ -3,7 +3,7 @@
 // goes back to the composer.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CONNECTING, errorHandsBack, heldWhileAsleep, NOT_CONNECTED, RECONNECTING, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "./chat-wait";
+import { CONNECTING, errorHandsBack, heldWhileAsleep, startsAsleep, NOT_CONNECTED, RECONNECTING, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "./chat-wait";
 import { UnackedSends } from "./unacked-sends";
 
 /** The first connection, open and helloed. */
@@ -176,4 +176,17 @@ test("heldWhileAsleep: the closed process still listed never wakes the tab; held
   seen = r.sawGone;
   r = heldWhileAsleep(seen, true);
   assert.deepEqual(r, { sawGone: true, connect: true }, "someone else opened it");
+});
+
+test("startsAsleep: a chat the server doesn't hold opens asleep over its rows from the file; otherwise it connects as before", () => {
+  const ordinary = { special: false, force: false, rows: true };
+  assert.equal(startsAsleep({}, ordinary), true, "not held: reading it starts nothing");
+  assert.equal(startsAsleep({ chat: { model: null } }, ordinary), false, "held: connecting starts nothing either");
+  assert.equal(startsAsleep(undefined, ordinary), false, "its row not known yet");
+  assert.equal(startsAsleep({}, { ...ordinary, rows: false }), false, "nothing to show (a new chat, a failed read): the hello brings it");
+  assert.equal(startsAsleep({ live: { pid: 1 } }, ordinary), false, "open in a terminal: the refusal makes it read only");
+  assert.equal(startsAsleep({}, { ...ordinary, special: true }), false, "the Overseer, a project overseer");
+  assert.equal(startsAsleep({ baton: {} }, ordinary), false, "a baton session");
+  assert.equal(startsAsleep({ projectOverseer: {} }, ordinary), false);
+  assert.equal(startsAsleep({}, { ...ordinary, force: true }), false, "a forced reopen");
 });

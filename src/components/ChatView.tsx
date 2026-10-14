@@ -78,7 +78,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
+import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, startsAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -724,9 +724,29 @@ export function ChatView(props: {
         },
         () => {},
       );
+  // Whether the server holds the chat is the list's to say (its row's `chat`): the first connect
+  // waits for the row too, within the same bound, so a chat closed while quiet opens asleep
+  // (lib/chat-wait startsAsleep) and opening it to read starts no process.
+  let rowHere!: () => void;
+  const listed = new Promise<void>((r) => (rowHere = r));
+  if (!props.summary) rowHere();
+  else createEffect(() => props.summary?.() && rowHere());
   const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
-    after: fromFile,
+    after: Promise.all([fromFile, listed]),
     afterMs: FILE_READ_WAIT_MS,
+    startClosed() {
+      const asleep = startsAsleep(untrack(() => props.summary?.()), {
+        special: !!props.overseer || !!props.projectOverseer,
+        force: !!props.force,
+        rows: (untrack(items)?.length ?? 0) > 0,
+      });
+      if (asleep) {
+        setWait(waitOnSleep(untrack(wait)));
+        // Not held now: a hold seen from here is someone else's open (heldWhileAsleep).
+        sawGone = true;
+      }
+      return asleep;
+    },
     onOpen(isReconnect) {
       setEverOpened(true);
       setWait(waitOnOpen(untrack(wait)));

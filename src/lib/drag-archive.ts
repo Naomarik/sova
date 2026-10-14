@@ -3,7 +3,7 @@
 // Sidebar.tsx does the archive.
 
 import type { SessionSummary } from "../../shared/protocol";
-import { isTopSession } from "./regions";
+import { isTopSession, listedWithLocalProject } from "./regions";
 import { archiveBlockReason, type SelectableSession } from "./session-selection";
 
 /**
@@ -43,13 +43,20 @@ export function archivedDropToast(deleted: boolean, project?: string | null): { 
   return { text: project ? `Archived. Find it in ${project}, under Done.` : "Archived. Find it under Archive.", undo: true };
 }
 
-/** What Undo (or Unarchive) says: an org session goes back to its project, the rest to Live & web. */
-export const unarchivedToast = (project?: string | null): string => (project ? `Moved back to ${project}.` : "Moved back to Live & web.");
+/** What Undo (or Unarchive) says: a session that goes back to a project names it (`unarchivedProjectOf`), the rest go back
+    to Folders. */
+export const unarchivedToast = (project?: string | null): string => (project ? `Moved back to ${project}.` : "Moved back to Folders.");
 
 /** The project an org or project row's unarchive toast names (it goes back there), or null for an ordinary session (a
     session only in a project's folder is one). */
 export const orgProjectOf = (s: Pick<SessionSummary, "org" | "project">): string | null =>
   s.org ? (s.org.projectId ? s.org.projectName || "its project" : s.org.orgName || s.org.orgId) : s.project && s.project.kind !== "folder" ? s.project.projectName || "its project" : null;
+
+/** The project an unarchive toast names: an org or project row's (`orgProjectOf`), or, for a session in the folder of a
+    project of this computer (`here`: not a mesh peer's row), that project, since it goes back to the project's block and
+    not to Folders (§app.session-list/regions-top-and-archive). Null: it goes back to Folders. */
+export const unarchivedProjectOf = (s: Pick<SessionSummary, "org" | "project" | "folderOrg">, here: boolean): string | null =>
+  orgProjectOf(s) ?? (listedWithLocalProject({ ...s, archived: false }, here) ? s.project!.projectName || "its project" : null);
 
 /** The project an archive toast names: an org session's, which goes to its group's Done; null for every other session,
     a standalone project's build included (it goes to the Archive, §app.projects/list). */

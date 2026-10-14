@@ -31,3 +31,7 @@ export function removeKey(store: Storage, key: string): void {
     // Nothing to undo.
   }
 }
+
+/** The sidebar's Folders region (§app.session-list/regions-top-and-archive): open by default, `"0"` once the user
+    collapses it, for the tab (`sessionStorage`). */
+export const FOLDERS_KEY = "sova:top-open";

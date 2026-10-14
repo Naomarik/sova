@@ -34,7 +34,7 @@ if (!url) {
 const windowSec = Number(args.get("window") ?? 30);
 const warmupSec = Number(args.get("warmup") ?? 10);
 // Folders start collapsed and build their rows on first open, so the probe opens the first N
-// folder sections (Live & web first, in document order) before it measures: survival is over rows
+// folder sections (Folders' first, in document order) before it measures: survival is over rows
 // that exist at the window's start, and those are the opened folders' rows.
 const openFolders = Number(args.get("open") ?? 6);
 // Two long sessions, "a,b" (run.mjs passes them): the switch check opens A, types in its composer,

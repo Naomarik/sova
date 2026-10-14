@@ -3,7 +3,7 @@
 // when it can't, and what the drop says.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { archiveDragOf, archivedDropToast, archivedProjectOf, archiveTileReason, blockedDropSentence, orgProjectOf, unarchivedToast } from "./drag-archive";
+import { archiveDragOf, archivedDropToast, archivedProjectOf, archiveTileReason, blockedDropSentence, orgProjectOf, unarchivedProjectOf, unarchivedToast } from "./drag-archive";
 import type { SelectableSession } from "./session-selection";
 
 const row = (over: Partial<SelectableSession> = {}): SelectableSession => ({
@@ -70,7 +70,7 @@ test("an org session goes to its group's Done list in its project, and back to i
   assert.deepEqual(archivedDropToast(false, project), { text: "Archived. Find it in Rakiba site, under Done.", undo: true });
   assert.doesNotMatch(archivedDropToast(false, project).text, /under Archive/);
   assert.equal(unarchivedToast(project), "Moved back to Rakiba site.");
-  assert.equal(unarchivedToast(orgProjectOf({})), "Moved back to Live & web.", "an ordinary session is unchanged");
+  assert.equal(unarchivedToast(orgProjectOf({})), "Moved back to Folders.", "an ordinary session goes back to Folders");
   assert.equal(archivedDropToast(true, project).undo, false, "a deleted never-sent session is still deleted");
   assert.equal(archivedProjectOf({ org }), "Rakiba site");
 });
@@ -81,5 +81,19 @@ test("a standalone project's build goes to the Archive when archived, and back t
   assert.equal(unarchivedToast(orgProjectOf(build)), "Moved back to sova.");
   const folder = { project: { projectId: "p", projectName: "sova", kind: "folder" as const } };
   assert.equal(archivedProjectOf(folder), null);
-  assert.equal(unarchivedToast(orgProjectOf(folder)), "Moved back to Live & web.", "a folder session is ordinary");
+  assert.equal(orgProjectOf(folder), null, "a folder session is ordinary");
+});
+
+test("unarchiving a session in this computer's project folder names the project; a peer's goes back to Folders", () => {
+  const folder = { project: { projectId: "p", projectName: "sova", kind: "folder" as const } };
+  assert.equal(unarchivedToast(unarchivedProjectOf(folder, true)), "Moved back to sova.", "it lands in its project's block, not Folders");
+  assert.equal(unarchivedToast(unarchivedProjectOf(folder, false)), "Moved back to Folders.", "a mesh peer's row stays in Folders");
+  const placed = { ...folder, folderOrg: { orgId: "o", orgName: "Mamluk", projectId: "p", projectName: "sova" } };
+  assert.equal(unarchivedToast(unarchivedProjectOf(placed, true)), "Moved back to sova.", "a placed project's folder session goes back to it too");
+  const archivedProject = { project: { ...folder.project, archived: true as const } };
+  assert.equal(unarchivedToast(unarchivedProjectOf(archivedProject, true)), "Moved back to Folders.", "an archived project lists nothing");
+  assert.equal(unarchivedToast(unarchivedProjectOf({ ...placed, folderOrg: { ...placed.folderOrg, projectArchived: true as const } }, true)), "Moved back to Folders.");
+  const build = { project: { projectId: "p", projectName: "sova", kind: "coding" as const } };
+  assert.equal(unarchivedProjectOf(build, false), "sova", "a project's own build names its project wherever it lives");
+  assert.equal(unarchivedToast(unarchivedProjectOf({}, true)), "Moved back to Folders.");
 });

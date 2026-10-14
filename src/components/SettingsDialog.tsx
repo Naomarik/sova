@@ -497,7 +497,7 @@ function GeneralPanel() {
           fallback={
             <span class="field-hint" id="recent-count-hint">
               The top of the sidebar lists this many sessions, the ones that moved last. They stay
-              in Live &amp; web and the Archive too. {MIN_RECENT_COUNT}–{MAX_RECENT_COUNT}, {DEFAULT_RECENT_COUNT} by default.
+              in Folders, your projects, and the Archive too. {MIN_RECENT_COUNT}–{MAX_RECENT_COUNT}, {DEFAULT_RECENT_COUNT} by default.
             </span>
           }
         >

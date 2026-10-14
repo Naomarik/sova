@@ -46,15 +46,38 @@ export const isOperatorBuild = (s: Pick<SessionSummary, "workerSession" | "overs
 export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): boolean => isOrgSession(s) || isProjectOwned(s);
 
 /**
- * The one check every ordinary surface reads (Recent, Needs you, Groups, Live & web, the Archive and
+ * The one check every ordinary surface reads (Recent, Needs you, Groups, Folders, the Archive and
  * its cleanup, recent folders, the overview): a main thread that no organization and no registered
  * project owns (a standalone project's builds and overseer are the Projects region's; a session in its
- * folder is both; an archived standalone build is the Archive's). It is NOT folded into `isMainThread`, because the Organizations region, the Overseer
+ * folder is ordinary, though Folders leaves it to its project, `listedWithLocalProject`; an archived standalone build is the Archive's). It is NOT folded into `isMainThread`, because the Organizations region, the Overseer
  * page and the Agents board still read org sessions.
  */
 export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): boolean =>
   isMainThread(s) && !isOrgSession(s) && (!isProjectOwned(s) || isArchivedStandaloneBuild(s));
 
-/** Which of the pane's places a main thread lives in: org, then a project's (§app.projects/list), win over live, web and archived. A folder session's, and an archived standalone build's, is its ordinary place. */
+/**
+ * A session a project of this computer lists (§app.projects/folder-sessions): in a registered, not archived project's
+ * folder (`project.kind` "folder", standalone or placed), and not archived itself. Its project's block is its place in
+ * the pane, so Folders leaves it out. `here`: the row is this computer's; a mesh peer's row carries the peer's own
+ * `project` and always stays in Folders. A remote target's session never carries a folder project (the server's rule).
+ */
+export const listedWithLocalProject = (s: Pick<SessionSummary, "org" | "project" | "folderOrg"> & { archived?: boolean }, here: boolean): boolean =>
+  here && !s.org && s.project?.kind === "folder" && s.project.archived !== true && s.folderOrg?.projectArchived !== true && s.archived !== true;
+
+/** Folders, the top region (§app.session-list/regions-top-and-archive): an ordinary session that is live or a web session
+    not archived, unless a project of this computer lists it. */
+export const inFolders = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project" | "folderOrg" | "live" | "origin" | "archived">, here: boolean): boolean =>
+  isOrdinarySession(s) && isTopSession(s) && !listedWithLocalProject(s, here);
+
+/** Folders' stored choice (`sova:top-open`): open by default, only "0" (the user collapsed it) closes it. */
+export const storedFoldersOpen = (raw: string | null): boolean => raw !== "0";
+
+/** Whether Folders is open: forced open, the stored choice left alone, while a search has matches in it and while it holds
+    the open session; otherwise the tab's choice (the Projects region's rule). */
+export const foldersOpen = (input: { stored: boolean; searching: boolean; hits: number; holdsSelected: boolean }): boolean =>
+  (input.searching && input.hits > 0) || input.holdsSelected || input.stored;
+
+/** Which of the pane's places a main thread lives in (the overview's live count reads "top": every open session, whether
+    Folders or its project's block lists it): org, then a project's (§app.projects/list), win over live, web and archived. A folder session's, and an archived standalone build's, is its ordinary place. */
 export const sidebarRegion = (s: Pick<SessionSummary, "live" | "origin" | "archived" | "org" | "project">): "org" | "projects" | "top" | "archive" =>
   isOrgSession(s) ? "org" : isProjectOwned(s) && !isArchivedStandaloneBuild(s) ? "projects" : isTopSession(s) ? "top" : "archive";

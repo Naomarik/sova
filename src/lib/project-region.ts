@@ -1,6 +1,6 @@
 // The sidebar's Projects region (§app.projects/list, §app.session-list): every standalone project's
 // sessions (`SessionSummary.project` with no `org`), its builds and overseer only here, the sessions in its folder
-// here and on the ordinary surfaces too. Shaped as one organization's
+// here and not in Folders (the shortcut surfaces and the Archive still list them). Shaped as one organization's
 // project blocks in the Organizations region: each project's heading with its overseer's eye, then
 // its Sessions (active, then a Done tail). An archived session is never here: it is the Archive's. A placed project's sessions stay in the Organizations region.
 //
@@ -31,6 +31,11 @@ export const isStandaloneProjectSession = (s: Pick<SessionSummary, "project" | "
     and its archived sessions (the Archive has them; the overseer's eye stays). */
 export const inProjectsRegion = (s: Pick<SessionSummary, "project" | "org" | "folderOrg"> & { archived?: boolean }): boolean =>
   isStandaloneProjectSession(s) && (s.project!.kind === "overseer" ? !s.project!.finished : s.archived !== true);
+
+/** What the region lists on this computer: `inProjectsRegion`, but never a mesh peer's folder session (`here` false): that
+    one carries the peer's own `project` and stays in Folders (§app.projects/folder-sessions). */
+export const inLocalProjectsRegion = (s: Pick<SessionSummary, "project" | "org" | "folderOrg"> & { archived?: boolean }, here: boolean): boolean =>
+  inProjectsRegion(s) && (here || s.project!.kind !== "folder");
 
 /** Done, for a row that isn't archived (an archived one is in no block): a build merged per git; a folder session that is
     neither live nor a web session. */
@@ -71,5 +76,3 @@ export function projectBlocks(sessions: readonly SessionSummary[], projects?: re
 /** A project heading's count: its open rows (running or waiting); Done counts its own, and the eye is not a row. */
 export const projectOpenCount = (b: ProjectBlock): number => b.builds.active.length;
 
-/** The region's count: every project's open rows. */
-export const projectRowCount = (blocks: readonly ProjectBlock[]): number => blocks.reduce((n, b) => n + projectOpenCount(b), 0);

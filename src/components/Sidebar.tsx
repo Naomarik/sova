@@ -9,10 +9,10 @@ import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
 import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
-import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
+import { type ArchiveGroupId, foldersWord, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { modelLabel, relativeTime, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
-import { isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isTopSession } from "../lib/regions";
+import { foldersOpen as foldersOpenRule, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
 import {
   eyeLabel,
   doneOpen as doneOpenRule,
@@ -40,7 +40,7 @@ import {
 } from "../lib/org-region";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
+import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentence, unarchivedProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
@@ -62,12 +62,12 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTi
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
-import { inProjectsRegion, projectBlocks, projectOpenCount, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
+import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
-import { readKey, removeKey, writeKey } from "../lib/storage-keys";
+import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
 import {
@@ -344,7 +344,7 @@ function SessionRow(props: {
       groupId: row.groupId ?? null,
       // A session only in a project's folder is ordinary: it can be grouped.
       org: isOwnedSession(row),
-      orgProject: orgProjectOf(row),
+      orgProject: unarchivedProjectOf(row, host === null),
       archivedProject: archivedProjectOf(row),
       peer: host ? hostLabel(host) : null,
       // Busy as the row shows it: this tab's own run is newer than the last fetched list.
@@ -446,7 +446,7 @@ function SessionRow(props: {
       <div class="session-rail">
         {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
             checkbox at the top of it, in selection mode only. Every copy of this row — Recent, a
-            group, Live & web — reads the same selection, so all of them check together. */}
+            group, Folders — reads the same selection, so all of them check together. */}
         <Show when={selecting()}>
           <label class="toggle session-select">
             <input
@@ -741,7 +741,7 @@ function ForKey<T>(props: { each: readonly T[]; by: (item: T) => string; childre
 }
 
 /** Sessions grouped by folder: the markup of the session list "Anatomy". The ORDER is the
-    caller's — `groupByCreation` for Live & web, `groupByActivity` for the Archive and for a group
+    caller's — `groupByCreation` for Folders, `groupByActivity` for the Archive and for a group
     (src/lib/session-order.ts) — so this component never decides what "newest" means.
     `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
     group, where the group's own label already sits at h3. Every folder collapses (the session list "Folder
@@ -846,7 +846,7 @@ function GroupList(props: {
 }
 
 /**
- * One user-made group: a collapsible section above Live & web that holds the same folder groups and
+ * One user-made group: a collapsible section above Projects and Folders that holds the same folder groups and
  * rows as every other region. It keeps its own Rename and Delete, and
  * it is a drop target while a row is being dragged. An empty group stays visible — that is what a
  * group is when the user makes it, and dragging a row in is how it fills.
@@ -1500,6 +1500,11 @@ export function Sidebar(props: {
   );
   const [targetsRes] = createResource(usedTargets, () => fetchTargets().catch(() => [] as TargetInfo[]));
   const targets = () => targetsRes.latest ?? [];
+  /** `all()` narrowed by the host filter only (no query): what each region's "of {total}" counts. */
+  const hostPool = createMemo(() => {
+    const h = hostFilter();
+    return h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+  });
   const hits = createMemo(() => {
     const q = query().trim().toLowerCase();
     // A remote session is found by its target and remote folder, not by its placeholder path.
@@ -1508,32 +1513,37 @@ export function Sidebar(props: {
       return r ? `${r.target} ${targets().find((t) => t.name === r.target)?.label ?? ""} ${r.remoteCwd}` : s.cwd;
     };
     // The host filter narrows first; with the mesh off it is always All and changes nothing.
-    const h = hostFilter();
-    const pool = h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+    const pool = hostPool();
     // An org row is also found by its org, its project and the baton holder (lib/org-region); it
     // only ever shows in the Organizations region, so that is the only place such a hit appears.
     return q
       ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""} ${tagSearchText(s.tags)} ${orgSearchText(s)}`.toLowerCase().includes(q))
       : pool;
   });
-  /** Every ordinary surface — Needs you, Recent, Groups, Live & web, the Archive and its cleanup —
+  /** Every ordinary surface — Needs you, Recent, Groups, Folders, the Archive and its cleanup —
       reads these, never `all()`/`hits()`: an organization's session lives only in its own region. */
   const ordinary = createMemo(() => all().filter(isOrdinarySession));
   /** Each group's session count, as its section counts them, for its tile in the overlay. */
   const groupCounts = createMemo(() => new Map(groupSections(ordinary(), sessionGroups(), false).map((x) => [x.group.id, x.sessions.length])));
   const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
-  /** The Organizations region's rows: org sessions, and the sessions in a placed project's folder, which are ordinary too. */
-  const inOrgs = (s: SessionSummary) => isOrgSession(s) || isOrgFolderSession(s);
+  /** The row is this computer's, not a mesh peer's: only this computer's sessions are listed under its projects. */
+  const here = (s: SessionSummary) => hostOf(s.path) === null;
+  /** The Organizations region's rows: org sessions, and the sessions in a placed project's folder on this computer, which
+      are ordinary too (a peer's stays in Folders). */
+  const inOrgs = (s: SessionSummary) => isOrgSession(s) || (isOrgFolderSession(s) && here(s));
   const orgHits = createMemo(() => hits().filter(inOrgs));
-  // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
+  // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts). Folders, the top region, leaves
+  // out a session a project of this computer lists: its project's block is its place.
   const isTop = isTopSession;
-  const topHits = createMemo(() => ordinaryHits().filter(isTop));
+  const topHits = createMemo(() => ordinaryHits().filter((s) => inFolders(s, here(s))));
   const archiveHits = createMemo(() => ordinaryHits().filter((s) => !isTop(s)));
   // Each region groups by cwd on its own, so a folder can appear in both.
   const topGroups = createMemo(() => groupByCreation(topHits()));
+  /** Folders' head counts folders: all of them with no query, the "of {total}" while searching. */
+  const folderTotal = createMemo(() => groupByCreation(hostPool().filter((s) => inFolders(s, here(s)))).length);
   /**
    * Recent: the handful of sessions that moved last, said once more at the very top.
-   * Purely additive, like a group — every row here is still in Live & web or the Archive below, or in its project's block —
+   * Purely additive, like a group — every row here is still in Folders or the Archive below, or in its project's block —
    * and built from `hits()`, so it narrows with the search and can never carry a row the rest of
    * the sidebar is hiding. How many rows is `recentCount()`, and the settings dialog spec's General tab is the only
    * place that writes it: this region has no controls of its own.
@@ -1628,6 +1638,17 @@ export function Sidebar(props: {
     setStoredOpen(open);
     writeKey(sessionStorage, ARCHIVE_KEY, open ? "1" : "0");
   };
+  // Folders: OPEN by default, like Projects; a collapse is remembered for the tab. Forced open, the stored choice left alone,
+  // while a search has matches in it or it holds the open session.
+  const [foldersStored, setFoldersStored] = createSignal(storedFoldersOpen(readKey(sessionStorage, FOLDERS_KEY)));
+  const foldersOpen = () =>
+    foldersOpenRule({ stored: foldersStored(), searching: searching(), hits: topHits().length, holdsSelected: topHits().some((s) => s.path === props.selected) });
+  const onFoldersToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === foldersOpen()) return; // our own `open` update, not the user's
+    setFoldersStored(open);
+    writeKey(sessionStorage, FOLDERS_KEY, open ? "1" : "0");
+  };
   // Needs you: OPEN by default, unlike the Archive; a collapse is remembered for the tab the same way.
   const [needsYouStored, setNeedsYouStored] = createSignal(storedNeedsYouOpen(readKey(sessionStorage, NEEDS_YOU_KEY)));
   /** Forced open while searching, so every hit is visible. */
@@ -1702,8 +1723,10 @@ export function Sidebar(props: {
     setOrgsStored(open);
     writeKey(sessionStorage, ORGS_KEY, open ? "1" : "0");
   };
-  /** The open session is one of these rows and lives only here: a folder session also has its ordinary place, so it forces nothing open. */
-  const holds = (rows: readonly SessionSummary[]) => rows.some((r) => r.path === props.selected && r.project?.kind !== "folder");
+  /** The open session is one of these rows and lives only here: a folder session of this computer's project lives only
+      with its project too; one Folders still lists (a peer's, an archived one) forces nothing open. */
+  const holds = (rows: readonly SessionSummary[]) =>
+    rows.some((r) => r.path === props.selected && (r.project?.kind !== "folder" || listedWithLocalProject(r, here(r))));
   const orgOpen = (o: OrgSection) => orgSectionOpenRule({ chosen: openOrgs()[o.id], searching: searching(), holdsSelected: holds(orgRows(o)) });
   const onOrgToggle = (o: OrgSection, e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
@@ -1723,7 +1746,7 @@ export function Sidebar(props: {
    * here, right before Organizations — each registered project's heading with its overseer's eye,
    * then its Sessions. Open by default, a collapse remembered for the tab.
    */
-  const projectHits = createMemo(() => hits().filter(inProjectsRegion));
+  const projectHits = createMemo(() => hits().filter((s) => inLocalProjectsRegion(s, here(s))));
   const projectsFound = createMemo(() => {
     const q = query().trim().toLowerCase();
     const list = projectList()?.projects;
@@ -1734,7 +1757,8 @@ export function Sidebar(props: {
     // A search keeps a project whose name matched, and any project with a row that did.
     return searching() ? blocks.filter((b) => projectsFound()?.some((p) => p.id === b.id) || b.builds.active.length + b.builds.done.length > 0 || b.overseer) : blocks;
   });
-  const projRowCount = () => projectRowCount(projBlocks());
+  /** The head counts projects; while searching, "of" every project the region lists with no query. */
+  const projTotal = createMemo(() => projectBlocks(hostPool().filter((s) => inLocalProjectsRegion(s, here(s))), projectList()?.projects ?? undefined).length);
   const [addingProject, setAddingProject] = createSignal(false);
   const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
   const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: holds(projectHits()) });
@@ -2349,17 +2373,17 @@ export function Sidebar(props: {
               <button
                 type="button"
                 class="button button-icon spine-item spine-region"
-                title={`Live & web · ${sessionsWord(topHits().length)}`}
-                aria-label={`Live & web · ${sessionsWord(topHits().length)}`}
+                title={`Folders · ${foldersWord(topGroups().length)}`}
+                aria-label={`Folders · ${foldersWord(topGroups().length)}`}
                 onClick={() =>
                   expandToRegion(
-                    () => document.getElementById("r-top")?.closest("section"),
-                    (el) => el.querySelector<HTMLElement>("summary, a"),
+                    () => aside.querySelector<HTMLElement>(".sidebar-folders > summary"),
+                    (el) => el,
                   )
                 }
               >
                 <Icon name="chat" />
-                <span class="spine-count text-num">{topHits().length}</span>
+                <span class="spine-count text-num">{topGroups().length}</span>
               </button>
             </Show>
             <Show when={showOrgs()}>
@@ -2370,7 +2394,7 @@ export function Sidebar(props: {
                 aria-label={orgsDoorLabel()}
                 onClick={() =>
                   expandToRegion(
-                    () => aside.querySelector<HTMLElement>(".sidebar-orgs > summary"),
+                    () => document.getElementById("r-orgs")?.closest("summary"),
                     (el) => el,
                   )
                 }
@@ -2657,7 +2681,7 @@ export function Sidebar(props: {
 
           {/* Recent, above everything else: a flat list, no folder sections — with 5 rows a
               folder head per row would be the region. It is a shortcut, not a place a session lives,
-              so every row appears again in Live & web or the Archive below, and the region carries
+              so every row appears again in Folders, its project's block or the Archive below, and the region carries
               no controls: the count is Settings › General's, and only its. */}
           <Show when={props.sessions && recent().length > 0}>
             <section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
@@ -2725,36 +2749,15 @@ export function Sidebar(props: {
           {/* Automations, under Groups (§app.session-list/automations): the sessions Sova's schedules run, a shortcut. */}
           <AutomationsShelf sessions={all()} searching={!!query().trim()} row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />} />
 
-          {/* Hidden when a search empties it            </details>
-          </Show>
-
-          {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}
-          <Show when={showTop()}>
-            <section class="sidebar-region" aria-labelledby="r-top">
-              <h2 class="sidebar-region-head" id="r-top">
-                Live &amp; web{" "}
-                <span class="sidebar-region-count">
-                  · {query().trim() ? `${topHits().length} of ${ordinary().length - archiveTotal()}` : topHits().length}
-                </span>
-                <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
-              </h2>
-              <Show
-                when={topHits().length > 0}
-                fallback={<p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>}
-              >
-                <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
-              </Show>
-            </section>
-          </Show>
-
-          {/* Projects, right before Organizations (lib/project-region): the only place a standalone
-              project's sessions are listed, each project's heading with its overseer's eye, then Sessions. */}
+          {/* Projects, above Folders and Organizations (lib/project-region): the only place a standalone project's own sessions
+              are listed, and the place of the sessions in its folder; each project's heading with its overseer's eye, then
+              Sessions. */}
           <Show when={showProjects()}>
             <details class="sidebar-region sidebar-orgs sidebar-projects" aria-labelledby="r-projects" open={projectsOpen()} onToggle={onProjectsToggle}>
               <summary class="sidebar-orgs-summary">
                 <h2 class="sidebar-region-head" id="r-projects" title="Your projects that no organization places: their overseers and coding sessions.">
                   <Icon name="chevron-right" small class="icon-twist" />
-                  Projects <span class="sidebar-region-count">· {projRowCount()}</span>
+                  Projects <span class="sidebar-region-count">· {searching() ? `${projBlocks().length} of ${projTotal()}` : projBlocks().length}</span>
                   <Show when={!projectsOpen() && folderActive(projectHits(), localRunning())}>
                     <span class="session-group-active" title="An agent is working in one of these sessions">
                       <span class="session-rail-dot" />
@@ -2816,6 +2819,32 @@ export function Sidebar(props: {
               </Show>
             </details>
           </Show>
+          {/* Folders, the top region, right under Projects: open in a terminal or started here and not archived, but not
+              what a project of this computer lists. Hidden when a search empties it; kept with a note when there's simply
+              nothing in it. Open by default, a collapse remembered for the tab. */}
+          <Show when={showTop()}>
+            <details class="sidebar-region sidebar-folders" aria-labelledby="r-top" open={foldersOpen()} onToggle={onFoldersToggle}>
+              {/* The Projects head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
+              <summary class="sidebar-folders-summary">
+                <h2 class="sidebar-region-head" id="r-top">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Folders{" "}
+                  <span class="sidebar-region-count">· {searching() ? `${topGroups().length} of ${folderTotal()}` : topGroups().length}</span>
+                  <Show when={!foldersOpen() && folderActive(topHits(), localRunning())}>
+                    <span class="session-group-active" title="An agent is working in one of these sessions">
+                      <span class="session-rail-dot" />
+                      <span class="visually-hidden">, an agent is working here</span>
+                    </span>
+                  </Show>
+                  <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
+                </h2>
+              </summary>
+              <Show when={topHits().length > 0} fallback={<p class="sidebar-region-note">No sessions outside your projects. The archive below has the rest.</p>}>
+                <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
+              </Show>
+            </details>
+          </Show>
+
           <Show when={addingProject()}>
             <AddProjectDialog
               onCancel={() => setAddingProject(false)}

@@ -10,7 +10,8 @@ export interface SessionsGlance {
   total: number;
   /** Distinct folders of those. */
   folders: number;
-  /** In Live & web: open in a terminal, or a web session not archived; never an org session. */
+  /** Open: in a terminal, or a web session not archived, whether Folders or its project's block lists it; never an org
+      session nor a project's own build. */
   live: number;
   /** Running a turn right now: a live record says working, or the server reports it busy. */
   working: number;
@@ -28,7 +29,7 @@ export function sessionsGlance(
   proactivity: OverseerProactivity | undefined,
 ): SessionsGlance {
   const main = list.filter(isMainThread);
-  // Needs you, Live & web and Recent never hold an organization's session (§app.session-list/organizations).
+  // Needs you, Folders and Recent never hold an organization's session (§app.session-list/organizations).
   const ordinary = main.filter(isOrdinarySession);
   const rows = needsYouRows(digest, ordinary);
   const shown = needsYouShown(proactivity, rows.length);

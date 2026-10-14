@@ -8,19 +8,20 @@
 // extensions linked in) and workspaces in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { HistoryEvent, HistoryInput, HistoryReader } from "../../shared/org-history";
 import type { DecisionProvider } from "../decide";
 import { scratchRoot } from "../test-scratch";
+import { linkPiConfigExtensions } from "../testing/agent-dir";
 
 const root = scratchRoot("sova-org-history-bootstrap-");
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 const orgs = await import("../orgs");
 const baton = await import("../baton");
@@ -320,7 +321,14 @@ describe("an org whose records predate its history", async () => {
     const ids = all().map((e) => e.id);
     await closeOrgHost(org.id);
     await orgs.openAttachedOrgs();
-    assert.deepEqual(all().map((e) => e.id), ids);
+    // The project's watch ticks on the wall clock (20 s) and may record a live event during a slow
+    // restart: every earlier id stays, and anything new is live, never imported.
+    const after = all();
+    const afterIds = new Set(after.map((e) => e.id));
+    assert.deepEqual(ids.filter((id) => !afterIds.has(id)), [], "every earlier id is kept");
+    const before = new Set(ids);
+    const added = after.filter((e) => !before.has(e.id));
+    assert.deepEqual(added.filter((e) => e.capture.origin === "imported").map((e) => e.kind), [], "nothing imported again");
     assert.equal((await importBaseline(hostOf(org.id), org.id)).ran, false, "asked again: done before");
   });
 

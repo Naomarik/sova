@@ -6,29 +6,35 @@ import { getPriority } from "node:os";
 import { WORKER_NICE } from "../pi-config/extensions/subagents/priority.ts";
 import { installWorkerNice, LOWER_WORKER, TOOL_COMMAND_PREFIX } from "./process-priority";
 
+/** The highest niceness on Linux and macOS (parseNice's bound): no lower priority to set from there. */
+const MAX_NICE = 19;
+const own = process.platform === "win32" ? 0 : getPriority();
+/** The default 10, or one below this process's priority when it already runs at 10 or more (a Sova chat). */
+const target = Math.max(10, own + 1);
+
 const inapplicable = process.platform === "win32"
   ? "Windows does not lower worker priority"
-  : getPriority() >= 10
-    ? "the starting priority is already at least niceness 10"
+  : own >= MAX_NICE
+    ? `the starting priority is already niceness ${MAX_NICE}`
     : false;
 
-test("the installed claude-code hook lowers a real launched worker to niceness 10", { skip: inapplicable }, async () => {
+test("the installed claude-code hook lowers a real launched worker to the configured niceness", { skip: inapplicable }, async () => {
   const g = globalThis as Record<symbol, unknown>;
   const before = g[WORKER_NICE];
   const beforeLower = g[LOWER_WORKER];
   const beforePrefix = g[TOOL_COMMAND_PREFIX];
   const env = process.env.SOVA_WORKER_NICE;
   try {
-    process.env.SOVA_WORKER_NICE = "10";
+    process.env.SOVA_WORKER_NICE = String(target);
     installWorkerNice();
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
     const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
     try {
       await once(child, "spawn");
       assert.ok(child.pid, "the worker started with a pid");
-      assert.ok(getPriority(child.pid) < 10, "the launched worker needs lowering before the hook runs");
+      assert.ok(getPriority(child.pid) < target, "the launched worker needs lowering before the hook runs");
       (g[LOWER_WORKER] as (pid: number) => void)(child.pid);
-      assert.equal(getPriority(child.pid), 10, "the claude-code hook lowers the launched worker");
+      assert.equal(getPriority(child.pid), target, "the claude-code hook lowers the launched worker");
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
       await closed;

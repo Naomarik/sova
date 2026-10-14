@@ -288,3 +288,38 @@ test("in a spec project the warnings are said once: a tool merge's answer (its c
 		r.done();
 	}
 });
+
+test("merging saved sessions takes the user's confirm, every time: no UI or a decline merges nothing", async () => {
+	const r = repo();
+	try {
+		const f = fakePi();
+		worktrees(f.pi);
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "saved" });
+		const t = join(r.root, ".worktrees", "repo-saved");
+		// A card copied in by hand (the marker spelled in parts, never whole in a file).
+		writeFileSync(join(t, "card.json"), JSON.stringify({ format: ["sova-saved-session", "v1"].join("/") }));
+		sh(t, "add", "card.json");
+		sh(t, "commit", "-q", "-m", "copy a chat");
+		const before = sh(r.main, "rev-parse", "master");
+		// Without the flag: refused, and the agent is told it needs cleaning or the user.
+		await assert.rejects(f.call(c, { action: "merge", path: t }), /user's explicit go-ahead/);
+		// (a) The flag with no one to ask (the sandbox is off: nothing else would ask).
+		await assert.rejects(f.call(f.ctx(r.main, false), { action: "merge", path: t, allowSavedSessions: true }), /no one to ask/);
+		assert.equal(sh(r.main, "rev-parse", "master"), before);
+		assert.deepEqual(f.confirms, []);
+		// (b) Declined.
+		f.setConfirm(false);
+		await assert.rejects(f.call(c, { action: "merge", path: t, allowSavedSessions: true }), /declined; nothing was merged/);
+		assert.equal(sh(r.main, "rev-parse", "master"), before);
+		assert.deepEqual(f.confirms, ["Merge saved sessions into the target?"]);
+		// (c) Accepted: it merges.
+		f.setConfirm(true);
+		await f.call(c, { action: "merge", path: t, allowSavedSessions: true });
+		assert.notEqual(sh(r.main, "rev-parse", "master"), before);
+		assert.equal(sh(r.main, "rev-parse", "master"), sh(t, "rev-parse", "HEAD"));
+	} finally {
+		r.done();
+	}
+});

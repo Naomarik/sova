@@ -75,6 +75,8 @@ const READY_WAIT_MS = 10_000;
 /** How long opening a chat waits for that take-back: past its own one-minute retries, so a chat whose
     process survived is never started a second time. */
 const TAKE_BACK_MAX_MS = 120_000;
+/** How long a new chat process may boot before its start fails: the worst measured start under heavy load was 34 s. */
+const BOOT_WAIT_MS = 40_000;
 
 /** How this server runs chat processes, once decided at start (logged in full). */
 let host: ChatHost | null = null;
@@ -371,7 +373,7 @@ export class ChatHostRouter {
     const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
-    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title ?? "", kind === "powers");
+    const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind === "powers");
     link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
@@ -460,7 +462,7 @@ export class ChatHostRouter {
         // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
         // chat declared them at its open).
         const kind = kindOfMirror(state.mirror);
-        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title ?? "", kind === "powers");
+        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title, kind === "powers");
         if (kind && kind !== "powers") await adoptSpecial(kind, rec.sessionPath);
         const h = this.adoptHandle(rec, link, state.mirror, held);
         this.pushSpecial(h);
@@ -518,7 +520,7 @@ export class ChatHostRouter {
         // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
         if (again === "reloaded") {
           const kind = kindOfMirror(open.mirror);
-          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title ?? "", kind === "powers");
+          servedToolsFor(path, open.mirror.sessionId, () => open.mirror.monitor.title, kind === "powers");
           if (kind && kind !== "powers") await adoptSpecial(kind, path);
         }
         return open;
@@ -643,7 +645,7 @@ export class ChatHostRouter {
       link = c.link;
       sup.noteConnected(rec.chatId);
       if (c.hello.proto < minProto) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${minProto}`);
-      if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
+      if (c.hello.state === "booting") await awaitFrame(link, "hello", BOOT_WAIT_MS, (h) => h.state !== "booting");
     } catch (err) {
       await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
       throw new NoProcess(err instanceof Error ? err.message : String(err));

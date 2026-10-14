@@ -35,14 +35,17 @@ export function MergeRunButton(props: {
 }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  /** The last refusal was the saved-sessions guard: Merge Anyway retries with the override. */
+  const [guarded, setGuarded] = createSignal(false);
   const label = () => reviewAction(props.run);
-  const go = async () => {
+  const go = async (allowSavedSessions = false) => {
     const hash = props.run.hash;
     if (busy() || !hash) return;
     setBusy(true);
     setError(null);
+    setGuarded(false);
     try {
-      const view = await mergeProjectRun(props.projectId, hash);
+      const view = await mergeProjectRun(props.projectId, hash, allowSavedSessions);
       const done = `Merged into ${props.run.target}.`;
       toast(done);
       announce(done);
@@ -50,6 +53,7 @@ export function MergeRunButton(props: {
     } catch (err) {
       const why = errText(err);
       setError(why);
+      setGuarded(err instanceof ApiError && !!(err.body as { savedSessions?: unknown } | undefined)?.savedSessions);
       announce(why);
       props.onDone?.();
     } finally {
@@ -65,7 +69,14 @@ export function MergeRunButton(props: {
           >
             {l()}
           </button>
-          <Show when={error()}>{(e) => <span class="field-error" role="status">{e()}</span>}</Show>
+          <Show when={guarded()}>
+            <button type="button" class="button button-sm button-destructive" aria-disabled={busy() ? "true" : undefined} onClick={() => void go(true)}>
+              Merge Anyway
+            </button>
+          </Show>
+          {/* The reason takes a row of its own under the buttons: a refusal names commits and paths,
+              and on one line it pushed Merge Anyway off the screen. */}
+          <Show when={error()}>{(e) => <span class="field-error playbook-review-why" role="status">{e()}</span>}</Show>
         </span>
       )}
     </Show>

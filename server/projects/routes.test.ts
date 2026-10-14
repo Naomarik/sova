@@ -3,18 +3,19 @@
 // PI_CODING_AGENT_DIR and repos in the OS temp dir; no network, ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import { Hono } from "hono";
+import { linkPiConfigExtensions } from "../testing/agent-dir";
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-project-routes-")));
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 const { registerProjectRoutes } = await import("./routes");
 const { readRegistry } = await import("./registry");

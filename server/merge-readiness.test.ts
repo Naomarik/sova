@@ -67,6 +67,9 @@ test("01a0ecd7: 2 ahead, clean, 1 of 3 open and a TEMP commit → blocked; answe
   assert.equal(r.asksToMerge(ECD7_REPLY), false, "asking about a test setup is not asking to merge");
   for (const s of ["WIP: half", "fixup! earlier", "squash! x", "amend! y", "temp: probe"]) assert.ok(r.tempCommitOf([s]), s);
   assert.equal(r.tempCommitOf(["Temperature units", "attempt 2"]), undefined);
+  // A saved session in the branch's own history holds it in progress (§chat.worktrees/readiness).
+  const saved = tree({ branch: "feat/saved", ahead: 2, savedSessions: 1 });
+  assert.deepEqual(r.treeReadiness(saved, idle), { state: "in-progress", why: "saved sessions in its history", reason: "In progress · saved sessions in its history" });
 });
 
 test("01a0eef8: ahead 0 with 10 dirty files is never merged, running or not", () => {

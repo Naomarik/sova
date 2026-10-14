@@ -4,17 +4,18 @@
 // standalone dir set aside) and a restart after it. The route's guards (peer, Overseer) too. A throwaway
 // PI_CODING_AGENT_DIR, workspace and project repos in the OS temp dir; no model is called.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import { Hono } from "hono";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-import-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(root, "agent", "extensions"));
+linkPiConfigExtensions(join(root, "agent"));
 
 const { buildWorld, stateOf } = await import("./project-import-child");
 const { importProject } = await import("./project-import");

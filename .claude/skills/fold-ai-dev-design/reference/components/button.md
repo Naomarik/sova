@@ -16,6 +16,7 @@ Rendered: `site/components/button.html#variants`
 | `.button-ghost` | Borderless, muted | Cancel and tertiary |
 | `.button-sm / .button-lg` | 36px / 52px | Label size shifts with it |
 | `.button-icon` | Square 44px | Requires `aria-label` |
+| `.button-split` | Joins a main `.button` and its ▾ `.button-icon` | One outline, `--stroke-thin` divider; neither part shrinks |
 | `.button-row` | Demo helper — wrapping row | Demo only |
 | `.is-hover / .is-focus / .is-active / .is-disabled` | Static states on `.button` | **Demo only** — production uses pseudo-classes |
 
@@ -60,6 +61,12 @@ Rendered: `site/components/button.html#variants`
 <button class="button button-icon" aria-label="More actions">…</button>
 ```
 
+### Split
+
+```html
+<div class="button-split"><a class="button" href="…">Overseer</a><button class="button button-icon" aria-haspopup="menu" aria-expanded="false" aria-label="Project overseers">…</button></div>
+```
+
 Every state is rendered together in the site page's state matrix. The `.is-hover`,
 `.is-focus`, `.is-active` and `.is-disabled` helpers are **documentation scaffolding
 only** — production code uses the real pseudo-classes.
@@ -70,5 +77,6 @@ only** — production code uses the real pseudo-classes.
 - **DO** Name the object on a destructive action — "Discard" alone is a question, "Discard Run" is an answer.
 - **DO** Keep destructive out of the thumb arc beside primary — one mis-tap on a train should not throw work away.
 - **DON'T** Fill a destructive button — it becomes the most inviting target on screen.
+- **DON'T** Put the ▾ inside the main part of a split button — a button nested in a button or link loses its role and its own target.
 - **DON'T** Use `.button-sm` as the only action on a touch surface — 36px is below the 44px minimum.
 - **DON'T** Ship the `.is-*` state helpers in production — they are documentation scaffolding; use the real pseudo-classes.

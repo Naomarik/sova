@@ -1171,21 +1171,57 @@ head's height, so a width change is no layout shift.
 
 ## §app.overseer/entry-button — Entry button
 
-- A **labelled button** — the eye icon, the word "Overseer", and the unread badge (below) —
-  closes the session list's one toolbar line at its right end, at every width
-  (§app.session-list/search). It leaves the line, with `Select` and the search icon,
-  for as long as the line's search is open, and comes back when the search closes.
-- The collapsed spine carries the same entry as a bare **eye** icon button.
+- **A split button at the toolbar line's right end** (§app.session-list/search), at every width,
+  after the search field. It has two parts.
+  - **The main part** is a link to `#/overseer`: the **eye** icon, then the word **Overseer**, then
+    the unread count (below) as an inline pill after the word ("Overseer 3"). Its `aria-label` is
+    "Overseer", or "Overseer · {n} new message(s)" while the count shows, and its `title` adds
+    " · Alt+O". It is tinted (`aria-current="page"`) while `#/overseer` is the route.
+  - **The ▾ part** is a separate 44×44 button joined to the main part: one shared outline, a thin
+    divider between them. It is named "Project overseers" and announced as opening a menu
+    (`aria-haspopup="menu"`, `aria-expanded`). It is drawn only once at least one of this
+    computer's projects has a started overseer; until then (with no project at all, too) the main
+    part stands alone as an ordinary button with its own rounded ends, so the list is never shown
+    empty.
+  - When the line is tight the search field shrinks, never the button: the eye, the word and ▾
+    keep their size at every width. While the search field has focus or holds a query, the field
+    takes the whole line and the split button is hidden (§app.session-list/search).
+- **The project overseers list.** ▾ opens a dropdown menu titled "Project overseers"
+  (§design/menu-rows), anchored under the button:
+  - One row per project of this computer whose overseer has **started** (its current conversation
+    exists, in an organization or standalone), sorted by project name. A project in an
+    organization shows "In {organization}" under its name; a standalone project shows its name
+    alone. A project whose overseer hasn't started isn't listed, and nothing is started from this
+    menu.
+  - At each row's right end, at most one state, in words, in this order: **Working** (the
+    overseer's Busy), else **Last turn failed**, else **New reply**: the same mark as the
+    project's eye on its heading (§app.session-list/organizations).
+  - The overseer whose conversation is open is the **current** row: tinted and checked
+    (`menuitemradio`, `aria-checked="true"`), and it shows no "Last turn failed" or "New reply".
+  - Picking a row opens that overseer's conversation (`#/s/<path>`, on the host that holds it) and
+    closes the list.
+  - The last row, after a separator, is **All Projects**, which opens the Projects page
+    (`#/projects`).
+  - The list ignores the search query and the host filter: it is built from every listed session
+    and this computer's project list, never from the search hits.
+- **▾'s dot.** While any listed overseer has a new reply or a failed last turn (not for Working),
+  ▾ carries a small accent dot, and its accessible name says it in words: "Project overseers ·
+  2 with new replies", "Project overseers · 1 with a failed last turn", or both, joined by " · ".
+- **Keyboard.** Tab reaches the main part, then ▾. Enter or Space on ▾ opens the list with focus on
+  its first row. Escape, or a click outside, closes it and returns focus to ▾; a click that lands
+  on another control (a session row, say) leaves focus on that control.
+- **Phone.** Below 768px the list is the same dropdown, not a sheet: anchored under the button, as
+  wide as the pane, with 44px rows.
+- The collapsed spine keeps the bare **eye** icon button as its entry. The eyes on each project's
+  heading in the pane are unchanged (§app.session-list/organizations).
 - **Alt+O** opens the Overseer from anywhere.
-- **Badge:** one count — the accent pill at the button's top-right corner on both forms
-  (`.overseer-entry-count`, "99+" past 99): the
-  Overseer's own assistant messages the user hasn't seen (`OverseerInfo.unread`,
-  §app.overseer/seen). It is 0, and the badge gone, while `#/overseer` is the route, and it shows
-  whatever the proactivity: these are the Overseer's messages, not an attention count. The eye
-  carries **no** attention count and no finished dot — who is blocked on you is the sidebar's
-  Needs you region (§app.session-list/needs-you). The badge is `aria-hidden`; the button's
-  `aria-label` is "Overseer", or "Overseer · {n} new message(s)" while it shows, and its `title`
-  adds " · Alt+O". The button is tinted as selected while `#/overseer` is the route.
+- **Badge:** one count, the Overseer's own assistant messages the user hasn't seen
+  (`OverseerInfo.unread`, §app.overseer/seen): an inline pill after the word on the toolbar, the
+  accent pill at the eye's top-right corner on the spine (`.overseer-entry-count`, "99+" past 99
+  on both). It is 0, and the pill gone, while `#/overseer` is the route, and it shows whatever the
+  proactivity: these are the Overseer's messages, not an attention count. The button carries
+  **no** attention count and no finished dot: who is blocked on you is the sidebar's Needs you
+  region (§app.session-list/needs-you). The pill is `aria-hidden`; the name says the count.
 
 ## §app.overseer/proactivity — Proactivity
 

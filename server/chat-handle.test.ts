@@ -41,6 +41,7 @@ const {
   refusalOf,
   serverToolCall,
   serveTools,
+  servedToolsFor,
   chatsReady,
   expectChatRouter,
   setChatRouter,
@@ -187,6 +188,54 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
   await assert.rejects(tool!.execute("tc-2", { n: 0 }, undefined, undefined, undefined), (e) => e instanceof RefusedError && e.message === "zero is refused");
   assert.deepEqual(await deliverServerToolCall({ ...call, effectId: "fx-zero", params: { n: 0 } }, { ...local }), { ok: false, error: { message: "zero is refused" } });
   assert.equal(serverToolCall(), undefined, "outside a run, no run");
+});
+
+test("a chat in a process of its own pushes a note under the title Sova shows for it, never a blank one (§chat.topics/push)", async () => {
+  const { setTopicStore, topicStore } = await import("./topics");
+  const { TopicStore } = await import("./topic-store");
+  const { displayTitleOf } = await import("./sessions-index");
+  const { setSessionTitle } = await import("./session-titles");
+  setTopicStore(new TopicStore(join(agentDir, "topics-served")));
+  const idOf = (p: string): string => JSON.parse(readFileSync(p, "utf8").split("\n")[0]!).id;
+  const receiver = session();
+  const local = { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: () => [], entries: () => [], append: async () => "", tool: () => undefined } };
+  let k = 0;
+  /** One push by `pusher` through its served queue_push, the chat reporting `known` as its title; the note's stored title. */
+  const push = async (pusher: string, known: string | undefined): Promise<string> => {
+    const s = topicStore();
+    const { name } = s.open({ sessionId: idOf(receiver), path: receiver }, `sender check ${k}`);
+    s.invite(name, idOf(pusher));
+    // What the chat host serves an ordinary chat at its open, its take-back and its reopen.
+    const decls = servedToolsFor(pusher, idOf(pusher), () => known, false);
+    assert.ok(decls.some((d) => d.name === "queue_push"));
+    const out = await deliverServerToolCall({ effectId: `fx-sender-${k}`, chatId: pusher, toolCallId: `tc-sender-${k++}`, name: "queue_push", params: { topic: name, text: "a note" }, attended: false, card: null }, { ...local });
+    assert.equal(out.ok, true, JSON.stringify(out));
+    return s.pending(name).at(-1)!.from.title;
+  };
+
+  // No pi session name (the chat reports none, or a blank one): its first message, as the list shows it.
+  const unnamed = session();
+  const shown = await displayTitleOf(unnamed);
+  assert.equal(shown, "first ask");
+  assert.equal(await push(unnamed, undefined), shown);
+  assert.equal(await push(unnamed, ""), shown);
+  // A title the user gave the session is what the list shows, so it is the sender's title too.
+  const titled = session();
+  setSessionTitle(idOf(titled), "Billing fixer");
+  assert.equal(await displayTitleOf(titled), "Billing fixer");
+  assert.equal(await push(titled, undefined), "Billing fixer");
+  // A file the list can't read: the title the chat reports, else "Untitled"; never blank.
+  const gone = join(sessionsDir, "not-a-session.jsonl");
+  writeFileSync(gone, "not json\n");
+  const pushed = (t: string | undefined) => {
+    const s = topicStore();
+    const { name } = s.open({ sessionId: idOf(receiver), path: receiver }, `sender check ${k}`);
+    s.invite(name, "gone-id");
+    servedToolsFor(gone, "gone-id", () => t, false);
+    return deliverServerToolCall({ effectId: `fx-sender-${k}`, chatId: gone, toolCallId: `tc-sender-${k++}`, name: "queue_push", params: { topic: name, text: "a note" }, attended: false, card: null }, { ...local }).then(() => s.pending(name).at(-1)!.from.title);
+  };
+  assert.equal(await pushed("pi name"), "pi name");
+  assert.equal(await pushed("  "), "Untitled");
 });
 
 test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {

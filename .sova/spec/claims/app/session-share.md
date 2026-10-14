@@ -165,9 +165,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   a `Live` chip. User messages are right-hand bubbles and each reply takes the column's width
   (§app.session-share/reading); neither is labelled with a name.
 - **Drawings.** A reply's `vis` fences draw as on the hand-off page (§app.baton/outsider-view),
-  plus `sequence` and `state`. `svg` draws as an image, which runs no script and fetches nothing;
-  `code` and `html` show as their source, escaped, under a caption. Any other kind, or one that
-  doesn't parse, is the one quiet line.
+  plus `sequence` and `state`. `svg` draws as a still image in the chat's figure (its title, the
+  drawing, its caption; no Source or Copy), at its own size, centred and shrunk only to fit the
+  column, in the page's colours and a sans-serif font, and it runs no script and fetches nothing
+  (§app.baton/outsider-view); `code` and `html` show as their source, escaped, under a caption.
+  Any other kind, or one that doesn't parse, is the one quiet line.
 - **Images** are thumbnails under their message's text, at most 320 by 240 pixels, each a link that
   opens the full image in a new tab.
 - The page reads the newest page first, from the top; **Show Earlier** reads the page before and
@@ -210,7 +212,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   a presence word when a page is open ("Viewing now", "Open in a tab") and "Opened {n}× · last
   {time}" or "Not opened yet". A stopped share says "Stopped". Each share has **Manage**; the
   section has **Share Session** (a link to the share page, §app.session-share/share-page) and a
-  link to `#/shares`. None: "Not shared with anyone."
+  link to `#/shares`. None: "Not shared with anyone." Beside Share Session sits **Save Session**,
+  which saves the session for colleagues rather than sharing it (§chat.saved-sessions/save-dialog),
+  with its Saved list under it (§chat.saved-sessions/saved-list).
 - **The Share sheet** is a dialog that becomes a sheet at folded width, and only manages a share:
   shares are created on the share page, whose create form holds:
   the public title (the session's title, editable, at most 120 characters, with a hint that the

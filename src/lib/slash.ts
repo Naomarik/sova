@@ -3,15 +3,6 @@
 
 import type { SlashCommand } from "../../shared/protocol";
 
-/** "/save" (§chat.saved-sessions/save-dialog): Sova's own, it opens Save Session. It stands in for a
-    command palette entry, which Sova's web app doesn't have. */
-export const SAVE_COMMAND: SlashCommand = { name: "save", description: "Save this session so a colleague can continue it", source: "builtin" };
-
-/** The "/" menu's commands with "/save" among them, unless the runtime has a "save" of its own. */
-export function withSaveCommand(commands: SlashCommand[]): SlashCommand[] {
-  return commands.length === 0 || commands.some((c) => c.name === SAVE_COMMAND.name) ? commands : [...commands, SAVE_COMMAND];
-}
-
 export interface SlashToken {
   /** Index of the "/" in the text. */
   start: number;
@@ -86,7 +77,7 @@ export function tuiOnlyCommand(text: string): string | null {
 }
 
 /** A command Sova answers itself rather than sending to the runtime. */
-export type LocalCommand = "subagents" | "new" | "tree" | "timeline" | "clear" | "mode" | "save";
+export type LocalCommand = "subagents" | "new" | "tree" | "timeline" | "clear" | "mode";
 
 /** Which optional local commands this composer answers. "/clear" and "/mode" are the Overseer's
     alone: anywhere else they are the runtime's (or plain text), exactly as before. */
@@ -116,7 +107,6 @@ export function localCommand(text: string, opts: LocalCommandOptions = {}): Loca
   if (t === "/new") return "new";
   if (t === "/tree") return "tree";
   if (t === "/timeline") return "timeline";
-  if (t === "/save") return "save";
   return null;
 }
 

@@ -191,8 +191,8 @@ export abstract class ChatHandle {
   appendState<T>(kind: StateKind<T>, data: T): Promise<string> {
     return this.call("appendState", { kind: kind.type, data });
   }
-  appendNote(noteType: string, text: string, display?: boolean): Promise<boolean> {
-    return this.call("appendNote", { noteType, text, ...(display === false ? { display } : {}) });
+  appendNote(noteType: string, text: string): Promise<boolean> {
+    return this.call("appendNote", { noteType, text });
   }
   writeProfile(data: ChatMethods["writeProfile"]["args"]["data"]): Promise<null> {
     return this.call("writeProfile", { data });

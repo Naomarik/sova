@@ -484,6 +484,10 @@ export function cardHeader(items: readonly SovaConfirmItem[]): string {
   return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session"), ...(folders.length ? { folders } : {}), ...(orgs.length ? { orgs } : {}) });
 }
 
+/** The project_modes parameter (§app.overseer/tools, §chat.mode-menu/project-modes). */
+const PROJECT_MODES_PARAM =
+  "The session project's own minor modes to have on (ids from its checkout's .sova/minor-modes/), its whole set; [] turns them all off. Your turn-on approves a mode's tools. Never with host.";
+
 /**
  * Build the Overseer's tool set. `limits` is shared with the extension that resets it per turn.
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
@@ -753,10 +757,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }
     if (p.model) await host.setModel(s.path, p.model).catch((err) => notes.push(`Model not set: ${err instanceof Error ? err.message : err}`));
     if (p.thinking) await host.setThinking(s.path, p.thinking).catch((err) => notes.push(`Thinking not set: ${err instanceof Error ? err.message : err}`));
-    if (p.mode || p.minor_modes !== undefined) {
+    if (p.mode || p.minor_modes !== undefined || p.project_modes !== undefined) {
       const body: Record<string, unknown> = {};
       if (p.mode) body.mode = p.mode;
       if (p.minor_modes !== undefined) body.minorModes = p.minor_modes;
+      // The project's own modes (§chat.mode-menu/project-modes): turned on by the Overseer counts as their approval.
+      if (p.project_modes !== undefined) body.projectModes = p.project_modes;
       // The mode route needs the chat open here, as in sova_set_session. A failed switch stops the
       // create short of its prompt, so the first turn never runs in a mode it wasn't given.
       // Then pinned: the extension writes a mode entry only on a change, so a mode equal to the
@@ -1171,6 +1177,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
         sandbox: str('Its sandbox, before its first prompt: "on" (its tools and its subagents confined), "subagents" (the default: only its subagents in its worktrees, write-only) or "off" (nothing confined). Below the default only in the turn the user\'s click on a card that said so opened. Not with host.', { enum: ["off", "subagents", "on"] }),
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the profile\'s, else the default.' },
+        project_modes: { type: "array", items: { type: "string" }, description: PROJECT_MODES_PARAM },
         title: str(`A title for the list: ${SESSION_TITLE_HINT}`),
         group: str("Group id to add it to."),
         profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode, minor modes and model apply unless you give your own. A profile that runs a playbook sends that playbook as the first message, with prompt as its text.'),
@@ -1182,11 +1189,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         // unknown one creates no session and takes no cap.
         // Memory is never given to a coding session (§chat.memory/where), here or on a peer.
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. No session was created.`);
-        if (p.mode || p.minor_modes !== undefined) {
-          const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}) });
-          if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes")}. No session was created.`);
+        if (p.mode || p.minor_modes !== undefined || p.project_modes !== undefined) {
+          const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}), ...(p.project_modes !== undefined ? { projectModes: p.project_modes } : {}) });
+          if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes").replace("projectModes", "project_modes")}. No session was created.`);
         }
         const onPeer = typeof p.host === "string" && p.host.trim() !== "";
+        // A project's modes are read from the new session's own checkout on this host.
+        if (onPeer && p.project_modes !== undefined) throw new Refusal("project_modes can't be given with host. No session was created.");
         if (onPeer && typeof p.group === "string" && p.group) throw new Refusal("A group can't be given with host: groups belong to one host. No session was created.");
         // A sandbox below the one it would start in needs the user's click (§app.overseer/tools); it
         // refuses before anything is created or capped.
@@ -1305,6 +1314,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           subagent_profile: str("Subagent profile id or off. Changes only this chat's later work, not running workers or the default."),
           sandbox: str('"on" (its tools and its subagents confined), "subagents" (only its subagents in its worktrees, write-only) or "off" (nothing confined). From its next tool call, and for subagents started or resumed afterwards. Lowering it needs the user\'s click on a card listing the session, in the turn that click opened.', { enum: ["off", "subagents", "on"] }),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on, e.g. ["spec"]; [] turns them all off.' },
+          project_modes: { type: "array", items: { type: "string" }, description: PROJECT_MODES_PARAM },
         },
         ["session"],
       ),
@@ -1345,10 +1355,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           done.push(`model ${p.model}`);
         }
         if (p.thinking) done.push(`thinking ${await host.setThinking(s.path, p.thinking)}`);
-        if (p.mode !== undefined || p.minor_modes !== undefined) {
+        if (p.mode !== undefined || p.minor_modes !== undefined || p.project_modes !== undefined) {
           const body: Record<string, unknown> = {};
           if (p.mode !== undefined) body.mode = p.mode;
           if (p.minor_modes !== undefined) body.minorModes = p.minor_modes;
+          if (p.project_modes !== undefined) body.projectModes = p.project_modes;
           // The mode route needs the chat open here; opening it is the same acquire a browser does.
           await host.open(s.path);
           const r = await call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, body);
@@ -1357,7 +1368,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           await host.pinMode(s.path).catch((err) => {
             throw new Error(`Switched, but its mode entry was not written (${err instanceof Error ? err.message : String(err)}), so it may follow a later default.`);
           });
-          done.push(`mode ${r.json?.mode ?? p.mode ?? ""}${Array.isArray(r.json?.minorModes) && r.json.minorModes.length ? ` + ${r.json.minorModes.join(", ")}` : ""}${r.json?.applies && r.json.applies !== "now" ? ` (applies ${r.json.applies})` : ""}`);
+          done.push(`mode ${r.json?.mode ?? p.mode ?? ""}${Array.isArray(r.json?.minorModes) && r.json.minorModes.length ? ` + ${r.json.minorModes.join(", ")}` : ""}${p.project_modes !== undefined ? `, project modes: ${Array.isArray(r.json?.projectModes) && r.json.projectModes.length ? r.json.projectModes.join(", ") : "none"}` : ""}${r.json?.applies && r.json.applies !== "now" ? ` (applies ${r.json.applies})` : ""}`);
         }
         if (p.subagent_profile !== undefined) {
           await host.open(s.path);

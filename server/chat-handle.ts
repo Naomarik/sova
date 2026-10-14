@@ -33,7 +33,7 @@ import type {
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
-import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, HeldChatState } from "../shared/protocol";
 import {
   BusyError,
   type ChatClient,
@@ -164,6 +164,9 @@ export abstract class ChatHandle {
   }
   applyMode(patch: ChatModePatch) {
     return this.call("applyMode", { patch });
+  }
+  modeResult(): Promise<ChatModeResult> {
+    return this.call("modeResult", {});
   }
   pinMode(): Promise<boolean> {
     return this.call("pinMode", {});

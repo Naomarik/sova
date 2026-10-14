@@ -1149,6 +1149,49 @@ html, body { overflow: clip; overscroll-behavior: none; }
   --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
 }
 
+
+/* ── Project minor modes in the mode menu ───────────────────────────────────────────────────────── */
+/* A row that can't be pressed (a broken mode) is not waiting on a save: no progress cursor. */
+.mode-menu .popover-item[data-project-state="broken"][aria-disabled="true"] { cursor: default; }
+.mode-menu .popover-item[data-project-state="broken"] .popover-item-label { color: var(--color-ink-muted); }
+/* The state line (broken, removed, changed, asks first) wraps rather than ellipsizing: it carries the
+   problem's path and error, which a cut would lose. */
+.mode-menu-project-note { white-space: normal; overflow-wrap: anywhere; }
+/* The approval panel: what the mode would run, before it is turned on. */
+.mode-approval { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.mode-approval > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
+.mode-approval-lead { margin: 0; padding: var(--space-2) var(--space-3) 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.mode-approval-tools {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mode-approval-tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+.mode-approval-tool-name { font-size: var(--fs-mono); color: var(--color-ink); }
+.mode-approval-tool-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.mode-approval-tool-cmd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink);
+  background: var(--color-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.mode-approval .mode-menu-foot-line .text-mono { overflow-wrap: anywhere; }
+
 /* ---- UPDATES. The dot on the Settings buttons, the note after an upgrade, and Settings →
    General's Updates section. ---------------------------------------------------------------- */
 

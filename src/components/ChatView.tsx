@@ -997,7 +997,16 @@ export function ChatView(props: {
             }
           break;
         case "mode":
-          setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies, ...(msg.memory ? { memory: msg.memory } : {}) });
+          setModeState({
+            mode: msg.mode,
+            minorModes: msg.minorModes,
+            strict: msg.strict,
+            applies: msg.applies,
+            ...(msg.memory ? { memory: msg.memory } : {}),
+            ...(msg.projectModes ? { projectModes: msg.projectModes } : {}),
+            ...(msg.project ? { project: msg.project } : {}),
+            ...(msg.projectMinors ? { projectMinors: msg.projectMinors } : {}),
+          });
           break;
         // This chat's memory (§chat.composer/memory-status): only while it is on, or the turn it goes off.
         case "memory_status":

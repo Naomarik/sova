@@ -68,7 +68,7 @@ import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ProjectModeApprovalNeeded, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -1047,7 +1047,16 @@ export function buildApp(deps: AppDeps) {
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
-  app.get("/api/mode", (c) => c.json(modeInfo(readMode(), defaultMemoryChoice())));
+  // With ?path=: that held chat's own mode, its project modes read now (§chat.mode-menu/project-modes).
+  app.get("/api/mode", async (c) => {
+    const rawPath = c.req.query("path");
+    if (rawPath === undefined) return c.json(modeInfo(readMode(), defaultMemoryChoice()));
+    const path = resolveSessionPath(rawPath);
+    if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    const chat = chatHandle(path);
+    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    return c.json(await chat.modeResult());
+  });
 
   // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
   // applyMode), or with { saveDefault: true } make that chat's own mode the default, switching nothing
@@ -1083,10 +1092,23 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       return modeRefusal(c, () => got.chat.saveModeDefault());
     }
-    if (path === null) return c.json(await switchMode(request.patch));
+    if (path === null) {
+      // The default never stores project modes (§chat.mode-menu/project-modes): they belong to one chat's checkout.
+      if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
+      return c.json(await switchMode(request.patch));
+    }
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
-    return modeRefusal(c, () => got.chat.switchMode(request.patch));
+    // The Overseer's own call turns a project mode on as its approval (q7); a body never says so itself.
+    const patch = { ...request.patch, ...(request.patch.projectModes !== undefined && overseerSender(c.req.header(OVERSEER_SENDER_HEADER)) ? { approvedBy: "overseer" as const } : {}) };
+    try {
+      const result = await got.chat.switchMode(patch);
+      if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+      return c.json(result);
+    } catch (err) {
+      if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
+      throw err;
+    }
   });
 
   // The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs

@@ -44,7 +44,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text, type KeyId } from "@earendil-works/pi-tui";
 import { execFile } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { registerPaletteCategory, requestPaletteOpen } from "../command-palette/contracts.ts";
 import {
@@ -107,7 +107,12 @@ function sessionIdOf(ctx: ExtensionContext): string | undefined {
 }
 import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignStyle } from "./align-settings.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, buildAlignStyleNote, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
+import { applyModeSection, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel, workerProjectModes } from "./prompt.ts";
+import { discoverProjectModes, readProjectMode } from "./project-discovery.ts";
+import { PROJECT_MODE_PREFIX, PROJECT_MODES_DIR, PROJECT_SNAPSHOT_TYPE, projectModeArg, projectToolName, type ProjectModeListing, type ProjectModeProblem, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
+import { isApproved } from "./project-tools-approval.ts";
+import { projectToolDefinitions, withdrawnDefinition } from "./project-tools.ts";
+import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../sandbox/state.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
@@ -125,11 +130,14 @@ import {
 	MODE_STATE_EVENT,
 	MODES,
 	parseMode,
+	projectModesOf,
 	restoreActive,
 	restoreHead,
+	restoreProjectSnapshots,
 	saveState,
 	toggleMode,
 	withMinor,
+	withProjectMode,
 	type Mode,
 	type ModeActive,
 	type ModeHeadRecord,
@@ -170,7 +178,51 @@ export const VISUALS_FLAG = "align-visuals";
  * `head`: the minor modes the prompt's mode section was built with, only while they differ from
  * `active.minorModes` (restoreHead in state.ts).
  */
-type ModeMarker = ({ mode: Mode } | { minor: MinorMode; on: boolean } | { strict: boolean }) & { active?: ModeActive; head?: MinorMode[] };
+type ModeMarker = ({ mode: Mode } | { minor: MinorMode; on: boolean } | { project: string; on: boolean } | { strict: boolean }) & {
+	active?: ModeActive;
+	head?: MinorMode[];
+	/** With `head`: the project modes the prompt's mode section was built with. */
+	projectHead?: ProjectModeRef[];
+};
+
+/** A switch's marker, without the snapshot appendSwitch adds. */
+type SwitchMarker = { mode: Mode } | { minor: MinorMode; on: boolean } | { project: string; on: boolean } | { strict: boolean };
+
+/** Refs as one comparable string. */
+const refsKey = (refs: readonly ProjectModeRef[]): string => refs.map((ref) => `${ref.id}@${ref.sha}`).join(",");
+
+/** The listing with one mode's fresh read in place of what it had for that id. */
+function withListed(listing: ProjectModeListing, read: ProjectModeSnapshot | ProjectModeProblem): ProjectModeListing {
+	const modes = listing.modes.filter((m) => m.id !== read.id);
+	const problems = listing.problems.filter((p) => p.id !== read.id);
+	if ("kind" in read) {
+		// A folder that is simply gone is no longer listed at all.
+		if (read.kind !== "no-entry" || existsSync(read.path)) problems.push(read);
+	} else modes.push(read);
+	const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+	return { ...listing, modes: modes.sort(byId), problems: problems.sort(byId) };
+}
+
+/** A project row as `/mode status` lists it. */
+export function projectRowText(row: ProjectModeRow): string {
+	const states = [row.on ? "on" : undefined, row.removed ? "removed" : undefined, row.changed ? "changed since turned on" : undefined, row.needsApproval ? "needs approval" : undefined, row.problem && !row.on ? `broken: ${row.problem}` : undefined].filter(Boolean);
+	return states.length > 0 ? `${row.id} (${states.join(", ")})` : row.id;
+}
+
+/** A row of the terminal's project mode list: a usable mode, a broken folder, or a mode on whose folder is gone. */
+export interface ProjectModeRow {
+	id: string;
+	description: string;
+	on: boolean;
+	/** Broken: what is wrong (path: error); can't be turned on. */
+	problem?: string;
+	/** On, and its folder is gone. */
+	removed?: boolean;
+	/** On, and the folder now differs from the chat's copy. */
+	changed?: boolean;
+	/** Has tools this exact version of which isn't approved. */
+	needsApproval?: boolean;
+}
 
 /** Test-only overrides; pi loads the extension without them. */
 export interface ModeExtensionOptions {
@@ -194,6 +246,22 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	let told: MinorMode[] = [];
 	/** Modes whose whole guide a note since the last compaction carried (a later "on" points back to it). */
 	let guides: MinorMode[] = [];
+	/** The project modes the head was built with (fixed and cleared with `head`). */
+	let projectHead: ProjectModeRef[] | undefined;
+	/** The project modes the model was last told are on. */
+	let toldProjects: ProjectModeRef[] = [];
+	/** Shas of project mode copies whose whole block a note since the last compaction carried. */
+	let projectGuides: string[] = [];
+	/** This chat's saved project mode copies (PROJECT_SNAPSHOT_TYPE entries), by sha: the only source of an on mode's text and tools. */
+	let snapshots = new Map<string, ProjectModeSnapshot>();
+	/** The chat's checkout's project modes as read at session start (and refreshed per mode on a turn-on): what can be turned on. */
+	let listing: ProjectModeListing = { root: null, name: "", modes: [], problems: [] };
+	/** The session's cwd: project tools run there. */
+	let sessionCwd = process.cwd();
+	/** The session's sandbox (sandbox:state): project tools refuse while it is on. */
+	let sandboxOn = false;
+	/** Project tool names registered with pi, and the copy (sha) each is registered for; "" once withdrawn. */
+	const registeredTools = new Map<string, string>();
 	/** From a run's first agent_start to agent_settled: its continuations keep the mode it started with. */
 	let running = false;
 	/**
@@ -314,7 +382,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	});
 
 	function renderStatus(ctx: ExtensionContext): void {
-		const { text, tone } = statusLabel(active.mode, routes, active.strict, active.minorModes, writerRoute);
+		const { text, tone } = statusLabel(active.mode, routes, active.strict, active.minorModes, writerRoute, projectModesOf(active).map((ref) => ref.id));
 		ctx.ui.setStatus("mode", ctx.ui.theme.fg(tone, text));
 	}
 
@@ -343,8 +411,16 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 * extension to append at spawn. Emitted on every resolve and switch, and on request.
 	 */
 	function publishWorkerModes(): void {
-		const prompt = composeWorkerPrompt(active);
-		const event: ModeWorkerEvent = { version: 1, minorModes: workerMinorModes(active.minorModes), ...(prompt === undefined ? {} : { prompt }) };
+		const minors = workerMinorModes(active.minorModes);
+		const copies = workerRole ? [] : activeSnapshots();
+		const projects = workerProjectModes(minors.length, copies);
+		const prompt = composeWorkerPrompt(active, copies);
+		const event: ModeWorkerEvent = {
+			version: 1,
+			minorModes: minors,
+			...(prompt === undefined ? {} : { prompt }),
+			...(projects.length > 0 ? { projectModes: projects } : {}),
+		};
 		try {
 			pi.events?.emit(MODE_WORKER_EVENT, event);
 		} catch {
@@ -373,6 +449,12 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	}
 
 	const headMinors = (): MinorMode[] => head ?? active.minorModes;
+	const headProjects = (): ProjectModeRef[] => projectHead ?? projectModesOf(active);
+	/** The saved copies of the given refs, in their order; a ref without one is skipped. */
+	const copiesOf = (refs: readonly ProjectModeRef[]): ProjectModeSnapshot[] =>
+		refs.map((ref) => snapshots.get(ref.sha)).filter((copy): copy is ProjectModeSnapshot => copy !== undefined);
+	/** The copies of the project modes on now. */
+	const activeSnapshots = (): ProjectModeSnapshot[] => copiesOf(projectModesOf(active));
 
 	/**
 	 * The `mode` section: the major mode as it is now, the minor blocks as the head has them. In a
@@ -381,7 +463,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const modeBlock = (): string | undefined =>
 		workerRole
 			? composeWorkerPrompt({ minorModes: headMinors() })
-			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style));
+			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style), copiesOf(headProjects()).map((copy) => copy.text));
 
 	/** A run is about to send the prompt: a head not sent since the start or the last compaction is the active set from now on. */
 	function fixHead(): void {
@@ -389,6 +471,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		head = [...active.minorModes];
 		told = [...head];
 		guides = [];
+		projectHead = projectModesOf(active);
+		toldProjects = [...projectHead];
+		projectGuides = [];
 		toldWriter = head.includes("spec") ? writerInstruction() : undefined;
 		// A head rebuilt on reopen keeps the style the branch recorded for it (restoreActiveState). A new
 		// one built in a style other than Default records it (MODE_HEAD_TYPE); a Default head records nothing.
@@ -420,15 +505,25 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		const alignGuide = note?.guides.includes("align") ?? false;
 		const was = toldStyle ?? headStyle ?? "default";
 		const styleNote = !workerRole && hasMinor(active, "align") && !alignGuide && was !== style ? buildAlignStyleNote(was, style) : undefined;
-		if (!note && !routeNote && !styleNote) return undefined;
+		const projectNote = workerRole ? undefined : buildProjectModeNote(toldProjects, projectModesOf(active), { head: projectHead ?? [], guides: projectGuides }, snapshots);
+		if (!note && !routeNote && !styleNote && !projectNote) return undefined;
 		if (active.minorModes.includes("spec")) toldWriter = instruction;
 		const toldAlignStyle = alignGuide || styleNote !== undefined;
 		if (toldAlignStyle) toldStyle = style;
 		told = [...active.minorModes];
 		guides = normalizeMinorModes([...guides, ...(note?.guides ?? [])]);
-		const details: ModeNoteDetails = { v: 1, minorModes: [...told], guides: note?.guides ?? [] };
+		toldProjects = projectModesOf(active);
+		projectGuides = [...new Set([...projectGuides, ...(projectNote?.guides ?? [])])];
+		const details: ModeNoteDetails = {
+			v: 1,
+			minorModes: [...told],
+			guides: note?.guides ?? [],
+			// Absent reads as none (restoreHead), so a chat without project modes writes the notes it always did.
+			...(toldProjects.length > 0 ? { projectModes: [...toldProjects] } : {}),
+			...(projectNote && projectNote.guides.length > 0 ? { projectGuides: projectNote.guides } : {}),
+		};
 		if (toldAlignStyle) Object.assign(details, { style, headStyle: headStyle ?? style });
-		return { customType: MODE_NOTE_TYPE, content: [note?.text, routeNote, styleNote].filter(Boolean).join("\n\n"), display: false, details };
+		return { customType: MODE_NOTE_TYPE, content: [note?.text, projectNote?.text, routeNote, styleNote].filter(Boolean).join("\n\n"), display: false, details };
 	}
 
 	/**
@@ -538,9 +633,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 * post-switch snapshot this session restores from. Best-effort: a failed append only costs
 	 * the pin (the session then follows the default again), never the turn.
 	 */
-	function appendSwitch(marker: { mode: Mode } | { minor: MinorMode; on: boolean } | { strict: boolean }): void {
+	function appendSwitch(marker: SwitchMarker): void {
 		const data: ModeMarker = { ...marker, active: activeOf(active) };
-		if (head !== undefined && head.join(",") !== active.minorModes.join(",")) data.head = [...head];
+		// The head, and with it the project head, while either differs from the active set (restoreHead).
+		if (head !== undefined && (head.join(",") !== active.minorModes.join(",") || refsKey(projectHead ?? []) !== refsKey(projectModesOf(active)))) {
+			data.head = [...head];
+			// Absent reads as none (restoreHead), so a chat without project modes writes the entries it always did.
+			if (projectHead && projectHead.length > 0) data.projectHead = [...projectHead];
+		}
 		try {
 			pi.appendEntry<ModeMarker>(MODE_ENTRY_TYPE, data);
 		} catch {
@@ -617,6 +717,120 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		}
 	}
 
+	/**
+	 * Turn a project mode on or off in this chat (§chat.mode-menu/project-modes). On reads its folder now,
+	 * refuses a broken one and one whose tools this exact version of isn't approved (Sova's menu or the
+	 * Overseer records the approval first), saves the copy into the branch and works from it from then on;
+	 * one already on stays on its copy. Off needs nothing from the folder, so a removed mode turns off too.
+	 */
+	function setProject(id: string, on: boolean, ctx: ExtensionContext): void {
+		const current = projectModesOf(active).find((ref) => ref.id === id);
+		if ((current !== undefined) === on) {
+			renderStatus(ctx);
+			return;
+		}
+		if (on) {
+			const refuse = (why: string): void => {
+				ctx.ui.notify(`Minor mode ${id} not turned on: ${why}`, "warning");
+				renderStatus(ctx);
+			};
+			if (workerRole) return refuse("a worker gets its project modes from the session that started it");
+			if (listing.root === null) return refuse("this chat has no local checkout");
+			const read = readProjectMode(join(listing.root, PROJECT_MODES_DIR), id);
+			const known = listing.modes.some((m) => m.id === id) || listing.problems.some((p) => p.id === id);
+			listing = withListed(listing, read);
+			if ("kind" in read) return refuse(read.kind === "no-entry" && !known ? `no project mode ${id} in ${listing.name}` : `${read.path}: ${read.error}`);
+			if (read.toolsHash !== "" && !isApproved(listing.root, id, read.toolsHash)) return refuse(`${id} runs the project's own tools: approve it from a Sova chat's mode menu first`);
+			if (!snapshots.has(read.sha)) {
+				try {
+					pi.appendEntry<ProjectModeSnapshot>(PROJECT_SNAPSHOT_TYPE, read);
+				} catch {
+					return refuse("its copy couldn't be saved in this chat");
+				}
+				snapshots.set(read.sha, read);
+			}
+			active = withProjectMode(active, id, { id, sha: read.sha });
+		} else {
+			active = withProjectMode(active, id, undefined);
+		}
+		publishActive();
+		appendSwitch({ project: id, on });
+		publishWorkerModes();
+		syncHostSection();
+		renderStatus(ctx);
+		// Like codemode: between runs the tools follow at once; a run under way keeps its tools until it settles.
+		if (!running) syncProjectTools();
+		ctx.ui.notify(`Minor mode: ${id} ${on ? "on" : "off"}`, "info");
+	}
+
+	/**
+	 * The loadout carries exactly the tools of the project modes on now, each registered for the copy that is
+	 * on (a newer copy re-registers the name). A tool of a mode turned off leaves the loadout and is
+	 * re-registered withdrawn, and its old definition refuses anyway (isOn checks the copy).
+	 */
+	function syncProjectTools(): void {
+		const want = new Map<string, ProjectModeSnapshot>();
+		if (!workerRole) for (const copy of activeSnapshots()) for (const tool of copy.tools) want.set(projectToolName(copy.id, tool.name), copy);
+		for (const [name, copy] of want) {
+			if (registeredTools.get(name) !== copy.sha) {
+				const definition = projectToolDefinitions(copy, {
+					cwd: () => sessionCwd,
+					sandboxOn: () => sandboxOn,
+					isOn: (id) => projectModesOf(active).some((ref) => ref.id === id && ref.sha === copy.sha),
+				}).find((d) => d.name === name);
+				try {
+					if (definition) pi.registerTool(definition as never);
+					registeredTools.set(name, copy.sha);
+				} catch {
+					continue; // Before the session exists; session_start syncs it.
+				}
+			}
+			syncTool(name, true);
+		}
+		// Names of this chat's copies that a restored loadout may still carry, and anything registered here.
+		const ours = new Set([...registeredTools.keys(), ...[...snapshots.values()].flatMap((copy) => copy.tools.map((tool) => projectToolName(copy.id, tool.name)))]);
+		for (const name of ours) {
+			if (want.has(name)) continue;
+			syncTool(name, false);
+			if (registeredTools.has(name) && registeredTools.get(name) !== "") {
+				try {
+					pi.registerTool(withdrawnDefinition(name) as never);
+					registeredTools.set(name, "");
+				} catch {
+					// Its definition refuses on its own (isOn).
+				}
+			}
+		}
+	}
+
+	/** The terminal's list of project modes: those on (from their copies), then the checkout's others, then broken folders. */
+	function projectRows(): ProjectModeRow[] {
+		const rows: ProjectModeRow[] = [];
+		const approved = (copy: ProjectModeSnapshot) => copy.toolsHash === "" || (listing.root !== null && isApproved(listing.root, copy.id, copy.toolsHash));
+		for (const ref of projectModesOf(active)) {
+			const copy = snapshots.get(ref.sha);
+			const now = listing.modes.find((m) => m.id === ref.id);
+			const broken = listing.problems.find((p) => p.id === ref.id);
+			rows.push({
+				id: ref.id,
+				description: copy?.description ?? "",
+				on: true,
+				...(now === undefined && broken === undefined ? { removed: true } : {}),
+				...((now !== undefined && now.sha !== ref.sha) || broken !== undefined ? { changed: true } : {}),
+				...(broken !== undefined ? { problem: `${broken.path}: ${broken.error}` } : {}),
+			});
+		}
+		for (const mode of listing.modes) {
+			if (rows.some((row) => row.id === mode.id)) continue;
+			rows.push({ id: mode.id, description: mode.description, on: false, ...(approved(mode) ? {} : { needsApproval: true }) });
+		}
+		for (const problem of listing.problems) {
+			if (rows.some((row) => row.id === problem.id)) continue;
+			rows.push({ id: problem.id, description: "", on: false, problem: `${problem.path}: ${problem.error}` });
+		}
+		return rows;
+	}
+
 	/** One-line summary of an active state, for the notifications and the `default:` status line. */
 	function activeSummary(a: ModeActive): string {
 		return [a.mode, ...(a.strict ? ["strict"] : []), ...a.minorModes].join(" · ");
@@ -684,6 +898,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 				}
 			}
 		}
+		try {
+			snapshots = workerRole ? new Map() : restoreProjectSnapshots(ctx.sessionManager.getBranch());
+		} catch {
+			snapshots = new Map();
+		}
+		// A project mode whose copy isn't on the branch can't run: it is not on.
+		const runnable = projectModesOf(next).filter((ref) => snapshots.has(ref.sha));
+		next = runnable.length > 0 ? { ...next, projectModes: runnable } : withProjectMode(next, "", undefined);
 		active = next;
 		publishActive();
 		publishWorkerModes();
@@ -697,6 +919,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		head = restoredHead.head;
 		told = restoredHead.told ?? [...(head ?? [])];
 		guides = restoredHead.guides;
+		projectHead = head === undefined ? undefined : (restoredHead.projectHead ?? []);
+		toldProjects = head === undefined ? [] : (restoredHead.projectTold ?? []);
+		projectGuides = restoredHead.projectGuides ?? [];
 		// The style the head was built with, as the branch records it since the last compaction (a style
 		// note, else the head's own record, else Default once a prompt went out; a head no entry records is
 		// rebuilt with it at the next fixHead), so a style changed since goes out as a note (§chat.alignment/style);
@@ -709,6 +934,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		syncAlignTool();
 		syncVisGuideTool();
 		syncCodemodeTool();
+		syncProjectTools();
 		recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
@@ -878,6 +1104,10 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		if (typeof target === "string" && target !== "") remoteTarget = target;
 	});
 	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
+	pi.events?.on(SANDBOX_STATE_EVENT, (data: unknown) => {
+		if ((data as { version?: unknown } | undefined)?.version === 1) sandboxOn = (data as { on?: unknown }).on === true;
+	});
+	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
 
 	/**
 	 * The chat's reviewer now (§chat.alignment-review/route): its profile's reviewer assessed like the
@@ -1007,6 +1237,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			writerLine(),
 			`strict: ${active.strict ? "on" : "off"}`,
 			`minor: ${active.minorModes.length > 0 ? active.minorModes.join(", ") : "(none)"}`,
+			`project modes${listing.name ? ` (${listing.name})` : ""}: ${projectRows().map(projectRowText).join(", ") || "(none)"}`,
 			`shortcut: ${fileDefault.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
 			`alignments: ${alignSummaryLine()}`,
 			`state file: ${STATE_FILE}`,
@@ -1047,7 +1278,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		ctx.ui.notify(`Subagent profile: ${profileLine()}`, "info");
 	}
 
-	const usage = `Usage: /mode [${MODES.join("|")}|status|default|sync|strict on|strict off|subagents <profile>|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
+	const usage = `Usage: /mode [${MODES.join("|")}|status|default|sync|strict on|strict off|subagents <profile>|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}|<project mode> [on|off]|${PROJECT_MODE_PREFIX}<project mode> [on|off]]`;
 
 	// The ctrl+p "Mode" category; the palette asks for fresh rows on every open.
 	registerPaletteCategory(pi.events, {
@@ -1061,6 +1292,10 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 				setMinor: (minor, on) => setMinor(minor, on, ctx),
 				openAlignViewer: () => openAlignViewer(ctx),
 				saveDefault: () => saveDefault(ctx),
+				projectRows: () => projectRows(),
+				projectGroup: () => listing.name,
+				setProject: (id, on) => setProject(id, on, ctx),
+				notify: (text) => ctx.ui.notify(text, "warning"),
 			}),
 	});
 
@@ -1100,7 +1335,10 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		description: "Open the mode selector, or set a mode with an argument",
 		getArgumentCompletions: (argumentPrefix) => {
 			const minorItems = MINOR_MODES.flatMap((minor) => [minor, `${minor} on`, `${minor} off`]);
-			const items = [...MODES, "status", "default", "sync", "strict on", "strict off", "subagents", ...minorItems]
+			const projectItems = projectRows()
+				.filter((row) => row.problem === undefined || row.on)
+				.flatMap((row) => [row.id, `${row.id} on`, `${row.id} off`]);
+			const items = [...MODES, "status", "default", "sync", "strict on", "strict off", "subagents", ...minorItems, ...projectItems]
 				.filter((value) => value.startsWith(argumentPrefix.trim()))
 				.map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
@@ -1177,6 +1415,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 				setMinor(minor, on, ctx);
 				return;
 			}
+			// A project mode: `project:<id>` always; a bare id when the checkout has it or the chat has it on.
+			const projectToggle = /^(\S+)(?:\s+(on|off))?$/.exec(arg);
+			const projectId = projectToggle ? projectModeArg(projectToggle[1]!) : undefined;
+			if (projectToggle && projectId !== undefined && (projectToggle[1]!.startsWith(PROJECT_MODE_PREFIX) || projectRows().some((row) => row.id === projectId))) {
+				const isOn = projectModesOf(active).some((ref) => ref.id === projectId);
+				setProject(projectId, projectToggle[2] === undefined ? !isOn : projectToggle[2] === "on", ctx);
+				return;
+			}
 			ctx.ui.notify(`Unknown argument "${arg}". ${usage}`, "warning");
 		},
 	});
@@ -1248,6 +1494,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		nudged = false;
 		syncVisGuideTool();
 		syncCodemodeTool();
+		syncProjectTools();
 	});
 
 	// A compaction summarizes the align results away, and the next run may be one no user prompt
@@ -1262,6 +1509,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		head = undefined;
 		told = [];
 		guides = [];
+		projectHead = undefined;
+		toldProjects = [];
+		projectGuides = [];
 		headStyle = undefined;
 		toldStyle = undefined;
 		syncHostSection();
@@ -1386,6 +1636,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		fixHead();
 		syncVisGuideTool();
 		syncCodemodeTool();
+		syncProjectTools();
 		const modeNote = takeNote();
 		if (modeNote) pi.sendMessage(modeNote, { deliverAs: "nextTurn" });
 		const block = modeBlock();
@@ -1435,6 +1686,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		const visualsFlag = pi.getFlag(VISUALS_FLAG);
 		alignVisuals = workerRole ? false : visualsFlag === "on" ? true : visualsFlag === "off" ? false : alignNow().visuals;
 		syncAlignForm();
+		// The chat's checkout's project modes, read once here (§chat.mode-menu/project-modes); a worker has none of its own.
+		sessionCwd = ctx.cwd;
+		listing = workerRole ? { root: null, name: "", modes: [], problems: [] } : discoverProjectModes(ctx.cwd);
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {
@@ -1451,6 +1705,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	pi.registerEntryRenderer<ModeMarker>(MODE_ENTRY_TYPE, (entry, _options, theme) => {
 		const data = entry.data;
 		if (data && "minor" in data) return new Text(theme.fg("dim", `── ${data.minor} ${data.on ? "on" : "off"} ──`), 0, 0);
+		if (data && "project" in data) return new Text(theme.fg("dim", `── ${data.project} ${data.on ? "on" : "off"} ──`), 0, 0);
 		if (data && "strict" in data) return new Text(theme.fg("dim", `── strict ${data.strict ? "on" : "off"} ──`), 0, 0);
 		const mode = data?.mode ?? "normal";
 		return new Text(theme.fg("dim", `── mode → ${mode} ──`), 0, 0);

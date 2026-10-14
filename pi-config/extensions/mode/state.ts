@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { isAlignStyle, type AlignStyle } from "./align-settings.ts";
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
+import { isProjectModeSnapshot, normalizeProjectModeRefs, PROJECT_SNAPSHOT_TYPE, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 
 export type Mode = "normal" | "delegate";
 
@@ -116,11 +117,45 @@ export interface ModeActive {
 	mode: Mode;
 	strict: boolean;
 	minorModes: MinorMode[];
+	/**
+	 * The project's own minor modes this chat turned on (§chat.mode-menu/project-modes), in turn-on order:
+	 * which mode and which saved copy (PROJECT_SNAPSHOT_TYPE entries). A namespace of their own, never in
+	 * `minorModes`; absent when none is on, and never in mode.json (ModeState has no such field).
+	 */
+	projectModes?: ProjectModeRef[];
 }
 
 /** The session-scoped triple of a state or another active snapshot, copied (never aliased). */
-export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): ModeActive {
-	return { version: 1, mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
+export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes"> & { projectModes?: readonly ProjectModeRef[] }): ModeActive {
+	const active: ModeActive = { version: 1, mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
+	if (state.projectModes && state.projectModes.length > 0) active.projectModes = state.projectModes.map((ref) => ({ ...ref }));
+	return active;
+}
+
+/** This chat's project modes (none when absent). */
+export function projectModesOf(active: { projectModes?: readonly ProjectModeRef[] }): ProjectModeRef[] {
+	return active.projectModes ? [...active.projectModes] : [];
+}
+
+/** New active state with project mode `id` on (as `ref`, at the end) or off. Never mutates the input. */
+export function withProjectMode(active: ModeActive, id: string, ref: ProjectModeRef | undefined): ModeActive {
+	const { projectModes: _old, ...rest } = active;
+	const others = projectModesOf(active).filter((r) => r.id !== id);
+	const next = ref ? [...others, { ...ref }] : others;
+	return next.length > 0 ? { ...rest, projectModes: next } : rest;
+}
+
+/**
+ * The saved copies of project modes on a branch, by sha: every PROJECT_SNAPSHOT_TYPE custom entry, the
+ * branch's whole length (a compaction keeps custom entries). The mode entry's refs name which is in use.
+ */
+export function restoreProjectSnapshots(entries: readonly { type: string; customType?: string; data?: unknown }[]): Map<string, ProjectModeSnapshot> {
+	const out = new Map<string, ProjectModeSnapshot>();
+	if (!Array.isArray(entries)) return out;
+	for (const entry of entries) {
+		if (entry?.type === "custom" && entry.customType === PROJECT_SNAPSHOT_TYPE && isProjectModeSnapshot(entry.data)) out.set(entry.data.sha, entry.data);
+	}
+	return out;
 }
 
 /**
@@ -141,12 +176,7 @@ export function normalizeActive(value: unknown): ModeActive | undefined {
 	const record = value as Record<string, unknown>;
 	const mode = parseMode(record.mode);
 	if (record.version !== 1 || mode === undefined) return undefined;
-	return {
-		version: 1,
-		mode,
-		strict: record.strict === true,
-		minorModes: normalizeMinorModes(record.minorModes),
-	};
+	return activeOf({ mode, strict: record.strict === true, minorModes: normalizeMinorModes(record.minorModes), projectModes: normalizeProjectModeRefs(record.projectModes) });
 }
 
 /**
@@ -187,6 +217,10 @@ export interface ModeNoteDetails {
 	guides: MinorMode[];
 	style?: AlignStyle;
 	headStyle?: AlignStyle;
+	/** The project modes in effect after it (refs); absent on notes from before project modes, read as none. */
+	projectModes?: ProjectModeRef[];
+	/** The shas of the project mode copies whose whole block it carried. */
+	projectGuides?: string[];
 }
 
 /**
@@ -220,11 +254,17 @@ export interface ModeHead {
 	 * else Default once a prompt was sent since that compaction; undefined while none has been.
 	 */
 	headStyle?: AlignStyle;
+	/** The project modes the head was built with, while `head` is set; absent: none. */
+	projectHead?: ProjectModeRef[];
+	/** The project modes the model was last told are on (with `told`). */
+	projectTold?: ProjectModeRef[];
+	/** Shas of project mode copies whose whole block a note since that compaction carried. */
+	projectGuides?: string[];
 }
 
 /**
- * The head a branch was left with, by the rule the extension keeps: a `mode` entry records `head`
- * only while it differs from that entry's own active minor modes, so the newest one carrying it
+ * The head a branch was left with, by the rule the extension keeps: a `mode` entry records `head`, and
+ * with it `projectHead`, only while either differs from that entry's own active modes, so the newest one carrying it
  * names the head, and none since the last compaction means the head equals the active set. Notes
  * before the last compaction are ignored: a compaction rebuilds the head from the active set.
  * Entries Sova writes (pinEntryFor) never carry `head`. Never throws.
@@ -232,6 +272,9 @@ export interface ModeHead {
 export function restoreHead(entries: readonly { type: string; customType?: string; data?: unknown; details?: unknown; message?: unknown }[]): ModeHead {
 	let head: MinorMode[] | undefined;
 	let told: MinorMode[] | undefined;
+	let projectHead: ProjectModeRef[] | undefined;
+	let projectTold: ProjectModeRef[] | undefined;
+	const projectGuides = new Set<string>();
 	let style: ModeHead["style"];
 	let recorded: AlignStyle | undefined;
 	let sent = false;
@@ -252,21 +295,35 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 		if (entry.type === "custom_message" && entry.customType === MODE_NOTE_TYPE) {
 			const details = entry.details as Partial<ModeNoteDetails> | undefined;
 			if (details?.v !== 1 || !Array.isArray(details.minorModes)) continue;
-			told ??= normalizeMinorModes(details.minorModes);
+			if (told === undefined) {
+				told = normalizeMinorModes(details.minorModes);
+				projectTold = normalizeProjectModeRefs(details.projectModes);
+			}
+			if (Array.isArray(details.projectGuides)) for (const sha of details.projectGuides) if (typeof sha === "string") projectGuides.add(sha);
 			if (style === undefined && isAlignStyle(details.style) && isAlignStyle(details.headStyle)) style = { told: details.style, head: details.headStyle };
 			for (const mode of normalizeMinorModes(details.guides)) guides.add(mode);
 			continue;
 		}
 		if (head === undefined && entry.type === "custom" && entry.customType === MODE_ENTRY_TYPE) {
-			const data = entry.data as { head?: unknown } | null | undefined;
-			if (data && typeof data === "object" && Array.isArray(data.head)) head = normalizeMinorModes(data.head);
+			const data = entry.data as { head?: unknown; projectHead?: unknown } | null | undefined;
+			if (data && typeof data === "object" && Array.isArray(data.head)) {
+				head = normalizeMinorModes(data.head);
+				projectHead = normalizeProjectModeRefs(data.projectHead);
+			}
 		}
 	}
 	// A head no entry records equals the active set, but the style it was built with is the entries' to say.
 	const headStyle = style?.head ?? recorded ?? (sent || head !== undefined ? "default" : undefined);
 	const styled = { ...(style ? { style } : {}), ...(headStyle ? { headStyle } : {}) };
 	if (head === undefined) return { head, told: undefined, guides: [], ...styled };
-	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]), ...styled };
+	// Project fields only when they say something: absent reads as none (the head fixed, so not "follows the active set").
+	const projectToldNow = told !== undefined ? (projectTold ?? []) : (projectHead ?? []);
+	const project = {
+		...(projectHead && projectHead.length > 0 ? { projectHead } : {}),
+		...(projectToldNow.length > 0 ? { projectTold: [...projectToldNow] } : {}),
+		...(projectGuides.size > 0 ? { projectGuides: [...projectGuides] } : {}),
+	};
+	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]), ...styled, ...project };
 }
 
 /** Read the defaults file; missing or corrupt files fall back to built-in defaults. Never throws. */

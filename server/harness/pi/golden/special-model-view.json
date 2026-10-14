@@ -304,6 +304,13 @@
        },
        "description": "Minor modes to have on from the first turn, e.g. [\"spec\"]; [] turns them all off. Omitted: the profile's, else the default."
       },
+      "project_modes": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "The session project's own minor modes to have on (ids from its checkout's .sova/minor-modes/), its whole set; [] turns them all off. Your turn-on approves a mode's tools. Never with host."
+      },
       "title": {
        "type": "string",
        "description": "A title for the list: 2–5 words, at most 36 characters, a short label not a sentence (the summary line already shows under it; don't repeat it)."
@@ -400,6 +407,13 @@
         "type": "string"
        },
        "description": "Minor modes to have on, e.g. [\"spec\"]; [] turns them all off."
+      },
+      "project_modes": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "description": "The session project's own minor modes to have on (ids from its checkout's .sova/minor-modes/), its whole set; [] turns them all off. Your turn-on approves a mode's tools. Never with host."
       }
      },
      "required": [

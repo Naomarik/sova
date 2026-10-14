@@ -63,9 +63,22 @@ test("a chat lists its checkout's modes, broken one included, all off", async ()
   const path = await newChat();
   const r = await get(path);
   assert.deepEqual(r.project, { root: repo, name: repo.split("/").at(-1) });
-  assert.deepEqual(r.projectModes, []);
+  assert.equal("projectModes" in r, false, "nothing on: absent");
   assert.deepEqual(r.projectMinors?.map((m) => [m.id, !!m.problem, !!m.needsApproval]), [["plain", false, false], ["rel", false, true], ["broken", true, false]]);
   assert.deepEqual(r.projectMinors?.find((m) => m.id === "rel")?.tools, [{ name: "status", description: "Shows the status", command: ["./status.sh"] }]);
+});
+
+test("a chat in a folder with no project modes gets no project fields, in GET and in a POST reply", async () => {
+  const plain = realpathSync(mkdtempSync(join(tmpdir(), "sova-project-modes-none-")));
+  process.on("exit", () => rmSync(plain, { recursive: true, force: true }));
+  const res = await app.request("/api/sessions", { method: "POST", headers: json, body: JSON.stringify({ cwd: plain }) });
+  const { path } = (await res.json()) as { path: string };
+  await acquireChat(path);
+  const keys = (o: object) => Object.keys(o).filter((k) => k.startsWith("project"));
+  assert.deepEqual(keys(await get(path)), []);
+  const r = await post(path, { minorModes: ["spec"] });
+  assert.equal(r.status, 200);
+  assert.deepEqual(keys((await r.json()) as object), []);
 });
 
 test("on and off; tools need the exact approval; broken and unknown refuse; nothing reaches the default", async () => {
@@ -99,7 +112,7 @@ test("on and off; tools need the exact approval; broken and unknown refuse; noth
 
   res = await post(path, { projectModes: [] });
   assert.equal(res.status, 200);
-  assert.deepEqual(((await res.json()) as ChatModeResult).projectModes, []);
+  assert.equal("projectModes" in ((await res.json()) as ChatModeResult), false, "all off: absent");
 });
 
 test("an edit shows as changed; a deleted mode stays on as removed until turned off", async () => {
@@ -116,7 +129,7 @@ test("an edit shows as changed; a deleted mode stays on as removed until turned 
   assert.equal(row?.removed, true);
   const res = await post(path, { projectModes: [] });
   assert.equal(res.status, 200, "off is always allowed");
-  assert.deepEqual(((await res.json()) as ChatModeResult).projectModes, []);
+  assert.equal("projectModes" in ((await res.json()) as ChatModeResult), false, "all off: absent");
   mode("plain", "---\ndescription: Plain words\n---\nSay hello first.\n");
 });
 

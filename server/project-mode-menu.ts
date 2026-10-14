@@ -37,7 +37,7 @@ function infoOf(mode: ProjectModeSnapshot, root: string | null, approved: Approv
  * versions it keeps (newest per id). A mode on whose folder is gone is `removed`; one on whose files differ
  * from what it turned on is `changed`; a broken folder carries `problem`. A mode that is on shows the version
  * the chat runs (its snapshot's words and tools), never the files. `snapshots` is keyed by snapshot sha.
- * Nothing at all when the chat has no checkout and nothing on.
+ * Each field is absent when it would be empty (nothing on, no rows), so a chat with no project modes gets {}.
  */
 export function projectModesInfo(
   listing: ProjectModeListing,
@@ -45,7 +45,7 @@ export function projectModesInfo(
   snapshots: ReadonlyMap<string, ProjectModeSnapshot>,
   approved: ApprovedFn,
 ): ChatProjectModes {
-  if (listing.root === null && on.length === 0) return {};
+  if (listing.modes.length === 0 && listing.problems.length === 0 && on.length === 0) return {};
   const onById = new Map(on.map((r) => [r.id, r]));
   const minors: ProjectMinorInfo[] = [];
   const seen = new Set<string>();
@@ -84,10 +84,11 @@ export function projectModesInfo(
       removed: true,
     });
   }
+  // Absent rather than empty, so a chat with no project modes sends the frame it always did.
   return {
-    projectModes: on.map((r) => r.id),
-    ...(listing.root !== null ? { project: { root: listing.root, name: listing.name } } : {}),
-    projectMinors: minors,
+    ...(on.length > 0 ? { projectModes: on.map((r) => r.id) } : {}),
+    ...(minors.length > 0 && listing.root !== null ? { project: { root: listing.root, name: listing.name } } : {}),
+    ...(minors.length > 0 ? { projectMinors: minors } : {}),
   };
 }
 

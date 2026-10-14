@@ -272,8 +272,9 @@ const READ_PREFIXES = [
   "provider-limits",
   "usage",
 ];
-// Never below `full`: the operator's credentials and the share pages' own routes.
-const FULL_PREFIXES = ["auth", "h", "i", "s"];
+// Never below `full`: the operator's credentials, the share pages' own routes, and this machine's
+// updates (whose writes refuse the peer listener outright).
+const FULL_PREFIXES = ["auth", "h", "i", "s", "updates"];
 
 const prefixRe = (list: string[]) => new RegExp(`^/api/(${list.map((p) => p.replace(/[-]/g, "\\-")).join("|")})(?:/|$)`);
 const SESSION_RE = prefixRe(SESSION_PREFIXES);

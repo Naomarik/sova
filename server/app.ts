@@ -135,6 +135,7 @@ import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, SERVER_HEADER, unlock, pair, revealToken } from "./auth";
+import { registerUpdatesRoutes } from "./updates/routes";
 
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
@@ -238,6 +239,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/auth/status", (c) => c.json({ ok: true }));
   // The folder this server lists sessions from (its agent dir's), which the empty list names.
   app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
+  // Updates: what runs, the daily check, and the operator's upgrade.
+  registerUpdatesRoutes(app);
 
   app.get("/api/sessions", async (c) => c.json(await listSessions()));
   registerProfileRoutes(app);

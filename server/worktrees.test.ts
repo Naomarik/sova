@@ -216,7 +216,8 @@ test("unchanged board/readiness fanout shares Git facts; only dirty polls surviv
   const first = await Promise.all([ins.get([a, b]), ins.treeStatus(wt), ins.treeStatus(wt)]);
   assert.equal(calls.filter((a) => a[0] === "status").length, 1);
   assert.equal(calls.filter((a) => a[0] === "for-each-ref").length, 1);
-  assert.equal(calls.filter((a) => a[0] === "log").length, 2);
+  // HEAD's time, the subjects past the base, and the saved-session marker scan over the same range.
+  assert.equal(calls.filter((a) => a[0] === "log").length, 3);
   assert.equal(ins.computeCount, 1);
   assert.ok(calls.some((a) => a[0] === "log" && a.at(-1) !== "HEAD"), "logs use resolved OIDs");
   calls.length = 0;
@@ -248,7 +249,7 @@ test("equivalent empty worktree configs share facts without token ping-pong, dis
   const initial = await Promise.all([ins.treeStatus(a), ins.treeStatus(b)]);
   assert.equal(initial[0]?.head, initial[1]?.head);
   assert.equal(calls.filter((args) => args[0] === "for-each-ref").length, 1);
-  assert.equal(calls.filter((args) => args[0] === "log").length, 2);
+  assert.equal(calls.filter((args) => args[0] === "log").length, 3);
   assert.equal(ins.computeCount, 1);
   for (let turn = 0; turn < 3; turn++) {
     calls.length = 0;

@@ -36,7 +36,9 @@
 // node:test has none: --timeout=60000 unless you pass one. PATH gets the real node's directory and
 // mise's tool paths first (shims refuse an untrusted config in a throwaway HOME), and
 // SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT). bun test itself sets TZ=UTC and
-// NODE_ENV=test.
+// NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
+// process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
+// needs another `claude` sets its own PATH.
 // Bun's queue runs longest first: each file's wall time is recorded in its tier's durations file
 // (gitignored, in the worktree itself: a worktree's node_modules is a symlink into the main
 // checkout, which a sandboxed session can't write) and the next run sorts by it; a file never timed
@@ -71,6 +73,7 @@ const GLOBS = [
   "server/org-history/*.test.ts",
   "server/claude-pool/*.test.ts",
   "server/voice/*.test.ts",
+  "server/saved-sessions/*.test.ts",
   "server/usage-helper/*.test.ts",
   "server/memory/*.test.ts",
   "server/harness/**/*.test.ts",
@@ -290,6 +293,19 @@ if (!/^sova_test_[A-Za-z0-9_]+\.slice$/.test(process.env.SOVA_CHAT_SLICE ?? ""))
   });
 }
 
+// No test reaches the installed Claude program, nor a paid model through it: every test process finds
+// scripts/fake-claude.mjs first on its PATH as `claude` (§app.server-runtime/test-tiers). Code under
+// test resolves the Claude program from PATH (claude-code/claude-executable.ts), and the inherited
+// PATH holds the real one (/usr/local/bin, …): an in-process chat's topic-outline summary once ran
+// it from a unit file. A test that needs another `claude` sets its own PATH. Returns the directory.
+function fakeClaudeDir(parent) {
+  const dir = path.join(parent, "fake-claude-bin");
+  fs.mkdirSync(dir, { recursive: true });
+  const q = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
+  fs.writeFileSync(path.join(dir, "claude"), `#!/bin/sh\nexec ${q(process.execPath)} ${q(path.join(ROOT, "scripts", "fake-claude.mjs"))} "$@"\n`, { mode: 0o755 });
+  return dir;
+}
+
 if (runtime === "node") {
   // A pass still running after NODE_PASS_LIMIT_MS is stuck (seen: a file whose tests all reported
   // but whose process never exits, under heavy load): its whole process group is killed and the run
@@ -303,6 +319,7 @@ if (runtime === "node") {
   refuseTmpInRepo("/tmp");
   const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
   process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
+  process.env.PATH = [fakeClaudeDir(tmp), process.env.PATH ?? ""].filter(Boolean).join(path.delimiter);
   process.on("exit", () => {
     sweepDetachedChats(tmp);
     removeTree(tmp);
@@ -403,7 +420,7 @@ function hermeticEnv() {
     HOME: home,
     USERPROFILE: home,
     SOVA_TEST_HOME: root,
-    PATH: [path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
+    PATH: [fakeClaudeDir(root), path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.

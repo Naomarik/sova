@@ -103,7 +103,7 @@ try {
   const panel = dialog.locator(".settings-panel");
   const openTab = async (name, ready) => {
     await tab(name).click();
-    if (ready) await ready.waitFor({ state: "visible", timeout: 20000 });
+    await ready.waitFor({ state: "visible", timeout: 20000 });
   };
   const hostInput = dialog.locator("#mesh-host-label");
   /** The first profile's Edit in Settings → Subagents (the library is seeded on first read). */
@@ -143,18 +143,37 @@ try {
 
   console.log(`settings-footer-save e2e against ${BASE} (agent dir ${AGENT})`);
 
+  // Every tab in the rail, in rail order, each with what its panel shows once it is up (taken from
+  // the panel's own source). The first check holds this list to the rail itself, so a tab added,
+  // renamed or moved fails here instead of going unvisited.
+  const allTabs = [
+    ["General", dialog.locator("#recent-count")],
+    ["Models", dialog.locator(".model-policy-list")],
+    ["Accounts", dialog.locator("#settings-accounts-title")],
+    ["Subagents", subagentEdit],
+    ["Alignment", dialog.locator("#align-review-hint")],
+    ["Profiles", dialog.locator("#profiles-title")],
+    ["Overseer", dialog.locator(".overseer-advanced")],
+    ["Notifications", dialog.locator("#settings-push-title")],
+    ["Decisions", dialog.locator("#decisions-exclusions")],
+    ["Summaries", dialog.locator("#settings-summaries-title")],
+    ["Memory", dialog.locator("#settings-memory-title")],
+    ["Organizations", dialog.locator("#settings-orgs-title")],
+    ["Themes", dialog.getByRole("radiogroup", { name: "Theme", exact: true })],
+    ["Mesh", hostInput],
+    ["Public links", dialog.locator("#settings-public-links-title")],
+    ["Outreach", dialog.locator("#outreach-heading")],
+    ["Voice", dialog.locator("#voice-settings-title")],
+    ["Experimental", panel.getByText("No experimental features right now.", { exact: true })],
+  ];
+
+  await check("the rail's tabs are exactly the tabs this script visits, in the same order", async () => {
+    const rail = (await dialog.getByRole("tab").allTextContents()).map((n) => n.trim());
+    eq(rail, allTabs.map(([name]) => name), "Settings tabs");
+  });
+
   await check("no form has a Save bar: every tab's panel has no Save Changes or Discard Changes", async () => {
-    for (const [name, ready] of [
-      ["General", dialog.locator("#recent-count")],
-      ["Models", dialog.locator(".model-policy-list")],
-      ["Subagents", subagentEdit],
-      ["Overseer", dialog.locator(".overseer-advanced")],
-      ["Decisions", dialog.locator("#decisions-exclusions")],
-      ["Summaries", dialog.locator("#settings-summaries-title")],
-      ["Themes", null],
-      ["Mesh", hostInput],
-      ["Experimental", dialog.locator("#experimental-review-hint")],
-    ]) {
+    for (const [name, ready] of allTabs) {
       await openTab(name, ready);
       if (name === "Summaries") await shot("dialog-summaries");
       for (const b of ["Save Changes", "Discard Changes"])

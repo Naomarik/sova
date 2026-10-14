@@ -64,6 +64,15 @@ environment every runner starts in, and the hermetic dev server.
   (Bun's `os.homedir()` ignores an in-process change), puts the real node and `mise bin-paths` first
   on PATH (shims refuse in a throwaway HOME; tests spawn `node` and `python3`), and sets
   `SOVA_PRICES_FETCH=off`. `bun test` itself runs with TZ=UTC and NODE_ENV=test, unlike `node --test`.
+- **No real Claude.** On both runtimes the runner puts a stand-in `claude` (`scripts/fake-claude.mjs`)
+  first on every test process's PATH: code under test resolves the Claude program from PATH, and the
+  inherited one holds the installed CLI (a paid model). A test that needs another `claude` sets its
+  own PATH. A unit file whose in-process chats load this tree's pi-config extensions links them with
+  `linkPiConfigExtensions` (`server/testing/agent-dir.ts`), never a bare symlink: its
+  `topic-outline.json` runs the outline's check at once after each turn and never calls a summarizer
+  model on its own. A bare link left topic-outline's 3 s debounce, so a file still running 3 s after
+  a turn spawned `claude` (a tier-guard failure only on slow runs). `server/outline-no-claude.test.ts`
+  proves both.
 
 ### The hermetic test environment
 
@@ -97,6 +106,7 @@ environment every runner starts in, and the hermetic dev server.
 | add a test file in a new folder | a glob in `scripts/run-tests.mjs` GLOBS (the boundary test fails otherwise) |
 | a unit test needs a process, port or fetch | split those cases into the `.integration.test.ts` sibling |
 | add a test runner | import `hermetic-env.mjs` first |
+| a unit file's chats need pi-config's extensions | `linkPiConfigExtensions(agentDir)` from `server/testing/agent-dir.ts` |
 | the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers or /test-repo-fence through a spec draft |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land. Landing (the

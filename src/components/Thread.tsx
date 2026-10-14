@@ -24,6 +24,7 @@ import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
 import { profileIconName } from "../lib/profiles";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
+import { ContinuationCard } from "./SavedSessions";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
 import { parseTopicBatch } from "../../shared/topic-message";
@@ -930,6 +931,7 @@ export function HistoryItems(props: {
               <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
                 {(explain) => <ExplainCard explain={explain()} />}
               </Match>
+              <Match when={item.kind === "report" && item.report?.continued}>{(details) => <ContinuationCard details={details()} />}</Match>
               <Match when={item.kind === "report" && item.report?.team}>
                 {(team) => <TeamMessageCard report={item.report!} team={team()} time={item.at} attachments={item.attachments} />}
               </Match>

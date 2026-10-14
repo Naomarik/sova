@@ -389,7 +389,7 @@ comments): `yes`, `no`, or `partial` with what is missing.
 
 | Component | Variants | Sizes | Key rule | Ported |
 |---|---|---|---|---|
-| Button | primary, secondary, destructive, ghost, icon | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. | partial — no `.button-lg` |
+| Button | primary, secondary, destructive, ghost, icon, split | sm 36 · md 44 · lg 52 | One primary per view. Destructive outlined, never filled. A split joins an action and its ▾ menu. | partial — no `.button-lg` |
 | Chip | success, warn, error, info, accent, solid, count | one | Status is round. A dot *and* the word — never hue alone. | yes |
 | Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. | partial — no `.field-row`; no `.input-invalid` rule (invalid is styled through `.input[aria-invalid="true"]`, not the class) |
 | Select | select, combobox | md 44 | Options are 44px targets too. | partial — no combobox (`.combobox-list`, `.combobox-option`) |
@@ -454,7 +454,7 @@ something this table lacks, add a variant here and in `fold-ai-dev.css` first.
 
 | Component | Selectors |
 |---|---|
-| Button | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-lg` `.button-icon` `.button-row` · demo only: `.is-hover` `.is-focus` `.is-active` `.is-disabled` |
+| Button | `.button` `.button-primary` `.button-destructive` `.button-ghost` `.button-sm` `.button-lg` `.button-icon` `.button-split` `.button-row` · demo only: `.is-hover` `.is-focus` `.is-active` `.is-disabled` |
 | Chip | `.chip` `.chip-dot` `.chip-success` `.chip-warn` `.chip-error` `.chip-info` `.chip-accent` `.chip-solid` `.chip-count` |
 | Input | `.field` `.field-row` `.field-label` `.field-hint` `.field-error` `.input` `.textarea` `.input-mono` `.input-invalid` · demo only: `.is-hover` `.is-focus` `.is-disabled` |
 | Select | `.select` `.select-wrap` `.select-caret` `.combobox-list` `.combobox-option` |

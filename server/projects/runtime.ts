@@ -4,7 +4,8 @@ import type { ProjectRuntimeView, RuntimeOrphan, RuntimePlaybook, RuntimePlayboo
 import { buildSessionPath, readBuild, probeBuild, withWorktreePath } from "../build-loadout";
 import type { Envelope } from "../org-envelope";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "../org-engine";
-import { OrgError } from "../org-error";
+import type { SavedSessionsInHistory } from "../../shared/session-bundle";
+import { OrgError, SavedSessionsMergeRefusal } from "../org-error";
 import { branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
 import { deployNotes } from "../project-services/deploy";
@@ -388,23 +389,25 @@ export interface MergeRunOutcome {
   view: ProjectRuntimeView;
   merged: boolean;
   refused?: string;
+  /** A refusal over saved sessions in the branch's history: what was found (Merge Anyway retries with the override). */
+  savedSessions?: SavedSessionsInHistory;
 }
 
 /**
  * Merge Branch on a proposed run (§app.project-runtime/merge): refused when `hash` is no longer the one its branch
  * proposes, then Merge Branch on its session with every refusal of its own.
  */
-export async function mergeRun(projectId: string, hash: string): Promise<MergeRunOutcome> {
+export async function mergeRun(projectId: string, hash: string, opts: { allowSavedSessions?: boolean } = {}): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
-    await mergeCodingWorktree(projectId, review.sessionId);
+    await mergeCodingWorktree(projectId, review.sessionId, opts);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;
-    return { view: await readRuntime(projectId), merged: false, refused: err.message };
+    return { view: await readRuntime(projectId), merged: false, refused: err.message, ...(err instanceof SavedSessionsMergeRefusal ? { savedSessions: err.savedSessions } : {}) };
   }
   return { view: await readRuntime(projectId), merged: true };
 }

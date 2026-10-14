@@ -92,6 +92,29 @@
         "at": "2026-10-13T05:04Z"
       }
     },
+    "§app.chat-processes/extension-loading": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "pi-config/extensions/provider-limits/index.ts",
+        "server/harness/pi/own-code.ts",
+        "server/harness/pi/extension-deps.test.ts",
+        "server/harness/pi/extension-deps.integration.test.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/contract.test.ts"
+      ],
+      "requires": [
+        "§app.chat-processes/code-generations"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:53Z"
+      }
+    },
     "§app.chat-processes/idle-stop": {
       "kind": "behavior",
       "authority": "accepted",
@@ -100,7 +123,13 @@
         "server/chat-runtime/supervisor.test.ts",
         "server/chat-runtime/host.ts",
         "scripts/stop-chats.ts",
-        "server/chat-runtime/host.test.ts"
+        "server/chat-runtime/host.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts",
+        "server/chat-handle-remote.ts",
+        "scripts/chat-runtime-trial/run.mjs",
+        "server/chat-runtime/trial-crash-idle.integration.test.ts",
+        "scripts/e2e/quiet-close.mjs"
       ],
       "requires": [
         "§app/chat-processes",
@@ -108,10 +137,32 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T15:33Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:32Z"
       },
       "evidence": "verified"
+    },
+    "§app.chat-processes/no-terminal-drawing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/harness/pi/headless.ts",
+        "server/harness/pi/headless-files.json",
+        "server/harness/pi/headless.test.ts",
+        "server/harness/pi/headless.integration.test.ts",
+        "server/chat-runtime/main.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/contract.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:53Z"
+      }
     },
     "§app.chat-processes/one-writer": {
       "kind": "behavior",
@@ -231,15 +282,18 @@
         "server/chat-host.ts",
         "pi-config/extensions/claude-code/provider/children.ts",
         "server/chat-runtime/generations.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/chat-runtime/gc-timer.ts",
+        "server/chat-runtime/gc-timer.test.ts",
+        "server/chat-runtime/main.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§app.claude-code-provider/continuity"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:51Z"
+        "by": "naomarik",
+        "at": "2026-10-14T09:38Z"
       }
     },
     "§app.chat-processes/survives-restart": {
@@ -1280,8 +1334,8 @@
         "src/design/base.css"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T15:33Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:32Z"
       }
     },
     "§chat.composer/memory-status": {
@@ -1727,12 +1781,11 @@
         "server/app.ts",
         "pi-config/extensions/mode/index.ts",
         "src/components/Thread.tsx",
-        "server/project-mode-menu.ts",
-        "server/mode-state.ts"
+        "server/quiet-close-actions.test.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:42Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:46Z"
       }
     },
     "§chat.mode-menu/memory-panel": {
@@ -1764,66 +1817,7 @@
         "src/lib/mode-menu.ts",
         "src/lib/mode-menu.test.ts",
         "server/chat-manager.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T09:48Z"
-      }
-    },
-    "§chat.mode-menu/project-modes": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.mode-menu/how-a-switch-reaches-the-chat",
-        "§chat.mode-menu/minor-toggle-keeps-prompt",
-        "§chat.mode-menu/workers",
-        "§chat.mode-menu/terminal",
-        "§chat.profiles/projects",
-        "§chat.playbooks/where-playbooks-come-from",
-        "§app.overseer/tools",
-        "§chat.sandbox/states",
-        "§chat.worktrees/worktree-config"
-      ],
-      "authority": "accepted",
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T09:48Z"
-      },
-      "code": [
-        "pi-config/extensions/mode/project-tools.ts",
-        "pi-config/extensions/mode/project-tools-approval.ts",
-        "server/project-mode-approvals.ts",
-        "pi-config/extensions/mode/project-tools-worker.ts",
-        "pi-config/extensions/subagents/index.ts",
-        "server/project-mode-menu.ts",
-        "server/mode-state.ts",
-        "server/chat-manager.ts",
-        "server/app.ts",
-        "shared/protocol.ts",
-        "shared/chat-runtime.ts",
-        "server/project-mode-menu.test.ts",
-        "server/project-modes-chat.test.ts",
-        "server/transcript.ts",
-        "server/overseer-tools.ts",
-        "shared/project-modes.ts",
-        "server/project-mode-approvals.test.ts",
-        "src/lib/session-tools.ts",
-        "src/components/ModeMenu.tsx",
-        "src/lib/mode-menu.ts",
-        "src/lib/mode-menu.test.ts",
-        "pi-config/extensions/mode/project-format.ts",
-        "pi-config/extensions/mode/project-discovery.ts",
-        "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/mode/prompt.ts",
-        "pi-config/extensions/mode/state.ts",
-        "pi-config/extensions/mode/palette.ts",
-        "pi-config/extensions/mode/events.ts",
-        "pi-config/extensions/mode/project-modes.test.ts",
-        "pi-config/extensions/mode/project-mode-extension.test.ts",
-        "pi-config/extensions/mode/project-tools.test.ts",
-        "pi-config/extensions/subagents/index.test.ts",
-        "pi-config/extensions/mode/README.md"
-      ],
-      "evidence": "verified"
+      ]
     },
     "§chat.mode-menu/rejected": {
       "kind": "note",
@@ -1840,11 +1834,7 @@
         "src/components/ModeMenu.tsx"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
-      }
+      "evidence": "reviewed"
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
@@ -2617,11 +2607,19 @@
         "server/tail-hello.integration.test.ts",
         "src/lib/unacked-sends.ts",
         "src/lib/unacked-sends.test.ts",
-        "scripts/e2e/instant-open.mjs"
+        "scripts/e2e/instant-open.mjs",
+        "server/app.ts",
+        "server/sessions-index.ts",
+        "server/chat-handle.ts",
+        "server/chat-host.ts",
+        "server/archive-quiet-close.test.ts",
+        "server/quiet-close-actions.test.ts",
+        "server/chat-host.test.ts",
+        "scripts/e2e/quiet-close.mjs"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T18:51Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:32Z"
       },
       "evidence": "verified"
     },
@@ -2819,11 +2817,7 @@
         "server/chat-manager.ts",
         "server/project-overseer.ts",
         "server/mode-state.test.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
-      }
+      ]
     },
     "§chat/model-menu": {
       "kind": "surface",
@@ -3666,8 +3660,14 @@
         "src/lib/sandbox.ts",
         "server/overseer-tools.ts",
         "server/sandbox-state.ts",
-        "pi-config/extensions/subagents/index.ts"
-      ]
+        "pi-config/extensions/subagents/index.ts",
+        "server/app.ts",
+        "server/quiet-close-actions.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T13:46Z"
+      }
     },
     "§app.sessions-extension/agent-dir": {
       "kind": "behavior",
@@ -3765,11 +3765,12 @@
         "server/worker-restore.ts",
         "shared/protocol.ts",
         "pi-config/extensions/subagents/claude-workers.ts",
-        "pi-config/extensions/subagents/claude-workers.test.ts"
+        "pi-config/extensions/subagents/claude-workers.test.ts",
+        "server/quiet-close-actions.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-14T13:46Z"
       }
     },
     "§app.worker-restore/transcript-protocol": {
@@ -4906,11 +4907,7 @@
         "§chat.model-menu/saved-default",
         "§mesh.links/by-id",
         "§mesh.peers/listener"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
-      }
+      ]
     },
     "§app.settings-dialog/overseer": {
       "kind": "behavior",
@@ -7887,13 +7884,8 @@
         "pi-config/extensions/subagents/worker-transcript.test.ts",
         "pi-config/extensions/sessions/test.mjs",
         "server/insights-workers.test.ts",
-        "server/insights-restored.test.ts",
-        "pi-config/extensions/mode/project-tools-worker.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
-      }
+        "server/insights-restored.test.ts"
+      ]
     },
     "§app.organizations/about": {
       "kind": "behavior",
@@ -8947,11 +8939,7 @@
         "§chat.mode-menu/prompt-holds-across-turn-starters",
         "§chat.mode-menu/how-a-switch-reaches-the-chat",
         "§app.worker-restore/claude-bridge-restart"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
-      }
+      ]
     },
     "§app.organizations/archive": {
       "kind": "behavior",
@@ -9499,7 +9487,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T02:39Z"
+        "at": "2026-10-14T08:11Z"
       }
     },
     "§app.resource-monitor/entry-button": {
@@ -9535,26 +9523,31 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-14T08:11Z"
       }
     },
     "§app.resource-monitor/platform-fallback": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.resource-monitor/sampling-and-history"
       ],
       "code": [
         "server/resource-monitor.ts",
         "server/resource-monitor-proc.ts",
-        "src/lib/monitor-view.ts"
-      ]
+        "src/lib/monitor-view.ts",
+        "server/resource-monitor.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:11Z"
+      }
     },
     "§app.resource-monitor/sampling-and-history": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [],
       "code": [
         "server/resource-monitor.ts",
@@ -9567,7 +9560,11 @@
         "server/resource-monitor-history.test.ts",
         "server/resource-monitor.test.ts",
         "server/resource-monitor.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:11Z"
+      }
     },
     "§app.resource-monitor/screen": {
       "kind": "behavior",
@@ -9587,7 +9584,11 @@
         "src/lib/api.ts",
         "server/session-titles.ts",
         "server/sessions-index.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:11Z"
+      }
     },
     "§app/resource-monitor": {
       "kind": "surface",
@@ -16657,7 +16658,8 @@
         "server/harness/pi/golden/fixtures/make-synthetic.ts",
         "server/harness/pi/golden/fixtures/large.ts",
         "scripts/harness-golden.mjs",
-        "scripts/harness-golden/faux-record.mjs"
+        "scripts/harness-golden/faux-record.mjs",
+        "server/harness/pi/reader-retention.test.ts"
       ],
       "requires": [
         "§app.harness/boundary"
@@ -18193,11 +18195,7 @@
         "pi-config/extensions/mode/prompt.ts",
         "pi-config/extensions/mode/tests/smoke.mjs",
         "pi-config/extensions/mode/index.test.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
-      }
+      ]
     },
     "§site.docs/align": {
       "kind": "behavior",
@@ -18327,7 +18325,6 @@
     "§site.docs/index": {
       "kind": "behavior",
       "requires": [
-        "§chat.mode-menu/project-modes",
         "§chat/mode-menu",
         "§design.copy-deck/mode-menu",
         "§chat/alignment",
@@ -18340,11 +18337,7 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/index.md"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
-      }
+      ]
     },
     "§site.docs/install": {
       "kind": "behavior",
@@ -18389,18 +18382,13 @@
         "§app.overseer/quick-actions",
         "§app.project-overseer/coding-mode",
         "§chat/memory",
-        "§chat.mode-menu/memory-panel",
-        "§chat.mode-menu/project-modes"
+        "§chat.mode-menu/memory-panel"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/modes/index.md"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
-      }
+      ]
     },
     "§site.docs/needs-you": {
       "kind": "behavior",
@@ -18455,7 +18443,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T12:38Z"
+        "at": "2026-10-10T10:39Z"
       }
     },
     "§site.docs/phone": {
@@ -18484,7 +18472,6 @@
     "§site.docs/playbooks-and-schedules": {
       "kind": "behavior",
       "requires": [
-        "§chat.mode-menu/project-modes",
         "§chat/playbooks",
         "§chat/schedules",
         "§chat.schedules/header",
@@ -18503,28 +18490,8 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T12:38Z"
+        "at": "2026-10-10T10:39Z"
       }
-    },
-    "§site.docs/project-modes": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.mode-menu/project-modes",
-        "§chat.mode-menu/menu",
-        "§chat.mode-menu/states",
-        "§chat.mode-menu/workers",
-        "§chat.mode-menu/terminal",
-        "§app.overseer/tools"
-      ],
-      "authority": "accepted",
-      "code": [
-        "site/src/content/docs/modes/project-modes.md"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
-      },
-      "evidence": "reviewed"
     },
     "§site.docs/spec-mode": {
       "kind": "behavior",
@@ -18552,7 +18519,6 @@
     "§site.docs/subagent-profiles": {
       "kind": "behavior",
       "requires": [
-        "§chat.mode-menu/project-modes",
         "§chat/subagent-profiles",
         "§chat.subagent-profiles/file",
         "§chat.subagent-profiles/off",
@@ -18570,11 +18536,7 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/subagent-profiles.md"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
-      }
+      ]
     },
     "§site.docs/vis": {
       "kind": "behavior",
@@ -18593,7 +18555,6 @@
     "§site.docs/worktrees-and-changes": {
       "kind": "behavior",
       "requires": [
-        "§chat.mode-menu/project-modes",
         "§chat/worktrees",
         "§chat.worktrees/entry",
         "§chat.worktrees/tool",
@@ -18621,11 +18582,7 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/worktrees-and-changes.md"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
-      }
+      ]
     },
     "§site/docs": {
       "kind": "note",

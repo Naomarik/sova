@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type ChatReply, noAnswer, type ServerToolCall, unsentRefusal } from "../shared/chat-runtime";
 import type { ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
-import type { ChatClientMessage } from "../shared/protocol";
+import type { ChatClientMessage, ChatServerMessage } from "../shared/protocol";
 import {
   answerChatAsk,
   type ChatClient,
@@ -372,12 +372,21 @@ export class RemoteChatHandle extends ChatHandle {
   /** Every pane is told `message` and its socket closed, so it reconnects (a death, or a chat this
       server can no longer talk to). The handle is done. */
   endPanes(message: string, code: "internal" | "reloaded" = "internal"): void {
+    this.closePanes({ type: "error", code, message }, code === "internal" ? "chat process stopped" : "chat closed");
+  }
+  /** The chat closed for being quiet (§app.chat-processes/idle-stop): each pane is told so, then its
+      socket closes. A pane that knows the word keeps what it shows and doesn't reconnect; one that
+      doesn't reconnects on the close, as it always did. The handle is done. */
+  closePanesQuietly(): void {
+    this.closePanes({ type: "closed", reason: "idle" }, "chat closed");
+  }
+  private closePanes(last: ChatServerMessage, reason: string): void {
     this.ended = true;
     this.reloadingNow = false;
     this.failPending();
     for (const c of this.clients.values()) {
-      c.send({ type: "error", code, message });
-      c.close?.(4500, code === "internal" ? "chat process stopped" : "chat closed");
+      c.send(last);
+      c.close?.(4500, reason);
     }
     this.clients.clear();
     this.ids.clear();

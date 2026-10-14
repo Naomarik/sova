@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
-import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type FrameOf } from "../shared/chat-runtime-wire";
+import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
 import { sovaToken } from "./auth";
 import {
   acquireChatHandle,
@@ -202,9 +202,9 @@ export class ChatHostRouter {
         log(`${id}: did not start (${d.detail ?? d.cause})`);
         this.forget(d.sessionPath);
       },
-      onStopped: (id) => {
+      onStopped: (id, cause) => {
         const path = this.paths.get(id);
-        if (path) this.forget(path);
+        if (path) this.forget(path, cause);
       },
       drain: (id, reason) => this.handleOf(id)?.drain(reason) ?? Promise.resolve({ ok: false }),
       reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild() ?? Promise.resolve("none" as const),
@@ -266,10 +266,13 @@ export class ChatHostRouter {
     return path ? this.remotes.get(path) : undefined;
   }
 
-  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand). */
-  private forget(path: string): void {
+  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand),
+      except after an idle stop: they are told the chat closed, and keep what they show without
+      reconnecting until they need it (§chat.transcript/instant-open). */
+  private forget(path: string, cause?: ExitCause): void {
     const h = this.remotes.get(path);
-    h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
+    if (cause === "idle") h?.closePanesQuietly();
+    else h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) {
       this.paths.delete(h.mirror.sessionId);
       this.workers.parentUnlinked(h);
@@ -284,7 +287,8 @@ export class ChatHostRouter {
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;
-      sup.noteIdle(m.sessionId, m.quiet.quiet && m.quiet.clients === 0, m.quiet.since);
+      // Quiet is enough: an open tab doesn't keep a chat running (§app.chat-processes/idle-stop).
+      sup.noteIdle(m.sessionId, m.quiet.quiet, m.quiet.since);
       sup.noteClaude(m.sessionId, m.claude);
       const w = this.workerPaths.has(h.path) ? this.workers.record(m.sessionId) : undefined;
       setRemoteHosted(h.path, {
@@ -307,7 +311,7 @@ export class ChatHostRouter {
       const id = h.mirror.sessionId;
       this.sup.expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.
-      if (cause !== "reload") this.forget(h.path);
+      if (cause !== "reload") this.forget(h.path, cause);
       if (this.workers.has(id)) this.workers.onExit(id, cause);
     },
     linkEnd: (h, end) => {

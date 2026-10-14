@@ -821,7 +821,7 @@ export class ChatSupervisor {
     return recs;
   }
 
-  /** Chat `chatId`'s mirror: idle (quiet, nobody attached) since `since`, or not. */
+  /** Chat `chatId`'s mirror: idle (quiet, whether or not a tab has it open) since `since`, or not. */
   noteIdle(chatId: string, idle: boolean, since?: number): void {
     const t = this.chats.get(chatId);
     if (!t) return;
@@ -868,7 +868,7 @@ export class ChatSupervisor {
   }
 
   /**
-   * Close an idle chat through its drain: the chat re-checks that it is quiet with nobody attached.
+   * Close an idle chat through its drain: the chat re-checks that it is quiet (an open tab doesn't count).
    * A refusal restarts its idle clock; an accepted drain is waited for 30 s, then the unit is stopped.
    */
   private async idleStop(chatId: string, t: Tracked): Promise<void> {

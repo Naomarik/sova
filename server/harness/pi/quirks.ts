@@ -399,6 +399,20 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds",
   },
   {
+    id: "P27",
+    name: "headless-standins",
+    kind: "monkey-patch",
+    relies:
+      "A chat process answers each module STANDIN_FILTER matches (pi-tui's screen, terminal and components, marked, pi's modes/interactive/ but its theme, pi's syntax highlighter) with inert stand-ins of the same export names. pi-tui keeps its text, key and colour helpers in modules apart from its drawing ones; pi's theme takes only the highlighter from them; outside its terminal mode pi takes a drawing module only in terminal renderers, its CLI and its entry's re-exports, none of which a Sova chat calls.",
+    pi: ["@earendil-works/pi-tui dist/", "dist/modes/interactive/", "dist/utils/syntax-highlight.js"],
+    where: [
+      { file: "server/harness/pi/headless.ts", symbol: "installHeadless" },
+      { file: "server/harness/pi/headless.ts", symbol: "standInSource" },
+    ],
+    canary: "P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry",
+    retireWhen: "pi ships an entry point without its terminal drawing code",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

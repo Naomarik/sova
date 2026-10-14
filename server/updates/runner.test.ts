@@ -154,7 +154,7 @@ test("installed copy: an installer that fails before promoting changes nothing a
   const w = world(installer({ fail: "before" }), [CO]);
   const job = await runUpgrade(basePlan(), w.deps);
   assert.equal(job.state, "failed");
-  assert.equal(job.detail, "The installer failed: pnpm install failed; nothing was changed. Nothing changed: v0.3.2 still runs. See the log.");
+  assert.equal(job.detail, "The installer failed: pnpm install failed. Nothing changed: v0.3.2 still runs. See the log.");
   assert.ok(!w.calls.some((c) => c.startsWith("systemctl") || c.startsWith("mv ")));
 });
 

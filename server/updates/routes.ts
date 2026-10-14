@@ -34,8 +34,12 @@ export function operatorRefusal(c: Context): string | null {
 let listen = { port: Number(process.env.PORT) || 4800, host: process.env.HOST || "127.0.0.1" };
 let manager: UpdatesManager | null = null;
 
-/** The environment the job's programs get: what install.sh, git, pnpm and systemctl need. */
-const JOB_ENV = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "SHELL", "TMPDIR", "PI_CODING_AGENT_DIR", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "MISE_DATA_DIR", "SOVA_UPDATES_REPO_URL", "SOVA_RUNTIME", "SOVA_BUN", "SOVA_NODE"];
+/**
+ * The environment the job's programs get: what install.sh, git, pnpm and systemctl need, and what
+ * the launcher reads (PORT is the plan's; HOST too, so a copy with no service that the job starts
+ * again listens where it listened before).
+ */
+const JOB_ENV = ["HOST", "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "SHELL", "TMPDIR", "PI_CODING_AGENT_DIR", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "MISE_DATA_DIR", "SOVA_UPDATES_REPO_URL", "SOVA_RUNTIME", "SOVA_BUN", "SOVA_NODE"];
 
 /** Start the job outside this server's service: a transient user unit, else a detached process. */
 async function launchJob(plan: UpgradePlan): Promise<string | null> {
@@ -79,6 +83,11 @@ async function launchJob(plan: UpgradePlan): Promise<string | null> {
   });
 }
 
+/** The part of the server's environment the job gets (JOB_ENV). */
+export function jobEnvOf(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(JOB_ENV.flatMap((k) => (env[k] ? [[k, env[k]!]] : [])));
+}
+
 let installCache: { at: number; info: Promise<InstallInfo> } | null = null;
 
 /** This server's updates, built once with the real git, clock and launcher. */
@@ -107,7 +116,7 @@ export function updates(): UpdatesManager {
     },
     pid: process.pid,
     uid: process.getuid?.() ?? 0,
-    jobEnv: () => Object.fromEntries(JOB_ENV.flatMap((k) => (process.env[k] ? [[k, process.env[k]!]] : []))),
+    jobEnv: () => jobEnvOf(process.env),
     serverLog: join(stateRoot(), "app-server.log"),
     log: (line) => console.log(line),
   });

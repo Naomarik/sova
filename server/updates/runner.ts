@@ -80,7 +80,9 @@ const lastLine = (out: string): string =>
     .filter(Boolean)
     .slice(-1)[0]
     ?.replace(/^(sova install|fatal|error):\s*/i, "")
-    .replace(/\.$/, "") ?? "no output";
+    .replace(/\.$/, "")
+    // install.sh ends its refusals with "; nothing was changed": the job's own sentence says so once.
+    .replace(/[;,]\s*nothing was changed$/i, "") ?? "no output";
 
 export async function runUpgrade(plan: UpgradePlan, deps: RunnerDeps): Promise<UpdateJob> {
   const job: UpdateJob = {

@@ -6,7 +6,7 @@ import { OVERSEER_SENDER_HEADER, senderSecret } from "../overseer-sender";
 import { scratchRoot } from "../test-scratch";
 import { gitIn } from "./git";
 import { UpdatesManager } from "./manager";
-import { OPERATOR_ONLY, registerUpdatesRoutes, setUpdatesForTest } from "./routes";
+import { jobEnvOf, OPERATOR_ONLY, registerUpdatesRoutes, setUpdatesForTest } from "./routes";
 
 /**
  * Only the operator acts on updates: a same-origin browser request on the
@@ -92,4 +92,10 @@ test("the operator's browser: settings save; a check with checks off says so; an
   assert.equal(apply.status, 409, "a check-only copy can't upgrade");
   assert.match(((await apply.json()) as { error: string }).error, /doesn't run from a git checkout/);
   assert.equal(calls.length, 0);
+});
+
+test("the job keeps the server's HOST and the tools' environment, and nothing else", () => {
+  // A copy with no service is started again by the job: it must listen where it did (HOST), not on the default.
+  const env = jobEnvOf({ HOST: "0.0.0.0", PATH: "/usr/bin", HOME: "/home/u", SOVA_UPDATES_REPO_URL: "file:///standin", ANTHROPIC_API_KEY: "secret", SOVA_CHAT_UNIT: "x" });
+  assert.deepEqual(env, { HOST: "0.0.0.0", PATH: "/usr/bin", HOME: "/home/u", SOVA_UPDATES_REPO_URL: "file:///standin" });
 });

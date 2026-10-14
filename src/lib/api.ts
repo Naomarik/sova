@@ -87,6 +87,25 @@ import type {
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import { WIRE_PARAM } from "../../shared/protocol";
+import type {
+  ContinueRequest,
+  ContinueResponse,
+  PruneResponse,
+  PurgeFromMainResponse,
+  RemoveFromMainRequest,
+  RemoveFromMainResponse,
+  SavedFetchResponse,
+  SavedForSessionResponse,
+  SavedListResponse,
+  SavedOnMainResponse,
+  SavedPreviewResponse,
+  SavePrepareRequest,
+  SavePrepareResponse,
+  SaveRequest,
+  SaveResponse,
+  WorktreesRequest,
+  WorktreesResponse,
+} from "../../shared/session-bundle";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -1379,7 +1398,10 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
-export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
+/** `allowSavedSessions`: Merge Anyway, the answer to a refusal whose history carries saved sessions
+    (409 with `savedSessions`, §chat.saved-sessions/merge-guard). */
+export const mergeProjectRun = (projectId: string, hash: string, allowSavedSessions = false) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash, ...(allowSavedSessions ? { allowSavedSessions: true } : {}) }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
@@ -1468,3 +1490,48 @@ export const getProjectPreviews = (projectId: string) => request<PreviewList>(`$
 export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));
+
+// ---- saved sessions (§chat/saved-sessions) -------------------------------------------------------------
+
+/** A saved-sessions route answers a refusal as `{ ok: false, reason, message }`, as a 200 or an error
+    status: either way the caller gets the body, so a refusal is handled where the contract says. */
+async function refusable<T extends { ok: boolean }>(url: string, init?: RequestInit): Promise<T> {
+  try {
+    return await request<T>(url, init);
+  } catch (err) {
+    const body = err instanceof ApiError ? (err.body as { ok?: unknown } | undefined) : undefined;
+    if (body && body.ok === false) return body as T;
+    throw err;
+  }
+}
+
+export const prepareSave = (path: string) => request<SavePrepareResponse>("/api/saved-sessions/prepare", jsonInit("POST", { path } satisfies SavePrepareRequest));
+/** A raw `<img src>`, so it routes itself: `path` (the session being saved) sends it to the peer that
+    holds that session (§mesh.remote-sessions/host-scope). */
+export const savePreparedImageUrl = (prepareId: string, id: string, path: string) =>
+  routeUrl(`/api/saved-sessions/prepare/${encodeURIComponent(prepareId)}/image/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`);
+export const saveSession = (body: SaveRequest) => refusable<SaveResponse>("/api/saved-sessions/save", jsonInit("POST", body));
+export const savedForSession = (path: string) =>
+  request<SavedForSessionResponse>(`/api/saved-sessions/for-session?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+// The cwd routes also name the blank session's `path`: the server ignores it, and mesh routing reads it, so
+// a peer's session asks that peer (§mesh.remote-sessions/host-scope).
+const pathQ = (path: string) => `&path=${encodeURIComponent(path)}`;
+export const listSavedSessions = (cwd: string, path: string) =>
+  request<SavedListResponse>(`/api/saved-sessions?cwd=${encodeURIComponent(cwd)}${pathQ(path)}`, { cache: "no-store" });
+export const fetchSavedSessions = (cwd: string, path: string) => refusable<SavedFetchResponse>("/api/saved-sessions/fetch", jsonInit("POST", { cwd, path }));
+/** `path`: the blank session Continue would load into, so the model it names is that session's pick. */
+export const previewSavedSession = (cwd: string, bundleId: string, path?: string) =>
+  request<SavedPreviewResponse>(
+    `/api/saved-sessions/preview?cwd=${encodeURIComponent(cwd)}&bundleId=${encodeURIComponent(bundleId)}${path ? `&path=${encodeURIComponent(path)}` : ""}`,
+    { cache: "no-store" },
+  );
+export const continueSavedSession = (body: ContinueRequest) => refusable<ContinueResponse>("/api/saved-sessions/continue", jsonInit("POST", body));
+export const setUpSavedWorktrees = (body: WorktreesRequest) => request<WorktreesResponse>("/api/saved-sessions/worktrees", jsonInit("POST", body));
+export const savedOnMain = (cwd: string, path: string) =>
+  request<SavedOnMainResponse>(`/api/saved-sessions/on-main?cwd=${encodeURIComponent(cwd)}${pathQ(path)}`, { cache: "no-store" });
+export const removeSavedFromMain = (body: RemoveFromMainRequest, path: string) =>
+  refusable<RemoveFromMainResponse>("/api/saved-sessions/remove-from-main", jsonInit("POST", { ...body, path }));
+export const purgeSavedFromMain = (body: RemoveFromMainRequest, path: string) =>
+  refusable<PurgeFromMainResponse>("/api/saved-sessions/purge-from-main", jsonInit("POST", { ...body, path }));
+export const pruneSavedSessions = (cwd: string, branch: string, path: string) =>
+  refusable<PruneResponse>("/api/saved-sessions/prune", jsonInit("POST", { cwd, branch, path }));

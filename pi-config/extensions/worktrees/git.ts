@@ -6,6 +6,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { SavedSessionsInHistoryError, savedSessionsToMerge } from "./saved-sessions.ts";
 import { canonical, type TrackedWorktree, type WorktreeMergeDetails } from "./state.ts";
 
 export interface GitResult {
@@ -214,6 +215,8 @@ export async function mergedReviewBase(git: Git, cwd: string, head: string, targ
 export interface MergeRequest {
 	tree: Pick<TrackedWorktree, "path" | "branch">;
 	target: string;
+	/** Merge even when the history it brings in carries saved sessions (the user's explicit override). */
+	allowSavedSessions?: boolean;
 }
 
 /**
@@ -221,7 +224,8 @@ export interface MergeRequest {
  * no tracked changes and the merge runs there (fast-forward when possible, else a merge commit; a
  * conflict is aborted, leaving everything as it was). Where it is not checked out, only a
  * fast-forward is done (update-ref, guarded by the old value). `before` and `branchSha` are the target's old tip and
- * the branch tip merged.
+ * the branch tip merged. A branch whose history (since the merge base) adds, changes or removes a saved
+ * session's card is refused (SavedSessionsInHistoryError) unless `allowSavedSessions`.
  */
 export async function mergeWorktree(git: Git, req: MergeRequest): Promise<Omit<WorktreeMergeDetails, "version" | "how"> & { before: string; branchSha: string }> {
 	const cwd = req.tree.path;
@@ -232,6 +236,12 @@ export async function mergeWorktree(git: Git, req: MergeRequest): Promise<Omit<W
 	const before = await refSha(git, req.target, cwd);
 	if (!before) throw new GitError(`Target branch ${req.target} does not exist`);
 	if ((await git(["merge-base", "--is-ancestor", branchSha, before], cwd)).code === 0) throw new GitError(`${req.tree.branch} is already merged into ${req.target} (nothing to merge)`);
+	// Every commit the merge would bring in, scanned for a saved session's card (by its marker): a
+	// conversation committed and deleted on the branch would still reach the target's history.
+	if (!req.allowSavedSessions) {
+		const found = await savedSessionsToMerge(git, cwd, branchSha, before);
+		if (found.length) throw new SavedSessionsInHistoryError(req.tree.branch, found);
+	}
 	const checkout = (await listWorktrees(git, cwd)).find((w) => w.branch === req.target);
 	if (checkout) {
 		const dirty = await must(git, ["status", "--porcelain", "--untracked-files=no"], checkout.path);

@@ -12,9 +12,13 @@
  * registered tool: its bridge lists pi's active tools each turn and restarts its CLI child when that
  * set changes.
  *
- * The command (project-format.ts): argv[0] is a program on PATH (bare name) or `./path` in the mode
- * folder; every element starting `./` is a mode-folder file, passed as its absolute path. The runner
- * also refuses a `./` file whose real path leaves the folder (a symlink out). The program runs in the
+ * The command (project-format.ts): argv[0] is a program on PATH (a bare name: the machine's own
+ * program, which approval doesn't cover) or `./path` in the mode folder. Any element holding a `/`
+ * must be a `./` mode-folder path, passed as its absolute path; the runner refuses any other (a
+ * `scripts/x.js`, an absolute path, a `../`) and a `./` file whose real path leaves the folder (a
+ * symlink out). What a call may run is approved as the whole mode folder (project-discovery.ts
+ * `toolsHashOf`: the declared tools plus every file in the folder but MODE.md), so a helper a tool
+ * sources or imports is covered as much as the program it names. The program runs in the
  * session's cwd, in its own process group, with SOVA_MODE_ID, SOVA_MODE_DIR, SOVA_PROJECT_ROOT and
  * SOVA_TOOL_NAME set.
  */
@@ -47,7 +51,7 @@ export function resolveCommand(dir: string, command: readonly string[]): { argv:
 	const argv: string[] = [];
 	for (const [i, part] of command.entries()) {
 		if (!part.startsWith("./")) {
-			if (i === 0 && part.includes("/")) return { error: `"${part}" must be a program name or a ./path in the mode folder` };
+			if (part.includes("/")) return { error: i === 0 ? `"${part}" must be a program name or a ./path in the mode folder` : `"${part}" holds a / but is not a ./path in the mode folder` };
 			argv.push(part);
 			continue;
 		}
@@ -297,7 +301,7 @@ export interface ProjectToolOptions {
 	maxOutputBytes?: number;
 }
 
-/** The text of a call refused because a tool's program (or declaration) changed since approval (t18). */
+/** The text of a call refused because the mode's tools or any file in its folder (MODE.md aside) changed since approval (t18). */
 export function changedText(toolName: string, modeId: string): string {
 	return `${toolName} wasn't run: its program changed since ${modeId} was approved. Ask the user to approve ${modeId} again in the mode menu.`;
 }
@@ -314,8 +318,9 @@ export function projectRootOfModeDir(dir: string): string {
 
 /**
  * Why a call of one of this mode's tools must not run now, or undefined. In order: the mode is off;
- * the sandbox is on; the declared tools and the programs on disk no longer hash to the snapshot's
- * `toolsHash`, which is what was approved when the chat turned the mode on (t18).
+ * the sandbox is on; the declared tools and the mode folder's files on disk (every one but MODE.md)
+ * no longer hash to the snapshot's `toolsHash`, which is what was approved when the chat turned the
+ * mode on (t18). A reference file's edit refuses too: the whole folder is what was approved.
  */
 export function refuseCall(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash">, toolName: string, opts: Pick<ProjectToolOptions, "sandboxOn" | "isOn">): string | undefined {
 	if (opts.isOn && !opts.isOn(snapshot.id)) return `${toolName} wasn't run: project mode ${snapshot.id} is off.`;

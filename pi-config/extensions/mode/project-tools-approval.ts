@@ -7,7 +7,8 @@
  *   { "version": 1, "approvals": { "<real path of the checkout root>": { "<mode id>": [ { "hash", "by", "at" } ] } } }
  *
  * The hash is the mode's `toolsHash` (project-discovery.ts `toolsHashOf`): its declared tools plus the
- * bytes of the folder files they run. A changed declaration or program is a new hash, which no approval
+ * bytes of every file in the mode folder except MODE.md (helpers a tool sources or imports, and
+ * reference files, included). A changed declaration or any such file is a new hash, which no approval
  * covers until the user approves it, or the Overseer turns the mode on (that counts as approval). A mode
  * with no tools ("" hash) never needs one. Each key keeps its last APPROVALS_KEPT hashes, newest first,
  * so switching a worktree's branch back and forth doesn't re-ask for a set already approved.

@@ -183,7 +183,7 @@ test("projectToolDefinitions: a program edited after approval refuses the call (
 		assert.throws(() => readFileSync(marker), "nothing ran");
 		assert.equal(
 			changedText("release_check__status", "release-check"),
-			"release_check__status wasn't run: its program changed since release-check was approved. Ask the user to approve release-check again in the mode menu.",
+			"release_check__status wasn't run: the files of release-check changed since it was approved. Ask the user to approve release-check again in the mode menu.",
 		);
 	} finally {
 		f.done();

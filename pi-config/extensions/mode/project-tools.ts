@@ -303,7 +303,7 @@ export interface ProjectToolOptions {
 
 /** The text of a call refused because the mode's tools or any file in its folder (MODE.md aside) changed since approval (t18). */
 export function changedText(toolName: string, modeId: string): string {
-	return `${toolName} wasn't run: its program changed since ${modeId} was approved. Ask the user to approve ${modeId} again in the mode menu.`;
+	return `${toolName} wasn't run: the files of ${modeId} changed since it was approved. Ask the user to approve ${modeId} again in the mode menu.`;
 }
 
 /** The text of a call refused while the session's sandbox is on. */

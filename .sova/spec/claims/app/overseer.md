@@ -1121,7 +1121,9 @@ memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popov
 the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
 coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
 with the reason, and its memory is unchanged. Its run-status row shows memory's status
-like any chat's (§chat.composer/memory-status).
+like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat at
+128 KB (§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
+has the same button and popover for its own memory (§app.project-overseer/memory-switch).
 
 ## §app.overseer/head-layout — The head at every width
 

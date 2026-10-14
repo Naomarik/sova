@@ -18,32 +18,15 @@
       <svg class="icon" aria-hidden="true">…panel-collapse…</svg></button>
   </div>
 
-  <!-- The one toolbar line (§app.session-list/search), the same at every width. At rest: -->
+  <!-- The one toolbar line (§app.session-list/search), the same at every width: the search field
+       on the left, then the Overseer split button. While the field is focused or holds a query it
+       takes the whole line and the split button is hidden. -->
   <div class="sidebar-search" role="search">
     <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="sidebar-toolbar">
       <!-- the count is never printed on the line: kept in the DOM, visually hidden, for the field's
            description and the live count -->
-      <p class="search-count visually-hidden" id="session-count" aria-live="polite">48 sessions</p>
-      <!-- not in selection mode (§app.session-list/selecting-several-sessions) -->
-      <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
-      <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
-              title="Search sessions · /">…search…</button>
-      <!-- only while work is running: the working-now line (§app.session-list/working-now) -->
-      <a class="sidebar-working" href="#/agents" aria-label="2 sessions · 5 subagents working"
-         title="2 sessions · 5 subagents working">
-        <span class="sidebar-working-part">…chat…<span class="text-num">2</span></span>
-        <span class="sidebar-working-sep" aria-hidden="true">·</span>
-        <span class="sidebar-working-part">…worker…<span class="text-num">5</span></span></a>
-      <!-- the Overseer entry button (§app.overseer/entry-button), with its unread badge -->
-      <a class="button button-sm button-ghost overseer-entry" href="#/overseer" aria-label="Overseer"
-         title="Overseer · Alt+O">…eye…Overseer</a>
-    </div>
-  </div>
-  <!-- search open (the icon pressed, or a query in force): -->
-  <div class="sidebar-search" role="search">
-    <label class="visually-hidden" for="session-search">Search sessions</label>
-    <div class="sidebar-toolbar">
+      <p class="search-count visually-hidden" id="session-count" aria-live="polite">12 of 48 sessions</p>
       <div class="search">
         <svg class="icon" aria-hidden="true">…search…</svg>
         <input class="input" id="session-search" type="search" placeholder="Title, folder, or tag"
@@ -51,8 +34,18 @@
         <!-- only when the query is non-empty -->
         <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
       </div>
-      <button class="button button-icon" type="button" aria-label="Close Search" title="Close Search">…close…</button>
-      <p class="search-count visually-hidden" id="session-count" aria-live="polite">12 of 48 sessions</p>
+      <!-- the Overseer split button (§app.overseer/entry-button): the eye, the word and the unread
+           pill, then ▾ (only once a project overseer has started) -->
+      <div class="button-split overseer-split">
+        <a class="button overseer-entry" href="#/overseer"
+           aria-label="Overseer · 2 new messages" title="Overseer · 2 new messages · Alt+O">…eye…
+          <span>Overseer</span><span class="overseer-entry-count text-num" aria-hidden="true">2</span></a>
+        <button class="button button-icon overseer-split-menu" type="button" aria-haspopup="menu"
+                aria-expanded="false" aria-label="Project overseers · 1 with a new reply"
+                title="Project overseers · 1 with a new reply">…chevron-down…
+          <!-- only while a listed overseer has a new reply or a failed last turn -->
+          <span class="overseer-split-dot" aria-hidden="true"></span></button>
+      </div>
     </div>
   </div>
 
@@ -332,7 +325,7 @@ label a person reads says "sessions pane".
   head's collapse toggle.
 - **Live tallies.** The working count (§app.session-list/working-now) — the expanded foot's
   Agents row's own figure (the bare `{n}` whenever known, a floor too, `–` while unknown), named by
-  the count's sentence, the toolbar line's breakdown, then the load average's sentence
+  the count's sentence, then the load average's sentence
   (§app.insights/token-velocity): "7 agents working now: 2 sessions and 5 subagents. Output tokens
   a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written
   aren't counted yet." — shown unless the count is a complete 0; and
@@ -753,9 +746,8 @@ thing it waits on being done.
   §app.project-runtime/review): under its row, **Merge Branch**, which acts
   at once and says a refusal's reason under it; and WhatsApp sending down's **Open Outreach
   Settings**. Otherwise: a press
-  held on it and let go selects it (§app.session-list/selecting-several-sessions), one that moves
-  opens the drop overlay (§app.session-list/drop-overlay), and a right-click is the browser's, as
-  on every other row.
+  held on it lifts it and, moved, opens the drop overlay (§app.session-list/drop-overlay), a lifted
+  row let go in place does nothing, and a right-click is the browser's, as on every other row.
 - **The open session stays listed**, drawn with the current tint like any row: the count is the
   digest's, and a number must match its list.
 - **Open by default, collapsible.** The head is a twist (`<details>`, the Groups head's
@@ -961,8 +953,7 @@ a group with no matching session is left out entirely. Every group reaches this 
 last member leaves, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups).
 - **Creating.** The region makes no group: it has no `+` and no name field. A group is made
 where a session is being filed: the drop overlay's `+ New group` (§app.session-list/drop-overlay),
-`New group…` in the session pane's `Move into group` and in the selection toolbar's Move to group,
-and the Overseer. `POST /api/session-groups`, then the group appears at the end of the region in
+`New group…` in the session pane's `Move into group`, and the Overseer. `POST /api/session-groups`, then the group appears at the end of the region in
 creation order.
 - **Open Groups.** The region's one action is `Open Groups` at the right end of its head
 (`.button-icon.button-ghost` with the `external` glyph, as `Open workspace` has, `aria-label` and `title` "Open Groups",
@@ -996,7 +987,7 @@ discovered as a blank workspace. The head's `Open Groups` picker
 (§app.session-list/group-picker) opens the same `#/g/{id}`, with the same refusal for an empty
 group. The section is still the place you file sessions into; the workspace is the place you read
 them in.
-- **This is where membership changes.** The Groups region, the selection toolbar and the
+- **This is where membership changes.** The Groups region (a row dragged onto a group) and the
 session details' `Move into group` are where a person puts a session into a group; the workspace
 takes members out but adds none (§workspace.groups/group-lifecycle).
 - **Renaming.** `Rename…` swaps the menu's rows for the same field, pre-filled, without closing
@@ -1167,10 +1158,25 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
 - **Starting it.** With a mouse, pressing a row and moving it about 6px opens the overlay at once,
   with no hold. With a thumb (and a pen), a press held still ~500ms **lifts** the row: it rises
   (surface fill, `--shadow-2`) and the phone buzzes briefly where it can (`navigator.vibrate`).
-  Moving the lifted row more than 10px opens the overlay. A touch that moves before the lift is a
-  scroll or a tap, exactly as before. Letting go of a lifted row without moving it selects it
-  (§app.session-list/selecting-several-sessions), and a still mouse held 500ms does the same. In
-  selection mode a row doesn't drag at all.
+  Moving the lifted row more than 10px opens the overlay. A still mouse held 500ms lifts the row
+  the same way. A touch that moves before the lift is a scroll or a tap, exactly as before.
+  **Letting go of a lifted row without moving it does nothing**: the row settles back, nothing
+  opens and nothing is picked. The list has no multi-select: a row is filed one at a time, here
+  or with the session pane's `Move into group`.
+- **What a press is, and what it stops being.** A press becomes a hold only if it stays within
+  10px of where it started and nothing interrupts it. Before the hold, a mouse that moves 6px
+  opens the overlay, and a thumb that moves 10px is a scroll. A `pointercancel` (what touch sends
+  the moment the list starts moving under a still finger) ends the press too, and so does a wheel
+  scroll under a held mouse, the pointer leaving the row before the hold, capture being lost, and
+  the window losing focus: every path where the `pointerup` may never arrive. A press that ends
+  any of these ways does nothing.
+- **What a hold leaves behind is swallowed.** A hold that fired, and a drag, swallow the `click`
+  the pointerup produces and, on touch, the `contextmenu` that arrives before it: neither may reach
+  the row's link, or the session would open under a gesture that meant something else. That
+  suppression lasts for the whole press and for a second after it is **released**, never a second
+  after the hold fired: a press may be held as long as the user likes, and a window measured from
+  the hold would have run out under a 3-second press. The rules live in `src/lib/hold-select.ts`
+  and `src/lib/drag-overlay.ts`.
 - **Layout.** Fixed to the window, `inset: 0`, above the toasts (z-index 65; a toast from the
   last drop would otherwise cover `Cancel`). The page stays in view behind it under `--scrim`,
   as behind a dialog, with no blur: the panel is small, and the dimmed list still shows where the
@@ -1255,90 +1261,13 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
 **Accessibility.** Opening it announces "Moving “{title}”. Drop it on a group, Archive, New
 group, or Cancel." through the polite region. Escape cancels. Every tile carries its words, and
 disabled tiles carry `aria-disabled` and their reason. The overlay is a pointer gesture: a
-keyboard files a session with the session pane's `Move into group` and the selection toolbar,
-which do the same changes.
+keyboard files a session with the session pane's `Move into group`, which does the same change.
 
-## §app.session-list/selecting-several-sessions — Selecting several sessions
+## §app.session-list/session-titles — Session titles: Sova's own store
 
-One session at a time is the sidebar's whole grammar: one row, one click, one transcript. Three
-gestures are not about one session though — renaming, filing into a group, archiving — and doing
-them to eight sessions one row at a time is eight round trips through a pane the user did not want
-to open. So the list itself can be picked from.
-
-**The way in is a press held on a row**, ~500ms, mouse or thumb alike, and let go without moving:
-the hold lifts the row (§app.session-list/drop-overlay), and the release selects it and puts the
-sidebar in **selection mode**, on a Needs you row as on any other. The selection commits on the
-release, never at the hold, because a lifted row that moves is a drag. Press-and-hold is the accelerator; the **Select** button
-beside the session count is the door, for a keyboard and for anyone who has never held a row in
-their life — it shares the pane's one toolbar line with the count and the search icon
-(§app.session-list/search), and leaves it while the search is open. There is never only one way in.
-
-**What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
-of where it started and nothing interrupts it. Before the hold, a mouse that moves 6px opens the
-drop overlay, and a thumb that moves 10px is a scroll. After the hold, moving 10px opens the drop
-overlay and the release selects nothing. A `pointercancel` (what touch sends the moment the list
-starts moving under a still finger) ends the press too, and so does a wheel scroll under a held
-mouse, the pointer leaving the row before the hold, capture being lost, and the window losing
-focus: every path where the `pointerup` may never arrive. A press that ends any of these ways
-selects nothing.
-
-A hold that DID fire, and a drag, swallow what they leave behind: the `click` the pointerup
-produces and, on touch, the `contextmenu` that arrives before it. Neither may reach the row's link, or the session
-would open on top of the selection that was just made. **That suppression lasts for the whole
-press and for a second after it is RELEASED** — never a second after the hold fired. A press may be
-held for as long as the user likes, and a window measured from the hold would have run out under a
-3-second press, letting the click through to toggle the row straight back off. The rules live in
-`src/lib/hold-select.ts` and `src/lib/drag-overlay.ts`.
-
-**In selection mode**, a click on a row toggles it instead of opening it, each row's rail carries a
-44px checkbox, and the rail — 30px of gutter everywhere else — widens to 44px to hold it. Outside
-selection mode nothing changes: a click is a click. **The selection is keyed by session path**, so
-the same session shown in Recent, in a group and in Live & web is ONE selection with three checked
-boxes, and it is module state (`src/lib/session-selection.ts`), like the open groups and the drag —
-the list refreshes every few seconds and rebuilds every row, and a selection that a poll could
-clear would be unusable. A poll may do exactly one thing to it: drop a session that is no longer in
-the list.
-
-**The toolbar sits inside the sidebar, above the list**, never floating over the rows it acts on —
-**one row**: the count ("**{n} selected**", a polite live region) leads at the left and takes the
-leftover width (it may ellipsize; the controls never shrink); the actions are one cluster at the
-right end — **Move** as a word, **Rename** and **Archive** as icons, the normal control gap apart
-— and `Cancel` ends them after a wider step, so it reads as the way out, not a fifth action. The
-rename field, while open, takes its own row below with its hint — that row is not the actions row.
-
-- **Rename** appears at **exactly one** selected session and is gone at two — one field cannot
-  mean two titles. It opens an inline field: Enter saves, Escape cancels, and an **empty field
-  clears** the user's title so the derived one (the session's first message) comes back. Changing
-  the selection closes the field rather than leaving a stale one over another row's title.
-- **Move to group** files every selected session at once, with `No group` first and `New group…`
-  last — the one-session menu's own rows (§app.session-list/groups), in a menu that says how many it will move.
-  Organization sessions are skipped and said once: "Skipped 1: an organization session stays with
-  its project." / "Skipped {n}: organization sessions stay with their project."
-- **Archive**, on organization sessions, moves them to their group's Done list in their project
-  (§app.session-list/organizations), and the run's sentence says so: "Archived 2 sessions. 1 went to
-  its project's Done list." ({n} > 1: "{n} went to their projects' Done lists.")
-- **Archive** points one way for the whole selection. All archived → `Unarchive`. None archived →
-  `Archive`. **A mix is a disabled control**; what it found ("2 of these 3 are archived
-  and the rest aren't. Select one kind, or the other.") lives in the control's `title` and
-  **accessible name** — the bar is one row and there is no note line, so the reason can't exist
-  in a tooltip alone. Guessing which half was meant is how a
-  bulk gesture loses work. Only eligible sessions are written — the single Archive button's own
-  four rules, in one place (`archiveBlockReason`): open in a TUI, not started in Sova, mid-turn,
-  or holding working subagents (archiving closes the runtime, so they would stop). The rest are
-  skipped, and what was skipped or failed is said **once, in one sentence, for the whole run**
-  ("Archived 2 sessions. Skipped 1: 1 open in a TUI.") and **stays selected**, so what is left is
-  on screen rather than in a toast that has gone.
-
-**One action at a time, and it owns the tab.** Archive, Move to group and Rename are each several
-requests long. While one is in flight the selection is locked: rows don't toggle, `Cancel` and
-`Escape` are refused (each saying so), and the toolbar's own controls are disabled — and the run
-applies its leftovers through a token that says whether the tab is still the one it started on. A
-run that comes back to a tab whose selection has moved on — cancelled, re-entered, picked again —
-writes **nothing**, neither the leftovers nor the busy flag. "New group…" is ONE action across both
-of its requests, and the sessions it moves are the ones that were selected when the row was
-pressed, snapshotted before the group is created rather than re-read after it.
-
-**Renaming is Sova's, and only Sova's.** A title set here is stored by session id in
+**Renaming is Sova's, and only Sova's.** A session's title, set by a rename (the Agents board's `Rename…`,
+§app.insights/team-cards), by the Overseer or by the automatic namer (§app.session-list/auto-titles),
+is stored by session id in
 `~/.pi/agent/sova/session-titles.json` (`POST /api/sessions/title`, `server/session-titles.ts`)
 and **not one byte is written into the session's `.jsonl`** — which is what lets a session open in
 a TUI be renamed at all (the webapp must never write a file a TUI owns). Every summary the server
@@ -1361,21 +1290,12 @@ whenever a title is stored for the session, even one that equals the derived tit
 deletes the entry whatever set it; nothing remembers that a title was cleared, so a cleared session
 is unnamed again, and the automatic namer may name it.
 
-**Accessibility.** `Escape` leaves selection mode from anywhere outside a text field (inside one it
-belongs to the field: search clears, the rename field cancels). "Text field" means a caret, not
-merely an `<input>`: a row's checkbox is an input too, and Escape pressed on one — the likeliest
-place for a keyboard to be in this mode — leaves the mode like Escape anywhere else
-(`isTextEntry`). Every checkbox is a real
-`<input type="checkbox">` inside its label, named "Select {title}". The toolbar is a `role="group"`
-labelled "Selected sessions", its count is a polite live region, and every disabled control carries
-the reason it is disabled in its `title` and accessible name, before it is pressed, never after. Every target in the mode is 44px.
-
 ## §app.session-list/auto-titles — Automatic session titles
 
 A session is named by its first message until someone renames it, and a first message is a
 question or an instruction, not a name. So Sova can name sessions itself, the way the Overseer does
 when asked: one short title per session from what the session became, written into Sova's own
-title store (§app.session-list/selecting-several-sessions) as an `auto` title. Never into the
+title store (§app.session-list/session-titles) as an `auto` title. Never into the
 `.jsonl`, and **never over an explicit title** automatically: a title a user or the Overseer set,
 or any title stored before provenance existed, is never replaced by the sweep or by the section
 button. Only two presses go further: **Shorten long titles** may replace a long Overseer or
@@ -1482,7 +1402,7 @@ sessions" ("Name 1 session"), counting the section's rows as the search shows th
 once. A press sends exactly those rows; while it runs the button is disabled, `aria-busy`, and
 titled "Naming {n} sessions…". When it returns the list is fetched again and the rows show their
 new titles. **No toast, no undo**: a title the user doesn't like is renamed or cleared like any
-other (§app.session-list/selecting-several-sessions). A click or keypress on the button inside a
+other (on the Agents board, §app.insights/team-cards; the store is §app.session-list/session-titles). A click or keypress on the button inside a
 `<summary>` never toggles its section. A row the model failed on stays nameable, so a second press
 tries it again.
 
@@ -1512,7 +1432,7 @@ came, the session's title was no longer one it may shorten). A dry run calls no 
 a quiet ghost icon button (`refresh`), labelled and titled "Regenerate title", at the start of the
 open session's path line, before the path; never between the title and the context gauge. It is
 sized to the path line's small text (a caption-sized icon) and never makes that line taller or
-gives way when the path is truncated, so the title keeps the head's full width. It is not on sidebar rows, in the selection toolbar or
+gives way when the path is truncated, so the title keeps the head's full width. It is not on sidebar rows or
 on a workspace pane's head. A press sends the regenerate form for that session to its own host;
 while it runs the button is disabled, `aria-busy`, and titled "Regenerating title…". When a title
 comes back the list is fetched again and the head shows it; when none does, the title stays as it
@@ -1684,7 +1604,7 @@ them reads the same predicate, so no surface can drift from the others. Two kind
 **special** and never appear on any of them:
 
 - **Overseer files** (`SessionSummary.overseer`, §app.overseer/identity-and-clear) — reached only through
-  the Overseer's own door (the eye button, Alt+O, `#/overseer`). Unlike an organization session, an
+  the Overseer's own door (the Overseer button, Alt+O, `#/overseer`). Unlike an organization session, an
   Overseer file is in no search and no region at all.
 - **Organization sessions** (`SessionSummary.org`, §app.organizations/org-sessions) — reached only through
   the Organizations region (§app.session-list/organizations), which is built from the same search hits as
@@ -1900,13 +1820,14 @@ Projects region never lists an archived session and counts open rows only (§app
 - **The project overseer's eye.** The project's current overseer (`org.kind` `overseer`, not
   finished) is never a row: it is a 44px ghost **eye** link at the end of its project's heading, hung
   into the right gutter like the org link, opening `#/s/<its path>` (a plain link: nothing is
-  written). A project with no overseer yet has no eye; its project page's Start Overseer is the way
-  in. The eye reads only the session list, so nothing more is fetched, and carries at most one mark,
+  written). A started overseer is also a row in the Overseer split button's ▾ list, with the same
+  mark in words (§app.overseer/entry-button). A project with no overseer yet has no eye and no row
+  there; its project page's Start Overseer is the way in. The eye reads only the session list, so nothing more is fetched, and carries at most one mark,
   in this order: **working** (the row's Busy: Busy's pulsing dot, the one sanctioned animation),
   **last turn failed** (the row's turn-error mark), **new reply** (the row's unread dot). Its name
   says the same: "Open the {project} overseer", plus " · working", " · last turn failed" or " · new
   reply". While its conversation is open the eye is tinted selected with `aria-current="page"`, like
-  the global Overseer's eye on `#/overseer`, and shows no failed or new-reply mark (you are looking at
+  the global Overseer button on `#/overseer`, and shows no failed or new-reply mark (you are looking at
   it). Level and pause are not shown here: they are its chat head's (§app.project-overseer/page).
   Should a project ever list two current overseers, the newest is the eye and the other stays a row.
 - **The project's groups**, in this order, each omitted while it has no row (a project with only an
@@ -2208,32 +2129,32 @@ record whose transcript is gone.
   visually hidden at rest and while searching alike, as the field's `aria-describedby` and the
   polite live region that speaks the filtered count. The line shows no resting session total.
 - **One toolbar line, every width.** Below the brand row the pane carries exactly one toolbar
-  row, unfolded and folded alike — the desktop's separate search row and count row are gone.
-  Left to right it holds: `Select` (while not in selection mode,
-  §app.session-list/selecting-several-sessions), then a wordless **search icon button**, then,
-  only while work is running, the **working-now line** (§app.session-list/working-now) in the
-  gap, and at the right end the Overseer entry button (§app.overseer/entry-button), a labelled
-  button with its unread badge. The field is not on screen until that icon is pressed; then it
-  opens **in the same line**, focused at once, and the line holds only the field (with its Clear
-  Search `×` while there is a query) and a **Close Search** button — `Select`, the search icon,
-  the working-now line and the Overseer button are gone from it. The hidden count stays in the DOM, so the
-  field's description and the live count still speak. The line stays open while there is a
-  query, and blur never closes it: leaving the field and coming back finds it as it was left.
-  **Close Search** clears the query and folds the line back, and focus returns to the search
-  icon.
-- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on the closed line
-  it opens the line first, at every width (from the spine, the pane expands first,
-  §app.session-list/spine). `Esc` inside search clears the query first; a second press closes
-  the line, as Close Search does. Clear Search returns focus to the input.
+  row, unfolded and folded alike: the **search field** on the left, always on screen, taking the
+  room the button leaves (placeholder "Title, folder, or tag", with its Clear Search `×` while
+  there is a query), and at the right end the Overseer split button (§app.overseer/entry-button:
+  the eye and the word Overseer, then ▾). When the line is tight the field shrinks, never the
+  button. **Focus widens the field:** clicking into it, or `/`, gives it the whole line and hides
+  the split button; leaving it while it is empty brings the button back. While it holds a query it
+  keeps the whole line, focused or not, until the query is cleared. Nothing else is on it: no search toggle, no Close Search,
+  no select control and no working count (that figure is the foot's, §app.insights/sidebar-foot).
+  The hidden count stays in the DOM, so the field's description and the live count still speak.
+  Blur never clears the field: leaving it and coming back finds the query as it was left.
+- **Keys.** `/` anywhere, while focus isn't in a text field, focuses the field (from the spine,
+  the pane expands first, §app.session-list/spine). `Esc` inside the field clears the query
+  first; a second `Esc`, on the empty field, leaves it (the split button returns), and focus goes
+  back to the list: the open
+  session's row, else the list's first row (with no row on screen the field simply loses focus).
+  Clear Search returns focus to the input.
 
-## §app.session-list/working-now — Working now: the toolbar's breakdown, and the one count
+## §app.session-list/working-now — Working now: the one count
 
 **One count says how much work is running right now: the sessions whose own turn is running,
 plus the subagents working, on this host and every connected host.** It is `workNow()` in
-`src/lib/work-now.ts`, one pure function, and every place that shows it reads it — the toolbar's
-breakdown line (below), the foot's Agents row and its doorway on the spine
-(§app.insights/sidebar-foot), the phone bar (§app.insights/sidebar-foot-phone) and the spine's
-tally (§app.session-list/spine) — so no two can disagree.
+`src/lib/work-now.ts`, one pure function, and every place that shows it reads it — the foot's
+Agents row and its doorway on the spine (§app.insights/sidebar-foot), the phone bar
+(§app.insights/sidebar-foot-phone) and the spine's tally (§app.session-list/spine) — so no two
+can disagree. The session list's toolbar line carries no working figure: it holds only the search
+field and the Overseer split button (§app.session-list/search).
 
 - **Sessions** are main threads whose own turn is running. On this host: each fresh host session
   in the Agents poll (a fresh live record that isn't a headless worker pi, `isHostSession`) whose
@@ -2259,24 +2180,7 @@ tally (§app.session-list/spine) — so no two can disagree.
   sentence "Agents working now: not known yet".
 - **The sentence** — "7 agents working now: 2 sessions and 5 subagents" ("1 agent working now: 1
   session"; a part at 0 left out, "3 agents working now: 3 subagents"); "No agents working now" at
-  a known 0.
-
-**The breakdown line.** In the toolbar line (§app.session-list/search), between the search icon
-and the Overseer button, a link to `#/agents` (`a.sidebar-working`) shows each part as an icon
-before its figure, no words: the `chat` icon and the sessions, then ` · `, then the `worker` icon
-(the foot's person) and the subagents — `[chat]2 · [worker]5`. A part at 0 is left out, its icon
-with it (`[worker]5` alone). The icons are the toolbar's 16px `.icon-sm`, muted; the figures are
-`.text-num`. Its `title` and `aria-label` carry the words: "2 sessions · 5 subagents working"
-("1 session working", "5 subagents working"), and while the count is a floor, "At least " before
-it and the missing hosts' sentence after it ("At least 2 sessions · 5 subagents working. Work on
-desk isn't counted: it isn't answering."). It is the same at every width, the pane's own on a
-desktop and the whole screen on a phone; the spine has no line, and its tally's name carries the
-count's sentence. It is **omitted** at 0 (a floor of 0 too) and while unknown, and while the
-search field is open, when the line holds only the field. It takes only the gap the line already
-had (about 66px in a 320px pane, with `Select` shown: `[chat]2 · [worker]5` is 64px), and the
-**figures are never cut**: where the parts won't fit beside the line's other items (figures of
-three digits there), the line measures it and drops the icons, `12 · 148`, keeping every figure. It ignores the search and the host filter, so it always adds up to the foot's
-figure.
+  a known 0. The count ignores the search and the host filter.
 
 ## §app.session-list/states — States
 

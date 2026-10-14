@@ -74,9 +74,7 @@ after each landing, since every other branch is then checked against the new mas
   then landed with `worktree merge` and built in the main checkout. A step that fails in no time
   didn't run, and its log is read. A branch its owner already merged goes straight to `landed`. A
   branch with a leak in its history, or a commit a scrub cut out of master, never merges: its owner
-  re-applies the change on a fresh branch. A saved session in a branch's history
-  (§chat.saved-sessions/merge-guard) is such a leak: `leak-scan.mjs` and `status` flag it, and the
-  round lands nothing of that branch unless the user waives it for that branch. The owner's worktree stays theirs: uncommitted files go
+  re-applies the change on a fresh branch. The owner's worktree stays theirs: uncommitted files go
   back to the owner, and the captain parks them outside the repo only with the owner's OK and
   restores them byte for byte; a symlinked `node_modules` is environment, which it may rebuild and
   report.

@@ -189,8 +189,6 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       { file: OPS, symbol: "rewindSession" },
       { file: SESSION, symbol: "PiHarnessSession.rewindTo" },
       { file: "server/harness/pi/fork.ts", symbol: "activeBranchLines" },
-      { file: "server/harness/pi/bundle.ts", symbol: "importIntoFile" },
-      { file: "server/harness/pi/bundle.ts", symbol: "appendNoteToClosedFile" },
     ],
     canary: "P10 leaf-is-last-line: navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf; open() takes the last line as the leaf",
     retireWhen: "pi persists the leaf",

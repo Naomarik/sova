@@ -9,9 +9,10 @@
 //   row never moves and the older-edge line is never there.
 // - A long chat, opened fresh and switched back to (its rows kept from the last visit): the
 //   older-edge line is there from the first painted frame with rows, and stays.
-// - A whole chat of 120 rows switched back to, its hello held back until the idle fill has built
-//   the kept rows down to the top: the line goes once the hello says nothing is above, and the
-//   row at the top of the view doesn't move.
+// - A whole chat of 120 rows switched back to, built down to its top by the idle fill before
+//   anything from the server lands (a chat closed while quiet opens asleep and connects nothing;
+//   a running one's hello is held back): the line goes, and the row at the top of the view doesn't
+//   move.
 //
 // Writes three fixture sessions into the hermetic agent dir (dated ten minutes back, so they're in the
 // sidebar's Recent there until other sessions are newer) and drives a hermetic server
@@ -25,11 +26,12 @@
 // SOVA_E2E_SCALE (default 1.25) as its --force-device-scale-factor: a ratio that isn't whole is
 // where a row's move by part of a pixel shows.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
+import { whenListed } from "./listed.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
@@ -187,6 +189,12 @@ const RECORDER = () => {
       // and going is not what this measures.
       firstTop: first && t ? first.getBoundingClientRect().top - t.getBoundingClientRect().top + t.scrollTop - [...t.querySelectorAll(".transcript-banner")].reduce((h, b) => h + b.getBoundingClientRect().height, 0) : null,
       fromEnd: t ? t.scrollHeight - t.scrollTop : null,
+      // The row the view's top is in, and its top below the view's top.
+      ...(() => {
+        const view = t?.getBoundingClientRect().top;
+        const row = [...rows].find((r) => r.getBoundingClientRect().bottom > view);
+        return { viewRow: row?.dataset.entry ?? null, viewTop: row ? row.getBoundingClientRect().top - view : null };
+      })(),
     });
   };
   const loop = () => {
@@ -328,42 +336,80 @@ try {
     }
   });
 
-  await check("a kept, whole chat whose hello lands after the fill built its top: the older-edge line goes, and the view doesn't move", async () => {
+  await check("a kept, whole chat built down to its top before anything says what is above: the older-edge line goes, and the view doesn't move", async () => {
     const { ctx, page } = await newPage();
     await page.goto(`${BASE}/`);
-    const all = (n) => page.waitForFunction((k) => document.querySelectorAll("section.transcript .thread > .entry").length === k, n, { timeout: 30000 });
-    /** The row the view's top is in, and its top below the view's top. */
-    const top = () =>
-      page.evaluate(() => {
-        const t = [...document.querySelectorAll("section.transcript")].find((s) => s.getBoundingClientRect().height > 0);
-        const view = t.getBoundingClientRect().top;
-        const row = [...t.querySelectorAll(".thread > .entry")].find((r) => r.getBoundingClientRect().bottom > view);
-        return { edge: !!t.querySelector(".older-edge"), row: row?.dataset.entry, top: row ? row.getBoundingClientRect().top - view : null, held: window.__jit.hold.queue.length };
+    const all = (n) =>
+      page.waitForFunction((k) => document.querySelectorAll("section.transcript .thread > .entry").length === k, n, { timeout: 30000 }).catch(async () => {
+        throw new Error(`${await rowsOf(page)} row(s) built, not ${n}`);
       });
-    // The first visit: the whole branch, kept with the view's rows for the next.
+    const away = async () => {
+      await go(page, SHORT);
+      await page.waitForFunction(() => document.querySelectorAll("section.transcript .thread > .entry").length > 0, null, { timeout: 30000 });
+      await page.waitForTimeout(1000);
+    };
+    /** Back to the chat, its rows kept: the frames painted from then on, once `settle` is done. */
+    const back = async (settle) => {
+      const from = await page.evaluate(() => performance.now());
+      await go(page, MID);
+      await all(120);
+      await page.waitForTimeout(1500);
+      await settle?.();
+      return shown(await page.evaluate((a) => window.__jit.frames.filter((f) => f.t >= a), from), MID);
+    };
+    /** Whether the line was there from the first frame and went, and the view through its going. */
+    const judge = (what, frames, dpr) => {
+      assert(frames.length > 10, `${what}: only ${frames.length} frame(s) recorded`);
+      assert(frames[0].edge && frames[0].rows < 120, `${what}: the first frame had ${frames[0].rows} row(s) built and the line ${frames[0].edge ? "there" : "missing"} (60 and there: rows to build): the check compared nothing`);
+      assert(!frames.at(-1).edge, `${what}: the older-edge line stayed over a whole branch`);
+      const i = frames.findIndex((f) => !f.edge);
+      const [a, b] = [frames[i - 1], frames[i]];
+      assert(a.viewRow === b.viewRow && Math.abs(a.viewTop - b.viewTop) < 1 / dpr, `${what}: the row at the top of the view moved as the line went: ${JSON.stringify(a)} → ${JSON.stringify(b)}`);
+    };
+    // The first visit: the file's newest 60 rows, then the reader scrolls up to the rest (which
+    // starts the chat); the whole branch is kept with the view's rows for the next visit.
     await go(page, MID);
-    await all(120);
-    await page.waitForTimeout(1500);
-    await go(page, SHORT);
     await page.waitForFunction(() => document.querySelectorAll("section.transcript .thread > .entry").length > 0, null, { timeout: 30000 });
-    await page.waitForTimeout(1000);
-    // Back, with its hello held: the kept rows paint (60 built), the fill builds the other 60.
+    const box = await page.locator("section.transcript").first().boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let k = 0; (await rowsOf(page)) < 120; k++) {
+      assert(k < 300, `scrolled up for 30 s and ${await rowsOf(page)} row(s) are built, not 120`);
+      await page.mouse.wheel(0, -2000);
+      await page.waitForTimeout(100);
+    }
+    await page.waitForTimeout(1500);
+    await away();
+    // Back to the running chat, its hello held until the fill has built the kept rows to the top.
     await page.evaluate(() => (window.__jit.hold.on = true));
-    await go(page, MID);
-    await all(120);
-    await page.waitForTimeout(1500);
-    const before = await top();
-    await page.evaluate(() => window.__jit.hold.release());
-    await page.waitForTimeout(1500);
-    const after = await top();
+    let held = 0;
+    const running = await back(async () => {
+      held = await page.evaluate(() => window.__jit.hold.queue.length);
+      await page.evaluate(() => window.__jit.hold.release());
+      await page.waitForTimeout(1500);
+    });
+    // Back once its chat has closed while quiet: it opens asleep, and nothing from the server says
+    // what is above the kept rows.
+    await away();
+    spawnSync("bun", [join(ROOT, "scripts/stop-chats.ts"), "--agent-dir", AGENT], { cwd: ROOT, stdio: "ignore" });
+    for (let i = 0; (await whenListed(api, [pathOf(MID)], "path")).get(pathOf(MID)).chat; i++) {
+      assert(i < 100, "the chat did not stop");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    // The tab's list hears it a moment later (the session feed): until then the view connects.
+    await page.waitForTimeout(6000);
+    const asleep = await back();
+    const woke = !!(await whenListed(api, [pathOf(MID)], "path")).get(pathOf(MID)).chat;
+    const dpr = await page.evaluate(() => devicePixelRatio);
     await ctx.close();
-    assert(before.held > 0, "nothing from the server was held: the hello landed before the fill, the check compared nothing");
-    assert(before.edge, "the line wasn't there while the hello was held (a kept chat with rows to build has it): the check compared nothing");
-    assert(!after.edge, "the older-edge line stayed after the hello said nothing is above the rows");
-    assert(after.row === before.row && Math.round(after.top * 100) === Math.round(before.top * 100), `the row at the top of the view moved: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+    assert(held > 0, "nothing from the running chat's socket was held: its hello landed before the fill, the check compared nothing");
+    judge("the running chat, its hello held", running, dpr);
+    assert(!woke, "the chat closed while quiet was started by opening it: the check compared nothing");
+    judge("the chat closed while quiet", asleep, dpr);
   });
 } finally {
   await browser.close().catch(() => {});
+  // The chats the checks started (scrolling up starts a chat closed while quiet).
+  spawnSync("bun", [join(ROOT, "scripts/stop-chats.ts"), "--agent-dir", AGENT], { cwd: ROOT, stdio: "ignore" });
   if (cdpPort) {
     try {
       execFileSync(join(SKILL, "stop-browser.sh"), [], { cwd: SKILL, env: { ...process.env, PW_PORT: cdpPort }, stdio: "ignore" });

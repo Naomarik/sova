@@ -42,9 +42,15 @@ export const KNOBS = {
   codeRoot: "SOVA_CHAT_CODE_ROOT",
   /** "on": the code root is this server's alone, and unused copies there are collected. */
   codeGc: "SOVA_CHAT_CODE_GC",
+  /** How long the server waits for a booting chat process, in ms (test-only; default 30000). Trials run
+      niced beside other suites, where a start once took 34 s. */
+  bootMs: "SOVA_CHAT_BOOT_MS",
   /** Chat units are named sova-chat-<stateHash>-<session id>. */
   unitPrefix: "sova-chat-",
 };
+
+/** A chat start's wait, the server's (KNOBS.bootMs) and a client's: 90 s, as long as a reload's. */
+export const CHAT_START_MS = 90000;
 
 export const RESUME_TEXT = "The Sova server restarted and cut off your last turn. Continue where you left off.";
 export const CRASH_RESUME_TEXT = "This chat's process stopped unexpectedly and cut off your last turn. Continue where you left off.";
@@ -152,6 +158,7 @@ export function serverEnv({ agent, port, driver, slice, idleMs, build, failBoot,
   if (idleMs !== undefined) env[KNOBS.idle] = String(idleMs / 60_000);
   if (build) env[KNOBS.build] = build;
   if (failBoot) env[KNOBS.failBoot] = failBoot;
+  env[KNOBS.bootMs] = String(CHAT_START_MS);
   // No copy of the code per server (its state root sits in the scratch, on another filesystem than the
   // checkout: ~350 MB each), unless the check is about the copies and names their root (t25).
   if (!(KNOBS.codeRoot in extra)) env[KNOBS.code] = "live";
@@ -389,7 +396,7 @@ export function client(base, token) {
 
 /** Opens /ws/chat (wire 2) on a session and waits for its hello. `force`: the page's "Open anyway"
     (&force=1), past a "recent" refusal. */
-export async function chat(c, path, ms = 30000, { force = false } = {}) {
+export async function chat(c, path, ms = CHAT_START_MS, { force = false } = {}) {
   const s = c.socket(`/ws/chat?path=${encodeURIComponent(path)}&wire=2${force ? "&force=1" : ""}`);
   await s.opened;
   const first = await s.until((m) => m.type === "hello" || m.type === "error", ms, "hello");

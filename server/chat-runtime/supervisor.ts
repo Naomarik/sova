@@ -26,6 +26,8 @@ export const CHAT_STOP_SEC = 30;
 export const IDLE_STOP_MIN = 30;
 /** Idle Claude CLI children kept across all chat processes (the bridge's own `maxIdleSessions`). */
 export const CLAUDE_IDLE_MAX = 4;
+/** How long a booting chat process is waited for to finish its boot (its non-booting hello). */
+export const CHAT_BOOT_MS = 30_000;
 const LOG_TAIL = 20;
 /** How long an accepted drain, or a predecessor still exiting, is waited for. */
 const EXIT_WAIT_MS = 30_000;
@@ -56,10 +58,13 @@ export interface SupervisorConfig {
   /** 0: never stop an idle chat. */
   idleMs: number;
   claudeIdleMax: number;
+  /** The wait for a booting chat process's hello; tests only raise it. */
+  bootMs: number;
 }
 
 /** The supervisor's knobs from the server's env: `SOVA_CHAT_SLICE`, `SOVA_CHAT_DRIVER=detached` (tests),
-    `SOVA_CHAT_IDLE_MIN` (fractional minutes, 0 never), `SOVA_CHAT_CLAUDE_IDLE_MAX`. */
+    `SOVA_CHAT_IDLE_MIN` (fractional minutes, 0 never), `SOVA_CHAT_CLAUDE_IDLE_MAX`, `SOVA_CHAT_BOOT_MS`
+    (tests: the boot wait in ms, a positive integer, else 30000). */
 export function supervisorConfig(env: NodeJS.ProcessEnv = process.env): SupervisorConfig {
   const num = (v: string | undefined, dflt: number) => {
     const n = v === undefined || v.trim() === "" ? Number.NaN : Number(v);
@@ -70,7 +75,13 @@ export function supervisorConfig(env: NodeJS.ProcessEnv = process.env): Supervis
     driver: env.SOVA_CHAT_DRIVER?.trim() === "detached" ? "detached" : "systemd",
     idleMs: Math.round(num(env.SOVA_CHAT_IDLE_MIN, IDLE_STOP_MIN) * 60_000),
     claudeIdleMax: Math.floor(num(env.SOVA_CHAT_CLAUDE_IDLE_MAX, CLAUDE_IDLE_MAX)),
+    bootMs: positiveInt(env.SOVA_CHAT_BOOT_MS, CHAT_BOOT_MS),
   };
+}
+
+function positiveInt(v: string | undefined, dflt: number): number {
+  const s = v?.trim() ?? "";
+  return /^[0-9]+$/.test(s) && Number(s) > 0 && Number.isSafeInteger(Number(s)) ? Number(s) : dflt;
 }
 
 // ---- where chats run ----------------------------------------------------------------------------

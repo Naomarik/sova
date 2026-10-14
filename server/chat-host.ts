@@ -126,6 +126,8 @@ export class ChatHostRouter {
       in use from the forget until its new record is written (never collected in between). */
   private readonly restarting = new Map<string, string>();
   private readonly settings: ChatRuntimeSettings;
+  /** How long a booting chat process is waited for (`SOVA_CHAT_BOOT_MS`, tests only; default 30 s). */
+  private readonly bootMs: number;
   private readonly sup: ChatSupervisor;
   private readonly rollout: Rollout<Link>;
   private readyP: Promise<void> = Promise.resolve();
@@ -145,6 +147,7 @@ export class ChatHostRouter {
     deps: RouterDeps = {},
   ) {
     const cfg = supervisorConfig();
+    this.bootMs = cfg.bootMs;
     this.connect = deps.connect ?? connectLink;
     this.bun = deps.bun ?? chatBun;
     this.sweepChildren = deps.sweepChildren;
@@ -642,7 +645,7 @@ export class ChatHostRouter {
       link = c.link;
       sup.noteConnected(rec.chatId);
       if (c.hello.proto < minProto) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${minProto}`);
-      if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
+      if (c.hello.state === "booting") await awaitFrame(link, "hello", this.bootMs, (h) => h.state !== "booting");
     } catch (err) {
       await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
       throw new NoProcess(err instanceof Error ? err.message : String(err));

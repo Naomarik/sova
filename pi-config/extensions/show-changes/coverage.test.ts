@@ -21,27 +21,65 @@ test("placeSteps: path alone takes a file, a start inside a range names one hunk
 	const p = placeSteps(
 		[
 			{ hunks: [{ path: "a.ts", newStart: 44 }, { path: "logo.png", newStart: 3 }] },
-			{ hunks: [{ path: "a.ts" }, { path: "old.ts", oldStart: 14 }] },
+			{ hunks: [{ path: "a.ts" }, { path: "old.ts", oldStart: 14 }, { path: "was.ts" }] },
 		],
 		files,
 	);
-	assert.equal(p.units, 4);
-	assert.deepEqual(p.owner, [[1, 0], [1], [0], []]);
+	assert.equal(p.units, 5);
+	assert.deepEqual(p.owner, [[1, 0], [1], [0], [1]]);
 	assert.deepEqual(p.unplaced, []);
 	assert.deepEqual(p.badRefs, []);
-	const miss = placeSteps([{ hunks: [{ path: "a.ts", newStart: 47 }, { path: "gone.ts" }, { path: "moved.ts" }] }], files);
+	assert.deepEqual(p.shadowed, []);
+	const miss = placeSteps([{ hunks: [{ path: "a.ts", newStart: 47 }, { path: "gone.ts" }] }], files);
 	assert.deepEqual(
 		miss.badRefs.map((b) => b.ref.path),
-		["a.ts", "gone.ts", "moved.ts"],
+		["a.ts", "gone.ts"],
 	);
-	assert.equal(miss.unplaced.length, 4);
+	assert.equal(miss.unplaced.length, 5);
+});
+
+test("placeSteps: a file with no line changes is one unit any ref to it names, by either path", () => {
+	const p = placeSteps([{ hunks: [{ path: "moved.ts", newStart: 12 }] }], files);
+	assert.deepEqual(p.owner[3], [0]);
+	assert.deepEqual(p.badRefs, []);
+	assert.deepEqual(placeSteps([], files).unplaced.at(-1), { path: "moved.ts", hunk: null, whole: "no-lines" });
+});
+
+test("placeSteps: a step naming only units earlier steps hold is shadowed, with who holds them", () => {
+	const p = placeSteps(
+		[{ hunks: [{ path: "a.ts", newStart: 1 }] }, { hunks: [{ path: "logo.png" }, { path: "old.ts" }] }, { hunks: [{ path: "a.ts", newStart: 2 }, { path: "new.ts" }, { path: "nowhere.ts" }] }, { hunks: [{ path: "a.ts" }] }],
+		files,
+	);
+	assert.deepEqual(p.shadowed, [{ step: 3, heldBy: [1, 2] }]);
+	// Step 4 takes a.ts's second hunk, so it is not shadowed though it also names step 1's.
+	assert.deepEqual(p.owner[0], [0, 3]);
+	assert.deepEqual(p.badRefs.map((b) => [b.step, b.ref.path]), [[3, "nowhere.ts"]]);
+	// A step whose refs all name nothing is a bad-ref problem only.
+	assert.deepEqual(placeSteps([{ hunks: [{ path: "a.ts" }] }, { hunks: [{ path: "nowhere.ts" }] }], files).shadowed, []);
+});
+
+test("refusal c: a shadowed step is refused with the step holding its hunks", () => {
+	const all = files.map((f) => ({ path: f.path }));
+	const msg = coverageRefusal([{ hunks: all }, { hunks: [{ path: "a.ts", newStart: 3 }] }], files)!;
+	assert.equal(
+		msg,
+		[
+			"Nothing was shown: the steps leave 1 step naming only hunks earlier steps hold. Every hunk must be in exactly one step (the first naming it).",
+			"Resend show_changes with the same steps, fixed: add a ref for each hunk below to the step it belongs to (or a new step); {path} alone takes all of a file's hunks. newStart is any new-side line inside the hunk.",
+			"Steps that would open empty (merge each into the step holding its hunks, or name the hunks it should hold):",
+			"  step 2 names only hunks earlier steps already hold (step 1)",
+		].join("\n"),
+	);
+	assert.match(coverageRefusal([{ hunks: [{ path: "a.ts" }] }, { hunks: all.slice(1) }, { hunks: all }], files)!, /step 3 names only hunks earlier steps already hold \(steps 1 and 2\)/);
 });
 
 test("no refusal for one unit or none without steps, or full coverage", () => {
 	assert.equal(coverageRefusal(undefined, []), undefined);
-	assert.equal(coverageRefusal(undefined, [{ path: "a.ts", hunks: [h(3, 4)] }, { path: "b.ts", hunks: [] }]), undefined);
+	assert.equal(coverageRefusal(undefined, [{ path: "b.ts", hunks: [] }]), undefined);
+	// An empty new file is a unit of its own: with a hunk elsewhere, steps are needed.
+	assert.match(coverageRefusal(undefined, [{ path: "a.ts", hunks: [h(3, 4)] }, { path: "b.ts", hunks: [] }])!, /this diff has 2 hunks in 2 files/);
 	assert.equal(coverageRefusal(undefined, [{ path: "logo.png", hunks: null }]), undefined);
-	assert.equal(coverageRefusal([{ hunks: [{ path: "a.ts" }, { path: "new.ts" }, { path: "logo.png" }] }], files), undefined);
+	assert.equal(coverageRefusal([{ hunks: [{ path: "a.ts" }, { path: "new.ts" }, { path: "logo.png" }, { path: "moved.ts" }] }], files), undefined);
 	// Steps over an empty diff: nothing to place, nothing refused.
 	assert.equal(coverageRefusal([{ hunks: [{ path: "a.ts" }] }], []), undefined);
 });
@@ -51,7 +89,7 @@ test("refusal a: several hunks and no steps lists them all by file", () => {
 	assert.equal(
 		msg,
 		[
-			"Nothing was shown: this diff has 4 hunks in 3 files and the call sent no steps.",
+			"Nothing was shown: this diff has 5 hunks in 4 files and the call sent no steps.",
 			"Resend show_changes with steps that place every hunk below. If the change is one idea, send one step naming every file by path alone ({path} with no start takes all of a file's hunks).",
 			"Hunks (path, then @@ +newStart,newLines: first changed line):",
 			"a.ts",
@@ -61,6 +99,8 @@ test("refusal a: several hunks and no steps lists them all by file", () => {
 			"  @@ +10,3: +renamed",
 			"logo.png",
 			"  (binary or too large: one unit, name it by path)",
+			"moved.ts",
+			"  (renamed, mode change or empty: no line changes, one unit, name it by path)",
 		].join("\n"),
 	);
 });
@@ -70,13 +110,15 @@ test("refusal b: unplaced hunks and refs naming nothing, each with what fixes it
 	assert.equal(
 		msg,
 		[
-			"Nothing was shown: the steps leave 2 of 4 hunks placed by no step and 2 refs naming no hunk. Every hunk must be in exactly one step (the first naming it).",
+			"Nothing was shown: the steps leave 3 of 5 hunks placed by no step and 2 refs naming no hunk. Every hunk must be in exactly one step (the first naming it).",
 			"Resend show_changes with the same steps, fixed: add a ref for each hunk below to the step it belongs to (or a new step); {path} alone takes all of a file's hunks. newStart is any new-side line inside the hunk.",
 			"Placed by no step (path, then @@ +newStart,newLines: first changed line):",
 			"a.ts",
 			"  @@ +40,7: -old()",
 			"new.ts",
 			"  @@ +10,3: +renamed",
+			"moved.ts",
+			"  (renamed, mode change or empty: no line changes, one unit, name it by path)",
 			"Refs naming no hunk (fix or remove them):",
 			'  step 1: {path: "a.ts", newStart: 90}: new-side line inside none of its hunks (+1,5 +40,7)',
 			'  step 1: {path: "gone.ts"}: that file is not in this diff',

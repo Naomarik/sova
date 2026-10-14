@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "./details.ts";
+import { runGit } from "./git.ts";
 import showChanges, { renderShowChangesResult } from "./index.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -61,6 +62,10 @@ test("registers show_changes with its prompt snippet and guidelines", () => {
 	assert.match(t.description, /checks the steps against the diff/);
 	assert.ok(t.promptGuidelines.some((g: string) => /instead of pasting diffs/.test(g)));
 	assert.equal(t.parameters.additionalProperties, false);
+	// The agent no longer sends "builds on": not in the schema, the description, the guidelines or the example.
+	assert.doesNotMatch(JSON.stringify(t.parameters), /buildsOn/);
+	assert.doesNotMatch(t.description, /buildsOn/);
+	assert.ok(t.promptGuidelines.every((g: string) => !/buildsOn/.test(g)));
 });
 
 test("dirty scope: whole-file refs place every hunk; details Sova can read and the files in the text", async () => {
@@ -73,7 +78,7 @@ test("dirty scope: whole-file refs place every hunk; details Sova can read and t
 		const out = await f.call(f.ctx(r.main), {
 			scope: "dirty",
 			title: "Edits",
-			steps: [{ title: "Change a", hunks: [{ path: "a.txt" }] }, { title: "Add b", buildsOn: [1], hunks: [{ path: "b.txt" }] }],
+			steps: [{ title: "Change a", hunks: [{ path: "a.txt" }] }, { title: "Add b", hunks: [{ path: "b.txt" }] }],
 		});
 		assert.deepEqual(normalizeShowChangesDetails(out.details), out.details);
 		assert.deepEqual(out.details.scope, { kind: "dirty", cwd: r.main, root: r.main, head: sh(r.main, "rev-parse", "HEAD") });
@@ -199,6 +204,27 @@ test("refusals: bad input, no repository, a remote session; nothing is shown", a
 		assert.ok(f.emitted.includes("remote:discover"));
 		f.pi.events.emit("remote:session", { version: 1 });
 		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty" }), /local only/);
+	} finally {
+		r.done();
+	}
+});
+
+test("past 3,000 files, counted within the paths given, the call is refused with a hint to narrow it", async () => {
+	const r = repo();
+	try {
+		writeFileSync(join(r.main, "a.txt"), "two\n");
+		// A git that lists 3,001 changed files under big/ besides a.txt.
+		const many = Array.from({ length: 3001 }, (_, i) => `big/f${i}.txt`);
+		const git = async (args: string[], cwd: string, opts?: any) => {
+			const out = await runGit(args, cwd, opts);
+			return args.includes("--name-only") ? { ...out, stdout: `${out.stdout}${many.join("\0")}\0` } : out;
+		};
+		const f = fakePi();
+		showChanges(f.pi, { git });
+		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty" }), /^Error: 3002 files changed, more than the 3000 the viewer shows: narrow it with paths .*Nothing was shown\.$/);
+		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty", paths: ["big"] }), /3001 files changed within the paths given, more than the 3000/);
+		const narrowed = await f.call(f.ctx(r.main), { scope: "dirty", paths: ["a.txt"] });
+		assert.match(narrowed.content[0].text, /1 changed file:\n {2}a\.txt\n/);
 	} finally {
 		r.done();
 	}

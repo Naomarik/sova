@@ -36,6 +36,9 @@ export interface ActionMenuItemProps {
   checked?: boolean;
   /** A trailing value in words (`.popover-item-end`), never the row's only label. */
   end?: string;
+  /** A trailing mark drawn in `.popover-item-end` instead of `end` (a count pill, say): its words
+      belong in `aria`, so it is `aria-hidden` by its maker. */
+  endBadge?: JSX.Element;
 }
 
 /** What a menu's body is handed: the rows it draws with, and the menu's own state. */
@@ -207,8 +210,8 @@ export function ActionMenu(props: {
             <span class="popover-item-desc">{p.disabled || p.description}</span>
           </Show>
         </span>
-        <Show when={p.end}>
-          <span class="popover-item-end">{p.end}</span>
+        <Show when={p.endBadge} fallback={<Show when={p.end}><span class="popover-item-end">{p.end}</span></Show>}>
+          <span class="popover-item-end">{p.endBadge}</span>
         </Show>
       </>
     );

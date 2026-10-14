@@ -42,8 +42,10 @@ const snapshotOf = (dir: string, tools: ProjectModeTool[], id = "release-check")
 test("resolveCommand: ./ elements become absolute folder paths, bare ones pass through", () => {
 	const f = fixture();
 	try {
-		const r = resolveCommand(f.dir, ["python3", "./tools/x.py", "--flag", "plain/arg"]);
-		assert.deepEqual(r, { argv: ["python3", join(f.dir, "tools/x.py"), "--flag", "plain/arg"] });
+		const r = resolveCommand(f.dir, ["python3", "./tools/x.py", "--flag", "plain"]);
+		assert.deepEqual(r, { argv: ["python3", join(f.dir, "tools/x.py"), "--flag", "plain"] });
+		assert.ok("error" in resolveCommand(f.dir, ["node", "scripts/check.js"]), "a later argument with a / that isn't ./ is refused");
+		assert.ok("error" in resolveCommand(f.dir, ["cat", "/etc/hosts"]), "an absolute argument is refused");
 		assert.ok("error" in resolveCommand(f.dir, ["/usr/bin/env"]), "an absolute program is refused");
 		assert.ok("error" in resolveCommand(f.dir, ["bin/x"]), "a program path without ./ is refused");
 		assert.ok("error" in resolveCommand(f.dir, ["./../escape"]), "a .. segment is refused");
@@ -183,6 +185,29 @@ test("projectToolDefinitions: a program edited after approval refuses the call (
 			changedText("release_check__status", "release-check"),
 			"release_check__status wasn't run: its program changed since release-check was approved. Ask the user to approve release-check again in the mode menu.",
 		);
+	} finally {
+		f.done();
+	}
+});
+
+test("projectToolDefinitions: a helper the program sources, or a reference file, edited after approval refuses the call", async () => {
+	const f = fixture();
+	try {
+		const marker = join(f.base, "ran");
+		writeFileSync(join(f.dir, "lib.sh"), "x=1\n");
+		writeFileSync(join(f.dir, "notes.md"), "reference\n");
+		script(f.dir, "bin/status", `. "$SOVA_MODE_DIR/lib.sh"; touch ${marker}`);
+		const snapshot = snapshotOf(f.dir, [tool()]);
+		const [def] = projectToolDefinitions(snapshot, { cwd: () => f.cwd, sandboxOn: () => false });
+		writeFileSync(join(f.dir, "lib.sh"), "x=2\n");
+		await assert.rejects(() => def!.execute("c", {}), { message: changedText("release_check__status", "release-check") });
+		writeFileSync(join(f.dir, "lib.sh"), "x=1\n");
+		writeFileSync(join(f.dir, "notes.md"), "reference, edited\n");
+		await assert.rejects(() => def!.execute("c", {}), { message: changedText("release_check__status", "release-check") });
+		writeFileSync(join(f.dir, "notes.md"), "reference\n");
+		writeFileSync(join(f.dir, "MODE.md"), "instructions edited\n");
+		await def!.execute("c", {});
+		assert.ok(readFileSync(marker), "MODE.md alone never refuses; restored files run again");
 	} finally {
 		f.done();
 	}

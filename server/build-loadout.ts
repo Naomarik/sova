@@ -13,7 +13,7 @@ import { canonicalPath } from "./paths";
 import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
-import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
+import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, noteSavedSessionsRefusal, takeSavedSessionsOverride, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { teardownCopyOf } from "./project-services/checkout-teardown";
 import { mainMoved } from "./project-services/on-merge";
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
@@ -440,7 +440,13 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
     const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
-    const m = await mergeBack(row.worktree, root, title);
+    let m: { sha: string };
+    try {
+      m = await mergeBack(row.worktree, root, title, undefined, { allowSavedSessions: takeSavedSessionsOverride(sessionId) });
+    } catch (err) {
+      noteSavedSessionsRefusal(sessionId, err);
+      throw err;
+    }
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
     void mainMoved(root, undefined, { merged: true }).catch((err) => console.warn(`[on-merge] ${root}: ${err instanceof Error ? err.message : String(err)}`));

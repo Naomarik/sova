@@ -1,3 +1,4 @@
+import { CONTINUATION_NOTE_TYPE, type ContinuationDetails } from "../shared/session-bundle";
 import {
   EAGER_TOOLS,
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -331,12 +332,31 @@ function withPaths(it: TranscriptItem, source: string): TranscriptItem {
 }
 
 type NoteEntry = Extract<HEntry, { kind: "note" }>;
+
+/** A continuation note's details, when they read as one (a saved transcript is untrusted: shape-checked). */
+function continuationOf(d: unknown): ContinuationDetails | null {
+  const x = d as Partial<ContinuationDetails> | null;
+  if (!x || typeof x !== "object" || typeof x.bundleId !== "string" || typeof x.title !== "string" || typeof x.rev !== "number") return null;
+  if (!x.savedBy || typeof x.savedBy.name !== "string" || typeof x.savedAt !== "string" || !Array.isArray(x.workers)) return null;
+  if (!x.model || typeof x.model.provider !== "string" || typeof x.model.id !== "string") return null;
+  return x as ContinuationDetails;
+}
 type StateEntry = Extract<HEntry, { kind: "state" }>;
 
 /** An extension message: a report row when it's a subagent report or long/multi-line, else an info row. */
 function customRow(id: string, h: NoteEntry): TranscriptItem {
   const text = contentText(h.content);
   const source = typeof h.noteType === "string" ? h.noteType : "";
+  // A continued saved session's opening note (§chat.saved-sessions/continuation-note): a report row carrying
+  // its details, which the thread draws as the continuation card.
+  if (source === CONTINUATION_NOTE_TYPE) {
+    const continued = continuationOf(h.details);
+    if (continued) {
+      const it = withPaths(item(id, "report", h, text), text);
+      it.report = { source, body: text, preview: previewLine(text), truncated: false, continued };
+      return it;
+    }
+  }
   // A coordinated team's report or question: a report row whatever its length, with the header
   // and trailer peeled off. Unparsed, it falls through to the generic row below.
   const team = parseTeamMessage(source, text);

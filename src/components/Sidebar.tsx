@@ -63,24 +63,15 @@ import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } f
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { inProjectsRegion, projectBlocks, projectOpenCount, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
-import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
+import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
+import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, STATE_WORDS } from "../lib/overseer-menu";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
-import {
-  clearSelection,
-  isSelected,
-  isTextEntry,
-  selectionBusy,
-  pruneSelection,
-  selectedPaths,
-  selectionMode,
-  startSelection,
-  toggleSelection,
-} from "../lib/session-selection";
+import { isTextEntry } from "../lib/text-entry";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { sessionWorking } from "../lib/workers";
@@ -102,7 +93,6 @@ import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
-import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { MergeRunButton } from "./PlaybookReview";
@@ -317,18 +307,13 @@ function SessionRow(props: {
   };
   /**
    * Press-and-hold — a mouse button held down, a thumb held on the row — lifts the row; letting go
-   * in place selects this session and turns the sidebar into selection mode. A lifted row that
-   * moves, or a mouse press that moves 6px, is a drag instead: it opens the drop overlay
-   * (§app.session-list/drop-overlay), which owns the gesture from then on. The press is off the
-   * moment it stops being a press in place: a scroll (the list moving under a still finger is
-   * `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row going away. What a
-   * lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is swallowed below, or
-   * the row would navigate on top of what the gesture just did.
+   * in place does nothing. A lifted row that moves, or a mouse press that moves 6px, is a drag: it
+   * opens the drop overlay (§app.session-list/drop-overlay), which owns the gesture from then on.
+   * The press is off the moment it stops being a press in place: a scroll (the list moving under a
+   * still finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row
+   * going away. What a lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is
+   * swallowed below, or the row would navigate on top of what the gesture just did.
    */
-  const select = () => {
-    startSelection(s().path);
-    announce(`Selecting sessions. ${s().title} selected.`);
-  };
   let shell: HTMLLIElement | undefined;
   let pointerId = 0;
   let pointerKind = "mouse";
@@ -369,12 +354,11 @@ function SessionRow(props: {
     setLifted(false);
     watchPress(false);
   };
-  /** The press ended in place: a lifted row is selected. */
+  /** The press ended in place: a lifted row settles back, and nothing else happens. */
   const releasePress = () => {
-    const wasLifted = press.finish();
+    press.finish();
     setLifted(false);
     watchPress(false);
-    if (wasLifted) select();
   };
   const movePress = (e: PointerEvent) => e.pointerId === pointerId && press.move({ x: e.clientX, y: e.clientY });
   const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && cancelPress();
@@ -403,10 +387,8 @@ function SessionRow(props: {
   };
   onMount(() => shell?.addEventListener("touchmove", holdStill, { passive: false }));
   onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
-  /** The rail's own controls (the state pills, the checkbox) are pressed, not held. */
+  /** The rail's own controls (the state pills) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
-  const selecting = () => selectionMode();
-  const chosen = () => isSelected(s().path);
 
   return (
     <li
@@ -416,16 +398,13 @@ function SessionRow(props: {
         "session-row-shell-current": props.selected === s().path,
         "session-row-dragging": draggingPath() === s().path,
         "session-row-lifted": lifted(),
-        "session-row-shell-selecting": selecting(),
-        "session-row-shell-selected": selecting() && chosen(),
       }}
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
         if (onOwnControl(e) || draggingPath()) return;
         pointerId = e.pointerId;
         pointerKind = e.pointerType;
-        // In selection mode there is no drag at all: a press there is a hold or a toggle.
-        press.start({ x: e.clientX, y: e.clientY }, e.pointerType, !selecting());
+        press.start({ x: e.clientX, y: e.clientY }, e.pointerType);
         watchPress(true);
       }}
       onPointerCancel={cancelPress}
@@ -433,7 +412,7 @@ function SessionRow(props: {
       // that may still drag, whose moves the window keeps watching (6px is a drag, wherever it goes).
       onPointerLeave={(e) => {
         if (press.phase() !== "pressed") return;
-        if (e.pointerType === "mouse" && !selecting()) return;
+        if (e.pointerType === "mouse") return;
         cancelPress();
       }}
       // Capture went to someone else (a scrollbar, another element grabbing it), so the pointerup
@@ -444,68 +423,47 @@ function SessionRow(props: {
       onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
     >
       <div class="session-rail">
-        {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
-            checkbox at the top of it, in selection mode only. Every copy of this row — Recent, a
-            group, Live & web — reads the same selection, so all of them check together. */}
-        <Show when={selecting()}>
-          <label class="toggle session-select">
-            <input
-              type="checkbox"
-              checked={chosen()}
-              aria-label={`Select ${s().title}`}
-              // An action in flight owns the selection it started with; the box says so rather
-              // than silently ignoring the press (the store refuses it either way).
-              disabled={selectionBusy()}
-              onChange={() => toggleSelection(s().path)}
-            />
-            <span class="toggle-box" />
-          </label>
+        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
+        <Show when={s().live}>
+          <button
+            type="button"
+            tabindex="-1"
+            class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
+            aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
+            title={tuiTitle()}
+            onClick={() => toast(tuiTitle())}
+          >
+            TUI
+          </button>
         </Show>
-        {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot.
-            The wrapper is layout-neutral outside selection mode; in it, it hangs the state under
-            the checkbox so the box alone decides where the row's middle is. */}
-        <div class="session-rail-states">
-          <Show when={s().live}>
+        <Show when={isBusy()}>
+          <button
+            type="button"
+            tabindex="-1"
+            class="session-rail-item session-rail-state chip chip-info chip-live"
+            aria-label={busyWords()}
+            title={busyWords()}
+            onClick={() => toast(busyWords())}
+          >
+            <span class="session-rail-dot" />
+          </button>
+        </Show>
+        <Show when={working()}>
+          {(n) => (
             <button
               type="button"
               tabindex="-1"
-              class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
-              aria-label={`Open in a TUI. Pid ${s().live!.pid}, status ${s().live!.status}.`}
-              title={tuiTitle()}
-              onClick={() => toast(tuiTitle())}
+              class="session-rail-item session-rail-count"
+              // One moving thing per row: the figure only pulses when Busy isn't already pulsing.
+              classList={{ "session-rail-count-live": !isBusy() }}
+              aria-label={workingNow(n())}
+              title={workingNow(n())}
+              onClick={() => toast(workingNow(n()))}
             >
-              TUI
+              <span class="text-num">{n()}</span>
             </button>
-          </Show>
-          <Show when={isBusy()}>
-            <button
-              type="button"
-              tabindex="-1"
-              class="session-rail-item session-rail-state chip chip-info chip-live"
-              aria-label={busyWords()}
-              title={busyWords()}
-              onClick={() => toast(busyWords())}
-            >
-              <span class="session-rail-dot" />
-            </button>
-          </Show>
-          <Show when={working()}>
-            {(n) => (
-              <button
-                type="button"
-                tabindex="-1"
-                class="session-rail-item session-rail-count"
-                // One moving thing per row: the figure only pulses when Busy isn't already pulsing.
-                classList={{ "session-rail-count-live": !isBusy() }}
-                aria-label={workingNow(n())}
-                title={workingNow(n())}
-                onClick={() => toast(workingNow(n()))}
-              >
-                <span class="text-num">{n()}</span>
-              </button>
-            )}
-          </Show>
-        </div>
+          )}
+        </Show>
       </div>
       <a
         class="list-row list-row-interactive session-row"
@@ -514,14 +472,7 @@ function SessionRow(props: {
         aria-current={props.selected === s().path ? "page" : undefined}
         onClick={(e) => {
           // A hold or a drag already acted on this row; its click is the gesture's echo, not a choice.
-          if (press.suppressed() || dragSuppressesClick(s().path)) {
-            e.preventDefault();
-            return;
-          }
-          // In selection mode a row is picked, not opened. Outside it, a click is a click.
-          if (!selecting()) return;
-          e.preventDefault();
-          toggleSelection(s().path);
+          if (press.suppressed() || dragSuppressesClick(s().path)) e.preventDefault();
         }}
       >
         <div class="list-main">
@@ -1294,13 +1245,9 @@ export function Sidebar(props: {
   };
   // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
-  /** The one toolbar line (both widths) has the search open: opened by its icon or "/", and
-      held open by a query, so a row tapped and left finds it as it was. */
-  const [searchOpen, setSearchOpen] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
-  let searchToggle: HTMLButtonElement | undefined;
   let aside!: HTMLElement;
   // The tab's copy of the group list: the pane's region and the session pane's menu share it.
   onMount(() => void loadSessionGroups());
@@ -1375,16 +1322,13 @@ export function Sidebar(props: {
     announce(on ? "Sessions pane collapsed." : "Sessions pane expanded.");
     if (refocus && hadFocus) queueMicrotask(() => (on ? expandToggle : collapseToggle)?.focus());
   };
-  /** The spine's Search, and "/" while collapsed: open the pane and its search line, cursor in
-      the field. The field exists only while the line is open, so the line opens here too. */
+  /** The spine's Search, and "/" while collapsed: open the pane, cursor in its search field. */
   const expandToSearch = () => {
     setCollapsed(false, false);
-    setSearchOpen(true);
     queueMicrotask(() => search.focus());
   };
 
-  // "/" anywhere outside a text field focuses search; Escape leaves selection mode; Ctrl/⌘+B
-  // collapses or expands the pane.
+  // "/" anywhere outside a text field focuses search; Ctrl/⌘+B collapses or expands the pane.
   const onKey = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
       if (!props.unfolded) return; // collapse is a desktop affordance
@@ -1392,29 +1336,12 @@ export function Sidebar(props: {
       setCollapsed(!spine());
       return;
     }
-    const t = e.target as HTMLInputElement | null;
-    // Typing, not merely focused on a control: a row's checkbox is an <input> too, and Escape on
-    // one has to leave selection mode like Escape anywhere else (src/lib/session-selection.ts).
-    const inText = isTextEntry(t);
-    // Escape is the way OUT of selection mode, on every keyboard, with no control to find first.
-    // Not while a field has focus: there Escape belongs to the field (search clears, rename cancels).
-    if (e.key === "Escape" && selectionMode() && !inText) {
-      e.preventDefault();
-      // Not while an action is running: leaving the mode under a run in flight is what let a
-      // finished run put its leftovers back over a selection that had moved on.
-      if (selectionBusy()) {
-        announce("Something is still running. It'll be a moment.");
-        return;
-      }
-      clearSelection();
-      announce("Selection off.");
-      return;
-    }
     if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (inText) return;
+    // Typing, not merely focused on a control: a checkbox or a button is no place for a "/".
+    if (isTextEntry(e.target as HTMLElement | null)) return;
     e.preventDefault();
     if (collapsed()) expandToSearch();
-    else openSearch();
+    else search.focus();
   };
   document.addEventListener("keydown", onKey);
   onCleanup(() => {
@@ -1482,18 +1409,6 @@ export function Sidebar(props: {
     const d = dirInfo();
     return d ? tildePath(d.sessionsDir, d.home) : null;
   };
-  /**
-   * The selection lives in module state and is keyed by PATH, so a background poll can neither
-   * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
-   * a session that is no longer in the list is no longer selected. `undefined` is a fetch in
-   * flight, not an empty list — pruning against that would clear everything every few seconds.
-   * Pruned against the UNFILTERED list: a worker session is still in the list, just not drawn.
-   */
-  createEffect(() => {
-    const list = props.sessions;
-    if (!list) return;
-    pruneSelection(list.map((s) => s.path));
-  });
   // Labels for remote groups: refetched only when the set of targets the list uses changes.
   const usedTargets = createMemo(
     () => [...new Set(all().map((s) => remotePlaceOf(s)?.target).filter(Boolean))].sort().join("\n") || false,
@@ -1819,17 +1734,13 @@ export function Sidebar(props: {
     setQuery("");
     search.focus();
   };
-  const toolbarOpen = () => searchOpen() || query() !== "";
-  /** The folded line's search icon (and "/"): the field takes the line, with the cursor in it. */
-  const openSearch = () => {
-    setSearchOpen(true);
-    queueMicrotask(() => search.focus());
-  };
-  /** Close Search, or Escape on an empty field: the query goes, and the line folds back. */
-  const closeSearch = () => {
-    setQuery("");
-    setSearchOpen(false);
-    queueMicrotask(() => searchToggle?.focus());
+  /** Escape on an empty field: leave it for the list — the open session's row, else the first
+      row; with no row on screen the field just lets go of the focus. */
+  const leaveSearch = () => {
+    const list = aside.querySelector(".sidebar-list");
+    const row = list?.querySelector<HTMLElement>('a.session-row[aria-current="page"]') ?? list?.querySelector<HTMLElement>("a.session-row");
+    if (row) row.focus();
+    else search.blur();
   };
 
 
@@ -1854,77 +1765,23 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
-   * The toolbar's working-now line (§app.session-list/working-now): the breakdown the foot's figure
-   * sums, a link to the Agents page. No words on the line — a chat icon before the sessions, the
-   * foot's person before the subagents — the words are its name. Where even that won't fit the gap
-   * (figures of three digits beside `Select` in a 320px pane), the icons go and the figures stay.
+   * The spine's Overseer door, with the count of Overseer messages you haven't read: the bare eye
+   * with the corner pill (the toolbar has the split button, below). Its name and tooltip carry the words.
+   * Who needs you is the Needs you region's to say, not the eye's. Alt+O does the same (App).
    */
-  const WorkingLine = () => {
-    let link!: HTMLAnchorElement;
-    const fit = () => {
-      const bar = link?.parentElement;
-      if (!bar) return;
-      delete link.dataset.fit;
-      if (bar.scrollWidth > bar.clientWidth) link.dataset.fit = "bare";
-    };
-    onMount(() => {
-      // The toolbar, not the link: the link's own size moves with the fit, the line's doesn't.
-      const ro = new ResizeObserver(fit);
-      ro.observe(link.parentElement!);
-      onCleanup(() => ro.disconnect());
-    });
-    createEffect(() => {
-      work().parts.forEach((p) => p.n);
-      fit();
-    });
-    return (
-      <a
-        ref={link}
-        class="sidebar-working"
-        href={agentsHref()}
-        aria-current={props.insightsPage === "agents" ? "page" : undefined}
-        title={work().lineLabel}
-        aria-label={work().lineLabel}
-      >
-        <For each={work().parts}>
-          {(p, i) => (
-            <>
-              <Show when={i() > 0}>
-                <span class="sidebar-working-sep" aria-hidden="true">
-                  ·
-                </span>
-              </Show>
-              <span class="sidebar-working-part">
-                <Icon name={p.kind === "sessions" ? "chat" : "worker"} small />
-                <span class="text-num">{p.n}</span>
-              </span>
-            </>
-          )}
-        </For>
-      </a>
-    );
-  };
-
-  /**
-   * The Overseer's door, with the count of Overseer messages you haven't read. In the toolbar it
-   * is a labelled button (`labelled`): the eye, the word, then the count as an inline pill; on the
-   * spine it is the bare eye with the corner pill. Who needs you is the Needs you region's to say,
-   * not the eye's. Alt+O does the same (App).
-   */
-  const OverseerButton = (p: { class: string; labelled?: boolean }) => {
+  const OverseerButton = (p: { class: string }) => {
     // The Overseer's own messages, so it shows whatever the proactivity; moot while it is open.
     const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
     const label = () => overseerButtonLabel(unread());
     return (
       <a
-        class={`button overseer-entry ${p.labelled ? "button-sm overseer-entry-word" : "button-icon"} ${p.class}`}
+        class={`button button-icon overseer-entry ${p.class}`}
         href={OVERSEER_HASH}
         aria-current={props.overseerOpen ? "page" : undefined}
         aria-label={label()}
         title={`${label()} · Alt+O`}
       >
-        <Icon name="eye" small={p.labelled || undefined} />
-        <Show when={p.labelled}>Overseer</Show>
+        <Icon name="eye" />
         <Show when={unread() > 0}>
           <span class="overseer-entry-count text-num" aria-hidden="true">
             {unread() > 99 ? "99+" : unread()}
@@ -1934,7 +1791,77 @@ export function Sidebar(props: {
     );
   };
 
-  /** The session filter, in the toolbar line while the search is open (both widths). */
+  /**
+   * The toolbar's Overseer split button (§app.overseer/entry-button): the eye, the word and the
+   * unread pill link to the Overseer; ▾, once a project overseer has started, lists them. The list
+   * reads every listed session and this host's project list (lib/overseer-menu), never the hits.
+   */
+  const ovMenu = createMemo(() => overseerMenu(all(), projectList()?.projects, { selected: props.selected, busy: sessionBusy }));
+  const OverseerSplit = () => {
+    const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
+    const label = () => overseerButtonLabel(unread());
+    const menuLabel = () => overseerMenuLabel(ovMenu());
+    return (
+      <div class="button-split overseer-split">
+        <a class="button overseer-entry" href={OVERSEER_HASH} aria-current={props.overseerOpen ? "page" : undefined} aria-label={label()} title={`${label()} · Alt+O`}>
+          <Icon name="eye" />
+          <span>Overseer</span>
+          <Show when={unread() > 0}>
+            <span class="overseer-entry-count text-num" aria-hidden="true">
+              {unread() > 99 ? "99+" : unread()}
+            </span>
+          </Show>
+        </a>
+        <Show when={hasOverseerRows(ovMenu())}>
+          <ActionMenu
+            label={menuLabel()}
+            title={menuLabel()}
+            icon="chevron-down"
+            ghost={false}
+            class="overseer-split-menu"
+            panelClass="overseer-menu"
+            menuName="Project overseers"
+            contain
+            returnFocus
+            span={() => aside}
+            badge={
+              <Show when={overseerMenuDot(ovMenu())}>
+                <span class="overseer-split-dot" aria-hidden="true" />
+              </Show>
+            }
+          >
+            {(menu) => (
+              <>
+                <p class="popover-label" aria-hidden="true">
+                  Project overseers
+                </p>
+                <For each={ovMenu().rows}>
+                  {(r) => (
+                    <menu.Item
+                      label={r.name}
+                      description={r.org ? `In ${r.org}` : undefined}
+                      aria={[r.name, r.org ? `in ${r.org}` : "", r.state ? STATE_WORDS[r.state] : ""].filter(Boolean).join(" · ")}
+                      title={r.org ? `${r.name} · ${r.org}` : r.name}
+                      checked={r.current}
+                      end={r.state ? STATE_WORDS[r.state] : undefined}
+                      href={projectSessionHref(r.projectId, r.path)}
+                    />
+                  )}
+                </For>
+                <div class="popover-sep" role="separator" />
+                <menu.Item label="All Projects" aria="All Projects" href={PROJECTS_HREF} />
+              </>
+            )}
+          </ActionMenu>
+        </Show>
+      </div>
+    );
+  };
+  /** Focus widens the field over the whole line, and a query keeps it there until cleared. */
+  const [searchFocused, setSearchFocused] = createSignal(false);
+  const searchWide = () => searchFocused() || query() !== "";
+
+  /** The session filter: on the toolbar line's left, the whole line while focused or holding a query. */
   const SearchField = () => (
     <div class="search">
       <Icon name="search" />
@@ -1948,12 +1875,14 @@ export function Sidebar(props: {
         autocomplete="off"
         spellcheck={false}
         value={query()}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
         onInput={(e) => setQuery(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
           e.preventDefault();
           if (query()) setQuery("");
-          else closeSearch();
+          else leaveSearch();
         }}
       />
       <Show when={query()}>
@@ -1973,25 +1902,6 @@ export function Sidebar(props: {
       </Show>
     </p>
   );
-  /** The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is the
-      accelerator, never the only way in. */
-  const SelectStart = () => (
-    <Show when={props.sessions && all().length > 0 && !selectionMode()}>
-      <button
-        type="button"
-        class="button button-sm button-ghost sidebar-select-start"
-        title="Select several sessions to rename, group or archive them"
-        onClick={() => {
-          startSelection();
-          announce("Selecting sessions. Pick rows with their checkboxes.");
-        }}
-      >
-        <Icon name="check" small />
-        Select
-      </button>
-    </Show>
-  );
-
   /** The foot's rows, as §app.insights/sidebar-foot draws them: the host filter (mesh only), the
       Usage glance with its monitor button, and Agents with its Settings gear. On the
       desktop they sit in `.sidebar-foot`; on a phone the foot bar's sheet holds them, verbatim. */
@@ -2492,47 +2402,17 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
-          {/* One toolbar line at every width. At rest: the count, Select, the search icon, and the
-              labelled Overseer at the right end. Open: only the field and Close Search — the count
-              stays in the DOM, visually hidden, as the field's description and the live count. */}
+          {/* One toolbar line at every width: the search field on the left, the Overseer split
+              button on the right; focus or a query gives the field the whole line. The count stays
+              in the DOM, visually hidden, as the field's description and the live count. */}
           <div class="sidebar-toolbar">
             <SearchCount />
-            <Show
-              when={toolbarOpen()}
-              fallback={
-                <>
-                  <SelectStart />
-                  <button
-                    ref={searchToggle}
-                    type="button"
-                    class="button button-icon button-ghost"
-                    aria-label="Search sessions"
-                    title="Search sessions · /"
-                    onClick={openSearch}
-                  >
-                    <Icon name="search" small />
-                  </button>
-                  {/* Only while work runs: the breakdown the foot's figure sums, in the gap the
-                      line already has — its words give way, its figures never do. */}
-                  <Show when={work().parts.length > 0}>
-                    <WorkingLine />
-                  </Show>
-                  <OverseerButton class="button-ghost" labelled />
-                </>
-              }
-            >
-              <SearchField />
-              <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
-                <Icon name="close" />
-              </button>
+            <SearchField />
+            <Show when={!searchWide()}>
+              <OverseerSplit />
             </Show>
           </div>
         </div>
-
-        {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
-        <Show when={selectionMode()}>
-          <SelectionToolbar sessions={all()} onRefresh={props.onRefresh} />
-        </Show>
 
         <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
@@ -2689,7 +2569,7 @@ export function Sidebar(props: {
                   </span>
                   {/* The region's one action, at the head's right end: the group picker, which
                       only opens workspaces. Groups are made where sessions are filed (the drop
-                      overlay, Move into group, the selection toolbar, the Overseer). Its click
+                      overlay, Move into group, the Overseer). Its click
                       and keydown stop here, as the group head's `⋯` does, so a press is never
                       read as a press on the summary. */}
                   <button

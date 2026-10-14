@@ -4423,7 +4423,8 @@ export interface DiffFilePatch {
       list per unit in patch order: one per hunk; a file with no hunks (binary, `tooLarge`,
       rename-, mode-only or empty) has exactly one list, the whole file's. A list may be empty. */
   hunkCommits?: number[][];
-  /** With `origins=1`: this file's commits, by `authorTime` ascending (ties by sha). A commit
+  /** With `origins=1`: this file's commits, ancestors first (the order of
+      `rev-list --topo-order --reverse base..head`; by `authorTime`, then sha, if that can't be read). A commit
       scope gives its one commit, every unit `[0]`. */
   commits?: DiffCommit[];
   /** With `origins=1`: the history read timed out or failed, so neither `hunkCommits` nor

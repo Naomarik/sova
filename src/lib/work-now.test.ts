@@ -16,25 +16,25 @@ const insight = (...sessions: LiveAgentSession[]): AgentsInsight => ({
 type Row = NonNullable<WorkPeer["rows"]>[number];
 const row = (path: string, o: Partial<Row> = {}): Row => ({ path, live: null, busy: false, ...o });
 const view = (...a: Parameters<typeof workNow>) => workNowView(workNow(...a));
-const line = (v: ReturnType<typeof workNowView>) => (v.parts.length ? `${v.parts.map((p) => `${p.n} ${p.word}`).join(" · ")} working` : null);
+const breakdown = (v: ReturnType<typeof workNowView>) => (v.parts.length ? `${v.parts.map((p) => `${p.n} ${p.word}`).join(" · ")} working` : null);
 
-test("unknown until the Agents poll answers: no figure, never a 0, no line", () => {
+test("unknown until the Agents poll answers: no figure, never a 0, no breakdown", () => {
   const v = view(undefined, [{ label: "desk", rows: [row("/p/a", { busy: true })] }], { running: { "/x": true }, working: {} });
   assert.equal(v.state, "unknown");
   assert.equal(v.total, null);
   assert.equal(v.figure, "–");
   assert.equal(v.rowWord, null);
-  assert.equal(line(v), null);
+  assert.equal(breakdown(v), null);
   assert.equal(v.sentence, "Agents working now: not known yet");
   assert.equal(v.showTally, true);
 });
 
-test("a known 0: the figure 0, no line, the tally hidden", () => {
+test("a known 0: the figure 0, no breakdown, the tally hidden", () => {
   const v = view(insight(rec("/a")));
   assert.equal(v.state, "complete");
   assert.equal(v.figure, "0");
   assert.equal(v.rowWord, "agents");
-  assert.equal(line(v), null);
+  assert.equal(breakdown(v), null);
   assert.equal(v.sentence, "No agents working now");
   assert.equal(v.showTally, false);
 });
@@ -42,16 +42,16 @@ test("a known 0: the figure 0, no line, the tally hidden", () => {
 test("sessions are turns running; subagents are workers working; the sum is the figure", () => {
   const v = view(insight(rec("/a", { state: "working" }), rec("/b", { workerCounts: counts(3, 2) }), rec("/c", { state: "working", workerCounts: counts(2) })));
   assert.equal(v.total, 7);
-  assert.equal(line(v), "2 sessions · 5 subagents working");
+  assert.equal(breakdown(v), "2 sessions · 5 subagents working");
   assert.equal(v.sentence, "7 agents working now: 2 sessions and 5 subagents");
   assert.equal(`${v.figure} ${v.rowWord}`, "7 agents");
 });
 
 test("parts at 0 are left out, words singular at 1", () => {
-  assert.equal(line(view(insight(rec("/a", { state: "working" })))), "1 session working");
+  assert.equal(breakdown(view(insight(rec("/a", { state: "working" })))), "1 session working");
   assert.equal(view(insight(rec("/a", { state: "working" }))).sentence, "1 agent working now: 1 session");
-  assert.equal(line(view(insight(rec("/a", { workerCounts: counts(5) })))), "5 subagents working");
-  assert.equal(line(view(insight(rec("/a", { workerCounts: counts(1) })))), "1 subagent working");
+  assert.equal(breakdown(view(insight(rec("/a", { workerCounts: counts(5) })))), "5 subagents working");
+  assert.equal(breakdown(view(insight(rec("/a", { workerCounts: counts(1) })))), "1 subagent working");
   assert.equal(view(insight(rec("/a", { workerCounts: counts(3) }))).sentence, "3 agents working now: 3 subagents");
 });
 
@@ -64,14 +64,14 @@ test("only fresh host sessions count; waiting, done and stale workers never do",
       rec("/waiting", { workerCounts: { total: 9, working: 0, waiting: 3, done: 4, error: 1, killed: 1 } }),
     ),
   );
-  assert.equal(line(v), "1 session working");
+  assert.equal(breakdown(v), "1 session working");
 });
 
 test("team members are never double-counted: a team adds nothing beyond its workers", () => {
   const team = { id: "t", name: "t", objective: "", createdAt: 0, parentPath: "/a", live: true, members: [], working: 3 };
   const v = view(insight(rec("/a", { workerCounts: counts(3), teams: [team, { ...team, id: "u", working: 2 }] })));
   assert.equal(v.total, 3);
-  assert.equal(line(v), "3 subagents working");
+  assert.equal(breakdown(v), "3 subagents working");
 });
 
 test("peers: turns from activity, or busy when no TUI has it; their workers; worker sessions skipped", () => {
@@ -85,7 +85,7 @@ test("peers: turns from activity, or busy when no TUI has it; their workers; wor
   ];
   const v = view(insight(rec("/a", { state: "working" })), [{ label: "desk", rows }]);
   assert.equal(v.state, "complete");
-  assert.equal(line(v), "3 sessions · 3 subagents working");
+  assert.equal(breakdown(v), "3 sessions · 3 subagents working");
 });
 
 test("a down or stale peer adds nothing and makes it a floor, said in words only", () => {
@@ -95,7 +95,7 @@ test("a down or stale peer adds nothing and makes it a floor, said in words only
   ]);
   assert.equal(v.state, "partial");
   assert.equal(v.figure, "8", "the bare number, no + or ~");
-  assert.equal(line(v), "3 sessions · 5 subagents working");
+  assert.equal(breakdown(v), "3 sessions · 5 subagents working");
   assert.equal(v.sentence, "At least 8 agents working now: 3 sessions and 5 subagents. Work on desk isn't counted: it isn't answering.");
   assert.equal(v.showTally, true);
   const two = view(insight(), [
@@ -103,7 +103,7 @@ test("a down or stale peer adds nothing and makes it a floor, said in words only
     { label: "laptop", rows: null },
   ]);
   assert.equal(two.sentence, "No agents seen working now. Work on desk and laptop isn't counted: they aren't answering.");
-  assert.equal(line(two), null, "a floor of 0 shows no line");
+  assert.equal(breakdown(two), null, "a floor of 0 has no breakdown");
   assert.equal(two.showTally, true, "the tally hides only a complete 0");
   assert.equal(workMissing(["a", "b", "c"]), "Work on a, b and c isn't counted: they aren't answering.");
 });
@@ -112,16 +112,16 @@ test("the open chat's socket overrides the poll and the peer list, and counts a 
   const agents = insight(rec("/a", { state: "idle", workerCounts: counts(1) }), rec("/b", { state: "working" }));
   // The poll says /a idle with 1 worker; its socket says it is replying with 4.
   let v = view(agents, [], { running: { "/a": true }, working: { "/a": 4 } });
-  assert.equal(line(v), "2 sessions · 4 subagents working");
+  assert.equal(breakdown(v), "2 sessions · 4 subagents working");
   // The socket says the turn ended before the poll noticed.
   v = view(agents, [], { running: { "/b": false }, working: {} });
-  assert.equal(line(v), "1 subagent working");
+  assert.equal(breakdown(v), "1 subagent working");
   // A peer's open chat.
   v = view(insight(), [{ label: "desk", rows: [row("/p/a", { busy: false })] }], { running: { "/p/a": true }, working: { "/p/a": 2 } });
-  assert.equal(line(v), "1 session · 2 subagents working");
+  assert.equal(breakdown(v), "1 session · 2 subagents working");
   // A new chat no list has yet.
   v = view(insight(), [], { running: { "/new": true }, working: { "/new": 0 } });
-  assert.equal(line(v), "1 session working");
+  assert.equal(breakdown(v), "1 session working");
   // Closed chats leave nothing behind: no key, no count.
   v = view(insight(), [], { running: {}, working: {} });
   assert.equal(v.total, 0);
@@ -191,16 +191,11 @@ test("sentences: each ends in exactly one full stop", () => {
   assert.equal(sentences("a", ""), "a.");
 });
 
-test("the toolbar line: an icon kind per part, 0s left out; its name carries the words, a floor's too", () => {
+test("the breakdown: a kind per part, 0s left out", () => {
   const both = view(insight(rec("/a", { state: "working", workerCounts: counts(3) }), rec("/b", { state: "working", workerCounts: counts(2) })));
   assert.deepEqual(both.parts.map((p) => [p.kind, p.n]), [["sessions", 2], ["subagents", 5]]);
-  assert.equal(both.lineLabel, "2 sessions · 5 subagents working");
   const subs = view(insight(rec("/a", { workerCounts: counts(5) })));
   assert.deepEqual(subs.parts.map((p) => p.kind), ["subagents"]);
-  assert.equal(subs.lineLabel, "5 subagents working");
-  assert.equal(view(insight(rec("/a", { state: "working" }))).lineLabel, "1 session working");
-  const floor = view(insight(rec("/a", { state: "working", workerCounts: counts(1) })), [{ label: "desk", rows: null }]);
-  assert.equal(floor.lineLabel, "At least 1 session · 1 subagent working. Work on desk isn't counted: it isn't answering.");
-  assert.equal(view(insight()).lineLabel, "", "no line at 0");
-  assert.equal(view(undefined).lineLabel, "", "no line while unknown");
+  assert.deepEqual(view(insight()).parts, [], "no parts at 0");
+  assert.deepEqual(view(undefined).parts, [], "no parts while unknown");
 });

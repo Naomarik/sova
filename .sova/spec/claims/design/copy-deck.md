@@ -12,8 +12,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count (visually hidden: the search field's description and live region, never printed) | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| Search icon button (toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
-| Close Search (toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
+| Search field (toolbar line, always shown, §app.session-list/search) | `/` focuses it · Esc clears the query, then on an empty field leaves it for the list · Clear Search `×` (`aria-label` "Clear Search") while there is a query |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
 | Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session", or while its request waits on a provider's limit the waiting sentence, "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown) · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
@@ -32,7 +31,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
-| Overseer entry button | `eye` + the word `Overseer` on the toolbar line (§app.session-list/search); wordless `eye` on the spine · badge: {unread} at the button's top-right corner, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
+| Overseer entry button | toolbar line (§app.session-list/search): `eye` + "Overseer" + {unread} as an inline pill, then ▾; spine: wordless `eye`, {unread} at its top-right corner · "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
+| Project overseers ▾ (§app.overseer/entry-button) | `aria-label`/`title`: Project overseers (+ " · {n} with new replies" (1: "1 with a new reply"), " · {n} with failed last turns" (1: "1 with a failed last turn")) · list title: Project overseers · row: {project}, "In {organization}" under it in an organization · state: Working / Last turn failed / New reply · last row: All Projects |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
@@ -52,7 +52,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |
 | Org archive toasts | "Archived. Find it in {project}, under Done." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Done." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
 | Org group refusal (drop, Move into group reason, server 400) | Organization sessions stay with their project. |
-| Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Done list." (n > 1: "{n} went to their projects' Done lists.") |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
 | Open Groups button (on the Groups region head) | wordless `external` · `aria-label` and `title`: Open Groups · no groups: `title` "No groups yet. Drag a session to start one." |
@@ -397,7 +396,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Foot row 1 (→ `#/usage`) | Glance: `C` `O` `OL` `Z`, each with its pace meter and no number, then `DS {amount}` (DeepSeek has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · Claude login with no current reading: `C` with empty tracks (muted) · no data: Usage · `title`: Usage, then a line per provider · `aria-label`: Usage: {lines joined by ". "} · a line: {Provider} {window}: {pct}% used · day {n} of {total} (under a day: {2h 10m} of {5h}) · resets {6:59 PM \| Oct 9 10:00 PM}, a two-window provider's bars joined by "; " · DeepSeek balance $4.29 (exact amount) · pending Claude: Claude ({login}) reading pending · then each other Claude account: Claude ({email}) {its bars} |
 | Foot row 2 (→ `#/agents`, §app.session-list/working-now) | `{n} agents` (1: `1 agent`), the bare number whenever known (a floor too: no `+`, no `~`) · unknown: Agents — then the readout `{5m} tok/min` (§app.insights/token-velocity; unknown: `–`), and under them the chart's muted `30m` · `title`/`aria-label`: Agents: {working sentence}. {velocity sentence} (each ending in one full stop) — working sentence: {n} agents working now: {s} sessions and {m} subagents (1: 1 agent working now: 1 session; a part at 0 left out) · known 0: No agents working now · floor: At least {n} agents working now: … . Work on {host} isn't counted: it isn't answering. (2+: Work on {host} and {host} isn't counted: they aren't answering.; floor of 0: No agents seen working now. …) · unknown: Agents working now: not known yet |
-| Working-now line (toolbar, → `#/agents`, §app.session-list/working-now) | no words on the line: `chat` icon + `{s}` · `worker` icon + `{m}`, a part at 0 left out · `title`/`aria-label`: {s} sessions · {m} subagents working (1: `1 session`, `1 subagent`; a part at 0 left out: `1 session working`, `5 subagents working`) · floor: At least {…} working. Work on {host} isn't counted: it isn't answering. · omitted at 0 and while unknown |
 | Token velocity (§app.insights/token-velocity) | readout `48k tok/min` (phone bar: `48k /min`), the figure the 5-minute mean — under 1,000 whole (`840`), 1,000–9,999 one decimal (`8.4k`), 10,000 up no decimal (`48k`), a million up one decimal (`1.2M`) · chart label: `30m` · unknown: `–` · sentence: Output tokens a minute: {5m} over the last 5 minutes, {30m} over 30. Replies still being written aren't counted yet. · partial: Output tokens a minute: at least {5m} over the last 5 minutes, {30m} over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet. · unknown: Output tokens a minute: not known yet. |
 | Provider names | Claude · OpenAI · Ollama Cloud · Z.ai · DeepSeek |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
@@ -547,7 +545,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Tab | Overseer (icon `eye`) · Notifications (icon `bell`), the next tab, holding Phone Notifications |
-| Intro | The Overseer watches every session and acts on them for you. Open it with the Overseer button on the toolbar line (its eye, the word, and its unread count), or Alt+O. |
+| Intro | The Overseer watches every session and acts on them for you. Open it with the eye beside the session search, or Alt+O. |
 | Group order (legends) | Proactivity · Model and thinking · Limits · Quick actions · Standing notes · Advanced (folded) |
 | Model and thinking | labels Model · Thinking · options pi's default · Model default · {ref} (not available) · hint: Applies when the Overseer is idle. It never changes the model new sessions start with. |
 | Limits lede | Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts restart each time you message it. |

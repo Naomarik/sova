@@ -249,6 +249,19 @@ i.icon {
 /* Square 44px. Requires aria-label. */
 .button-icon { width: var(--control-md); min-height: var(--control-md); padding: 0; }
 
+/* Split (ported from the skill): a main action and its ▾, two real buttons joined into one
+   control. One shared outline, a thin divider, each part its own 44px target and focus ring. A
+   lone main part keeps both rounded ends. Neither part shrinks. */
+.button-split { display: inline-flex; flex: none; align-items: stretch; }
+.button-split > .button { flex: none; }
+.button-split > .button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+.button-split > .button + .button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+.button-split > .button:focus-visible { position: relative; z-index: 1; }
+
 
 /* ---- CHIP. Status is round. A dot AND the word, never hue alone. ---------- */
 
@@ -2542,17 +2555,6 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .session-rail-count:first-child { margin-top: calc((var(--session-title-line) - 16px) / 2); }
 .session-rail-state + .session-rail-count { margin-top: calc(-1 * var(--space-1)); }
 .session-rail-count:hover { color: var(--color-ink); }
-/* Outside selection mode the state wrapper is not a box: its items are the
-   rail's own flex children, so their gap, margins and axis are unchanged. */
-.session-rail-states { display: contents; }
-
-/* ---- SELECTING SEVERAL SESSIONS. A press held on a row turns the
-   list into a picker: the rail — the column that already carries a row's state —
-   carries its checkbox, and the toolbar that acts on the picked rows sits INSIDE
-   the sidebar, above the list, where a thumb can reach it with the rows still on
-   screen. Nothing here is hover-only: every control is visible the whole time the
-   mode is on. ------------------------------------------------------------- */
-
 /* A held press must not also scroll-lock or text-select the row it is held on,
    and a vertical drag of the list has to keep working: pan-y says both. A long
    press lifts the row (§app.session-list/drop-overlay), so no text selection or
@@ -2563,88 +2565,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.session-row-shell-selecting {
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;    /* iOS: the hold is ours, not the OS callout's */
-}
-/* The 30px rail is a gutter the eye skips; a checkbox is a target a thumb aims
-   at, so in selection mode — and only then — the gutter becomes a 44px column,
-   stretched to the row's full height with the checkbox in its middle rather
-   than on the title's line: it picks the whole row, not the title. */
-.session-row-shell-selecting .session-rail {
-  position: relative;
-  width: var(--control-md);
-  align-self: stretch;
-  justify-content: center;
-  padding: 0;
-}
-/* While picking, the rail is the checkbox's alone: the state (TUI, Busy, the
-   worker count) is hidden, so every row centres its checkbox the same way and
-   nothing moves beside it. The row link's hidden suffix still names the state. */
-.session-row-shell-selecting .session-rail-states { display: none; }
-.session-select {
-  width: 100%;
-  min-height: var(--control-md);
-  justify-content: center;
-}
-/* A tick, not just a filled square: the shared .toggle-box is the switch's box
-   here, so the checkbox's own mark is drawn where it is used. Never hue alone. */
-.session-select .toggle-box { position: relative; }
-.session-select input:checked ~ .toggle-box::after {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 1px;
-  width: 4px;
-  height: 9px;
-  border: solid var(--color-on-accent);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-/* Picked outranks hover, and reads as the current row's sibling rather than its
-   twin: the same tint, with the accent said again on the left edge. */
-.session-row-shell-selected,
-.session-row-shell-selected:hover,
-.session-row-shell-selected:focus-within { background: var(--color-accent-tint); }
-.session-row-shell-selected { box-shadow: inset 2px 0 0 var(--color-accent); }
-
-/* The toolbar: a band between the search and the list, so it never floats over
-   the rows it is about. ONE row: the count leads and takes the leftover width
-   (it may ellipsize; the controls never shrink); the actions are ONE cluster at
-   the right end — Move, Rename, Archive at the normal control gap, and Cancel
-   after a space-3 step, so it reads as the way out rather than a fifth action.
-   The count matches the search toolbar's (micro). The open rename field is the
-   one thing below the row. */
-.sidebar-select-bar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  /* The pane's own side edge (space-3, the list rows' and search block's): 8px
-     read as pinched at the left. */
-  padding: var(--space-3);
-  border-bottom: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-sunken);
-}
-.sidebar-select-row {
-  display: flex;
-  align-items: center;
-}
-/* Margins by boundary, not `gap`: the menu's closed panel sits in the cluster
-   display:none, and the count may shrink — a container gap can't absorb either. */
-.sidebar-select-row > * + * { margin-left: var(--space-2); }
-.sidebar-select-count { margin: 0; font-size: var(--fs-micro); color: var(--color-ink-muted); flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-select-actions { display: flex; align-items: center; flex: none; margin-left: auto; }
-.sidebar-select-actions > * + * { margin-left: var(--space-2); }
-/* Small buttons, full-size targets — Cancel included: the band is a touch
-   surface first, and Cancel is the control a mis-hold reaches for. The word
-   buttons run tighter inside. */
-.sidebar-select-bar .button { min-height: var(--control-md); }
-.sidebar-select-actions > .sidebar-select-move,
-.sidebar-select-actions > .sidebar-select-cancel { padding: 0 var(--space-2); gap: var(--space-1); }
-/* The wider step before Cancel: the way out, not a fifth action. */
-.sidebar-select-actions > .sidebar-select-cancel { margin-left: var(--space-3); }.sidebar-select-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.sidebar-select-rename { display: flex; flex-direction: column; gap: var(--space-1); }
+/* The inline title field (TitleField: the Agents board's Rename…). */
 .session-title-field { width: 100%; }
 .session-title-field .input { flex: 1; min-width: 0; }
 
@@ -6307,43 +6228,55 @@ a.subagent-row { text-decoration: none; }
    and the machine rows and confirm card in its thread.
    ============================================================================= */
 
-/* The one toolbar line, every width (§app.session-list/search): the count, Select, the search
-   icon, and the labelled Overseer at the right end. Opened, the field takes the line beside
-   Close Search, and the count stays in it hidden (the field's description and live count), so
-   `position: relative` keeps it inside the line. The normal control gap (space-2) is a boundary
-   margin, not `gap`: the Overseer's auto margin must be able to absorb it at the 320px pane.
-   (A container `gap` can't collapse, and would starve the count by exactly it.) */
+/* The one toolbar line, every width (§app.session-list/search): the search field on the left,
+   taking what the Overseer split button leaves, and the whole line while focused or holding a
+   query (the button is then not rendered). The field shrinks, never the button. The count stays
+   in it hidden (the field's description and live count), so `position: relative` keeps it inside
+   the line. The normal control gap (space-2) is a boundary margin; the count is never printed
+   (visually hidden, first in the line), so the field after it starts at the line's edge. */
 .sidebar-toolbar { position: relative; display: flex; align-items: center; min-height: var(--tap-min); }
 .sidebar-toolbar > * + * { margin-left: var(--space-2); }
+.sidebar-toolbar > .search-count + * { margin-left: 0; }
 .sidebar-toolbar > .search { flex: 1; min-width: 0; }
-/* The count is never printed (visually hidden, first in the line), so at rest the control after
-   it starts at the line's edge rather than a gap's width in. The open line keeps its layout. */
-.sidebar-toolbar > .search-count + :not(.search) { margin-left: 0; }
 .sidebar-toolbar > .button-icon { flex: none; }
-.sidebar-toolbar > .overseer-entry { margin-left: auto; }
-.sidebar-toolbar > .sidebar-select-start { padding: 0 var(--space-2); gap: var(--space-1); flex: none; }
-/* The working-now line (§app.session-list/working-now): a link in the gap between the search icon
-   and the Overseer, only while work runs. No words, so nothing in it shrinks: each part is a 16px
-   muted icon (chat for sessions, the foot's person for subagents) and its figure, never cut. */
-.sidebar-toolbar > .sidebar-working {
-  flex: none;
-  min-height: var(--tap-min);
-  margin-right: var(--space-2);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  white-space: nowrap;
-  font-size: var(--fs-caption);
-  color: var(--color-ink-muted);
-  text-decoration: none;
-  border-radius: var(--r-sm);
+
+/* The toolbar's Overseer split button (§app.overseer/entry-button): the main part is the eye, the
+   word and the unread count as an inline pill, a bordered button like its ▾; tinted while the
+   Overseer is open, keeping the shared outline. ▾'s dot: a new reply or a failed last turn in
+   its list, said in words by its name. */
+.overseer-split > .overseer-entry { padding: 0 var(--space-3); color: var(--color-ink); }
+.overseer-split > .overseer-entry[aria-current="page"] { border-color: var(--color-border-strong); }
+.overseer-split .overseer-entry-count { position: static; }
+.overseer-split-menu { position: relative; color: var(--color-ink-muted); }
+.overseer-split-menu:hover { color: var(--color-ink); }
+.overseer-split-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  pointer-events: none;
 }
-.sidebar-working:hover { color: var(--color-ink); }
-.sidebar-working[aria-current="page"] { color: var(--color-ink); }
-.sidebar-working-part { display: inline-flex; align-items: center; gap: 2px; }
-.sidebar-working-part > .text-num { color: var(--color-ink-2); }
-/* The toolbar measured an overflow (long figures beside Select): the figures alone, "12 · 148". */
-.sidebar-working[data-fit="bare"] .icon { display: none; }
+/* Its list stays a dropdown below 768px, not the bottom sheet other menus become: under the
+   button, as wide as the pane (ActionMenu's `span` measures it). Compound to outweigh the
+   `.model-menu` sheet rules at any source order. */
+@media (max-width: 767px) {
+  .model-menu.action-menu.action-menu-span {
+    top: var(--menu-top, 64px);
+    left: var(--menu-left, var(--space-2));
+    right: auto;
+    bottom: auto;
+    width: var(--menu-width, auto);
+    max-height: min(70dvh, var(--menu-max, 70dvh));
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    padding-bottom: 0;
+  }
+  .model-menu.action-menu.action-menu-span::backdrop { background: transparent; }
+}
 
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's
@@ -6367,11 +6300,6 @@ a.subagent-row { text-decoration: none; }
   text-align: center;
   pointer-events: none;
 }
-/* The toolbar's labelled form: the word after a small eye with a tighter gap, and the count kept
-   as a corner pill (inline, it would cost the session count its room). */
-.overseer-entry-word { padding: 0 var(--space-2); gap: var(--space-1); }
-.overseer-entry-word .overseer-entry-count { position: absolute; top: -4px; right: -4px; }
-
 /* A session row with activity since you last had it open: a small accent dot
    leading line 1, like the draft pencil. The hidden word carries it for AT. */
 .list-title > .session-unread {

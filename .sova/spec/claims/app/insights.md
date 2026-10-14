@@ -184,13 +184,13 @@ Usage glance needs the room.
 - **Agents row, what is working right now:** `{n} agents` and how fast the agents are writing, on
   two lines in one 64px whole-row link, the gear centred at its right.
   - **The figure** is the working count (§app.session-list/working-now): the sessions whose own
-    turn is running plus the subagents working, on this host and every connected host — the sum
-    of the toolbar's breakdown line, so the two never disagree. It is printed short as agents:
+    turn is running plus the subagents working, on this host and every connected host — the one
+    figure the foot, the phone bar and the spine all show, so none of them disagree. It is printed short as agents:
     `{n} agents` (`1 agent`). A known count always shows the bare number, `0 agents` included: a
     floor (a connected host that isn't answering) is marked by no `+` or `~`, only by its
     sentence (below). The word follows the number shown, floor or not: `1 agent`, every other
     figure `agents`. While it is unknown the segment is the plain word "Agents", with no figure,
-    never a 0. No other figure follows it in words — the breakdown is the toolbar line's — and
+    never a 0. No other figure follows it in words — the breakdown is in its sentence — and
     teams are never counted (their members are subagents already).
   - **The velocity** (§app.insights/token-velocity): line 1 ends with the readout, `48k tok/min`
     (the figure semibold ink at body size, the unit muted micro), never shrunk or cut — `{n}
@@ -771,8 +771,9 @@ can't disagree, and nothing is fetched, sent or stored.
   running work; no TUI mark pulses anywhere (§design.ground-rules/motion).
 - **Working** is worker-level: a subagent is mid-task. On a member row it's
   `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards). The one
-  aggregate that also says "working" of a session's own turn is the toolbar's working-now line,
-  which names the two apart: "2 sessions · 5 subagents working" (§app.session-list/working-now).
+  aggregate that also says "working" of a session's own turn is the working count's sentence, on
+  the foot's Agents row and the spine's tally, which names the two apart: "7 agents working now: 2
+  sessions and 5 subagents" (§app.session-list/working-now).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
   - **Session rows (§app/session-list):** no chip at all. The count is a bare `{n}`, with no icon, in the row's
@@ -1571,8 +1572,8 @@ Sova that aren't archived.
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path.
-- **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, the
-  sidebar's title field: Enter saves, Escape cancels, an empty field restores the derived title,
+- **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, a
+  title field (Sova's title store, §app.session-list/session-titles): Enter saves, Escape cancels, an empty field restores the derived title,
   and leaving the field saves what's in it (empty: cancels). A value equal to the title the field
   opened with is a cancel, never a write, on Enter or on leaving, even when the row's title
   changed while the field was open. Kept in Sova only.

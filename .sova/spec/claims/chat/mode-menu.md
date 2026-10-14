@@ -186,8 +186,11 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 
 ## §chat.mode-menu/how-a-switch-reaches-the-chat — How a switch reaches the chat
 
-`POST /api/mode?path=<session>` switches exactly the chat that file belongs to; it must be one
-this server holds open (404 otherwise), and `mode.json` is not written. The chat then:
+`POST /api/mode?path=<session>` switches exactly the chat that file belongs to, and `mode.json` is
+not written. A chat this server doesn't hold open (one closed for being quiet,
+§app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
+TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
+The chat then:
 
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
   so it leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode

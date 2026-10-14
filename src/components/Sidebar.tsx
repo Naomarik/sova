@@ -125,6 +125,10 @@ import {
 import { MeshHostMenu } from "./MeshHostMenu";
 import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
+import { updateAvailable } from "../lib/updates";
+
+/** The Settings buttons' name: it says when the last check found an update. */
+const settingsLabel = () => (updateAvailable() ? "Settings · update available" : "Settings");
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -2080,11 +2084,14 @@ export function Sidebar(props: {
         <button
           type="button"
           class="button button-icon sidebar-settings"
-          title="Settings"
-          aria-label="Settings"
+          title={settingsLabel()}
+          aria-label={settingsLabel()}
           onClick={() => props.onOpenSettings()}
         >
           <Icon name="settings" small />
+          <Show when={updateAvailable()}>
+            <span class="update-dot" aria-hidden="true" />
+          </Show>
         </button>
         <Show when={reading()}>
           {(r) => <VelocityScrubCard reading={r()} x={pick()?.x ?? 0} y={pick()?.y ?? 0} touch={pick()?.touch ?? false} />}
@@ -2358,8 +2365,11 @@ export function Sidebar(props: {
           >
             <Icon name="worker" />
           </a>
-          <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
+          <button type="button" class="button button-icon spine-item" title={settingsLabel()} aria-label={settingsLabel()} onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />
+            <Show when={updateAvailable()}>
+              <span class="update-dot" aria-hidden="true" />
+            </Show>
           </button>
         </div>
       </div>

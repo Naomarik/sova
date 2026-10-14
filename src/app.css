@@ -1153,3 +1153,72 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .chat-wait-note-icon {
   --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
 }
+
+/* ---- UPDATES. The dot on the Settings buttons, the note after an upgrade, and Settings →
+   General's Updates section. ---------------------------------------------------------------- */
+
+/* A small accent dot at the gear's top right: an update this copy can install. Static. */
+.button:has(> .update-dot) { position: relative; }
+.update-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-surface);
+  pointer-events: none;
+}
+/* "Sova was updated · Reload": a note, not a toast — it stays until the page reloads. */
+.update-note {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-body);
+}
+.settings-updates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.settings-updates-version { font-weight: var(--fw-medium); }
+.settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.settings-updates-status p { margin: 0; }
+.settings-updates-checked { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.settings-updates-offer { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.settings-updates-notes { width: 100%; }
+.settings-updates-notes summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-accent); }
+.settings-updates-notes pre {
+  margin: 0 0 var(--space-2);
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.settings-updates-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings-updates-confirm p { margin: 0; max-width: var(--measure); }
+.settings-updates-progress p { margin: 0 0 var(--space-2); }
+.settings-updates-steps { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: 0; list-style: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.settings-updates-steps li::before { content: "○ "; }
+.settings-updates-steps li.done { color: var(--color-ink-2); }
+.settings-updates-steps li.done::before { content: "✓ "; }
+.settings-updates-steps li.now { color: var(--color-ink); font-weight: var(--fw-medium); }
+.settings-updates-steps li.now::before { content: "● "; }
+.settings-updates-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings-updates-toggle { align-self: flex-start; width: fit-content; }

@@ -103,6 +103,21 @@ test("targetInfo: label defaults to the name; kind shows the environment layer; 
   assert.equal(info.error, "boom");
 });
 
+test("remoteTimeoutMs: 15 s unless the ssh hop sets connectTimeoutS (then + 10 s); a timeout names the bound that cut it", () => {
+  const slow = { ...ssh, name: "slow", connectTimeoutS: 50 } as never;
+  const boxOnSlow = { name: "box", kind: "docker", docker: { container: "web" }, via: "slow" } as never;
+  assert.equal(T.REMOTE_TIMEOUT_MS, 15_000);
+  assert.equal(T.remoteTimeoutMs(ssh as never, [ssh as never]), 15_000);
+  assert.equal(T.remoteTimeoutMs({ ...ssh, ssh: { ...ssh.ssh, options: ["ConnectTimeout=60"] } } as never, []), 15_000, "an ssh option alone changes no timer");
+  assert.equal(T.remoteTimeoutMs(local as never, [local as never]), 15_000);
+  assert.equal(T.remoteTimeoutMs(slow, [slow]), 60_000);
+  assert.equal(T.remoteTimeoutMs(boxOnSlow, [slow, boxOnSlow]), 60_000);
+  assert.equal(T.remoteTimeoutMs({ ...ssh, connectTimeoutS: 3 } as never, []), 15_000, "never below today's cap");
+  // A run without the bound recorded (older callers, fakes) still reads 15s.
+  assert.equal(T.classifyFailure({ code: null, stdout: "", stderr: "", timedOut: true })?.error, "No answer within 15s");
+  assert.equal(T.classifyFailure({ code: null, stdout: "", stderr: "", timedOut: true, timeoutMs: 60_000 })?.error, "No answer within 60s");
+});
+
 // ---------------------------------------------------------------------------
 
 const mthost = { name: "mthost", label: "mt host", kind: "ssh", ssh: { user: "u", host: "example.invalid" }, cwd: "/srv/app" } as const;

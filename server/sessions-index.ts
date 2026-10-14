@@ -783,6 +783,14 @@ export function cachedTitleOf(path: string): string | undefined {
   return hit ? withTitle(hit.summary, memoSessionTitleRecords()).title : undefined;
 }
 
+/** A session's display title as the list shows it (its stored title, else its name or first message,
+    else "Untitled"), reading the file when its summary is not cached or is stale; undefined when the
+    file is not a session. */
+export async function displayTitleOf(path: string): Promise<string | undefined> {
+  const s = await summarize(path).catch(() => null);
+  return s ? withTitle(s, memoSessionTitleRecords()).title : undefined;
+}
+
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
 export function lastReplyAtOf(path: string): number | undefined {
   return cache.get(path)?.lastReply?.at;

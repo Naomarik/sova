@@ -17,8 +17,10 @@ import {
   liveRows,
   livePids,
   mergeHistory,
+  memoryParts,
   meters,
   momentText,
+  readoutText,
   msText,
   nearestIndex,
   niceCeil,
@@ -138,11 +140,117 @@ test("numbers read at a glance", () => {
 });
 
 test("scope and degraded lines say what the numbers cover", () => {
-  assert.equal(scopeLine({ scope: "unit", unitName: "sova-runtime.service" }), "Everything in sova-runtime.service");
-  assert.equal(scopeLine({ scope: "tree" }), "This server's process tree only");
+  assert.equal(scopeLine({ scope: "unit", unitName: "sova-runtime.service" }), "Sova's server and its chats");
+  assert.equal(scopeLine({ scope: "tree" }), "Sova's server and its chats, process trees only");
+  assert.equal(scopeLine({ scope: "ps" }), "Sova's server and its chats");
+  assert.equal(scopeLine({ scope: "none" }), "This server's own numbers only");
+  assert.match(degradedLine({ scope: "ps", platform: "darwin" })!, /resident memory/);
   assert.equal(degradedLine({ scope: "unit", platform: "linux" }), null);
   assert.match(degradedLine({ scope: "tree", platform: "linux" })!, /process tree only/);
-  assert.match(degradedLine({ scope: "none", platform: "darwin" })!, /need Linux/);
+  assert.match(degradedLine({ scope: "none", platform: "win32" })!, /need Linux/);
+});
+
+const MEMORY = { total: 6 * GB, backend: { bytes: 2.5 * GB, procs: 2 }, runtime: { bytes: 2 * GB, count: 3 }, wrapped: { bytes: GB, count: 2 }, tools: { bytes: 0.5 * GB } };
+/** A snapshot from a server that splits Sova's memory: a Claude Code chat with a worker, and a pi-model chat. */
+function split(extra: Partial<MonitorSnapshot> = {}): MonitorSnapshot {
+  const base = snapshot();
+  return snapshot({
+    memory: MEMORY,
+    server: { ...base.server, privBytes: 2.4 * GB, helpers: [proc(110, "bun usage-helper/main.ts", 0.5, 70 * MB, { kind: "sova-helper", privBytes: 56 * MB })] },
+    sessions: [
+      {
+        sessionPath: "/s/cc.jsonl", title: "Claude chat", hosted: true, backend: "claude-code",
+        cpuPct: 12, rssBytes: 900 * MB, privBytes: 600 * MB, swapBytes: 0, procCount: 5,
+        runtimeBytes: 150 * MB, wrappedBytes: 160 * MB, toolsBytes: 40 * MB,
+        own: [
+          proc(450, "bun main.ts", 2, 200 * MB, { kind: "sova-runtime", privBytes: 150 * MB }),
+          proc(451, "claude -p", 8, 300 * MB, { kind: "claude-provider", privBytes: 160 * MB }),
+          proc(452, "zsh -c make", 2, 50 * MB, { kind: "shell", privBytes: 40 * MB }),
+        ],
+        ownCpuPct: 12, ownRssBytes: 550 * MB,
+        workers: [worker("ag_09", 0, 350 * MB, { name: "tester", backend: "claude-code", status: "idle", privBytes: 250 * MB, runtimeBytes: 120 * MB, wrappedBytes: 130 * MB, toolsBytes: 0, procCount: 2 })],
+      },
+      {
+        sessionPath: "/s/pi.jsonl", title: "Pi chat", hosted: true, backend: "pi",
+        cpuPct: 1, rssBytes: 180 * MB, privBytes: 130 * MB, swapBytes: 0, procCount: 1,
+        runtimeBytes: 130 * MB, wrappedBytes: 0, toolsBytes: 0,
+        own: [proc(600, "bun main.ts", 1, 180 * MB, { kind: "sova-runtime", privBytes: 130 * MB })],
+        ownCpuPct: 1, ownRssBytes: 180 * MB, workers: [],
+      },
+    ],
+    escaped: { cpuPct: 0, rssBytes: 0, swapBytes: 0, procCount: 0, procs: [] },
+    ...extra,
+  });
+}
+
+test("Sova memory: one meter against RAM, and four figures that add up to it", () => {
+  const m = meters(split()).find((x) => x.key === "memory")!;
+  assert.deepEqual([m.label, m.value, m.of], ["Sova memory", "6 GB", " of 32 GB"]);
+  assert.equal(m.pct, (6 / 32) * 100);
+  assert.match(m.context!, /10 GB available/);
+  const parts = memoryParts(split())!;
+  assert.deepEqual(parts.map((p) => [p.label, p.value, p.context ?? ""]), [
+    ["Backend", "2.5 GB", "server and helper"],
+    ["Sova runtime", "2 GB", "3 chats"],
+    ["Claude Code", "1 GB", "2 CLIs"],
+    ["Tools and work", "512 MB", ""],
+  ]);
+  assert.equal(parts.reduce((n, p) => n + p.bytes, 0), MEMORY.total);
+  assert.equal(memoryParts(snapshot()), null, "an older server's snapshot has no split");
+  // macOS: no per-process swap, so no swap meter.
+  assert.ok(!meters(split({ scope: "ps", unit: undefined })).some((x) => x.key === "swap"));
+});
+
+test("table: Backend first, each chat split into runtime, what it wraps and tools; no 'Hosted here', no 'own tools'", () => {
+  const rows = liveRows(split());
+  assert.deepEqual(rows.map((r) => r.label), ["Backend", "Claude chat", "Pi chat"]);
+  const backend = rows[0]!;
+  assert.deepEqual([backend.kind, backend.caption, backend.rssBytes], ["server", "the Sova server and its helper", 2.5 * GB]);
+  assert.deepEqual(backend.parts!.map((p) => [p.label, p.caption, p.rssBytes]), [
+    ["Sova server", "web app, sessions, monitor", 2.4 * GB],
+    ["Usage helper", "prices and usage", 56 * MB],
+  ]);
+  const cc = rows[1]!;
+  assert.deepEqual([cc.caption, cc.rssBytes], ["Claude Code", 600 * MB]);
+  assert.deepEqual(cc.parts!.map((p) => [p.label, p.caption, p.rssBytes]), [
+    ["Sova runtime", "this chat's own process", 150 * MB],
+    ["Claude Code", "the wrapped CLI", 160 * MB],
+    ["Tools", "1 process", 40 * MB],
+  ]);
+  assert.deepEqual(cc.parts![2]!.procs.map((p) => p.cmd), ["zsh -c make"]);
+  assert.equal(cc.procs.length, 0, "a split session's processes hang off its parts");
+  // Its parts and its workers add up to its row.
+  assert.equal(cc.parts!.reduce((n, p) => n + p.rssBytes, 0) + cc.workers.reduce((n, w) => n + w.rssBytes, 0), cc.rssBytes);
+  assert.deepEqual([cc.workers[0]!.rssBytes, cc.workers[0]!.split], [250 * MB, "runtime 120 MB · Claude Code 130 MB"]);
+  const pi = rows[2]!;
+  assert.equal(pi.caption, "pi model · nothing wrapped");
+  assert.deepEqual(pi.parts!.map((p) => p.label), ["Sova runtime"], "nothing wrapped, no tools: only its runtime");
+  for (const r of rows) assert.ok(!/Hosted here/.test(r.caption ?? ""));
+  // A row per group still adds up to Sova's memory.
+  assert.equal(rows.reduce((n, r) => n + r.rssBytes, 0), 2.5 * GB + 600 * MB + 130 * MB);
+});
+
+test("chart and reading: Sova memory only from readings that carry it, never the old count", () => {
+  const now = 3_600_000;
+  // Two 30s rollups from before the change (RSS-era numbers, far higher), then three new ticks.
+  const pts = [
+    point(now - 60_000, { a: [10, GB] }, { rssBytes: 20 * GB, anonBytes: 15 * GB }),
+    point(now - 30_000, { a: [10, GB] }, { rssBytes: 20 * GB, anonBytes: 15 * GB }),
+    point(now - 10_000, { a: [10, GB] }, { sovaBytes: 6 * GB, mem: [2.5 * GB, 2 * GB, GB, 0.5 * GB] }),
+    point(now - 5000, { a: [10, GB] }, { sovaBytes: 6 * GB, mem: [2.5 * GB, 2 * GB, GB, 0.5 * GB] }),
+    point(now, { a: [10, GB] }, { sovaBytes: 6.5 * GB, mem: [3 * GB, 2 * GB, GB, 0.5 * GB] }),
+  ];
+  const m = chartModel(pts, {}, { width: 720, height: 120, now });
+  assert.equal(m.memMax, 6.5 * GB, "the old numbers set no scale");
+  assert.equal(m.memory.length, 1);
+  assert.ok(m.memory[0]!.startsWith(`M${Math.round(m.xs[2]! * 10) / 10},`), `memory line starts at the first new tick: ${m.memory[0]}`);
+  assert.equal(chartModel(pts.slice(0, 2), {}, { width: 720, height: 120, now }).memory.length, 0, "no new tick: no memory line at all");
+  assert.equal(readoutText(pts[4]!), "CPU 10% · Sova memory 6.5 GB: backend 3 GB, runtime 2 GB, Claude Code 1 GB, tools 512 MB · load 1.00");
+  assert.equal(readoutText(pts[0]!), "CPU 10% · load 1.00");
+  // A moment from before the change shows no memory per row rather than the old count.
+  const old = rowsAt(pts[0]!, {}, undefined);
+  assert.ok(old.every((r) => Number.isNaN(r.rssBytes)));
+  assert.equal(rowsAt(pts[4]!, {}, undefined)[0]!.rssBytes, GB);
 });
 
 test("meters: unit memory is anon, not memory.current; number first with context", () => {
@@ -180,9 +288,9 @@ test("live rows: sessions heaviest first, workers heaviest first, then server an
   const rows = liveRows(snapshot());
   assert.deepEqual(
     rows.map((r) => r.label),
-    ["Heavy", "Light", "Sova server", "Escaped processes"],
+    ["Backend", "Heavy", "Light", "Escaped processes"],
   );
-  const heavy = rows[0]!;
+  const heavy = rows[1]!;
   assert.equal(heavy.sessionPath, "/s/heavy.jsonl");
   assert.deepEqual(
     heavy.workers.map((w) => w.label),
@@ -198,7 +306,7 @@ test("live rows: sessions heaviest first, workers heaviest first, then server an
 });
 
 test("a worker with no name shows its id; folder matches are labelled guesses", () => {
-  assert.equal(liveRows(snapshot())[1]!.workers[0]!.label, "w1");
+  assert.equal(liveRows(snapshot())[2]!.workers[0]!.label, "w1");
   assert.equal(isHeuristic("cwd"), true);
   assert.equal(isHeuristic("exited-tools"), true);
   assert.equal(isHeuristic("env"), false);
@@ -231,20 +339,20 @@ test("rows at a scrubbed moment come from the point, named by the history and th
   assert.deepEqual(
     rows.map((r) => [r.label, r.kind]),
     [
+      ["Backend", "server"],
       ["Heavy", "session"],
-      ["Sova server", "server"],
       ["Not attributed", "unattributed"],
     ],
   );
-  assert.equal(rows[0]!.sessionPath, "/s/heavy.jsonl");
+  assert.equal(rows[1]!.sessionPath, "/s/heavy.jsonl");
   assert.deepEqual(
-    rows[0]!.workers.map((w) => [w.label, w.cpuPct]),
+    rows[1]!.workers.map((w) => [w.label, w.cpuPct]),
     [
       ["builder", 70],
       ["reviewer", 10],
     ],
   );
-  assert.equal(rows[0]!.workers[0]!.top[0]!.cmd, "tsc");
+  assert.equal(rows[1]!.workers[0]!.top[0]!.cmd, "tsc");
   assert.equal(rows[2]!.procs[0]!.cmd, "git status");
 });
 
@@ -331,7 +439,8 @@ test("chart: stacks the heaviest groups, folds the rest, breaks paths across gap
   // 10s after a 5s step is not a gap: one run per series.
   assert.equal(m.series[0]!.paths.length, 1);
   // A 10-minute gap (a restart) starts a new path.
-  const gapped = chartModel([pts[0]!, pts[1]!, point(now + 600_000, { a: [10, GB] })], {}, { width: 720, height: 120, now: now + 600_000 });
+  const sova = (p: MonitorPoint) => ({ ...p, sovaBytes: 4 * GB });
+  const gapped = chartModel([sova(pts[0]!), sova(pts[1]!), sova(point(now + 600_000, { a: [10, GB] }))], {}, { width: 720, height: 120, now: now + 600_000 });
   assert.equal(gapped.series[0]!.paths.length, 2);
   assert.equal(gapped.memory.length, 2);
   // A lone point still draws a sliver.
@@ -348,7 +457,7 @@ test("footer and this tab", () => {
 test("reserved groups read the same everywhere, whatever the history calls them", () => {
   const labels = { unattributed: { label: "Unattributed" }, "/s/a.jsonl": { label: "A chat" } };
   assert.equal(groupLabel("unattributed", labels), "Not attributed");
-  assert.equal(groupLabel("server", {}), "Sova server");
+  assert.equal(groupLabel("server", {}), "Backend");
   assert.equal(groupLabel("/s/a.jsonl", labels), "A chat");
   assert.equal(groupLabel("/s/b.jsonl", labels), "Untitled session");
   assert.equal(groupLabel("/s/c.jsonl", { "/s/c.jsonl": { label: "2026-09-29T06-28-59-167Z_01a0.jsonl", sessionPath: "/s/c.jsonl" } }), "Untitled session");
@@ -360,7 +469,7 @@ test("session names come from the app's list, never from the file name", () => {
   const titleOf = (p: string) => ({ "/s/heavy.jsonl": "Renamed heavy", "/s/new.jsonl": "Untitled" })[p];
   const s = withTitles(snapshot(), titleOf);
   assert.deepEqual(
-    liveRows(s).map((r) => r.label).slice(0, 2),
+    liveRows(s).map((r) => r.label).slice(1, 3),
     ["Renamed heavy", "Light"],
   );
   assert.equal(liveRows(s).find((r) => r.kind === "escaped")!.procs[0]!.chargedTo, "Renamed heavy · w3");

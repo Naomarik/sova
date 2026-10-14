@@ -14,9 +14,12 @@ export interface TickPoint {
   rssBytes: number;
   swapBytes: number;
   anonBytes?: number;
+  /** Sova's own memory and its parts [backend, runtime, wrapped, tools]; absent where nothing is listed. */
+  sovaBytes?: number;
+  mem?: [number, number, number, number];
   load1: number;
   loopMaxMs: number;
-  /** group key → [cpuPct, rssBytes] */
+  /** group key → [cpuPct, own memory] */
   groups: Map<string, [number, number]>;
   /** group key → worker id → [cpuPct, rssBytes] */
   workers: Map<string, Map<string, [number, number]>>;
@@ -29,7 +32,7 @@ export interface TickPoint {
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// A packed tick: [at, cpu, rss, swap, anon(-1 = none), load1, loop,
+// A packed tick: [at, cpu, rss, swap, anon(-1 = none), sova(-1 = none), backend, runtime, wrapped, tools, load1, loop,
 //   nGroups, (g, cpu, rss)…, nWorkers, (g, w, cpu, rss)…, nTop, (proc, cpu, rss, g(-1), w(-1))…]
 // where g, w and proc index the intern tables.
 type Packed = Float64Array;
@@ -95,7 +98,8 @@ export class MonitorRing {
 
   push(p: TickPoint): void {
     const t = ++this.tick;
-    const nums: number[] = [p.at, r1(p.cpuPct), p.rssBytes, p.swapBytes, p.anonBytes ?? -1, p.load1, r1(p.loopMaxMs)];
+    const mem = p.sovaBytes !== undefined && p.mem ? p.mem : [0, 0, 0, 0];
+    const nums: number[] = [p.at, r1(p.cpuPct), p.rssBytes, p.swapBytes, p.anonBytes ?? -1, p.sovaBytes ?? -1, ...mem, p.load1, r1(p.loopMaxMs)];
     const wid = (g: string, w: string) => {
       const name = p.workerLabels?.get(g)?.get(w);
       return this.workerIds.id(`${g}\0${w}`, { id: w, ...(name ? { name } : {}) }, t);
@@ -139,14 +143,17 @@ export class MonitorRing {
 
   private decode(b: Packed, groups: MonitorHistory["groups"], workerLabels: NonNullable<MonitorHistory["workerLabels"]>): MonitorPoint {
     let i = 0;
-    const at = b[i++]!, cpuPct = b[i++]!, rssBytes = b[i++]!, swapBytes = b[i++]!, anon = b[i++]!, load1 = b[i++]!, loopMaxMs = b[i++]!;
+    const at = b[i++]!, cpuPct = b[i++]!, rssBytes = b[i++]!, swapBytes = b[i++]!, anon = b[i++]!, sova = b[i++]!;
+    const mem: [number, number, number, number] = [b[i++]!, b[i++]!, b[i++]!, b[i++]!];
+    const load1 = b[i++]!, loopMaxMs = b[i++]!;
     const gkey = (id: number) => {
       const g = this.groups.get(id);
       if (!g) return `?${id}`;
       groups[g.key] ??= { label: g.label, ...(g.sessionPath ? { sessionPath: g.sessionPath } : {}) };
       return g.key;
     };
-    const point: MonitorPoint = { at, cpuPct, rssBytes, swapBytes, ...(anon >= 0 ? { anonBytes: anon } : {}), load1, loopMaxMs,
+    const point: MonitorPoint = { at, cpuPct, rssBytes, swapBytes, ...(anon >= 0 ? { anonBytes: anon } : {}),
+      ...(sova >= 0 ? { sovaBytes: sova, mem } : {}), load1, loopMaxMs,
       groups: {}, workers: {}, top: [] };
     for (let n = b[i++]!; n > 0; n--) point.groups[gkey(b[i++]!)] = [b[i++]!, b[i++]!];
     const worker = (g: string, id: number) => {
@@ -184,15 +191,18 @@ export class MonitorRing {
 
 // ── 30s rollups ──────────────────────────────────────────────────────────────────────────────
 
-/** One disk line: a MonitorPoint plus its own labels (so a line stands alone). */
+/** One disk line: a MonitorPoint plus its own labels (so a line stands alone). Version 2 counts
+    memory as each process's own and carries Sova's memory; a version-1 line (RSS) is still read
+    for its CPU, and carries no Sova memory. */
 export interface RollupLine extends MonitorPoint {
-  v: 1;
+  v: 2;
   labels: MonitorHistory["groups"];
   workerLabels?: MonitorHistory["workerLabels"];
 }
 
 /** Folds 5s ticks into one 30s line: mean and max CPU, max memory, mean per group/worker CPU with
-    max memory, and the window's top 5 processes by mean CPU (transient ones included). */
+    max memory, the window's top 5 processes by mean CPU (transient ones included), and Sova's
+    memory at its peak with all four parts from that same tick, so they add up to it. */
 export class Rollup {
   private ticks: TickPoint[] = [];
   add(p: TickPoint): void {
@@ -239,10 +249,13 @@ export class Rollup {
     const top = [...procs.values()].sort((a, b) => b.sum - a.sum).slice(0, 5)
       .map(({ sum, ...q }) => ({ ...q, cpuPct: r1(sum / n) }));
     const anon = ts.some((t) => t.anonBytes !== undefined) ? max((t) => t.anonBytes ?? 0) : undefined;
+    let peak: TickPoint | undefined;
+    for (const t of ts) if (t.sovaBytes !== undefined && t.mem && (!peak || t.sovaBytes > peak.sovaBytes!)) peak = t;
     return {
-      v: 1, at: ts[n - 1]!.at,
+      v: 2, at: ts[n - 1]!.at,
       cpuPct: r1(ts.reduce((s, t) => s + t.cpuPct, 0) / n), cpuPctMax: r1(max((t) => t.cpuPct)),
       rssBytes: max((t) => t.rssBytes), swapBytes: max((t) => t.swapBytes), ...(anon === undefined ? {} : { anonBytes: anon }),
+      ...(peak ? { sovaBytes: peak.sovaBytes!, mem: [...peak.mem!] as [number, number, number, number] } : {}),
       load1: max((t) => t.load1), loopMaxMs: r1(max((t) => t.loopMaxMs)),
       groups, workers, top, labels, ...(Object.keys(workerLabels).length ? { workerLabels } : {}),
     };
@@ -309,14 +322,16 @@ export class MonitorLog {
       const text = await readFile(join(this.dir, name), "utf8").catch(() => "");
       for (const raw of text.split("\n")) {
         if (!raw) continue;
-        let line: RollupLine;
+        let line: Omit<RollupLine, "v"> & { v: number };
         try {
-          line = JSON.parse(raw) as RollupLine;
+          line = JSON.parse(raw) as typeof line;
         } catch {
           continue; // a torn last line from a crash
         }
-        if (line?.v !== 1 || typeof line.at !== "number" || line.at < since) continue;
-        const { v: _v, labels, workerLabels: wl, ...point } = line;
+        if ((line?.v !== 1 && line?.v !== 2) || typeof line.at !== "number" || line.at < since) continue;
+        // A version-1 line counted memory as RSS: its CPU stands, but it never carries Sova's memory.
+        const { v, labels, workerLabels: wl, sovaBytes, mem, ...rest } = line;
+        const point: MonitorPoint = v === 2 && typeof sovaBytes === "number" && Array.isArray(mem) ? { ...rest, sovaBytes, mem } : rest;
         for (const [k, l] of Object.entries(labels ?? {})) groups[k] = l;
         for (const [g, names] of Object.entries(wl ?? {})) Object.assign((workerLabels[g] ??= {}), names);
         points.push(point);

@@ -23,10 +23,6 @@ and each merge becomes a card.
 - `git.ts` (builtins only, git by argv): the extension's own "is this branch merged" probe, and
   `mergedReviewBase`, the review base of an already merged branch. `server/git-diff.ts` imports it, and
   show-changes' `git.ts` shares it.
-- `saved-sessions.ts` (builtins only, git by argv): the merge guard over saved sessions in a branch's history
-  (§chat.saved-sessions/merge-guard). `mergeWorktree` runs it unless `allowSavedSessions`, which the tool passes only after the user
-  confirms (`ctx.ui.confirm`, always; no UI or a decline merges nothing); Merge Branch
-  (`server/project-worktrees.ts` `mergeBack`) imports the same scan and refusal.
 - `spec.ts`: when a merge is recorded, it adds the landing's spec warnings to the merge note (changed files no claim
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
@@ -39,5 +35,3 @@ its restart.
 - The entry or the merge card's details: the README and Sova's readers in the same branch.
 - `git.ts`'s `mergedReviewBase`: show-changes' tests too (`cd pi-config/extensions/show-changes && node --test git.test.ts`).
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).
-- `saved-sessions.ts`'s marker: `shared/session-bundle.ts` SAVED_SESSION_MARKER and the merge round's
-  `leak-scan.mjs` / `round.mjs` copies (a test pins the extension's to the split spelling).

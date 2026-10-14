@@ -28,7 +28,7 @@ export function upstreamLabel(s: GitRepoSummary): string {
   return `${parts.join(", ")} ${u.name}`;
 }
 
-export const UPSTREAM_TITLE = "Counted against the upstream as this repository last fetched it. Sova doesn't fetch it.";
+export const UPSTREAM_TITLE = "Counted against the upstream as this repository last fetched it. Sova never fetches.";
 
 /** "Clean", or the non-zero tallies — "At least …" when git status was cut short. */
 export function changesLabel(s: GitRepoSummary): string {

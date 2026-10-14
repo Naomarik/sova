@@ -424,11 +424,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .needs-you-playbook { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .playbook-review-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-review-act .button { min-height: var(--tap-min); }
-.playbook-review-act { min-width: 0; max-width: 100%; }
-.playbook-review-why { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
-/* A banner's action keeps its own width (base.css), so one holding a refusal takes the banner's
-   full row instead, or the reason's one long line runs past the edge. */
-.banner-action:has(.playbook-review-why) { flex: 1 1 100%; min-width: 0; }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
 .org-section[open] > .group-label > .text-num { display: inline; }

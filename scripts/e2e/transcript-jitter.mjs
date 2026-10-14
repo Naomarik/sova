@@ -9,8 +9,11 @@
 //   row never moves and the older-edge line is never there.
 // - A long chat, opened fresh and switched back to (its rows kept from the last visit): the
 //   older-edge line is there from the first painted frame with rows, and stays.
+// - A whole chat of 120 rows switched back to, its hello held back until the idle fill has built
+//   the kept rows down to the top: the line goes once the hello says nothing is above, and the
+//   row at the top of the view doesn't move.
 //
-// Writes two fixture sessions into the hermetic agent dir (dated ten minutes back, so they're in the
+// Writes three fixture sessions into the hermetic agent dir (dated ten minutes back, so they're in the
 // sidebar's Recent there until other sessions are newer) and drives a hermetic server
 // (`pnpm run build && pnpm run dev:hermetic` in THIS worktree; it serves the built app on 4810).
 //
@@ -104,8 +107,11 @@ function fixture(id, turns, name) {
 }
 const LONG = "01a0e2e0-0000-7000-8000-0000000071e1";
 const SHORT = "01a0e2e0-0000-7000-8000-0000000071e2";
+const MID = "01a0e2e0-0000-7000-8000-0000000071e3";
 fixture(LONG, 400, "long");
 fixture(SHORT, 3, "short");
+// 120 rows: more than the 60 built with the first frame, all of them one hello's worth.
+fixture(MID, 60, "mid");
 
 // ---- the browser ----
 
@@ -144,6 +150,24 @@ const RECORDER = () => {
     set(v) {
       if (this.matches?.("section.transcript")) J.writes.push({ t: performance.now(), from: desc.get.call(this), to: v, stack: new Error().stack.split("\n").slice(2, 6).join(" | ") });
       desc.set.call(this, v);
+    },
+  });
+  // A session's socket (chat or watch) holds what the server sends while `hold.on`, and hands it
+  // all over in order at `hold.release()`: rows kept from the last visit then paint, and the fill
+  // builds them, before the hello says what is above them.
+  const hold = (J.hold = { on: false, queue: [], release() {
+    hold.on = false;
+    for (const f of hold.queue.splice(0)) f();
+  } });
+  const onmessage = Object.getOwnPropertyDescriptor(WebSocket.prototype, "onmessage");
+  Object.defineProperty(WebSocket.prototype, "onmessage", {
+    configurable: true,
+    get() {
+      return onmessage.get.call(this);
+    },
+    set(fn) {
+      const session = /\/ws\/(chat|watch)\?path=/.test(this.url);
+      onmessage.set.call(this, !session || typeof fn !== "function" ? fn : (ev) => (hold.on ? hold.queue.push(() => fn.call(this, ev)) : fn.call(this, ev)));
     },
   });
   J.inputs = [];
@@ -302,6 +326,41 @@ try {
       const missing = frames.filter((f) => !f.edge).length;
       assert(missing === 0, `${what}: the line was missing in ${missing} of ${frames.length} frame(s) (first painted frame: ${frames[0].edge ? "there" : "missing"})`);
     }
+  });
+
+  await check("a kept, whole chat whose hello lands after the fill built its top: the older-edge line goes, and the view doesn't move", async () => {
+    const { ctx, page } = await newPage();
+    await page.goto(`${BASE}/`);
+    const all = (n) => page.waitForFunction((k) => document.querySelectorAll("section.transcript .thread > .entry").length === k, n, { timeout: 30000 });
+    /** The row the view's top is in, and its top below the view's top. */
+    const top = () =>
+      page.evaluate(() => {
+        const t = [...document.querySelectorAll("section.transcript")].find((s) => s.getBoundingClientRect().height > 0);
+        const view = t.getBoundingClientRect().top;
+        const row = [...t.querySelectorAll(".thread > .entry")].find((r) => r.getBoundingClientRect().bottom > view);
+        return { edge: !!t.querySelector(".older-edge"), row: row?.dataset.entry, top: row ? row.getBoundingClientRect().top - view : null, held: window.__jit.hold.queue.length };
+      });
+    // The first visit: the whole branch, kept with the view's rows for the next.
+    await go(page, MID);
+    await all(120);
+    await page.waitForTimeout(1500);
+    await go(page, SHORT);
+    await page.waitForFunction(() => document.querySelectorAll("section.transcript .thread > .entry").length > 0, null, { timeout: 30000 });
+    await page.waitForTimeout(1000);
+    // Back, with its hello held: the kept rows paint (60 built), the fill builds the other 60.
+    await page.evaluate(() => (window.__jit.hold.on = true));
+    await go(page, MID);
+    await all(120);
+    await page.waitForTimeout(1500);
+    const before = await top();
+    await page.evaluate(() => window.__jit.hold.release());
+    await page.waitForTimeout(1500);
+    const after = await top();
+    await ctx.close();
+    assert(before.held > 0, "nothing from the server was held: the hello landed before the fill, the check compared nothing");
+    assert(before.edge, "the line wasn't there while the hello was held (a kept chat with rows to build has it): the check compared nothing");
+    assert(!after.edge, "the older-edge line stayed after the hello said nothing is above the rows");
+    assert(after.row === before.row && Math.round(after.top * 100) === Math.round(before.top * 100), `the row at the top of the view moved: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
   });
 } finally {
   await browser.close().catch(() => {});

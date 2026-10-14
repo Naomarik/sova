@@ -195,7 +195,7 @@ let nextToken = 0;
 /** Whether the sidebar is in selection mode: rows toggle instead of opening. */
 export { selecting as selectionMode };
 /** The selected session paths. Keyed by PATH, so the same session selected in Recent, in a group
-    and in Live & web is one selection with three checked boxes. */
+    and in Folders is one selection with three checked boxes. */
 export { selected as selectedPaths };
 
 /** Whether an action is in flight. Every control that could contradict one reads this. */

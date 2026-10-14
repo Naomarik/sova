@@ -9,7 +9,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { readKey, writeKey } from "./storage-keys";
 import { sessionWorking } from "./workers";
 
-/** One key per region + folder. The region prefix is what keeps the same folder under Live & web
+/** One key per region + folder. The region prefix is what keeps the same folder under Folders
     separate from it inside a group or an Archive date section. */
 export const folderOpenKey = (idPrefix: string, cwd: string) => `sova:folder-open-${idPrefix}-${cwd}`;
 

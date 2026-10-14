@@ -39,7 +39,8 @@ import { compactModel, relativeTime, tildePath } from "../lib/format";
 import { browserZone, costsHref, type CostsQuery, DEFAULT_COSTS_QUERY } from "../lib/cost-history";
 import { agentsHref, teamKey } from "../lib/insights";
 import { createPoll, type Poll } from "../lib/poll";
-import { archivedProjectOf, orgProjectOf } from "../lib/drag-archive";
+import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
+import { hostOf } from "../lib/mesh";
 import { archiveSession, renameSession } from "../lib/session-actions";
 import { archiveBlockReason } from "../lib/session-selection";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
@@ -413,7 +414,7 @@ function RowMenu(props: { row: BoardRow; ctx: BoardCtx; archive: { label: string
                       onRun={() => {
                         const path = s().path;
                         const next = !s().archived;
-                        void archiveSession(path, next, (next ? archivedProjectOf : orgProjectOf)(s())).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
+                        void archiveSession(path, next, next ? archivedProjectOf(s()) : unarchivedProjectOf(s(), hostOf(path) === null)).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
                       }}
                     />
                   )}

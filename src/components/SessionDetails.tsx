@@ -4,7 +4,7 @@ import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
 import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
-import { archivedProjectOf, orgProjectOf } from "../lib/drag-archive";
+import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel, remotePlaceOf } from "../lib/remote-session";
 import { addProject, ApiError, listProjects } from "../lib/api";
@@ -796,7 +796,7 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
     const next = !props.archived;
     setPending(true);
     try {
-      if (await archiveSession(props.session.path, next, (next ? archivedProjectOf : orgProjectOf)(props.session))) props.onDone(next);
+      if (await archiveSession(props.session.path, next, next ? archivedProjectOf(props.session) : unarchivedProjectOf(props.session, hostOf(props.session.path) === null))) props.onDone(next);
     } finally {
       setPending(false);
     }

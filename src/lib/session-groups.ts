@@ -1,5 +1,5 @@
 // Session groups: the user's own grouping of sessions, shown as a
-// region above Live & web. Server-side (~/.pi/agent/sova/session-groups.json), so every tab and
+// region above Projects and Folders. Server-side (~/.pi/agent/sova/session-groups.json), so every tab and
 // server sees the same groups, and purely additive: a grouped session keeps its place in Live &
 // web or the Archive. A session is in at most one group.
 //

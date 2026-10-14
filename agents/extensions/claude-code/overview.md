@@ -96,6 +96,12 @@ watcher doesn't watch this directory either.
   stream-json turn. It never contacts Anthropic. In a hermetic run, put `$(scripts/fake-claude-path.sh)` first on
   `PATH` and point `CLAUDE_CONFIG_DIR` at a fixture directory under `.agent/` (the `default` login; the real
   `~/.claude` stays untouched).
+- Two opt-in knobs on the fake, for checking what a model was sent: `FAKE_CLAUDE_ONESHOT=1` makes a one-shot
+  `-p` run (no `--input-format stream-json`, such as a memory summary) answer a result envelope
+  ("Fake summary: …"; `FAKE_CLAUDE_ONESHOT_MS=<ms>` holds each answer), and `FAKE_CLAUDE_RECORD=<file>`
+  appends each run's argv with the initialize request, user frame or one-shot input it was sent. Unset,
+  the fake behaves as before. Its `claude` shim execs `node` from PATH: where mise's shims refuse a
+  folder (a chat's code copy), write the shim with the absolute node path.
 - `SOVA_CLAUDE_ACCOUNTS_DEV=1` lets `.agent/claude-accounts-dev.json` (`{"forceLimit": [ids], "forceAuth":
   [ids]}`) force a login to fail, to drive failover end to end. The force reaches only a session on a
   registry-known login (`claude-accounts.json`). With no registry a session has no login and the force does

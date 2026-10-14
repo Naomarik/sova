@@ -19,6 +19,8 @@
  * POST   /api/projects/:pid/overseer               -> ProjectOverseerInfo (open or create; then mount #/s/<path>)
  * PATCH  /api/projects/:pid/overseer               body ProjectOverseerPatch -> ProjectOverseerInfo
  * POST   /api/projects/:pid/overseer/clear         -> ProjectOverseerInfo (a new conversation; settings, notes, ideas, todos stay)
+ * GET    /api/projects/:pid/overseer/memory        -> OverseerMemoryInfo (protocol.ts; its own memory switch, on by default)
+ * PUT    /api/projects/:pid/overseer/memory        body { on?, type?, size? } -> OverseerMemoryInfo (saved as `memory`; Clear keeps it)
  * GET    /api/projects/:pid/overseer/ideas         -> OverseerIdeasInfo (protocol.ts shape)
  * GET    /api/projects/:pid/overseer/idea?id=      -> OverseerIdeaDetail
  * PATCH  /api/projects/:pid/overseer/idea?id=      body IdeaPatch (no newId) -> OverseerIdeaDetail
@@ -263,6 +265,9 @@ export interface ProjectOverseerSettings {
   /** The act kinds that, held, wait for the overseer's confirmation (CONFIRM_KINDS; default all). */
   confirmKinds: ConfirmKind[];
   extraSystemPrompt: string;
+  /** Its memory switch, written only by PUT …/overseer/memory.
+      Absent = no choice made: on, UniiChat at 128 KB. */
+  memory?: { on: boolean; type: "uniichat" | "zoomable"; size: number };
 }
 
 export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "confirmKinds" | "extraSystemPrompt">> & {

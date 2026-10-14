@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
@@ -66,13 +66,20 @@ import { playbookHost } from "./playbook-host";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
-/** The Overseer's memory choice as a record (overseer.json), or null: it then uses the saved default. */
-function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable"; size: number } | null {
-  const m = readOverseerSettings().memory;
-  return m ? { v: 1, type: m.type, size: m.size } : null;
+/** An overseer's own memory switch in force: the Overseer's from the state root's
+    overseer.json, a project overseer's from the file its loadout names; no saved choice = on, UniiChat 128 KB. */
+function overseerMemoryNow(file: string | undefined): OverseerMemorySetting {
+  if (!file) return overseerMemoryOf(readOverseerSettings().memory);
+  let raw: unknown;
+  try {
+    raw = (JSON.parse(readFileSync(file, "utf8")) as { memory?: unknown } | null)?.memory;
+  } catch {
+    raw = undefined;
+  }
+  return overseerMemoryOf(parseOverseerMemory(raw));
 }
 import { withWebMinors } from "./memory/permit";
-import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
+import { applyMemoryPatch, overseerMemoryOf, type OverseerMemorySetting, parseOverseerMemory, saveDefaultMemoryChoice } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
@@ -2092,12 +2099,23 @@ class ChatSession {
       sessionId: () => this.harness.id,
       cwd: () => this.harness.cwd || undefined,
       branch: () => this.harness.branch(),
-      // The Overseer has no mode entry: its switch, type and size are overseer.json's (§chat.memory/overseer).
-      record: () => (this.overseer ? overseerMemoryRecord() : (this.harness.state.branch().latest(MEMORY)?.data ?? null)),
-      on: () => (this.overseer ? (readOverseerSettings().memory?.on ?? false) : this.modeState.minorModes.includes("memory")),
+      // An overseer (the Overseer, a project overseer) has no mode entry: its switch, type and size are its own
+      // overseer.json's, on by default.
+      record: () => {
+        const o = this.overseerMemory();
+        return o ? { v: 1, type: o.type, size: o.size } : (this.harness.state.branch().latest(MEMORY)?.data ?? null);
+      },
+      on: () => this.overseerMemory()?.on ?? this.modeState.minorModes.includes("memory"),
       send: (msg) => this.broadcast(msg),
     });
     return this.memoryRef;
+  }
+
+  /** An overseer's own memory switch in force, or undefined for every other chat (its memory is its mode's). */
+  private overseerMemory(): OverseerMemorySetting | undefined {
+    if (this.overseer) return overseerMemoryNow(undefined);
+    if (this.special === "project-overseer" && this.specialSpec?.memory && this.specialSpec.memorySettings) return overseerMemoryNow(this.specialSpec.memorySettings);
+    return undefined;
   }
 
   /** What the memory extension asks this chat (server/harness/pi/memory.ts). */
@@ -2134,6 +2152,19 @@ class ChatSession {
     this.flushDeferredAppends();
     this.harness.state.append(MEMORY, { v: 1, type: next.type, size: next.size, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
     markOwned(this.path);
+  }
+
+  /** An overseer's runtime opened (its kind now set): its recall tools follow its switch, and with memory on the
+      engine syncs with the branch, preparing a conversation whose memory was never built. */
+  memoryOpened(): void {
+    if (this.disposed || !this.memoryAvailable()) return;
+    this.syncMemoryTools();
+    if (!this.memory.choice().on) return;
+    try {
+      this.memory.engine().sync(this.harness.branch());
+    } catch (err) {
+      console.warn(`[memory] sync at open failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** The Overseer's switch moved (server/memory/routes.ts): its tools follow between runs. */
@@ -4204,6 +4235,9 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       chat.special = kind;
       chat.specialSpec = last.special.spec;
       chat.specialPort = last.special.port;
+      // An overseer's memory is its own switch, readable only once its kind is set: the recall tools and the
+      // engine follow it from the open, so a conversation on by default starts preparing now.
+      if (last.special.spec.memory) chat.memoryOpened();
     }
     // A chat process's kind is opened by its server, once the open is answered (server/chat-host.ts).
     const local = !presetSpecs.has(path);

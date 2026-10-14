@@ -1805,12 +1805,18 @@ export interface ChatModeResult extends ModeInfo {
 // PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
 //                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
 //                                  with a warning. Every chat's summarizer reads it at its next summary)
-// GET  /api/overseer/memory      -> OverseerMemoryInfo
+// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat at 128 KB, whatever the
+//                                  chats' saved default is)
 // PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
 //                                  Overseer from its next turn. 400 bad body)
+// GET  /api/projects/:pid/overseer/memory -> OverseerMemoryInfo (that project overseer's own switch, on the
+//                                  same terms; 404 unknown project)
+// PUT  /api/projects/:pid/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept as `memory` in the
+//                                  project overseer's overseer.json; reaches it from its next turn. 400 bad body)
 // WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
 //                                  (the turn it goes off included), only from a runtime with the memory
-//                                  engine (an ordinary chat, or the Overseer). No message: memory is off.
+//                                  engine (an ordinary chat, the Overseer, a project overseer). No message:
+//                                  memory is off.
 //            The `mode` message carries `memory` (this chat's ChatMemoryChoice), so a type-only change
 //            sends a new `mode` message too.
 // Transcript: the model's recalls are tool rows (`zoom`, `date`) whose slim row summary
@@ -3193,7 +3199,8 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
-  /** The Overseer's memory (§chat.memory/overseer): its own switch, type and size. Absent = off. */
+  /** The Overseer's memory: its own switch, type and size. Absent = no choice made:
+      on, UniiChat at 128 KB. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. */
   memory?: { on: boolean; type: MemoryType; size: number };
 }
 

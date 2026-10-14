@@ -1,6 +1,7 @@
 // The show_changes tool refuses steps that don't place every hunk, with its own copy of the
 // viewer's matching (pi-config/extensions/show-changes/coverage.ts, standalone). This pins the
-// two to the same placement on shared fixtures.
+// two to the same placement, and the tool's shadowed steps to the viewer's empty "taken" ones, on
+// shared fixtures.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type DiffFileHunks, placeSteps } from "../../pi-config/extensions/show-changes/coverage";
@@ -34,6 +35,16 @@ const cases: [string, AgentStepInput[]][] = [
       { title: "Rename by new path", hunks: [{ path: "new.ts", newStart: 14 }, { path: "gone.ts", oldStart: 4 }] },
     ],
   ],
+  [
+    "shadowed steps and files with no line changes",
+    [
+      { title: "Top", hunks: [{ path: "a.ts", newStart: 1 }, { path: "was.ts", newStart: 3 }] },
+      { title: "Logo", hunks: [{ path: "logo.png" }] },
+      { title: "Shadowed", hunks: [{ path: "a.ts", newStart: 2 }, { path: "logo.png" }, { path: "moved.ts" }, { path: "nowhere.ts" }] },
+      { title: "Gone", hunks: [{ path: "nowhere.ts" }] },
+      { title: "Rest", hunks: [{ path: "a.ts" }, { path: "new.ts" }, { path: "gone.ts" }] },
+    ],
+  ],
 ];
 
 for (const [name, steps] of cases) {
@@ -53,8 +64,17 @@ for (const [name, steps] of cases) {
     const mine = new Map<string, number>();
     files.forEach((f, fi) => tool.owner[fi]!.forEach((o, u) => mine.set(`${f.path}#${u}`, o)));
     assert.deepEqual(Object.fromEntries(mine), Object.fromEntries(viewer));
-    // A step the viewer drops as unmatched is one that took no unit here.
+    // Every agent step keeps its number; the empty ones are the tool's shadowed steps ("taken",
+    // naming the same holders) or steps whose refs all name nothing ("gone").
+    assert.deepEqual(plan.steps.map((s) => s.n), steps.map((_, i) => i + 1));
     const took = new Set(tool.owner.flat());
-    assert.deepEqual(plan.unmatched, steps.filter((_, i) => !took.has(i)).map((s) => s.title));
+    assert.deepEqual(
+      plan.steps.filter((s) => s.empty).map((s) => [s.n, s.empty, s.heldBy ?? []]),
+      steps.flatMap((_, i) => {
+        if (took.has(i)) return [];
+        const sh = tool.shadowed.find((x) => x.step === i + 1);
+        return [[i + 1, sh ? "taken" : "gone", sh ? sh.heldBy : []]];
+      }),
+    );
   });
 }

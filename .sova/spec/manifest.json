@@ -129,7 +129,9 @@
         "server/chat-handle-remote.ts",
         "scripts/chat-runtime-trial/run.mjs",
         "server/chat-runtime/trial-crash-idle.integration.test.ts",
-        "scripts/e2e/quiet-close.mjs"
+        "scripts/e2e/quiet-close.mjs",
+        "src/components/ChatView.tsx",
+        "src/lib/older-rows-view.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -137,8 +139,8 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:32Z"
+        "by": "user (al_1 go-ahead, revised)",
+        "at": "2026-10-14T22:01Z"
       },
       "evidence": "verified"
     },
@@ -729,8 +731,8 @@
         "src/lib/readiness.test.ts"
       ],
       "agreed": {
-        "by": "omar (al_1 go-ahead)",
-        "at": "2026-10-13T21:40Z"
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
       }
     },
     "§app.session-list/archive-by-date": {
@@ -2279,8 +2281,15 @@
         "server/index.ts",
         "server/app.ts",
         "shared/protocol.ts",
-        "src/components/InsightStrip.tsx"
-      ]
+        "src/components/InsightStrip.tsx",
+        "src/lib/older-rows-view.ts",
+        "src/lib/older-rows-view.browser.test.ts",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead, revised)",
+        "at": "2026-10-14T22:01Z"
+      }
     },
     "§chat.timeline/no-virtualization": {
       "kind": "behavior",
@@ -2413,8 +2422,8 @@
         "scripts/e2e/quiet-close.mjs"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:32Z"
+        "by": "user (al_1 go-ahead, revised)",
+        "at": "2026-10-14T22:01Z"
       },
       "evidence": "verified"
     },
@@ -4449,8 +4458,8 @@
         "§design/menu-rows"
       ],
       "agreed": {
-        "by": "omar (al_2 go-ahead)",
-        "at": "2026-10-14T07:03Z"
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
       }
     },
     "§app.overseer/hosting": {
@@ -4607,9 +4616,16 @@
         "server/turn-error.test.ts",
         "src/lib/summary-diff.test.ts",
         "server/unread-replies.ts",
-        "server/unread-replies.test.ts"
+        "server/unread-replies.test.ts",
+        "server/project-overseer-unread.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-unread.integration.test.ts"
       ],
-      "requires": []
+      "requires": [],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
+      }
     },
     "§app.overseer/sent-marker": {
       "kind": "behavior",
@@ -7157,7 +7173,11 @@
         "server/session-feed.ts",
         "src/lib/built-once.ts",
         "src/lib/built-once.browser.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-14T17:06Z"
+      }
     },
     "§app.project-overseer/coding-mode": {
       "kind": "behavior",
@@ -9065,7 +9085,11 @@
         "server/app.ts",
         "shared/protocol.ts",
         "server/git-diff.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/entry": {
       "kind": "behavior",
@@ -9094,12 +9118,17 @@
       "code": [
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/show-changes-pinned.test.ts"
       ],
       "requires": [
         "§chat.changes/show-changes-tool",
         "§chat.changes/steps"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/show-changes-tool": {
       "kind": "behavior",
@@ -9126,7 +9155,11 @@
         "pi-config/extensions/show-changes/hunks.ts",
         "pi-config/extensions/show-changes/coverage.test.ts",
         "src/lib/show-changes-coverage.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/steps": {
       "kind": "behavior",
@@ -9138,7 +9171,11 @@
       ],
       "requires": [
         "§chat.changes/show-changes-tool"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/tool-card-diff": {
       "kind": "behavior",
@@ -9175,14 +9212,19 @@
       "code": [
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
-        "src/lib/changes-view.ts"
+        "src/lib/changes-view.ts",
+        "src/lib/changes-view.test.ts"
       ],
       "requires": [
         "§chat.changes/endpoint",
         "§chat.changes/diff-renderer",
         "§chat.changes/tree",
         "§chat.changes/steps"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat/changes": {
       "kind": "surface",

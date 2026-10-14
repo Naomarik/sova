@@ -23,6 +23,10 @@ The **major mode** is one of two:
 | [codemode](/docs/modes/codemode/) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
 | memory | A cheap model folds the chat's messages into short summaries, and the model opens any of them back to the original message, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
 
+A project can also ship minor modes of its own, with instructions and its own command-line tools,
+in its `.sova/minor-modes/` folder. Chats in that project list them in their own group, and none is
+ever on until you turn it on. See [Project modes](/docs/modes/project-modes/).
+
 Both kinds are **per chat**. Each chat keeps its own modes, saved in that chat's session file, so
 they survive a reload or a server restart. Switching one chat never moves another chat or a
 terminal session.
@@ -43,6 +47,9 @@ Press it to open the menu. It has three groups:
   opens its spec writer settings. Memory is listed only in a chat whose runtime can run it; its
   row has a chevron, **Memory type**, that opens a panel to choose the chat's memory type and
   summary size.
+- **This project · {name}**, only in a chat whose project has [project modes](/docs/modes/project-modes/):
+  one row per mode, with its description and, when it applies, its state, such as **Asks before
+  turning on** for a mode with tools you haven't approved.
 - **Subagents**: one row, **Subagents · {profile}**, that opens the picker for this chat's
   [subagent profile](/docs/subagent-profiles/).
 
@@ -80,7 +87,7 @@ follows it; its first switch pins that chat to its own modes from then on.
 you ask for exactly that:
 
 - **Save as default** in the menu. It makes this chat's major mode, strict flag, minor modes and
-  subagent profile what new sessions start from. It reads **Already the default**, and can't be
+  subagent profile what new sessions start from. Project modes are never part of the default. It reads **Already the default**, and can't be
   pressed, when all four already match.
 - `/mode default` in a terminal, which saves the current session's mode (not its subagent profile).
 
@@ -98,6 +105,7 @@ switch made either way is the same switch.
 | `/mode` | Opens the command palette at its **Mode** category: the major modes, one row per minor mode, the alignment viewer, and save as default. It never switches anything by itself |
 | `/mode normal`, `/mode delegate` | Switch this session's major mode |
 | `/mode align`, `/mode vis on`, `/mode spec off` | Toggle a minor mode, or set it on or off |
+| `/mode project:<id> on`, `/mode project:<id> off` | Turn one of the project's own [project modes](/docs/modes/project-modes/) on or off |
 | `/mode status` | List this session's modes, the default, its subagent profile and routing, its spec writer and its alignments |
 | `/mode default` | Save this session's major mode, strict flag and minor modes as the default for new sessions |
 | `/mode strict on`, `/mode strict off` | Set this session's [strict](#strict) flag |
@@ -126,6 +134,8 @@ Of the minor modes, only those that are meant for workers reach them, and today 
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent.
 - **codemode** doesn't: it changes the chat's own tools, and a worker's tools come from its brief.
+- A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,
+  with its tools. See [Project modes](/docs/modes/project-modes/#workers).
 
 A worker gets the modes its parent has **when it starts**. A later switch in the chat doesn't reach
 a running worker; a resumed worker takes the parent's current modes. The worker's view in the

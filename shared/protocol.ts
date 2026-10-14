@@ -172,6 +172,12 @@ export interface SessionSummary {
       its origin; a session never stamped is never unread. Server-computed from the same seen
       store the Overseer digest uses. The tab showing the session hides its own dot. Safe by absence. */
   unread?: true;
+  /** A project overseer's CURRENT conversation only, and only while `unread` is set: how many of
+      its finished replies on the active branch are newer than `seenAt` (the project overseer page's
+      `ProjectOverseerInfo.unread`, §app.overseer/seen). It labels the row; `unread` alone decides
+      whether it has new replies, and 0 with `unread` set can happen (`unread` reads the last reply
+      in file order, this the active branch). Absent: unknown, or an older server. */
+  unreadReplies?: number;
   /** The file's last finished assistant reply stopped with pi's `stopReason: "error"`, the session
       is not mid-turn or on screen, and it has not been seen since that reply (a session never
       stamped shows it too). `message` = the reply's errorMessage, ≤300 chars. The sidebar's red

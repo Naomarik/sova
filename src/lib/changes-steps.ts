@@ -325,9 +325,9 @@ function refsOf(file: StepFile): HunkRef[] {
  */
 export interface StepOrigins {
   files: ReadonlyMap<string, readonly (readonly string[])[] | "unknown">;
-  commits: ReadonlyMap<string, { subject: string; authorTime: number }>;
-  /** Oldest-first position of every commit: each read's own list order (ancestors first) kept,
-      author time then id deciding only between commits no list orders. */
+  commits: ReadonlyMap<string, { subject: string; authorTime: number; order?: number }>;
+  /** Oldest-first position of every commit: by the comparison-wide history `order` when the reads
+      give it, each read's own list order (ancestors first) kept, then author time, then id. */
   rank: ReadonlyMap<string, number>;
 }
 
@@ -335,14 +335,14 @@ export interface StepOrigins {
 export interface PatchOrigins {
   path: string;
   hunkCommits?: number[][];
-  commits?: { sha: string; subject: string; authorTime: number }[];
+  commits?: { sha: string; subject: string; authorTime: number; order?: number }[];
   originsUnknown?: true;
 }
 
 /** StepOrigins from patch reads; a read with neither origins nor "unknown" is left out (not read). */
 export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
   const files = new Map<string, string[][] | "unknown">();
-  const commits = new Map<string, { subject: string; authorTime: number }>();
+  const commits = new Map<string, { subject: string; authorTime: number; order?: number }>();
   /** sha → the commits a read lists right after it. */
   const after = new Map<string, Set<string>>();
   for (const p of patches) {
@@ -353,7 +353,8 @@ export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
     if (!p.hunkCommits || !p.commits) continue;
     const list = p.commits;
     list.forEach((c, i) => {
-      commits.set(c.sha, { subject: c.subject, authorTime: c.authorTime });
+      const order = c.order ?? commits.get(c.sha)?.order;
+      commits.set(c.sha, { subject: c.subject, authorTime: c.authorTime, ...(order !== undefined ? { order } : {}) });
       if (!after.has(c.sha)) after.set(c.sha, new Set());
       if (i > 0 && list[i - 1]!.sha !== c.sha) after.get(list[i - 1]!.sha)!.add(c.sha);
     });
@@ -364,10 +365,15 @@ export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
 }
 
 /** A topological merge of the reads' lists; on a cycle (lists that disagree) the rest go by time. */
-function rankCommits(commits: ReadonlyMap<string, { authorTime: number }>, after: ReadonlyMap<string, ReadonlySet<string>>): Map<string, number> {
+function rankCommits(commits: ReadonlyMap<string, { authorTime: number; order?: number }>, after: ReadonlyMap<string, ReadonlySet<string>>): Map<string, number> {
   const before = new Map<string, number>([...commits.keys()].map((sha) => [sha, 0]));
   for (const next of after.values()) for (const sha of next) before.set(sha, before.get(sha)! + 1);
-  const earlier = (a: string, b: string) => commits.get(a)!.authorTime - commits.get(b)!.authorTime || (a < b ? -1 : a > b ? 1 : 0);
+  const earlier = (a: string, b: string) => {
+    const x = commits.get(a)!;
+    const y = commits.get(b)!;
+    if (x.order !== undefined && y.order !== undefined && x.order !== y.order) return x.order - y.order;
+    return x.authorTime - y.authorTime || (a < b ? -1 : a > b ? 1 : 0);
+  };
   const rank = new Map<string, number>();
   let ready = [...before].filter(([, n]) => n === 0).map(([sha]) => sha);
   while (ready.length) {

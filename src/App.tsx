@@ -27,6 +27,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
+import { updatedSinceLoad, watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
@@ -627,6 +628,8 @@ export function App() {
   setHostCheck(() => void checkHello());
   onCleanup(() => setHostCheck(null));
   createEffect(on(socketReconnects, () => void checkHello(), { defer: true }));
+  // This machine's updates: the Settings dot, and the note after an upgrade restarted the server.
+  watchUpdates();
   const onVisible = () => {
     if (!document.hidden) void checkHello();
   };
@@ -1057,6 +1060,14 @@ export function App() {
       >
         {skipLabel()}
       </a>
+      <Show when={updatedSinceLoad()}>
+        <div class="update-note" role="status">
+          <span>Sova was updated</span>
+          <button type="button" class="button button-sm" onClick={() => location.reload()}>
+            Reload
+          </button>
+        </div>
+      </Show>
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}

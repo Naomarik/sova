@@ -265,7 +265,10 @@ export function ChatView(props: {
       connection's hello, a list kept from the last visit says nothing about what's above it:
       nothing says a row isn't there, and nothing counts the whole list. */
   // The Overseer's history is the longest there is: it holds only what is shown or jumped to.
-  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: !props.overseer });
+  // A jump to a row not held, or the reader scrolling up for older rows, starts a chat closed
+  // while quiet, as a send does (§chat.transcript/instant-open); the rows land once it says what's
+  // above them, or from the file if it is slow (lib/older-rows-view).
+  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: !props.overseer, want: () => wake() });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The branch's inputs: this connection's hello says; before it, the rows kept from the last

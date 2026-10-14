@@ -19,10 +19,11 @@
  * SOVA_TOOL_NAME set.
  */
 import { spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { toolsHashOf } from "./project-discovery.ts";
-import { isFolderPath, projectToolName, PROJECT_TOOL_TIMEOUT_DEFAULT_S, PROJECT_TOOL_TIMEOUT_MAX_S, type ProjectModeSnapshot, type ProjectModeTool } from "./project-format.ts";
+import { isFolderPath, isProjectModeSnapshot, projectToolName, PROJECT_TOOL_TIMEOUT_DEFAULT_S, PROJECT_TOOL_TIMEOUT_MAX_S, type ProjectModeSnapshot, type ProjectModeTool } from "./project-format.ts";
 
 /** How much of each stream a call keeps; the rest is dropped and the result says so. */
 export const PROJECT_TOOL_OUTPUT_MAX = 256 * 1024;
@@ -376,4 +377,44 @@ export function withdrawnDefinition(name: string) {
 			throw new Error("This project mode tool is unavailable: its mode is off.");
 		},
 	};
+}
+
+/** Names the file a worker reads its project modes' copies from (project-tools-worker.ts). */
+export const PROJECT_TOOLS_FILE_ENV = "SOVA_PROJECT_TOOLS_FILE";
+/** Where `writeWorkerToolsFile` keeps the hand-off files, under the agent dir. */
+export const WORKER_TOOLS_DIR = ["sova", "project-tools"] as const;
+
+/**
+ * Hand a worker the copies of the parent's project modes that have tools: one file per distinct set,
+ * named by the sha256 of its content under `<agentDir>/sova/project-tools/` (written once, atomically,
+ * 0600; a resumed worker still finds it). Returns its path for PROJECT_TOOLS_FILE_ENV, or undefined
+ * when no copy has tools (the worker then loads nothing).
+ */
+export function writeWorkerToolsFile(agentDir: string, copies: readonly ProjectModeSnapshot[]): string | undefined {
+	const withTools = copies.filter((copy) => copy.tools.length > 0);
+	if (withTools.length === 0) return undefined;
+	const body = `${JSON.stringify({ v: 1, modes: withTools })}\n`;
+	const dir = join(agentDir, ...WORKER_TOOLS_DIR);
+	const file = join(dir, `${createHash("sha256").update(body).digest("hex")}.json`);
+	try {
+		if (readFileSync(file, "utf8") === body) return file;
+	} catch {
+		// Not written yet.
+	}
+	mkdirSync(dir, { recursive: true });
+	const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+	writeFileSync(tmp, body, { mode: 0o600 });
+	renameSync(tmp, file);
+	return file;
+}
+
+/** The copies a hand-off file holds: well-formed ones with tools only; none for a missing or damaged file. */
+export function readWorkerToolsFile(file: string): ProjectModeSnapshot[] {
+	try {
+		const data = JSON.parse(readFileSync(file, "utf8")) as { v?: unknown; modes?: unknown };
+		if (data?.v !== 1 || !Array.isArray(data.modes)) return [];
+		return data.modes.filter((copy): copy is ProjectModeSnapshot => isProjectModeSnapshot(copy) && copy.tools.length > 0);
+	} catch {
+		return [];
+	}
 }

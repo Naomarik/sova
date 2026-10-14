@@ -6,7 +6,8 @@ import test from "node:test";
 import { toolsHashOf } from "./project-discovery.ts";
 import type { ProjectModeTool } from "./project-format.ts";
 import { approvalsFile, APPROVALS_KEPT, isApproved, projectKey, readApprovals, recordApproval } from "./project-tools-approval.ts";
-import { changedText, projectRootOfModeDir, projectToolDefinitions, resolveCommand, runProjectTool, sandboxText } from "./project-tools.ts";
+import { changedText, PROJECT_TOOLS_FILE_ENV, projectRootOfModeDir, projectToolDefinitions, readWorkerToolsFile, resolveCommand, runProjectTool, sandboxText, writeWorkerToolsFile } from "./project-tools.ts";
+import projectToolsWorker from "./project-tools-worker.ts";
 
 /** A checkout with one mode folder `<root>/.sova/minor-modes/<id>`, and a cwd beside it. */
 function fixture(id = "release-check") {
@@ -266,4 +267,79 @@ test("approvalsFile: the server's state root when a chat names it, else <agent d
 	assert.equal(approvalsFile({ SOVA_CHAT_STATE_ROOT: "/srv/state" }), "/srv/state/project-mode-approvals.json");
 	assert.equal(approvalsFile({ PI_CODING_AGENT_DIR: "/a/agent" }), "/a/agent/sova/project-mode-approvals.json");
 	assert.equal(approvalsFile({}, "/x"), "/x/sova/project-mode-approvals.json");
+});
+
+const fullCopy = (dir: string, tools: ProjectModeTool[], id = "release-check") => ({
+	v: 1 as const,
+	id,
+	dir,
+	description: "d",
+	workers: true,
+	tools,
+	text: "t",
+	sha: "e".repeat(64),
+	toolsHash: toolsHashOf(dir, tools),
+});
+
+test("worker hand-off: the file holds the copies with tools, content-addressed, and reads back", () => {
+	const f = fixture();
+	try {
+		script(f.dir, "bin/status", "cat");
+		const copies = [fullCopy(f.dir, [tool()]), fullCopy(f.dir, [], "no-tools")];
+		const file = writeWorkerToolsFile(join(f.base, "agent"), copies)!;
+		assert.ok(file.startsWith(join(f.base, "agent", "sova", "project-tools")));
+		assert.equal(writeWorkerToolsFile(join(f.base, "agent"), copies), file, "the same set is the same file");
+		assert.deepEqual(readWorkerToolsFile(file).map((c) => c.id), ["release-check"]);
+		assert.equal(writeWorkerToolsFile(join(f.base, "agent"), [fullCopy(f.dir, [], "no-tools")]), undefined);
+		writeFileSync(file, "{broken");
+		assert.deepEqual(readWorkerToolsFile(file), []);
+	} finally {
+		f.done();
+	}
+});
+
+test("worker extension: registers the parent's copies, puts them in the loadout, runs them in the worker's cwd", async () => {
+	const f = fixture();
+	try {
+		script(f.dir, "bin/status", "pwd");
+		const file = writeWorkerToolsFile(join(f.base, "agent"), [fullCopy(f.dir, [tool()])])!;
+		const registered = new Map<string, { execute: (id: string, params: unknown) => Promise<{ content: { text: string }[] }> }>();
+		let active = ["read", "bash"];
+		const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void>>();
+		const listeners = new Map<string, (data: unknown) => void>();
+		const pi = {
+			registerTool: (def: { name: string }) => registered.set(def.name, def as never),
+			getActiveTools: () => active,
+			setActiveTools: (names: string[]) => (active = names),
+			on: (name: string, fn: (event: unknown, ctx: unknown) => Promise<void>) => handlers.set(name, fn),
+			events: { on: (name: string, fn: (data: unknown) => void) => listeners.set(name, fn), emit: () => {} },
+		};
+		const before = process.env[PROJECT_TOOLS_FILE_ENV];
+		process.env[PROJECT_TOOLS_FILE_ENV] = file;
+		try {
+			projectToolsWorker(pi as never);
+		} finally {
+			if (before === undefined) delete process.env[PROJECT_TOOLS_FILE_ENV];
+			else process.env[PROJECT_TOOLS_FILE_ENV] = before;
+		}
+		assert.deepEqual([...registered.keys()], ["release_check__status"]);
+		await handlers.get("session_start")!({}, { cwd: f.cwd });
+		assert.deepEqual(active, ["read", "bash", "release_check__status"]);
+		const r = await registered.get("release_check__status")!.execute("c", {});
+		assert.equal(r.content[0]!.text, `Exit code 0.\n\nstdout:\n${f.cwd}\n`);
+		listeners.get("sandbox:state")!({ version: 1, on: true });
+		await assert.rejects(() => registered.get("release_check__status")!.execute("c", {}), /sandbox is on/);
+	} finally {
+		f.done();
+	}
+});
+
+test("worker extension: no hand-off file, nothing registered", () => {
+	const before = process.env[PROJECT_TOOLS_FILE_ENV];
+	delete process.env[PROJECT_TOOLS_FILE_ENV];
+	let calls = 0;
+	const pi = { registerTool: () => calls++, on: () => calls++, events: { on: () => calls++, emit: () => calls++ } };
+	projectToolsWorker(pi as never);
+	if (before !== undefined) process.env[PROJECT_TOOLS_FILE_ENV] = before;
+	assert.equal(calls, 0);
 });

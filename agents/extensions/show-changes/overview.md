@@ -23,10 +23,15 @@ commit, optionally as agent-written steps. The browser imports its details check
 - The tool refuses a diff of more than one hunk unless its steps place every hunk, with its own copy of the viewer's
   matching in `coverage.ts` (imports nothing). Sova places every hunk again when it draws the diff. The test
   `src/lib/show-changes-coverage.test.ts` imports `coverage.ts` to pin its matching to `src/lib/changes-steps.ts`'s.
-- `git.ts` shares worktrees' `mergedReviewBase` (see [worktrees](../worktrees/overview.md)).
+- `git.ts` and `hunks.ts` take the worktree base and the limits from worktrees' `reviewBase` and `REVIEW_LIMITS`
+  (see [worktrees](../worktrees/overview.md)), the rule and limits Sova's diff endpoint uses too, so a card never
+  opens a viewer that refuses it or shows less.
+- Saved details may carry a step's old `buildsOn`: the tool no longer takes it, but `normalizeShowChangesDetails`
+  keeps accepting it forever so old cards open; no reader shows it.
 
 ## When you change it, also update
 
 - The details shape: `normalizeShowChangesDetails`, the README, and the web's reader in the same branch.
+- The review base or limits: change `reviewBase`/`REVIEW_LIMITS` in `../worktrees/git.ts`, never a copy here.
 - Hunk matching in `coverage.ts` or `src/lib/changes-steps.ts`: the other one, then run
   `pnpm test -- src/lib/show-changes-coverage.test.ts`.

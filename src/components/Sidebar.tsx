@@ -64,7 +64,7 @@ import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { inProjectsRegion, projectBlocks, projectOpenCount, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
-import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, STATE_WORDS } from "../lib/overseer-menu";
+import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, rowEnd, rowLabel } from "../lib/overseer-menu";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
@@ -1844,10 +1844,17 @@ export function Sidebar(props: {
                     <menu.Item
                       label={r.name}
                       description={r.org ? `In ${r.org}` : undefined}
-                      aria={[r.name, r.org ? `in ${r.org}` : "", r.state ? STATE_WORDS[r.state] : ""].filter(Boolean).join(" · ")}
-                      title={r.org ? `${r.name} · ${r.org}` : r.name}
+                      aria={rowLabel(r)}
+                      title={rowLabel(r)}
                       checked={r.current}
-                      end={r.state ? STATE_WORDS[r.state] : undefined}
+                      end={rowEnd(r).words}
+                      endBadge={
+                        rowEnd(r).pill ? (
+                          <span class="overseer-entry-count text-num" aria-hidden="true">
+                            {rowEnd(r).pill}
+                          </span>
+                        ) : undefined
+                      }
                       href={projectSessionHref(r.projectId, r.path)}
                     />
                   )}

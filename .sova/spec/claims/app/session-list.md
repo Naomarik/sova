@@ -41,8 +41,8 @@
            aria-label="Overseer · 2 new messages" title="Overseer · 2 new messages · Alt+O">…eye…
           <span>Overseer</span><span class="overseer-entry-count text-num" aria-hidden="true">2</span></a>
         <button class="button button-icon overseer-split-menu" type="button" aria-haspopup="menu"
-                aria-expanded="false" aria-label="Project overseers · 1 with a new reply"
-                title="Project overseers · 1 with a new reply">…chevron-down…
+                aria-expanded="false" aria-label="Project overseers · 1 overseer with new replies"
+                title="Project overseers · 1 overseer with new replies">…chevron-down…
           <!-- only while a listed overseer has a new reply or a failed last turn -->
           <span class="overseer-split-dot" aria-hidden="true"></span></button>
       </div>
@@ -1823,7 +1823,7 @@ Projects region never lists an archived session and counts open rows only (§app
   finished) is never a row: it is a 44px ghost **eye** link at the end of its project's heading, hung
   into the right gutter like the org link, opening `#/s/<its path>` (a plain link: nothing is
   written). A started overseer is also a row in the Overseer split button's ▾ list, with the same
-  mark in words (§app.overseer/entry-button). A project with no overseer yet has no eye and no row
+  mark: in words, or a new reply as the count of its unseen replies (§app.overseer/entry-button). A project with no overseer yet has no eye and no row
   there; its project page's Start Overseer is the way in. The eye reads only the session list, so nothing more is fetched, and carries at most one mark,
   in this order: **working** (the row's Busy: Busy's pulsing dot, the one sanctioned animation),
   **last turn failed** (the row's turn-error mark), **new reply** (the row's unread dot). Its name

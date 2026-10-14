@@ -320,7 +320,14 @@ describe("an org whose records predate its history", async () => {
     const ids = all().map((e) => e.id);
     await closeOrgHost(org.id);
     await orgs.openAttachedOrgs();
-    assert.deepEqual(all().map((e) => e.id), ids);
+    // The project's watch ticks on the wall clock (20 s) and may record a live event during a slow
+    // restart: every earlier id stays, and anything new is live, never imported.
+    const after = all();
+    const afterIds = new Set(after.map((e) => e.id));
+    assert.deepEqual(ids.filter((id) => !afterIds.has(id)), [], "every earlier id is kept");
+    const before = new Set(ids);
+    const added = after.filter((e) => !before.has(e.id));
+    assert.deepEqual(added.filter((e) => e.capture.origin === "imported").map((e) => e.kind), [], "nothing imported again");
     assert.equal((await importBaseline(hostOf(org.id), org.id)).ran, false, "asked again: done before");
   });
 

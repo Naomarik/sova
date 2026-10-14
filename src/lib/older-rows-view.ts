@@ -21,6 +21,9 @@ export function createOlderRows(o: {
   /** False: never fetch the rest in the background, whatever the hello says; only what is
       scrolled to or jumped to (the Overseer, §app.overseer/transcript-window). */
   prefetch?: boolean;
+  /** What was known to be above the rows the view opened on, kept with them (lib/transcript-cache
+      `keptOlder`): only for laying out the page before the hello (`api.known`). */
+  kept?: () => Older | null;
 }) {
   /** Null until this connection's hello or snapshot says what's above the list. */
   const [older, setOlder] = createSignal<Older | null>(null);
@@ -73,6 +76,7 @@ export function createOlderRows(o: {
 
   const api: OlderRowsApi = {
     left: () => older()?.left ?? null,
+    known: () => (older() ?? o.kept?.() ?? null)?.left ?? null,
     more: () => void loader.more(),
     load: async (target) => {
       if (!older()) await new Promise<void>((r) => waiting.push(r));

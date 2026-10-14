@@ -217,7 +217,7 @@ const describe = (r) => `${r.frames.length} frame(s) moved over ${r.prepends} pr
 try {
   console.log(`transcript-drift e2e against ${BASE} (agent dir ${AGENT})`);
 
-  await check("desktop, opened at the end: the prefetch and the backfill never move the view", async () => {
+  await check("desktop, opened at the end: the prefetch, the backfill and rows built as the view nears their top never move the view", async () => {
     const { ctx, page } = await open({ width: 1440, height: 900 }, { remote: false });
     // Up from the end a little, so the view isn't following: rows above must hold it where it is.
     await page.evaluate(() => {
@@ -230,6 +230,12 @@ try {
       const n = await rowsNow(page);
       still = n === last ? still + 1 : 0;
       last = n;
+    }
+    // Then up toward the top of the built rows, where the rest are built a chunk at a time: the idle
+    // fill stops at about 200 rows, and may have done so before the check started.
+    for (let k = 0; k < 40; k++) {
+      const top = await page.evaluate(() => window.__drift.scroll(-600));
+      await new Promise((r) => setTimeout(r, top <= 0 ? 700 : 150));
     }
     const r = await page.evaluate(() => window.__drift.stop());
     await ctx.close();

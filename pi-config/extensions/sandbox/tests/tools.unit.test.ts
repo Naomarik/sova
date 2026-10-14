@@ -229,7 +229,13 @@ test("bash: denial note, runner failure, per-call env only from PATH and PI_*", 
 	const backend = passthroughBackend();
 	const snap = async (): Promise<Snapshot> => ({ ok: true, policy, backendPolicy: backendPolicy(policy), backend, enforcement: "full" });
 	const bash = defs(ws, snap).get("bash")!;
-	await assert.rejects(run(bash, { command: "echo 'x: Read-only file system' >&2; exit 1" }, ws), (e: Error) => /Read-only file system\n\n?\[sandbox: /.test(e.message) && /exited with code 1/.test(e.message));
+	// pi's bash returns a non-zero exit as an error result (isError), not a throw.
+	const denied = await run(bash, { command: "echo 'x: Read-only file system' >&2; exit 1" }, ws);
+	assert.equal(denied.isError, true);
+	assert.match(text(denied), /\[sandbox: /);
+	assert.match(text(denied), /Read-only file system\n\n?\[sandbox: /);
+	assert.match(text(denied), /exited with code 1/);
+	// A runner failure still throws: the command never ran.
 	await assert.rejects(run(bash, { command: "echo 'bwrap: cannot mount' >&2; exit 1" }, ws), /sandbox runner failed, the command did not run: bwrap: cannot mount/);
 	process.env.SANDBOX_UNIT_SECRET = "leak";
 	process.env.PI_UNIT_TOKEN = "leak";
@@ -256,11 +262,15 @@ test("bash under the real backend: writes land in the workspace only", { skip: p
 	const bash = defs(ws, snap).get("bash")!;
 	await run(bash, { command: "echo in > inside.txt" }, ws);
 	assert.equal(readFileSync(join(ws, "inside.txt"), "utf8"), "in\n");
-	await assert.rejects(run(bash, { command: `echo out > ${join(root, "outside", "o.txt")}` }, ws), /\[sandbox: /);
+	const outside = await run(bash, { command: `echo out > ${join(root, "outside", "o.txt")}` }, ws);
+	assert.equal(outside.isError, true);
+	assert.match(text(outside), /\[sandbox: /);
 	assert.equal(existsSync(join(root, "outside", "o.txt")), false);
 	const policyJson = join(ws, ".agent", "sandbox-policy", "linux", "policy.json");
 	const before = readFileSync(policyJson, "utf8");
-	await assert.rejects(run(bash, { command: `echo '{}' > ${policyJson}` }, ws));
+	const onPolicy = await run(bash, { command: `echo '{}' > ${policyJson}` }, ws);
+	assert.equal(onPolicy.isError, true);
+	assert.match(text(onPolicy), /\[sandbox: /);
 	assert.equal(readFileSync(policyJson, "utf8"), before);
 	cleanup();
 });

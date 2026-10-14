@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { pickSlot, tryLock, type InstanceRecord, type Registry } from "./store";
+import { BLANK_LOCK_GRACE_MS, pickSlot, takeOver, tryLock, type InstanceRecord, type Registry } from "./store";
 
 /** Above any pid the kernel hands out (Linux's pid_max is at most 2^22): never a live process. */
 const DEAD_PID = 2 ** 22 + 1;
@@ -60,5 +60,81 @@ test("a lock is held against this process and taken over from a dead one", () =>
   const d = tryLock(file);
   assert.ok("release" in d, "a dead holder's lock is taken over");
   d.release();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a lock without a pid is held while young and stale debris once old", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sova-lock-"));
+  const file = join(dir, "x.lock");
+  // Created but not yet written (older code wrote the pid after creating the file): held, never stolen.
+  writeFileSync(file, "");
+  const a = tryLock(file);
+  assert.ok("heldBy" in a, "a fresh empty lock is held");
+  assert.equal(readFileSync(file, "utf8"), "", "and left as it was");
+  writeFileSync(file, "not a pid");
+  assert.ok("heldBy" in tryLock(file), "a fresh lock with no integer pid is held");
+  // The same lock long after: a crash between create and write. It must not block for good.
+  writeFileSync(file, "");
+  const old = (Date.now() - 60_000) / 1000;
+  utimesSync(file, old, old);
+  assert.ok(60_000 > BLANK_LOCK_GRACE_MS);
+  const b = tryLock(file);
+  assert.ok("release" in b, "an old empty lock is taken over");
+  assert.equal(readFileSync(file, "utf8"), String(process.pid));
+  b.release();
+  assert.deepEqual(readdirSync(dir), [], "no temp, stale or takeover file is left behind");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("creating a lock never overwrites one that exists, and a release removes only its own lock", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sova-lock-"));
+  const file = join(dir, "x.lock");
+  // Another live holder (this process's parent stands in for one).
+  writeFileSync(file, String(process.ppid));
+  const a = tryLock(file);
+  assert.ok("heldBy" in a && a.heldBy === process.ppid);
+  assert.equal(readFileSync(file, "utf8"), String(process.ppid), "the holder's lock is untouched");
+  // The primitive itself: a hard link onto an existing name fails rather than replacing it.
+  writeFileSync(join(dir, "other"), "1");
+  assert.throws(() => linkSync(join(dir, "other"), file), /EEXIST/);
+  rmSync(join(dir, "other"));
+  rmSync(file);
+  // Our lock replaced by someone else's (a takeover): our release must leave theirs.
+  const b = tryLock(file);
+  assert.ok("release" in b);
+  rmSync(file);
+  writeFileSync(file, String(process.ppid));
+  b.release();
+  assert.equal(readFileSync(file, "utf8"), String(process.ppid), "release left the other caller's lock");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a takeover judges the lock as it is now, never by its inode alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sova-lock-"));
+  const file = join(dir, "x.lock");
+  // A live holder's lock (the test runner, our parent) now sits on the inode a taker saw as a dead
+  // holder's: the old lock was removed and the new one reused its inode.
+  writeFileSync(file, String(process.ppid));
+  const st = statSync(file, { bigint: true });
+  const seenEarlier = { pid: DEAD_PID, dev: st.dev, ino: st.ino, mtimeNs: st.mtimeNs, mtimeMs: Number(st.mtimeMs) };
+  assert.equal(takeOver(file, seenEarlier), null);
+  assert.ok(existsSync(file), "the live lock is still there");
+  assert.equal(readFileSync(file, "utf8"), String(process.ppid));
+  // Even a lock matching what was seen exactly is left while its pid is alive.
+  assert.equal(takeOver(file, { ...seenEarlier, pid: process.ppid }), null);
+  assert.equal(readFileSync(file, "utf8"), String(process.ppid));
+  assert.deepEqual(readdirSync(dir), ["x.lock"], "no guard or moved file is left behind");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a release leaves another caller's lock on the same inode", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sova-lock-"));
+  const file = join(dir, "x.lock");
+  const a = tryLock(file);
+  assert.ok("release" in a);
+  // Our lock taken over and a new holder's lock on the very same inode (written in place).
+  writeFileSync(file, String(process.ppid));
+  a.release();
+  assert.equal(readFileSync(file, "utf8"), String(process.ppid), "release left the other caller's lock");
   rmSync(dir, { recursive: true, force: true });
 });

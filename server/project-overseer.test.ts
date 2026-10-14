@@ -2,13 +2,14 @@
 // this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
 // org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { stateView } from "./harness/state-view";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -16,7 +17,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+linkPiConfigExtensions(agentDir);
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const orgs = await import("./orgs");

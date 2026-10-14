@@ -232,6 +232,44 @@ test("a developer copy whose branch diverged is never moved, even by the button"
   assert.equal(s.available, false);
 });
 
+test("a developer copy follows only the branch its source names: on topic with source master, nothing is offered and apply refuses", async () => {
+  const x = rig();
+  await x.m.saveSettings({ source: { kind: "master" } });
+  x.r.git(x.copy, "checkout", "--quiet", "-b", "topic"); // at master's commit: an ancestor of the new tip
+  const tip = advance(x);
+  await x.m.check({ auto: true });
+  const s = await x.m.state();
+  assert.equal(s.running.branch, "topic");
+  assert.notEqual(s.lastCheck?.result?.state, "available");
+  assert.equal(s.available, false, "no button, no dot");
+  assert.equal(x.launched.length, 0, "Upgrade automatically starts nothing");
+  assert.match(JSON.stringify(s.lastCheck?.result), /You're on topic; switch to master to follow it\./);
+  await assert.rejects(x.m.apply({ target: tip }), (e: unknown) => e instanceof UpdatesRefusal);
+  assert.equal(x.launched.length, 0);
+});
+
+test("a developer copy on master, source master, is offered the update", async () => {
+  const x = rig();
+  await x.m.saveSettings({ source: { kind: "master" } });
+  const tip = advance(x);
+  await x.m.check();
+  const s = await x.m.state();
+  assert.equal(s.lastCheck?.result?.state, "available");
+  assert.equal(s.available, true);
+  await x.m.apply({ target: tip });
+  assert.equal(x.launched.length, 1);
+});
+
+test("apply re-checks the branch: an offer made on master is refused once the copy is on another branch", async () => {
+  const x = rig();
+  await x.m.saveSettings({ source: { kind: "master" } });
+  const tip = advance(x);
+  await x.m.check();
+  x.r.git(x.copy, "checkout", "--quiet", "-b", "topic"); // same commit, so the offer still matches the head
+  await assert.rejects(x.m.apply({ target: tip }), (e: unknown) => e instanceof UpdatesRefusal && /You're on topic; switch to master to follow it\./.test(e.message));
+  assert.equal(x.launched.length, 0);
+});
+
 test("an installed copy runs the target's own installer, and refuses one that can't keep the version that runs", async () => {
   const keep = rig({ kind: "installer" });
   await keep.m.saveSettings({ source: { kind: "master" } });

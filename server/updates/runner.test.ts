@@ -184,8 +184,9 @@ test("installed copy with no service: the job stops the old server and starts th
 
 // ---- developer copies ----
 
-const dev = (over: { dirty?: string; ff?: boolean; buildFails?: boolean; head?: string } = {}) => (cmd: string, w: World): RunResult | undefined => {
+const dev = (over: { dirty?: string; ff?: boolean; buildFails?: boolean; head?: string; on?: string } = {}) => (cmd: string, w: World): RunResult | undefined => {
   const g = `git -C ${CO} `;
+  if (cmd === `${g}symbolic-ref --quiet --short HEAD`) return { code: over.on === "" ? 1 : 0, out: `${over.on ?? "master"}\n` };
   if (cmd === `${g}status --porcelain --untracked-files=no`) return { code: 0, out: over.dirty ?? "" };
   if (cmd === `${g}rev-parse HEAD`) return { code: 0, out: `${over.head ?? OLD}\n` };
   if (cmd.startsWith(`${g}cat-file -e`)) return { code: 0, out: "" };
@@ -264,4 +265,14 @@ test("developer copy: a new version that doesn't answer gets the old commit, dep
   assert.ok(w.calls.includes(`git -C ${CO} reset --keep --quiet ${OLD}`));
   assert.ok(w.calls.includes(`mv ${CO}/dist.sova-previous-job1 ${CO}/dist`));
   assert.equal(restarts, 2);
+});
+
+test("developer copy: the job itself refuses a branch other than the source's, before any git move", async () => {
+  const w = world(dev({ on: "topic" }), [CO, `${CO}/dist`]);
+  const job = await runUpgrade(devPlan({ source: { kind: "master" } }), w.deps);
+  assert.equal(job.state, "failed");
+  assert.equal(job.detail, "You're on topic; switch to master to follow it. Nothing changed.");
+  assert.ok(!w.calls.some((c) => / (fetch|merge|checkout|reset) /.test(c) || c.startsWith("pnpm") || c.startsWith("systemctl")));
+  const ok = world(dev(), [CO, `${CO}/dist`]);
+  assert.equal((await runUpgrade(devPlan({ source: { kind: "master" } }), ok.deps)).state, "succeeded", "on master it moves");
 });

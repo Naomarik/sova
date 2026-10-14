@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { UpdateCheck, UpdateJob, UpdatesRunning, UpdatesSettings, UpdatesState } from "../../shared/protocol";
-import { checkForUpdate, describeRunning, lsRemoteArgs, offersUpgrade, parseLsRemote, sourceRef } from "./check";
+import { branchMismatch, checkForUpdate, describeRunning, lsRemoteArgs, offersUpgrade, parseLsRemote, sourceRef } from "./check";
 import { firstLine, type Git } from "./git";
 import type { InstallInfo } from "./install-kind";
 import { binDirOf } from "./install-kind";
@@ -268,6 +268,8 @@ export class UpdatesManager {
     const from = { sha: running.head!, label: running.version ?? (running.branch ? `${running.branch} at ${running.head!.slice(0, 7)}` : running.head!.slice(0, 7)) };
 
     if (info.kind === "developer") {
+      const wrong = branchMismatch(f.source, running.branch);
+      if (wrong) throw new UpdatesRefusal(wrong);
       const dirty = await git(["status", "--porcelain", "--untracked-files=no"]);
       const n = dirty.stdout.split("\n").filter((l) => l.trim()).length;
       if (dirty.code !== 0) throw new UpdatesRefusal(`git couldn't read your copy: ${firstLine(dirty)}.`);
@@ -299,6 +301,7 @@ export class UpdatesManager {
       uid: this.deps.uid,
       env: this.deps.jobEnv(),
       branch: running.branch,
+      source: f.source,
     };
     if (info.kind === "installer") {
       // The target's own installer, taken from the target commit (the check fetched it).

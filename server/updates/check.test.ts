@@ -104,6 +104,11 @@ test("master and a branch: newer commits are counted and the newest subject name
     assert.equal(m.target.count, 1);
     assert.equal(m.target.subject, "six: the newest");
   }
+  // A developer copy follows a branch only from that branch: on master it's told to switch.
+  const elsewhere = await run(r, copy, { kind: "branch", branch: "feat/x" });
+  assert.equal(elsewhere.state, "diverged");
+  if (elsewhere.state === "diverged") assert.equal(elsewhere.message, "You're on master; switch to feat/x to follow it.");
+  r.git(copy, "checkout", "--quiet", "-b", "feat/x", r.c.c4);
   const b = await run(r, copy, { kind: "branch", branch: "feat/x" });
   assert.equal(b.state, "available");
   if (b.state === "available") {

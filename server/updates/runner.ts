@@ -17,7 +17,7 @@ import { spawn } from "node:child_process";
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { UpdateJob, UpdateStep } from "../../shared/protocol";
+import type { UpdateJob, UpdateSource, UpdateStep } from "../../shared/protocol";
 
 export interface UpgradePlan {
   id: string;
@@ -45,6 +45,8 @@ export interface UpgradePlan {
   installer?: { script: string; launcher: string; binDir: string; installPort: number | null; noExtensions: boolean; noAppEntry: boolean; serverLog: string };
   /** Developer copy: the branch checked out (null: detached). */
   branch?: string | null;
+  /** The source the upgrade follows (a developer copy must be on its branch). */
+  source?: UpdateSource;
 }
 
 export interface RunResult {
@@ -245,6 +247,17 @@ async function upgradeDeveloper(
   if (changed > 0) return finish("failed", `Your copy has uncommitted changes in ${changed} ${changed === 1 ? "file" : "files"}. Commit or stash them, then upgrade. Nothing changed.`);
   const head = (await git(["rev-parse", "HEAD"])).out.trim();
   if (head !== plan.from.sha) return finish("failed", `Your copy moved since the check (it's at ${head.slice(0, 7)} now). Check again. Nothing changed.`);
+  // Only the branch the source names moves (check.ts branchMismatch; repeated here, the job is self-contained).
+  if (plan.source) {
+    const on = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"])).out.trim() || null;
+    const src = plan.source;
+    const want = src.kind === "master" ? "master" : src.kind === "branch" ? src.branch : null;
+    const wrong =
+      src.kind === "stable"
+        ? on === null || on === "master" ? null : `You're on ${on}; switch to master or a release to follow Stable.`
+        : on === want ? null : on ? `You're on ${on}; switch to ${want} to follow it.` : `Your copy isn't on a branch; switch to ${want} to follow it.`;
+    if (wrong) return finish("failed", `${wrong} Nothing changed.`);
+  }
   step("downloading");
   if ((await git(["cat-file", "-e", `${plan.to.sha}^{commit}`])).code !== 0) {
     const f = await git(["-c", "fetch.writeFetchHEAD=false", "fetch", "--quiet", "--no-tags", plan.repo, `+${plan.installRef}:refs/sova-updates/target`], 600_000);

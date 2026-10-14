@@ -43,7 +43,7 @@ setup pages.
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
 the default for new sessions, strict, the terminal's commands, what workers get, and the sessions
-that choose their own mode.
+that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
@@ -97,6 +97,13 @@ style reaches the page only when the generator runs again.
 
 The codemode minor mode: the script tool it adds, what a script can call, the script's card, when a
 switch applies, and where it is available.
+
+## §site.docs/project-modes — Project modes (`/docs/modes/project-modes/`)
+
+Writing a project's own minor mode: the `.sova/minor-modes/<id>/` folder and its `MODE.md`, which
+checkout a chat reads it from, the instructions and reference files, declaring a tool and the
+program it runs, approval and when it is asked again, the copy a chat keeps once a mode is on, what
+workers get, the menu's states, and one worked example of a mode with a tool.
 
 ## §site.docs/worktrees-and-changes — Worktrees and changes (`/docs/worktrees-and-changes/`)
 

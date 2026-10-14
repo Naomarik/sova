@@ -43,6 +43,7 @@ import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
 import { setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { setSovaPort } from "./extensions";
+import { startUpdates } from "./updates/routes";
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
@@ -159,6 +160,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
+  // Updates: the daily check, on the schedule updates.json keeps across restarts.
+  startUpdates(info.port, HOST);
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler

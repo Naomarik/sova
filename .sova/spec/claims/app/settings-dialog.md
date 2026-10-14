@@ -40,10 +40,13 @@ can change the dialog's size by being long or short.
 
 - **Compress thinking & tool calls** — a default-on browser-local switch, applied immediately to every open transcript and stored in `localStorage["sova:compress-work"]`. Only `"false"` disables it; missing, unreadable, or corrupt values mean on. On selects the compact work timeline; off restores the original cards (§chat.work-chain-setting/preference).
 
-The first tab: how **this browser** draws Sova. Nothing here is written to the machine — no
-policy file, no server endpoint — which is the line between this screen and Models, where a
-switch is a rule every session obeys. The panel says so in one line, because "settings" in a tool
-with a shared config file is otherwise an open question.
+The first tab, in two parts. Above: how **this browser** draws Sova. Nothing there is written to
+the machine — no policy file, no server endpoint — which is the line between those settings and
+Models, where a switch is a rule every session obeys. Below, under the heading **Updates · this
+machine**: this machine's updates (§app/updates), the one part of General the server keeps. The
+panel's intro says so ("How this browser draws Sova. The settings above stay in this browser;
+another device keeps its own. Updates, below, are this machine's."), because "settings" in a tool with a shared config
+file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
 (§app.session-list/recent). A number field, **3 to 20, 5 by default**. This is the
@@ -75,6 +78,12 @@ places is a count that disagrees in one of them.
   It applies as you flip it, and persists in `localStorage["sova:show-summaries"]` for the same
   reason as the count: it is this browser's, not the machine's. Only the stored value `false` turns
   it off; a missing or unreadable value is on.
+
+- **Updates · this machine** — last, under its own heading: what runs, the last check and what it
+  found, Check Now, the upgrade button and its progress (§app/updates), then **Update from**,
+  **Check for updates automatically** and **Upgrade automatically**. Those three are the form
+  **Updates**, staged and written by the dialog's Save Changes (§app.settings-dialog/save-bar);
+  Check Now and the upgrade are actions that run at once.
 
 ## §app.settings-dialog/models — Models
 
@@ -637,7 +646,7 @@ Folders box or the tab writes nothing.
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
-**Mesh**, **Alignment** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+**Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
 - **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
@@ -690,8 +699,9 @@ Discard button of its own: saving is the dialog's.
   "Alignment" whichever of the two failed.
 - **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
-- **Not gated.** General, Themes and Typography change only this browser and still apply as you
-  pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
+- **Not gated.** General (apart from its Updates form), Themes and Typography change only this
+  browser and still apply as you pick. Actions run at once and are never part of a draft: Retry,
+  Try Again, Check Again, Updates' Check Now and its upgrade button, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
   Tag All Sessions and Stop Tagging, and Phone Notifications' Enable on This Device, Turn Off on
   This Device, Remove and Send Test.

@@ -2132,7 +2132,6 @@ export function ChatView(props: {
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
               />
-              </ChangesSession.Provider>
               <LiveEntries
                 live={live}
                 author={props.author}
@@ -2142,6 +2141,7 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (
                   <div class="info-row" role="note">

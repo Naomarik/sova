@@ -41,6 +41,8 @@ export function WatchView(props: {
   path: string;
   /** The session's id: what an "Open in Session" jump names when it linked by id. */
   sessionId?: string;
+  /** The session's folder (its header cwd): where a merge card's turn steps resolve paths. */
+  cwd?: string;
   author: string;
   /** A TUI is running this session, so tools without results may still be running. */
   streaming: boolean;
@@ -236,7 +238,7 @@ export function WatchView(props: {
                 </div>
               }
             >
-              <ChangesSession.Provider value={{ get path() { return props.path; } }}>
+              <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.cwd; } }}>
               <ToolSourceContext.Provider value={{ kind: "pi", path: props.path }}>
               <HistoryItems
                 items={list()}

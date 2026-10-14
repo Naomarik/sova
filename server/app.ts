@@ -135,6 +135,7 @@ import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, SERVER_HEADER, unlock, pair, revealToken } from "./auth";
+import { registerUpdatesRoutes } from "./updates/routes";
 
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
@@ -238,6 +239,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/auth/status", (c) => c.json({ ok: true }));
   // The folder this server lists sessions from (its agent dir's), which the empty list names.
   app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
+  // Updates: what runs, the daily check, and the operator's upgrade.
+  registerUpdatesRoutes(app);
 
   app.get("/api/sessions", async (c) => c.json(await listSessions()));
   registerProfileRoutes(app);
@@ -1292,7 +1295,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Git diffs for the changes viewer (server/git-diff.ts, shared/protocol.ts DiffScope). Read-only;
-  // the scope names a folder the session knows, the server picks every ref.
+  // the scope names a folder the session knows, the server picks every ref but a pinned card's two oids.
   const diffRoute = (fn: (c: Context) => Promise<unknown>) => async (c: Context) => {
     try {
       return c.json(await fn(c), 200, { "Cache-Control": "no-store" });
@@ -1301,11 +1304,16 @@ export function buildApp(deps: AppDeps) {
       throw err;
     }
   };
-  app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(scopeFromQuery((n) => c.req.query(n)))));
+  const diffScope = (c: Context) =>
+    scopeFromQuery(
+      (n) => c.req.query(n),
+      (n) => c.req.queries(n),
+    );
+  app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(diffScope(c))));
   app.get(
     "/api/diff/patch",
     diffRoute((c) =>
-      gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
+      gitDiffs.patch(diffScope(c), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1", origins: c.req.query("origins") === "1" }),
     ),
   );
 

@@ -11,28 +11,35 @@ import {
   stepHunksOf,
   stepsFromAgent,
   stepsFromTurns,
+  stepOrigins,
   turnsFromItems,
   editCallsToLoad,
   type AgentStepInput,
   type Step,
   type StepFile,
+  type StepOrigins,
   type StepPlan,
 } from "../lib/changes-steps";
 import {
   changesPaneHidden,
+  commitsCaption,
+  commitsSummary,
   countsLine,
+  emptyReason,
   fetchDiffPatch,
   fetchDiffSummary,
   inPaths,
   scopeFromDetails,
+  scopeHasCommits,
   scopeTitle,
+  sha7,
   setChangesPaneHidden,
   STATUS_WORD,
   stepMark,
 } from "../lib/changes-view";
 import { DiffLayoutToggle, DiffStat, DiffView, diffLayout, setDiffLayout, type ContextState, type DiffLayout } from "./DiffView";
 import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
-import { tildePath } from "../lib/format";
+import { relativeTime, tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
 import "./ChangesViewer.css";
@@ -250,6 +257,18 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
     return files().filter((f) => names.has(f.path) || (f.oldPath !== undefined && names.has(f.oldPath)));
   });
   createEffect(on(needed, (list) => list.forEach((f) => ensure(f))));
+  /** Which commits each read file's hunks came from (§chat.changes/steps); none for the uncommitted
+      comparison, and not shown for one commit, whose header already names it. */
+  const showCommits = () => scopeHasCommits(props.scope) && props.scope.kind !== "commit";
+  const origin = createMemo<StepOrigins | undefined>(() => {
+    if (!showCommits()) return undefined;
+    const read: DiffFilePatch[] = [];
+    for (const f of files()) {
+      const p = patches[f.path];
+      if (p?.state === "ok") read.push(p.patch);
+    }
+    return stepOrigins(read);
+  });
   const stepsReady = () => (agentSteps() || transcript() !== null) && needed().every((f) => patches[f.path] && patches[f.path]!.state !== "loading");
   const plan = createMemo<StepPlan | null>(() => {
     const s = summary();
@@ -260,9 +279,10 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
       const hunks = need.has(f.path) && p?.state === "ok" && p.diff ? p.diff.hunks : null;
       return { path: f.path, oldPath: f.oldPath, hunks };
     });
+    const origins = origin();
     const agent = props.agent?.steps;
-    if (agent?.length) return stepsFromAgent(agent, stepFiles, s.repo);
-    return stepsFromTurns(turns(), stepFiles, props.cwd ?? s.repo, s.repo);
+    if (agent?.length) return stepsFromAgent(agent, stepFiles, s.repo, origins);
+    return stepsFromTurns(turns(), stepFiles, props.cwd ?? s.repo, s.repo, origins);
   });
   const allSteps = createMemo(() => {
     const p = plan();
@@ -276,7 +296,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
     if (pick() || !summary()) return;
     const p = plan();
     if (p === null) return;
-    const first = p.steps[0] ?? null;
+    const first = p.steps.find((s) => !s.empty) ?? null;
     if (first) setPick({ kind: "step", id: first.id });
     else if (ordered()[0]) setPick({ kind: "file", path: ordered()[0]!.path });
   });
@@ -505,27 +525,39 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
                             <button
                               type="button"
                               class="changes-step-row"
+                              classList={{ "changes-step-empty": !!s.empty }}
                               aria-current={isPick(pick(), "step", s.id) ? "true" : undefined}
                               onClick={() => openStep(s.id)}
                             >
-                              <span class="changes-step-n" classList={{ "changes-step-other": s.n === 0 }} aria-hidden={s.n === 0 ? "true" : undefined}>
+                              <span class="changes-step-n" classList={{ "changes-step-other": s.n === 0 || !!s.empty }} aria-hidden={s.n === 0 ? "true" : undefined}>
                                 {s.n ? stepMark(s.n) : "·"}
                               </span>
                               <span class="changes-step-title">{s.title}</span>
-                              <Show when={s.buildsOn.length}>
-                                <span class="changes-step-builds text-caption text-muted">builds on {s.buildsOn.map(stepMark).join(" ")}</span>
+                              <Show
+                                when={emptyReason(s)}
+                                fallback={
+                                  <Show when={showCommits() && !s.commitsPending && !s.commitsUnknown && s.commits.length > 0}>
+                                    <span class="changes-step-caption text-mono">
+                                      {(() => {
+                                        // Breaks only between the ids and the count.
+                                        const [ids, count] = commitsCaption(s.commits).split(" · ");
+                                        return (
+                                          <>
+                                            {ids} · <span class="changes-nowrap">{count}</span>
+                                          </>
+                                        );
+                                      })()}
+                                    </span>
+                                  </Show>
+                                }
+                              >
+                                {(why) => <span class="changes-step-caption text-caption">{why()}</span>}
                               </Show>
                             </button>
                           </li>
                         )}
                       </For>
                     </ol>
-                    <Show when={p().unmatched.length}>
-                      <p class="changes-note text-caption text-muted">
-                        {p().unmatched.length === 1 ? "1 step the agent wrote names" : `${p().unmatched.length} steps the agent wrote name`} nothing in this diff:{" "}
-                        {p().unmatched.join("; ")}.
-                      </p>
-                    </Show>
                   </>
                 )}
               </Show>
@@ -579,6 +611,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
                     {(c) => (
                       <StepBody
                         step={(c() as { kind: "step"; step: Step }).step}
+                        commits={showCommits() ? origin()?.commits : undefined}
                         files={byPath()}
                         patches={patches}
                         layout={layout()}
@@ -742,13 +775,23 @@ function PatchNote(props: { file: DiffFileSummary; patch: PatchState | undefined
               ? "A binary file: there are no lines to show."
               : patch().tooLarge
                 ? `This file's diff is over ${Math.round(patch().tooLarge!.cap / 1_000_000)} MB, so it isn't shown. +${props.file.added} −${props.file.removed}.`
-                : "Only the file's mode changed."}
+                : noLineChanges(props.file.status)}
           </p>
         )}
       </Match>
     </Switch>
   );
 }
+
+/** A file with no line changes, under its header (§chat.changes/viewer). */
+function noLineChanges(status: DiffFileSummary["status"]): string {
+  if (status === "R") return "renamed, no line changes";
+  if (status === "A" || status === "D") return "empty file";
+  return "mode changed, no line changes";
+}
+
+/** The patch's parsed diff when it has lines to draw. */
+const linesOf = (p: PatchState | undefined) => (p?.state === "ok" && p.diff && p.diff.hunks.length > 0 ? p.diff : null);
 
 /** Consecutive hunk indexes grouped by the step that holds them, in file order. */
 function runsByStep(plan: StepPlan | null, path: string, count: number): { n: number; step: Step | null; hunks: number[] }[] {
@@ -774,7 +817,7 @@ function FileBody(props: {
   onRetry(f: DiffFileSummary): void;
   context(f: DiffFileSummary): { state: ContextState; load(): void };
 }) {
-  const diff = () => (props.patch?.state === "ok" ? props.patch.diff : null);
+  const diff = () => linesOf(props.patch);
   const context = () => props.context(props.file);
   return (
     <Show when={diff()} fallback={<PatchNote file={props.file} patch={props.patch} onRetry={props.onRetry} />}>
@@ -804,9 +847,12 @@ function FileBody(props: {
   );
 }
 
-/** One step: its why and "builds on", then its hunks file by file under headers that open the file. */
+/** One step: its why and the commits it came from, then its hunks file by file under headers that
+    open the file; an empty step shows only why it is empty. */
 function StepBody(props: {
   step: Step;
+  /** The comparison's commits by id, when it shows commits (not uncommitted, not one commit). */
+  commits?: StepOrigins["commits"];
   files: Map<string, DiffFileSummary>;
   patches: Record<string, PatchState>;
   layout: DiffLayout;
@@ -815,27 +861,48 @@ function StepBody(props: {
   onRetry(f: DiffFileSummary): void;
   context(f: DiffFileSummary): { state: ContextState; load(): void };
 }) {
+  // Absent until every file of the step has been read with its commits.
+  const commitsShown = () =>
+    !!props.commits && !props.step.empty && !props.step.commitsPending && (!!props.step.commitsUnknown || props.step.commits.length > 0);
   return (
     <div class="changes-step">
-      <Show when={props.step.note || props.step.buildsOn.length || props.step.source === "other"}>
+      <Show when={props.step.note || props.step.source === "other" || props.step.empty || commitsShown()}>
         <div class="changes-step-about">
+          <Show when={emptyReason(props.step)}>{(why) => <p class="text-caption text-muted">{why()}</p>}</Show>
           <Show when={props.step.source === "other"}>
             <p class="text-caption text-muted">Hunks no step made: edits by hand, by other tools, or by another session.</p>
           </Show>
           <Show when={props.step.note}>
             <p>{props.step.note}</p>
           </Show>
-          <Show when={props.step.buildsOn.length}>
-            <p class="changes-builds text-caption">
-              Builds on
-              <For each={props.step.buildsOn}>
-                {(n) => (
-                  <button type="button" class="changes-step-chip" aria-label={`Step ${n}`} title={`Show step ${n}`} onClick={() => props.onStep(n)}>
-                    {stepMark(n)}
-                  </button>
-                )}
-              </For>
-            </p>
+          <Show when={commitsShown()}>
+            <Show
+              when={!props.step.commitsUnknown}
+              fallback={<p class="changes-commits-unknown text-caption text-muted">commits unknown</p>}
+            >
+              <details class="changes-commits text-caption">
+                <summary class="text-muted">
+                  <Icon name="chevron-right" small />
+                  {commitsSummary(props.step.commits)}
+                </summary>
+                <ol class="changes-commit-list" role="list">
+                  <For each={props.step.commits}>
+                    {(sha) => {
+                      const c = () => props.commits?.get(sha);
+                      return (
+                        <li class="changes-commit">
+                          <span class="changes-commit-sha text-mono text-muted" title={sha}>
+                            {sha7(sha)}
+                          </span>
+                          <span class="changes-commit-subject">{c()?.subject ?? ""}</span>
+                          <Show when={c()}>{(x) => <span class="changes-commit-when text-muted">{relativeTime(x().authorTime)}</span>}</Show>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ol>
+              </details>
+            </Show>
           </Show>
         </div>
       </Show>
@@ -843,10 +910,7 @@ function StepBody(props: {
         {(path) => {
           const f = () => props.files.get(path);
           const patch = () => props.patches[path];
-          const diff = () => {
-            const p = patch();
-            return p?.state === "ok" ? p.diff : null;
-          };
+          const diff = () => linesOf(patch());
           return (
             <Show when={f()}>
               {(file) => (

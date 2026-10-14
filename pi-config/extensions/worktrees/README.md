@@ -50,6 +50,16 @@ Workers never have this extension: the subagents extension refuses any copy of `
 `state.ts` imports node builtins only: Sova's server (`server/worktrees-state.ts`) and the
 subagents extension import it.
 
+`git.ts` holds the one review-base rule and its limits, shared by the `show_changes` tool
+(`show-changes/git.ts`, `hunks.ts`, `index.ts`) and Sova's diff endpoint (`server/git-diff.ts`), so
+a card never opens a viewer that compares against a different base. `reviewBase(git, root, {head,
+branch?, tracked?})` tries the tracked base branch, then `master`, then `main` (each skipped when it
+is the branch itself, missing, or shares no history), then `origin/HEAD`, then the tracked
+created-from commit ("<sha7> (created from)"); otherwise it refuses with `detached`,
+`on-base-branch`, `no-history` or `no-base` (a merged branch's base is `mergedReviewBase`).
+`REVIEW_LIMITS` (frozen) carries the git timeout (5 s), the 3,000-file cap and the patch and
+untracked-file read caps both sides apply. Change either only with both callers; spec `§chat.changes/endpoint`.
+
 ## Tests
 
 ```sh

@@ -407,6 +407,7 @@ export function SessionView(props: {
                   <WatchView
                     path={path}
                     sessionId={s().id}
+                    cwd={s().cwd}
                     author={author()}
                     streaming={!!s().live}
                     onAppend={reloadInsight}

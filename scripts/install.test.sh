@@ -310,6 +310,20 @@ check "$([ -f "$home/.local/share/sova/dist/index.html" ] && echo true || echo f
 check "$([ -x "$home/.local/bin/sova" ] && echo true || echo false)" "rerun: the launcher is in place"
 check "$([ -z "$(ls -d "$home/.local/share/sova.sova-previous."* 2>/dev/null)" ] && echo true || echo false)" \
 	"rerun: removed the previous install after promoting"
+check "$(yes_if grep -qF 'export SOVA_LAUNCHER=$self' "$home/.local/bin/sova")" "rerun: the launcher tells the server its own path"
+
+# 5b. SOVA_KEEP_PREVIOUS moves the replaced install there instead of deleting it (Settings' upgrade).
+printf 'from the previous install\n' > "$home/.local/share/sova/KEPT.txt"
+SOVA_KEEP_PREVIOUS="$home/kept install" inst --reinstall
+check "$(yes_if [ "$status" -eq 0 ])" "keep previous: exits 0"
+check "$(yes_if [ -f "$home/kept install/KEPT.txt" ])" "keep previous: the replaced install is at the path it was given"
+check "$(yes_if [ ! -e "$home/.local/share/sova/KEPT.txt" ] && [ -f "$home/.local/share/sova/dist/index.html" ])" "keep previous: the new install is in place"
+check "$(yes_if [ -z "$(ls -d "$home/.local/share/sova.sova-previous."* 2>/dev/null)" ])" "keep previous: no other backup left"
+check "$(yes_if said 'kept the previous install at')" "keep previous: says where it kept it"
+SOVA_KEEP_PREVIOUS="$home/kept install" inst --reinstall
+check "$(yes_if [ "$status" -ne 0 ] && said 'already exists; nothing was changed')" "keep previous: a path that exists is refused before anything changes"
+check "$(yes_if [ -f "$home/kept install/KEPT.txt" ] && [ -f "$home/.local/share/sova/dist/index.html" ])" "keep previous: the refusal left both installs alone"
+rm -rf "$home/kept install"
 
 # 6. An install directory that is not our clone is refused, with its contents left alone.
 fresh_home foreign-dir

@@ -3,24 +3,29 @@
  * imported): the same plumbing (`diff-index` against the working tree, `diff-tree -r` between
  * commits, never porcelain `git diff`, whose config could change the context), `-p --histogram -M
  * --full-index` at git's default context, untracked files of a dirty scope as one added hunk each,
- * and a file whose patch is binary or past Sova's 1 MB patch cap as one whole-file unit. Only the
- * `@@` headers and each hunk's first changed line are kept. Read-only, through the extension's
+ * and a file whose patch is binary or past Sova's 1 MB patch cap as one whole-file unit (a file
+ * with no line changes, such as a pure rename, a mode change or an empty file, has no hunks and
+ * counts as one unit too, coverage.ts). The whole patch gets a longer time than the 5 s listing
+ * reads; past it, or past its output cap, every file is one whole-file unit, as the viewer reads
+ * patches per file. Only the `@@` headers and each hunk's first changed line are kept. Read-only, through the extension's
  * git runner (execFile, timeout, output cap). Node builtins only.
  */
 import { lstat, open, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { ShowChangesScope } from "./details.ts";
 import type { DiffFileHunks, DiffHunk } from "./coverage.ts";
+import { REVIEW_LIMITS } from "../worktrees/git.ts";
 import { changedFiles, type Git } from "./git.ts";
 import { ShowChangesError } from "./input.ts";
 
-/** Sova's PATCH_CAP: one file's patch past it isn't drawn, so the file is one unit. */
-const PATCH_CAP = 1024 * 1024;
-/** Sova's MAX_UNTRACKED_READ and UNTRACKED_BUDGET: an untracked file past either is one unit. */
-const UNTRACKED_READ = PATCH_CAP;
-const UNTRACKED_BUDGET = 16 * 1024 * 1024;
-/** The whole diff's output cap; past it every file counts as one unit. */
+/** The viewer's patch cap: one file's patch past it isn't drawn, so the file is one unit. */
+const PATCH_CAP = REVIEW_LIMITS.patchCap;
+/** The viewer's untracked read and budget: an untracked file past either is one unit. */
+const UNTRACKED_READ = REVIEW_LIMITS.untrackedRead;
+const UNTRACKED_BUDGET = REVIEW_LIMITS.untrackedBudget;
+/** The whole diff's output cap and time; past either every file counts as one unit. */
 const DIFF_CAP = 64 * 1024 * 1024;
+const DIFF_TIMEOUT_MS = 15_000;
 /** First changed line, cut to this many characters. */
 const FIRST_MAX = 80;
 
@@ -73,6 +78,9 @@ const side = (l: string, prefix: RegExp) => unquote(l.slice(4).replace(/\t$/, ""
  * Parse `diff -p` output into files and hunks. A file's path is its new path (the old one for a
  * deletion), named from `rename to` / `+++` / `---` lines, else the `diff --git` line. A path seen
  * twice (a type change: delete then add) keeps its first section's hunks, as Sova's parser does.
+ * A section with no hunks and no header saying what changed (rename, copy, mode, new or deleted
+ * file, binary) is a stat-only entry, not a change: dropped, as the viewer drops a file with no
+ * numstat line.
  */
 export function parseHunks(text: string): DiffFileHunks[] {
 	const out: DiffFileHunks[] = [];
@@ -87,6 +95,7 @@ export function parseHunks(text: string): DiffFileHunks[] {
 		let newPath: string | undefined;
 		let binary = false;
 		let deleted = false;
+		let described = false;
 		const hunks: DiffHunk[] = [];
 		let cur: DiffHunk | undefined;
 		for (const l of lines.slice(1)) {
@@ -100,6 +109,7 @@ export function parseHunks(text: string): DiffFileHunks[] {
 				if (!cur.firstChanged && (l.startsWith("+") || l.startsWith("-"))) cur.firstChanged = firstChangedText(l);
 				continue;
 			}
+			if (/^(?:rename from |rename to |copy from |copy to |old mode |new mode |new file mode |deleted file mode |similarity index )/.test(l)) described = true;
 			if (l.startsWith("rename from ")) oldPath = unquote(l.slice(12));
 			else if (l.startsWith("rename to ")) newPath = unquote(l.slice(10));
 			else if (l.startsWith("--- ")) oldPath ??= l === "--- /dev/null" ? undefined : side(l, /^a\//);
@@ -107,6 +117,7 @@ export function parseHunks(text: string): DiffFileHunks[] {
 			else if (l.startsWith("deleted file mode")) deleted = true;
 			else if (l.startsWith("Binary files ") || l === "GIT binary patch") binary = true;
 		}
+		if (!hunks.length && !binary && !described) return;
 		const path = (deleted ? oldPath : newPath) ?? newPath ?? oldPath ?? headerPath(lines[0]!);
 		if (!path) return;
 		const prior = seen.get(path);
@@ -172,9 +183,9 @@ export async function readHunks(git: Git, scope: ShowChangesScope): Promise<Diff
 				: scope.parent
 					? ["diff-tree", "-r", ...OPTS, scope.parent, scope.sha, "--"]
 					: ["diff-tree", "--root", "-r", ...OPTS, scope.sha, "--"];
-	const r = await git([...PATCH, ...args], scope.root, { maxBuffer: DIFF_CAP });
-	if (r.cut) {
-		// Too big to read here: every file is one unit, named by path.
+	const r = await git([...PATCH, ...args], scope.root, { maxBuffer: DIFF_CAP, timeoutMs: DIFF_TIMEOUT_MS });
+	if (r.cut || r.timedOut) {
+		// Too big or too slow to read here: every file is one unit, named by path.
 		return (await changedFiles(git, scope)).map((path) => ({ path, hunks: null }));
 	}
 	if (r.code !== 0) throw new ShowChangesError(`git ${args[0]} -p failed: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);

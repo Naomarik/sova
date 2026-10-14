@@ -27,6 +27,7 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 - **Send a message** to a session, as if you typed it there. If a turn is running, the message is queued behind it; it steers the running turn only when you've asked it to interrupt.
 - **Archive and unarchive** sessions (never a permanent delete), rename them, and move them between groups.
 - **Change a session's** model, mode, or subagent profile.
+- **Turn a project's own modes on or off** in a session it starts or changes, from the modes that session's checkout ships ([Project modes](/docs/modes/project-modes/)), though not in a session it starts on another Sova host. When it turns on a mode that runs tools, that counts as your approval of them: nothing waits for you, and the approval is recorded as if you had given it.
 - **Answer a dialog** that's waiting in a session Sova runs. The session's transcript shows "Overseer chose: …". It never answers in a session that's open in a terminal.
 - **Keep notes for itself.** Standing notes are instructions it reads every turn; it can add to them, and you can edit them in Settings → Overseer.
 - **Keep your ideas and todos.** Say "it'd be nice if…" and it files an idea; say "remind me to…" and it adds a todo. It says what it filed in one line and starts nothing. The **Ideas** and **Todos** buttons in its head open each list.

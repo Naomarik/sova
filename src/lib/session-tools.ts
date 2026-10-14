@@ -47,9 +47,14 @@ export function toolsView(answer: { ok: SessionTools } | { error: string }): Too
 }
 
 /** What the group re-reads on, as one string (a memo of it gates on the value): the chat's model, its
-    mode triple, and how many times it has (re)connected. */
-export function toolsKeyOf(model: string | null, mode: { mode: string; strict: boolean; minorModes: readonly string[] } | null, hellos: number): string {
-  return JSON.stringify([model, mode?.mode ?? null, mode?.strict ?? null, mode ? [...mode.minorModes] : null, hellos]);
+    mode triple with its project modes (each brings its own tools), and how many times it has
+    (re)connected. */
+export function toolsKeyOf(
+  model: string | null,
+  mode: { mode: string; strict: boolean; minorModes: readonly string[]; projectModes?: readonly string[] } | null,
+  hellos: number,
+): string {
+  return JSON.stringify([model, mode?.mode ?? null, mode?.strict ?? null, mode ? [...mode.minorModes] : null, mode ? [...(mode.projectModes ?? [])] : null, hellos]);
 }
 
 /** The open rows that are still listed after a re-read: a row stays open while its tool is listed. */

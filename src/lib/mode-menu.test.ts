@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { filterProfiles, FOOT_NOTE, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
+import { APPROVAL_FOOT, approvalLead, barePrograms, bareProgramsNote, commandLine, filterProfiles, FOOT_NOTE, nextProjectModes, projectGroupLabel, projectRowState, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
 
 const def = (mode: string, minorModes: string[], strict = false) => ({ mode, minorModes, strict });
 
@@ -100,4 +100,76 @@ test("an empty search says so and no two setup suggestions collide", () => {
   // Both checks block: a taken id and a taken name each move the suggestion on.
   assert.deepEqual(nextSetup([{ id: "setup-1", name: "Mine" }, { id: "other", name: "Setup 2" }]), { id: "setup-3", name: "Setup 3" });
   assert.deepEqual(nextSetup([{ id: "mine", name: "Setup 2" }]), { id: "setup-1", name: "Setup 1" }, "a taken name blocks only that name");
+});
+
+// ── Project minor modes ───────────────────────────────────────────────────
+
+test("project modes never make a chat 'not the default': no save writes them", () => {
+  // The same built-in mode with project modes on is still exactly what a save would write.
+  assert.equal(isDefaultMode(def("delegate", ["align"]), { ...def("delegate", ["align"]), projectModes: ["deploy-notes"] }), true);
+  // And the title names only what a save writes.
+  assert.equal(saveTitle({ ...def("normal", ["spec"]), projectModes: ["deploy-notes"] }, false), "New sessions will start from normal · spec.");
+  assert.equal(modeSummary({ ...def("normal", []), projectModes: ["deploy-notes"] }), "normal");
+});
+
+const pm = (over: Record<string, unknown> = {}) => ({ tools: [] as { name: string; description: string; command: string[] }[], ...over });
+
+test("each row state is told apart, and only a broken mode refuses a press", () => {
+  const states = [
+    [projectRowState(pm(), false), "ok", true],
+    [projectRowState(pm(), true), "ok", true],
+    [projectRowState(pm({ problem: "MODE.md: missing description" }), false), "broken", false],
+    [projectRowState(pm({ removed: true }), true), "removed", true],
+    [projectRowState(pm({ changed: true }), true), "changed", true],
+    [projectRowState(pm({ needsApproval: true, tools: [{ name: "a", description: "", command: ["./a"] }] }), false), "approval", true],
+    [projectRowState(pm({ needsApproval: true }), true), "tools-changed", true],
+  ] as const;
+  for (const [s, kind, can] of states) {
+    assert.equal(s.kind, kind);
+    assert.equal(s.canToggle, can, kind);
+    assert.equal(s.note === null, kind === "ok", `${kind}: a note exactly when the row isn't ok`);
+  }
+  // The broken note carries the problem itself.
+  assert.match(projectRowState(pm({ problem: "MODE.md: line 3: unknown key" }), false).note!, /MODE\.md: line 3: unknown key/);
+  // An ON mode whose files broke since can still be turned off: the press is how it goes away.
+  assert.equal(projectRowState(pm({ problem: "bad" }), true).canToggle, true);
+  // Removed wins over changed while on: the folder is gone, there's nothing to reload.
+  assert.equal(projectRowState(pm({ removed: true, changed: true }), true).kind, "removed");
+});
+
+test("the approval counts its tools in digits", () => {
+  const t = { name: "x", description: "", command: ["./x"] };
+  assert.equal(projectRowState(pm({ needsApproval: true, tools: [t] }), false).note, "Asks before turning on: it runs 1 tool.");
+  assert.equal(projectRowState(pm({ needsApproval: true, tools: [t, t, t] }), false).note, "Asks before turning on: it runs 3 tools.");
+  assert.match(approvalLead("deploy", "shop", [t]), /^deploy comes from shop's files\. .*this tool/);
+  assert.match(approvalLead("deploy", undefined, [t, t]), /this project's files\. .*these 2 tools/);
+});
+
+test("a press sends the whole ON set, toggling only its own id", () => {
+  assert.deepEqual(nextProjectModes([], "a"), ["a"]);
+  assert.deepEqual(nextProjectModes(["a", "b"], "a"), ["b"]);
+  assert.deepEqual(nextProjectModes(["b"], "a"), ["b", "a"]);
+});
+
+test("a command reads as one line, quoting only what a shell would split", () => {
+  assert.equal(commandLine(["./bin/check", "--fast"]), "./bin/check --fast");
+  assert.equal(commandLine(["python3", "tool.py", "a b"]), "python3 tool.py 'a b'");
+  assert.equal(commandLine(["echo", "it's"]), "echo 'it'\\''s'");
+  assert.equal(commandLine(["x", ""]), "x ''");
+});
+
+test("the group label names the project when it has one", () => {
+  assert.equal(projectGroupLabel("shop"), "This project · shop");
+  assert.equal(projectGroupLabel(undefined), "This project");
+});
+
+test("the approval says it covers the whole folder, and names the machine's own programs it doesn't cover", () => {
+  assert.match(APPROVAL_FOOT, /every file in this folder/);
+  const t = (...command: string[]) => ({ name: "t", description: "", command });
+  // A program from the folder is covered: nothing to name.
+  assert.equal(bareProgramsNote([t("./run.sh", "--fast")]), null);
+  assert.deepEqual(barePrograms([t("node", "./check.js"), t("sh", "./a.sh"), t("node", "./b.js"), t("./c")]), ["node", "sh"]);
+  assert.equal(bareProgramsNote([t("python3", "./tool.py")]), "python3 is this machine's own program, so the approval doesn't cover it.");
+  assert.equal(bareProgramsNote([t("node", "./a.js"), t("sh", "./b.sh")]), "node and sh are this machine's own programs, so the approval doesn't cover them.");
+  assert.equal(bareProgramsNote([t("node"), t("sh"), t("bun")]), "node, sh, and bun are this machine's own programs, so the approval doesn't cover them.");
 });

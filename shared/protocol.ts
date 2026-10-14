@@ -1783,8 +1783,74 @@ export interface HeldChatState {
 
 /** POST /api/mode?path=…: the chat's mode after the switch, plus how it took (ModeApplies).
     The same values reach every client of that chat as a "mode" server message. */
-export interface ChatModeResult extends ModeInfo {
+export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+}
+
+// ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
+// A project's own minor modes, from `<checkout>/.sova/minor-modes/<id>/MODE.md` of the checkout the
+// chat runs in (git toplevel of its cwd, else the cwd). Per chat, so never in GET /api/mode's
+// global `minors`; kept apart from `minorModes` (that list stays the closed built-in set).
+//
+// POST /api/mode?path=… { projectModes?: string[], approve?: ProjectModeApproval[] } -> ChatModeResult
+//                                  `projectModes` is the whole ON set, like minorModes. Turning on a mode
+//                                  with needsApproval and no `approve` entry carrying its current toolsHash
+//                                  → 409 ProjectModeApprovalNeeded (nothing switched; a stale hash too, with
+//                                  the fresh info). An id not offered here, or broken → 409 { error }. Turning off is
+//                                  always allowed (removed ones too). The Overseer's own calls count as the
+//                                  approval (q7). POST /api/mode with no ?path= and projectModes → 400:
+//                                  the default never stores project modes; saveDefault never saves them.
+
+/** One tool a project mode declares, as the approval shows it. `command` is the argv as declared,
+    relative to the mode's folder. */
+export interface ProjectMinorTool {
+  name: string;
+  description: string;
+  command: string[];
+}
+
+/** One project minor mode offered in a chat, on or off. */
+export interface ProjectMinorInfo {
+  /** The folder name (for a broken folder whose name isn't a valid id too: display only). */
+  id: string;
+  description: string;
+  /** Carried to the chat's workers (`workers: yes`). */
+  workers: boolean;
+  tools: ProjectMinorTool[];
+  /** The mode's folder (absolute). */
+  dir: string;
+  /** Why it can't be turned on (path + error). */
+  problem?: string;
+  /** On in this chat, but its folder is gone. */
+  removed?: true;
+  /** On in this chat, and its files differ from the version the chat turned on. */
+  changed?: true;
+  /** Has tools whose exact set (toolsHash) the user hasn't approved. */
+  needsApproval?: true;
+  /** What an approval approves: the declared tools and every file in the mode's folder except MODE.md. Absent: no tools. */
+  toolsHash?: string;
+}
+
+/** A chat's project modes: in its `mode` message and ChatModeResult. Absent from older servers. */
+export interface ChatProjectModes {
+  /** Project mode ids ON in this chat. */
+  projectModes?: string[];
+  /** The checkout the modes come from; absent when the chat has none (remote, no folder). */
+  project?: { root: string; name: string };
+  /** Every project mode offered here, on or off (removed ones that are still on included). */
+  projectMinors?: ProjectMinorInfo[];
+}
+
+/** An approval sent with a turn-on: exactly the toolsHash the user saw. */
+export interface ProjectModeApproval {
+  id: string;
+  hash: string;
+}
+
+/** 409 body of a turn-on that needs approval. */
+export interface ProjectModeApprovalNeeded {
+  error: string;
+  needsApproval: ProjectMinorInfo[];
 }
 
 // ---- Memory (§chat/memory) ------------------------------------------------------------------------
@@ -2289,7 +2355,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice }
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }

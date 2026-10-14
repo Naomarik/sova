@@ -145,7 +145,13 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
   first prompt is sent, so its first turn already runs in them, and written into the session as its
   `mode` entry even when they equal the default, so a later change to the default never moves it
-  (the same for `sova_set_session`). An unknown mode or minor mode refuses
+  (the same for `sova_set_session`). Both tools also take `project_modes`, the ids of the session's
+  own project modes to have on (§chat.mode-menu/project-modes: from the checkout the session runs
+  in; `minor_modes` names built-in modes only). The Overseer turning a project mode on counts as the
+  user's approval of its tools: nothing waits, and the approval is recorded. `project_modes` is the
+  whole set to have on (`[]` turns them all off); `sova_create_session` refuses it with `host`
+  ("project_modes can't be given with host. No session was created."). An unknown mode, minor
+  mode or project mode, or a broken project mode, refuses
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
   result says the session was created but its first prompt was not sent. A `sova_set_session`
   whose `minor_modes` leave `align` out, on a session waiting on the user's alignment answers, is

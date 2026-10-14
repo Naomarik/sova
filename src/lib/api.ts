@@ -15,6 +15,7 @@ import type {
   AttentionDigest,
   ChatModeResult,
   ChatMemoryChoice,
+  ProjectModeApproval,
   MemoryOpen,
   MemoryOutline,
   MemorySaveResult,
@@ -485,13 +486,21 @@ export const revokeSchedule = (id: string, host?: string | null) =>
 
 /** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = (host?: string | null) => request<ModeInfo>(hostUrl(host, "/api/mode"));
+/** One chat's mode with its project modes read from disk now (GET /api/mode?path=): what the menu
+    shows on open, so a mode edited, removed or broken since the chat's last mode message says so. */
+export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?path=${encodeURIComponent(path)}`);
 
 /**
  * POST /api/mode with a patch. With `path` (a session file) it switches that one chat: only it
  * follows, from its next message, the reply says how (ChatModeResult.applies), and mode.json is not
  * written. Without `path` this writes the default for new sessions instead and changes no open chat.
+ * `projectModes` (the whole ON set) and `approve` take a path only: a turn-on that needs approval
+ * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
-export const postMode = (patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice> }, path?: string) =>
+export const postMode = (
+  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[] },
+  path?: string,
+) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
     method: "POST",
     headers: { "content-type": "application/json" },

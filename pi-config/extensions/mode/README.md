@@ -54,6 +54,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
+| `/mode project:<id> [on\|off]` | Toggle (or set) one of this checkout's project minor modes; the bare `<id>` works when no built-in has that name (see **Project minor modes**) |
 | `/align`, or `alt+a` | Open the read-only alignments viewer (see below) |
 | `/align status` · `/align export [path]` · `/align on\|off` | List the alignments, write the open ones to a file (default `.pi/align.md`), or toggle align |
 | `pi --major delegate` | Start that launch in a mode (not persisted) |
@@ -649,6 +650,61 @@ independent of Delegate:
   asking the user — never a substitute. A writer that can't run at all is
   rendered as Delegate renders a profile with no worker. The paragraph is the
   session's alone: a worker is never offered a writer (see **Workers**).
+
+## Project minor modes
+
+A project can ship minor modes of its own: `<checkout>/.sova/minor-modes/<id>/MODE.md`, where the
+checkout is the nearest folder at or above the session's cwd holding `.git` (else the cwd; a
+relative cwd has none). The user docs are `site/src/content/docs/modes/project-modes.md`; the
+product claim is §chat.mode-menu/project-modes.
+
+- **Format** (`project-format.ts`, no imports): the id is the folder name,
+  `^[a-z][a-z0-9-]*$`, at most 30 characters, never a built-in's. `MODE.md` is a strict `---`
+  frontmatter with only `description` (required), `workers: yes|no` (default no) and `tools` (a
+  JSON array; lines starting with whitespace continue a value), then a non-empty body. A tool is
+  `{name, description, params?, command, timeoutS?}`: at most 16, `name` lowercase with single
+  underscores (at most 32), `params` a JSON schema of `type: "object"`, `command` an argv whose
+  first element a bare program name on `PATH` (the machine's own, not covered by approval) or a
+  `./` path; every element containing `/` must be a `./` file inside the mode folder (passed as its
+  absolute path; `scripts/x.js`, absolute paths and `../` are parse errors), `timeoutS` 1–600 (default 60). The model sees a tool as
+  `projectToolName(id, name)`: the id with `-` as `_`, `__`, the name. There is no key that turns
+  a mode on: a mode is on only when the user (`/mode`, Sova's menu) or the Overseer turns it on.
+- **Discovery** (`project-discovery.ts`, node builtins only): `discoverProjectModes(cwd)` lists
+  every usable mode and every broken folder (`bad-id`, `clash`, `no-entry`, `parse`) and never
+  throws; one bad folder never hides the others. The server imports it for the menu.
+- **Namespace.** Project modes never enter `minorModes`. The `mode` entry and the mode-note
+  details carry `projectModes: [{id, sha}]` (turn-on order; older readers ignore it). At turn-on
+  the extension writes a `mode-project-snapshot` custom entry with the block text, description,
+  `workers`, the tools and `toolsHash`; its `sha` (`snapshotShaInput`) is the copy's identity, so the
+  server's "changed" is one compare of the listing's sha with the on ref's (reference files are not
+  in it: the agent reads them live); while a mode is on, it is rebuilt from that entry on the branch, never re-read from
+  disk, so the head rebuilds byte for byte on reopen and an edit reaches the session only by
+  turning the mode off and on. A deleted or broken folder leaves an active mode on from its copy.
+- **Prompt.** The block is `projectModeBlock(id, dir, body)`: `# Project minor mode: <id>`, a
+  `Folder:` line, one line on relative paths, then the body. It follows the built-in minor
+  blocks in the head, and reaches a running session in a hidden mode note, like theirs.
+- **Tools** (`project-tools.ts`): registered while the mode is on, unregistered when it goes off.
+  A call spawns the command in the session's cwd, writes the arguments as JSON to stdin, with
+  `SOVA_MODE_ID`, `SOVA_MODE_DIR`, `SOVA_PROJECT_ROOT` and `SOVA_TOOL_NAME` set, kills the process
+  group past the time limit, and returns the exit code, stdout and stderr, each cut at 256 KB.
+  Before each call it compares the snapshot's `toolsHash` with the files on disk and refuses on a
+  mismatch, asking for re-approval.
+  It also refuses, running nothing, a `./` file that is a symlink out of the mode folder, and
+  every call while the session's sandbox is On (the sandbox confines only the session's own tools).
+  Approvals (`server/project-mode-approvals.ts`) keep the last 8 approved `toolsHash`es per
+  checkout realpath and mode.
+- **Approval.** At `/mode <id> on` the extension reads the same approval store Sova's menu
+  writes: a mode with tools turns on only when that exact `toolsHash` is approved for its
+  checkout, otherwise it is refused ("Minor mode <id> not turned on: <id> runs the project's own
+  tools: approve it from a Sova chat's mode menu first"); it never asks in a terminal. A worker
+  never turns a project mode on itself: it gets them from the session that started it. `toolsHash` covers the declared tools and every file in the mode folder,
+  recursively, dotfiles included, except the top-level `MODE.md` (`./path sha` lines, sorted; a
+  symlink hashes as its target path), so a sourced helper or an imported sibling can't change
+  under an approval; editing the body never asks again. A mode with tools past 1000 files or 50 MB
+  is broken. Discovery and the call-time check both hash through `toolsHashOf`.
+- **Workers.** A mode with `workers: yes` is in the worker prompt after spec's block, from the
+  parent's snapshot, with its tools when the worker has `bash` (a read-only or remote worker gets the
+  block only; a worker on its worktree's own config gets neither; the tools refuse in a worker as in the parent); a worker carries at most 8 modes, built-in and project.
 
 ## Workers
 

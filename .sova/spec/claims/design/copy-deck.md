@@ -309,7 +309,17 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
-| Group labels | Major mode · Minor modes · Subagents |
+| Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Subagents |
+| Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. |
+| Trigger with project modes | {mode} · {built-in minors} · {project modes}, e.g. delegate · spec · deploy-notes |
+| Approval panel | Back · title: Turn on {id}? · {id} comes from {project}'s files. Turning it on lets the model run this tool / these {n} tools in this chat's folder. · one card per tool: {name} (mono), {description}, {command argv as one line} (mono) · foot: Runs from {dir}. Approval covers its tools and every file in this folder. We ask again when any of them changes. · when a tool starts a bare program: {node} is this machine's own program, so the approval doesn't cover it. (two: {node and sh}; three or more, with the serial comma: {node, python3, and sh} are this machine's own programs, so the approval doesn't cover them.) · buttons: Approve and Turn On (primary; while saving: Turning On…) · Cancel |
+| Approval out of date (warn banner in the panel) | Its tools changed while this was open. These are the tools it has now. Check them again before you approve. |
+| Project tool refused (to the model) | {tool} wasn't run: the files of {id} changed since it was approved. Ask the user to approve {id} again in the mode menu. |
+| Project tool refused under the sandbox (to the model) | {tool} wasn't run: project mode tools don't run while the sandbox is on. Ask the user to turn the sandbox off to use {id}'s tools. |
+| Terminal: project mode needs approval | Minor mode {id} not turned on: {id} runs the project's own tools: approve it from a Sova chat's mode menu first |
+| Terminal: palette row | This project · {name} — {description} — {state} |
+| Terminal: `/mode status` line | project modes ({name}): {id} (on \| removed \| changed since turned on \| needs approval \| broken: {path}: {error}) |
+| Worker turning a project mode on | a worker gets its project modes from the session that started it |
 | Subagents row / Delegate detail | Subagents · {name} / Profile: {name} |
 | Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
 | Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · codemode: Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool) |
@@ -324,8 +334,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
-| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off · Strict mode on\|off (shown as recorded) |
-| Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
+| Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off (a project mode by its id) |
 
 ## §design.copy-deck/context-window — Context window
 

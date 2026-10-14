@@ -429,13 +429,16 @@ function toolResultRow(id: string, h: Extract<HEntry, { kind: "tool-result" }>):
 }
 
 /**
- * pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one,
+ * pi-config mode extension marker: `{mode}` for a major switch, `{minor, on}` for a minor one, `{project, on}`
+ * for a project minor mode,
  * `{strict}` for the strict toggle. Newer entries also carry an `active` snapshot (what the
  * session restores from); it is state, not a message, so it is never rendered.
  */
 function modeMarker(h: StateEntry, id: string): TranscriptItem[] {
   const d: any = h.data;
   if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", h, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
+  // A project minor mode (§chat.mode-menu/project-modes): `{project, on}`, the same row as a built-in's.
+  if (d && typeof d.project === "string" && typeof d.on === "boolean") return [item(id, "info", h, `Minor mode: ${d.project} ${d.on ? "on" : "off"}`)];
   if (d && typeof d.mode === "string") return [item(id, "info", h, `Mode → ${d.mode}`)];
   if (d && typeof d.strict === "boolean") return [item(id, "info", h, `Strict mode ${d.strict ? "on" : "off"}`)];
   return [];

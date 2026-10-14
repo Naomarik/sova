@@ -5,7 +5,7 @@ import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORK
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
@@ -72,6 +72,10 @@ function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable"; size: nu
   return m ? { v: 1, type: m.type, size: m.size } : null;
 }
 import { withWebMinors } from "./memory/permit";
+import { approvalNeededText, checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
+import { isApproved, recordApproval } from "./project-mode-approvals";
+import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
+import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
 import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
@@ -2046,7 +2050,37 @@ class ChatSession {
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
     // `memory` only where the menu can turn it on (§chat.memory/where): its absence hides the row.
-    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}) };
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}), ...this.projectModesInfo() };
+  }
+
+  /** The project modes this chat has on (its newest mode entry's `projectModes`, turn-on order). */
+  projectOn(): ProjectModeRef[] {
+    const active = this.harness.state.branch().latest(MODE)?.data.active;
+    return active ? projectModesOf(active) : [];
+  }
+
+  /** The checkout this chat's project modes come from, read now: none for a remote (target) chat, the
+      Overseer, or a session that refuses mode switches. */
+  private projectListing() {
+    const cwd = this.harness.cwd || undefined;
+    const none = this.overseer || !!this.specialRefuses("mode") || (cwd !== undefined && !!targetOfCwd(cwd));
+    return listingFor(cwd, none);
+  }
+
+  /** The mode menu's project rows (§chat.mode-menu/project-modes), read from disk now. Empty (no keys) when
+      the chat has no checkout and nothing on; never throws. */
+  projectModesInfo() {
+    try {
+      return projectModesInfo(this.projectListing(), this.projectOn(), restoreProjectSnapshots(this.extensionBranch()), isApproved);
+    } catch (err) {
+      console.error("[chat] project modes unreadable", err);
+      return {};
+    }
+  }
+
+  /** This chat's mode as POST /api/mode?path= answers it, the project rows read now. */
+  modeResult(): ChatModeResult {
+    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies, ...this.projectModesInfo() };
   }
 
   /**
@@ -2068,21 +2102,32 @@ class ChatSession {
    * in the TUI, or a POST /api/mode with no ?path=. A new chat's switch stops being a side effect
    * of being new.
    */
-  async switchMode(patch: ModePatch): Promise<ChatModeResult> {
+  async switchMode(patch: ModePatch): Promise<ChatModeResult & Partial<ProjectModeApprovalNeeded>> {
     if (this.overseer) throw new ModeRefusedError();
     const refused = this.specialRefuses("mode");
     if (refused) throw new ModeRefusedError(refused);
+    // Project modes (§chat.mode-menu/project-modes): every turn-on checked, and its approval stored, before
+    // anything switches; one needing the user's approval switches nothing.
+    if (patch.projectModes !== undefined) {
+      const listing = this.projectListing();
+      const check = checkProjectSwitch(listing, this.projectOn().map((r) => r.id), patch.projectModes, patch.approve ?? [], patch.approvedBy === "overseer", isApproved);
+      if ("error" in check) throw new ModeRefusedError(check.error);
+      if ("needsApproval" in check) {
+        return { ...this.modeResult(), error: approvalNeededText(check), needsApproval: check.needsApproval };
+      }
+      for (const a of check.record) recordApproval(listing.root!, a.id, a.hash, patch.approvedBy === "overseer" ? "overseer" : "user");
+    }
     // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
     if (!this.memoryOffered() && (patch.memory || (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory"))))
       throw new ModeRefusedError("Memory can't be turned on in this chat.");
     if (patch.memory) this.writeMemoryChoice(patch.memory);
     const wasOn = this.modeState.minorModes.includes("memory");
-    if (patch.mode !== undefined || patch.minorModes !== undefined) await this.applyMode(mergeMode(this.modeState, patch));
+    if (patch.mode !== undefined || patch.minorModes !== undefined || patch.projectModes !== undefined) await this.applyMode(mergeMode(this.modeState, patch), patch.projectModes);
     else this.broadcast(this.modeMessage());
     const isOn = this.modeState.minorModes.includes("memory");
     if (isOn && !wasOn) this.memory.turnedOn();
     else if (isOn !== wasOn) this.memory.changed();
-    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies };
+    return this.modeResult();
   }
 
   /** This chat's memory (§chat/memory): its choice, engine and status. */
@@ -2222,7 +2267,7 @@ class ChatSession {
    * starts isn't awaited. Returns the plan that ran ("command" = taken, "skip" = a foreign writer
    * got it, "unsupported" = no /mode command loaded), so callers can decide what else to do.
    */
-  async applyMode(state: ModeState): Promise<"skip" | "unsupported" | "command"> {
+  async applyMode(state: ModeState, projectModes?: readonly string[]): Promise<"skip" | "unsupported" | "command"> {
     if (this.disposed) return "skip"; // a disposed runtime took nothing
     const streaming = this.harness.isRunning();
     let live = false;
@@ -2258,6 +2303,14 @@ class ChatSession {
             await cmd.handler(`${minor} ${on ? "on" : "off"}`, ctx);
           }
         });
+        // Project modes (§chat.mode-menu/project-modes), always by their prefixed name: off first, then each
+        // new one on in the order asked. A turn-on the extension refuses leaves it off; the menu reads the
+        // on set back from the branch (projectOn), never from what was asked.
+        if (projectModes !== undefined) {
+          const was = this.projectOn().map((r) => r.id);
+          for (const id of was) if (!projectModes.includes(id)) await cmd.handler(`${PROJECT_MODE_PREFIX}${id} off`, ctx);
+          for (const id of projectModes) if (!was.includes(id)) await cmd.handler(`${PROJECT_MODE_PREFIX}${id} on`, ctx);
+        }
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
         cmd.handler(state.mode, ctx).catch((err) => {
           console.error("[chat] /mode handler failed", err);

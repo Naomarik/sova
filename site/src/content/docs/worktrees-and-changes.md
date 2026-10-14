@@ -31,6 +31,8 @@ A pi worker started inside a worktree writes only inside that worktree unless th
 
 A fork of a session starts with the same worktree list. A worktree that came from another session says so in the Session tab.
 
+A chat working in a worktree reads that worktree's own [project modes](/docs/modes/project-modes/), the ones on its branch, not your main checkout's.
+
 ## The Worktrees section
 
 Open the session pane and its Session tab. Right after Repository, **Worktrees** lists every worktree the session tracks, dropped and merged ones included, with a count line such as "2 active · 1 merged". Each row names the branch and the folder, and has a status chip: Active, Dropped, or Merged "into master at 4ef9f18".

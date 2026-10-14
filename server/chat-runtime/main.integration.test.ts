@@ -53,6 +53,8 @@ test("boots, says ready, opens its chat, serves a browser, and drains on purpose
   assert.equal(hello.sessionId, p.id);
   assert.equal(hello.build, "b1");
   if (hello.state !== "ready") await awaitFrame(link, "hello", 30_000, (h) => h.state === "ready");
+  // As the server does: the chat's stored reply timings (none here), which a wire-2 pane's hello waits for.
+  link.on("ask", (f) => void (f.method === "reply.timings" && link.send({ t: "answer", id: f.id, ok: true, result: null })));
   const opened = awaitFrame(link, "opened", 30_000);
   link.send({ t: "open", id: "o1", path: p.path, force: true, link: null, served: [] });
   const o = await opened;

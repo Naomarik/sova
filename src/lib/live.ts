@@ -5,6 +5,7 @@
 
 import { produce, type SetStoreFunction } from "solid-js/store";
 import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
+import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
 import type { HelloLive, TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
@@ -94,6 +95,10 @@ export type LiveEntry =
       stoppedAt?: string;
       /** The transcript entry the message was written as (its `message.end`'s `entryId`). */
       entryId?: string;
+      /** The reply's measured timing, from its `message.end` (absent when not measured). */
+      reply?: ReplyTiming;
+      /** ISO time its `message.end` arrived, set with `reply` only: the measured head's time. */
+      endedAt?: string;
     };
 
 export interface LiveTool {
@@ -509,6 +514,10 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           if (entryId) entry.entryId = entryId;
           // message.end is authoritative.
           if (event.model) entry.model = event.model;
+          if (event.reply) {
+            entry.reply = event.reply;
+            entry.endedAt = new Date().toISOString();
+          }
           const blocks = blocksOf(event.parts);
           if (blocks.length) entry.blocks = blocks;
           entry.done = true;

@@ -27,7 +27,13 @@ import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type Sandbo
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { onWire, withRows } from "./wire-rows";
+import { onWire, onWire1, withRows, type ReplyLookup } from "./wire-rows";
+import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
+import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
+import { replyTimingsOf } from "./reply-facts";
+import type { ReplyTiming } from "../shared/harness-wire";
+import { producerId } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { readDeviceId } from "../pi-config/extensions/llm-inflight/usage-record.ts";
 import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
 import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
@@ -75,7 +81,7 @@ import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, si
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
-import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/llm-inflight/attribution.ts";
+import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
@@ -84,6 +90,15 @@ import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
 const GUARD_POLL_MS = 3000;
+const PERF_KINDS_SET: ReadonlySet<string> = new Set(["main", "worker", "overseer"]);
+/** The entry a message was written as, or null. */
+const safeId = (harness: HarnessSession, message: unknown): string | null => {
+  try {
+    return harness.persistedId(message);
+  } catch {
+    return null;
+  }
+};
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
 const workerContextReader = new WorkerContextReader();
 
@@ -392,6 +407,9 @@ export interface ChatClient {
   /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
       pushed, and its hellos carry `olderSummary` (and `prefetch`, for a browser on this machine). */
   pull?: { prefetch: boolean };
+  /** Called after each hello this client is sent at its attach (greet), for what the host says to a
+      pane after its hello (its chat process's code state): the hello may wait (attach). */
+  greeted?(): void;
   /** …and already holds the rows up to this one (`?have=`, §chat.transcript/instant-open): its
       first hello carries only the rows after it, when it can (server/tail-hello.ts `afterHave`). */
   have?: string;
@@ -405,9 +423,9 @@ const wireOfClient = (client: ChatClient) => client.wire ?? 1;
 /** A message on each wire (its rows mapped for wire 2, server/wire-rows.ts), each made and serialized at
     most once however many clients get it. */
 type PerWire = (wire: 1 | 2) => { msg: ChatServerMessage; json?: string };
-function perWire(msg: ChatServerMessage): PerWire {
+function perWire(msg: ChatServerMessage, replies?: ReplyLookup): PerWire {
   const made: { 1?: { msg: ChatServerMessage; json?: string }; 2?: { msg: ChatServerMessage; json?: string } } = {};
-  return (wire) => (made[wire] ??= { msg: withRows(msg, wire) });
+  return (wire) => (made[wire] ??= { msg: withRows(msg, wire, replies) });
 }
 
 /** The message to one client, on its wire, serialized once for every client that takes JSON. */
@@ -435,26 +453,26 @@ export function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, h
 }
 
 /** The cut hello as `client` gets it, on its wire: a `?tail=rest` client's also sums up the rows before it. */
-function helloFor(cut: CutHello, client: ChatClient): ChatServerMessage {
+function helloFor(cut: CutHello, client: ChatClient, replies?: ReplyLookup): ChatServerMessage {
   const older = cut.hello.older ?? 0;
   const hello = client.pull && older > 0 ? { ...cut.hello, ...pullFields(cut.all, older, client.pull.prefetch) } : cut.hello;
-  return withRows(hello, wireOfClient(client));
+  return withRows(hello, wireOfClient(client), replies);
 }
 
 /** A pane's first hello: when it holds the rows up to `have` (it painted them from the file,
     §chat.transcript/instant-open), only the rows after that one, with `after` naming it and the
     summary counting every row up to it; else the usual cut hello (tail-hello.ts `afterHave`). */
-export function firstHelloFor(cut: CutHello, client: ChatClient): ChatServerMessage {
+export function firstHelloFor(cut: CutHello, client: ChatClient, replies?: ReplyLookup): ChatServerMessage {
   const after = client.pull && client.have ? helloAfterHave(cut.hello, cut.all, cut.hello.older ?? 0, client.have, client.pull.prefetch) : null;
-  return after ? withRows(after, wireOfClient(client)) : helloFor(cut, client);
+  return after ? withRows(after, wireOfClient(client), replies) : helloFor(cut, client, replies);
 }
 
 /** A cut hello's history to the tail clients that got that hello and are still here. */
-function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still: (c: ChatClient) => boolean): void {
+function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still: (c: ChatClient) => boolean, replies?: ReplyLookup): void {
   if (!cut) return;
   for (const c of clients) {
     if (!still(c)) continue;
-    const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map(historyOnWire2)) : cut.history;
+    const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map((p) => historyOnWire2(p, replies))) : cut.history;
     for (const part of parts) {
       if (c.sendRaw) c.sendRaw(part.raw);
       else c.send(part.msg);
@@ -462,8 +480,8 @@ function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still
   }
 }
 
-const historyOnWire2 = (part: HistoryPart): HistoryPart => {
-  const msg = withRows(part.msg, 2);
+const historyOnWire2 = (part: HistoryPart, replies?: ReplyLookup): HistoryPart => {
+  const msg = withRows(part.msg, 2, replies);
   return { msg, raw: JSON.stringify(msg) };
 };
 
@@ -920,10 +938,29 @@ export function setSingletonCheck(fn: typeof singletonCheck): void {
   singletonCheck = fn;
 }
 
+/** How long a wire-2 pane's hello waits for the session's stored reply timings (ChatSession.attach):
+    a slow store delays a cold transcript by at most this. */
+export const HELLO_WAIT_MS = 1500;
+
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
   readonly clients = new Set<ChatClient>();
   private unsubscribe: (() => void) | null = null;
+  /** Times each reply as it streams (§app.insights/reply-timing); a new one per bind. */
+  private replyTimer = new ReplyTimer();
+  /** This session's measured replies by entry id: one load at bind (the store, through the server)
+      plus each reply measured here. A wire-2 row's `reply` fact reads it. */
+  private replyTimings = new Map<string, ReplyTiming>();
+  private storedTimings: ReplyLookup | null = null;
+  /** The stored timings are on their way (loadReplyTimings). */
+  private timingsLoading = false;
+  /** Wire-2 panes greeted while they were (their hold ran out first). */
+  private readonly greetedEarly = new Set<ChatClient>();
+  /** Wire-2 panes that attached while they were: greeted once they arrive, or at HELLO_WAIT_MS. Not
+      yet in `clients` (nothing is sent to them before their hello), but they count as attached for a
+      dialog. */
+  private readonly helloHeld = new Map<ChatClient, NodeJS.Timeout>();
+  private readonly replyLookup: ReplyLookup = (entryId) => this.replyTimings.get(entryId) ?? this.storedTimings?.(entryId);
   private streamGuardOff: (() => void) | null = null;
   /** This runtime's last stream-guard trip (server/stream-guard.ts); cleared when a run starts. */
   lastStreamTrip: StreamTrip | null = null;
@@ -1717,9 +1754,22 @@ class ChatSession {
       this.broadcast({ type: "error", code: "internal", message: `Extension error (${extensionPath}): ${error}` }),
     );
     this.unsubscribe?.();
+    this.replyTimer = new ReplyTimer();
+    void this.loadReplyTimings();
     // Through the driving session: one pi listener, registered here, after the stream guard and the
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
     this.unsubscribe = harness.subscribe((event) => {
+      // The agent's request going out: reply timing's alone, never forwarded (no wire carries it).
+      if (event.type === "request.start") {
+        this.replyTimer.observe(event);
+        return;
+      }
+      let timed: ReplyOutcome | null = null;
+      try {
+        timed = this.replyTimer.observe(event);
+      } catch (err) {
+        console.error("[chat] reply timing failed", err);
+      }
       // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
       // process), start the next session listing afresh (§app.session-list/listing-reuse). A codemode
       // script's own calls don't: its result's end does, once.
@@ -1734,7 +1784,7 @@ class ChatSession {
       }
       try {
         const wire = event.frame();
-        if (event.type === "message.end") this.holdForEntryId(wire, event.handle);
+        if (event.type === "message.end") this.holdForEntryId(wire, event.handle, timed);
         else this.broadcast(wire);
         // A note an extension sends while the chat is idle (pi's sendMessage, triggerTurn false: /btw's
         // answer) is written with no entry_appended and no turn to end: its row goes out now, after
@@ -1826,6 +1876,71 @@ class ChatSession {
     this.modeState = chatModeOf(harness.state.branch());
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
     await this.syncModePrompt();
+  }
+
+  /** This session's measured replies from the store (server/reply-facts.ts), merged under the ones
+      measured here since. Never throws. */
+  private async loadReplyTimings(): Promise<void> {
+    const fresh = (this.replyTimings = new Map());
+    this.storedTimings = null;
+    this.greetedEarly.clear();
+    this.timingsLoading = true;
+    try {
+      // In a chat process the server answers once this chat's open is done: a pane that attaches
+      // before then gets its hello again with the facts (greetedEarly).
+      const got = await replyTimingsOf(this.harness.id);
+      // A later bind started its own load: this one's answer is for a session no longer here.
+      if (this.replyTimings !== fresh) return;
+      this.timingsLoading = false;
+      const early = [...this.greetedEarly];
+      this.greetedEarly.clear();
+      if (got && !this.disposed) this.storedTimings = got.get;
+      // Whatever the answer (none, failed, timed out), each held pane gets its one hello now.
+      this.releaseHeld();
+      if (!got || this.disposed) return;
+      for (const c of early) if (this.clients.has(c)) this.greet(c);
+    } catch {
+      // no facts: rows look as they always did
+      if (this.replyTimings === fresh) {
+        this.timingsLoading = false;
+        this.releaseHeld();
+      }
+    }
+  }
+
+  /** Greet held panes (`only`: that one, its hold run out; it gets its hello again when the timings
+      arrive). */
+  private releaseHeld(only?: ChatClient): void {
+    for (const c of only ? [only] : [...this.helloHeld.keys()]) {
+      const t = this.helloHeld.get(c);
+      if (!t) continue;
+      clearTimeout(t);
+      this.helloHeld.delete(c);
+      if (this.disposed) continue;
+      this.clients.add(c);
+      this.greet(c);
+      if (only && this.timingsLoading) this.greetedEarly.add(c);
+    }
+  }
+
+  /** A measured reply, once its entry is known: its record into the store, and its timing on the
+      message_end frame (wire 2's message.end) and in this chat's lookup. Only a written record is
+      shown. Never throws. */
+  private recordReply(outcome: ReplyOutcome | null, entryId: string | null, wire: V1EventFrame): void {
+    if (!outcome || !("measured" in outcome) || entryId === null) return;
+    try {
+      const sid = this.harness.id;
+      const who = resolveUsageAttribution(sid);
+      const kind = who.routed && PERF_KINDS_SET.has(who.kind) ? (who.kind as PerfKind) : undefined;
+      const root = agentRoot();
+      const rec = perfRecordOf(outcome.measured, { sid, entryId, device: readDeviceId(root), producer: producerId(), ...(kind ? { kind } : {}) });
+      if (!appendPerfRecord(rec, root)) return;
+      const timing = replyTimingOf(rec);
+      this.replyTimings.set(entryId, timing);
+      wire.reply = timing;
+    } catch (err) {
+      console.error("[chat] reply timing record failed", err);
+    }
   }
 
   /**
@@ -2411,12 +2526,27 @@ class ChatSession {
   private readonly liveTail = new LiveTail();
 
   attach(client: ChatClient): void {
+    // A wire-2 pane that comes while this session's stored reply timings are on their way waits
+    // for them, a bounded while, so its one hello carries the reply facts (loadReplyTimings). It
+    // joins `clients` at its hello: what it would have been sent before then, the hello holds.
+    if (this.timingsLoading && client.wire === 2 && !this.disposed) {
+      if (this.helloHeld.has(client)) return;
+      const t = setTimeout(() => this.releaseHeld(client), HELLO_WAIT_MS);
+      t.unref?.();
+      this.helloHeld.set(client, t);
+      return;
+    }
     this.clients.add(client);
+    this.greet(client);
+  }
+
+  /** A client's hello and the state its first paint needs, in one synchronous step (attach). */
+  private greet(client: ChatClient): void {
     const hello = this.hello(client.wire === 2);
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.
     const cut = client.tail ? cutHello(hello, !client.pull) : null;
-    client.send(cut ? firstHelloFor(cut, client) : withRows(hello, wireOfClient(client)));
+    client.send(cut ? firstHelloFor(cut, client, this.replyLookup) : withRows(hello, wireOfClient(client), this.replyLookup));
     client.send(this.commands());
     // The queue goes out on EVERY attach, empty or not: a reconnect resets the pane's live rows to
     // nothing, so a client that is told nothing cannot tell "no queue" from "not told yet" and
@@ -2436,7 +2566,8 @@ class ChatSession {
     // reconnect after its chat process lost the server) can answer them (§app.harness/session-open).
     for (const [id, p] of this.pendingUi)
       client.send({ type: "ui_request", id, request: { ...p.request, timeout: p.deadline === undefined ? undefined : Math.max(0, p.deadline - Date.now()) } });
-    if (!client.pull) sendHistory(cut, [client], (c) => this.clients.has(c));
+    if (!client.pull) sendHistory(cut, [client], (c) => this.clients.has(c), this.replyLookup);
+    client.greeted?.();
   }
 
   /**
@@ -2470,8 +2601,12 @@ class ChatSession {
   }
 
   detach(client: ChatClient): void {
+    const held = this.helloHeld.get(client);
+    if (held) clearTimeout(held);
+    this.helloHeld.delete(client);
+    this.greetedEarly.delete(client);
     this.clients.delete(client);
-    if (this.clients.size === 0) {
+    if (this.clients.size === 0 && this.helloHeld.size === 0) {
       // Nobody can answer open dialogs anymore: resolve them with defaults. The runtime stays
       // alive: a session closes when the user archives it, not when the last tab leaves.
       this.resolveDialogsUnanswered();
@@ -3253,14 +3388,14 @@ class ChatSession {
     if (this.disposed) return () => {};
     const hello = this.hello();
     let cut: CutHello | null = null;
-    const whole = perWire(hello);
+    const whole = perWire(hello, this.replyLookup);
     const tails: ChatClient[] = [];
     const pushed = [...this.clients].some((c) => c.tail && !c.pull);
     for (const c of this.clients) {
       if (c.tail) {
         cut ??= cutHello(hello, pushed);
         if (!c.pull) tails.push(c);
-        c.send(helloFor(cut, c));
+        c.send(helloFor(cut, c, this.replyLookup));
       } else deliver(c, whole);
     }
     // Every client's hello handler clears its worker list, and pushWorkers only sends on change,
@@ -3276,7 +3411,7 @@ class ChatSession {
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
     this.broadcast(this.loginAfterHello()); // the new branch's newest entry
     pushLinks(this); // after every hello, as attach() does
-    return () => sendHistory(cut, tails, (c) => this.clients.has(c));
+    return () => sendHistory(cut, tails, (c) => this.clients.has(c), this.replyLookup);
   }
 
   /** `msg` to every client, on its wire (server/wire-rows.ts): wire 1 the message itself, wire 2 its
@@ -3291,10 +3426,12 @@ class ChatSession {
     let on2: (ChatServerMessage | V2EventFrame)[] | undefined;
     // Every live event folds into the reply so far, whoever is attached: a pane that joins later
     // starts from it.
-    if (msg.type === "event") for (const f of (on2 ??= onWire(msg, 2))) if (f.type === "event" && "v" in f && f.v === 2) this.liveTail.apply(f.event);
+    if (msg.type === "event") for (const f of (on2 ??= onWire(msg, 2, this.replyLookup))) if (f.type === "event" && "v" in f && f.v === 2) this.liveTail.apply(f.event);
+    let on1: ChatServerMessage | undefined;
     for (const c of this.clients) {
-      if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2))) c.send(m);
-      else c.send(msg);
+      if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2, this.replyLookup))) c.send(m);
+      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only.
+      else c.send((on1 ??= onWire1(msg)));
     }
   }
 
@@ -3328,19 +3465,23 @@ class ChatSession {
    * waits behind it: the order clients see is unchanged. Queued before `markSend`'s, so the leaf
    * read here is still the message, never its marker.
    */
-  private holdForEntryId(wire: V1EventFrame, message: unknown): void {
+  private holdForEntryId(wire: V1EventFrame, message: unknown, timed: ReplyOutcome | null = null): void {
     if (this.held) {
       this.held.push(wire);
+      // Behind an earlier message_end: its record (and its frame's tag) once its entry is written.
+      if (timed) queueMicrotask(() => this.recordReply(timed, safeId(this.harness, message), wire));
       return;
     }
     this.held = [wire];
     queueMicrotask(() => {
+      let id: string | null = null;
       try {
-        const id = this.harness.persistedId(message);
+        id = this.harness.persistedId(message);
         if (id !== null) wire.entryId = id;
       } catch {
         // untagged: a client falls back to the rows it can see
       }
+      this.recordReply(timed, id, wire);
       // The entry is on disk now (P12): ours, recorded at once, so a process that dies before the
       // guard's next tick leaves no "recent" behind (§chat.transcript/own-writes-across-restart).
       if (!this.disposed && !this.foreignWrite) this.checkOwnWrites();
@@ -3399,6 +3540,8 @@ class ChatSession {
         .then(() => this.keepQueued((it) => !!it.baton))
         .catch((err) => console.warn(`[chat] queued messages not kept at close: ${err instanceof Error ? err.message : String(err)}`));
     this.disposed = true;
+    for (const t of this.helloHeld.values()) clearTimeout(t);
+    this.helloHeld.clear();
     this.memoryRef?.dispose();
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
@@ -3437,7 +3580,7 @@ class ChatSession {
       parse: (value: unknown) => T,
       opts: { signal?: AbortSignal; timeout?: number } | undefined,
     ): Promise<T> => {
-      if (opts?.signal?.aborted || this.clients.size === 0) return Promise.resolve(fallback);
+      if (opts?.signal?.aborted || (this.clients.size === 0 && this.helloHeld.size === 0)) return Promise.resolve(fallback);
       const id = randomUUID();
       return new Promise<T>((resolve) => {
         let timer: NodeJS.Timeout | undefined;

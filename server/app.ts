@@ -14,6 +14,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
+import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { rowsFor, wireOf } from "./wire-rows";
 import { claudeToolContent, parseToolIds, piToolContent } from "./transcript-tool";
@@ -1116,17 +1117,19 @@ export function buildApp(deps: AppDeps) {
     };
     // `wire=2`: rows with `facts` in place of `meta` (server/wire-rows.ts); else as they always were.
     const wire = wireOf({ get: (name: string) => c.req.query(name) });
+    // Wire 2: an assistant reply's row carries its measured timing (server/reply-facts.ts).
+    const replies = wire === 2 ? await replyTimingsOf(sessionIdOfPath(path)) : null;
     if (c.req.query("view") === "light") {
-      const body = await transcriptLight(path, (branch) => resolveContext(contextOfBranch(branch)), wire);
+      const body = await transcriptLight(path, (branch) => resolveContext(contextOfBranch(branch)), wire, replies);
       return c.body(body, 200, { "Content-Type": "application/json; charset=UTF-8" });
     }
     if (asksForRows(q)) {
-      const r = await transcriptRows(path, q, (branch) => resolveContext(contextOfBranch(branch)), wire);
+      const r = await transcriptRows(path, q, (branch) => resolveContext(contextOfBranch(branch)), wire, replies);
       if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
       return c.body(r.body, 200, { "Content-Type": "application/json; charset=UTF-8" });
     }
     const branch = await readBranch(path);
-    return c.json({ items: rowsFor(rowsOf(branch), wire), context: await resolveContext(contextOfBranch(branch)) });
+    return c.json({ items: rowsFor(rowsOf(branch), wire, replies?.get), context: await resolveContext(contextOfBranch(branch)) });
   });
 
   // The whole content of tool rows (§chat.transcript/slim-rows): a row carries only what its folded

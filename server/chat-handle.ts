@@ -97,6 +97,7 @@ export {
   setWorkerHostSource,
   warmChatRuntime,
 } from "./chat-manager";
+import { fetchSessionTimings } from "./reply-facts";
 
 export { failureReply, refusalOf };
 
@@ -708,6 +709,8 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return linksFor(a.sessionId, a.path ?? path);
     case "singleton":
       return singletonFor(a.key, a.path ?? path);
+    case "reply.timings":
+      return fetchSessionTimings(String(a.sessionId ?? ""));
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":

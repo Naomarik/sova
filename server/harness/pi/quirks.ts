@@ -373,6 +373,21 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi's loader takes a path-mapping hook for discovered extensions",
   },
   {
+    id: "P25",
+    name: "request-start",
+    kind: "monkey-patch",
+    relies:
+      "The agent loop hands agent.streamFunction its own options, onPayload included, and pi's stream function passes them on to the provider, which calls onPayload once just before it sends the request (after any provider-slot wait); so a stream function wrapped to put a listening onPayload in those options hears each of the agent's own requests go out, and no side call's.",
+    pi: ["Agent.streamFunction", "StreamOptions.onPayload", "createAgentSession"],
+    where: [
+      { file: "server/harness/pi/session.ts", symbol: "hearRequests" },
+      { file: "server/harness/pi/session.ts", symbol: "keepHearingRequests" },
+      { file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.subscribe" },
+    ],
+    canary: "P25 request-start: the agent hands its stream function options whose onPayload the provider calls once per request, before the reply starts; a wrapped one hears it",
+    retireWhen: "pi emits a request-sent event of its own",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

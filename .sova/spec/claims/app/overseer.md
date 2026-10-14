@@ -1171,10 +1171,10 @@ head's height, so a width change is no layout shift.
 
 ## §app.overseer/entry-button — Entry button
 
-- A wordless **eye** icon button with the unread badge (below) at its corner closes the session
-  list's one toolbar line at its right end, at every width, beside the search field that fills
-  the rest of it (§app.session-list/search). It never leaves the line. Its name is in its
-  `aria-label` and its `title` ("Overseer", with the unread count, and " · Alt+O" in the title).
+- A **labelled button** — the eye icon, the word "Overseer", and the unread badge (below) —
+  closes the session list's one toolbar line at its right end, at every width
+  (§app.session-list/search). It leaves the line, with `Select` and the search icon,
+  for as long as the line's search is open, and comes back when the search closes.
 - The collapsed spine carries the same entry as a bare **eye** icon button.
 - **Alt+O** opens the Overseer from anywhere.
 - **Badge:** one count — the accent pill at the button's top-right corner on both forms

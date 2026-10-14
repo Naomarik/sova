@@ -389,7 +389,7 @@ export function client(base, token) {
 
 /** Opens /ws/chat (wire 2) on a session and waits for its hello. `force`: the page's "Open anyway"
     (&force=1), past a "recent" refusal. */
-export async function chat(c, path, ms = 30000, { force = false } = {}) {
+export async function chat(c, path, ms = 40000, { force = false } = {}) {
   const s = c.socket(`/ws/chat?path=${encodeURIComponent(path)}&wire=2${force ? "&force=1" : ""}`);
   await s.opened;
   const first = await s.until((m) => m.type === "hello" || m.type === "error", ms, "hello");

@@ -2382,11 +2382,12 @@ export type ChatServerMessage =
   | { type: "queue_removed"; id: string; itemId: string; text: string }
   /** The removal was refused and the item is untouched; to the requester only. */
   | { type: "queue_remove_refused"; id: string; itemId: string; reason: QueueRemoveRefusal; message: string }
-  /** The chat's process closed for being quiet (§app.chat-processes/idle-stop), and the server closes
-      this socket next. The tab keeps what it shows and doesn't reconnect: the chat starts again only
-      when the tab needs it (a send), or when something else opened it (§chat.transcript/instant-open).
-      A client that doesn't know it reconnects on the close, as before. */
-  | { type: "closed"; reason: "idle" }
+  /** The chat's process closed for being quiet (§app.chat-processes/idle-stop), or the chat was
+      archived, and the server closes this socket next. The tab keeps what it shows and doesn't
+      reconnect: the chat starts again only when the tab needs it (a send), or when something else
+      opened it (§chat.transcript/instant-open). A client that doesn't know it reconnects on the
+      close, as before. */
+  | { type: "closed"; reason: "idle" | "archived" }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);

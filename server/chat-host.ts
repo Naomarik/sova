@@ -20,6 +20,7 @@ import {
   ConfigError,
   RefusedError,
   type ChatHandle,
+  type CloseOpts,
   chatHandle,
   currentLinkOrigin,
   errorOfRefusal,
@@ -271,7 +272,7 @@ export class ChatHostRouter {
       reconnecting until they need it (§chat.transcript/instant-open). */
   private forget(path: string, cause?: ExitCause): void {
     const h = this.remotes.get(path);
-    if (cause === "idle") h?.closePanesQuietly();
+    if (cause === "idle") h?.closePanesQuietly("idle");
     else h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) {
       this.paths.delete(h.mirror.sessionId);
@@ -666,10 +667,13 @@ export class ChatHostRouter {
     }
   }
 
-  async close(path: string, message: string): Promise<boolean> {
+  async close(path: string, message: string, opts: CloseOpts = {}): Promise<boolean> {
     const h = this.remotes.get(path);
     if (!h || h.closed) return false;
     const sid = h.mirror.sessionId;
+    // An archive: its tabs are told first, so the chat's own goodbye (`reloaded`, from its dispose)
+    // reaches none of them and none reconnects, which would start the archived chat again.
+    if (opts.quiet) h.closePanesQuietly(opts.quiet);
     this.sup.expectExit(sid, "archived");
     const r = await h.drain("archived", { force: true, message });
     if (!r.ok) await this.sup.stop(sid, "archived").catch(() => {});
@@ -834,7 +838,7 @@ export function startChatHost(): void {
       if (!router) throw new Error("The Sova server's chat host did not start.");
       return router.acquire(path, force);
     },
-    close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
+    close: (path, message, opts) => (router ? router.close(path, message, opts) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
   });
 }

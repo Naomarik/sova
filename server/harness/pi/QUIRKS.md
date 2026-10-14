@@ -62,6 +62,7 @@ Paths in "Where" are under `server/`.
 | P24 own-code-discovery | monkey-patch | `patchResolve` (harness/pi/own-code.ts), `installOwnCode` (harness/pi/own-code.ts) | `DefaultPackageManager.resolve`, `DefaultResourceLoader.reload`, `DefaultResourceLoader.loadCurrentExtensionSet`, `createAgentSessionServices` | pi's loader takes a path-mapping hook for discovered extensions |
 | P25 request-start | monkey-patch | `hearRequests` (harness/pi/session.ts), `keepHearingRequests` (harness/pi/session.ts), `PiHarnessSession.subscribe` (harness/pi/session.ts) | `Agent.streamFunction`, `StreamOptions.onPayload`, `createAgentSession` | pi emits a request-sent event of its own |
 | P26 native-extension-load | semantic | `extensionDepDrift` (harness/pi/own-code.ts) | `loadExtensions`, `getAliases`, jiti `tryNative` | pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds |
+| P27 headless-standins | monkey-patch | `installHeadless` (harness/pi/headless.ts), `standInSource` (harness/pi/headless.ts) | pi-tui `dist/` modules, `dist/modes/interactive/`, `dist/utils/syntax-highlight.js` | pi ships an entry point without its terminal drawing code |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -211,6 +212,12 @@ Canary: `P23 turn-end-loadout: a tool registered at turn_end is declared in the 
 Under Bun, pi's extension loader (`loadExtensions`, jiti with `moduleCache: false` and pi's `getAliases()`) leaves jiti's `tryNative` at its default, `"Bun" in globalThis`: it imports each extension natively first, which ignores the aliases, and translates it only when that throws. An extension whose bare imports resolve from its real path is then a plain module: Bun keys it by its real path, so extensions share one instance of a file they have in common, with each other and with Sova's own imports of it. One that can't resolve them is translated, with a private copy of every file it imports (and jiti's Babel stays resident). So Sova's package.json names pi-ai, pi-tui and typebox at pi's own versions, and `extensionDepDrift` checks that they resolve from the copy's extensions to pi's own copies (§app.chat-processes/extension-loading).
 
 Canary: `P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own`.
+
+### P27 headless-standins
+
+A chat process replaces pi's terminal drawing code with stand-ins (§app.chat-processes/no-terminal-drawing): a Bun plugin, installed by `server/chat-runtime/main.ts` before pi loads, answers each module `STANDIN_FILTER` matches (pi-tui's screen, terminal and components, marked, pi's `modes/interactive/` but its theme, pi's syntax highlighter) with a module of the same export names, each an inert stand-in. Sova relies on three things pi does not promise: pi-tui keeps its text, key and colour helpers (`utils`, `keys`, `keybindings`, `fuzzy`, `colors`, `terminal-image`, …) in modules apart from its drawing ones, and its index re-exports each name from one of them; pi's theme imports none of the drawing modules (only the highlighter, inside its code-highlighting functions); and outside its terminal mode pi's code takes a drawing module only in terminal renderers, its CLI and its entry's re-exports, none of which a Sova chat calls. The canary checks the three statically; `headless.integration.test.ts` runs a chat process with every extension and a turn, logs every module replaced and every call that reached a stand-in, and compares pi-tui's export names with and without the stand-ins.
+
+Canary: `P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry`.
 
 ### T1 scripted-model (test-only)
 

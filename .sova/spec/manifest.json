@@ -1781,11 +1781,13 @@
         "server/app.ts",
         "pi-config/extensions/mode/index.ts",
         "src/components/Thread.tsx",
-        "server/quiet-close-actions.test.ts"
+        "server/quiet-close-actions.test.ts",
+        "server/project-mode-menu.ts",
+        "server/mode-state.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T13:46Z"
+        "by": "user",
+        "at": "2026-10-14T16:29Z"
       }
     },
     "§chat.mode-menu/memory-panel": {
@@ -1817,7 +1819,66 @@
         "src/lib/mode-menu.ts",
         "src/lib/mode-menu.test.ts",
         "server/chat-manager.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T09:48Z"
+      }
+    },
+    "§chat.mode-menu/project-modes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/terminal",
+        "§chat.profiles/projects",
+        "§chat.playbooks/where-playbooks-come-from",
+        "§app.overseer/tools",
+        "§chat.sandbox/states",
+        "§chat.worktrees/worktree-config"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T09:48Z"
+      },
+      "code": [
+        "pi-config/extensions/mode/project-tools.ts",
+        "pi-config/extensions/mode/project-tools-approval.ts",
+        "server/project-mode-approvals.ts",
+        "pi-config/extensions/mode/project-tools-worker.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/project-mode-menu.ts",
+        "server/mode-state.ts",
+        "server/chat-manager.ts",
+        "server/app.ts",
+        "shared/protocol.ts",
+        "shared/chat-runtime.ts",
+        "server/project-mode-menu.test.ts",
+        "server/project-modes-chat.test.ts",
+        "server/transcript.ts",
+        "server/overseer-tools.ts",
+        "shared/project-modes.ts",
+        "server/project-mode-approvals.test.ts",
+        "src/lib/session-tools.ts",
+        "src/components/ModeMenu.tsx",
+        "src/lib/mode-menu.ts",
+        "src/lib/mode-menu.test.ts",
+        "pi-config/extensions/mode/project-format.ts",
+        "pi-config/extensions/mode/project-discovery.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "pi-config/extensions/mode/events.ts",
+        "pi-config/extensions/mode/project-modes.test.ts",
+        "pi-config/extensions/mode/project-mode-extension.test.ts",
+        "pi-config/extensions/mode/project-tools.test.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/mode/README.md"
+      ],
+      "evidence": "verified"
     },
     "§chat.mode-menu/rejected": {
       "kind": "note",
@@ -1834,7 +1895,11 @@
         "src/components/ModeMenu.tsx"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T08:06Z"
+      }
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
@@ -2817,7 +2882,11 @@
         "server/chat-manager.ts",
         "server/project-overseer.ts",
         "server/mode-state.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T08:06Z"
+      }
     },
     "§chat/model-menu": {
       "kind": "surface",
@@ -4907,7 +4976,11 @@
         "§chat.model-menu/saved-default",
         "§mesh.links/by-id",
         "§mesh.peers/listener"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T08:06Z"
+      }
     },
     "§app.settings-dialog/overseer": {
       "kind": "behavior",
@@ -7884,8 +7957,13 @@
         "pi-config/extensions/subagents/worker-transcript.test.ts",
         "pi-config/extensions/sessions/test.mjs",
         "server/insights-workers.test.ts",
-        "server/insights-restored.test.ts"
-      ]
+        "server/insights-restored.test.ts",
+        "pi-config/extensions/mode/project-tools-worker.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T08:06Z"
+      }
     },
     "§app.organizations/about": {
       "kind": "behavior",
@@ -8939,7 +9017,11 @@
         "§chat.mode-menu/prompt-holds-across-turn-starters",
         "§chat.mode-menu/how-a-switch-reaches-the-chat",
         "§app.worker-restore/claude-bridge-restart"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T08:06Z"
+      }
     },
     "§app.organizations/archive": {
       "kind": "behavior",
@@ -18195,7 +18277,11 @@
         "pi-config/extensions/mode/prompt.ts",
         "pi-config/extensions/mode/tests/smoke.mjs",
         "pi-config/extensions/mode/index.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T08:06Z"
+      }
     },
     "§site.docs/align": {
       "kind": "behavior",
@@ -18325,6 +18411,7 @@
     "§site.docs/index": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/mode-menu",
         "§design.copy-deck/mode-menu",
         "§chat/alignment",
@@ -18337,7 +18424,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/index.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site.docs/install": {
       "kind": "behavior",
@@ -18382,13 +18473,18 @@
         "§app.overseer/quick-actions",
         "§app.project-overseer/coding-mode",
         "§chat/memory",
-        "§chat.mode-menu/memory-panel"
+        "§chat.mode-menu/memory-panel",
+        "§chat.mode-menu/project-modes"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/modes/index.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site.docs/needs-you": {
       "kind": "behavior",
@@ -18443,7 +18539,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "at": "2026-10-14T12:38Z"
       }
     },
     "§site.docs/phone": {
@@ -18472,6 +18568,7 @@
     "§site.docs/playbooks-and-schedules": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/playbooks",
         "§chat/schedules",
         "§chat.schedules/header",
@@ -18490,8 +18587,28 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "at": "2026-10-14T12:38Z"
       }
+    },
+    "§site.docs/project-modes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/project-modes",
+        "§chat.mode-menu/menu",
+        "§chat.mode-menu/states",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/terminal",
+        "§app.overseer/tools"
+      ],
+      "authority": "accepted",
+      "code": [
+        "site/src/content/docs/modes/project-modes.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      },
+      "evidence": "reviewed"
     },
     "§site.docs/spec-mode": {
       "kind": "behavior",
@@ -18519,6 +18636,7 @@
     "§site.docs/subagent-profiles": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/subagent-profiles",
         "§chat.subagent-profiles/file",
         "§chat.subagent-profiles/off",
@@ -18536,7 +18654,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/subagent-profiles.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site.docs/vis": {
       "kind": "behavior",
@@ -18555,6 +18677,7 @@
     "§site.docs/worktrees-and-changes": {
       "kind": "behavior",
       "requires": [
+        "§chat.mode-menu/project-modes",
         "§chat/worktrees",
         "§chat.worktrees/entry",
         "§chat.worktrees/tool",
@@ -18582,7 +18705,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/worktrees-and-changes.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:38Z"
+      }
     },
     "§site/docs": {
       "kind": "note",

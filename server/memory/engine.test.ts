@@ -201,6 +201,34 @@ describe("the engine", () => {
     assert.ok(await e.turnView([...history, user("next")], 128));
   });
 
+  test("on by default in a chat with history whose view was never built: its first sync starts preparing; a built view doesn't", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const statuses: string[] = [];
+    const { e, dir, deps } = engine({ summarize: async () => (await gate, { text: "s", model: "f" }), onStatus: (s) => statuses.push(s.state === "preparing" ? `preparing ${s.done}/${s.total}` : s.state) });
+    const history = Array.from({ length: 40 }, (_, k) => (k % 2 ? reply(long(`r${k}`)) : user(long(`u${k}`))));
+    e.sync(history); // no startPreparing: nobody turned it on
+    assert.match(statuses.at(-1)!, /^preparing 0\/40$/);
+    assert.equal(await e.turnView([...history, user("next")], 128), undefined, "still preparing: the turn goes out as without memory");
+    release();
+    await e.idle();
+    assert.equal(e.status().state, "ready");
+    assert.ok(await e.turnView([...history, user("next")], 128), "prepared: the view");
+    // Reopened (a new engine on the same sidecar) with a built view and many new messages: no preparing.
+    const more = [...history, user("next"), ...Array.from({ length: 40 }, (_, k) => (k % 2 ? reply(long(`R${k}`)) : user(long(`U${k}`))))];
+    const again = new MemoryEngine(e.sessionId, new MemoryStore(dir), { ...deps, summarize: async () => new Promise(() => {}) });
+    again.sync(more);
+    assert.notEqual(again.status().state, "preparing", "a chat whose view was built is never prepared again");
+    again.dispose();
+  });
+
+  test("a chat with a few messages and no view isn't prepared: its first turn waits for them as usual", () => {
+    const { e } = engine({ summarize: async () => new Promise(() => {}) });
+    e.sync([user(long("a")), reply(long("b")), user(long("c"))]);
+    assert.notEqual(e.status().state, "preparing");
+    e.dispose();
+  });
+
   test("the turn's wait is 20 s unless the deps say otherwise", () => {
     assert.equal(WAIT_MS, 20_000);
   });

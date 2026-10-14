@@ -58,6 +58,7 @@ import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session
 import { getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
+import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview as turnOffPreviewLink } from "./project-previews";
 import { shareFromAct } from "./project-services/share";
@@ -421,6 +422,13 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
       pending: memo.pending,
     },
   };
+}
+
+/** The project overseer's current conversation as this server holds it (its chat handle), else undefined. */
+export async function projectOverseerChat(projectId: string): Promise<ReturnType<typeof chatHandle>> {
+  const st = readPoState(projectOverseerPaths(projectId));
+  const path = st ? await pathOfId(st.current) : null;
+  return path ? chatHandle(path) : undefined;
 }
 
 /** PATCH …/overseer: settings, then the held idle runtime brought to the model/thinking. */
@@ -1134,13 +1142,17 @@ registerSpecialHost({
       cwd: this.cwd!(path),
       tools: tools.map(declOfTool),
       customTools: files.map(declOfTool),
-      allow: [...tools.map((t) => t.name), ...PO_BUILTINS],
+      allow: [...tools.map((t) => t.name), ...PO_BUILTINS, ...MEMORY_TOOLS],
       // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
       // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
       // agent dir's, and those of folders above the root, like the home folder's) don't.
       loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, append: "none", contextFilesWithin: { root: project.root, out: confinedOut() } },
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
+      // Its memory, by its own switch in its overseer.json, on by default: the
+      // same engine as a chat's, its summaries in this host's agent dir.
+      memory: true,
+      memorySettings: p.settings,
       // An operator's message makes the run theirs: the watch's message allowance, the write rule.
       attribution: true,
       usage: "overseer",

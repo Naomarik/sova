@@ -126,7 +126,7 @@ import { inputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, 
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
-import { OverseerMemoryMenu } from "./OverseerMemoryMenu";
+import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
@@ -240,7 +240,7 @@ export function ChatView(props: {
   /** Set only for the Overseer's own chat. */
   overseer?: OverseerChat;
   /** Set only for a project overseer's current conversation: its "/clear", and a clear from another tab. */
-  projectOverseer?: { onClear(): Promise<boolean>; onReloaded(): void };
+  projectOverseer?: { projectId: string; onClear(): Promise<boolean>; onReloaded(): void };
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -2259,7 +2259,9 @@ export function ChatView(props: {
                 />
                 </>
               )
-            : undefined
+            : props.projectOverseer
+              ? () => <OverseerMemoryMenu scope={projectOverseerMemory(props.projectOverseer!.projectId)} />
+              : undefined
         }
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount() ?? 0}

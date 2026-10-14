@@ -84,8 +84,15 @@ const { getSessionSummary } = await import("./sessions-index");
 const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
 const sender_ = await import("./overseer-sender");
-const { DEFAULT_CAPS, defaultSettings, overseerActionsFile, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
+const overseerStore = await import("./overseer-store");
+const { DEFAULT_CAPS, overseerActionsFile, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = overseerStore;
+/** The Overseer's memory is on by default; this file's turns run it off (a summary
+    would spawn the summarizer, which the unit tier refuses), except where a test says otherwise. */
+const MEMORY_OFF = { on: false, type: "uniichat" as const, size: 128 };
+const defaultSettings = () => ({ ...overseerStore.defaultSettings(), memory: { ...MEMORY_OFF } });
+writeOverseerSettings(defaultSettings());
 const { OVERSEER_BRIEF_PREFIX } = await import("../shared/protocol");
+const { MEMORY_TOOLS } = await import("../shared/memory");
 const { addIdea, getIdea } = await import("./overseer-ideas");
 const { UNATTENDED_REFUSAL, UNATTENDED_WRITE_REFUSAL } = await import("./overseer-tools");
 const { STATE_WRITE_REFUSAL } = await import("./overseer-deny");
@@ -1182,5 +1189,21 @@ describe("the Overseer's memory (§chat.memory/overseer)", () => {
     const chat = await overseerChat();
     assert.equal(chat.memoryAvailable(), true, "the engine's recall tools are registered");
     assert.ok(chat.memoryHost(), "the engine's host is the chat's own");
+  });
+
+  test("with no saved choice it is on, UniiChat at 128 KB, whatever the chats' saved default; an explicit off stays off", async () => {
+    const { saveDefaultMemoryChoice } = await import("./memory/settings");
+    saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
+    writeOverseerSettings(overseerStore.defaultSettings());
+    assert.equal(readOverseerSettings().memory, undefined, "no memory key");
+    const chat = await overseerChat();
+    assert.deepEqual(chat.memory.choice(), { on: true, type: "uniichat", size: 128 });
+    assert.equal(chat.memoryOffered(), false, "no mode-menu row");
+    chat.memorySwitched();
+    for (const t of MEMORY_TOOLS) assert.ok(piSession(chat).getActiveToolNames().includes(t), `${t} active`);
+    writeOverseerSettings(defaultSettings());
+    assert.deepEqual(chat.memory.choice(), { on: false, type: "uniichat", size: 128 }, "switched off: off");
+    chat.memorySwitched();
+    for (const t of MEMORY_TOOLS) assert.ok(!piSession(chat).getActiveToolNames().includes(t), `${t} gone`);
   });
 });

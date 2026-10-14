@@ -290,6 +290,10 @@ test("G10: open, attach and dispose with no prompt leaves the file byte-identica
 const org = await orgs.createOrg({ name: "Golden", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
 const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+// The goldens record what the files held before overseers ran memory by default: both run it off here.
+const { overseerMemoryOff, projectOverseerMemoryOff } = await import("../../testing/overseer-memory");
+overseerMemoryOff();
+projectOverseerMemoryOff(project.id);
 
 /** A participant's message enters as the share route does it: the lock, then the prompt. */
 function says(chat: Chat, sessionId: string, by: string, text: string): void {

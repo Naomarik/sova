@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
-import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type FrameOf } from "../shared/chat-runtime-wire";
+import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
 import { sovaToken } from "./auth";
 import {
   acquireChatHandle,
@@ -20,6 +20,7 @@ import {
   ConfigError,
   RefusedError,
   type ChatHandle,
+  type CloseOpts,
   chatHandle,
   currentLinkOrigin,
   errorOfRefusal,
@@ -202,9 +203,9 @@ export class ChatHostRouter {
         log(`${id}: did not start (${d.detail ?? d.cause})`);
         this.forget(d.sessionPath);
       },
-      onStopped: (id) => {
+      onStopped: (id, cause) => {
         const path = this.paths.get(id);
-        if (path) this.forget(path);
+        if (path) this.forget(path, cause);
       },
       drain: (id, reason) => this.handleOf(id)?.drain(reason) ?? Promise.resolve({ ok: false }),
       reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild() ?? Promise.resolve("none" as const),
@@ -266,9 +267,14 @@ export class ChatHostRouter {
     return path ? this.remotes.get(path) : undefined;
   }
 
-  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand). */
-  private forget(path: string): void {
+  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand),
+      except after an idle stop: they are told the chat closed, and keep what they show without
+      reconnecting until they need it (§chat.transcript/instant-open). */
+  private forget(path: string, cause?: ExitCause): void {
     const h = this.remotes.get(path);
+    // An archive's own exit can come before its close finishes: its panes are told `closed` either way.
+    if (cause === "idle" || h?.closingQuietly) h?.closePanesQuietly(cause === "idle" ? "idle" : "archived");
+    // Panes told `closed` are gone from the handle already: this ends its calls only.
     h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) {
       this.paths.delete(h.mirror.sessionId);
@@ -284,7 +290,8 @@ export class ChatHostRouter {
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;
-      sup.noteIdle(m.sessionId, m.quiet.quiet && m.quiet.clients === 0, m.quiet.since);
+      // Quiet is enough: an open tab doesn't keep a chat running (§app.chat-processes/idle-stop).
+      sup.noteIdle(m.sessionId, m.quiet.quiet, m.quiet.since);
       sup.noteClaude(m.sessionId, m.claude);
       const w = this.workerPaths.has(h.path) ? this.workers.record(m.sessionId) : undefined;
       setRemoteHosted(h.path, {
@@ -308,7 +315,7 @@ export class ChatHostRouter {
       const id = h.mirror.sessionId;
       this.sup.expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.
-      if (cause !== "reload") this.forget(h.path);
+      if (cause !== "reload") this.forget(h.path, cause);
       if (this.workers.has(id)) this.workers.onExit(id, cause);
     },
     linkEnd: (h, end) => {
@@ -663,13 +670,18 @@ export class ChatHostRouter {
     }
   }
 
-  async close(path: string, message: string): Promise<boolean> {
+  async close(path: string, message: string, opts: CloseOpts = {}): Promise<boolean> {
     const h = this.remotes.get(path);
     if (!h || h.closed) return false;
     const sid = h.mirror.sessionId;
+    // An archive: the chat's own goodbye (`reloaded`, from its dispose) reaches no tab, so none
+    // reconnects, which would start the archived chat again. Its tabs keep everything before it (an
+    // ack for a send it took) and are told `closed` once the drain returned; its calls end after that.
+    if (opts.quiet) h.beginQuietClose();
     this.sup.expectExit(sid, "archived");
     const r = await h.drain("archived", { force: true, message });
     if (!r.ok) await this.sup.stop(sid, "archived").catch(() => {});
+    if (opts.quiet) h.closePanesQuietly(opts.quiet);
     this.forget(path);
     return true;
   }
@@ -831,7 +843,7 @@ export function startChatHost(): void {
       if (!router) throw new Error("The Sova server's chat host did not start.");
       return router.acquire(path, force);
     },
-    close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
+    close: (path, message, opts) => (router ? router.close(path, message, opts) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
   });
 }

@@ -23,6 +23,9 @@ export interface ModeControl {
   path: string;
   /** Why the switch waits (the chat connecting or starting, §chat.transcript/instant-open), or null. */
   blocked?: () => string | null;
+  /** Resolves once this chat is open: a chat closed while quiet wakes for what the menu asks of it
+      (§chat.transcript/instant-open); rejects when it doesn't start. Absent: always open. */
+  ready?: () => Promise<void>;
 }
 
 /** radio: the major mode; check: a minor mode; action: opens a settings screen or the picker, switches nothing. */
@@ -80,6 +83,8 @@ const memoryOf = (m: ModeInfo): ChatMemoryChoice | null => (m.memory ? { type: m
  * flyout's panel pattern) and back. The mode and the pick are per chat: only this chat follows.
  */
 export function ModeMenu(props: { control: ModeControl }) {
+  /** This chat open for what the menu asks of it (ModeControl.ready). */
+  const chatReady = () => props.control.ready?.() ?? Promise.resolve();
   const paneId = usePaneId();
   /** A peer session's profiles and library are its host's. */
   const host = useHostScope();
@@ -206,6 +211,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setMemError(null);
     try {
+      await chatReady();
       setInfo(await postMode({ memory: patch }, props.control.path));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -231,6 +237,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setSaveName(null);
     menu.showPopover();
     try {
+      await chatReady();
       setProfiles(await getSubagentProfiles(props.control.path, host()));
     } catch (err) {
       setProfiles(null);
@@ -283,6 +290,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
+      await chatReady();
       setInfo(await postMode(patch, props.control.path)); // this chat's "mode" message follows over the socket
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -315,6 +323,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setSaving(true);
     setError(null);
     try {
+      await chatReady();
       const written = await saveModeDefault(props.control.path); // the file as written, not this chat's copy
       setDefaultMode(shownOf(written));
       setDefaultMemory(memoryOf(written));
@@ -335,6 +344,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
+      await chatReady();
       const r = await pickSubagentProfile(props.control.path, id, host());
       setProfiles(r);
       closePicker();

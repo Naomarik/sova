@@ -2234,6 +2234,11 @@ export interface HelloLive {
  */
 export type ChatCodeState = "current" | "older" | "reloading" | "failed";
 
+/** The close code of a chat socket after `closed` (§app.chat-processes/idle-stop): one the web app's
+    socket never retries (src/lib/socket.ts PERMANENT_CLOSE, as for 4422 "config"), so a tab on an
+    older bundle, which doesn't know `closed`, stays down too instead of reopening the chat. */
+export const CHAT_CLOSED_CLOSE_CODE = 4422;
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -2382,6 +2387,12 @@ export type ChatServerMessage =
   | { type: "queue_removed"; id: string; itemId: string; text: string }
   /** The removal was refused and the item is untouched; to the requester only. */
   | { type: "queue_remove_refused"; id: string; itemId: string; reason: QueueRemoveRefusal; message: string }
+  /** The chat's process closed for being quiet (§app.chat-processes/idle-stop), or the chat was
+      archived, and the server closes this socket next. The tab keeps what it shows and doesn't
+      reconnect: the chat starts again only when the tab needs it (a send), or when something else
+      opened it (§chat.transcript/instant-open). A client that doesn't know it reconnects on the
+      close, as before. */
+  | { type: "closed"; reason: "idle" | "archived" }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);

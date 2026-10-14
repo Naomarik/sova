@@ -1081,7 +1081,8 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
   if (archived) {
-    await closeChat(s.path, "Session archived; its runtime was closed.");
+    // Its open tabs keep what they show and don't reconnect: a reconnect would start it again.
+    await closeChat(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
     sessionArchived(s.id);
   }
   return { ok: true, summary: { ...s, archived } };

@@ -247,7 +247,8 @@ that project's overseer `overseer.json` (§app.project-overseer/identity, §app.
 Changing one never changes the Overseer's or another project's.
 
 - **On by default.** An overseer with no saved choice has memory on, UniiChat at 128 KB, whatever
-  default Settings → Memory saved for ordinary chats; both routes report it so. Switched off, it
+  default Settings → Memory saved for ordinary chats; both routes report it so, and so does its
+  Memory outline (`GET /api/memory?path=…`), held or not. Switched off, it
   stays off until someone switches it on again. Clear keeps the choice: it is the overseer's, not
   its conversation's. Only its switch writes it: a Settings → Overseer save (and the proactivity
   cycle, which saves the same settings) keeps the stored switch whatever its body carries.

@@ -553,6 +553,9 @@ export interface ReportInfo {
       (server/reports.ts parseTeamMessage). `body` is then the message without its header and
       trailer lines; `agent` is absent, so the row is never a finished-worker marker. */
   team?: TeamMessageInfo;
+  /** customType CONTINUATION_NOTE_TYPE only (§chat/saved-sessions): the note a continued saved
+      session starts with, from the message's details. */
+  continued?: import("./session-bundle").ContinuationDetails;
 }
 
 /** A coordinated team's message to the operator, parsed from its header:

@@ -272,6 +272,14 @@ const READ_PREFIXES = [
   "provider-limits",
   "usage",
 ];
+// Saved sessions (§chat/saved-sessions): reading the saved branch, and loading one into a session, drive sessions
+// (as Fork from here does); what writes the repository or sends a conversation off the computer (saving, which
+// may push; fetching; Remove from Main, the purge and the prune) is the host's own control, `admin`, like a share
+// link's making. Matched before the prefixes.
+const SAVED_RULES: Array<[RegExp, (read: boolean) => Need]> = [
+  [/^\/api\/saved-sessions\/(?:save|fetch|remove-from-main|purge-from-main|prune)$/, () => "admin"],
+  [/^\/api\/saved-sessions(?:\/(?:prepare|prepare\/[^/]+\/image\/.+|for-session|preview|continue|worktrees|on-main))?$/, () => "sessions"],
+];
 // Never below `full`: the operator's credentials and the share pages' own routes.
 const FULL_PREFIXES = ["auth", "h", "i", "s"];
 
@@ -290,6 +298,7 @@ export function classifyRequest(method: string, pathname: string): Classified {
     return { need: "full", rule: "default" };
   }
   const read = method === "GET" || method === "HEAD";
+  for (const [re, need] of SAVED_RULES) if (re.test(path)) return { need: need(read), rule: `saved-sessions:${re.source}` };
   let m = SESSION_RE.exec(path);
   if (m) return { need: "sessions", rule: `sessions:${m[1]}` };
   m = READ_RE.exec(path);

@@ -32,6 +32,7 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { registerSessionForkRoutes } from "./session-fork-routes";
+import { registerSessionBundleRoutes } from "./session-bundles-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
@@ -375,6 +376,9 @@ export function buildApp(deps: AppDeps) {
   // Fork a conversation through a delivered reply (server/session-fork-routes.ts): POST /api/sessions/fork
   // makes a new web-owned session from the source's active branch, read-only on the source.
   registerSessionForkRoutes(app);
+  // Saved sessions (server/session-bundles-routes.ts, §chat/saved-sessions): save a chat to the project's
+  // sova/saved-sessions branch, list, preview and continue them, and the merge-guard recovery on main.
+  registerSessionBundleRoutes(app);
 
   // The sidebar's user-made groups: Sova's own grouping of
   // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by

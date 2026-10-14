@@ -265,6 +265,31 @@ describe("files", () => {
     assert.equal(lineEntry("{torn"), null);
   });
 
+  test("lineHead: the same values the pattern's raw captures give, on every line of every pi fixture", () => {
+    const HEAD = /^\{"type":"([^"]+)","id":"([^"]+)","parentId":(?:null|"([^"]*)")/;
+    const captures = (line: string) => {
+      const m = HEAD.exec(line);
+      return m ? { type: m[1]!, id: m[2]!, parentId: m[3] ?? null } : null;
+    };
+    let heads = 0;
+    let roots = 0;
+    let misses = 0;
+    for (const f of fixtures) {
+      for (const line of f.text.split("\n").filter(Boolean)) {
+        const want = captures(line);
+        assert.deepEqual(lineHead(line), want, `${label(f)}: ${line.slice(0, 80)}`);
+        if (want === null) misses++;
+        else if (want.parentId === null) roots++;
+        else heads++;
+      }
+    }
+    assert.ok(heads > 0 && roots > 0 && misses > 0, `fixtures cover a head (${heads}), a root (${roots}) and a miss (${misses})`);
+    assert.deepEqual(lineHead('{"type":"message","id":"a1","parentId":null,"x":1}'), { type: "message", id: "a1", parentId: null });
+    assert.deepEqual(lineHead('{"type":"custom","id":"b2","parentId":"a1","x":1}'), { type: "custom", id: "b2", parentId: "a1" });
+    assert.equal(lineHead('{"type":"session","version":3,"id":"s"}'), null);
+    assert.equal(lineHead(""), null);
+  });
+
   test("BranchScan: grown in pieces (a torn line in between) equals one full read; a rewrite starts over", async () => {
     for (const f of fixtures.filter((x) => !x.private && x.set !== "large")) {
       const path = join(dir, `scan-${f.set}-${f.name}.jsonl`);

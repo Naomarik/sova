@@ -280,8 +280,9 @@ const SAVED_RULES: Array<[RegExp, (read: boolean) => Need]> = [
   [/^\/api\/saved-sessions\/(?:save|fetch|remove-from-main|purge-from-main|prune)$/, () => "admin"],
   [/^\/api\/saved-sessions(?:\/(?:prepare|prepare\/[^/]+\/image\/.+|for-session|preview|continue|worktrees|on-main))?$/, () => "sessions"],
 ];
-// Never below `full`: the operator's credentials and the share pages' own routes.
-const FULL_PREFIXES = ["auth", "h", "i", "s"];
+// Never below `full`: the operator's credentials, the share pages' own routes, and this machine's
+// updates (whose writes refuse the peer listener outright).
+const FULL_PREFIXES = ["auth", "h", "i", "s", "updates"];
 
 const prefixRe = (list: string[]) => new RegExp(`^/api/(${list.map((p) => p.replace(/[-]/g, "\\-")).join("|")})(?:/|$)`);
 const SESSION_RE = prefixRe(SESSION_PREFIXES);

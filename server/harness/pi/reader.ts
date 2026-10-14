@@ -510,10 +510,18 @@ export function liveRead(owner: LiveOwner): SessionRead {
 /** pi writes type, id and parentId first, so most lines need nothing more and are never JSON-parsed. */
 const HEAD = /^\{"type":"([^"]+)","id":"([^"]+)","parentId":(?:null|"([^"]*)")/;
 
-/** A line's place in the tree from its first bytes, or null when the line doesn't start the way pi writes. */
+/** A line's place in the tree from its first bytes, or null when the line doesn't start the way pi writes.
+    Its strings are fresh copies: a regex capture can be a view that keeps its whole source line alive, and
+    the session list's scans keep these for every line of every session they read. */
 export function lineHead(line: string): { type: string; id: string; parentId: string | null } | null {
   const m = HEAD.exec(line);
-  return m ? { type: m[1]!, id: m[2]!, parentId: m[3] ?? null } : null;
+  if (!m) return null;
+  try {
+    const o = JSON.parse(m[0] + "}") as { type: string; id: string; parentId: string | null };
+    return { type: o.type, id: o.id, parentId: o.parentId ?? null };
+  } catch {
+    return null; // an escape the pattern cut in half: the caller reads the whole line instead
+  }
 }
 
 export type LineProbe = "header" | "user" | "assistant" | "toolResult" | { state: string } | { note: string } | { tool: string };

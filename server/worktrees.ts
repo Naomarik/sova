@@ -22,6 +22,7 @@
 // merge readiness sets for a tree (`dirtyLifetime`); an index or HEAD change ends it at once.
 // Git failures become the tree's `error`, never a throw.
 
+import { SAVED_SESSION_MARKER } from "../shared/session-bundle";
 import { execFile } from "node:child_process";
 import { existsSync, statSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -407,10 +408,11 @@ export class WorktreeInsights {
   /**
    * One linked worktree's reading by folder, for merge readiness (server/merge-readiness.ts): the
    * same comparison and caches as `get`, plus its HEAD and, while it is unmerged and ahead, the
-   * subjects of its commits past the base (newest first, at most 50). null when the folder is gone
+   * subjects of its commits past the base (newest first, at most 50) and how many of them carry a saved
+   * session's marker. null when the folder is gone
    * or is not a linked worktree.
    */
-  async treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] }) | null> {
+  async treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; headAt?: number; subjects?: string[]; savedSessions?: number }) | null> {
     const layout = await this.layout(dir);
     if (!layout || layout === "gone" || !layout.linked) return null;
     const metadata = await this.metadata(layout);
@@ -420,12 +422,16 @@ export class WorktreeInsights {
     const head = metadata.head ? await this.observedGit(layout, ["log", "-1", "--format=%H %ct", metadata.head.oid], () => historyToken(layout)) : { code: 1, stdout: "", stderr: "" };
     const [sha, ct] = head.code === 0 ? head.stdout.trim().split(" ") : [];
     const at = Number(ct) * 1000;
-    const out: WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] } = { ...st, ...(sha ? { head: sha } : {}), ...(sha && at > 0 ? { headAt: at } : {}) };
+    const out: WorktreeStatus & { head?: string; headAt?: number; subjects?: string[]; savedSessions?: number } = { ...st, ...(sha ? { head: sha } : {}), ...(sha && at > 0 ? { headAt: at } : {}) };
     if (st.base && st.merged === "no" && (st.ahead ?? 0) > 0) {
       const base = metadata.refs.code === 0 ? pickBase(metadata.refs.stdout) : null;
       if (!base || !metadata.head) return out;
       const log = await this.observedGit(layout, ["log", "--format=%s", "-n", "50", `${base.oid}..${metadata.head.oid}`], () => historyToken(layout));
       if (log.code === 0) out.subjects = log.stdout.split("\n").filter(Boolean);
+      // A saved session's card anywhere in the branch's own history (by its marker, deleted ones too):
+      // Sova's merges would stop on it (§chat.saved-sessions/merge-guard).
+      const saved = await this.observedGit(layout, ["log", "--format=%H", "-S", SAVED_SESSION_MARKER, `${base.oid}..${metadata.head.oid}`, "--"], () => historyToken(layout));
+      if (saved.code === 0) out.savedSessions = saved.stdout.split("\n").filter(Boolean).length;
     }
     return out;
   }

@@ -662,7 +662,11 @@ export class GitDiffs {
       const all = [...new Set(shasPerUnit.flat())];
       const info = all.length ? await Promise.race([this.commitInfo(r.top, all).catch(() => null), late]) : [];
       if (!info || info.length !== all.length) return { originsUnknown: true };
-      info.sort((a, b) => a.authorTime - b.authorTime || (a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0));
+      // Ancestors first (`rev-list --topo-order --reverse`), so commits made in the same second
+      // keep parent before child; by author time where that order can't be read.
+      const topo = info.length > 1 ? await Promise.race([this.topoOrder(r.top, r.base.oid, head).catch(() => null), late]) : null;
+      const rank = (sha: string) => topo?.get(sha) ?? Number.MAX_SAFE_INTEGER;
+      info.sort((a, b) => rank(a.sha) - rank(b.sha) || a.authorTime - b.authorTime || (a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0));
       const at = new Map(info.map((c, i) => [c.sha, i]));
       return { commits: info, hunkCommits: shasPerUnit.map((u) => [...new Set(u)].map((sha) => at.get(sha)!).sort((a, b) => a - b)) };
     } finally {
@@ -725,6 +729,13 @@ export class GitDiffs {
       }
     }
     return out;
+  }
+
+  /** Each commit of `base..head` (all of `head`'s history without a base) → its place, oldest first. */
+  private async topoOrder(top: string, base: string | undefined, head: string): Promise<Map<string, number>> {
+    const res = await this.git(top, ["rev-list", "--topo-order", "--reverse", base ? `${base}..${head}` : head, "--"]);
+    if (res.code !== 0) throw new Error(gitError("rev-list", res));
+    return new Map(res.stdout.toString("utf8").split("\n").filter(isOid).map((sha, i) => [sha, i]));
   }
 
   /** Each commit's subject and author time, in no particular order. */

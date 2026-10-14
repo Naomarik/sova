@@ -795,6 +795,22 @@ describe("commits per hunk (origins)", () => {
     assert.deepEqual(shasOf(m), [[c1], [c2], [c2]]);
   });
 
+  it("lists a file's commits ancestors first, even when made in the same second", async () => {
+    const { dir, base } = newRepo({ "s.txt": lines(30) });
+    git(dir, "checkout", "-q", "-b", "feat/s");
+    const parent = commitAt(dir, 2_000, "parent", { "s.txt": lines(30).replace("line 2\n", "two\n") });
+    // A child whose sha sorts before its parent's, so a sha tie-break would put it first.
+    let child = "";
+    for (let i = 0; ; i++) {
+      child = commitAt(dir, 2_000, `child ${i}`, { "s.txt": lines(30).replace("line 2\n", "two\n").replace("line 25\n", `twenty-five ${i}\n`) });
+      if (child < parent) break;
+      git(dir, "reset", "-q", "--hard", parent);
+    }
+    const p = await diffs(() => [dir], [{ path: dir, baseBranch: "master", base }]).patch({ kind: "worktree", sessionPath: SESSION, worktreePath: dir }, "s.txt", undefined, { origins: true });
+    assert.deepEqual(p.commits!.map((c) => c.sha), [parent, child]);
+    assert.deepEqual(shasOf(p), [[parent], [child]]);
+  });
+
   it("marks commits unknown when the history read fails or runs out of time, and still sends the patch", async () => {
     const { dir, base } = history();
     for (const fail of [{ code: null, stderr: "git timed out" }, { code: 128, stderr: "fatal: boom" }]) {

@@ -136,17 +136,47 @@
 :is(.vis-wf-main, .vis-wf-col, .vis-wf-card, .vis-wf-modal, .vis-wf-sheet, .vis-wf-sidebar, .vis-wf-heading, .vis-wf-box, .vis-wf-row, .vis-wf-grid) > .vis-wf-row:has(> .vis-wf-row-go) { container: wf-row / inline-size; }
 .vis-wf-row > .vis-wf-row-go { flex: none; display: flex; min-width: 0; max-width: 100%; align-self: center; }
 .vis-wf-row-go > .vis-wf-go { min-width: 0; max-width: min(120px, 100%); }
-@container wf-row (width < 223px) { .vis-wf-row > .vis-wf-row-go { flex-basis: 100%; } }
-@container wf-row (width < 326px) { .vis-wf-row:has(> :nth-child(2 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
-@container wf-row (width < 429px) { .vis-wf-row:has(> :nth-child(3 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
-@container wf-row (width < 532px) { .vis-wf-row:has(> :nth-child(4 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 223px) { .vis-wf-row:where(:not(.vis-wf-pack)) > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 326px) { .vis-wf-row:where(:not(.vis-wf-pack)):has(> :nth-child(2 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 429px) { .vis-wf-row:where(:not(.vis-wf-pack)):has(> :nth-child(3 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 532px) { .vis-wf-row:where(:not(.vis-wf-pack)):has(> :nth-child(4 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
 /* A button or a badge beside other blocks (a heading, a field) takes its label's width; a row of buttons shares it evenly. */
-.vis-wf-row:has(> :not(.vis-wf-button, .vis-wf-row-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge)))) > :is(.vis-wf-button, .vis-wf-badge) { flex: 0 1 auto; }
+.vis-wf-row:where(:not(.vis-wf-pack, .vis-wf-shares)):has(> :not(.vis-wf-button, .vis-wf-row-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge)))) > :is(.vis-wf-button, .vis-wf-badge) { flex: 0 1 auto; }
 /* A badge takes half the row at most (layout.ts's cap), so the blocks beside it keep theirs. */
 .vis-wf-row > .vis-wf-badge { max-width: 50%; }
 /* Past 4 blocks side by side (its chip and mark badge aside), a row wraps into rows of 4. */
-.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge))) { flex-wrap: wrap; }
-.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge))) > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 0 calc(25% - 6px); }
+.vis-wf-row:where(:not(.vis-wf-pack, .vis-wf-shares)):has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge))) { flex-wrap: wrap; }
+.vis-wf-row:where(:not(.vis-wf-pack, .vis-wf-shares)):has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge))) > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 0 calc(25% - 6px); }
+/* The row words (§chat.markdown/vis-wireframe, Rows; parse.ts settleRows), on their own classes only, so a row
+   without them draws as before (the rules above skip these rows through a :where, adding no specificity).
+   A row that lays out by content (.vis-wf-pack: a block in it says right or grow, or it says right): each block
+   at its own width, half the row at most (a control or a row in it, all of it), no narrower than 12ch but for controls, a
+   field 160px, an image a 96px thumbnail; a growing block takes the rest; .vis-wf-right starts the group at the
+   row's end; blocks that don't fit wrap, its chip with them. layout.ts's packRow mirrors these widths. */
+.vis-wf-row.vis-wf-pack { flex-wrap: wrap; }
+.vis-wf-row.vis-wf-pack > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 1 auto; min-width: min(12ch, 100%); max-width: 50%; }
+.vis-wf-row.vis-wf-pack > :is(.vis-wf-button, .vis-wf-badge, .vis-wf-link, .vis-wf-icon, .vis-wf-avatar, .vis-wf-check, .vis-wf-go) { min-width: 0; max-width: 100%; }
+.vis-wf-row.vis-wf-pack > :is(.vis-wf-icon, .vis-wf-avatar) { flex: none; }
+.vis-wf-row.vis-wf-pack > .vis-wf-row { max-width: 100%; }
+.vis-wf-row.vis-wf-pack > .vis-wf-field { width: 160px; }
+.vis-wf-row.vis-wf-pack > .vis-wf-image { flex: none; width: 96px; min-width: 0; }
+.vis-wf-row.vis-wf-pack > .vis-wf-grow { flex: 1 1 0; min-width: min(12ch, 100%); max-width: none; }
+.vis-wf-row.vis-wf-pack > .vis-wf-right { margin-left: auto; }
+/* A line of the right group that wraps sits at the row's end too: the row packs to its end, and the block before the
+   group takes the room left on its line. */
+.vis-wf-row.vis-wf-pack:has(> .vis-wf-right) { justify-content: flex-end; }
+.vis-wf-row.vis-wf-pack > :has(+ .vis-wf-right) { margin-right: auto; }
+.vis-wf-row.vis-wf-end { justify-content: flex-end; }
+/* `row 1:3:2`: each block its share, on one line; an avatar or an icon keeps its own size. */
+.vis-wf-row.vis-wf-shares > .vis-wf-share-1:not(.vis-wf-avatar, .vis-wf-icon) { flex: 1 1 0; }
+.vis-wf-row.vis-wf-shares > .vis-wf-share-2:not(.vis-wf-avatar, .vis-wf-icon) { flex: 2 1 0; }
+.vis-wf-row.vis-wf-shares > .vis-wf-share-3:not(.vis-wf-avatar, .vis-wf-icon) { flex: 3 1 0; }
+.vis-wf-row.vis-wf-shares > .vis-wf-share-4:not(.vis-wf-avatar, .vis-wf-icon) { flex: 4 1 0; }
+.vis-wf-row.vis-wf-shares > .vis-wf-share-5:not(.vis-wf-avatar, .vis-wf-icon) { flex: 5 1 0; }
+.vis-wf-row.vis-wf-shares > .vis-wf-share-6:not(.vis-wf-avatar, .vis-wf-icon) { flex: 6 1 0; }
+/* `row middle`, `row bottom`: its blocks on their centres or bottom edges, not stretched. */
+.vis-wf-row.vis-wf-align-middle > :not(.vis-wf-row-go, .vis-em-badge) { align-self: center; }
+.vis-wf-row.vis-wf-align-bottom > :not(.vis-wf-row-go, .vis-em-badge) { align-self: flex-end; }
 .vis-wf-grid { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .vis-wf-desktop .vis-wf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .vis-wf-grid > .vis-wf-wide { grid-column: span 2; }
@@ -243,6 +273,8 @@
 .vis-wf-button { position: relative; display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 6px; align-self: flex-start; min-height: 34px; box-sizing: border-box; padding: 4px 14px; border: 1.5px solid var(--color-border-strong); border-radius: var(--r-md); font-weight: var(--fw-semibold); color: var(--color-ink); text-align: center; }
 .vis-wf-phone .vis-wf-main > .vis-wf-button, .vis-wf-row > .vis-wf-button, .vis-wf-sheet > .vis-wf-button, .vis-wf-modal > .vis-wf-button, .vis-wf-empty > .vis-wf-button { align-self: stretch; }
 .vis-wf-empty > .vis-wf-button { align-self: center; }
+/* `right` outside a row: at the right edge, at its own width (after the stretch above, which it overrides). */
+.vis-wf :is(.vis-wf-main, .vis-wf-col, .vis-wf-card, .vis-wf-modal, .vis-wf-sheet, .vis-wf-sidebar, .vis-wf-box) > .vis-wf-right { align-self: flex-end; }
 .vis-wf-button.vis-tone-accent { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .vis-wf-button.vis-tone-accent .vis-wf-go { color: var(--color-on-accent); border-color: currentColor; }
 .vis-wf-button:is(.vis-tone-error, .vis-tone-warn, .vis-tone-ok, .vis-tone-info) { border-color: var(--vis-stroke); color: var(--vis-stroke); }

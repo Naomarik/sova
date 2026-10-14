@@ -1,6 +1,6 @@
 // Run: pnpm test -- src/lib/profile-cards.test.ts. The profile cards' pure parts: the caption line
 // and the Settings summary line, the groups and the filter threshold, a card's unusable reason, the System context fold's open
-// state, and which sessions the Profiles shelf and Recent list.
+// state, and that Recent lists profile sessions.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ListedProfile, ProfilesListing } from "../../shared/profiles";
@@ -8,10 +8,6 @@ import type { SessionSummary } from "../../shared/protocol";
 import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, mySettingsCaption, pickerProfiles, pickerSections, profileCaption, profileSummary } from "./profiles";
 import { recentEligible } from "./recent";
 import { setSetupContextOpen, setupContextOpen } from "./setup-fold";
-
-// @ts-expect-error untyped .mjs import
-const { importSsr } = await import("./align-card-ssr.mjs");
-const { shelfGroups } = (await importSsr(new URL("../components/ProfileShelf.tsx", import.meta.url), (s: string) => import.meta.resolve(s))) as typeof import("../components/ProfileShelf");
 
 const SUBAGENTS = [
   { id: "off", footprint: "the agent picks" },
@@ -39,7 +35,6 @@ const listing = (yours: ListedProfile[], extra: Partial<ProfilesListing> = {}): 
   problems: [],
   hidden: [],
   running: {},
-  everRun: [],
   ...extra,
 });
 
@@ -129,11 +124,9 @@ test("the System context fold: closed by default, kept open per session until cl
 const session = (id: string, profile?: SessionSummary["profile"]) =>
   ({ id, path: `/s/${id}.jsonl`, title: id, cwd: "/w", createdAt: "2026-10-01T00:00:00Z", lastActiveAt: "2026-10-01T00:00:00Z", origin: "web", ...(profile ? { profile } : {}) }) as unknown as SessionSummary;
 
-test("a capability-neutral profile's session is off the shelf and in Recent; any other profile's is the reverse", () => {
+test("a profile session is in Recent, capability-neutral or not", () => {
   const neutral = session("n", { id: "claude", label: "Claude session", icon: "wrench", source: "user", neutral: true });
   const reviewer = session("r", { id: "reviewer", label: "Docs reviewer", icon: "eye", source: "user" });
-  const { groups } = shelfGroups([neutral, reviewer], [], []);
-  assert.deepEqual(groups.map((g) => g.key), ["user:reviewer"]);
   assert.equal(recentEligible(neutral), true);
-  assert.equal(recentEligible(reviewer), false);
+  assert.equal(recentEligible(reviewer), true);
 });

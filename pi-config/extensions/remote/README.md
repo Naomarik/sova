@@ -83,7 +83,8 @@ ssh, no channel, no toast), for a client that reconnected to a live session. A f
 using prompt sections rather than replacing the prompt.
 
 **Fail fast, fail closed.** A bounded preflight (`id -un; hostname; $HOME; pwd`) runs at session
-start. ssh always runs with `BatchMode=yes` and `ConnectTimeout=10`. An unreachable target makes
+start. ssh always runs with `BatchMode=yes` and `ConnectTimeout=10` (or the entry's
+`connectTimeoutS`, below). An unreachable target makes
 every tool fail with the target's name and ssh's stderr. The failure is cached for 15 s, then
 retried. An unknown or invalid target name makes every tool refuse, and never falls back to local
 execution.
@@ -133,7 +134,8 @@ created if needed.
   "proxy": { "type": "aws-ssm", "profile": "p", "region": "eu-central-1", "pushKey": "ec2-instance-connect" },
   "incus": { "sudo": true, "sandbox": "foldai-sandbox", "cell": "foldai-cell-abc", "uid": 70000, "gid": 70000 },
   "docker": { "container": "web", "user": "app" },
-  "via": "other-target", "cwd": "/home/deploy/acme-site", "env": { "TERM": "dumb" } }
+  "via": "other-target", "cwd": "/home/deploy/acme-site", "env": { "TERM": "dumb" },
+  "connectTimeoutS": 30 }
 ```
 
 `kind` names the environment. `"ssh"` is the plain host, `"incus-cell"` uses the `incus` block, and
@@ -143,6 +145,29 @@ ignored (a `mount` block left over from the removed sshfs feature does not inval
 credential-free: key paths and profile names only. ssh always gets `ControlMaster=auto`,
 `ControlPath=~/.ssh/cm-%C` and `ControlPersist=10m` (a cold login can cost over 1.5 s), after the
 entry's own `options`, so the entry's options win.
+
+**Slow-to-connect hosts: `connectTimeoutS`.** Optional, an integer 1-300 (seconds). A host reached
+through `aws-ssm` with an Instance Connect key push can take 10-30 s to connect cold, longer than
+the fixed timers built on ssh's default `ConnectTimeout=10`. Set it on the entry that has the `ssh`
+block; a `via` entry takes it from the ssh-bearing target of its chain (on an entry with no `ssh`
+block of its own it is not read). It sets:
+
+| What | Unset (today) | Set to `N` |
+| --- | --- | --- |
+| ssh's `ConnectTimeout` (per call and the channel) | 10 | `N` |
+| The channel's start timeout (connect + ready line) | 15 s | `N` + 5 s |
+| The preflight and `/remote check` probe | 20 s | `N` + 10 s |
+| Sova's per-target probe, folder listing and remote runs (`server/targets.ts`) | 15 s | `N` + 10 s |
+| `check.ts`'s default `--timeout` | 30 s | `N` + 20 s |
+
+A derived timer never drops below its unset value: a small `N` makes ssh give up sooner, not the
+command after it. The entry's own `ssh.options` `ConnectTimeout=…` still comes first, so ssh uses it;
+when the field is also set, the timers follow that option's value. An entry with a
+`ConnectTimeout` option and no `connectTimeoutS` behaves exactly as before (the timers stay fixed).
+Leaving the field out changes nothing: every argv and timer is what it was before the field
+existed, and a reader that predates it ignores it as an unknown key. Not covered: the Sova New
+Session dialog's own 20 s wait for a folder listing; on a cold host it can give up first, while the
+server's run goes on and leaves a warm ControlMaster for the next try.
 
 **Quoting.** The folder browser's path is user input. Every value spliced into far shell code is
 single-quoted, and the far argv is re-quoted word by word for ssh's login shell. `argv.test.ts`

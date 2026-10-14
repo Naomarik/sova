@@ -242,7 +242,8 @@ picker and clears the field error; each tab keeps its own choice.
   always start at `/`, since the target's `$HOME` isn't ours, and **no remote path is ever shown
   with `~`**. The Home button reads **Start** and opens the target's start folder. Recent lists
   this target's recent folders. The client gives up after 20 s ("Couldn't reach {target}. No answer
-  within 20s."), so "Asking {target} for its folders…" always ends.
+  within 20s."), so "Asking {target} for its folders…" always ends. The server's own wait is 15 s,
+  longer for a target that declares a slow connect (§app.new-session-dialog/slow-targets).
 - **Recent remote folders.** No endpoint of their own. A remote session's local cwd is a
   placeholder that mirrors the remote folder, `~/.pi/agent/sova/targets/<target>/<remote path>`,
   so the recents from `GET /api/cwds` already hold them. The Remote tab lists those (up to 20,
@@ -369,3 +370,26 @@ branch, so the tab asks for nothing that names anything.
   the page (§mesh.remote-sessions/host-picker). Choosing another host drops the tab from the strip,
   and when Project was shown the dialog moves to This Computer.
 
+
+## §app.new-session-dialog/slow-targets — Slow-to-connect targets
+
+A target whose host is slow to reach cold (one behind AWS SSM with an EC2 Instance Connect key push
+takes 10-30 s) can say so in `targets.json` with `connectTimeoutS`, an integer from 1 to 300 seconds,
+on the entry that carries the `ssh` block; an entry reached `via` another takes the value of the
+ssh-bearing target of its chain. Any other value makes the entry invalid, listed with the reason
+"connectTimeoutS must be an integer 1-300".
+
+- **Set.** ssh's `ConnectTimeout` is that many seconds, unless the entry's own `ssh.options` sets
+  `ConnectTimeout`, which ssh takes first and the timers then follow. The server's reachability
+  probe, the Remote tab's folder listing and every other command the server runs on that target
+  wait the connect time plus 10 s, never less than the 15 s they wait otherwise; an offline result
+  says "No answer within {N}s" with that bound. A remote session on it gives its startup check the
+  connect time plus 10 s (never under 20 s) and its fast channel the connect time plus 5 s (never
+  under 15 s).
+- **Unset.** Nothing changes: ssh gets `ConnectTimeout=10`, and the server waits 15 s, the startup
+  check 20 s and the channel 15 s, exactly as before the field existed, including for an entry that
+  sets `ConnectTimeout` in its `ssh.options` alone.
+- **Older readers.** The field is additive: a Sova or remote extension that predates it ignores it
+  as an unknown key and keeps the entry valid.
+- The dialog's own 20 s wait for a folder listing is unchanged: on a cold slow host it can give up
+  first, and the server's run carries on, leaving the ssh connection warm for the next try.

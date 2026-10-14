@@ -94,7 +94,7 @@ class FakeSdk {
   }
 
   /** The agent loop taking messages: they leave the REAL queue and are committed to the model. The
-      steering lane drains WHOLE (Sova's runtimes run pi's steering in "all" mode, quirk P25), the
+      steering lane drains WHOLE (Sova's runtimes run pi's steering in "all" mode, quirk P26), the
       follow-up lane one at a time (pi's default). The mirror still lists them until `announce` — the
       window BUG 2 lives in. */
   drain(kind: "steer" | "followUp" = "steer"): string[] {

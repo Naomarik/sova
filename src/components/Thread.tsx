@@ -36,6 +36,9 @@ import { ExplainCard } from "./ExplainCard";
 import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
 import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
+import { ReplyTimingHead } from "./ReplyTiming";
+import type { ReplyTiming } from "../../shared/usage/perf";
+import { replyHovers } from "../lib/perf";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
@@ -162,7 +165,11 @@ function AssistantText(props: {
   streaming?: boolean;
   showHead: boolean;
   attachments?: TmpAttachment[];
+  /** The reply's own measurement (its entry's `reply` fact): the head's time shows it. Absent: the
+      head is as it always was. */
+  timing?: ReplyTiming;
 }) {
+  const author = () => <span class="message-author text-mono" title={props.model}>{props.author}</span>;
   return (
     <article
       class="message"
@@ -170,13 +177,20 @@ function AssistantText(props: {
       aria-label={props.time ? `${props.author}, ${stampTime(props.time)}` : props.author}
     >
       <Show when={props.showHead || props.streaming}>
-        <div class="message-head">
-          <span class="message-author text-mono" title={props.model}>{props.author}</span>
-          <Show when={props.streaming}>
-            <span class="live-dot" />
-          </Show>
-          <Stamp iso={props.time} />
-        </div>
+        <Show
+          when={!props.streaming && !!props.time && props.timing}
+          fallback={
+            <div class="message-head">
+              {author()}
+              <Show when={props.streaming}>
+                <span class="live-dot" />
+              </Show>
+              <Stamp iso={props.time} />
+            </div>
+          }
+        >
+          {(t) => <ReplyTimingHead timing={t()} author={author()} stamp={<Stamp iso={props.time} />} />}
+        </Show>
       </Show>
       <Markdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
     </article>
@@ -562,6 +576,8 @@ export function HistoryItems(props: {
   );
   /** The rows rendered: all of them, or everything but tool rows while they're hidden. */
   const rows = () => split()?.shown ?? renderable();
+  /** Measured replies: their first reply-text row's head shows the figures (its entry's `reply` fact). */
+  const timings = createMemo(() => replyHovers(props.items, entryIdOf, (r) => rowFacts(r)?.reply));
   const results = createMemo(() => {
     const byCall = new Map<string, TranscriptItem>();
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
@@ -880,6 +896,7 @@ export function HistoryItems(props: {
                     rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
                   }
                   attachments={item.attachments}
+                  timing={timings().get(item.id)}
                 />
               </Match>
               <Match when={item.kind === "thinking"}>
@@ -1061,14 +1078,14 @@ export function HistoryItems(props: {
   );
 }
 
-function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean }) {
+function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean; timing?: ReplyTiming; time?: string }) {
   const overseerThread = useOverseerThread();
   return (
     <Switch>
       <Match when={props.block.type === "text" && props.block}>
         {(b) => (
           <Show when={b().text}>
-            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} />
+            <AssistantText text={b().text} author={props.author} model={props.model} streaming={props.streaming} showHead={props.showHead} timing={props.timing} time={props.timing ? props.time : undefined} />
           </Show>
         )}
       </Match>
@@ -1168,6 +1185,8 @@ export function LiveEntries(props: {
     for (let j = i - 1; j >= 0; j--) if (!isHiddenBlock(blocks[j], hide())) return blocks[j];
     return undefined;
   };
+  /** A finished reply's first text block: its head carries the reply's measurement. */
+  const firstText = (blocks: LiveBlock[]) => blocks.findIndex((b) => b.type === "text" && !!b.text);
   const hiddenBlocks = () => props.live.entries.flatMap((e) => (e.kind === "assistant" ? e.blocks.filter((b) => isHiddenBlock(b, hide())) : []));
   /** A hidden block streams (live dot) as it would shown: thinking until a later block starts. */
   const hiddenStreams = (b: LiveBlock) => {
@@ -1286,6 +1305,8 @@ export function LiveEntries(props: {
                           model={e().model}
                           streaming={blockStreams(e(), i())}
                           showHead={shownBefore(e().blocks, i())?.type !== "text"}
+                          timing={e().done && e().reply && firstText(e().blocks) === i() ? e().reply : undefined}
+                          time={e().endedAt}
                         />
                       );
                       return (
@@ -1428,6 +1449,9 @@ export function ThreadScroller(props: {
   current?: boolean;
   /** The thread shows a new session's empty state: there is no latest to jump to. */
   empty?: boolean;
+  /** Floats over the transcript's end, taking no height (a chat connecting or starting,
+      §chat.transcript/instant-open). */
+  note?: JSX.Element;
 }) {
   const paneId = usePaneId();
   let el!: HTMLElement;
@@ -2031,6 +2055,7 @@ export function ThreadScroller(props: {
         <Icon name="chevron-down" small />
         {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
       </button>
+      {props.note}
     </div>
   );
 }

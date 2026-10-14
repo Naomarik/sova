@@ -29,6 +29,7 @@ import type {
 } from "./chat-runtime";
 import type { LlmProcessSnapshot } from "../pi-config/extensions/llm-inflight/tracker";
 import type { HEntry } from "./harness-history";
+import type { ReplyTiming } from "./harness-wire";
 import type { ToolResult } from "./harness-tools";
 import type { ChatClientMessage, SessionInsight, SessionSummary, TranscriptItem } from "./protocol";
 
@@ -242,6 +243,8 @@ export interface ChatAsks {
   "playbook.reprime": { args: { sessionId: string; leafId: string | null }; result: { block: string; playbook: string; sha: string } | null };
   links: { args: { sessionId: string; path: string }; result: unknown[] };
   singleton: { args: { key: string; path: string }; result: { id: string; path: string; title: string } | null };
+  /** A session's measured replies by entry (server/reply-facts.ts), for its rows' `reply` fact. */
+  "reply.timings": { args: { sessionId: string }; result: { v: string; timings: Record<string, ReplyTiming> } | null };
   // proto 2, policy "wait":
   "special.runStart": { args: { leafId: string | null; images: boolean }; result: RunStartAnswer };
   "special.compact": { args: { leafId: string | null }; result: RunStartAnswer["message"] | null };
@@ -267,6 +270,7 @@ export const ASK_POLICY: Record<ChatAskMethod, "nothing" | "wait"> = {
   "playbook.reprime": "nothing",
   links: "nothing",
   singleton: "nothing",
+  "reply.timings": "nothing",
   "special.runStart": "wait",
   "special.compact": "wait",
   "special.agentEnd": "wait",

@@ -172,7 +172,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "queue-one-bit",
     kind: "semantic",
     relies:
-      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P25) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
+      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P26) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
     pi: ["Agent.hasQueuedMessages", "Agent.continue", "Agent.peekQueuedMessages", "AgentSession.getSteeringMessages", "AgentSession.getFollowUpMessages", "AgentSession.clearQueue"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.queue" },
@@ -377,6 +377,21 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
   },
   {
     id: "P25",
+    name: "request-start",
+    kind: "monkey-patch",
+    relies:
+      "The agent loop hands agent.streamFunction its own options, onPayload included, and pi's stream function passes them on to the provider, which calls onPayload once just before it sends the request (after any provider-slot wait); so a stream function wrapped to put a listening onPayload in those options hears each of the agent's own requests go out, and no side call's.",
+    pi: ["Agent.streamFunction", "StreamOptions.onPayload", "createAgentSession"],
+    where: [
+      { file: "server/harness/pi/session.ts", symbol: "hearRequests" },
+      { file: "server/harness/pi/session.ts", symbol: "keepHearingRequests" },
+      { file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.subscribe" },
+    ],
+    canary: "P25 request-start: the agent hands its stream function options whose onPayload the provider calls once per request, before the reply starts; a wrapped one hears it",
+    retireWhen: "pi emits a request-sent event of its own",
+  },
+  {
+    id: "P26",
     name: "steer-all",
     kind: "monkey-patch",
     relies:
@@ -387,7 +402,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       { file: OPEN, symbol: "servicesForCwd" },
       { file: "server/queue.ts", symbol: "WebQueue.pumpOnce" },
     ],
-    canary: "P25 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode",
+    canary: "P26 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode",
     retireWhen: "pi takes a steering mode per session that no settings reload resets",
   },
   {

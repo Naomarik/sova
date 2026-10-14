@@ -60,7 +60,8 @@ Paths in "Where" are under `server/`.
 | P22 declared-tools | private-read | `PiHarnessSession.declaredTools` (harness/pi/session.ts), `toolSource` (harness/pi/session.ts) | `Agent.state.tools`, `AgentSession._hiddenDeclarations`, `AgentSession._applyToolLoadout`, `AgentSession.getAllTools`, `SourceInfo.path` | pi offers a public read of the declared tools as a request will send them |
 | P23 turn-end-loadout | ordering | `join` (pi-config/extensions/link/index.ts) | `agentLoop`, `AgentSession._installAgentNextTurnRefresh`, `AgentSession._preparePromptAndToolLoadout`, `ExtensionAPI.registerTool` | pi offers a documented hook for changing the tool set before a run's next request |
 | P24 own-code-discovery | monkey-patch | `patchResolve` (harness/pi/own-code.ts), `installOwnCode` (harness/pi/own-code.ts) | `DefaultPackageManager.resolve`, `DefaultResourceLoader.reload`, `DefaultResourceLoader.loadCurrentExtensionSet`, `createAgentSessionServices` | pi's loader takes a path-mapping hook for discovered extensions |
-| P25 steer-all | monkey-patch | `steerAllAtOnce` (harness/pi/queue-modes.ts), `servicesForCwd` (harness/pi/open.ts), `WebQueue.pumpOnce` (queue.ts) | `SettingsManager.getSteeringMode`, `AgentSession.reload`, `AgentSession.syncQueueModesFromSettings`, `createAgentSession`, `PendingMessageQueue.peek` | pi takes a steering mode per session that no settings reload resets |
+| P25 request-start | monkey-patch | `hearRequests` (harness/pi/session.ts), `keepHearingRequests` (harness/pi/session.ts), `PiHarnessSession.subscribe` (harness/pi/session.ts) | `Agent.streamFunction`, `StreamOptions.onPayload`, `createAgentSession` | pi emits a request-sent event of its own |
+| P26 steer-all | monkey-patch | `steerAllAtOnce` (harness/pi/queue-modes.ts), `servicesForCwd` (harness/pi/open.ts), `WebQueue.pumpOnce` (queue.ts) | `SettingsManager.getSteeringMode`, `AgentSession.reload`, `AgentSession.syncQueueModesFromSettings`, `createAgentSession`, `PendingMessageQueue.peek` | pi takes a steering mode per session that no settings reload resets |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -117,7 +118,7 @@ Canary: `P8 stream-function: agent.streamFunction is read at each request, so on
 
 ### P9 queue-one-bit
 
-`agent.hasQueuedMessages()` is the real queue; the session's steering/follow-up mirror is spliced on `message_start` by text only, so an image-only steer stays in it after delivery; `clearQueue()` returns and clears both kinds; `continue()` drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P25) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. `peekQueuedMessages()` exists and is unused.
+`agent.hasQueuedMessages()` is the real queue; the session's steering/follow-up mirror is spliced on `message_start` by text only, so an image-only steer stays in it after delivery; `clearQueue()` returns and clears both kinds; `continue()` drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P26) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. `peekQueuedMessages()` exists and is unused.
 
 Canary: `P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first`.
 
@@ -205,11 +206,11 @@ Within one run pi (1.0.3, `pi-agent-core` `agent-loop.js`) emits `turn_end` (an 
 
 Canary: `P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not`.
 
-### P25 steer-all
+### P26 steer-all
 
 pi builds the agent's steering mode from `settingsManager.getSteeringMode()` when it creates a session (`createAgentSession`, `sdk.js`) and reads it again on every `AgentSession.reload()` (`syncQueueModesFromSettings`, right after `settingsManager.reload()` re-read settings.json). `steerAllAtOnce` replaces that getter on each runtime's own settings object (`servicesForCwd`), so the agent's steering queue (`PendingMessageQueue`) runs in `"all"` mode: every queued steer lands at the next step, each its own message, in the order queued, and a reload keeps it. `AgentSession.setSteeringMode` is never called: it saves into settings.json, which the user's terminal pi reads. Follow-ups keep pi's one-at-a-time. The web queue (`WebQueue.pumpOnce`) hands every waiting steer in behind the ones pi still holds, which only lands them together because of this mode.
 
-Canary: `P25 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode`.
+Canary: `P26 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode`.
 
 ### T1 scripted-model (test-only)
 

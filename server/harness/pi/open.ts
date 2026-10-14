@@ -154,7 +154,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
     resourceLoaderOptions,
   });
   lowerToolCommands(services.settingsManager);
-  // Steers sent while the chat is busy land together, at the agent's next step (P25 steer-all).
+  // Steers sent while the chat is busy land together, at the agent's next step (P26 steer-all).
   steerAllAtOnce(services.settingsManager);
   return services;
 }

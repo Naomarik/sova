@@ -132,7 +132,8 @@ export const METHODS: Impl = {
     return found.ok ? { ok: true } : { ok: false, error: found.error };
   },
   switchMode: (chat, { patch }) => chat.switchMode(patch),
-  applyMode: (chat, { patch }) => chat.applyMode(mergeMode(chat.modeState, patch)),
+  applyMode: (chat, { patch }) => chat.applyMode(mergeMode(chat.modeState, patch), patch.projectModes),
+  modeResult: (chat) => chat.modeResult(),
   pinMode: (chat) => chat.pinMode(),
   saveModeDefault: (chat) => chat.saveModeDefault(),
   subagentProfileInfo: (chat) => chat.subagentProfileInfo(),

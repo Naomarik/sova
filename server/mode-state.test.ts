@@ -47,7 +47,7 @@ describe("parseModeRequest (whole POST /api/mode body)", () => {
   test("saveDefault never rides along with a mode: two intentions in one body, one of them silently losing", () => {
     const both = parseModeRequest({ saveDefault: true, mode: "delegate" });
     assert.ok("error" in both);
-    assert.match((both as { error: string }).error, /send no mode, minorModes or memory/);
+    assert.match((both as { error: string }).error, /send no mode, minorModes, projectModes or memory/);
     assert.ok("error" in parseModeRequest({ saveDefault: true, minorModes: [] }));
     assert.ok("error" in parseModeRequest({ saveDefault: "yes" }));
   });
@@ -236,6 +236,8 @@ describe("mode markers in the transcript", () => {
     assert.deepEqual(unknown.map((i) => i.text), ["Mode → someday"], "an unknown name is shown as written, never dropped");
     const minor = normalizeEntry({ type: "custom", customType: "mode", data: { minor: "align", on: false }, id: "m2" });
     assert.deepEqual(minor.map((i) => i.text), ["Minor mode: align off"]);
+    const project = normalizeEntry({ type: "custom", customType: "mode", data: { project: "release-check", on: true, active: { version: 1, mode: "normal", strict: false, minorModes: [] } }, id: "m6" });
+    assert.deepEqual(project.map((i) => [i.kind, i.text]), [["info", "Minor mode: release-check on"]], "a project mode's marker is the same row");
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "mode", data: {}, id: "m3" }), []);
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "topic-outline", data: { mode: "x" }, id: "m4" }), []);
   });

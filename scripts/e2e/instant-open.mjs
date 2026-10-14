@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
+import { whenListed } from "./listed.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
@@ -96,9 +97,8 @@ const path = join(dir, `2026-09-28T00-00-00-000Z_${id}.jsonl`);
 async function makeCold() {
   spawnSync("bun", [join(ROOT, "scripts/stop-chats.ts"), "--agent-dir", AGENT], { cwd: ROOT, stdio: "ignore" });
   for (let i = 0; i < 200; i++) {
-    const list = await api("/api/sessions");
-    const rows = Array.isArray(list) ? list : (list.sessions ?? []);
-    if (!rows.find((s) => s.path === path)?.chat) return;
+    // A row not listed yet is no answer: only a listed row without `chat` says the chat stopped.
+    if (!(await whenListed(api, [path], "path")).get(path).chat) return;
     await sleep(100);
   }
   throw new Error("the chat did not stop");

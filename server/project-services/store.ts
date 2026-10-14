@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { stateRoot } from "../state-root";
 
@@ -105,36 +105,136 @@ const alive = (pid: number) => {
   }
 };
 
+/** How long `mutateRegistry` waits for another writer. */
+const LOCK_WAIT_MS = 5_000;
 /**
- * Take a lock file (`O_EXCL`, holding our pid) or say who holds it. A lock whose pid is dead is
- * stale and taken over. Our own pid's lock is held (by another call in this process).
+ * A lock file without a pid (a crash between create and write, a full disk, or a lock made by code
+ * that wrote the pid after creating the file) counts as held while it is younger than this, and as
+ * stale debris after, so it never blocks an instance or the registry for good. Matches the wait.
+ */
+export const BLANK_LOCK_GRACE_MS = LOCK_WAIT_MS;
+
+const uniq = () => `${process.pid}.${randomBytes(4).toString("hex")}`;
+
+/** A lock file as read: its pid (null when it holds none) and its identity (device, inode, mtime in ns). */
+export type Seen = { pid: number | null; dev: bigint; ino: bigint; mtimeNs: bigint; mtimeMs: number };
+
+/** What a lock file holds, read through one descriptor so the pid and the identity belong together; null when it is gone. */
+function readLock(file: string): Seen | null {
+  let fd: number;
+  try {
+    fd = openSync(file, "r");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  try {
+    const st = fstatSync(fd, { bigint: true });
+    let text = "";
+    try {
+      text = readFileSync(fd, "utf8").trim();
+    } catch {
+      /* unreadable: no pid */
+    }
+    const n = /^\d+$/.test(text) ? Number(text) : NaN;
+    return { pid: Number.isSafeInteger(n) && n > 0 ? n : null, dev: st.dev, ino: st.ino, mtimeNs: st.mtimeNs, mtimeMs: Number(st.mtimeMs) };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Put a file holding our pid at `file` only if nothing is there (a hard link never overwrites); the whole content is there from the first moment. */
+function linkLock(file: string): Seen | null {
+  const tmp = `${file}.${uniq()}.new`;
+  writeFileSync(tmp, String(process.pid));
+  try {
+    const st = statSync(tmp, { bigint: true });
+    linkSync(tmp, file);
+    return { pid: process.pid, dev: st.dev, ino: st.ino, mtimeNs: st.mtimeNs, mtimeMs: Number(st.mtimeMs) };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") return null;
+    throw err;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+/** The same lock file: identity and pid alike, so a new lock that reused a freed inode is never taken for the old one. */
+const same = (a: Seen | null, b: Seen) => !!a && a.dev === b.dev && a.ino === b.ino && a.mtimeNs === b.mtimeNs && a.pid === b.pid;
+
+/** Stale: its pid is dead, or it holds no pid and is older than `BLANK_LOCK_GRACE_MS`. */
+const stale = (s: Seen) => (s.pid !== null ? !alive(s.pid) : Date.now() - s.mtimeMs > BLANK_LOCK_GRACE_MS);
+
+/**
+ * Move the stale lock `seen` out of the way, only if the file at `file` is still that lock and is
+ * still stale now. Takeovers go one at a time through `<file>.takeover` (held for a few syscalls):
+ * without it, a caller that judged the old lock stale could rename away the fresh lock another taker
+ * just linked in its place. `heldBy` when another caller is taking over right now. Exported for tests.
+ */
+export function takeOver(file: string, seen: Seen): { heldBy: number } | null {
+  const guard = `${file}.takeover`;
+  const g = linkLock(guard);
+  if (!g) {
+    const other = readLock(guard);
+    // A guard is held only for a few syscalls: an old one is a crashed taker's debris.
+    const old = (s: Seen | null) => !!s && Date.now() - s.mtimeMs > BLANK_LOCK_GRACE_MS;
+    if (other && old(other)) moveAside(guard, (now) => same(now, other) && old(now));
+    return { heldBy: other?.pid ?? -1 };
+  }
+  try {
+    const now = readLock(file);
+    if (now && same(now, seen) && stale(now)) moveAside(file, (moved) => same(moved, now) && stale(moved!));
+    return null;
+  } finally {
+    if (same(readLock(guard), g)) rmSync(guard, { force: true });
+  }
+}
+
+/** Rename `file` aside and remove it when `ok` says what was moved may go; anything else is put back. */
+function moveAside(file: string, ok: (moved: Seen | null) => boolean): void {
+  const aside = `${file}.stale.${uniq()}`;
+  try {
+    renameSync(file, aside);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return; // someone else moved it
+    throw err;
+  }
+  if (!ok(readLock(aside))) {
+    try {
+      linkSync(aside, file);
+    } catch {
+      /* a new lock is already there */
+    }
+  }
+  rmSync(aside, { force: true });
+}
+
+/**
+ * Take a lock file (created whole, holding our pid) or say who holds it (`-1`: not known). A lock
+ * whose pid is dead is stale and taken over, and so is one without a pid once it is older than
+ * `BLANK_LOCK_GRACE_MS`. Our own pid's lock is held (by another call in this process). Release
+ * removes the lock only while it is still the one this call made.
  */
 export function tryLock(file: string): { release: () => void } | { heldBy: number } {
   mkdirSync(dirname(file), { recursive: true });
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const fd = openSync(file, "wx");
-      writeSync(fd, String(process.pid));
-      closeSync(fd);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const mine = linkLock(file);
+    if (mine) {
       let done = false;
       return {
         release: () => {
           if (done) return;
           done = true;
-          rmSync(file, { force: true });
+          if (same(readLock(file), mine)) rmSync(file, { force: true });
         },
       };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-      let pid = NaN;
-      try {
-        pid = Number(readFileSync(file, "utf8").trim());
-      } catch {
-        continue; // released meanwhile
-      }
-      if (Number.isInteger(pid) && pid > 0 && alive(pid)) return { heldBy: pid };
-      rmSync(file, { force: true });
     }
+    const seen = readLock(file);
+    if (!seen) continue; // released meanwhile
+    // A live pid holds it; so does one without a pid while young (being written by older code).
+    if (!stale(seen)) return { heldBy: seen.pid ?? -1 };
+    const busy = takeOver(file, seen);
+    if (busy) return busy;
   }
   return { heldBy: -1 };
 }
@@ -144,7 +244,7 @@ const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuf
 /** Read, change and write the registry under its lock (waits up to 5 s for another writer). */
 export function mutateRegistry<T>(fn: (r: Registry) => T, file = registryFile()): T {
   const lockFile = `${file}.lock`;
-  const until = Date.now() + 5_000;
+  const until = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     const l = tryLock(lockFile);
     if ("release" in l) {

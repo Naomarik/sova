@@ -1,7 +1,8 @@
 // Opt-in live test: one real Claude Code turn driven through pi as a provider.
 //
 // This is the end-to-end claim the unit tests cannot make. It runs a headless
-// pi session against a fresh temp agent dir and cwd, selects claude-code-cli/sonnet,
+// pi session against a fresh temp agent dir and cwd, selects the catalog's current
+// Sonnet (latestClaude("sonnet"), as the product's built-in defaults do),
 // and asks the model to use PI'S OWN `read` tool. Everything the model can
 // reach is served by the in-process MCP facade, so a successful tool call
 // proves the whole path: initialize.sdkMcpServers -> tools/list -> a held
@@ -33,6 +34,10 @@ writeFileSync(TARGET, `${EXPECTED}\nsecond line, not the answer\n`);
 const pi = await jiti.import("@earendil-works/pi-coding-agent");
 const { claudeSessionId, getSessionBridge } = await jiti.import(new URL("../provider/session-bridge.ts", import.meta.url).pathname);
 const { CLAUDE_PROVIDER_FLAG, CLAUDE_PROVIDER_ID } = await jiti.import(new URL("../provider/index.ts", import.meta.url).pathname);
+// The provider registers catalog ids only, no aliases ("sonnet" is a legacy id it
+// never registers), so the model comes from the catalog, never a hard-coded guess.
+const { latestClaude } = await jiti.import(new URL("../catalog.ts", import.meta.url).pathname);
+const MODEL_ID = latestClaude("sonnet").id;
 
 /** Claude CLI processes whose argv carries this exact --session-id. */
 function claudeProcesses(sessionId) {
@@ -101,8 +106,8 @@ await session.bindExtensions({
 });
 mark("session");
 
-const model = runtime.services.modelRuntime.getModel(CLAUDE_PROVIDER_ID, "sonnet");
-assert.ok(model, `claude-code-cli/sonnet was not registered; is the ${CLAUDE_PROVIDER_FLAG} flag reaching the extension?`);
+const model = runtime.services.modelRuntime.getModel(CLAUDE_PROVIDER_ID, MODEL_ID);
+assert.ok(model, `${CLAUDE_PROVIDER_ID}/${MODEL_ID} was not registered; is the ${CLAUDE_PROVIDER_FLAG} flag reaching the extension?`);
 await session.setModel(model);
 console.log(`model: ${model.provider}/${model.id} (${model.name})`);
 

@@ -63,7 +63,8 @@ import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } f
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { inProjectsRegion, projectBlocks, projectOpenCount, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
-import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
+import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
+import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, STATE_WORDS } from "../lib/overseer-menu";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
@@ -1764,8 +1765,8 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
-   * The Overseer's door, with the count of Overseer messages you haven't read: the bare eye with
-   * the corner pill, in the toolbar and on the spine alike. Its name and tooltip carry the words.
+   * The spine's Overseer door, with the count of Overseer messages you haven't read: the bare eye
+   * with the corner pill (the toolbar has the split button, below). Its name and tooltip carry the words.
    * Who needs you is the Needs you region's to say, not the eye's. Alt+O does the same (App).
    */
   const OverseerButton = (p: { class: string }) => {
@@ -1790,7 +1791,77 @@ export function Sidebar(props: {
     );
   };
 
-  /** The session filter: always on the toolbar line, filling it (both widths). */
+  /**
+   * The toolbar's Overseer split button (§app.overseer/entry-button): the eye, the word and the
+   * unread pill link to the Overseer; ▾, once a project overseer has started, lists them. The list
+   * reads every listed session and this host's project list (lib/overseer-menu), never the hits.
+   */
+  const ovMenu = createMemo(() => overseerMenu(all(), projectList()?.projects, { selected: props.selected, busy: sessionBusy }));
+  const OverseerSplit = () => {
+    const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
+    const label = () => overseerButtonLabel(unread());
+    const menuLabel = () => overseerMenuLabel(ovMenu());
+    return (
+      <div class="button-split overseer-split">
+        <a class="button overseer-entry" href={OVERSEER_HASH} aria-current={props.overseerOpen ? "page" : undefined} aria-label={label()} title={`${label()} · Alt+O`}>
+          <Icon name="eye" />
+          <span>Overseer</span>
+          <Show when={unread() > 0}>
+            <span class="overseer-entry-count text-num" aria-hidden="true">
+              {unread() > 99 ? "99+" : unread()}
+            </span>
+          </Show>
+        </a>
+        <Show when={hasOverseerRows(ovMenu())}>
+          <ActionMenu
+            label={menuLabel()}
+            title={menuLabel()}
+            icon="chevron-down"
+            ghost={false}
+            class="overseer-split-menu"
+            panelClass="overseer-menu"
+            menuName="Project overseers"
+            contain
+            returnFocus
+            span={() => aside}
+            badge={
+              <Show when={overseerMenuDot(ovMenu())}>
+                <span class="overseer-split-dot" aria-hidden="true" />
+              </Show>
+            }
+          >
+            {(menu) => (
+              <>
+                <p class="popover-label" aria-hidden="true">
+                  Project overseers
+                </p>
+                <For each={ovMenu().rows}>
+                  {(r) => (
+                    <menu.Item
+                      label={r.name}
+                      description={r.org ? `In ${r.org}` : undefined}
+                      aria={[r.name, r.org ? `in ${r.org}` : "", r.state ? STATE_WORDS[r.state] : ""].filter(Boolean).join(" · ")}
+                      title={r.org ? `${r.name} · ${r.org}` : r.name}
+                      checked={r.current}
+                      end={r.state ? STATE_WORDS[r.state] : undefined}
+                      href={projectSessionHref(r.projectId, r.path)}
+                    />
+                  )}
+                </For>
+                <div class="popover-sep" role="separator" />
+                <menu.Item label="All Projects" aria="All Projects" href={PROJECTS_HREF} />
+              </>
+            )}
+          </ActionMenu>
+        </Show>
+      </div>
+    );
+  };
+  /** Focus widens the field over the whole line, and a query keeps it there until cleared. */
+  const [searchFocused, setSearchFocused] = createSignal(false);
+  const searchWide = () => searchFocused() || query() !== "";
+
+  /** The session filter: on the toolbar line's left, the whole line while focused or holding a query. */
   const SearchField = () => (
     <div class="search">
       <Icon name="search" />
@@ -1804,6 +1875,8 @@ export function Sidebar(props: {
         autocomplete="off"
         spellcheck={false}
         value={query()}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
         onInput={(e) => setQuery(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
@@ -2329,13 +2402,15 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
-          {/* One toolbar line at every width, always the same: the search field filling it and
-              the Overseer's eye at the right end. The count stays in the DOM, visually hidden, as
-              the field's description and the live count. */}
+          {/* One toolbar line at every width: the search field on the left, the Overseer split
+              button on the right; focus or a query gives the field the whole line. The count stays
+              in the DOM, visually hidden, as the field's description and the live count. */}
           <div class="sidebar-toolbar">
             <SearchCount />
             <SearchField />
-            <OverseerButton class="button-ghost" />
+            <Show when={!searchWide()}>
+              <OverseerSplit />
+            </Show>
           </div>
         </div>
 

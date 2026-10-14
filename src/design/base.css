@@ -249,6 +249,19 @@ i.icon {
 /* Square 44px. Requires aria-label. */
 .button-icon { width: var(--control-md); min-height: var(--control-md); padding: 0; }
 
+/* Split (ported from the skill): a main action and its ▾, two real buttons joined into one
+   control. One shared outline, a thin divider, each part its own 44px target and focus ring. A
+   lone main part keeps both rounded ends. Neither part shrinks. */
+.button-split { display: inline-flex; flex: none; align-items: stretch; }
+.button-split > .button { flex: none; }
+.button-split > .button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+.button-split > .button + .button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+.button-split > .button:focus-visible { position: relative; z-index: 1; }
+
 
 /* ---- CHIP. Status is round. A dot AND the word, never hue alone. ---------- */
 
@@ -6215,16 +6228,55 @@ a.subagent-row { text-decoration: none; }
    and the machine rows and confirm card in its thread.
    ============================================================================= */
 
-/* The one toolbar line, every width (§app.session-list/search): the search field filling it and
-   the Overseer's eye at the right end. The count stays in it hidden (the field's description and
-   live count), so `position: relative` keeps it inside the line. The normal control gap
-   (space-2) is a boundary margin; the count is never printed (visually hidden, first in the
-   line), so the field after it starts at the line's edge. */
+/* The one toolbar line, every width (§app.session-list/search): the search field on the left,
+   taking what the Overseer split button leaves, and the whole line while focused or holding a
+   query (the button is then not rendered). The field shrinks, never the button. The count stays
+   in it hidden (the field's description and live count), so `position: relative` keeps it inside
+   the line. The normal control gap (space-2) is a boundary margin; the count is never printed
+   (visually hidden, first in the line), so the field after it starts at the line's edge. */
 .sidebar-toolbar { position: relative; display: flex; align-items: center; min-height: var(--tap-min); }
 .sidebar-toolbar > * + * { margin-left: var(--space-2); }
 .sidebar-toolbar > .search-count + * { margin-left: 0; }
 .sidebar-toolbar > .search { flex: 1; min-width: 0; }
 .sidebar-toolbar > .button-icon { flex: none; }
+
+/* The toolbar's Overseer split button (§app.overseer/entry-button): the main part is the eye, the
+   word and the unread count as an inline pill, a bordered button like its ▾; tinted while the
+   Overseer is open, keeping the shared outline. ▾'s dot: a new reply or a failed last turn in
+   its list, said in words by its name. */
+.overseer-split > .overseer-entry { padding: 0 var(--space-3); color: var(--color-ink); }
+.overseer-split > .overseer-entry[aria-current="page"] { border-color: var(--color-border-strong); }
+.overseer-split .overseer-entry-count { position: static; }
+.overseer-split-menu { position: relative; color: var(--color-ink-muted); }
+.overseer-split-menu:hover { color: var(--color-ink); }
+.overseer-split-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  pointer-events: none;
+}
+/* Its list stays a dropdown below 768px, not the bottom sheet other menus become: under the
+   button, as wide as the pane (ActionMenu's `span` measures it). Compound to outweigh the
+   `.model-menu` sheet rules at any source order. */
+@media (max-width: 767px) {
+  .model-menu.action-menu.action-menu-span {
+    top: var(--menu-top, 64px);
+    left: var(--menu-left, var(--space-2));
+    right: auto;
+    bottom: auto;
+    width: var(--menu-width, auto);
+    max-height: min(70dvh, var(--menu-max, 70dvh));
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    padding-bottom: 0;
+  }
+  .model-menu.action-menu.action-menu-span::backdrop { background: transparent; }
+}
 
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's

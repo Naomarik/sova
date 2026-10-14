@@ -90,6 +90,20 @@
 
 .button-icon { width: var(--control-md); min-height: var(--control-md); padding: 0; }
 
+/* Split: a main action and its ▾, two real buttons joined into one control.
+   One shared outline, a thin divider between the parts, each part its own
+   44px target with its own focus ring. A lone main part keeps both rounded
+   ends. Neither part shrinks: a tight line gives the room up elsewhere. */
+.button-split { display: inline-flex; flex: none; align-items: stretch; }
+.button-split > .button { flex: none; }
+.button-split > .button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+.button-split > .button + .button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+.button-split > .button:focus-visible { position: relative; z-index: 1; }
+
 /* Static state helpers — DEMO/DOCUMENTATION ONLY.
    Production uses the real pseudo-classes above. These exist so the reference
    site can render a full state matrix on one page. They live in the `is-`

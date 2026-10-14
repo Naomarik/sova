@@ -122,7 +122,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CRASH_RESUME_TEXT,
-  CHAT_START_MS,
   KNOBS,
   RESUME_TEXT,
   ROOT,
@@ -318,7 +317,7 @@ async function teardown(s = srv, agentDir = agent) {
   const left = await sweep(agentDir, { mock: false });
   if (left.length) R.note(`teardown: stopped ${left.length} process(es) no record named: ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 80)}`).join("; ")}`);
 }
-async function newChat(model = "trial/m1", cl = c, ms = CHAT_START_MS) {
+async function newChat(model = "trial/m1", cl = c, ms = 30000) {
   const { path } = await cl.api("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: proj }) });
   const s = await chat(cl, path, ms);
   s.send({ type: "set_model", ref: model });

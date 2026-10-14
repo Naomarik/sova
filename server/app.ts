@@ -38,7 +38,8 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
@@ -168,6 +169,17 @@ let built = false;
 export function buildApp(deps: AppDeps) {
   if (built) throw new Error("buildApp: the app is built once per process");
   built = true;
+  /** The chat a person's action on it needs: open, or opened now, as a send opens a chat closed while
+      quiet (§chat.transcript/instant-open), never "open the chat first". A missing file is a 404; a
+      session that can't open (a TUI holds it, its folder is gone) is refused with why. */
+  async function chatFor(path: string): Promise<{ chat: ChatHandle } | { status: 404 | 409; error: string }> {
+    if (!existsSync(path)) return { status: 404, error: "Session file not found" };
+    try {
+      return { chat: await acquireChatHandle(path) };
+    } catch (err) {
+      return { status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
   const app = new Hono();
 
   // The gate (server/auth.ts, §app.access/gate), first so it stands before everything, and the
@@ -880,7 +892,10 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(raw);
     if (!path) return c.json({ error: "Invalid session path" }, 400);
     const chat = chatHandle(path);
-    return chat ? c.json(await chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
+    if (chat) return c.json(await chat.subagentProfileInfo());
+    // A chat closed while quiet (or never opened): its pick read from its file; a read never opens it.
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(subagentProfilesInfo(restorePick((await deps.extensionEntriesOf(path)) as Parameters<typeof restorePick>[0])));
   });
   app.put("/api/settings/subagents", async (c) => {
     const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
@@ -904,8 +919,9 @@ export function buildApp(deps: AppDeps) {
   app.post("/api/subagents", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "Open the chat first" }, 404);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const { chat } = got;
     try { return c.json(await chat.switchSubagentProfile((await c.req.json()).profile)); }
     catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 409); }
   });
@@ -1064,14 +1080,14 @@ export function buildApp(deps: AppDeps) {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
       if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const chat = chatHandle(path);
-      if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-      return modeRefusal(c, () => chat.saveModeDefault());
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      return modeRefusal(c, () => got.chat.saveModeDefault());
     }
     if (path === null) return c.json(await switchMode(request.patch));
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return modeRefusal(c, () => chat.switchMode(request.patch));
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    return modeRefusal(c, () => got.chat.switchMode(request.patch));
   });
 
   // The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
@@ -1087,9 +1103,9 @@ export function buildApp(deps: AppDeps) {
     }
     const parsed = parseSandboxBody(body);
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return c.json(await chat.applySandbox(parsed.state));
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    return c.json(await got.chat.applySandbox(parsed.state));
   });
 
   // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
@@ -1099,8 +1115,9 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const id = c.req.query("id") ?? "";
     if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const { chat } = got;
     const outcome = await chat.resumeWorker(id);
     if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
     return c.json({ worker: await chat.workerInfo(id) } satisfies WorkerResumeResult);

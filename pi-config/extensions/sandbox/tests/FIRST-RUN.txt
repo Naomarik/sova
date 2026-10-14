@@ -18,7 +18,7 @@
 
 ### suite naive
 host facts: mnt-ns=mnt:[4026531832] bwrap=bubblewrap 0.11.2
-fixture: cwd=/home/naomarik/.sova-redteam/fx-2gnoTh/work escape=/home/naomarik/.sova-redteam/fx-2gnoTh/escape
+fixture: cwd=<home>/.sova-redteam/fx-XXXX/work escape=<home>/.sova-redteam/fx-XXXX/escape
 [PASS] N0 control: the naive profile itself runs commands (11ms)
 [PASS] N1 control: plain touch outside cwd is EROFS even under the naive profile (8ms)
 [PASS] N2 control: a symlink out of cwd hits EROFS under the naive profile (8ms)
@@ -31,14 +31,14 @@ fixture: cwd=/home/naomarik/.sova-redteam/fx-2gnoTh/work escape=/home/naomarik/.
 [PASS] N7 escape: abstract unix socket is reachable (socat) (10ms)
 [PASS] N8 escape: git config + planted hook write succeed (16ms)
 [PASS] N9 escape: the policy file (agent dir inside cwd) is writable (7ms)
-       escape evidence: /home/naomarik/.sova-redteam/fx-2gnoTh/work/.agent/sandbox-policy/linux/policy.json now reads "{\"level\":\"full\"}"
+       escape evidence: <home>/.sova-redteam/fx-XXXX/work/.agent/sandbox-policy/linux/policy.json now reads "{\"level\":\"full\"}"
 [PASS] N9b escape: ancestor rename of the protected dir defeats path masks (9ms)
 [PASS] N10 escape: arbitrary egress is open (example.com AND api.github.com) (383ms)
 [PASS] N11 escape: host environment is not scrubbed (9ms)
 [PASS] N13 escape: in a linked worktree, hooks and git config are plantable (43ms)
 [PASS] N12 anchor: the naive profile shares the host NETWORK namespace (F3 contrast) (14ms)
 ### naive: 16 passed, 0 failed, 0 skipped, 0 pending (981ms)
-wrote /home/naomarik/webapps/.worktrees/sova-sandbox/pi-config/extensions/sandbox/tests/NAIVE-RUN.txt
+wrote <worktree>/pi-config/extensions/sandbox/tests/NAIVE-RUN.txt
 
 ═══ contract.mjs ═══
 

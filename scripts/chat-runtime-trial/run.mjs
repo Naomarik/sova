@@ -17,8 +17,9 @@
 //     t1e       a restart mid-compaction: the compaction completes and is written once
 //     t2        kill -9 of the chat mid-reply: the pane's error, a new process, the crash "continue"
 //               once; a second kill during that resume is not resumed again
-//     t3        idle stop (SOVA_CHAT_IDLE_MIN=0.05): not while a client is attached or a run is in
-//               flight; then the process exits (no death) and reopens on the next attach
+//     t3        idle stop (SOVA_CHAT_IDLE_MIN=0.05): not while a run is in flight; then the process
+//               exits (no death), even with a client attached (told "closed"), and nothing starts it
+//               until a client connects again, which reopens it
 //     t4        new code (SOVA_BUILD a → b): "older" in the pane, Reload now, automatic reload at a
 //               quiet moment, never mid-reply; the new process reports b
 //     t4fail    a replacement that fails to boot: the rollout halts, the old process stays, "failed"
@@ -576,15 +577,13 @@ async function t3() {
   await teardown();
   await boot({ idleMs: 3000 });
   const { path, s } = await newChat();
-  prompt(s, "say ok");
-  await settled(s, 0, 60000);
-  const pid1 = chatPid(path);
-  await sleep(9000);
-  R.check(chatPid(path) === pid1, `t3: with a client attached the process stays (pid ${pid1} → ${chatPid(path)})`);
   prompt(s, "[long 25 #t3] a long reply");
   await s.until(delta(/part 2\//), 30000, "streaming");
-  s.close();
+  const pid1 = chatPid(path);
   await sleep(6000);
+  R.check(chatPid(path) === pid1, "t3: with a run in flight and a client attached, the process stays");
+  s.close();
+  await sleep(4000);
   R.check(chatPid(path) === pid1, "t3: with a run in flight and no client, the process stays");
   for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.event === "done" && e.tag === "t3"); i++) await sleep(500);
   for (let i = 0; i < 40 && alive(pid1); i++) await sleep(500);
@@ -597,6 +596,15 @@ async function t3() {
   prompt(s2, "say ok again");
   await settled(s2, 0, 60000);
   R.check(true, "t3: a new turn ran after the reopen");
+  // Quiet with the client still attached: it closes all the same, and the client is told so
+  // (§app.chat-processes/idle-stop), never asked to reconnect.
+  const told = await s2.until((m) => m.type === "closed" || m.type === "error", 30000, "closed").catch(() => null);
+  R.check(told?.type === "closed" && told.reason === "idle", `t3: a quiet chat with a client attached closes, the client told "closed" (${JSON.stringify(told)})`);
+  for (let i = 0; i < 40 && alive(pid2); i++) await sleep(500);
+  R.check(!alive(pid2), "t3: its process exited");
+  R.check(deaths(path).length === 0, "t3: no death");
+  await sleep(5000);
+  R.check(!chatPid(path) || !alive(chatPid(path)), `t3: nothing started it again on its own (${chatPid(path)})`);
   s2.close();
   await teardown();
   await boot();
@@ -1400,6 +1408,13 @@ const completions = (path, workerFile, marker = "") => entries(path).filter((e) 
 /** The mock's requests whose newest user text holds `marker`, not a parent's own tool call quoting it. */
 const asksWith = (marker) => mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes(marker) && !(e.userText ?? "").includes("[call "));
 /** The parent's agent_list, through the model: its details' agents [{id, name, status, restored, …}]. */
+/** A pane whose chat closed for being quiet (its socket told "closed", then closed) connects again,
+    as the web app does when it sends: the chat opens in a new process. */
+async function reawaken(o) {
+  if (!o.s.closed() && !o.s.got.some((m) => m.type === "closed")) return;
+  o.s.close();
+  o.s = await chat(c, o.path);
+}
 async function agentList(o) {
   const r = await turn(o, "[call agent_list {}]");
   return r.at(-1)?.message?.details?.agents ?? [];
@@ -2113,6 +2128,9 @@ async function t23() {
   await waitFor(() => !alive(pid1), 30000);
   R.check(pid1 && !alive(pid1), `t23: the waiting worker's process stopped when idle (${pid1})`);
   R.check(deaths(w.path).length === 0, "t23: an idle stop is no death");
+  // The quiet parent closed too, its pane attached (§app.chat-processes/idle-stop): the pane
+  // connects again to send, which opens it again.
+  await reawaken(o);
   const me = (await agentList(o)).find((a) => a.name === "trial-t23w");
   R.check(me?.status === "waiting" && !me.restored, `t23: agent_list still says waiting (${me?.status}${me?.restored ? ", restored" : ""})`);
   if (me) await turn(o, `[call agent_steer ${JSON.stringify({ id: me.id, message: "STEER-T23 say ok" })}]`);

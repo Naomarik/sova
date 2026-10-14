@@ -341,7 +341,10 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
     const body = replyBody(text);
     const kept = body.length > REPLY_KEEP ? body.slice(-REPLY_KEEP) : body;
     const deferred = body.length < text.trimEnd().length ? deferredOf(text.slice(body.length)) : undefined;
-    e.reply = { stop: h.stop === "stop", text: deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept };
+    // A fresh copy: a slice (and a template over one) can be a view that keeps the whole reply alive,
+    // and the scan keeps this for every reply of the session for as long as the server runs.
+    const tail = deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept;
+    e.reply = { stop: h.stop === "stop", text: JSON.parse(JSON.stringify(tail)) as string };
     if (e.at === undefined) e.at = timeOf(h.sentAt);
     const calls: string[] = [];
     for (const b of h.blocks) {

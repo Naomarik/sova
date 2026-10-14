@@ -8,9 +8,12 @@
 // opens the chat. SOVA_CHAT_TEST_FAIL_BOOT=<build>: exit 3 before listening when this build is that
 // one (the code-pickup trial's failed start).
 import { CHAT_WIRE_MIN_PROTO, CHAT_WIRE_PROTO, type ExitCause, type FrameOf } from "../../shared/chat-runtime-wire";
+import { dropGcTimerEnv } from "./gc-timer";
 import { type ControlFrame, type Link, serveLink } from "./link";
 
 const env = process.env;
+// Bun read it at start (its GC timer is off for this process); the programs this chat's tools run keep theirs.
+dropGcTimerEnv(env);
 const need = (name: string): string => {
   const v = env[name];
   if (!v) {
@@ -79,6 +82,8 @@ const stop = (signal: string) => {
 process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
 
+// No terminal drawing code in a chat process (§app.chat-processes/no-terminal-drawing): before pi loads.
+(await import("../harness/pi/headless")).installHeadless();
 const { ChatRuntimeHost, RELOAD_MESSAGE, warmChatRuntime } = await import("./host");
 await warmChatRuntime();
 if (!exiting) {

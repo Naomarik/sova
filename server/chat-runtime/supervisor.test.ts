@@ -7,6 +7,7 @@ import { after, beforeEach, test } from "node:test";
 import { envFileText, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
 import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
+import { GC_TIMER_OFF } from "./gc-timer";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-chat-supervisor-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -688,6 +689,12 @@ test("the chat env: the server's minus the deny list, Sova's bun and the resolve
   assert.equal(env.PATH, "/opt/bun/bin:/home/u/.local/bin:/usr/bin");
   assert.deepEqual([env.HOME, env.PI_CODING_AGENT_DIR, env.SOVA_CHAT_ID, env.HTTPS_PROXY, env.CLAUDE_CODE_X, env.LANG], ["/home/u", "/home/u/.pi/agent", "c1", "http://p", "1", "C.UTF-8"]);
   for (const k of ["INVOCATION_ID", "NOTIFY_SOCKET", "PORT", "HOST", "PWD"]) assert.equal(env[k], undefined, k);
+});
+
+test("the chat env turns Bun's GC timer off, whatever the server's own env says", () => {
+  const base = { bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a" };
+  assert.equal(chatEnv({ ...base, serverEnv: { LANG: "C" } })[GC_TIMER_OFF.name], GC_TIMER_OFF.value);
+  assert.equal(chatEnv({ ...base, serverEnv: { [GC_TIMER_OFF.name]: "0" } })[GC_TIMER_OFF.name], GC_TIMER_OFF.value);
 });
 
 test("a chat process's own variables: never inherited from its server, and deleted from a server's env at boot", () => {

@@ -56,6 +56,27 @@ export function shownUserState(row: { state: LiveUserState; handed?: boolean }):
   return row.state === "queued" && row.handed ? "sending" : row.state;
 }
 
+/**
+ * Whether a pending row of ours offers its Remove (§chat.transcript/a-queued-message): only while the
+ * server says it HOLDS it (`Queued`). A row still `Sending…` offers none at all, not even a disabled
+ * one: before the server's answer nothing holds it (and a typed steer is handed over the moment the
+ * server has it), and once handed over it can't be taken back on its own, only by Stop. A row with no
+ * id can't be named to the server.
+ */
+export function offersRemove(row: { id?: string; state: LiveUserState; handed?: boolean }): boolean {
+  return !!row.id && shownUserState(row) === "queued";
+}
+
+/**
+ * The inputs the live turn has added to the branch (§chat.timeline/opening-it): each user message the
+ * agent has taken since the last settle, a steer the moment it lands. A row still waiting isn't on the
+ * branch; a topic batch is a turn start, never an input (`isInput`), and a link message has no row.
+ * The settled list's count plus this is the branch's; a settle swaps the two in one update (resync).
+ */
+export function liveInputCount(s: LiveState): number {
+  return s.entries.reduce((n, e) => (e.kind === "user" && e.started && parseTopicBatch(e.text) === null ? n + 1 : n), 0);
+}
+
 export type LiveEntry =
   | {
       kind: "user";
@@ -181,9 +202,26 @@ function lastAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> 
   const current = streamingAssistant(s);
   if (current) return current;
   // Joined mid-message (e.g. after reconnect): start a fresh one.
-  const entry: LiveEntry = { kind: "assistant", blocks: [], done: false };
-  s.entries.push(entry);
-  return s.entries[s.entries.length - 1] as Extract<LiveEntry, { kind: "assistant" }>;
+  return land(s, { kind: "assistant", blocks: [], done: false }) as Extract<LiveEntry, { kind: "assistant" }>;
+}
+
+/** Where the next thing the session writes goes on screen: after everything it has written this turn,
+    above the messages still waiting to be taken. Waiting rows always trail, in the order sent. */
+function landingIndex(s: LiveState): number {
+  const i = s.entries.findIndex((e) => e.kind === "user" && !e.started);
+  return i === -1 ? s.entries.length : i;
+}
+
+/**
+ * Puts an entry the session has just written where it landed (§chat.transcript/a-queued-message, "the
+ * live transcript keeps the session file's order"), and returns the store's copy. A row sent before
+ * the agent's step, so pushed above it, would otherwise stay above it: steers typed before the reply's
+ * first message_start were drawn above the step that ran before they landed.
+ */
+function land(s: LiveState, entry: LiveEntry): LiveEntry {
+  const at = landingIndex(s);
+  s.entries.splice(at, 0, entry);
+  return s.entries[at]!;
 }
 
 /**
@@ -466,7 +504,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           if (event.role === "assistant") {
             s.running = true;
             const model = event.model;
-            s.entries.push({ kind: "assistant", blocks: blocksOf(event.parts), done: false, ...(model ? { model } : {}) });
+            land(s, { kind: "assistant", blocks: blocksOf(event.parts), done: false, ...(model ? { model } : {}) });
           } else {
             // Which row this is, among the rows no start has claimed yet — NOT the undelivered
             // ones. A message sent mid-turn is reported delivered by id before its start arrives
@@ -495,8 +533,13 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
             const row = batch ? undefined : open.find((e) => e.text === text) ?? open.find((e) => e.state === "delivered") ?? open[0];
             if (row) {
               row.state = "delivered";
+              // Taken now: it leaves the waiting rows for the point it landed at (`land`), below the
+              // steps that ran before it. Moved, not rebuilt, so its attachments and id stay.
+              const at = s.entries.indexOf(row);
+              const [taken] = s.entries.splice(at, 1);
+              s.entries.splice(landingIndex(s), 0, taken!);
               row.started = true;
-            } else s.entries.push({ kind: "user", text, state: "delivered", started: true, images: event.images });
+            } else land(s, { kind: "user", text, state: "delivered", started: true, images: event.images });
           }
           break;
         }

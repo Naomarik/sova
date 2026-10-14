@@ -47,7 +47,8 @@ import {
   queuedText,
   runDetail,
   seedLive,
-  shownUserState,
+  offersRemove,
+  liveInputCount,
   takeBackQueued,
   unsentRows,
   type LiveEvent,
@@ -276,7 +277,9 @@ export function ChatView(props: {
   const inputCount = () => {
     const list = items();
     const o = older() ?? keptOlder(cached, list);
-    return o ? inputTotal(list ?? [], o) : null;
+    // Plus the messages the running turn has already put on the branch (a steer as it lands); the
+    // settle that brings them into `items` empties `live` in the same update, so none counts twice.
+    return o ? inputTotal(list ?? [], o) + liveInputCount(live) : null;
   };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
@@ -1338,13 +1341,14 @@ export function ChatView(props: {
       there is no truthful way to name it to the server. */
   const queueActions = (row: { id?: string; state: LiveUserState; text: string; handed?: boolean }): MessageActionItem[] => {
     const id = row.id;
-    // Handed to the agent: no Remove (§chat.transcript/a-queued-message); Stop takes it back.
-    if (!id || shownUserState(row) !== row.state) return [];
+    // Only a row the server holds (Queued) has one (§chat.transcript/a-queued-message): a Sending… row
+    // draws none, before the server's answer or once handed to the agent (Stop takes that back).
+    if (!id || !offersRemove(row)) return [];
     return [
       {
         kind: "remove",
         label: ACTION_LABEL.remove,
-        reason: queueRemoveReason({ state: row.state, pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
+        reason: queueRemoveReason({ state: "queued", pending: removing().includes(id), chat: true, sharedQueue: sharedQueue().includes(id) }),
         run: () => removeQueued(id),
       },
     ];

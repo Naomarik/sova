@@ -15,10 +15,12 @@ import {
   blockStreams,
   emptyLive,
   liveEventsOf,
+  liveInputCount,
   markDelivered,
   markQueued,
   markRemoved,
   newClientId,
+  offersRemove,
   queuedText,
   runDetail,
   seedLive,
@@ -299,11 +301,12 @@ test("message_start delivers the row with THAT text, not whichever came first", 
   addPendingPrompt(set, "follow up", [], [], "c1");
   addPendingPrompt(set, "steer me", [], [], "c2");
   applyQueue(set, [queued("c1", "follow up", { kind: "followUp" }), queued("c2", "steer me")]);
-  // Steers go before follow-ups in the loop: the SECOND row is delivered first.
+  // Steers go before follow-ups in the loop: the SECOND row is delivered first, and moves above the
+  // one still waiting, as the session file has them.
   feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "steer me" }] } });
   assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
-    ["c1", "queued"],
     ["c2", "delivered"],
+    ["c1", "queued"],
   ]);
 });
 
@@ -396,8 +399,8 @@ test("a start whose text was rewritten on the way claims the row the server deli
   applyQueue(set, [queued("t2", "theirs", { state: "sending" }), queued("c1", "mine")]);
   deliverMidTurn(set, "t2", "theirs\n\n[image: a chart]", [queued("c1", "mine")]);
   assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
-    ["c1", "queued"],
     ["t2", "delivered"],
+    ["c1", "queued"],
   ]);
 });
 
@@ -428,6 +431,93 @@ test("a message sent while a reply streams doesn't split the reply in two", () =
   assert.ok(reply?.kind === "assistant");
   assert.equal(reply.done, true); // no half of it left streaming for ever
   assert.deepEqual(reply.blocks.map((b) => (b.type === "toolCall" ? b.name : b.text)), ["Definitive timeline for today", "bash"]);
+});
+
+/** The live rows in drawn order: a user row by its id (or text), an assistant entry by its blocks. */
+const drawn = (s: LiveState) =>
+  s.entries.map((e) => (e.kind === "user" ? `you:${e.id ?? e.text}` : `agent:${e.blocks.map((b) => (b.type === "toolCall" ? b.name : b.type)).join("+")}`));
+
+test("steers sent before the reply's first step are drawn where they land: after that step, as the file has them", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "go", [], [], "c0");
+  feed(set, userStart("go"));
+  feed(set, { type: "agent_start" });
+  // Both steers go out before the reply's first message_start (the model is still connecting).
+  addPendingPrompt(set, "s1", [], [], "c1");
+  addPendingPrompt(set, "s2", [], [], "c2");
+  applyQueue(set, [queued("c1", "s1", { state: "sending" }), queued("c2", "s2", { state: "sending" })]);
+  feed(set, messageStart("zai", "glm-5.3"));
+  // The waiting rows sit below the step that is running, not above it.
+  assert.deepEqual(drawn(s), ["you:c0", "agent:", "you:c1", "you:c2"]);
+  feed(set, {
+    type: "message_end",
+    message: { role: "assistant", content: [{ type: "thinking", thinking: "plan" }, { type: "toolCall", id: "t1", name: "bash", arguments: {} }], stopReason: "toolUse" },
+  });
+  feed(set, { type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });
+  feed(set, { type: "tool_execution_end", toolCallId: "t1", toolName: "bash", result: { content: [] } });
+  assert.deepEqual(drawn(s), ["you:c0", "agent:thinking+bash", "you:c1", "you:c2"]);
+  // They land together at the next step, then the agent goes on.
+  deliverMidTurn(set, "c1", "s1", [queued("c2", "s2", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "s2");
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_update", assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, id: "t2", toolName: "read" } });
+  // The session file's order: prompt, first step, both steers, the steps after them.
+  assert.deepEqual(drawn(s), ["you:c0", "agent:thinking+bash", "you:c1", "you:c2", "agent:read"]);
+});
+
+test("a row the agent takes ahead of an older waiting one moves above it; the waiting one stays last", () => {
+  const [s, set] = store();
+  feed(set, messageStart());
+  addPendingPrompt(set, "follow up", [], [], "c1");
+  addPendingPrompt(set, "steer me", [], [], "c2");
+  applyQueue(set, [queued("c1", "follow up", { kind: "followUp" }), queued("c2", "steer me", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "steer me", [queued("c1", "follow up", { kind: "followUp" })]);
+  assert.deepEqual(drawn(s), ["agent:", "you:c2", "you:c1"]);
+  // A start that claims no row (a topic batch) lands above the waiting row too.
+  const batch = formatTopicBatch({
+    topic: "merge-k7m4qz",
+    batch: "tb_0123456789ab",
+    notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Fix login" }, at: "2026-10-01T10:00:00.000Z", text: "READY feat/x 0123456" }],
+  });
+  feed(set, userStart(batch));
+  assert.deepEqual(drawn(s), ["agent:", "you:c2", `you:${batch}`, "you:c1"]);
+});
+
+test("only a row the server holds offers Remove: never one still Sending, before the server's answer or after the hand-off", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "typed", [], [], "c1");
+  const row = () => s.entries.find((e) => e.kind === "user" && e.id === "c1") as Extract<LiveState["entries"][number], { kind: "user" }>;
+  assert.equal(shownUserState(row()), "sending");
+  assert.equal(offersRemove(row()), false, "Sending… before the server answers: no Remove, not even a disabled one");
+  applyQueue(set, [queued("c1", "typed", { kind: "followUp" })]);
+  assert.equal(offersRemove(row()), true, "held behind the turn: Queued, with its Remove");
+  applyQueue(set, [queued("c1", "typed", { kind: "followUp", state: "sending" })]);
+  assert.equal(offersRemove(row()), false, "handed to the agent: Sending… again, no Remove");
+  markDelivered(set, "c1");
+  assert.equal(offersRemove(row()), false);
+  assert.equal(offersRemove({ state: "queued" }), false, "a row with no id can't be named to the server");
+});
+
+test("the live inputs: each message the agent took in this turn, never one still waiting nor a topic batch", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "go", [], [], "c0");
+  assert.equal(liveInputCount(s), 0, "not on the branch until the agent takes it");
+  feed(set, userStart("go"));
+  feed(set, messageStart());
+  addPendingPrompt(set, "s1", [], [], "c1");
+  addPendingPrompt(set, "s2", [], [], "c2");
+  assert.equal(liveInputCount(s), 1);
+  deliverMidTurn(set, "c1", "s1", [queued("c2", "s2", { state: "sending" })]);
+  deliverMidTurn(set, "c2", "s2");
+  assert.equal(liveInputCount(s), 3, "both steers count the moment they land");
+  const batch = formatTopicBatch({
+    topic: "merge-k7m4qz",
+    batch: "tb_0123456789ab",
+    notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Fix login" }, at: "2026-10-01T10:00:00.000Z", text: "READY feat/x 0123456" }],
+  });
+  assert.ok(parseTopicBatch(batch));
+  feed(set, userStart(batch));
+  assert.equal(liveInputCount(s), 3, "a topic batch is a turn start, not an input");
 });
 
 test("client ids are unique, and exist without a secure context", () => {
@@ -557,7 +647,7 @@ test("a noted message_start claims the row whose typed text it carries, not the 
   feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
   assert.deepEqual(
     s.entries.map((e) => (e.kind === "user" ? [e.text, !!e.started] : e.kind)),
-    [["earlier words", false], ["Two images. Reply with just OK.", true]],
+    [["Two images. Reply with just OK.", true], ["earlier words", false]], // the taken row above the waiting one
   );
 });
 
@@ -591,11 +681,12 @@ test("a topic batch's start claims none of this tab's pending rows and adds its 
   feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: batch }] } });
   const users = s.entries.filter((e) => e.kind === "user") as { text: string; started?: boolean }[];
   assert.equal(users.length, 2, "the batch is its own row, never a claim");
-  assert.equal(users[0]!.text, "my own");
-  assert.notEqual(users[0]!.started, true, "still waiting for its own start");
-  assert.equal(users[1]!.text, batch);
-  assert.equal(users[1]!.started, true);
-  assert.ok(parseTopicBatch(users[1]!.text), "the live row still parses as a batch, so the thread draws the Queue card");
+  // The batch is in the file; the pending row still waits, below it.
+  assert.equal(users[1]!.text, "my own");
+  assert.notEqual(users[1]!.started, true, "still waiting for its own start");
+  assert.equal(users[0]!.text, batch);
+  assert.equal(users[0]!.started, true);
+  assert.ok(parseTopicBatch(users[0]!.text), "the live row still parses as a batch, so the thread draws the Queue card");
 });
 
 test("a link message's start draws no row and claims none of this tab's pending rows", () => {
@@ -670,14 +761,15 @@ test("a message_end's entry id names the live row it becomes: the reply, and the
   feed(set, { type: "message_end", message: { role: "user", content: "first" }, entryId: "u1" });
   feed(set, messageStart("zai", "glm-5.3"));
   feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1" });
-  const [first, second, reply] = s.entries;
+  // The waiting prompt stays below the reply that ran before it was taken.
+  const [first, reply, second] = s.entries;
   assert.equal(first?.kind === "user" && first.entryId, "u1");
   assert.equal(second?.kind === "user" && second.entryId, undefined, "the prompt no start has taken stays unnamed");
   assert.equal(reply?.kind === "assistant" && reply.entryId, "a1");
   // An end with no id (an older server) names nothing.
   feed(set, { type: "message_start", message: { role: "user", content: "second" } });
   feed(set, { type: "message_end", message: { role: "user", content: "second" } });
-  assert.equal(s.entries[1]?.kind === "user" && s.entries[1].entryId, undefined);
+  assert.equal(s.entries[2]?.kind === "user" && s.entries[2].text === "second" && s.entries[2].entryId, undefined);
 });
 
 test("a measured reply's end carries its timing to the live row, with the time it ended; an unmeasured one carries neither", () => {

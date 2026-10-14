@@ -3,7 +3,7 @@
 // be tested against the state it must NOT be said in — a button that offers to save what is already
 // saved is the case this exists to rule out.
 
-import type { ModeInfo } from "../../shared/protocol";
+import type { ModeInfo, ProjectMinorInfo, ProjectMinorTool } from "../../shared/protocol";
 import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
 
 /** A mode as the footer reads it: this chat's, or the default's. The same three fields
@@ -12,6 +12,9 @@ export interface ShownMode {
   mode: string;
   minorModes: string[];
   strict: boolean;
+  /** This chat's project minor modes. Never part of the default: no save writes them, so nothing
+      here compares or names them. */
+  projectModes?: string[];
 }
 
 /** The footer's sentence, after the `strict:` chip: a switch is this chat's own — nothing else
@@ -99,3 +102,56 @@ export function nextSetup(profiles: readonly { id: string; name: string }[]): { 
   while (profiles.some((p) => p.id === `setup-${n}` || p.name.toLowerCase() === `setup ${n}`)) n++;
   return { id: `setup-${n}`, name: `Setup ${n}` };
 }
+
+// ── The project's own minor modes in the menu ───────────────────────────────
+
+/** The group label: "This project · sova". */
+export function projectGroupLabel(name: string | undefined): string {
+  return name ? `This project · ${name}` : "This project";
+}
+
+/** What a project mode's row says and allows, besides its description. */
+export interface ProjectRowState {
+  /** broken: can't be turned on · removed: on, its folder gone · changed: on, its files edited since ·
+      approval: off, turning it on asks first · tools-changed: on, its tools changed since approval · ok. */
+  kind: "broken" | "removed" | "changed" | "approval" | "tools-changed" | "ok";
+  /** The second line under the description, or null. A word first, so the state never rests on tint. */
+  note: string | null;
+  /** Whether a press does anything: turning a broken mode on doesn't, turning any mode off always does. */
+  canToggle: boolean;
+}
+
+const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** A row's state, from the server's facts about it and whether it is on in this chat. */
+export function projectRowState(m: Pick<ProjectMinorInfo, "problem" | "removed" | "changed" | "needsApproval" | "tools">, on: boolean): ProjectRowState {
+  if (on) {
+    // On: every state still lets the user turn it off, which is how a change or a removal is taken.
+    if (m.removed) return { kind: "removed", note: "Removed from the project. This chat keeps it until you turn it off.", canToggle: true };
+    if (m.needsApproval) return { kind: "tools-changed", note: "Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again.", canToggle: true };
+    if (m.changed) return { kind: "changed", note: "Changed since you turned it on. Turn it off and on to load the changes.", canToggle: true };
+    if (m.problem) return { kind: "changed", note: `Its files have a problem now: ${m.problem}. This chat keeps the version it turned on.`, canToggle: true };
+    return { kind: "ok", note: null, canToggle: true };
+  }
+  if (m.problem) return { kind: "broken", note: `Can't turn on: ${m.problem}`, canToggle: false };
+  if (m.removed) return { kind: "broken", note: "Removed from the project.", canToggle: false };
+  if (m.needsApproval) return { kind: "approval", note: `Asks before turning on: it runs ${count(m.tools.length, "tool")}.`, canToggle: true };
+  return { kind: "ok", note: null, canToggle: true };
+}
+
+/** The whole ON set after a press on one row: the server takes the set, like minorModes. */
+export function nextProjectModes(on: readonly string[], id: string): string[] {
+  return on.includes(id) ? on.filter((x) => x !== id) : [...on, id];
+}
+
+/** A tool's argv as one line, quoting an argument a shell would split. */
+export function commandLine(argv: readonly string[]): string {
+  return argv.map((a) => (a === "" || /[\s"'\\$`]/.test(a) ? `'${a.replace(/'/g, `'\\''`)}'` : a)).join(" ");
+}
+
+/** The approval's sentence above the tool list. */
+export function approvalLead(id: string, project: string | undefined, tools: readonly ProjectMinorTool[]): string {
+  return `${id} comes from ${project ?? "this project"}'s files. Turning it on lets the model run ${tools.length === 1 ? "this tool" : `these ${tools.length} tools`} in this chat's folder.`;
+}
+export const APPROVAL_FOOT = "We ask again if its tools or the programs they run change.";
+export const APPROVE_LABEL = "Approve and Turn On";

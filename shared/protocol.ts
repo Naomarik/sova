@@ -4906,3 +4906,114 @@ export interface VoiceTranscript {
   ms: number;
   audioSec: number;
 }
+
+// ---- Updates (Settings → General) ---------------------------------------------------------------------
+
+/** Where updates come from: always a ref of Sova's own repository. */
+export type UpdateSource = { kind: "stable" } | { kind: "master" } | { kind: "branch"; branch: string };
+
+/** The Updates form of Settings → General, as `<stateRoot>/updates.json` keeps it. */
+export interface UpdatesSettings {
+  source: UpdateSource;
+  /** Check once a day (default on). */
+  autoCheck: boolean;
+  /** Upgrade when a check finds an update this copy can install (default off). */
+  autoUpgrade: boolean;
+}
+
+/** What kind of copy this server runs from. */
+export type InstallKind = "installer" | "developer" | "check-only";
+
+/** What this server runs. */
+export interface UpdatesRunning {
+  /** The checkout's commit now (null: no git checkout). */
+  head: string | null;
+  /** The commit this server started on (`GET /api/health`'s head). */
+  startedHead: string | null;
+  /** The release tag at the commit, when it is one ("v0.3.2"). */
+  version: string | null;
+  /** The newest release the commit contains, and how many commits past it. */
+  baseVersion: string | null;
+  pastBase: number | null;
+  /** The branch checked out (null: detached). */
+  branch: string | null;
+  kind: InstallKind;
+  /** May this copy upgrade itself from here. */
+  canUpgrade: boolean;
+  /** Why not, in a sentence, when it can't. */
+  whyNot: string | null;
+}
+
+/** What a check found newer, or not. */
+export interface UpdateTarget {
+  sha: string;
+  /** The ref's name as the button says it: "v0.3.3", "master", "feat/x". */
+  label: string;
+  /** The numbered release at the commit (Stable). */
+  version: string | null;
+  /** Commits from the running commit to it (null when unknown). */
+  count: number | null;
+  /** Its newest commit's subject. */
+  subject: string | null;
+  /** That release's section of CHANGELOG.md at the release (Stable). */
+  notes: string | null;
+  notesUrl: string | null;
+}
+
+export type UpdateCheckResult =
+  | { state: "up-to-date" }
+  | { state: "available"; target: UpdateTarget; rewritten?: boolean }
+  | { state: "ahead"; message: string }
+  | { state: "diverged"; target: UpdateTarget; message: string };
+
+export interface UpdateCheck {
+  at: string;
+  ok: boolean;
+  source: UpdateSource;
+  /** The running commit the check compared. */
+  head: string | null;
+  result?: UpdateCheckResult;
+  error?: string;
+}
+
+export type UpdateStep = "starting" | "downloading" | "installing" | "building" | "restarting" | "verifying" | "rolling-back" | "done";
+
+/** One upgrade job, as its runner records it under `<stateRoot>/updates/jobs/<id>/`. */
+export interface UpdateJob {
+  id: string;
+  kind: "installer" | "developer";
+  from: { sha: string | null; label: string };
+  to: { sha: string; label: string };
+  auto: boolean;
+  startedAt: string;
+  step: UpdateStep;
+  state: "running" | "succeeded" | "failed" | "rolled-back";
+  /** What happened, in a sentence (a failure says what failed and what it left). */
+  detail: string | null;
+  logPath: string;
+  endedAt: string | null;
+}
+
+/** `GET /api/updates`. */
+export interface UpdatesState {
+  settings: UpdatesSettings;
+  running: UpdatesRunning;
+  lastCheck: UpdateCheck | null;
+  checking: boolean;
+  /** SOVA_UPDATES_CHECK=off (or a test process): no check runs. */
+  checksOff: boolean;
+  nextCheckAt: string | null;
+  /** The running job, else the last one. */
+  job: UpdateJob | null;
+  /** The last check found an update this copy can install (the Settings dot). */
+  available: boolean;
+  /** Why the last automatic upgrade didn't start, until the next check. */
+  autoRefusal: string | null;
+}
+
+/** `POST /api/updates/apply`. */
+export interface UpdateApplyRequest {
+  /** The commit the button offered: refused when the last check found another. */
+  target: string;
+  confirm: true;
+}

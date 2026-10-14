@@ -17,7 +17,7 @@ A playbook can bring its own helper files, the way a skill does. A playbook writ
 
 A project's playbook can say when it runs by itself. Its header names the triggers and the profile its runs use. Only a project's playbooks can have a schedule, because a schedule needs a project to run its sessions in.
 
-Sova fires schedules itself, with no model involved. A run that fires reaches a session as a tagged wake-up, never as you. If the playbook's profile runs one session at a time, the run wakes that session, or starts it if none is running. Any other profile starts a new session for each run, titled after the playbook with "(scheduled)" added.
+Sova fires schedules itself, with no model involved. A run that fires reaches a session as a tagged wake-up, never as you. If the playbook's profile runs one session at a time, the run wakes that session, or starts it if none is running. Any other profile starts a new session for each run, titled after the playbook with "(scheduled)" added. A schedule never turns on one of the project's own [project modes](/docs/modes/project-modes/): only you or the Overseer turn one on.
 
 ### Triggers
 

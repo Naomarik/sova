@@ -22,7 +22,8 @@ writer. A profile names the model for each of them:
 - **Reviewer**: the worker that reviews alignments, only while
   [adversarial review](/docs/modes/align/review/) is switched on.
 
-The chat's own model is not part of a profile. You can have as many profiles as you like, each with
+The chat's own model is not part of a profile, and neither is a project's own
+[project mode](/docs/modes/project-modes/): a profile never turns one on. You can have as many profiles as you like, each with
 a name you choose.
 
 Subagent profiles are not the same thing as session profiles. Where Sova means these, it says

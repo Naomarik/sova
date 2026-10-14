@@ -446,8 +446,14 @@ once), **lease** (an offer's lock on its first taker).
 - **Drawings.** A `vis` fence in a reply whose kind is `chart`, `flow`, `matrix`, `timeline`,
   `tree`, `steps`, `wireframe`, `layers`, `state` or `sequence` is drawn as in the chat
   (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy. A
-  `vis svg` is drawn as a static image (an `<img>` of the parsed document, under its title), so
-  none of its script or links run. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
+  `vis svg` is drawn as a still image (an `<img>` of the parsed document, never the document
+  itself in the page) in that same figure, title above and caption below, so none of its script
+  or links run and it fetches nothing. It shows at its own size (a `viewBox` width with no `width`
+  of its own), centred, shrunk only when the column is narrower, never stretched to fill it. Before
+  it is drawn the page's current colour tokens (the frame's, §chat.markdown/visuals) and a
+  sans-serif font are set as its defaults, which its own styles override, so `var(--color-…)`
+  text matches the chat; a page that changes theme (the Share sheet's Preview) draws it again in
+  the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
   only while the session can draw interactive drawings (§app.baton/abilities; the view carries
   `drawings: {html}` from the session's abilities as they are now). Otherwise `html`, and always
   `code`, and a block that doesn't parse, shows one muted line, "A drawing couldn't be shown

@@ -11,7 +11,7 @@ const root = mkdtempSync(join(tmpdir(), "sova-monitor-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent"); // before paths.ts computes its dirs
 after(() => rmSync(root, { recursive: true, force: true }));
 
-const { ResourceMonitor, decodeWorkerEvent, monitorExtension, setRemoteHosted } = await import("./resource-monitor");
+const { ResourceMonitor, decodeWorkerEvent, monitorExtension, setRemoteHosted, CLAUDE_CODE_PROVIDER } = await import("./resource-monitor");
 type HostedInfo = import("./resource-monitor-attrib").HostedInfo;
 
 const BOOT = 1_790_000_000; // btime, seconds
@@ -398,6 +398,9 @@ describe("sampler over a fixture /proc", () => {
 
   test("Sova memory: each process's own memory, split four ways that add up, per session and worker too", async () => {
     const { claudeSessionId } = await import("../pi-config/extensions/claude-code/provider/session-records.ts");
+    // The id the claude-code extension itself registers, as a chat reports it.
+    const { CLAUDE_CODE_PROVIDER: CLAUDE_PROVIDER_ID } = await import("./models");
+    assert.equal(CLAUDE_PROVIDER_ID, CLAUDE_CODE_PROVIDER, "the monitor's copy of the provider id is the server's");
     const CHATS = "/user.slice/user-1000.slice/user@1000.service/sova-chats.slice";
     let now = BOOT * 1000 + 2_000_000;
     const PG = 4096;
@@ -416,8 +419,8 @@ describe("sampler over a fixture /proc", () => {
       { pid: 600, ppid: 1, argv: ["bun", "server/chat-runtime/main.ts"], rssPages: 45_000, sharedPages: 12_000, cgroup: `${CHATS}/sova-chat-p.service` },
     ];
     const facts = { workers: [], toolsRunning: 0, lastToolEnd: 0 };
-    setRemoteHosted("/s/a.jsonl", { sessionId: "sess-a", ...facts, workers: [{ id: "ag_09", name: "tester", status: "running", backend: "claude-code" }], pid: 450, provider: "claude-code" });
-    setRemoteHosted("/s/w.jsonl", { sessionId: "sess-w", ...facts, pid: 500, provider: "claude-code", worker: { parentPath: "/s/a.jsonl", parentSessionId: "sess-a", workerId: "ag_09" } });
+    setRemoteHosted("/s/a.jsonl", { sessionId: "sess-a", ...facts, workers: [{ id: "ag_09", name: "tester", status: "running", backend: "claude-code" }], pid: 450, provider: CLAUDE_PROVIDER_ID });
+    setRemoteHosted("/s/w.jsonl", { sessionId: "sess-w", ...facts, pid: 500, provider: CLAUDE_PROVIDER_ID, worker: { parentPath: "/s/a.jsonl", parentSessionId: "sess-a", workerId: "ag_09" } });
     setRemoteHosted("/s/p.jsonl", { sessionId: "sess-p", ...facts, pid: 600, provider: "zai" });
     try {
       const fx = fixture("sova-memory", procs(), { unit: true });

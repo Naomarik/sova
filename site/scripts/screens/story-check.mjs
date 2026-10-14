@@ -363,9 +363,6 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
               else if (owner.has(f)) err([...at, "show_changes", "steps", si, "files", fi], `${f} is already in step ${owner.get(f) + 1}; each change sits in exactly one step`);
               else owner.set(f, si);
             });
-            (st.buildsOn ?? []).forEach((b, bi) => {
-              if (b > si) err([...at, "show_changes", "steps", si, "buildsOn", bi], `${b} is not an earlier step (this is step ${si + 1})`);
-            });
             for (const [k2, v] of Object.entries({ title: st.title, why: st.why })) if (v && v.length > 2000) err([...at, "show_changes", "steps", si, k2], "longer than show_changes' 2000 characters");
           });
           for (const f of changed) if (!owner.has(f)) err([...at, "show_changes", "steps"], `${f} is changed but in no step`, "the show_changes tool refuses a call that leaves a change out");

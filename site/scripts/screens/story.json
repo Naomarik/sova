@@ -230,8 +230,8 @@
             "title": "Cap the upload backoff",
             "steps": [
               { "title": "Cap each wait at 30 s", "why": "Doubling from 500 ms passes a minute by the 8th try; delayFor() stops at MAX_DELAY_MS.", "files": ["src/upload/retry.ts"] },
-              { "title": "Pin the delays with a test", "why": "The doubling and the ceiling were untested.", "buildsOn": [1], "files": ["src/upload/retry.test.ts"] },
-              { "title": "Say so in the README", "why": "The README describes the retries.", "buildsOn": [1], "files": ["README.md"] }
+              { "title": "Pin the delays with a test", "why": "The doubling and the ceiling were untested.", "files": ["src/upload/retry.test.ts"] },
+              { "title": "Say so in the README", "why": "The README describes the retries.", "files": ["README.md"] }
             ]
         } },
         { "say": "Here are the changes in 3 steps. Say merge when you've read them." }

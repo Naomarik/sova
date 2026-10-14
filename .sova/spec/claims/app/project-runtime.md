@@ -243,10 +243,7 @@ changed since it was shown: look again."). For a run whose playbook proposes `de
 (§app.project-runtime/verb-playbooks), `hash` is the recipe's own deploy hash at the branch's tip,
 and the sentence is "The deploy recipe changed since it was shown: look again.". A merge that is
 refused answers 409 with "The merge was refused: {its reason}". With no run proposed it is refused
-409: "No playbook run is proposed." Merge Branch also refuses when the history being merged
-carries a saved session (§chat.saved-sessions/merge-guard), unless the request passes
-`allowSavedSessions: true`; the Software card then offers `Merge Anyway` under its reason. It
-answers the registry, read again. The Software card shows
+409: "No playbook run is proposed." It answers the registry, read again. The Software card shows
 **Merge Branch** while a run is proposed, beside the banner's and the Needs-you row's; each says, on
 a refusal, why under the button.
 

@@ -70,8 +70,6 @@ export interface TreeFacts {
   conflicts?: number;
   /** A TEMP / WIP / fixup! / squash! / amend! subject on the branch, the newest. */
   tempCommit?: string;
-  /** Commits past the base that add, change or remove a saved session's card. */
-  savedSessions?: number;
   /** When the newest commit was made (committer time, ms). */
   headAt?: number;
 }
@@ -107,8 +105,6 @@ const STATE_WORDS: Record<ReadinessState, string> = {
   removed: "Removed",
 };
 
-/** A branch whose own history carries a saved session (Sova's merges stop on it). */
-export const SAVED_IN_HISTORY = "saved sessions in its history";
 /** Why a clean branch has no commit of its own: an empty leftover worktree once nothing runs. */
 export const NO_COMMITS = "no commits yet";
 /** A gone folder's whys (§chat.worktrees/readiness, removed). */
@@ -153,7 +149,6 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   if (dirty >= DIRTY_MAX) return { state: "in-progress", why: t.dirtyCount ? uncommittedWords(t.dirtyCount, t.dirtyFiles) : "uncommitted changes" };
   if (!t.ahead) return { state: "in-progress", why: NO_COMMITS };
   if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
-  if (t.savedSessions) return { state: "in-progress", why: SAVED_IN_HISTORY };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
   if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };
   const checks = s.lastCheck ? "checks passed" : "no check run seen";
@@ -546,7 +541,6 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
     ...(st.base ? { base: st.base } : {}),
     ...(st.conflicts ? { conflicts: st.conflicts } : {}),
     ...(st.subjects ? { tempCommit: tempCommitOf(st.subjects) } : {}),
-    ...(st.savedSessions ? { savedSessions: st.savedSessions } : {}),
     ...(st.headAt ? { headAt: st.headAt } : {}),
   };
 }

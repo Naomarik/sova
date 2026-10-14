@@ -147,14 +147,3 @@ test("tuiOnlyCommand names a bare TUI-only command typed in full, nothing else",
   assert.equal(tuiOnlyCommand("/team"), null);
   assert.equal(tuiOnlyCommand("/remote"), null);
 });
-
-test("/save is Sova's own and joins the menu unless the runtime has one", async () => {
-  const { SAVE_COMMAND, withSaveCommand } = await import("./slash");
-  assert.equal(localCommand("/save"), "save");
-  assert.equal(localCommand("/save it"), null);
-  const ext = { name: "compact", source: "builtin" as const };
-  assert.deepEqual(withSaveCommand([ext]), [ext, SAVE_COMMAND]);
-  assert.deepEqual(withSaveCommand([]), []);
-  const own = { name: "save", source: "extension" as const };
-  assert.deepEqual(withSaveCommand([own]), [own]);
-});

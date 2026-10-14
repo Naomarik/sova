@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createWorktree, forkPoint, GitError, inspectWorktree, landedStats, mergedReviewBase, mergeStats, mergeWorktree, probeMerge, runGit } from "./git.ts";
-import { SAVED_SESSION_MARKER, SavedSessionsInHistoryError, savedSessionsToMerge } from "./saved-sessions.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } }).trim();
 
@@ -280,55 +279,4 @@ test("mergedReviewBase: the landing merge's first parent, a fast-forward's track
 	} finally {
 		r.done();
 	}
-});
-
-test("merge: a saved session anywhere in the branch's history stops it, deleted ones too; allowSavedSessions merges", async () => {
-	const r = repo();
-	try {
-		const f = await createWorktree(runGit, { repoCwd: r.main, name: "saved" });
-		// A card copied in by hand under any path, then deleted by a later commit: still in the history.
-		mkdirSync(join(f.path, "notes", "chat"), { recursive: true });
-		const card = JSON.stringify({ format: SAVED_SESSION_MARKER, bundleId: "b1", rev: 1 });
-		commit(f.path, "notes/chat/whatever.json", `${card}\n`, "add a chat by hand");
-		sh(f.path, "rm", "-q", "notes/chat/whatever.json");
-		sh(f.path, "commit", "-q", "-m", "remove it again");
-		commit(f.path, "b.txt", "code\n", "code");
-		const masterBefore = sh(r.main, "rev-parse", "master");
-		const found = await savedSessionsToMerge(runGit, r.main, sh(r.main, "rev-parse", "feat/saved"), masterBefore);
-		assert.deepEqual(found.map((c) => c.subject).sort(), ["add a chat by hand", "remove it again"]);
-		assert.deepEqual(found.map((c) => c.paths), [["notes/chat/whatever.json"], ["notes/chat/whatever.json"]]);
-		await assert.rejects(mergeWorktree(runGit, { tree: f, target: "master" }), (err: unknown) => {
-			assert.ok(err instanceof SavedSessionsInHistoryError);
-			assert.match(err.message, /history carries saved sessions/);
-			assert.match(err.message, /user's explicit go-ahead/);
-			assert.doesNotMatch(err.message, /allowSavedSessions/, "the agent is never told the flag");
-			assert.equal(err.commits.length, 2);
-			return true;
-		});
-		assert.equal(sh(r.main, "rev-parse", "master"), masterBefore, "nothing merged");
-		const m = await mergeWorktree(runGit, { tree: f, target: "master", allowSavedSessions: true });
-		assert.equal(m.sha, sh(r.main, "rev-parse", "master"));
-		assert.notEqual(m.sha, masterBefore);
-	} finally {
-		r.done();
-	}
-});
-
-test("merge: a branch with no saved session merges unasked, and history already on the target isn't rescanned", async () => {
-	const r = repo();
-	try {
-		// A card that reached master earlier (someone's old mistake) is not this branch's to answer for.
-		commit(r.main, "old.json", `${JSON.stringify({ format: SAVED_SESSION_MARKER })}\n`, "old mistake");
-		const f = await createWorktree(runGit, { repoCwd: r.main, name: "clean" });
-		commit(f.path, "b.txt", "code\n", "code");
-		const m = await mergeWorktree(runGit, { tree: f, target: "master" });
-		assert.equal(m.commits, 1);
-	} finally {
-		r.done();
-	}
-});
-
-test("the marker is spelled in parts: no source file holds it whole", () => {
-	assert.equal(SAVED_SESSION_MARKER, ["sova-saved-session", "v1"].join("/"));
-	for (const file of ["saved-sessions.ts", "git.ts", "index.ts"]) assert.ok(!readFileSync(new URL(file, import.meta.url), "utf8").includes(SAVED_SESSION_MARKER), file);
 });

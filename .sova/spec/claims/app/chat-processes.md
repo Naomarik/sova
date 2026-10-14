@@ -165,7 +165,10 @@ nothing but the server ever starts a chat again.
   server recorded but could not deliver before it stopped is delivered at its next start. Exit 0
   without a stated cause reads as an operator stop, not a death. A process that ends, or doesn't answer in time,
   before it ever answered the server is a failed start, not a death: logged, never in the deaths log,
-  and the chat starts on the last good code, or its open is refused (§app/chat-processes).
+  and the chat starts on the last good code, or its open is refused (§app/chat-processes). In time
+  means, for every chat, its socket answers within 10 s of the start and its `hello` says it is ready
+  within 40 s after that: a start normally takes under a second, and the slowest measured under heavy
+  load took 34 s.
 - **One process per chat.** Starting a chat whose previous process is still exiting waits up to
   10 s for that process and the session's writer lock to go.
 - **Claude programs.** Across all chat processes at most 4 idle Claude CLI children are kept

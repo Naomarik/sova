@@ -192,7 +192,7 @@ test("approval, the tools in the loadout, a changed program refused, off takes t
 	assert.match(run.content[0]!.text, /ready/);
 
 	p.put("release", "bin/status.sh", "#!/bin/sh\necho tampered\n");
-	await assert.rejects(a.tools.get("release__status")!.execute("c2", {}, undefined), /program changed since release was approved/);
+	await assert.rejects(a.tools.get("release__status")!.execute("c2", {}, undefined), /the files of release changed since it was approved/);
 
 	await a.mode("release off");
 	assert.ok(!a.activeTools().includes("release__status"));

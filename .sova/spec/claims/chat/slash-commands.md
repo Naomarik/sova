@@ -230,7 +230,11 @@ answered by Sova itself and never sent.
   untouched. **Bare `/tree` and bare `/timeline` (§chat/timeline)** both open the session pane on Timeline
   the same way — draft cleared, no row in the thread — `/tree` with **Inputs Only** on (your own
   messages, each able to rewind) and `/timeline` with it off. The runtime registers neither, so
-  neither appears in the menu, and either one with arguments is an ordinary message.
+  neither appears in the menu, and either one with arguments is an ordinary message. **Bare `/save`**
+  opens the Save Session dialog (§chat.saved-sessions/save-dialog) the same way, draft cleared, no
+  row in the thread, nothing sent. Unlike those, it is listed in the menu, with the description "Save
+  this session so a colleague can continue it", unless the runtime registers a `save` of its own,
+  which then keeps the name.
 - **`/clear`.** In the Overseer only (§app.overseer/identity-and-clear), bare `/clear` is a local
   command: it starts a fresh Overseer conversation. Anywhere else it's an ordinary message.
 - **`/mode`.** In the Overseer only (§app.overseer/hosting), `/mode`, with or without arguments,

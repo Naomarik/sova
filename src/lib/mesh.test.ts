@@ -124,6 +124,20 @@ test("a request naming a peer's session goes to that peer, by query or by body",
   assert.equal(routeUrl("/api/sessions/cleanup", JSON.stringify({ paths: [A, B] })), "/api/sessions/cleanup");
 });
 
+test("a peer's blank session's saved-sessions requests go to that peer, cwd routes included (§mesh.remote-sessions/host-scope)", () => {
+  resetHosts();
+  noteHost(A, "laptop");
+  const cwd = q("/home/u/proj");
+  assert.equal(routeUrl(`/api/saved-sessions?cwd=${cwd}&path=${q(A)}`), `/peer/laptop/api/saved-sessions?cwd=${cwd}&path=${q(A)}`);
+  assert.equal(routeUrl(`/api/saved-sessions/on-main?cwd=${cwd}&path=${q(A)}`), `/peer/laptop/api/saved-sessions/on-main?cwd=${cwd}&path=${q(A)}`);
+  for (const r of ["fetch", "remove-from-main", "purge-from-main", "prune"])
+    assert.equal(routeUrl(`/api/saved-sessions/${r}`, JSON.stringify({ cwd: "/home/u/proj", path: A })), `/peer/laptop/api/saved-sessions/${r}`, r);
+  assert.equal(routeUrl(`/api/saved-sessions/prepare/p1/image/e%2F0?path=${q(A)}`), `/peer/laptop/api/saved-sessions/prepare/p1/image/e%2F0?path=${q(A)}`);
+  // This host's own session stays here.
+  assert.equal(routeUrl(`/api/saved-sessions?cwd=${cwd}&path=${q(B)}`), `/api/saved-sessions?cwd=${cwd}&path=${q(B)}`);
+  resetHosts();
+});
+
 test("a URL already aimed at a peer is never prefixed twice", () => {
   resetHosts();
   noteHost(A, "laptop");

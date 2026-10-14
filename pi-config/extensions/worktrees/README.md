@@ -7,7 +7,7 @@ The git worktrees a session works in, kept in the session itself. Spec: `§chat/
 | Surface | Shape |
 |---|---|
 | Entry | `custom` entry `worktrees`: `{version: 1, trees: TrackedWorktree[]}` (`state.ts`), the **whole** set, appended on every change; `restoreActive(branch)` reads the newest usable one, so tree navigation, forks and rewinds move the set with the branch. A tree: `path` (canonical top level), `branch`, `base` (the commit it was created from, or its fork point from the default branch when attached), `baseBranch?`, `status` (`active` \| `dropped` \| `merged`), `merge?` (`{target, sha, at, how: "tool" \| "detected"}`), `session` (the id that created or attached it; another id means it was inherited, i.e. shared), `how` (`created` \| `attached`), `at`. Opening a session writes nothing. |
-| Tool | `worktree {action, name?, base?, path?, target?}`, the parent agent's only: `create` (`git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path`), `attach` (a worktree's top level; another session's is fine), `detach` (status `dropped`, nothing deleted), `merge` (into `target`, default `master`, else `main`), `list`. git runs by argument list (`git.ts`, `execFile`), never a shell. Local sessions only. No command, no pane control. |
+| Tool | `worktree {action, name?, base?, path?, target?}`, the parent agent's only: `create` (`git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path`), `attach` (a worktree's top level; another session's is fine), `detach` (status `dropped`, nothing deleted), `merge` (into `target`, default `master`, else `main`; refused when the history it brings in carries a saved Sova session; `allowSavedSessions: true` asks the user to confirm and merges only if they accept), `list`. git runs by argument list (`git.ts`, `execFile`), never a shell. Local sessions only. No command, no pane control. |
 | Sandbox | While the session's sandbox is on (`sandbox:state`), `create`, `attach` and `merge` ask the user (`ctx.ui.confirm`); declined or no UI changes nothing. The sandbox makes every active worktree writable and its `.agent` read-only. |
 | Event bus | `worktrees:state` (`{version: 1, active: string[]}`) on `session_start`, `session_tree`, every change, and in answer to `worktrees:discover`. The sandbox listens. |
 | Merge card | `custom_message` `worktree-merge`, `display: true`, content the one line the model reads (`mergeNote`: "Merged feat/x into master at abc1234, 5 commits, +120 −30"; a detected merge's spec warnings follow it), details `WorktreeMergeDetails` (`path`, `branch`, `target`, `sha`, `commits`, `added`, `removed`, `fastForward`, `how`). Sent with `triggerTurn: false`: pi holds it to the end of the running turn. The TUI draws it with `registerMessageRenderer`; Sova renders it as a merge card. |
@@ -47,8 +47,19 @@ Workers never have this extension: the subagents extension refuses any copy of `
 `subagents`) as a worker extension. It enforces where workers may start itself
 (`workerCwdRefusal` in `state.ts`, see `subagents/README.md` "Worktrees").
 
-`state.ts` imports node builtins only: Sova's server (`server/worktrees-state.ts`) and the
-subagents extension import it.
+Saved sessions (`saved-sessions.ts`): Sova keeps saved conversations on their own branch,
+`sova/saved-sessions`, never in the code. Before merging, `mergeWorktree` scans every commit the merge
+would bring in (`git log -S <marker> <branch> ^<target>`) for a saved session's card, found by the
+marker its card and README carry wherever the file sits, so one a later commit deleted is still found.
+A hit refuses the merge (`SavedSessionsInHistoryError`, naming the commits and files); its text tells the
+agent the branch needs cleaning or the user's explicit go-ahead, never the flag. A tool call with
+`allowSavedSessions: true` always asks the user (`ctx.ui.confirm`, sandbox or not), naming the branch and
+saying the conversations stay in the target's history; with no UI, or declined, it throws and nothing is
+merged. Sova's Merge Branch passes the same override from its own Merge Anyway button. The marker is
+spelled in two parts in source, never whole: a file holding it would read as a saved session itself.
+
+`state.ts` and `saved-sessions.ts` import node builtins only: Sova's server (`server/worktrees-state.ts`;
+Merge Branch's guard in `server/project-worktrees.ts`) and the subagents extension import them.
 
 ## Tests
 

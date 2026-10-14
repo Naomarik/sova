@@ -83,10 +83,13 @@ interface RemoteHosted {
   /** A worker chat's process (al_3 stage 4): whose worker it is. Charged to that parent and worker,
       never a session of its own. */
   worker?: { parentPath: string; parentSessionId: string; workerId: string };
-  /** Its model's provider, as its chat reports it ("claude-code": it wraps a Claude Code CLI). */
+  /** Its model's provider, as its chat reports it (CLAUDE_CODE_PROVIDER: it wraps a Claude Code CLI). */
   provider?: string;
 }
 const remoteHosted = new Map<string, RemoteHosted>();
+/** The Claude Code provider's id (server/models.ts CLAUDE_CODE_PROVIDER; the claude-code extension's
+    CLAUDE_PROVIDER_ID), repeated here so the monitor imports neither. */
+export const CLAUDE_CODE_PROVIDER = "claude-code-cli";
 export function setRemoteHosted(path: string, entry: RemoteHosted | null): void {
   if (entry) remoteHosted.set(path, entry);
   else remoteHosted.delete(path);
@@ -345,7 +348,7 @@ export class ResourceMonitor {
         out.push({
           path, sessionId: r.sessionId, ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.title ? { title: r.title } : {}),
           workers: r.workers, providerIds: providerIdsOf(r.sessionId), pid: r.pid,
-          ...(r.provider ? { backend: r.provider === "claude-code" ? "claude-code" as const : "pi" as const } : {}),
+          ...(r.provider ? { backend: r.provider === CLAUDE_CODE_PROVIDER ? "claude-code" as const : "pi" as const } : {}),
           toolInWindow: !r.worker && (r.toolsRunning > 0 || r.lastToolEnd >= this.prevAt),
           ...(r.worker ? { worker: { parentPath: r.worker.parentPath, workerId: r.worker.workerId } } : {}),
         });

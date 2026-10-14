@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { approvalLead, commandLine, filterProfiles, FOOT_NOTE, nextProjectModes, projectGroupLabel, projectRowState, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
+import { APPROVAL_FOOT, approvalLead, barePrograms, bareProgramsNote, commandLine, filterProfiles, FOOT_NOTE, nextProjectModes, projectGroupLabel, projectRowState, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
 
 const def = (mode: string, minorModes: string[], strict = false) => ({ mode, minorModes, strict });
 
@@ -161,4 +161,15 @@ test("a command reads as one line, quoting only what a shell would split", () =>
 test("the group label names the project when it has one", () => {
   assert.equal(projectGroupLabel("shop"), "This project · shop");
   assert.equal(projectGroupLabel(undefined), "This project");
+});
+
+test("the approval says it covers the whole folder, and names the machine's own programs it doesn't cover", () => {
+  assert.match(APPROVAL_FOOT, /every file in this folder/);
+  const t = (...command: string[]) => ({ name: "t", description: "", command });
+  // A program from the folder is covered: nothing to name.
+  assert.equal(bareProgramsNote([t("./run.sh", "--fast")]), null);
+  assert.deepEqual(barePrograms([t("node", "./check.js"), t("sh", "./a.sh"), t("node", "./b.js"), t("./c")]), ["node", "sh"]);
+  assert.equal(bareProgramsNote([t("python3", "./tool.py")]), "python3 is this machine's own program, so the approval doesn't cover it.");
+  assert.equal(bareProgramsNote([t("node", "./a.js"), t("sh", "./b.sh")]), "node and sh are this machine's own programs, so the approval doesn't cover them.");
+  assert.equal(bareProgramsNote([t("node"), t("sh"), t("bun")]), "node, sh, and bun are this machine's own programs, so the approval doesn't cover them.");
 });

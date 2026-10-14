@@ -27,13 +27,15 @@ export const SHOW_CHANGES_SCOPE_KINDS: readonly ShowChangesScopeKind[] = ["dirty
  * `sessionPath`, which the reader adds from the session it renders): `cwd` / `worktreePath` /
  * `repoPath` is the directory the tool read (the tracked worktree's path, or the session cwd), so
  * it is always a folder the session knows. `root` is that repository's canonical top level. The
- * shas are full object names resolved when the tool ran; Sova re-resolves the scope when it loads
- * the diff, so they say what the agent saw, not what is shown.
+ * shas are full object names resolved when the tool ran. A worktree card opens pinned to its
+ * `base`..`head` (labelled `baseRef`), the diff the tool checked; a dirty card shows the disk as it
+ * is now; a commit card names its commit.
  * - dirty: the index and working tree, untracked files included, against HEAD (`head`, then).
- * - worktree: the branch against its merge-base (`base`) with `baseRef` (the tracked worktree's
- *   base branch, else master, else main, else origin/HEAD's target such as "origin/main"; else the
- *   tracked base commit's short sha). Once the branch is merged, `base` is where what its merge
- *   brought in starts and `baseRef` names it, e.g. "master before 4ef9f18" or "f686546 (created from)".
+ * - worktree: the branch against `base`, chosen by the viewer's own rule (../worktrees/git.ts
+ *   reviewBase): its merge-base with the tracked worktree's base branch, else master, else main,
+ *   else origin/HEAD's target such as "origin/main", `baseRef` naming that branch; once merged,
+ *   where what its merge brought in starts, e.g. "master before 4ef9f18"; with no base branch
+ *   sharing history, the commit the tracked worktree was created from, "f686546 (created from)".
  * - commit: one commit against its first parent (`parent`; absent for a root commit, whose
  *   diff is against the empty tree).
  */
@@ -57,7 +59,10 @@ export interface ShowChangesHunkRef {
 export interface ShowChangesStep {
 	title: string;
 	why?: string;
-	/** 1-based numbers of earlier steps this one builds on. */
+	/**
+	 * Legacy: 1-based numbers of earlier steps this one built on. The tool no longer takes it, but
+	 * saved cards carry it, so the normalizer keeps accepting it forever; no reader shows it.
+	 */
 	buildsOn?: number[];
 	hunks: ShowChangesHunkRef[];
 }

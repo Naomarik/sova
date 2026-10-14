@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { changedFiles, inPaths, pickDir, resolveScope, runGit } from "./git.ts";
+import { changedFiles, type Git, inPaths, pickDir, resolveScope, runGit } from "./git.ts";
+import { parseHunks, readHunks } from "./hunks.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
@@ -188,4 +189,85 @@ test("inPaths: files and directory prefixes", () => {
 	assert.ok(inPaths("a/b.ts", ["a/"]));
 	assert.ok(inPaths("a/b.ts", ["a/b.ts"]));
 	assert.ok(!inPaths("ab/c.ts", ["a"]));
+});
+
+test("worktree with no base branch: the commit it was created from, else refused as having no base", async () => {
+	const r = repo();
+	try {
+		sh(r.main, "branch", "-q", "-m", "master", "trunk");
+		const created = sh(r.main, "rev-parse", "HEAD");
+		sh(r.main, "checkout", "-q", "-b", "feat/z");
+		writeFileSync(join(r.main, "z.txt"), "z\n");
+		sh(r.main, "add", "z.txt");
+		sh(r.main, "commit", "-q", "-m", "z");
+		const tree = { path: r.main, branch: "feat/z", base: created };
+		const s = await resolveScope(runGit, { scope: "worktree" }, r.main, tree);
+		assert.equal(s.kind === "worktree" && s.base, created);
+		assert.equal(s.kind === "worktree" && s.baseRef, `${created.slice(0, 7)} (created from)`);
+		assert.deepEqual(await changedFiles(runGit, s), ["z.txt"]);
+		await assert.rejects(resolveScope(runGit, { scope: "worktree" }, r.main), /feat\/z in .* has no base to compare against/);
+	} finally {
+		r.done();
+	}
+});
+
+test("runGit stops a read past its time and says so", async () => {
+	const r = repo();
+	try {
+		// hash-object --stdin waits on its open stdin forever.
+		const got = await runGit(["hash-object", "--stdin"], r.main, { timeoutMs: 200 });
+		assert.equal(got.timedOut, true);
+		assert.notEqual(got.code, 0);
+		assert.match(got.stderr, /timed out after/);
+	} finally {
+		r.done();
+	}
+});
+
+test("readHunks: a whole patch that runs out of time makes every file one whole-file unit", async () => {
+	const r = repo();
+	try {
+		writeFileSync(join(r.main, "a.txt"), "two\n");
+		writeFileSync(join(r.main, "b.txt"), "b\n");
+		sh(r.main, "add", ".");
+		sh(r.main, "commit", "-q", "-m", "two");
+		const s = await resolveScope(runGit, { scope: "commit", commit: "HEAD" }, r.main);
+		const slow: Git = async (args, cwd, opts) => (args.includes("-p") ? { code: 1, stdout: "", stderr: "timed out after 15 s", timedOut: true } : runGit(args, cwd, opts));
+		assert.deepEqual(await readHunks(slow, s), [
+			{ path: "a.txt", hunks: null },
+			{ path: "b.txt", hunks: null },
+		]);
+	} finally {
+		r.done();
+	}
+});
+
+test("parseHunks: files with no line changes stay (no hunks); a stat-only section is dropped", () => {
+	const text = [
+		"diff --git a/old.ts b/new.ts",
+		"similarity index 100%",
+		"rename from old.ts",
+		"rename to new.ts",
+		"diff --git a/run.sh b/run.sh",
+		"old mode 100644",
+		"new mode 100755",
+		"diff --git a/empty.txt b/empty.txt",
+		"new file mode 100644",
+		"index 0000000..e69de29",
+		"diff --git a/stat.txt b/stat.txt",
+		"diff --git a/x.txt b/x.txt",
+		"index 1111111..2222222 100644",
+		"--- a/x.txt",
+		"+++ b/x.txt",
+		"@@ -1 +1 @@",
+		"-x",
+		"+y",
+		"",
+	].join("\n");
+	assert.deepEqual(parseHunks(text), [
+		{ path: "new.ts", oldPath: "old.ts", hunks: [] },
+		{ path: "run.sh", hunks: [] },
+		{ path: "empty.txt", hunks: [] },
+		{ path: "x.txt", hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, firstChanged: "-x" }] },
+	]);
 });

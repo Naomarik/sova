@@ -20,9 +20,13 @@ and each merge becomes a card.
 - `state.ts` (builtins only): the entry, its fold and the merge card's details. `server/worktrees-state.ts`
   imports it, as do the server's worktree, merge-board and readiness modules
   (`git grep -n "extensions/worktrees/" -- server`).
-- `git.ts` (builtins only, git by argv): the extension's own "is this branch merged" probe, and
-  `mergedReviewBase`, the review base of an already merged branch. `server/git-diff.ts` imports it, and
-  show-changes' `git.ts` shares it.
+- `git.ts` (builtins only, git by argv): the extension's own "is this branch merged" probe, and the
+  one review-base rule both diff engines share: `reviewBase(git, root, {head, branch, tracked})`
+  (tracked base branch → master → main → origin/HEAD's branch, each skipped when it is the current
+  branch or shares no history; a merged branch via `mergedReviewBase`; else the tracked created-from
+  commit; else a refusal kind `detached | on-base-branch | no-history | no-base`) and
+  `REVIEW_LIMITS` (git timeout, file cap, patch and untracked caps). `server/git-diff.ts` and
+  show-changes' `git.ts` both import them (§chat.changes/endpoint, §chat.changes/show-changes-tool).
 - `spec.ts`: when a merge is recorded, it adds the landing's spec warnings to the merge note (changed files no claim
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
@@ -33,5 +37,7 @@ its restart.
 ## When you change it, also update
 
 - The entry or the merge card's details: the README and Sova's readers in the same branch.
-- `git.ts`'s `mergedReviewBase`: show-changes' tests too (`cd pi-config/extensions/show-changes && node --test git.test.ts`).
+- `git.ts`'s `reviewBase`, `mergedReviewBase` or `REVIEW_LIMITS`: show-changes' tests too
+  (`cd pi-config/extensions/show-changes && node --test git.test.ts`) and `server/git-diff.test.ts`; the
+  tool and the viewer must keep choosing the same base and limits.
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).

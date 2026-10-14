@@ -7,7 +7,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { mergedReviewBase } from "../worktrees/git.ts";
+import { REVIEW_LIMITS, reviewBase } from "../worktrees/git.ts";
 import { isSha, type ShowChangesScope } from "./details.ts";
 import { ShowChangesError, type ShowChangesRequest } from "./input.ts";
 
@@ -17,9 +17,12 @@ export interface GitResult {
 	stderr: string;
 	/** stdout passed `maxBuffer` and git was stopped; `stdout` is then cut short. */
 	cut?: boolean;
+	/** git ran past its time and was stopped. */
+	timedOut?: boolean;
 }
 
-export type Git = (args: string[], cwd: string, opts?: { maxBuffer?: number }) => Promise<GitResult>;
+/** `timeoutMs`: default REVIEW_LIMITS.gitTimeoutMs (5 s), the viewer's limit for every read but the whole patch. */
+export type Git = (args: string[], cwd: string, opts?: { maxBuffer?: number; timeoutMs?: number }) => Promise<GitResult>;
 
 /** Global options on every call: no fsmonitor hook, no index refresh writes. */
 const SAFE = ["-c", "core.fsmonitor=false", "--no-optional-locks"];
@@ -30,11 +33,24 @@ export const runGit: Git = (args, cwd, opts) =>
 		execFile(
 			"git",
 			[...SAFE, ...args],
-			{ cwd, maxBuffer: opts?.maxBuffer ?? 8 * 1024 * 1024, timeout: 15_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" } },
+			{
+				cwd,
+				maxBuffer: opts?.maxBuffer ?? 8 * 1024 * 1024,
+				timeout: opts?.timeoutMs ?? REVIEW_LIMITS.gitTimeoutMs,
+				env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+			},
 			(err, stdout, stderr) => {
 				const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
 				const cut = (err as { code?: unknown } | null)?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
-				done({ code, stdout: String(stdout), stderr: String(stderr) || (err && code !== 0 && !stderr ? err.message : ""), ...(cut ? { cut } : {}) });
+				const timedOut = !cut && !!err && (err as { killed?: boolean }).killed === true;
+				const why = timedOut ? `timed out after ${Math.round((opts?.timeoutMs ?? REVIEW_LIMITS.gitTimeoutMs) / 1000)} s` : "";
+				done({
+					code,
+					stdout: String(stdout),
+					stderr: why || String(stderr) || (err && code !== 0 && !stderr ? err.message : ""),
+					...(cut ? { cut } : {}),
+					...(timedOut ? { timedOut } : {}),
+				});
 			},
 		);
 	});
@@ -113,47 +129,23 @@ export async function resolveScope(git: Git, req: ShowChangesRequest, dir: strin
 			const branch = await maybe(git, ["symbolic-ref", "--quiet", "--short", "HEAD"], root);
 			if (!branch) throw new ShowChangesError(`${root} is not on a branch (detached HEAD); use scope commit or dirty`);
 			const head = await headSha();
-			const has = async (b: string) => (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${b}^{commit}`], root)).code === 0;
-			let baseRef: string | undefined;
-			for (const b of [tree?.baseBranch, "master", "main"]) {
-				if (b && b !== branch && (await has(b))) {
-					baseRef = b;
-					break;
-				}
-			}
-			let baseTip = baseRef ? `refs/heads/${baseRef}` : undefined;
-			let base = baseTip ? await maybe(git, ["merge-base", "HEAD", baseTip], root) : undefined;
-			// Then origin/HEAD's target, as Sova's diff endpoint does; the tracked base commit last.
-			if (!base) {
-				const origin = await maybe(git, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], root);
-				if (origin?.startsWith("refs/remotes/") && origin !== `refs/remotes/origin/${branch}`) {
-					base = await maybe(git, ["merge-base", "HEAD", origin], root);
-					if (base) {
-						baseRef = origin.slice("refs/remotes/".length);
-						baseTip = origin;
-					}
-				}
-			}
-			// Already merged: what the merge brought in, as Sova's diff endpoint compares it.
-			if (base && baseRef && baseTip) {
-				const tip = await maybe(git, ["rev-parse", "--verify", "--quiet", `${baseTip}^{commit}`], root);
-				const merged = tip ? await mergedReviewBase(git, root, head, tip, base, tree?.base) : undefined;
-				if (merged && isSha(merged.base)) {
-					base = merged.base;
-					baseRef = merged.landing ? `${baseRef} before ${merged.landing.slice(0, 7)}` : `${merged.base.slice(0, 7)} (created from)`;
-				}
-			}
-			if (!base && tree && isSha(tree.base) && (await git(["merge-base", "--is-ancestor", tree.base, "HEAD"], root)).code === 0) {
-				base = tree.base;
-				baseRef = tree.base.slice(0, 7);
-			}
-			if (!base || !baseRef) {
+			// The one rule the viewer's worktree comparison uses (../worktrees/git.ts), so a card never opens a refusal.
+			const tracked = tree ? { base: tree.base, ...(tree.baseBranch ? { baseBranch: tree.baseBranch } : {}) } : undefined;
+			const found = await reviewBase(git, root, { head, branch, ...(tracked ? { tracked } : {}) });
+			if (!found.ok) {
 				throw new ShowChangesError(
-					branch === "master" || branch === "main"
-						? `${root} is on ${branch}, the base branch itself: use scope dirty for uncommitted work, scope commit for one commit, or name a worktree`
-						: `No base branch (master or main) shares history with ${branch} in ${root}; use scope commit or dirty`,
+					found.refusal === "detached"
+						? `${root} is not on a branch (detached HEAD); use scope commit or dirty`
+						: found.refusal === "on-base-branch"
+							? `${root} is on ${branch}, the base branch itself: use scope dirty for uncommitted work, scope commit for one commit, or name a worktree`
+							: found.refusal === "no-history"
+								? `No base branch shares history with ${branch} in ${root}, and it has no tracked commit it was created from; use scope commit or dirty`
+								: `${branch} in ${root} has no base to compare against (no master, main or origin/HEAD, and no tracked commit it was created from); use scope commit or dirty`,
 				);
 			}
+			if (!isSha(found.base)) throw new ShowChangesError(`The base of ${branch} in ${root} did not resolve to a commit`);
+			const base = found.base;
+			const baseRef = found.label;
 			return { kind: "worktree", worktreePath: at, root, branch, head, base, baseRef };
 		}
 	}

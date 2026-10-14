@@ -175,7 +175,19 @@ button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent);
 }
 .changes-step-other { background: var(--color-sunken); color: var(--color-ink-muted); }
 .changes-step-title { flex: 1 1 6rem; min-width: 0; overflow-wrap: anywhere; }
-.changes-step-builds { flex: none; margin-left: calc(1em + var(--space-2)); }
+/* Under the title, aligned with it: a step's commits, or why it holds nothing. */
+.changes-step-caption {
+  flex: 0 0 100%;
+  min-width: 0;
+  padding-left: calc(20px + var(--space-2));
+  color: var(--color-ink-muted);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+.changes-step-caption.text-mono { font-size: var(--fs-mono); }
+.changes-nowrap { white-space: nowrap; }
+/* An empty step keeps its place, greyed; its reason carries the state, not the tone alone. */
+.changes-step-empty .changes-step-title { color: var(--color-ink-muted); }
 
 /* ---- the diff pane ---- */
 .changes-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -242,7 +254,27 @@ button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent);
 .changes-step { display: flex; flex-direction: column; gap: var(--space-4); }
 .changes-step-about { display: flex; flex-direction: column; gap: var(--space-2); }
 .changes-step-about p { margin: 0; max-width: var(--measure); color: var(--color-ink-2); }
-.changes-builds { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+/* The open step's commits: one row, collapsed by default. */
+.changes-commits { color: var(--color-ink-2); max-width: var(--measure); }
+.changes-commits > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  cursor: pointer;
+  width: fit-content;
+  border-radius: var(--r-xs);
+}
+.changes-commits > summary::-webkit-details-marker { display: none; }
+.changes-commits > summary .icon { transition: transform var(--dur-fast) var(--ease-standard); }
+.changes-commits[open] > summary .icon { transform: rotate(90deg); }
+.changes-commits > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.changes-commit-list { list-style: none; margin: 0; padding: 0 0 0 var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+.changes-commit { display: flex; gap: var(--space-2); align-items: baseline; min-width: 0; }
+.changes-commit-sha { flex: none; user-select: text; }
+.changes-commit-subject { flex: 1 1 auto; min-width: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.changes-commit-when { flex: none; white-space: nowrap; }
+.changes-commits-unknown { margin: 0; }
 
 .changes-empty { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; padding: var(--space-5) var(--space-4); }
 .changes-empty p { margin: 0; }

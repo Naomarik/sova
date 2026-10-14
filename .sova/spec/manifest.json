@@ -8867,7 +8867,11 @@
         "server/app.ts",
         "shared/protocol.ts",
         "server/git-diff.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/entry": {
       "kind": "behavior",
@@ -8896,12 +8900,17 @@
       "code": [
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/show-changes-pinned.test.ts"
       ],
       "requires": [
         "§chat.changes/show-changes-tool",
         "§chat.changes/steps"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/show-changes-tool": {
       "kind": "behavior",
@@ -8928,7 +8937,11 @@
         "pi-config/extensions/show-changes/hunks.ts",
         "pi-config/extensions/show-changes/coverage.test.ts",
         "src/lib/show-changes-coverage.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/steps": {
       "kind": "behavior",
@@ -8940,7 +8953,11 @@
       ],
       "requires": [
         "§chat.changes/show-changes-tool"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat.changes/tool-card-diff": {
       "kind": "behavior",
@@ -8977,14 +8994,19 @@
       "code": [
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
-        "src/lib/changes-view.ts"
+        "src/lib/changes-view.ts",
+        "src/lib/changes-view.test.ts"
       ],
       "requires": [
         "§chat.changes/endpoint",
         "§chat.changes/diff-renderer",
         "§chat.changes/tree",
         "§chat.changes/steps"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-14T10:01Z"
+      }
     },
     "§chat/changes": {
       "kind": "surface",

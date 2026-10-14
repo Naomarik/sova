@@ -689,7 +689,7 @@ runaway reply there is capped: it can't write a line too long to read back or to
 
 A transcript opens on its newest rows, and fetches the older ones only when they're wanted: as
 the reader scrolls toward them, when a jump needs them, or all at once for a browser on this
-machine. It builds about its newest 400 rows into the page on its own; older rows held are
+machine. It builds about its newest 200 rows into the page on its own; older rows held are
 built only as the reader scrolls up to them or a jump needs them. Nothing that's built is
 virtualized.
 
@@ -709,7 +709,12 @@ virtualized.
     whole entries, never opening on a tool
     result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
     it's taller or reaches the top. While older rows remain, a line's height is held at the top
-    of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
+    of the transcript, so what appears in it never moves the view. Whether that line is there is
+    settled before the first frame, from the rows the view opens with and what is known to be
+    above them (rows kept from the last visit, the file's newest rows, or the `hello`): a
+    transcript with older rows has it from its first frame, and one that opens on the whole
+    branch never has it; nothing learned later adds it. It goes with the build of the last rows
+    above, which keeps the view where it is. When a fetch (this one, or a
     jump's) takes longer than 0.4 s, a short bar sweeps in that line: the skeleton sweep, with no
     text; screen readers hear it as "Loading older messages" (a status region). The line sticks to
     the top of the view, over the rows, taking no pointer, so a jump fetching from the end shows
@@ -723,7 +728,7 @@ virtualized.
     Overseer (§app.overseer/transcript-window).
 
   Rows are built above the ones on screen while the browser is idle, a chunk at a time, each
-  chunk sized to stay under a frame, until about 400 rows are built; past that, a chunk is built
+  chunk sized to stay under a frame, until about 200 rows are built; past that, a chunk is built
   only as the view comes near the top of the built rows (above). Rows landing never build at
   once, and rows appended at the end are built as they come. The view doesn't move
   while they're added, not by a pixel: it keeps its distance from the end, which at the bottom is
@@ -734,7 +739,7 @@ virtualized.
   branch has moved under the list since (a rewind in another tab), the view starts again from
   the branch's newest rows, keeping the rows above them that are still their ancestors.
 - **Nothing built is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers
-  and text selection reach every row built so far: the newest 400 or so, and every row the
+  and text selection reach every row built so far: the newest 200 or so, and every row the
   reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
   in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
   Message, Open in Session, the card chip and a card reference still reach every row on the

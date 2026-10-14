@@ -689,7 +689,7 @@ runaway reply there is capped: it can't write a line too long to read back or to
 
 A transcript opens on its newest rows, and fetches the older ones only when they're wanted: as
 the reader scrolls toward them, when a jump needs them, or all at once for a browser on this
-machine. It builds about its newest 200 rows into the page on its own; older rows held are
+machine. It builds about its newest 400 rows into the page on its own; older rows held are
 built only as the reader scrolls up to them or a jump needs them. Nothing that's built is
 virtualized.
 
@@ -709,12 +709,7 @@ virtualized.
     whole entries, never opening on a tool
     result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
     it's taller or reaches the top. While older rows remain, a line's height is held at the top
-    of the transcript, so what appears in it never moves the view. Whether that line is there is
-    settled before the first frame, from the rows the view opens with and what is known to be
-    above them (rows kept from the last visit, the file's newest rows, or the `hello`): a
-    transcript with older rows has it from its first frame, and one that opens on the whole
-    branch never has it; nothing learned later adds it. It goes with the build of the last rows
-    above, which keeps the view where it is. When a fetch (this one, or a
+    of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
     jump's) takes longer than 0.4 s, a short bar sweeps in that line: the skeleton sweep, with no
     text; screen readers hear it as "Loading older messages" (a status region). The line sticks to
     the top of the view, over the rows, taking no pointer, so a jump fetching from the end shows
@@ -728,7 +723,7 @@ virtualized.
     Overseer (§app.overseer/transcript-window).
 
   Rows are built above the ones on screen while the browser is idle, a chunk at a time, each
-  chunk sized to stay under a frame, until about 200 rows are built; past that, a chunk is built
+  chunk sized to stay under a frame, until about 400 rows are built; past that, a chunk is built
   only as the view comes near the top of the built rows (above). Rows landing never build at
   once, and rows appended at the end are built as they come. The view doesn't move
   while they're added, not by a pixel: it keeps its distance from the end, which at the bottom is
@@ -739,7 +734,7 @@ virtualized.
   branch has moved under the list since (a rewind in another tab), the view starts again from
   the branch's newest rows, keeping the rows above them that are still their ancestors.
 - **Nothing built is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers
-  and text selection reach every row built so far: the newest 200 or so, and every row the
+  and text selection reach every row built so far: the newest 400 or so, and every row the
   reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
   in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
   Message, Open in Session, the card chip and a card reference still reach every row on the
@@ -767,7 +762,9 @@ virtualized.
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
   the transcript" still means the thread has no row for the entry: said by a list that reaches
-  the top of the branch, or when the server finds no such row on it.
+  the top of the branch, or when the server finds no such row on it. It is also said when the
+  rows down to it can't be fetched (the server unreachable, the file unreadable), so a jump never
+  waits silently (§chat.timeline/jumping).
   Rows never drawn have estimated heights, so a jump lands once and holds its row in the middle
   while the rows around it are drawn (§chat.transcript/jump-landing).
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
@@ -930,8 +927,15 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
 ## §chat.transcript/instant-open — A chat opens on its saved rows while it starts
 
 Opening a chat shows its newest rows at once, read from its saved session file and scrolled to the
-end, whether or not its process is running; when it isn't, the process starts behind them
-(§app.chat-processes/idle-stop). The Overseer, a project overseer, a baton session, a chat whose
+end, whether or not its process is running. When it isn't (the list's row for it has no `chat`), an
+ordinary chat whose rows are on screen opens asleep, as a tab does after an idle stop ("A chat closed
+while its tab is open", below): opening it to read starts no process, whether by a click in the
+list, a reload, a tab the browser discarded coming back or a restored session, and the first send or
+other action starts it, a jump to a row the tab doesn't hold and scrolling up for older rows
+included ("A chat closed while its tab is open", below). Otherwise the process starts behind the rows (§app.chat-processes/idle-stop):
+the row isn't known within about 1.5 s, there are no rows to show (a new chat, a read that failed or
+hasn't answered), a terminal has it open, it is the Overseer, a project overseer or a baton
+session, or it is a forced reopen. The Overseer, a project overseer, a baton session, a chat whose
 profile grants powers and a peer's chat open this way too, a peer's through that peer. Views that
 only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
 unchanged.
@@ -942,7 +946,9 @@ unchanged.
   once instead; the file is read first only when it changed after they were kept (its
   `lastActiveAt`). A file read that fails opens the socket as before, and so does one that hasn't
   answered within about 1.5 s: the socket then names no row, and rows the read brings after the
-  chat's `hello` are not shown.
+  chat's `hello` are not shown. A load of older rows asked before the chat's `hello` (a scroll up,
+  a jump, §chat.timeline/jumping) waits for it about 1.5 s at most, then reads the file's newest
+  rows itself and goes on from them, so a slow or failed start never leaves it waiting.
 - **Nothing downloaded twice.** The socket names the last row the view holds
   (`/ws/chat?…&have=<row id>`), and the chat's `hello` carries its state and only the rows after
   that one (its `after` names it). Rows after it (a reply streaming, entries written between the
@@ -964,6 +970,30 @@ unchanged.
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
   the connection ends or reports an internal error before its `hello`. A message sent on an earlier
   connection, after its `hello`, never comes back this way: that chat may have taken it.
+- **A chat closed while its tab is open.** When the chat's process closes for being quiet
+  (§app.chat-processes/idle-stop), a tab showing it keeps its rows, draft and composer and closes
+  its socket without reconnecting: no note shows and Send stays usable. Nothing the tab does on its
+  own starts the chat again, neither a reconnect nor a server restart. Sending does: the message
+  shows at once, the "Connecting to chat…" note floats meanwhile, and the message goes to the chat
+  once, when its `hello` comes. So does a change of model, thinking level, Claude login, mode or
+  sandbox, opening the mode menu, or a rewind, regenerate, Remove of a queued message or
+  `/compact`, each sent once the chat is ready. So does a jump to a row the tab doesn't hold
+  (§chat.timeline/jumping) and the reader scrolling up by hand (a wheel, a touch, a key, a
+  scrollbar drag) to rows not fetched yet: the chat starts, and the rows land once its `hello`
+  says what lies above them, or from the file if it hasn't within about 1.5 s ("Rows from the file
+  first", above). A list fetching on its own (too short to fill the view), one that already reaches
+  the top, and a jump to a row already held start nothing.
+  When something else opens the chat meanwhile (another tab, a worker's report), the tab connects
+  to it. Reloading the page, or opening the chat again, opens it asleep the same way (above).
+  Archiving a chat tells its open tabs the same way (`closed`), so no tab reconnects and starts the
+  archived chat again; whatever the chat answered before it closed (a send it took) reaches the tab
+  first, so nothing it took comes back to the composer, and a server call it took is answered by it,
+  never failed as unreachable. The socket closes with a code the web app never retries (4422), so
+  a tab still on an older build, which doesn't know `closed`, stays down too. A person's own
+  action on a closed chat from anywhere else opens it the same way, never answering "open the chat
+  first": a mode switch or a save of its mode as the default, a sandbox switch, a subagent profile
+  pick, a restored worker's resume. What only reads it never opens it: its subagent profile
+  (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
@@ -1132,7 +1162,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then, for a folder in a git repository, the small Saved sessions card in the setup card's column (§chat.saved-sessions/discovery; absent when there is nothing to show), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card
@@ -1163,7 +1193,6 @@ main-pane rows.
       …(/setup-card-repository)…
     </div>
   </section>
-  <button class="saved-card" aria-haspopup="dialog">…Saved sessions, its count line (§chat.saved-sessions/discovery)…</button>
   <p class="empty-body">…</p>
 </div>
 ```
@@ -1171,11 +1200,7 @@ main-pane rows.
 - **When it shows.** Only inside that empty state, so only while the thread has zero rows, local
   rows included. The first row takes the empty state away, and the card with it.
 - **The profile comes first.** In an ordinary session the empty state's profile cards and what the
-  picked profile changes (§chat.profiles/picker) sit between the title and this card. Under this
-  card, in its column and at its width, above the footnote, sits the small Saved sessions card
-  (§chat.saved-sessions/discovery) when the folder's repository has saved sessions, a remote to get
-  them from, a saved session on its main branch, or a merged branch's saved sessions to prune; it
-  reads on its own and never holds this card back. The
+  picked profile changes (§chat.profiles/picker) sit between the title and this card. The
   `sova-profile` entry draws no row, so picking a profile keeps the empty state.
 - **System context is folded.** Everything on the card but Repository, that is the loadout (the
   `System context` line, Context and Skills, or the one line in their place) and the Tools group,
@@ -1358,7 +1383,7 @@ heading is `Repository`, with no count and no total.
   <p class="setup-git">
     …branch icon… <span class="setup-git-head">main</span>
     <span class="setup-sep">·</span>                          <!-- this and the next only with an upstream -->
-    <span title="Counted against the upstream as this repository last fetched it. Sova doesn't fetch it.">2 ahead origin/main</span>
+    <span title="Counted against the upstream as this repository last fetched it. Sova never fetches.">2 ahead origin/main</span>
   </p>
   <p class="setup-git">
     …file icon… <span>2 staged · 3 unstaged · 1 untracked</span>
@@ -1379,9 +1404,7 @@ heading is `Repository`, with no count and no total.
   `{a} ahead, {b} behind {upstream}` (only the sides that aren't zero), or `{upstream} is gone`
   when that ref no longer exists locally. "Level with", not "up to date": the count is against
   the upstream ref as this repository last saw it, and the words' `title` says "Counted against
-  the upstream as this repository last fetched it. Sova doesn't fetch it." Nothing on the
-  new-session screen fetches the code's branches; its one fetch is of the saved-sessions branch alone,
-  on Get Saved Sessions (§chat.saved-sessions/discovery). A branch with no upstream
+  the upstream as this repository last fetched it. Sova never fetches." A branch with no upstream
   shows nothing after the head.
 - **The changes line.** A file icon, then `Clean`, or the tallies that aren't zero, joined by `·`,
   in the order conflicted, staged, unstaged, untracked. A path with both staged and unstaged

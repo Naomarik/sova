@@ -13,10 +13,14 @@ const packageDir =
 const require = createRequire(path.join(packageDir, "package.json"));
 const { createJiti } = require("jiti");
 const resolver = createJiti(path.join(packageDir, "package.json"));
-// Extensions get the pi-ai root as its compat entry (pi's extension loader does the same).
+// Extensions get the pi-ai root as its compat entry (pi's extension loader does the same). The
+// compat subpath is named first, to the same file: the root entry alone is a prefix alias, which
+// would turn index.ts's "@earendil-works/pi-ai/compat" into "<compat.js>/compat".
+const piAiCompat = resolver.esmResolve("@earendil-works/pi-ai/compat");
 const alias = {
 	"@earendil-works/pi-coding-agent": resolver.esmResolve("@earendil-works/pi-coding-agent"),
-	"@earendil-works/pi-ai": resolver.esmResolve("@earendil-works/pi-ai/compat"),
+	"@earendil-works/pi-ai/compat": piAiCompat,
+	"@earendil-works/pi-ai": piAiCompat,
 };
 const jiti = createJiti(import.meta.url, { alias });
 const root = fileURLToPath(new URL("../", import.meta.url));

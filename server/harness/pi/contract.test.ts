@@ -5,16 +5,17 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P24 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P27 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
-import { patchResolve } from "./own-code.ts";
+import { STANDIN_FILTER } from "./headless.ts";
+import { packageFrom, patchResolve } from "./own-code.ts";
 import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
 
@@ -861,6 +862,70 @@ return w + ":" + r.stopReason;`;
     await session.prompt("second");
     assert.deepEqual(order, ["provider: onPayload given", "message_start"], "a removed listener hears nothing; the request still goes out");
     session.dispose();
+  });
+
+  test("P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own", async () => {
+    const { discoverAndLoadExtensions } = pi.agent as any;
+    const t = join(dir, "p26");
+    mkdirSync(join(t, "agent"), { recursive: true });
+    writeFileSync(join(t, "shared.ts"), "export const box = {};\n");
+    // a and b import only the shared file; c also imports pi-tui, which nothing resolves from this
+    // folder but pi's aliases, so a native import of it throws.
+    const ext = (name: string, extra = "") =>
+      writeFileSync(join(t, `${name}.ts`), `${extra}import { box } from "./shared.ts";\n(globalThis.__sovaP26 ??= {})[${JSON.stringify(name)}] = box;\nexport default () => {};\n`);
+    ext("a");
+    ext("b");
+    ext("c", 'import { visibleWidth } from "@earendil-works/pi-tui";\nif (typeof visibleWidth !== "function") throw new Error("no pi-tui");\n');
+    const seen = ((globalThis as any).__sovaP26 = {}) as Record<string, object>;
+    const r = await discoverAndLoadExtensions(["a", "b", "c"].map((n) => join(t, `${n}.ts`)), t, join(t, "agent"));
+    assert.deepEqual(r.errors, [], "all three load");
+    const direct = (await import(join(t, "shared.ts"))).box;
+    assert.ok(seen.a && seen.b && seen.c);
+    assert.equal(seen.a, seen.b, "fixed?: pi no longer imports extensions natively first under Bun (each one translated, with its own copy)");
+    assert.equal(seen.a, direct, "the extensions' instance is the one a plain import gets");
+    assert.notEqual(seen.c, seen.a, "the control: one that can't load natively is translated, with its own copy");
+    delete (globalThis as any).__sovaP26;
+  });
+
+  test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry", () => {
+    const piDist = join(pi.dir, "dist");
+    const tuiDist = join(packageFrom(pi.dir, "@earendil-works/pi-tui")!, "dist");
+    // The filter matches by these path tails, as they sit under any node_modules.
+    const piKey = (rel: string) => `/@earendil-works/pi-coding-agent/dist/${rel}`;
+    const tuiKey = (rel: string) => `/@earendil-works/pi-tui/dist/${rel}`;
+    const names = (list: string) => list.split(",").map((s) => s.trim()).filter((s) => s && !s.startsWith("type ")).map((s) => s.split(/\s+as\s+/).at(-1)!);
+    // pi-tui's index: each export name and the module it comes from; nothing but `export {…} from`.
+    const index = readFileSync(join(tuiDist, "index.js"), "utf8");
+    const from = new Map<string, string>();
+    for (const m of index.matchAll(/^export \{([^}]*)\} from "([^"]+)";/gm))
+      for (const n of names(m[1]!)) from.set(n, m[2]!.startsWith("./") ? tuiKey(m[2]!.slice(2)) : `/${m[2]}/lib/marked.esm.js`);
+    assert.doesNotMatch(index.replace(/^export \{[^}]*\} from "[^"]+";/gm, ""), /^export /m, "pi-tui's index re-exports by name only");
+    // 1. The helpers extensions and pi's theme use for text stay real.
+    const theme = ["theme.js", "system-theme.js"].map((f) => readFileSync(join(piDist, "modes", "interactive", "theme", f), "utf8"));
+    const themeNames = theme.flatMap((s) => [...s.matchAll(/import \{([^}]*)\} from "@earendil-works\/pi-tui"/g)].flatMap((m) => names(m[1]!)));
+    const helpers = ["visibleWidth", "truncateToWidth", "wrapTextWithAnsi", "sliceByColumn", "stripTerminalSequences", "matchesKey", "Key", "KeybindingsManager", "TUI_KEYBINDINGS", "getKeybindings", "setKeybindings", "fuzzyFilter", "fuzzyMatch", ...themeNames];
+    assert.ok(themeNames.length > 0, "the theme's own pi-tui names were read");
+    for (const n of helpers) {
+      assert.ok(from.has(n), `pi-tui exports ${n}`);
+      assert.doesNotMatch(from.get(n)!, STANDIN_FILTER, `${n} lives in a module the stand-ins replace (fixed?: pi-tui moved a text helper into a drawing module)`);
+    }
+    // 2 and 3. Who outside pi's terminal mode takes a drawing module: a relative import, or a pi-tui name.
+    const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : e.name.endsWith(".js") ? [join(d, e.name)] : []));
+    const takers: string[] = [];
+    for (const file of walk(piDist)) {
+      const rel = relative(piDist, file);
+      if (rel.startsWith("bundle/") || STANDIN_FILTER.test(piKey(rel))) continue;
+      const code = readFileSync(file, "utf8");
+      const taken = [
+        ...[...code.matchAll(/^(?:import|export) [^;]*? from "(\.[^"]+)";/gm)].map((m) => piKey(relative(piDist, resolve(dirname(file), m[1]!)))),
+        ...[...code.matchAll(/^import \{([^}]*)\} from "@earendil-works\/pi-tui";/gm)].flatMap((m) => names(m[1]!).map((n) => from.get(n) ?? "")),
+      ].filter((k) => STANDIN_FILTER.test(k));
+      if (taken.length) takers.push(`${rel} <- ${[...new Set(taken.map((k) => k.replace(/^.*\/dist\//, "")))].join(" ")}`);
+    }
+    const allowed = /^(?:core\/tools\/renderers\/[^/]+|extensions\/[^/]+\/(?:renderer|ui|tools)|cli\/[^/]+|package-manager-cli|index|modes\/index|utils\/image-convert)\.js <- /;
+    const themeTakes = "modes/interactive/theme/theme.js <- utils/syntax-highlight.js";
+    assert.ok(takers.includes(themeTakes), `the theme takes the highlighter:\n${takers.join("\n")}`);
+    assert.deepEqual(takers.filter((t) => t !== themeTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

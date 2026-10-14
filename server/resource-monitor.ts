@@ -2,9 +2,11 @@
 // of every process this server started — workers, the Claude Code provider, tool children such
 // as a JVM REPL, and what escaped the tree — to the session and worker that started it.
 //
-// Lightness (§app.resource-monitor/lightness-budget): each 5s tick reads /proc/<pid>/stat for the
-// measured processes, a few cgroup/pressure/loadavg files, and VmSwap for about a sixth of the
-// processes (each at most every 30s). stat/status reads are synchronous in small batches that
+// Lightness (§app.resource-monitor/lightness-budget): each 5s tick reads /proc/<pid>/stat and
+// /proc/<pid>/statm (own memory: resident less shared pages, i.e. RssAnon) for the measured
+// processes, a few cgroup/pressure/loadavg files, and VmSwap for about a sixth of the
+// processes (each at most every 30s). On macOS (no /proc) one `ps` per tick lists the process
+// table instead, and argv comes from one more `ps` for new processes. stat/statm/status reads are synchronous in small batches that
 // yield between them (a sync /proc read costs ~14µs against ~35µs through fs/promises, measured),
 // so the loop is never held for more than a batch. cmdline, environ and cwd take the target's
 // mm lock and can hang on a stuck process: they are async, once per process. Never smaps/PSS.
@@ -12,6 +14,7 @@
 // Parsers: resource-monitor-proc.ts. CPU fold, joins, sid memory: resource-monitor-attrib.ts.
 // Ring, rollups, disk log: resource-monitor-history.ts.
 
+import { execFile } from "node:child_process";
 import { closeSync, openSync, readdirSync, readSync as readFd } from "node:fs";
 import { readFile, readlink } from "node:fs/promises";
 import { availableParallelism, freemem, loadavg, platform, totalmem } from "node:os";
@@ -21,7 +24,7 @@ import { loopDelaySampler, type LoopDelaySampler } from "./runtime-quirks";
 import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import { claudeSessionId } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type {
-  MonitorBucket, MonitorHistory, MonitorPointProc, MonitorProc, MonitorProcKind, MonitorResolution, MonitorScope,
+  MonitorBucket, MonitorHistory, MonitorMemory, MonitorPointProc, MonitorProc, MonitorProcKind, MonitorResolution, MonitorScope,
   MonitorSession, MonitorSnapshot, MonitorWorker,
 } from "../shared/protocol";
 import {
@@ -30,8 +33,8 @@ import {
 import { toolCtx } from "./harness/pi/tools";
 import { MonitorLog, MonitorRing, Rollup, type TickPoint } from "./resource-monitor-history";
 import {
-  classifyArgv, parseBootTime, parseCmdline, parseEnviron, parseKeyValues, parseLoadavg, parseMeminfo, parseSelfCgroup,
-  parseStat, parseStatusRss, parseStatusSwap, pressureOf, type ArgvInfo, type ProcEnv, type ProcStat,
+  classifyArgv, parseBootTime, parseCmdline, parseEnviron, parseKeyValues, parseLoadavg, parseMeminfo, parsePsTable, parseSelfCgroup,
+  parseStat, parseStatm, parseStatusRss, parseStatusSwap, pressureOf, type ArgvInfo, type ProcEnv, type ProcStat,
 } from "./resource-monitor-proc";
 
 // ── Hosted sessions, as their runtimes report them ───────────────────────────────────────────
@@ -80,8 +83,13 @@ interface RemoteHosted {
   /** A worker chat's process (al_3 stage 4): whose worker it is. Charged to that parent and worker,
       never a session of its own. */
   worker?: { parentPath: string; parentSessionId: string; workerId: string };
+  /** Its model's provider, as its chat reports it (CLAUDE_CODE_PROVIDER: it wraps a Claude Code CLI). */
+  provider?: string;
 }
 const remoteHosted = new Map<string, RemoteHosted>();
+/** The Claude Code provider's id (server/models.ts CLAUDE_CODE_PROVIDER; the claude-code extension's
+    CLAUDE_PROVIDER_ID), repeated here so the monitor imports neither. */
+export const CLAUDE_CODE_PROVIDER = "claude-code-cli";
 export function setRemoteHosted(path: string, entry: RemoteHosted | null): void {
   if (entry) remoteHosted.set(path, entry);
   else remoteHosted.delete(path);
@@ -193,6 +201,8 @@ export interface MonitorOptions {
   eventLoop?: boolean;
   /** Sova's display title for a session, from memory only (it is asked each tick; no I/O). */
   titleOf?: (path: string) => string | undefined;
+  /** Runs `ps` with these arguments and resolves its stdout (macOS; tests inject a table). */
+  ps?: (args: string[]) => Promise<string>;
 }
 
 interface ProcState {
@@ -211,7 +221,20 @@ interface ProcState {
   swapBytes?: number;
   swapAt: number;
   stat: ProcStat;
+  /** Resident memory, and the process's own (RssAnon on Linux; resident on macOS), in bytes. */
+  rssBytes: number;
+  privBytes: number;
 }
+
+/** Which part of Sova's memory a process is (§app.resource-monitor/attribution): 0 backend, 1 runtime,
+    2 wrapped (Claude Code), 3 tools and work. */
+const partOf = (kind: MonitorProcKind): 0 | 1 | 2 | 3 =>
+  kind === "sova-helper" ? 0 : kind === "sova-runtime" ? 1 : kind === "claude-worker" || kind === "claude-provider" ? 2 : 3;
+
+/** `ps` through execFile: its stdout even when it exits non-zero (a pid gone between listing and asking). */
+const runPs = (args: string[]): Promise<string> =>
+  new Promise((resolve, reject) =>
+    execFile("ps", args, { maxBuffer: 16 << 20, timeout: 4000 }, (err, out) => (out ? resolve(out) : err ? reject(err) : resolve(""))));
 
 const BATCH = 48;
 const LOOP_RESOLUTION_MS = 200;
@@ -295,6 +318,9 @@ export class ResourceMonitor {
   private snap: MonitorSnapshot | null = null;
   private readonly idleEvery: number;
   private readonly titleOf?: (path: string) => string | undefined;
+  private readonly ps: (args: string[]) => Promise<string>;
+  /** ps scope: when each pid was first seen (its stand-in starttime), and its last CPU time. */
+  private psSeen = new Map<number, { start: number; cpu: number }>();
   /** The last tick's busy ms per phase, with its process and new-process counts (diagnostics). */
   lastPhases: Record<string, number> = {};
 
@@ -308,6 +334,7 @@ export class ResourceMonitor {
     this.log = new MonitorLog(opts.logDir);
     this.plat = opts.platform ?? platform();
     this.titleOf = opts.titleOf;
+    this.ps = opts.ps ?? runPs;
     this.idleEvery = Math.max(1, Math.round(opts.idleEvery ?? IDLE_EVERY));
     const held = opts.held;
     this.hostedOf = opts.hosted ?? (() => {
@@ -321,6 +348,7 @@ export class ResourceMonitor {
         out.push({
           path, sessionId: r.sessionId, ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.title ? { title: r.title } : {}),
           workers: r.workers, providerIds: providerIdsOf(r.sessionId), pid: r.pid,
+          ...(r.provider ? { backend: r.provider === CLAUDE_CODE_PROVIDER ? "claude-code" as const : "pi" as const } : {}),
           toolInWindow: !r.worker && (r.toolsRunning > 0 || r.lastToolEnd >= this.prevAt),
           ...(r.worker ? { worker: { parentPath: r.worker.parentPath, workerId: r.worker.workerId } } : {}),
         });
@@ -344,7 +372,8 @@ export class ResourceMonitor {
   private init(): void {
     const self = readSync(join(this.procRoot, String(this.serverPid), "stat"));
     if (this.plat !== "linux" || !self) {
-      this.scope = "none";
+      // macOS: no /proc, but one `ps` per tick lists the processes (§app.resource-monitor/platform-fallback).
+      this.scope = this.plat === "darwin" ? "ps" : "none";
       this.sids = new SidMemory();
       return;
     }
@@ -460,6 +489,61 @@ export class ResourceMonitor {
     return out;
   }
 
+  /** ps scope: the whole process table from one `ps`, then the server's tree and each chat's. Each
+      process gets a stand-in stat: its pid, parent, CPU time (as utime) and when it was first seen. */
+  private async listPs(at: number): Promise<{ stats: Map<number, ProcStat>; mem: Map<number, number> }> {
+    const stats = new Map<number, ProcStat>();
+    const mem = new Map<number, number>();
+    let table: ReturnType<typeof parsePsTable>;
+    try {
+      table = parsePsTable(await this.ps(["-A", "-o", "pid=,ppid=,rss=,time="]));
+    } catch {
+      return { stats, mem };
+    }
+    const kids = new Map<number, number[]>();
+    for (const r of table.values()) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]);
+    const roots = [this.serverPid, ...this.hostedOf().flatMap((h) => (h.pid ? [h.pid] : []))];
+    const out: number[] = [];
+    const seen = new Set<number>();
+    for (const r of roots) if (table.has(r) && !seen.has(r)) { seen.add(r); out.push(r); }
+    for (let i = 0; i < out.length; i++) for (const c of kids.get(out[i]!) ?? []) if (!seen.has(c)) { seen.add(c); out.push(c); }
+    const first = this.prevAt === 0;
+    const next = new Map<number, { start: number; cpu: number }>();
+    for (const pid of out) {
+      const r = table.get(pid)!;
+      const was = this.psSeen.get(pid);
+      // CPU time that went backwards is a new process on a reused pid.
+      const start = was && r.cpu >= was.cpu ? was.start : first ? 0 : at;
+      next.set(pid, { start, cpu: r.cpu });
+      stats.set(pid, {
+        pid, comm: "", state: "S", ppid: r.ppid, pgid: 0, sid: 0, utime: Math.round((r.cpu * this.clkTck) / 100), stime: 0,
+        cutime: 0, cstime: 0, starttime: start, rss: 0,
+      });
+      mem.set(pid, r.rssKb * 1024);
+    }
+    this.psSeen = next;
+    this.listed = new Set(out);
+    return { stats, mem };
+  }
+
+  /** ps scope: argv of new processes, all in one `ps`. */
+  private async learnPs(ps: ProcState[]): Promise<void> {
+    for (const p of ps) p.learned = true;
+    let text = "";
+    try {
+      text = await this.ps(["-o", "pid=,args=", "-p", ps.map((p) => p.stat.pid).join(",")]);
+    } catch { /* gone: they keep their stand-in names */ }
+    const args = new Map<number, string>();
+    for (const line of text.split("\n")) {
+      const m = /^\s*(\d+)\s+(.*)$/.exec(line);
+      if (m) args.set(Number(m[1]), m[2]!);
+    }
+    for (const p of ps) {
+      const a = args.get(p.stat.pid);
+      if (a) p.argv = classifyArgv(parseCmdline(a));
+    }
+  }
+
   /** `roots` and their descendants: each process's main-thread children every tick; every 30s every
       thread's (a JVM or a browser forks from other threads), so a missed child is found within 30s. */
   private async tree(roots: number[], deep: boolean): Promise<number[]> {
@@ -536,9 +620,24 @@ export class ResourceMonitor {
       // lives, its first read counts its whole life. Only its name in the top lists is lost, for
       // processes that lived under one tick, and each such process costs nothing.
       const stats = new Map<number, ProcStat>();
+      /** pid → [resident, own] bytes. */
+      const mems = new Map<number, [number, number]>();
       const stale = new Set<string>();
       let deferred = 0;
-      if (this.scope !== "none") {
+      if (this.scope === "ps") {
+        const before = this.listed;
+        let got: Awaited<ReturnType<ResourceMonitor["listPs"]>> = { stats, mem: new Map() };
+        await pause(this.listPs(at).then((r) => { got = r; }));
+        for (const [pid, st] of got.stats) {
+          if (this.prevAt > 0 && !before.has(pid) && pid !== this.serverPid) {
+            deferred++;
+            continue;
+          }
+          stats.set(pid, st);
+          const b = got.mem.get(pid) ?? 0;
+          mems.set(pid, [b, b]);
+        }
+      } else if (this.scope !== "none") {
         let pids: number[] = [];
         await pause(this.listPids().then((p) => { pids = p; }));
         const before = this.listed;
@@ -556,11 +655,19 @@ export class ResourceMonitor {
           if (last && last.quiet >= 2 && (this.tickCount + pid) % this.idleEvery !== 0) {
             stale.add(last.key);
             stats.set(pid, last.stat);
+            mems.set(pid, [last.rssBytes, last.privBytes]);
             continue;
           }
           const text = readSync(this.pidDir(pid) + "/stat");
           const st = text ? parseStat(text) : null;
-          if (st) stats.set(st.pid, st);
+          if (st) {
+            stats.set(st.pid, st);
+            // Own memory in the same batch: resident less shared pages (RssAnon). Never smaps.
+            const sm = readSync(this.pidDir(pid) + "/statm");
+            const m = sm ? parseStatm(sm) : null;
+            const rss = st.rss * this.pageSize;
+            mems.set(st.pid, [rss, m ? Math.max(0, m.resident - m.shared) * this.pageSize : rss]);
+          }
           if (i % BATCH === BATCH - 1) await pause(yieldLoop());
         }
       }
@@ -572,15 +679,20 @@ export class ResourceMonitor {
       for (const st of stats.values()) {
         const key = cpuKey(st);
         const known = this.procs.get(key);
+        const [rssBytes, privBytes] = mems.get(st.pid) ?? [0, 0];
         if (known) {
           known.stat = st;
           known.seen++;
+          known.rssBytes = rssBytes;
+          known.privBytes = privBytes;
           live.set(key, known);
         } else {
           fresh++;
+          // ps scope: starttime stands for when it was first seen (epoch ms; 0 = before sampling began).
+          const startedAt = this.scope === "ps" ? st.starttime : this.bootMs + (st.starttime * 1000) / this.clkTck;
           live.set(key, {
-            key, startedAt: this.bootMs + (st.starttime * 1000) / this.clkTck, argv: classifyArgv([], st.comm), env: {},
-            learned: false, seen: 1, quiet: 0, cwdRead: false, swapAt: 0, stat: st,
+            key, startedAt, argv: classifyArgv([], st.comm), env: {},
+            learned: false, seen: 1, quiet: 0, cwdRead: false, swapAt: 0, stat: st, rssBytes, privBytes,
           });
         }
       }
@@ -606,8 +718,10 @@ export class ResourceMonitor {
       const cpuOf = (p: ProcState) => (fold.own.get(p.key) ?? 0) + (fold.kids.get(p.key) ?? 0);
       const unlearned = [...live.values()].filter((p) => !p.learned && p.stat.pid !== this.serverPid);
       const topCpu = new Set(unlearned.filter((p) => cpuOf(p) > 0).sort((a, b) => cpuOf(b) - cpuOf(a)).slice(0, 10));
-      const toLearn = unlearned.filter((p) => p.seen > 1 || p.stat.ppid === this.serverPid || !byPidState.has(p.stat.ppid) || topCpu.has(p));
-      if (toLearn.length) await pause(Promise.all(toLearn.map((p) => this.learn(p))));
+      // ps scope: every new process at once, in one `ps` (the spawn is the cost, not the count).
+      const toLearn = this.scope === "ps" ? unlearned
+        : unlearned.filter((p) => p.seen > 1 || p.stat.ppid === this.serverPid || !byPidState.has(p.stat.ppid) || topCpu.has(p));
+      if (toLearn.length) await pause(this.scope === "ps" ? this.learnPs(toLearn) : Promise.all(toLearn.map((p) => this.learn(p))));
       phase("learn");
 
       // 5. VmSwap, only while the host has swap in use: each process on its second sighting, then
@@ -616,6 +730,7 @@ export class ResourceMonitor {
       const swapInUse = host.swapTotalBytes - host.swapFreeBytes > 0;
       let n = 0;
       for (const p of live.values()) {
+        if (this.scope === "ps") break; // no per-process swap on macOS
         if (!swapInUse) {
           p.swapBytes = 0;
           continue;
@@ -647,6 +762,7 @@ export class ResourceMonitor {
       // cwd, once per process that outlived a tick and nothing exact matched: next tick's heuristic.
       const cwdReads: Promise<void>[] = [];
       for (const p of live.values()) {
+        if (this.scope === "ps") break; // no /proc/<pid>/cwd
         if (p.cwdRead || p.seen < 2 || p.stat.pid === this.serverPid || owners.has(p.stat.pid)) continue;
         p.cwdRead = true;
         cwdReads.push(readlink(this.pidDir(p.stat.pid) + "/cwd").then((c) => { p.cwd = c; }, () => {}));
@@ -697,7 +813,7 @@ export class ResourceMonitor {
   }
 
   private hostNumbers(): MonitorSnapshot["host"] {
-    const proc = this.scope !== "none";
+    const proc = this.scope === "unit" || this.scope === "tree";
     const mi = proc ? parseMeminfo(readSync(join(this.procRoot, "meminfo")) ?? "") : new Map<string, number>();
     const la = proc ? readSync(join(this.procRoot, "loadavg")) : null;
     const pressure = proc
@@ -756,7 +872,11 @@ export class ResourceMonitor {
     const { at, live, fold, owners, inTree, hostedNow, pct } = t;
     // A worker chat's entry is charged to its parent (attribution), never a session row of its own.
     const hostedBy = new Map(hostedNow.filter((h) => !h.worker).map((h) => [h.path, h]));
+    // A chat's runtime by the pid its chat reports first; by argv only for a chat process charged to
+    // nobody (one its server hasn't heard from yet), never a server some tool of a chat started.
+    const runtimePids = new Set(hostedNow.flatMap((h) => (h.pid ? [h.pid] : [])));
     const procs: MonitorProc[] = [];
+    const helpers: MonitorProc[] = [];
     let server: ProcState | undefined;
     let serverKidsPct = 0;
     for (const p of live.values()) {
@@ -767,20 +887,40 @@ export class ResourceMonitor {
         continue;
       }
       const o = owners.get(p.stat.pid);
-      const kind: MonitorProcKind = p.argv.kind === "claude-worker" && o?.session && !o.worker ? "claude-provider" : p.argv.kind;
-      procs.push({
-        pid: p.stat.pid, ppid: p.stat.ppid, kind, cmd: p.argv.cmd, cpuPct: round1(pct(cpu)), rssBytes: p.stat.rss * this.pageSize,
+      const a = p.argv.kind;
+      const kind: MonitorProcKind = runtimePids.has(p.stat.pid) || (a === "sova-runtime" && !o) ? "sova-runtime"
+        : a === "sova-helper" && !o ? "sova-helper"
+        : a === "sova-runtime" || a === "sova-helper" ? "node"
+        : a === "claude-worker" && o?.session && !o.worker ? "claude-provider" : a;
+      const row: MonitorProc = {
+        pid: p.stat.pid, ppid: p.stat.ppid, kind, cmd: p.argv.cmd, cpuPct: round1(pct(cpu)), rssBytes: p.rssBytes, privBytes: p.privBytes,
         ...(p.swapBytes !== undefined ? { swapBytes: p.swapBytes } : {}), startedAt: Math.round(p.startedAt),
         ...(o?.session ? { sessionPath: o.session } : {}), ...(o?.worker ? { workerId: o.worker } : {}), ...(o ? { via: o.via } : {}),
         ...(!o && p.cwd ? { cwd: p.cwd } : {}),
-      });
+      };
+      // The server's usage helper is the backend's, never Not attributed.
+      if (kind === "sova-helper") helpers.push(row);
+      else procs.push(row);
     }
     const heavy = (a: MonitorProc, b: MonitorProc) => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes;
     procs.sort(heavy);
+    const priv = (p: MonitorProc) => p.privBytes ?? 0;
     const sum = (ps: MonitorProc[]) => ({
       cpuPct: round1(ps.reduce((s, p) => s + p.cpuPct, 0)), rssBytes: ps.reduce((s, p) => s + p.rssBytes, 0),
+      privBytes: ps.reduce((s, p) => s + priv(p), 0),
       swapBytes: ps.reduce((s, p) => s + (p.swapBytes ?? 0), 0), procCount: ps.length,
     });
+    /** Own memory split by part: runtime, wrapped, tools (the backend is never a session's). */
+    const split = (ps: MonitorProc[]) => {
+      const out = { runtimeBytes: 0, wrappedBytes: 0, toolsBytes: 0 };
+      for (const p of ps) {
+        const part = partOf(p.kind);
+        if (part === 1) out.runtimeBytes += priv(p);
+        else if (part === 2) out.wrappedBytes += priv(p);
+        else out.toolsBytes += priv(p);
+      }
+      return out;
+    };
 
     // Sessions and workers. A worker's own process is its row; everything else charged to it is
     // its subtree (`top`).
@@ -824,7 +964,7 @@ export class ResourceMonitor {
         ...(info?.status ? { status: info.status } : {}),
         ...(info?.status && info.status !== "running" && info.status !== "starting" && info.lastActivity ? { idleSince: info.lastActivity } : {}),
         ...(self ? { pid: self.pid } : {}), via: self?.via ?? ps[0]?.via ?? "descendant",
-        ...s, top: ps.filter((p) => p !== self).slice(0, 5),
+        ...s, ...split(ps), top: ps.filter((p) => p !== self).slice(0, 5),
       };
     };
     const sessionRows: MonitorSession[] = [];
@@ -838,7 +978,9 @@ export class ResourceMonitor {
       const own = sum(s.own);
       sessionRows.push({
         sessionPath: path, ...(title ? { title } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
-        ...sum(all), own: s.own.slice(0, 5), ownCpuPct: own.cpuPct, ownRssBytes: own.rssBytes, workers,
+        ...(h?.backend ? { backend: h.backend } : {}),
+        // Its chat's runtime and Claude Code CLI always, so the screen can show each; then its heaviest tools.
+        ...sum(all), ...split(s.own), own: [...s.own.filter((p) => partOf(p.kind) !== 3), ...s.own.filter((p) => partOf(p.kind) === 3).slice(0, 5)], ownCpuPct: own.cpuPct, ownRssBytes: own.rssBytes, workers,
       });
     }
     sessionRows.sort((a, b) => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes);
@@ -848,18 +990,37 @@ export class ResourceMonitor {
     // Escaped: the totals are the uncharged ones (a charged one is counted in its session), the
     // list shows all of them, charged ones with their session.
     const escapedUncharged = escaped.filter((p) => !p.sessionPath && !p.workerId);
-    const serverRss = server ? server.stat.rss * this.pageSize : t.mem.rss;
+    const serverRss = server ? server.rssBytes : t.mem.rss;
+    const serverPriv = server ? server.privBytes : t.mem.rss;
     const serverCpu = server ? round1(pct(fold.own.get(server.key) ?? 0)) : 0;
-    const everything = sum(procs);
+    const everything = sum([...procs, ...helpers]);
     const totals = {
       cpuPct: round1(everything.cpuPct + serverCpu + exitedPct), rssBytes: everything.rssBytes + serverRss,
-      swapBytes: everything.swapBytes + (server?.swapBytes ?? 0), procCount: procs.length + (server ? 1 : 0),
+      swapBytes: everything.swapBytes + (server?.swapBytes ?? 0), procCount: procs.length + helpers.length + (server ? 1 : 0),
     };
+    // Sova's own memory, four ways: every measured process is in exactly one part.
+    const helper = sum(helpers);
+    let memory: MonitorMemory | undefined;
+    if (this.scope !== "none") {
+      const parts = [serverPriv + helper.privBytes, 0, 0, 0];
+      const counts = [helpers.length + 1, 0, 0, 0];
+      for (const p of procs) {
+        const part = partOf(p.kind);
+        parts[part] = parts[part]! + priv(p);
+        counts[part] = counts[part]! + 1;
+      }
+      memory = {
+        total: parts[0]! + parts[1]! + parts[2]! + parts[3]!, backend: { bytes: parts[0]!, procs: counts[0]! },
+        runtime: { bytes: parts[1]!, count: counts[1]! }, wrapped: { bytes: parts[2]!, count: counts[2]! }, tools: { bytes: parts[3]! },
+      };
+    }
 
     const notes: string[] = [];
-    if (this.scope === "none") notes.push("Process details need Linux (/proc); only this server's own numbers are shown.");
+    if (this.scope === "none") notes.push("Process details need Linux (/proc) or macOS (ps); only this server's own numbers are shown.");
     if (this.scope === "tree") notes.push("Not running in a dedicated systemd unit: the numbers cover this server's process tree only.");
-    notes.push("Memory is RSS per process; pages shared between processes are counted in each.");
+    if (this.scope === "ps")
+      notes.push("Memory is each process's resident memory (macOS has no cheap count of a process's own), so program code that processes share is counted in each of them and the numbers run high.");
+    else if (this.scope !== "none") notes.push("Memory is each process's own memory. Program code that processes share is not counted per process.");
 
     // History: the groups partition the total (escaped only when charged to nobody).
     const groups = new Map<string, [number, number]>();
@@ -870,37 +1031,41 @@ export class ResourceMonitor {
       g[1] += rss;
       groups.set(k, g);
     };
-    addG("server", serverCpu, serverRss);
-    labels.set("server", { label: "Sova server" });
+    // The server group is the backend: the server and its helper.
+    addG("server", round1(serverCpu + helper.cpuPct), memory ? memory.backend.bytes : serverRss);
+    labels.set("server", { label: "Backend" });
     const workersH = new Map<string, Map<string, [number, number]>>();
     const workerLabels: TickPoint["workerLabels"] = new Map();
     for (const s of sessionRows) {
-      addG(s.sessionPath!, s.cpuPct, s.rssBytes);
+      addG(s.sessionPath!, s.cpuPct, memory ? s.privBytes! : s.rssBytes);
       labels.set(s.sessionPath!, { label: s.title ?? s.sessionPath!.split("/").pop()!, sessionPath: s.sessionPath! });
       if (s.workers.length) {
-        workersH.set(s.sessionPath!, new Map(s.workers.map((w) => [w.id, [w.cpuPct, w.rssBytes] as [number, number]])));
+        workersH.set(s.sessionPath!, new Map(s.workers.map((w) => [w.id, [w.cpuPct, memory ? w.privBytes! : w.rssBytes] as [number, number]])));
         const names = new Map(s.workers.filter((w) => w.name).map((w) => [w.id, w.name!]));
         if (names.size) workerLabels.set(s.sessionPath!, names);
       }
     }
     if (escapedUncharged.length) {
       const e = sum(escapedUncharged);
-      addG("escaped", e.cpuPct, e.rssBytes);
+      addG("escaped", e.cpuPct, memory ? e.privBytes : e.rssBytes);
       labels.set("escaped", { label: "Escaped" });
     }
     const una = [...unattributed, ...[...unowned.values()].flat()];
     if (una.length) {
-      addG("unattributed", sum(una).cpuPct, sum(una).rssBytes);
+      const u = sum(una);
+      addG("unattributed", u.cpuPct, memory ? u.privBytes : u.rssBytes);
       labels.set("unattributed", { label: "Unattributed" });
     }
     const groupOf = (p: MonitorProc) => (p.sessionPath ?? (p.workerId ? "unattributed" : p.pid === 0 ? undefined : escaped.includes(p) ? "escaped" : "unattributed"));
     const top: MonitorPointProc[] = procs.slice(0, 5).map((p) => ({
-      pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: p.rssBytes,
+      pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: memory ? priv(p) : p.rssBytes,
       ...(groupOf(p) ? { group: groupOf(p)! } : {}), ...(p.workerId && p.sessionPath ? { workerId: p.workerId } : {}),
     }));
     const point: TickPoint = {
       at, cpuPct: totals.cpuPct, rssBytes: totals.rssBytes, swapBytes: totals.swapBytes,
-      ...(t.unit ? { anonBytes: t.unit.memory.anon } : {}), load1: t.host.loadavg[0], loopMaxMs: t.loopMs.max,
+      ...(t.unit ? { anonBytes: t.unit.memory.anon } : {}),
+      ...(memory ? { sovaBytes: memory.total, mem: [memory.backend.bytes, memory.runtime.bytes, memory.wrapped.bytes, memory.tools.bytes] as [number, number, number, number] } : {}),
+      load1: t.host.loadavg[0], loopMaxMs: t.loopMs.max,
       groups, workers: workersH, top, labels, workerLabels,
     };
     this.ring.push(point);
@@ -913,7 +1078,9 @@ export class ResourceMonitor {
         pid: this.serverPid, cpuPct: serverCpu, rssBytes: serverRss, heapUsedBytes: t.mem.heapUsed, heapTotalBytes: t.mem.heapTotal,
         eventLoop: { p50: round1000(t.loopMs.p50), p99: round1000(t.loopMs.p99), max: round1000(t.loopMs.max) },
         uptimeSec: Math.round(process.uptime()),
+        ...(memory ? { privBytes: serverPriv, helpers } : {}),
       },
+      ...(memory ? { memory } : {}),
       totals, sessions: sessionRows, unownedWorkers, escaped: { ...sum(escapedUncharged), procs: escaped.slice(0, 20) }, unattributed: bucket(unattributed),
       topProcs: procs.slice(0, 10), sampler: { intervalMs: this.intervalMs, lastTickMs: 0, avgTickMs: 0, skipped: 0, ticks: 0, startedAt: 0 },
       notes,

@@ -15,6 +15,7 @@ import { Type } from "typebox";
 import { activeTrees, restoreActive } from "../worktrees/state.ts";
 import { normalizeShowChangesDetails, scopeLine, SHOW_CHANGES_LIMITS, SHOW_CHANGES_TOOL, type ShowChangesDetails } from "./details.ts";
 import { coverageRefusal, placeSteps } from "./coverage.ts";
+import { REVIEW_LIMITS } from "../worktrees/git.ts";
 import { changedFiles, type Git, inPaths, type KnownTree, pickDir, resolveScope, runGit } from "./git.ts";
 import { readHunks } from "./hunks.ts";
 import { checkShowChangesParams, ShowChangesError } from "./input.ts";
@@ -28,19 +29,19 @@ const LIST_FILES = 40;
 
 export const SHOW_CHANGES_DESCRIPTION = `Open Sova's changes viewer on a set of git changes, for the user to review: a file tree, a numbered list of steps, and one file or step's diff at a time. Read-only: it changes nothing and returns the changed files.
 
-scope: "dirty" = uncommitted work (index + working tree, untracked files included) vs HEAD; "worktree" = a worktree's branch vs its merge-base with its base branch (the tracked worktree's base, else master, else main, else origin/HEAD), or, once merged, what its merge brought in; "commit" = one commit vs its first parent (give commit, e.g. a sha or "HEAD").
+scope: "dirty" = uncommitted work (index + working tree, untracked files included) vs HEAD; "worktree" = a worktree's branch vs its merge-base with its base branch (the tracked worktree's base, else master, else main, else origin/HEAD), or, once merged, what its merge brought in, or, with no base branch sharing history, the commit the tracked worktree was created from: the same base Sova's viewer uses; "commit" = one commit vs its first parent (give commit, e.g. a sha or "HEAD").
 worktree: for dirty or worktree, which checkout: a tracked worktree's branch or path, or a directory; default the tracked worktree holding the session cwd, else (worktree scope) the only tracked one, else the session cwd.
-paths: limit the view to these repo-relative files or directories.
-steps: the change told as a story, in reading order. Required when the diff has more than one hunk: the tool checks the steps against the diff (git's default context) and refuses, opening nothing, unless every hunk is in a step and every ref names a hunk; the refusal lists the hunks to place. Each step: a title, why (optional), buildsOn (numbers of earlier steps it depends on) and hunks: {path} for every hunk of a file, or {path, newStart} (or oldStart) naming one hunk by any line inside it, new side (old side), as numbered in \`git show\`/\`git diff\` @@ -a,b +c,d @@ headers at default context. A hunk named by two steps goes to the first.
+paths: limit the view to these repo-relative files or directories. A change of more than ${REVIEW_LIMITS.maxFiles} files (counted within paths) is refused: narrow it with paths.
+steps: the change told as a story, in reading order. Required when the diff has more than one hunk: the tool checks the steps against the diff (git's default context) and refuses, opening nothing, unless every hunk is in a step and every ref names a hunk; the refusal lists the hunks to place. Each step: a title, why (optional) and hunks: {path} for every hunk of a file (or the file itself when it has no line changes: a pure rename, a mode change, an empty file), or {path, newStart} (or oldStart) naming one hunk by any line inside it, new side (old side), as numbered in \`git show\`/\`git diff\` @@ -a,b +c,d @@ headers at default context. A hunk named by two steps goes to the first; a step naming only hunks earlier steps already hold is refused.
 
-Example: {"scope": "worktree", "title": "Rate limits on the export API", "steps": [{"title": "Token bucket", "why": "one limiter shared by every route", "hunks": [{"path": "server/limit.ts"}]}, {"title": "Apply it to /export", "buildsOn": [1], "hunks": [{"path": "server/routes.ts", "newStart": 120}, {"path": "server/routes.test.ts"}]}]}`;
+Example: {"scope": "worktree", "title": "Rate limits on the export API", "steps": [{"title": "Token bucket", "why": "one limiter shared by every route", "hunks": [{"path": "server/limit.ts"}]}, {"title": "Apply it to /export", "hunks": [{"path": "server/routes.ts", "newStart": 120}, {"path": "server/routes.test.ts"}]}]}`;
 
 export const SHOW_CHANGES_PROMPT_SNIPPET = "Show the user git changes (uncommitted, a worktree branch, or a commit) in Sova's diff viewer, as numbered steps";
 
 export const SHOW_CHANGES_GUIDELINES = [
 	"When the user asks to see, review or walk through changes (\"show me the diff\", \"what did you change\"), call show_changes instead of pasting diffs or running git diff for them; reply with a sentence or two, the viewer shows the rest. Pick the scope: dirty for uncommitted work, worktree for a feature branch, commit for one commit. When the user names files or folders, pass them as paths.",
 	"Before calling, read the diff yourself with git's default context: `git show <sha>` (commit), `git diff <base>...<head>` (worktree branch), `git diff HEAD` (uncommitted); add `-- <path>` to narrow. Hunk numbers come from its `@@ -a,b +c,d @@` headers; never use -U0 or another context size.",
-	"Send steps whenever the diff has more than one hunk: the tool refuses the call otherwise, and refuses steps that leave a hunk unplaced or name a hunk that isn't there, listing the hunks to fix. Each step is one reviewable unit (a new module, then its wiring, then its tests) with a title and a short why, ordered so later steps build on earlier ones (buildsOn). If the change is one idea, send one step naming every file by path. Name a file by path alone when all its hunks share one step; otherwise name each hunk by newStart (any new-side line inside it; oldStart, any old-side line). A hunk named by two steps goes to the first.",
+	"Send steps whenever the diff has more than one hunk: the tool refuses the call otherwise, and refuses steps that leave a hunk unplaced or name a hunk that isn't there, listing the hunks to fix. Each step is one reviewable unit (a new module, then its wiring, then its tests) with a title and a short why, ordered so later steps build on earlier ones. If the change is one idea, send one step naming every file by path. Name a file by path alone when all its hunks share one step; otherwise name each hunk by newStart (any new-side line inside it; oldStart, any old-side line). A hunk named by two steps goes to the first, and a step whose refs name only hunks earlier steps already hold is refused: give each step hunks of its own.",
 ];
 
 const Hunk = Type.Object(
@@ -56,7 +57,6 @@ const Step = Type.Object(
 	{
 		title: Type.String({ minLength: 1, description: 'What this step does, short: "Token bucket limiter".' }),
 		why: Type.Optional(Type.String({ minLength: 1, description: "Why, in a sentence (optional)." })),
-		buildsOn: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { description: "Numbers (from 1) of earlier steps this one depends on." })),
 		hunks: Type.Array(Hunk, { minItems: 1, maxItems: SHOW_CHANGES_LIMITS.hunksPerStep, description: "The hunks of this step: {path} alone when all of a file's hunks are in this step, else {path, newStart} per hunk." }),
 	},
 	{ additionalProperties: false },
@@ -120,7 +120,7 @@ export function renderShowChangesResult(result: { content?: unknown; details?: u
 	}
 	const head = `${d.title ? `${d.title} · ` : ""}${scopeLine(d.scope)}${d.steps ? ` · ${d.steps.length} step${d.steps.length === 1 ? "" : "s"}` : ""} · open it in Sova`;
 	if (!expanded || !d.steps) return new Text(theme.fg("dim", head), 0, 0);
-	const steps = d.steps.map((s, i) => `  ${i + 1}. ${s.title}${s.buildsOn ? ` (builds on ${s.buildsOn.join(", ")})` : ""} · ${s.hunks.length} ref${s.hunks.length === 1 ? "" : "s"}`);
+	const steps = d.steps.map((s, i) => `  ${i + 1}. ${s.title} · ${s.hunks.length} ref${s.hunks.length === 1 ? "" : "s"}`);
 	return new Text(theme.fg("dim", [head, ...steps].join("\n")), 0, 0);
 }
 
@@ -153,6 +153,12 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 				const scope = await resolveScope(git, req, dir, tree);
 				const all = await changedFiles(git, scope);
 				const files = all.filter((f) => inPaths(f, req.paths));
+				// The viewer lists at most maxFiles (after the same paths filter): past it, refuse rather than open a cut list.
+				if (files.length > REVIEW_LIMITS.maxFiles) {
+					throw new ShowChangesError(
+						`${files.length} files changed${req.paths ? " within the paths given" : ""}, more than the ${REVIEW_LIMITS.maxFiles} the viewer shows: narrow it with paths (the folders or files to review)`,
+					);
+				}
 				// The steps against the hunks the viewer will show: refuse unless they place them all.
 				const diff = (await readHunks(git, scope)).filter((f) => inPaths(f.path, req.paths));
 				const refusal = coverageRefusal(req.steps, diff);

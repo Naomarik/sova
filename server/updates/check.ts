@@ -152,6 +152,18 @@ export async function fetchPrivate(git: Git, repo: string, ref: string): Promise
   if (r.code !== 0) throw new Error(`Couldn't fetch from Sova's repository: ${firstLine(r)}.`);
 }
 
+/**
+ * Why a developer copy can't follow `source` from the branch it is on, or null when it can: Latest
+ * changes needs master checked out, a branch source that branch, Stable master or a detached HEAD.
+ * Nothing of the developer's is moved to follow a source it isn't on (runner.ts repeats this rule).
+ */
+export function branchMismatch(source: UpdateSource, branch: string | null): string | null {
+  if (source.kind === "stable") return branch === null || branch === "master" ? null : `You're on ${branch}; switch to master or a release to follow Stable.`;
+  const want = source.kind === "master" ? "master" : source.branch;
+  if (branch === want) return null;
+  return branch ? `You're on ${branch}; switch to ${want} to follow it.` : `Your copy isn't on a branch; switch to ${want} to follow it.`;
+}
+
 export async function checkForUpdate(input: CheckInput): Promise<CheckOutcome> {
   const { git, repo, source, head } = input;
   const ls = await git(lsRemoteArgs(repo, source), { timeoutMs: 60_000 });
@@ -166,6 +178,9 @@ export async function checkForUpdate(input: CheckInput): Promise<CheckOutcome> {
   const label = source.kind === "stable" ? (version ?? "stable") : source.kind === "master" ? "master" : source.branch;
   const name = sourceLabel(source);
   if (sha === head) return { result: { state: "up-to-date" }, refs };
+  // A developer copy on another branch than the source's is never offered a move.
+  const wrong = input.kind === "developer" ? branchMismatch(source, input.branch) : null;
+  if (wrong) return { result: { state: "diverged", target: { sha, label, version, count: null, subject: null, notes: null, notesUrl: null }, message: wrong }, refs };
 
   await fetchPrivate(git, repo, ref);
   const target: UpdateTarget = { sha, label, version, count: null, subject: null, notes: null, notesUrl: null };

@@ -1771,7 +1771,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "at": "2026-10-14T09:48Z"
       }
     },
     "§chat.mode-menu/project-modes": {
@@ -1790,7 +1790,7 @@
       "authority": "accepted",
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "at": "2026-10-14T09:48Z"
       },
       "code": [
         "pi-config/extensions/mode/project-tools.ts",

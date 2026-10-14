@@ -277,7 +277,7 @@ const origins = stepOrigins([
     ],
   },
   { path: "src/dates.ts", hunkCommits: [[0]], commits: [{ sha: sha("c"), subject: "third", authorTime: 3_000 }] },
-  { path: "src/big.json", hunkCommits: [[0, 1]], commits: [{ sha: sha("d"), subject: "fourth", authorTime: 4_000 }, { sha: sha("a"), subject: "first", authorTime: 1_000 }] },
+  { path: "src/big.json", hunkCommits: [[0, 1]], commits: [{ sha: sha("a"), subject: "first", authorTime: 1_000 }, { sha: sha("d"), subject: "fourth", authorTime: 4_000 }] },
   { path: "README.md", originsUnknown: true },
 ]);
 
@@ -312,6 +312,25 @@ test("commits: turn steps too; no origins (an uncommitted comparison) means none
   const p = stepsFromTurns(turns, files, "/repo", "/repo", partial);
   assert.deepEqual([p.steps[0]!.commits, p.steps[0]!.commitsUnknown, p.steps[0]!.commitsPending], [[sha("c")], undefined, undefined]);
   assert.deepEqual([p.steps[1]!.commitsUnknown, p.steps[1]!.commitsPending], [undefined, true]);
+});
+
+test("stepOrigins: same-second commits keep each read's ancestors-first order, merged across files", () => {
+  const t = 5_000;
+  const o = stepOrigins([
+    // f is older than e by history though both have the same time and a later id.
+    { path: "x.ts", hunkCommits: [[0, 1]], commits: [{ sha: sha("f"), subject: "", authorTime: t }, { sha: sha("e"), subject: "", authorTime: t }] },
+    { path: "y.ts", hunkCommits: [[0, 1]], commits: [{ sha: sha("e"), subject: "", authorTime: t }, { sha: sha("0"), subject: "", authorTime: t }] },
+    { path: "z.ts", hunkCommits: [[0]], commits: [{ sha: sha("9"), subject: "", authorTime: t - 1 }] },
+  ]);
+  const f: StepFile[] = ["y.ts", "x.ts", "z.ts"].map((path) => ({ path, hunks: [hunk(1, ["a"])] }));
+  const plan = stepsFromAgent([{ title: "All", hunks: f.map((x) => ({ path: x.path })) }], f, "/r", o);
+  assert.deepEqual(plan.steps[0]!.commits, [sha("9"), sha("f"), sha("e"), sha("0")]);
+  // Lists that disagree (a cycle) still give every commit a place.
+  const c = stepOrigins([
+    { path: "a", hunkCommits: [[0, 1]], commits: [{ sha: sha("a"), subject: "", authorTime: 1 }, { sha: sha("b"), subject: "", authorTime: 2 }] },
+    { path: "b", hunkCommits: [[0, 1]], commits: [{ sha: sha("b"), subject: "", authorTime: 2 }, { sha: sha("a"), subject: "", authorTime: 1 }] },
+  ]);
+  assert.deepEqual([...c.rank], [[sha("a"), 0], [sha("b"), 1]]);
 });
 
 test("stepOrigins: a read naming a commit it doesn't list is unknown; a read without origins is left out", () => {

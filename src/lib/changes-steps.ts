@@ -326,9 +326,12 @@ function refsOf(file: StepFile): HunkRef[] {
 export interface StepOrigins {
   files: ReadonlyMap<string, readonly (readonly string[])[] | "unknown">;
   commits: ReadonlyMap<string, { subject: string; authorTime: number }>;
+  /** Oldest-first position of every commit: each read's own list order (ancestors first) kept,
+      author time then id deciding only between commits no list orders. */
+  rank: ReadonlyMap<string, number>;
 }
 
-/** What a patch read with origins carries (DiffFilePatch's fields, structurally). */
+/** What a patch read with origins carries (DiffFilePatch's fields, structurally; `commits` ancestors first). */
 export interface PatchOrigins {
   path: string;
   hunkCommits?: number[][];
@@ -340,6 +343,8 @@ export interface PatchOrigins {
 export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
   const files = new Map<string, string[][] | "unknown">();
   const commits = new Map<string, { subject: string; authorTime: number }>();
+  /** sha → the commits a read lists right after it. */
+  const after = new Map<string, Set<string>>();
   for (const p of patches) {
     if (p.originsUnknown) {
       files.set(p.path, "unknown");
@@ -347,14 +352,39 @@ export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
     }
     if (!p.hunkCommits || !p.commits) continue;
     const list = p.commits;
-    for (const c of list) commits.set(c.sha, { subject: c.subject, authorTime: c.authorTime });
+    list.forEach((c, i) => {
+      commits.set(c.sha, { subject: c.subject, authorTime: c.authorTime });
+      if (!after.has(c.sha)) after.set(c.sha, new Set());
+      if (i > 0 && list[i - 1]!.sha !== c.sha) after.get(list[i - 1]!.sha)!.add(c.sha);
+    });
     if (p.hunkCommits.some((u) => u.some((i) => !list[i]))) files.set(p.path, "unknown");
     else files.set(p.path, p.hunkCommits.map((u) => u.map((i) => list[i]!.sha)));
   }
-  return { files, commits };
+  return { files, commits, rank: rankCommits(commits, after) };
 }
 
-/** A step's commits: its units' commits together, no repeats, oldest first (ties as first seen). */
+/** A topological merge of the reads' lists; on a cycle (lists that disagree) the rest go by time. */
+function rankCommits(commits: ReadonlyMap<string, { authorTime: number }>, after: ReadonlyMap<string, ReadonlySet<string>>): Map<string, number> {
+  const before = new Map<string, number>([...commits.keys()].map((sha) => [sha, 0]));
+  for (const next of after.values()) for (const sha of next) before.set(sha, before.get(sha)! + 1);
+  const earlier = (a: string, b: string) => commits.get(a)!.authorTime - commits.get(b)!.authorTime || (a < b ? -1 : a > b ? 1 : 0);
+  const rank = new Map<string, number>();
+  let ready = [...before].filter(([, n]) => n === 0).map(([sha]) => sha);
+  while (ready.length) {
+    ready.sort(earlier);
+    const sha = ready.shift()!;
+    rank.set(sha, rank.size);
+    for (const next of after.get(sha) ?? []) {
+      const n = before.get(next)! - 1;
+      before.set(next, n);
+      if (n === 0) ready.push(next);
+    }
+  }
+  for (const sha of [...commits.keys()].filter((c) => !rank.has(c)).sort(earlier)) rank.set(sha, rank.size);
+  return rank;
+}
+
+/** A step's commits: its units' commits together, no repeats, oldest first (StepOrigins.rank). */
 function commitsOf(hunks: HunkRef[], origins: StepOrigins | undefined): Pick<Step, "commits" | "commitsUnknown" | "commitsPending"> {
   if (!origins) return { commits: [] };
   const seen: string[] = [];
@@ -371,8 +401,8 @@ function commitsOf(hunks: HunkRef[], origins: StepOrigins | undefined): Pick<Ste
     else if (r.hunk < units.length) add(units[r.hunk]!);
     else unknown = true;
   }
-  const time = (sha: string) => origins.commits.get(sha)?.authorTime ?? Number.POSITIVE_INFINITY;
-  const commits = seen.map((sha, i) => ({ sha, i })).sort((a, b) => time(a.sha) - time(b.sha) || a.i - b.i).map((c) => c.sha);
+  const rank = (sha: string) => origins.rank.get(sha) ?? Number.POSITIVE_INFINITY;
+  const commits = seen.map((sha, i) => ({ sha, i })).sort((a, b) => rank(a.sha) - rank(b.sha) || a.i - b.i).map((c) => c.sha);
   return { commits, ...(unknown ? { commitsUnknown: true as const } : {}), ...(pending ? { commitsPending: true as const } : {}) };
 }
 

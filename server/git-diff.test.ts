@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { WorktreeMergeDetails } from "../pi-config/extensions/worktrees/state.ts";
 import type { DiffScope } from "../shared/protocol";
-import { DiffError, GitDiffs, knownFoldersOf, MAX_UNTRACKED_READ, PATCH_CAP, parseNumstatZ, parseRawZ, quotePath, scopeFromQuery, splitPatch } from "./git-diff";
+import { DiffError, execGitRaw, GitDiffs, knownFoldersOf, MAX_UNTRACKED_READ, PATCH_CAP, parseNumstatZ, parseRawZ, quotePath, scopeFromQuery, splitPatch } from "./git-diff";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" }).trim();
@@ -557,5 +557,267 @@ describe("parsers", () => {
     const s = splitPatch(text);
     assert.deepEqual(s.map((x) => [x.path, x.oldPath, x.status]), [['q"t\tx', 'q"t\tx', "M"], ["same same", "same same", "A"]]);
     assert.equal(s[1]!.oldOid, undefined);
+  });
+});
+
+// ── Shared base rule, paths, pinned cards and commits per hunk (§chat.changes/endpoint) ──────────
+
+/** git with fixed author and committer dates (epoch seconds), so commit order is certain. */
+const gitAt = (cwd: string, at: number, ...args: string[]) =>
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, GIT_AUTHOR_DATE: `@${at} +0000`, GIT_COMMITTER_DATE: `@${at} +0000` },
+  }).trim();
+
+let fresh = 0;
+/** A new repository on `branch` with one commit holding `files`; returns its folder and that commit. */
+function newRepo(files: Record<string, string | Buffer>, branch = "master") {
+  const dir = join(root, `fresh-${++fresh}`);
+  mkdirSync(dir, { recursive: true });
+  git(dir, "init", "-q", "-b", branch);
+  for (const [f, body] of Object.entries(files)) {
+    mkdirSync(join(dir, f, ".."), { recursive: true });
+    writeFileSync(join(dir, f), body);
+  }
+  git(dir, "add", "-A");
+  gitAt(dir, 1_000, "commit", "-q", "--allow-empty", "-m", "base");
+  return { dir, base: git(dir, "rev-parse", "HEAD") };
+}
+/** Write `files` (null deletes) in `cwd` and commit them at `at` with `msg`; returns the commit. */
+function commitAt(cwd: string, at: number, msg: string, files: Record<string, string | Buffer | null>) {
+  for (const [f, body] of Object.entries(files)) {
+    if (body === null) git(cwd, "rm", "-q", f);
+    else {
+      mkdirSync(join(cwd, f, ".."), { recursive: true });
+      writeFileSync(join(cwd, f), body);
+    }
+  }
+  git(cwd, "add", "-A");
+  gitAt(cwd, at, "commit", "-q", "--allow-empty", "-m", msg);
+  return git(cwd, "rev-parse", "HEAD");
+}
+const shasOf = (p: { commits?: { sha: string }[]; hunkCommits?: number[][] }) => (p.hunkCommits ?? []).map((u) => u.map((i) => p.commits![i]!.sha));
+
+describe("worktree scope: the shared base rule", () => {
+  it("skips the branch itself, then compares against the commit it was created from when no base branch exists", async () => {
+    const { dir, base } = newRepo({ "a.txt": "a\n" }, "trunk");
+    git(dir, "checkout", "-q", "-b", "feat/y");
+    commitAt(dir, 2_000, "y", { "y.txt": "y\n" });
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
+    // No master/main/origin: the tracked base commit.
+    const s = await diffs(() => [dir], [{ path: dir, baseBranch: "trunk", base }]).summary(scope);
+    assert.equal(s.base.label, "trunk (merge-base)");
+    const created = await diffs(() => [dir], [{ path: dir, baseBranch: "gone", base }]).summary(scope);
+    assert.equal(created.base.label, `${base.slice(0, 7)} (created from)`);
+    assert.equal(created.base.oid, base);
+    assert.deepEqual(created.files.map((f) => f.path), ["y.txt"]);
+    // Without one: refused with a reason.
+    await rejects(diffs(() => [dir]).summary(scope), 404, /No base branch/);
+  });
+
+  it("skips a base branch that shares no history", async () => {
+    const { dir, base } = newRepo({ "a.txt": "a\n" }, "feat/z");
+    git(dir, "checkout", "-q", "--orphan", "master");
+    git(dir, "rm", "-rfq", ".");
+    commitAt(dir, 2_000, "other root", { "o.txt": "o\n" });
+    git(dir, "checkout", "-q", "feat/z");
+    const head = commitAt(dir, 3_000, "z", { "z.txt": "z\n" });
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
+    await rejects(diffs(() => [dir]).summary(scope), 404, /No common history/);
+    const s = await diffs(() => [dir], [{ path: dir, base }]).summary(scope);
+    assert.equal(s.base.label, `${base.slice(0, 7)} (created from)`);
+    assert.equal(s.head.oid, head);
+  });
+
+  it("refuses a detached HEAD, and shows a checkout on its own base branch as empty", async () => {
+    const { dir } = newRepo({ "a.txt": "a\n" });
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
+    const s = await diffs(() => [dir]).summary(scope);
+    assert.deepEqual(s.files, []);
+    assert.equal(s.base.label, "master (merge-base)");
+    git(dir, "checkout", "-q", "--detach");
+    await rejects(diffs(() => [dir]).summary(scope), 404, /not on a branch/);
+  });
+});
+
+describe("paths narrow a comparison before the file cap", () => {
+  it("lists and serves only files under the paths, counted within them", async () => {
+    const { dir, base } = newRepo({});
+    const many: Record<string, string> = {};
+    for (let i = 0; i < 12; i++) many[`big/f${i}.txt`] = `${i}\n`;
+    const head = commitAt(dir, 2_000, "many", { ...many, "src/a.ts": "a\n", "src/sub/b.ts": "b\n", "srcx.ts": "x\n" });
+    const d = new GitDiffs({ maxFiles: 5, sessionKnown: async () => ({ roots: [dir], trees: [], merges: [] }) });
+    const scope: DiffScope = { kind: "commit", sessionPath: SESSION, repoPath: dir, sha: head };
+    const all = await d.summary(scope);
+    assert.equal(all.truncated, true);
+    assert.equal(all.files.length, 5);
+    const narrowed = await d.summary({ ...scope, paths: ["src", "big/f3.txt"] });
+    assert.equal(narrowed.truncated, undefined);
+    assert.deepEqual(narrowed.files.map((f) => f.path), ["big/f3.txt", "src/a.ts", "src/sub/b.ts"]);
+    assert.equal(narrowed.totals.files, 3);
+    assert.deepEqual((await d.summary({ ...scope, paths: ["src/sub/"] })).files.map((f) => f.path), ["src/sub/b.ts"]);
+    assert.equal((await d.patch({ ...scope, paths: ["src"] }, "src/a.ts")).status, "A");
+    await rejects(d.patch({ ...scope, paths: ["src"] }, "srcx.ts"), 404);
+    // The dirty scope narrows its untracked files too.
+    writeFileSync(join(dir, "src", "new.ts"), "n\n");
+    writeFileSync(join(dir, "loose.ts"), "l\n");
+    const dirty = await d.summary({ kind: "dirty", sessionPath: SESSION, cwd: dir, paths: ["src"] });
+    assert.deepEqual(dirty.files.map((f) => f.path), ["src/new.ts"]);
+    assert.ok(base);
+  });
+
+  it("parses repeatable paths from a query and refuses bad ones", () => {
+    const q = (o: Record<string, string>) => (n: string) => o[n];
+    const all = (paths: string[]) => (n: string) => (n === "paths" ? paths : undefined);
+    const base = { kind: "dirty", session: "s", path: "/p" };
+    assert.deepEqual(scopeFromQuery(q(base), all(["src/", "a.ts", "a.ts"])), { kind: "dirty", sessionPath: "s", cwd: "/p", paths: ["src/", "a.ts"] });
+    assert.deepEqual(scopeFromQuery(q(base), all([])), { kind: "dirty", sessionPath: "s", cwd: "/p" });
+    for (const bad of ["/abs", "../up", "a/../b", "a//b", "a\\b", ""]) assert.throws(() => scopeFromQuery(q(base), all([bad])), DiffError, bad);
+    assert.throws(() => scopeFromQuery(q(base), all(Array.from({ length: 201 }, (_, i) => `f${i}`))), DiffError);
+  });
+});
+
+describe("a pinned worktree card", () => {
+  it("shows the saved base..head after the branch moves on, labelled as the card named it", async () => {
+    const { dir, base } = newRepo({ "a.txt": "a\n" });
+    git(dir, "checkout", "-q", "-b", "feat/p");
+    const head = commitAt(dir, 2_000, "p1", { "p1.txt": "1\n" });
+    commitAt(dir, 3_000, "p2", { "p2.txt": "2\n" });
+    const d = diffs(() => [dir]);
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir, pin: { base, head, baseRef: "master", branch: "feat/p" } };
+    const s = await d.summary(scope);
+    assert.deepEqual(s.files.map((f) => f.path), ["p1.txt"]);
+    assert.deepEqual([s.base.label, s.base.oid, s.head.label, s.head.oid], ["master", base, "feat/p", head]);
+    const bare = await d.summary({ ...scope, pin: { base, head } });
+    assert.deepEqual([bare.base.label, bare.head.label], [base.slice(0, 7), head.slice(0, 7)]);
+    // Unpinned: today's tip.
+    assert.deepEqual((await d.summary({ kind: "worktree", sessionPath: SESSION, worktreePath: dir })).files.map((f) => f.path), ["p1.txt", "p2.txt"]);
+  });
+
+  it("refuses commits that are not in that repository, before reading anything", async () => {
+    const { dir, base } = newRepo({ "a.txt": "a\n" });
+    const other = newRepo({ "b.txt": "b\n" });
+    const d = diffs(() => [dir]);
+    const scope = (pin: { base: string; head: string }): DiffScope => ({ kind: "worktree", sessionPath: SESSION, worktreePath: dir, pin });
+    await rejects(d.summary(scope({ base, head: other.base })), 404, /No such commit/);
+    await rejects(d.summary(scope({ base: "f".repeat(40), head: base })), 404, /No such commit/);
+    // A tree is not a commit.
+    const treeOid = git(dir, "rev-parse", "HEAD^{tree}");
+    await rejects(d.summary(scope({ base, head: treeOid })), 404, /No such commit/);
+  });
+
+  it("reads a removed worktree's saved commits from another known folder", async () => {
+    const { dir, base } = newRepo({ "a.txt": "a\n" });
+    const wt = join(root, `fresh-${++fresh}-wt`);
+    git(dir, "worktree", "add", "-q", "-b", "feat/gone", wt);
+    const head = commitAt(wt, 2_000, "g", { "g.txt": "g\n" });
+    git(dir, "worktree", "remove", "--force", wt);
+    const s = await diffs(() => [dir, wt]).summary({ kind: "worktree", sessionPath: SESSION, worktreePath: wt, pin: { base, head, branch: "feat/gone" } });
+    assert.deepEqual(s.files.map((f) => f.path), ["g.txt"]);
+  });
+
+  it("parses a pin from a query: both full oids or neither, labels capped and display-only", () => {
+    const q = (o: Record<string, string>) => (n: string) => o[n];
+    const a = "a".repeat(40);
+    const b = "B".repeat(40);
+    const w = { kind: "worktree", session: "s", path: "/p" };
+    assert.deepEqual(scopeFromQuery(q({ ...w, base: a, head: b, baseRef: "master before 1234567", branch: "feat/x" })), {
+      kind: "worktree",
+      sessionPath: "s",
+      worktreePath: "/p",
+      pin: { base: a, head: b.toLowerCase(), baseRef: "master before 1234567", branch: "feat/x" },
+    });
+    for (const bad of <Record<string, string>[]>[{ base: a }, { head: a }, { base: "abc1234", head: a }, { base: "HEAD", head: a }, { base: a, head: a, branch: "x".repeat(201) }, { base: a, head: a, baseRef: "a\nb" }]) {
+      assert.throws(() => scopeFromQuery(q({ ...w, ...bad })), DiffError, JSON.stringify(bad));
+    }
+  });
+});
+
+describe("commits per hunk (origins)", () => {
+  /** master at `base`; feat/o adds, edits, deletes lines, renames, deletes a file, and adds a binary. */
+  function history() {
+    const body = lines(40);
+    const { dir, base } = newRepo({ "a.txt": body, "r.txt": lines(10, "keep"), "d.txt": "doomed\n", "m.txt": "m\n" });
+    git(dir, "checkout", "-q", "-b", "feat/o");
+    const c1 = commitAt(dir, 2_000, "first", { "a.txt": body.replace("line 3\n", "line 3\nadded by c1\n") });
+    const c2 = commitAt(dir, 3_000, "second", {
+      "a.txt": readFileSync(join(dir, "a.txt"), "utf8").replace("line 20\nline 21\n", "").replace("line 35\n", "line 35\nadded by c2\n"),
+      "img.bin": Buffer.from([0, 1, 2, 0]),
+    });
+    git(dir, "mv", "r.txt", "r2.txt");
+    const c3 = commitAt(dir, 4_000, "third", { "d.txt": null });
+    chmodSync(join(dir, "m.txt"), 0o755);
+    const c4 = commitAt(dir, 5_000, "fourth", {});
+    return { dir, base, c1, c2, c3, c4 };
+  }
+
+  it("names each hunk's commits: added lines by their last writer, a removal by the commit that removed it", async () => {
+    const { dir, base, c1, c2 } = history();
+    const d = diffs(() => [dir], [{ path: dir, baseBranch: "master", base }]);
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
+    const p = await d.patch(scope, "a.txt", undefined, { origins: true });
+    assert.equal(p.originsUnknown, undefined);
+    assert.deepEqual(shasOf(p), [[c1], [c2], [c2]]);
+    assert.deepEqual(p.commits!.map((c) => [c.sha, c.subject, c.authorTime]), [[c1, "first", 2_000_000], [c2, "second", 3_000_000]]);
+    // Without asking: none of it.
+    const plain = await d.patch(scope, "a.txt");
+    assert.equal(plain.commits, undefined);
+    assert.equal(plain.hunkCommits, undefined);
+  });
+
+  it("gives a whole-file unit every commit that touched the file: binary, rename-only, mode-only, deleted", async () => {
+    const { dir, base, c2, c3, c4 } = history();
+    const d = diffs(() => [dir], [{ path: dir, baseBranch: "master", base }]);
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
+    assert.deepEqual(shasOf(await d.patch(scope, "img.bin", undefined, { origins: true })), [[c2]]);
+    assert.deepEqual(shasOf(await d.patch(scope, "r2.txt", "r.txt", { origins: true })), [[c3]]);
+    assert.deepEqual(shasOf(await d.patch(scope, "m.txt", undefined, { origins: true })), [[c4]]);
+    assert.deepEqual(shasOf(await d.patch(scope, "d.txt", undefined, { origins: true })), [[c3]]);
+  });
+
+  it("names a commit scope's one commit, gives an uncommitted one none, and reads merges from history", async () => {
+    const { dir, base, c1, c2 } = history();
+    const d = diffs(() => [dir], [{ path: dir, baseBranch: "master", base }]);
+    const one = await d.patch({ kind: "commit", sessionPath: SESSION, repoPath: dir, sha: c2 }, "a.txt", undefined, { origins: true });
+    assert.deepEqual(shasOf(one), [[c2], [c2]]);
+    assert.equal(one.commits![0]!.subject, "second");
+    writeFileSync(join(dir, "a.txt"), "dirty\n");
+    const dirty = await d.patch({ kind: "dirty", sessionPath: SESSION, cwd: dir }, "a.txt", undefined, { origins: true });
+    assert.deepEqual([dirty.commits, dirty.hunkCommits, dirty.originsUnknown], [undefined, undefined, undefined]);
+    git(dir, "checkout", "-q", "--", "a.txt");
+    // A merge card's merge: the branch's commits, not the merge's.
+    git(dir, "checkout", "-q", "master");
+    gitAt(dir, 6_000, "merge", "-q", "--no-ff", "--no-edit", "feat/o");
+    const merge = git(dir, "rev-parse", "HEAD");
+    const card = { version: 1, path: dir, branch: "feat/o", target: "master", sha: merge, commits: 4, added: 1, removed: 1, fastForward: false, how: "tool" } as WorktreeMergeDetails;
+    const m = await diffs(() => [dir], [], undefined, [card]).patch({ kind: "merge", sessionPath: SESSION, repoPath: dir, sha: merge }, "a.txt", undefined, { origins: true });
+    assert.deepEqual(shasOf(m), [[c1], [c2], [c2]]);
+  });
+
+  it("marks commits unknown when the history read fails or runs out of time, and still sends the patch", async () => {
+    const { dir, base } = history();
+    for (const fail of [{ code: null, stderr: "git timed out" }, { code: 128, stderr: "fatal: boom" }]) {
+      const d = new GitDiffs({
+        sessionKnown: async () => ({ roots: [dir], trees: [{ path: dir, baseBranch: "master", base } as never], merges: [] }),
+        run: async (args, opts) => (args.includes("blame") || args.includes("log") ? { ...fail, stdout: Buffer.alloc(0), cut: false } : execGitRaw(args, opts)),
+      });
+      const p = await d.patch({ kind: "worktree", sessionPath: SESSION, worktreePath: dir }, "a.txt", undefined, { origins: true });
+      assert.equal(p.originsUnknown, true);
+      assert.equal(p.commits, undefined);
+      assert.ok(p.patch?.includes("added by c1"));
+    }
+    // Past the deadline, while the history read still runs.
+    const slow = new GitDiffs({
+      originsDeadlineMs: 50,
+      sessionKnown: async () => ({ roots: [dir], trees: [{ path: dir, baseBranch: "master", base } as never], merges: [] }),
+      run: async (args, opts) => {
+        if (args.includes("blame")) await new Promise((go) => setTimeout(go, 400));
+        return execGitRaw(args, opts);
+      },
+    });
+    const late = await slow.patch({ kind: "worktree", sessionPath: SESSION, worktreePath: dir }, "a.txt", undefined, { origins: true });
+    assert.equal(late.originsUnknown, true);
+    assert.ok(late.patch?.includes("added by c1"));
   });
 });

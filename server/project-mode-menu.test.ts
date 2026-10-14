@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectModeListing, ProjectModeSnapshot } from "../shared/project-modes";
-import { checkProjectSwitch, parseApprovals, parseProjectModes, projectModesInfo } from "./project-mode-menu";
+import { approvalNeededText, checkProjectSwitch, parseApprovals, parseProjectModes, projectModesInfo } from "./project-mode-menu";
 import { defaultPatchOf, parseModePatch, parseModeRequest, pinEntryFor } from "./mode-state";
 
 const H = (c: string) => c.repeat(64);
@@ -63,7 +63,10 @@ test("turn-on: unknown and broken refuse; tools need approval unless approved no
   const ask = checkProjectSwitch(l, [], ["plain", "rel"], [], false, never);
   assert.ok("needsApproval" in ask);
   assert.deepEqual(ask.needsApproval.map((m) => [m.id, m.toolsHash]), [["rel", H("a")]]);
-  assert.ok("needsApproval" in checkProjectSwitch(l, [], ["rel"], [{ id: "rel", hash: H("b") }], false, never), "a stale hash approves nothing");
+  const stale = checkProjectSwitch(l, [], ["rel"], [{ id: "rel", hash: H("b") }], false, never);
+  assert.ok("needsApproval" in stale, "a stale hash approves nothing");
+  assert.equal(approvalNeededText(stale), "The tools of rel changed since you looked; check them again.");
+  assert.equal(approvalNeededText(ask), "Approve the tools of rel to turn it on.");
   assert.deepEqual(checkProjectSwitch(l, [], ["rel"], [{ id: "rel", hash: H("a") }], false, never), { ok: true, ids: ["rel"], record: [{ id: "rel", hash: H("a") }] });
   assert.deepEqual(checkProjectSwitch(l, [], ["rel"], [], true, never), { ok: true, ids: ["rel"], record: [{ id: "rel", hash: H("a") }] }, "the Overseer's turn-on approves (q7)");
   assert.deepEqual(checkProjectSwitch(l, [], ["rel"], [], false, () => true), { ok: true, ids: ["rel"], record: [] }, "already approved");

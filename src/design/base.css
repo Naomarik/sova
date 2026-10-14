@@ -1822,7 +1822,9 @@ html.is-resizing * {
   color: var(--color-ink-muted);
   pointer-events: none;
 }
-.search .input { padding-left: calc(var(--space-3) + 20px + var(--space-2)); padding-right: var(--control-md); }
+.search .input { padding-left: calc(var(--space-3) + 20px + var(--space-2)); padding-right: var(--space-3); }
+/* Room on the right for the clear button only while it is rendered. */
+.search:has(> .button-icon) .input { padding-right: var(--control-md); }
 .search .button-icon {
   position: absolute;
   right: 0;
@@ -4532,7 +4534,6 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .folder-crumb:hover { text-decoration: underline; }
 .folder-crumb:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
 .folder-crumb-current { padding: 0 var(--space-1); color: var(--color-ink); font-weight: var(--fw-semibold); }
-.folder-picker .search .input { padding-right: var(--space-3); }
 .folder-picker-list:empty { display: none; }
 .folder-picker-list .list-title { flex: 1; }
 .folder-picker-list .list-row > .icon:last-child { color: var(--color-ink-muted); }
@@ -6247,6 +6248,9 @@ a.subagent-row { text-decoration: none; }
 .overseer-split > .overseer-entry { padding: 0 var(--space-3); color: var(--color-ink); }
 .overseer-split > .overseer-entry[aria-current="page"] { border-color: var(--color-border-strong); }
 .overseer-split .overseer-entry-count { position: static; }
+/* Its list's rows: an overseer with new replies shows their count in the button's pill, inline at
+   the row's end. */
+.popover-item-end > .overseer-entry-count { position: static; display: inline-block; }
 .overseer-split-menu { position: relative; color: var(--color-ink-muted); }
 .overseer-split-menu:hover { color: var(--color-ink); }
 .overseer-split-dot {

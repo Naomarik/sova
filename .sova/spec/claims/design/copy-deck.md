@@ -32,7 +32,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
 | Overseer entry button | toolbar line (§app.session-list/search): `eye` + "Overseer" + {unread} as an inline pill, then ▾; spine: wordless `eye`, {unread} at its top-right corner · "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
-| Project overseers ▾ (§app.overseer/entry-button) | `aria-label`/`title`: Project overseers (+ " · {n} with new replies" (1: "1 with a new reply"), " · {n} with failed last turns" (1: "1 with a failed last turn")) · list title: Project overseers · row: {project}, "In {organization}" under it in an organization · state: Working / Last turn failed / New reply · last row: All Projects |
+| Project overseers ▾ (§app.overseer/entry-button) | `aria-label`/`title`: Project overseers (+ " · {n} overseers with new replies" (1: "1 overseer with new replies"), " · {n} with failed last turns" (1: "1 with a failed last turn")) · list title: Project overseers · row: {project}, "In {organization}" under it in an organization · state: Working / Last turn failed / {n} as a number pill ("99+" past 99; no count or 0: New reply) · row `aria-label`/`title`: {project} · in {organization} · {n} new replies (1: "1 new reply"; no count: "New reply") · last row: All Projects |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
@@ -211,7 +211,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Off asked of a host without it (an older server) | This host's Sova has no Off; its sandbox stays {status}. |
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
-| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · That session isn't open on this server; open the chat first |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · Session file not found · why the chat couldn't open (a TUI holds it, its folder is gone) |
 | TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
 | TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |

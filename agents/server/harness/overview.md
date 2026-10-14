@@ -20,7 +20,14 @@ found so far (pi 1.0.3).
 - Pi package on disk: the repo-pinned copy Sova runs, `node_modules/@earendil-works/pi-coding-agent/`
   (call it `<pi>`; its `<pi>/docs/` and `<pi>/examples/sdk/` are authoritative: read them, not your
   memory). Under pnpm it is a link into `node_modules/.pnpm/`, and its own dependencies (pi-ai, pi-tui, pi-agent-core, typebox) sit
-  BESIDE its real path, not nested under it: resolve them from `realpath` of the package. The global pi
+  BESIDE its real path, not nested under it: resolve them from `realpath` of the package. Sova's own
+  `package.json` also names pi-ai, pi-tui and typebox, at exactly the versions pi depends on, so that
+  `pi-config/` extensions resolve those very copies and load as plain modules under Bun (quirk P26,
+  §app.chat-processes/extension-loading); no Sova code outside the adapter imports them. A chat process
+  (never the server or the terminal pi) runs with stand-ins for pi's terminal drawing code: pi-tui's
+  screen and components, marked, pi's `modes/interactive/` but its theme, and its syntax highlighter
+  (`server/harness/pi/headless.ts`, quirk P27, §app.chat-processes/no-terminal-drawing). pi-tui's text,
+  key and colour helpers stay real. The global pi
   the TUI runs (`$(npm root -g)/@earendil-works/pi-coding-agent`, under mise's node install) is a
   separate install and may be another version: a fact read there is not a fact about Sova.
 
@@ -251,6 +258,7 @@ found so far (pi 1.0.3).
 | a hit removed from a ratchet | lower `server/harness/boundary-baseline.json` in the same change (never raise it: ask) |
 | new per-session state | a `StateKind` in `server/harness/state-kinds.ts` |
 | the pi pin in `package.json`, or the TUI's pi | run the contract suite against that pi; triage failures by QUIRKS.md row; refresh this guide's SDK facts |
+| the pi pin in `package.json` | pin `@earendil-works/pi-ai`, `@earendil-works/pi-tui` and `typebox` beside it to the exact versions the new pi depends on, then `pnpm install` (`server/harness/pi/extension-deps.test.ts` fails on any mismatch or second copy); run `pnpm test:int -- server/harness/pi/headless.integration.test.ts` (pi-tui's export names with and without the stand-ins, and a chat turn's stand-in log) |
 | a new test file under `server/`, `shared/`, `src/` | make sure a glob in `scripts/run-tests.mjs` matches it |
 | after a merge touching the boundary | regenerate the baseline on the merged tree |
 

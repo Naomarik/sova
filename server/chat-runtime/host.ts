@@ -997,7 +997,8 @@ export class ChatRuntimeHost {
         }
         return void answer({ t: "drained", id: f.id, ok: false, why: "busy" });
       }
-      if (f.reason === "idle" && this.clientCount() > 0) return void answer({ t: "drained", id: f.id, ok: false, why: "attached" });
+      // An open tab doesn't keep a quiet chat running (§app.chat-processes/idle-stop): its panes are
+      // told it closed, and keep what they show until they need the chat again.
     }
     answer({ t: "drained", id: f.id, ok: true });
     const cause: ExitCause = f.reason;

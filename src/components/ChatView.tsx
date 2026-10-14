@@ -1,6 +1,6 @@
 import { archivedDropToast, archivedProjectOf } from "../lib/drag-archive";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, produce, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
   ChatClaudeLogin,
@@ -78,7 +78,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { errorHandsBack, FILE_READ_WAIT_MS, WAIT_START, waitOnHello, waitOnOpen, waitOnStatus, waitReason, type ChatWait } from "../lib/chat-wait";
+import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, startsAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -528,7 +528,7 @@ export function ChatView(props: {
   /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
   const [code, setCode] = createSignal<CodeView | null>(null);
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
-  const reloadCode = () => void socket.send({ type: "reload_code" });
+  const reloadCode = () => void chatSend({ type: "reload_code" });
   props.onCode?.({ view: code, quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
   onCleanup(() => props.onCode?.(null));
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -720,9 +720,29 @@ export function ChatView(props: {
         },
         () => {},
       );
+  // Whether the server holds the chat is the list's to say (its row's `chat`): the first connect
+  // waits for the row too, within the same bound, so a chat closed while quiet opens asleep
+  // (lib/chat-wait startsAsleep) and opening it to read starts no process.
+  let rowHere!: () => void;
+  const listed = new Promise<void>((r) => (rowHere = r));
+  if (!props.summary) rowHere();
+  else createEffect(() => props.summary?.() && rowHere());
   const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
-    after: fromFile,
+    after: Promise.all([fromFile, listed]),
     afterMs: FILE_READ_WAIT_MS,
+    startClosed() {
+      const asleep = startsAsleep(untrack(() => props.summary?.()), {
+        special: !!props.overseer || !!props.projectOverseer,
+        force: !!props.force,
+        rows: (untrack(items)?.length ?? 0) > 0,
+      });
+      if (asleep) {
+        setWait(waitOnSleep(untrack(wait)));
+        // Not held now: a hold seen from here is someone else's open (heldWhileAsleep).
+        sawGone = true;
+      }
+      return asleep;
+    },
     onOpen(isReconnect) {
       setEverOpened(true);
       setWait(waitOnOpen(untrack(wait)));
@@ -784,7 +804,24 @@ export function ChatView(props: {
           // polled insight, never a list from before the reconnect.
           noteLinks(props.path, null);
           props.onModel(msg.model);
+          // What the tab asked while its chat was closed goes now, once (§chat.transcript/instant-open).
+          wakeQueue.flush();
           break;
+        // The chat closed for being quiet (§app.chat-processes/idle-stop): the rows, draft and
+        // composer stay, and no socket is held until something needs the chat (wake).
+        case "closed": {
+          setCode(null);
+          setWait(waitOnSleep(untrack(wait)));
+          sawGone = !props.summary?.()?.chat;
+          socket.close();
+          // Sends it never took can't be refused back on this socket any more: they come back now.
+          const back = unacked.takeAll(handedBack);
+          if (back.length) {
+            putBack(back);
+            announce("That message couldn't be sent. It's back in the composer.");
+          }
+          return;
+        }
         case "workers":
           batch(() => {
             setWorkersWorking(msg.working);
@@ -1090,6 +1127,55 @@ export function ChatView(props: {
     },
   });
 
+  // ---- A chat closed while its tab is open (§chat.transcript/instant-open) ------------------
+  /** What this tab asked of its chat while it was closed, done at the woken chat's hello. */
+  const wakeQueue = new WakeQueue();
+  /** The list said the server no longer holds the chat since it closed (lib/chat-wait heldWhileAsleep). */
+  let sawGone = false;
+  /** Something needs the chat: connect, which starts it again. */
+  const wake = () => {
+    if (!untrack(wait).asleep) return;
+    setWait(waitOnWake(untrack(wait)));
+    socket.retry();
+  };
+  /** Whether what the tab asks now waits for a woken chat: asleep, or woken with acts still held (kept in order). */
+  const holding = () => !!untrack(wait).asleep || wakeQueue.size > 0;
+  const holdForWake = (run: () => void, o: { id?: string; dropped?: () => void } = {}) => {
+    wakeQueue.hold(run, o);
+    wake();
+  };
+  /** Resolves once this tab's chat is open: at once, or at the hello of the chat it wakes; rejects when the tab gives up. */
+  const chatReady = (): Promise<void> =>
+    holding() ? new Promise((resolve, reject) => holdForWake(resolve, { dropped: () => reject(new Error("The chat didn't start")) })) : Promise.resolve();
+  /** A message for the chat: held while it is closed, else on the socket. */
+  const chatSend = (msg: Record<string, unknown>): boolean => {
+    if (!holding()) return socket.send(msg);
+    holdForWake(() => void socket.send(msg));
+    return true;
+  };
+  /** The woken chat refused, or the tab gave up connecting: what it held never goes; its sends' rows go back to the composer. */
+  const giveUpWake = () => {
+    const ids = new Set(wakeQueue.drop());
+    if (!ids.size) return;
+    restoreUnsent();
+    setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && ids.has(e.id))))));
+    if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+  };
+  createEffect(on(socket.status, (status) => (status === "failed" || status === "closed") && !untrack(wait).asleep && giveUpWake(), { defer: true }));
+  // Someone else opened the chat meanwhile (another tab, a worker's report): connect to it.
+  createEffect(
+    on(
+      () => !!props.summary?.()?.chat,
+      (held) => {
+        if (!untrack(wait).asleep) return;
+        const r = heldWhileAsleep(sawGone, held);
+        sawGone = r.sawGone;
+        if (r.connect) wake();
+      },
+      { defer: true },
+    ),
+  );
+
   // ---- Session requests: rewind, regenerate, remove a queued message ------------------------
   /**
    * Every request this socket makes that the server answers by id, in ONE map. The server answers
@@ -1146,6 +1232,11 @@ export function ChatView(props: {
   };
   /** Sends a request and waits for its answer. The id is minted here, so no caller can collide. */
   const ask = (kind: RequestKind, message: Record<string, unknown>): Promise<ActionResult> => {
+    // A chat closed while quiet: the request waits for it, then goes as any other.
+    if (holding())
+      return new Promise((resolve) =>
+        holdForWake(() => void ask(kind, message).then(resolve), { dropped: () => resolve(refuseHere("disconnected", "The chat didn't start. Try again.")) }),
+      );
     const id = `${kind}-${++requestSeq}`;
     return new Promise((resolve) => {
       if (!socket.send({ ...message, id })) return resolve(refuseHere("disconnected", "Not connected. Try again once it reconnects."));
@@ -1528,7 +1619,7 @@ export function ChatView(props: {
   };
   const chooseModel = (ref: string) => {
     if (pendingModel() || ref === model() || live.running || blocked()) return;
-    if (!socket.send({ type: "set_model", ref })) return;
+    if (!chatSend({ type: "set_model", ref })) return;
     setModelError(null);
     setPendingModel(ref);
     clearTimeout(modelTimer);
@@ -1561,7 +1652,7 @@ export function ChatView(props: {
     blocked: thinkingBlocked,
     choose: (level: string) => {
       if (pendingThinking() || level === thinking() || thinkingBlocked()) return;
-      if (!socket.send({ type: "set_thinking", level })) return;
+      if (!chatSend({ type: "set_thinking", level })) return;
       setThinkingError(null);
       setPendingThinking(level);
       clearTimeout(thinkingTimer);
@@ -1596,14 +1687,14 @@ export function ChatView(props: {
     running: () => live.running,
     context: () => sessionContext()[props.path],
     choose: (id) => {
-      if (socket.send({ type: "set_claude_login", login: id })) setLoginError(null);
+      if (chatSend({ type: "set_claude_login", login: id })) setLoginError(null);
     },
     cancel: () => {
-      socket.send({ type: "set_claude_login", login: null });
+      chatSend({ type: "set_claude_login", login: null });
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => (waitNote() ? blocked()!.text : null) };
+  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => (waitNote() ? blocked()!.text : null), ready: chatReady };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
@@ -1615,7 +1706,9 @@ export function ChatView(props: {
     pending: sandboxPending,
     set: (state) => {
       setSandboxPending(state);
-      setSandbox(props.path, state)
+      // A chat closed while quiet wakes for it, and the switch goes once it is open.
+      chatReady()
+        .then(() => setSandbox(props.path, state))
         .then((r) => {
           if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
           if (!r.sandbox) return;
@@ -1683,7 +1776,30 @@ export function ChatView(props: {
   createEffect(() => props.onTurnError?.(turnError()));
 
   /** `confirm`: the Overseer's confirm card click (that card's tool call id); never set by typing. */
-  const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string) => {
+  const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string): boolean => {
+    if (!holding()) return sendNow(text, steer, attachments, confirm);
+    // A chat closed while quiet (§chat.transcript/instant-open): the message shows now and goes, once,
+    // when the chat it wakes says its hello. A model turned off is said before waking anything.
+    if (offNow()) return sendNow(text, steer, attachments, confirm);
+    const clientId = newClientId();
+    holdForWake(
+      () => {
+        if (!sendNow(text, steer, attachments, confirm, clientId)) putBack([text]);
+      },
+      { id: clientId },
+    );
+    if (!text.startsWith("/")) {
+      rememberSend(props.path, clientId);
+      batch(() => {
+        addPendingPrompt(setLive, text, [], attachments, clientId);
+        setLive("running", true);
+        setResume((n) => n + 1);
+      });
+    }
+    return true;
+  };
+  /** `id`: the client id a held send's row already shows (send, above). */
+  const sendNow = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string, id?: string) => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
     // spending it on a refusal, and never picks another model for you.
@@ -1699,7 +1815,7 @@ export function ChatView(props: {
     // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
     const compact = compactCommand(text);
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
-    const clientId = newClientId();
+    const clientId = id ?? newClientId();
     if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
     unacked.sent(clientId, text, untrack(wait).conn);
     // A known slash command isn't a message to the model (templates and skills expand into other
@@ -1754,6 +1870,8 @@ export function ChatView(props: {
   };
 
   const abort = () => {
+    // Stop before the woken chat's hello: what the tab held never goes, and its text comes back.
+    if (wakeQueue.size) return giveUpWake();
     if (socket.send({ type: "abort" })) setLive("stopping", true);
   };
 
@@ -1761,8 +1879,8 @@ export function ChatView(props: {
   // Sent straight over the socket: no "Ran" row, the chips show the answer.
   if (remote) {
     const controls: RemoteControls = {
-      check: () => socket.send({ type: "prompt", text: REMOTE_CHECK_TEXT }),
-      reconnect: () => socket.send({ type: "prompt", text: REMOTE_RECONNECT_TEXT }),
+      check: () => chatSend({ type: "prompt", text: REMOTE_CHECK_TEXT }),
+      reconnect: () => chatSend({ type: "prompt", text: REMOTE_RECONNECT_TEXT }),
     };
     createEffect(() => setRemoteControls(props.path, commands().some((c) => c.name === REMOTE_COMMAND) ? controls : undefined));
   }

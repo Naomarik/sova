@@ -23,11 +23,14 @@ const point = (at: number, cpu: number, extra: Partial<TickPoint> = {}): TickPoi
 describe("MonitorRing", () => {
   test("round-trips a tick: groups, workers, top processes and labels", () => {
     const ring = new MonitorRing(10);
-    ring.push(point(5000, 51, { anonBytes: 77 }));
+    ring.push(point(5000, 51, { anonBytes: 77, sovaBytes: 1000, mem: [400, 300, 200, 100] }));
+    ring.push(point(10000, 52));
     const h = ring.history(0);
     assert.equal(h.res, "5s");
-    assert.deepEqual(h.points, [{
-      at: 5000, cpuPct: 51, rssBytes: 6000, swapBytes: 0, anonBytes: 77, load1: 1, loopMaxMs: 2,
+    assert.equal(h.points[1]!.sovaBytes, undefined, "a tick without Sova memory has none");
+    assert.equal(h.points[1]!.mem, undefined);
+    assert.deepEqual(h.points.slice(0, 1), [{
+      at: 5000, cpuPct: 51, rssBytes: 6000, swapBytes: 0, anonBytes: 77, sovaBytes: 1000, mem: [400, 300, 200, 100], load1: 1, loopMaxMs: 2,
       groups: { server: [1, 100], "/s/a.jsonl": [50, 900] },
       workers: { "/s/a.jsonl": { ag_01: [50, 800] } },
       top: [{ pid: 42, cmd: "java … clojure.main", kind: "java", cpuPct: 50, rssBytes: 800, group: "/s/a.jsonl", workerId: "ag_01" }],
@@ -74,7 +77,7 @@ describe("Rollup", () => {
     r.add(point(5000, 11));
     r.add(point(10000, 31, { top: [{ pid: 7, cmd: "node tsc", kind: "build", cpuPct: 90, rssBytes: 5 }] }));
     const line = r.flush()!;
-    assert.equal(line.v, 1);
+    assert.equal(line.v, 2);
     assert.equal(line.at, 10000);
     assert.equal(line.cpuPct, 21);
     assert.equal(line.cpuPctMax, 31);
@@ -87,9 +90,39 @@ describe("Rollup", () => {
     assert.equal(line.labels["/s/a.jsonl"]!.label, "Fix the build");
     assert.equal(r.flush(), null, "empty after a flush");
   });
+
+  test("Sova memory: the window's peak, with all four parts from that same tick, so they add up", () => {
+    const r = new Rollup();
+    // The backend peaks in the first tick, the runtime in the second; Sova memory peaks in the first.
+    r.add(point(5000, 10, { sovaBytes: 1000, mem: [600, 200, 150, 50] }));
+    r.add(point(10000, 10, { sovaBytes: 950, mem: [300, 450, 150, 50] }));
+    r.add(point(15000, 10, { sovaBytes: 900, mem: [300, 400, 100, 100] }));
+    const line = r.flush()!;
+    assert.equal(line.sovaBytes, 1000);
+    assert.deepEqual(line.mem, [600, 200, 150, 50]);
+    assert.equal(line.mem!.reduce((n, v) => n + v, 0), line.sovaBytes);
+    r.add(point(20000, 10));
+    const bare = r.flush()!;
+    assert.equal("sovaBytes" in bare || "mem" in bare, false, "no Sova memory in the window: none on the line");
+  });
 });
 
 describe("MonitorLog", () => {
+  test("a version-1 line (memory counted the old way) keeps its CPU but carries no Sova memory; version-2 lines do", async () => {
+    const d = join(dir, "versions");
+    mkdirSync(d);
+    const base = new Date(2026, 8, 29, 13, 0, 0).getTime();
+    const v1 = { v: 1, at: base, cpuPct: 12, rssBytes: 8e9, swapBytes: 0, anonBytes: 6e9, load1: 1, loopMaxMs: 1, groups: { server: [1, 2e9] }, workers: {}, top: [], labels: {} };
+    writeFileSync(join(d, dayFile(base)), JSON.stringify(v1) + "\n");
+    const log = new MonitorLog(d);
+    const r = new Rollup();
+    r.add(point(base + 30_000, 20, { sovaBytes: 5e9, mem: [2e9, 2e9, 5e8, 5e8] }));
+    await log.append(r.flush()!);
+    const h = await log.history(0, base + 60_000);
+    assert.deepEqual(h.points.map((p) => [p.cpuPct, p.sovaBytes]), [[12, undefined], [20, 5e9]]);
+    assert.ok(!("v" in h.points[1]!));
+  });
+
   test("appends one JSON line per rollup to the day's file and reads them back by since", async () => {
     const log = new MonitorLog(join(dir, "a"));
     const r = new Rollup();

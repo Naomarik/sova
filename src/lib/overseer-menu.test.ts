@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
-import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, STATE_WORDS } from "./overseer-menu";
+import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, rowEnd, rowLabel } from "./overseer-menu";
 
 const project = (id: string, name: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   id,
@@ -72,28 +72,59 @@ test("no rows (and so no ▾) with no projects, no project list, or no started o
   assert.equal(hasOverseerRows(overseerMenu([session("plain")], [project("p1", "Zeta"), project("p2", "Beta")], idle)), false);
 });
 
-test("at most one state, in this order: Working, then Last turn failed, then New reply", () => {
+test("at most one state, in this order: Working, then Last turn failed, then the new-reply count", () => {
   const projects = [project("w", "A"), project("e", "B"), project("u", "C"), project("n", "D")];
   const sessions = [
-    standaloneOverseer("w", "w", { unread: true, turnError: err }),
-    standaloneOverseer("e", "e", { unread: true, turnError: err }),
-    standaloneOverseer("u", "u", { unread: true }),
+    standaloneOverseer("w", "w", { unread: true, unreadReplies: 4, turnError: err }),
+    standaloneOverseer("e", "e", { unread: true, unreadReplies: 4, turnError: err }),
+    standaloneOverseer("u", "u", { unread: true, unreadReplies: 3 }),
     standaloneOverseer("n", "n"),
   ];
   const m = overseerMenu(sessions, projects, { selected: null, busy: (s) => s.id === "w" });
   assert.deepEqual(
-    m.rows.map((r) => r.state && STATE_WORDS[r.state]),
-    ["Working", "Last turn failed", "New reply", null],
+    m.rows.map((r) => rowEnd(r)),
+    [{ words: "Working" }, { words: "Last turn failed" }, { pill: "3" }, {}],
   );
+  // Only an unread row carries a count.
+  assert.deepEqual(m.rows.map((r) => r.replies), [null, null, 3, null]);
   // The dot and the name count new replies and failures, never Working.
   assert.deepEqual([m.unread, m.failed], [1, 1]);
   assert.equal(overseerMenuDot(m), true);
-  assert.equal(overseerMenuLabel(m), "Project overseers · 1 with a new reply · 1 with a failed last turn");
+  assert.equal(overseerMenuLabel(m), "Project overseers · 1 overseer with new replies · 1 with a failed last turn");
+});
+
+test("the new-reply count: a pill and words in the row's name; New reply in words with no count or 0, never \"0\"", () => {
+  const projects = [project("a", "AmalMoney", inOrg("Amal")), project("b", "B"), project("c", "C"), project("d", "D"), project("e", "E")];
+  const sessions = [
+    orgOverseer("a", "a", { unread: true, unreadReplies: 3 }),
+    standaloneOverseer("b", "b", { unread: true, unreadReplies: 1 }),
+    standaloneOverseer("c", "c", { unread: true, unreadReplies: 0 }),
+    standaloneOverseer("d", "d", { unread: true }),
+    standaloneOverseer("e", "e", { unread: true, unreadReplies: 250 }),
+  ];
+  const m = overseerMenu(sessions, projects, idle);
+  assert.deepEqual(
+    m.rows.map((r) => [rowEnd(r), rowLabel(r)]),
+    [
+      [{ pill: "3" }, "AmalMoney · in Amal · 3 new replies"],
+      [{ pill: "1" }, "B · 1 new reply"],
+      [{ words: "New reply" }, "C · New reply"],
+      [{ words: "New reply" }, "D · New reply"],
+      [{ pill: "99+" }, "E · 250 new replies"],
+    ],
+  );
+  // Unread is decided by `unread` alone: a 0 or missing count still reads as unread, never as read.
+  assert.ok(m.rows.every((r) => r.state === "unread"));
+  for (const r of m.rows) assert.notEqual(rowEnd(r).pill, "0");
+  assert.equal(m.unread, 5);
+  // A count without `unread` labels nothing: the row is read.
+  const read = overseerMenu([standaloneOverseer("a", "a", { unreadReplies: 3 })], [project("a", "A")], idle);
+  assert.deepEqual([read.rows[0]!.state, read.rows[0]!.replies, rowEnd(read.rows[0]!), rowLabel(read.rows[0]!)], [null, null, {}, "A"]);
 });
 
 test("the open overseer is current and shows no failed or new-reply word; Working stays", () => {
   const projects = [project("a", "A"), project("b", "B")];
-  const sessions = [standaloneOverseer("a", "a", { unread: true, turnError: err }), orgOverseer("b", "b")];
+  const sessions = [standaloneOverseer("a", "a", { unread: true, unreadReplies: 2, turnError: err }), orgOverseer("b", "b")];
   const open = overseerMenu(sessions, projects, { selected: "/s/a.jsonl", busy: () => false });
   assert.deepEqual(
     open.rows.map((r) => [r.name, r.current, r.state]),
@@ -102,6 +133,7 @@ test("the open overseer is current and shows no failed or new-reply word; Workin
       ["B", false, null],
     ],
   );
+  assert.deepEqual([open.rows[0]!.replies, rowEnd(open.rows[0]!), rowLabel(open.rows[0]!)], [null, {}, "A"]);
   assert.equal(overseerMenuDot(open), false);
   assert.equal(overseerMenuLabel(open), "Project overseers");
   const working = overseerMenu(sessions, projects, { selected: "/s/a.jsonl", busy: (s) => s.id === "a" });
@@ -109,8 +141,9 @@ test("the open overseer is current and shows no failed or new-reply word; Workin
   assert.equal(overseerMenuDot(working), false);
 });
 
-test("▾'s name says the counts in words, plural and singular", () => {
-  assert.equal(overseerMenuLabel({ unread: 2, failed: 0 }), "Project overseers · 2 with new replies");
+test("▾'s name says the counts in words, plural and singular, counting overseers", () => {
+  assert.equal(overseerMenuLabel({ unread: 1, failed: 0 }), "Project overseers · 1 overseer with new replies");
+  assert.equal(overseerMenuLabel({ unread: 2, failed: 0 }), "Project overseers · 2 overseers with new replies");
   assert.equal(overseerMenuLabel({ unread: 0, failed: 3 }), "Project overseers · 3 with failed last turns");
   assert.equal(overseerMenuDot({ unread: 0, failed: 0 }), false);
 });

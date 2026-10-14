@@ -249,6 +249,8 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
          aria-label="{the Agents row's full sentence}" title="{the same}">…worker…</a>
+      <!-- while an update this copy can install is waiting (§app.updates/indicator): the name reads
+           "Settings · update available" and an accent .update-dot sits at the button's top right -->
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
     </div>
   </div>

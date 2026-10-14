@@ -135,7 +135,7 @@ Of the minor modes, only those that are meant for workers reach them, and today 
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent.
 - **codemode** doesn't: it changes the chat's own tools, and a worker's tools come from its brief.
 - A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,
-  with its tools. See [Project modes](/docs/modes/project-modes/#workers).
+  with its tools if it can run commands. See [Project modes](/docs/modes/project-modes/#workers).
 
 A worker gets the modes its parent has **when it starts**. A later switch in the chat doesn't reach
 a running worker; a resumed worker takes the parent's current modes. The worker's view in the

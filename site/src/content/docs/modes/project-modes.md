@@ -155,7 +155,9 @@ codemode's.
 
 A mode with `workers: yes` reaches every worker the chat starts while the mode is on, the way
 [spec](/docs/modes/spec/) does: the worker gets the chat's copy of the instructions, after spec's,
-and the mode's tools. A worker never reads the mode's folder. A worker gets at most 8 modes, built-in
+and the mode's tools if it can run commands. A read-only worker gets the instructions without the
+tools, and a worker on a remote machine gets neither. The tools refuse in a worker just as in the
+chat. A worker never reads the mode's folder. A worker gets at most 8 modes, built-in
 and project together. Its view in the Subagents pane lists the mode's id on its modes chip.
 
 ## From the terminal

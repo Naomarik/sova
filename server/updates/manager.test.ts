@@ -171,6 +171,26 @@ test("Upgrade automatically keeps the button's refusals: uncommitted changes sta
   assert.equal((await x.m.state()).autoRefusal, "Your copy has uncommitted changes in 1 file. Commit or stash them, then upgrade.");
 });
 
+test("Upgrade automatically never reinstalls a version that was put back; one that merely failed is tried again", async () => {
+  for (const outcome of ["rolled-back", "failed"] as const) {
+    const x = rig();
+    await x.m.saveSettings({ source: { kind: "master" }, autoUpgrade: true });
+    const target = advance(x);
+    const f = JSON.parse(readFileSync(x.file, "utf8"));
+    f.lastUpgrade = { id: "j1", from: "a".repeat(40), to: target, at: new Date(T0).toISOString(), outcome, logPath: "/state/updates/jobs/j1/log.txt" };
+    writeFileSync(x.file, JSON.stringify(f));
+    await x.m.check({ auto: true });
+    const s = await x.m.state();
+    if (outcome === "rolled-back") {
+      assert.equal(x.launched.length, 0, "no unattended retry of a version that didn't start");
+      assert.equal(s.autoRefusal, "master didn't start the last time it was installed, so it isn't tried again automatically. Upgrade by hand to try it again.");
+      assert.equal(s.available, true, "the button still offers it");
+    } else {
+      assert.equal(x.launched.length, 1, "a failure that changed nothing (a network error) is tried again");
+    }
+  }
+});
+
 test("the button: refused on a check-only copy, for a target that isn't the one on offer, and while a job runs", async () => {
   const co = rig({ kind: "check-only" });
   await co.m.saveSettings({ source: { kind: "master" } });

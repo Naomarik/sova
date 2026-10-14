@@ -184,11 +184,21 @@ export class UpdatesManager {
     this.deps.log(`[updates] ${auto ? "daily " : ""}check of ${sourceLabel(f.source)}: ${check.ok ? check.result?.state : `failed: ${check.error}`}`);
     // Upgrade automatically: the same path as the button, the same refusals.
     if (auto && fresh.autoUpgrade && check.ok && offersUpgrade(check.result, info.kind) && info.kind !== "check-only") {
-      try {
-        await this.apply({ target: check.result.target.sha, auto: true });
-      } catch (err) {
-        this.autoRefusal = err instanceof Error ? err.message : String(err);
+      const target = check.result.target;
+      // A version that was put back because it didn't start isn't installed again unattended: each
+      // try costs a minute of Sova not answering. The button still offers it.
+      this.job(); // records a finished job's outcome in updates.json
+      const last = this.read().lastUpgrade;
+      if (last && last.to === target.sha && last.outcome === "rolled-back") {
+        this.autoRefusal = `${target.label} didn't start the last time it was installed, so it isn't tried again automatically. Upgrade by hand to try it again.`;
         this.deps.log(`[updates] automatic upgrade didn't start: ${this.autoRefusal}`);
+      } else {
+        try {
+          await this.apply({ target: target.sha, auto: true });
+        } catch (err) {
+          this.autoRefusal = err instanceof Error ? err.message : String(err);
+          this.deps.log(`[updates] automatic upgrade didn't start: ${this.autoRefusal}`);
+        }
       }
     }
     return check;

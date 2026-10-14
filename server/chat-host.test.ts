@@ -56,8 +56,10 @@ function session(o: { extra?: object[]; fresh?: boolean } = {}): { path: string;
   return { path: canonicalPath(path), id };
 }
 
-/** Two ends of an in-memory stream, as a connected socket pair. */
-function pair(): [Duplex, Duplex] {
+/** Two ends of an in-memory stream, as a connected socket pair. `later`: each write lands on the
+    other end on a later turn, as over a socket, so a frame answered at once doesn't re-enter the
+    link that is still reading the frame before it. */
+function pair(later = false): [Duplex, Duplex] {
   const ends: Duplex[] = [];
   for (let i = 0; i < 2; i++)
     ends.push(
@@ -65,11 +67,13 @@ function pair(): [Duplex, Duplex] {
         allowHalfOpen: false, // as a socket: one end closing closes the other
         read() {},
         write(chunk, _enc, cb) {
-          ends[1 - i]!.push(chunk);
+          if (later) setImmediate(() => ends[1 - i]!.push(chunk));
+          else ends[1 - i]!.push(chunk);
           cb();
         },
         final(cb) {
-          ends[1 - i]!.push(null);
+          if (later) setImmediate(() => ends[1 - i]!.push(null));
+          else ends[1 - i]!.push(null);
           cb();
         },
       }),
@@ -98,7 +102,8 @@ afterEach(async () => {
 
 type Connect = typeof import("./chat-runtime/link").connectLink;
 /** `wrap`: the router's connect seen through it (a link that misbehaves). */
-function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect } = {}) {
+/** `sup`: the supervisor's own knobs (its clock, idle time, exit wait). */
+function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect; sup?: { now?: () => number; idleMs?: number; exitWaitMs?: number }; later?: boolean } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -123,7 +128,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
       hosts.set(sock, host);
       made.hosts.push(host);
     }
-    const [a, b] = pair();
+    const [a, b] = pair(o.later);
     const runtimeEnd = new Link(a as never, { log: quiet });
     const link = new Link(b as never, { log: quiet });
     made.links.push(runtimeEnd, link);
@@ -148,7 +153,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   // every test: the real one would act on the shared in-flight markers.
   const resumes = o.resumes ?? [];
   const resumeCrashed = (path: string, since: number, _before: unknown, done?: () => void) => void resumes.push({ path, since, ...(done ? { done } : {}) });
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor: { ...supervisor, ...o.sup }, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
   made.routers.push(router);
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
@@ -184,6 +189,75 @@ test("an ordinary chat runs in a process of its own; a link member is ordinary",
   const m = await t.router.acquire(member.path, false);
   assert.equal(m?.where, "process");
   assert.equal(t.driver.started.length, 2);
+  t.router.detach();
+});
+
+/** A tab on chat `h`, as the server holds it (attach in this process would run the pane's whole
+    greeting through the in-memory link at once), and the chat's state as it reports it: `quiet`,
+    with that tab attached. */
+function paneOn(router: unknown, h: unknown, client: { send(m: unknown): void; close(code?: number): void }, quiet = true): void {
+  const handle = h as { clients: Map<string, unknown>; ids: Map<unknown, string>; mirror: { quiet: { quiet: boolean; clients: number; since: number } } };
+  handle.clients.set("k1", client);
+  handle.ids.set(client, "k1");
+  handle.mirror = { ...handle.mirror, quiet: { ...handle.mirror.quiet, quiet, clients: 1, since: Date.now() } };
+  (router as { hooks: { state(h: unknown): void } }).hooks.state(h);
+}
+
+test("idle stop: a quiet chat with a tab attached closes after the idle time; the tab is told it closed, and only its next open starts the chat again", async () => {
+  // The supervisor's clock, moved on by hand (its waits still pass in real time).
+  let ahead = 0;
+  const t = setup({ later: true, sup: { now: () => Date.now() + ahead, idleMs: 30 * 60_000, exitWaitMs: 50 } });
+  const sup = (t.router as unknown as { sup: InstanceType<typeof ChatSupervisor> }).sup;
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; code?: string; reason?: string }[] = [];
+  const closes: number[] = [];
+  // A tab attached, as ws.ts attaches one; the chat reports its state with it attached.
+  h.attach({ wire: 2, send: (m) => void got.push(m as never), close: (code) => void closes.push(code ?? 0) });
+  const said = () => (h as unknown as { mirror: { quiet: { quiet: boolean; clients: number } } }).mirror.quiet;
+  for (let i = 0; i < 50 && said().clients !== 1; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(said().clients, 1, "the chat says the tab is attached");
+  assert.equal(said().quiet, true);
+  assert.ok(got.some((m) => m.type === "hello"), "the tab had its hello");
+  // 29 minutes on: still running.
+  ahead += 29 * 60_000;
+  await sup.tick();
+  assert.deepEqual(t.exits, []);
+  assert.equal(t.router.get(s.path), h);
+  // 31: asked to close, it accepts though the tab is attached.
+  ahead += 2 * 60_000;
+  await sup.tick();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(t.exits, ["idle"]);
+  assert.equal(t.router.get(s.path), undefined, "the router is done with it");
+  // The tab: told it closed, never told to reconnect; its socket closed by the server.
+  assert.deepEqual(got.filter((m) => m.type === "closed" || m.type === "error"), [{ type: "closed", reason: "idle" }]);
+  assert.deepEqual(closes, [4500]);
+  // Nothing starts it again on its own.
+  ahead += 60 * 60_000;
+  await sup.tick();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(t.driver.started.length, 1, "no second process");
+  // The tab's send opens it again (ws.ts acquires on its connect, then hands the message on): one new process.
+  const again = await t.router.acquire(s.path, false);
+  assert.notEqual(again, h);
+  assert.equal(t.driver.started.length, 2);
+  t.router.detach();
+});
+
+test("idle stop: a chat with a working worker, a tab attached or not, is never asked to close", async () => {
+  let ahead = 0;
+  const t = setup({ later: true, sup: { now: () => Date.now() + ahead, idleMs: 30 * 60_000, exitWaitMs: 50 } });
+  const sup = (t.router as unknown as { sup: InstanceType<typeof ChatSupervisor> }).sup;
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  // The chat says a worker works (not quiet), with the tab attached.
+  paneOn(t.router, h, { send: () => {}, close: () => {} }, false);
+  ahead += 120 * 60_000;
+  await sup.tick();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(t.exits, [], "never asked: not quiet");
+  assert.equal(t.router.get(s.path), h);
   t.router.detach();
 });
 

@@ -50,6 +50,10 @@ export interface SocketHandlers<M> {
   after?: Promise<unknown>;
   /** …but no longer than this many ms: past it, the first connect goes ahead. */
   afterMs?: number;
+  /** Asked at the moment of the first connect: true leaves the socket closed instead (status
+      "closed", no socket made) until `retry()`. A chat closed while quiet opens this way
+      (§chat.transcript/instant-open). */
+  startClosed?(): boolean;
 }
 
 /**
@@ -143,10 +147,19 @@ export function createReconnectingSocket<M>(url: string | (() => string), handle
     setStatus("closed");
   };
 
-  // The first connect, unless something else connected or closed it meanwhile (retry, reconnect, close).
+  // The first connect, unless something else connected or closed it meanwhile (retry, reconnect,
+  // close), or the view starts it closed.
+  const firstConnect = () => {
+    if (handlers.startClosed?.()) {
+      stopped = true;
+      setStatus("closed");
+      return;
+    }
+    connect();
+  };
   if (handlers.after) {
     const first = () => {
-      if (!ws && !stopped && status() === "connecting" && attempt() === 0) connect();
+      if (!ws && !stopped && status() === "connecting" && attempt() === 0) firstConnect();
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
     const go = () => {
@@ -156,7 +169,7 @@ export function createReconnectingSocket<M>(url: string | (() => string), handle
     if (handlers.afterMs !== undefined) timer = setTimeout(go, handlers.afterMs);
     onCleanup(() => clearTimeout(timer));
     void handlers.after.then(go, go);
-  } else connect();
+  } else firstConnect();
   onCleanup(close);
 
   return {

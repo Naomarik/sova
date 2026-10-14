@@ -55,6 +55,11 @@ export interface PusherContext {
   now?: () => number;
 }
 
+/** A pusher whose title may need a read first (a chat in a process of its own: its display title). */
+export interface PushingSession extends Omit<PusherContext, "title"> {
+  title(): string | Promise<string>;
+}
+
 /**
  * The invitations a `session_send` makes: each of the sender's own open topics
  * its text names as a whole word invites the target there, once the send is accepted. They are
@@ -121,7 +126,7 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   const key = `${sessionId}\u0000${topic}`;
   const recent = (pushTimes.get(key) ?? []).filter((t) => now - t < PUSH_WINDOW_MS);
   if (recent.length >= PUSHES_PER_WINDOW) refuse(`Limit: at most ${PUSHES_PER_WINDOW} pushes to one topic in 10 minutes.`);
-  const r = s.push(topic, { sessionId, title: ctx.title() }, body);
+  const r = s.push(topic, { sessionId, title: ctx.title().trim() || "Untitled" }, body);
   if (!r.ok) refuse(r.error);
   recent.push(now);
   pushTimes.set(key, recent);
@@ -138,14 +143,15 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
 
 type Tool = ToolSpec;
 
-export function queuePushTool(ctx: PusherContext): Tool {
+export function queuePushTool(ctx: PushingSession): Tool {
   return {
     name: QUEUE_PUSH_TOOL,
     label: "Queue push",
     description: QUEUE_PUSH_DESCRIPTION,
     parameters: obj({ topic: str("The topic you were told to use."), text: str("The note. One line is best.") }, ["topic", "text"]),
     execute: async (_id: string, p: any) => {
-      const said = pushNote(ctx, p ?? {});
+      const title = await ctx.title();
+      const said = pushNote({ sessionId: ctx.sessionId, title: () => title, ...(ctx.now ? { now: ctx.now } : {}) }, p ?? {});
       return { content: text(said), details: { v: 1, topic: String(p?.topic ?? "").trim() } };
     },
   } as Tool;

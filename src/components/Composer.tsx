@@ -167,8 +167,6 @@ export function Composer(props: {
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?: (inputsOnly?: boolean) => void;
-  /** "/save": open Save Session for this session. Absent where a session can't be saved. */
-  onSave?: () => void;
   /** The branch's alignments (§chat.alignment/chip): with one open, the run-status row carries
       the alignment chip right before the Inputs trigger. */
   aligns?: AlignEntry[];
@@ -835,15 +833,6 @@ export function Composer(props: {
       input.value = "";
       setSlashToken(null);
       announce("Timeline open.");
-      return;
-    }
-    // "/save" is ours: it opens Save Session (§chat.saved-sessions/save-dialog), the palette entry Sova
-    // has no palette for. Nothing reaches the runtime.
-    if (!props.picks && localCommand(text()) === "save" && props.onSave && images().length === 0) {
-      props.onSave();
-      setDraft("");
-      input.value = "";
-      setSlashToken(null);
       return;
     }
     // "/new" is ours too: a fresh session in this folder, and this one archived. Nothing

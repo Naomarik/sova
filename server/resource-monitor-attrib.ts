@@ -123,6 +123,8 @@ export interface HostedInfo {
   /** A worker chat's process (its own chat process, with `pid`): it, everything it starts and its
       session file are charged to its parent session and that worker, never to a session of its own. */
   worker?: { parentPath: string; workerId: string };
+  /** What its chat runs on, when its chat says (a Claude Code CLI it wraps, or a pi model). */
+  backend?: "claude-code" | "pi";
 }
 
 /** Who a process is charged to. `session` absent with `worker` set: a worker no join tied to a

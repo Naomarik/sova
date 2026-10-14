@@ -54,7 +54,8 @@ export interface ProjectModeTool {
 	/**
 	 * argv. Element 0 is a program on PATH (a bare name, no `/`) or a file in the mode folder (`./…`). Any
 	 * element starting with `./` names a file in the mode folder: the runner passes it as that file's
-	 * absolute path, and its bytes are part of toolsHash. Nothing else is rewritten.
+	 * absolute path. No other element may contain a `/`: a tool runs only its own folder's code (all of which
+	 * toolsHash covers) or a program of the machine (a bare name, not covered). Nothing else is rewritten.
 	 */
 	command: string[];
 	/** Per-call timeout in seconds, 1–600 (default 60). */
@@ -90,7 +91,7 @@ export interface ProjectModeSnapshot {
 	 * any edit that reaches the chat on off/on gives a new sha. Approval looks at toolsHash alone.
 	 */
 	sha: string;
-	/** sha256 hex over the declared tools and the bytes of the folder files they run (toolsHash); "" with no tools. */
+	/** sha256 hex over the declared tools and every file in the mode folder but MODE.md (toolsHashInput); "" with no tools. */
 	toolsHash: string;
 }
 
@@ -236,7 +237,9 @@ function parseTools(raw: string | undefined): ProjectModeTool[] {
 		if (!Array.isArray(command) || command.length === 0 || !command.every((arg) => typeof arg === "string")) throw new ModeFileError(`${label}: command must be a non-empty array of strings`);
 		const program = command[0] as string;
 		if (!program.startsWith("./") && !/^[A-Za-z0-9._+-]+$/.test(program)) throw new ModeFileError(`${label}: command[0] must be a program name or a ./path in the mode folder`);
-		for (const arg of command as string[]) if (arg.startsWith("./") && !isFolderPath(arg)) throw new ModeFileError(`${label}: "${arg}" must stay inside the mode folder`);
+		// A tool runs only code from its own folder (covered by approval) or a program of the machine (a bare name):
+		// any argument naming a path must be a `./` path inside the mode folder.
+		for (const arg of command as string[]) if (arg.includes("/") && !isFolderPath(arg)) throw new ModeFileError(`${label}: "${arg}" must be a ./path inside the mode folder (a tool can't run files from elsewhere in the project)`);
 		if (timeoutS !== undefined && (typeof timeoutS !== "number" || !Number.isInteger(timeoutS) || timeoutS < 1 || timeoutS > PROJECT_TOOL_TIMEOUT_MAX_S)) throw new ModeFileError(`${label}: timeoutS must be a whole number from 1 to ${PROJECT_TOOL_TIMEOUT_MAX_S}`);
 		return {
 			name,
@@ -255,18 +258,26 @@ export function isFolderPath(arg: string): boolean {
 	return segments.length > 0 && segments.every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 
-/** The `./…` files a tool list runs or reads (sorted, deduped): the files toolsHash covers. */
+/** The `./…` files a tool list names (sorted, deduped): each must exist in the mode folder. */
 export function toolFiles(tools: readonly ProjectModeTool[]): string[] {
 	return [...new Set(tools.flatMap((tool) => tool.command.filter((arg) => arg.startsWith("./"))))].sort();
 }
 
+/** Most files, and most bytes in all, a mode folder with tools may hold: past either it is broken. */
+export const PROJECT_MODE_FILES_MAX = 1000;
+export const PROJECT_MODE_BYTES_MAX = 50 * 1024 * 1024;
+
 /**
- * The text toolsHash digests: the declared tools as canonical JSON, then each tool file's path and the sha256
- * hex of its bytes, one per line. Exposed so both halves (discovery, the call-time check) hash the same thing.
+ * The text toolsHash digests: the declared tools as canonical JSON, then EVERY file in the mode folder but its
+ * top-level MODE.md (recursively, dotfiles too), as `./<path> <sha256 hex>` lines sorted by path. A program
+ * sourcing a sibling, a script importing a helper, a reference file: any change to any of them asks for approval
+ * again; MODE.md's own tool declarations are the first line, and its body is instructions (q2: never re-asks).
+ * `folderShas` comes from project-discovery.ts folderFileShas. Both halves (discovery, the call-time check) hash
+ * through here.
  */
-export function toolsHashInput(tools: readonly ProjectModeTool[], fileShas: Readonly<Record<string, string>>): string {
+export function toolsHashInput(tools: readonly ProjectModeTool[], folderShas: Readonly<Record<string, string>>): string {
 	const declared = JSON.stringify(tools.map((tool) => canonical(tool)));
-	return [declared, ...toolFiles(tools).map((file) => `${file} ${fileShas[file] ?? "missing"}`)].join("\n");
+	return [declared, ...Object.keys(folderShas).sort().map((file) => `${file} ${folderShas[file]}`)].join("\n");
 }
 
 function canonical(value: unknown): unknown {

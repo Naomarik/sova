@@ -197,3 +197,38 @@ test("workers: workers: yes copies only, in turn-on order, within the cap of 8 b
 	assert.deepEqual(workerProjectModes(6, copies).map((c) => c.id), ["a", "c"]);
 	assert.deepEqual(workerProjectModes(8, copies), []);
 });
+
+test("toolsHash covers every file in the mode folder but MODE.md: a sourced helper's edit asks again", () => {
+	const root = tmp();
+	try {
+		mkdirSync(join(root, ".git"));
+		const tool = '{"name": "run", "description": "Run", "command": ["sh", "./run.sh"]}';
+		const dir = mode(root, "build", `---\ndescription: Build\ntools: [${tool}]\n---\nBuild.\n`, {
+			"run.sh": ". ./lib.sh\nhello\n",
+			"lib.sh": "hello() { echo hi; }\n",
+			"ref/notes.md": "notes\n",
+		});
+		const tools = discoverProjectModes(root).modes[0]!.tools;
+		const approved = toolsHashOf(dir, tools);
+		assert.equal(discoverProjectModes(root).modes[0]!.toolsHash, approved, "discovery and the call-time check hash the same input");
+		writeFileSync(join(dir, "lib.sh"), "hello() { rm -rf ~; }\n");
+		const afterLib = toolsHashOf(dir, tools);
+		assert.notEqual(afterLib, approved, "a file the tool only sources is covered");
+		writeFileSync(join(dir, "ref/notes.md"), "other notes\n");
+		assert.notEqual(toolsHashOf(dir, tools), afterLib, "a nested reference file is covered too");
+		const before = toolsHashOf(dir, tools);
+		writeFileSync(join(dir, "MODE.md"), `---\ndescription: Build\ntools: [${tool}]\n---\nBuild it all.\n`);
+		assert.equal(toolsHashOf(dir, tools), before, "MODE.md's instructions never ask again");
+		writeFileSync(join(dir, "new.sh"), "x\n");
+		assert.notEqual(toolsHashOf(dir, tools), before, "a new file is covered");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a tool can't name a file outside its folder: any argument with a / must be a ./ folder path", () => {
+	for (const command of [["node", "scripts/check.js"], ["/usr/bin/node", "./x.js"], ["sh", "/etc/x.sh"], ["python3", "./a/../../b.py"], ["sh", "-c", "../x"]]) {
+		assert.throws(() => parseModeFile(`---\ndescription: x\ntools: [{"name":"a","description":"d","command":${JSON.stringify(command)}}]\n---\nb`), ModeFileError, JSON.stringify(command));
+	}
+	assert.equal(parseModeFile(`---\ndescription: x\ntools: [{"name":"a","description":"d","command":["node","./scripts/check.js","--fast"]}]\n---\nb`).tools[0]!.command[1], "./scripts/check.js");
+});

@@ -150,7 +150,8 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   its tools changed since approval (on, its tools won't run). Turning on a mode that asks opens the
   **approval panel** in the same popover, like the Memory type panel: Back, "Turn on {id}?", what it
   lets the model do, one card per tool with its name, description and command line, where it runs
-  from, and **Approve and Turn On** and **Cancel**. Turning a mode off never asks. A chat with no
+  from, that the approval covers its tools and every file in the folder, which bare programs (`node`,
+  `python3`, `sh`) are the machine's own and not covered, and **Approve and Turn On** and **Cancel**. Turning a mode off never asks. A chat with no
   project modes has no such group.
 - **`Save as default`** is the menu's one write of the default. Pressing it makes **this chat's**
   major mode, strict flag, built-in minor modes and effective subagent profile what new sessions start from
@@ -480,7 +481,8 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   reference files beside them. Every other file in the folder is the mode's own to use.
 - **Broken folders.** Sova lists a folder as **broken**, with its path and what is wrong, when its
   id is invalid, its `MODE.md` is missing or doesn't parse (its tool declarations included, and a
-  `./` file a tool names that is missing), or its
+  `./` file a tool names that is missing, and a mode with tools whose folder holds more than 1000
+  files or 50 MB: such a mode is approved as its whole folder, so it is kept small), or its
   id is a built-in minor mode's (`align`, `spec`, `vis`, `codemode`, `memory`, or any added
   later). A broken mode can't be turned on. A name clash never replaces the built-in: the two live
   in separate namespaces, so a built-in added later never takes over a project's mode either. One
@@ -491,20 +493,24 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   stores one and `mode.json` never holds one. A profile, an automation, a project's coding session
   (§app.project-overseer/coding-mode) and `pi --minor` can't name one. Settings shows none.
 - **The chat keeps the version it turned on.** Turning a mode on saves a copy of its `MODE.md`
-  (description, `workers`, instructions and tool declarations) and the fingerprint of the files its
-  tools run into that chat's own history. From then on the chat works from that copy and never
+  (description, `workers`, instructions and tool declarations) and, for a mode with tools, the
+  fingerprint of every other file in its folder into that chat's own history. From then on the chat works from that copy and never
   reads `MODE.md` again for it, across a reload, a resume, a server restart and a compaction.
   An edit to `MODE.md` reaches the chat only when the mode is turned off and on again; until then
-  its row says it changed since you turned it on (when the menu next opens), and so does a change
-  to a file its tools run.
-  Reference files are not copied: the agent reads them from the folder when it needs them, so an
-  edit to one reaches the chat at once and marks nothing changed. A mode whose folder is deleted
+  its row says it changed since you turned it on (when the menu next opens). The other files are
+  not copied: the agent reads them from the folder when it needs them, so an edit to one reaches the
+  chat at once. In a mode without tools that marks nothing changed; in a mode with tools any edit to
+  a file in its folder (other than `MODE.md`) changes its fingerprint, so the row says it changed
+  and its tools stop running until it is approved again (below). A mode whose folder is deleted
   stays on, its row saying it was removed from the project, until it is turned off; then its row is
   gone. One whose files turn broken while it is on stays on too, from its copy, and its row says so.
 - **Tools.** A mode may declare up to 16 tools, each with a name (`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`,
   at most 32 characters), a description, its parameters (a JSON schema of an object; none by
-  default), the command that runs it (an argv: a program on the `PATH` or a `./` path, and every
-  argument starting `./` names a file in the mode's folder, passed as its absolute path) and an
+  default), the command that runs it (an argv: the program is a bare name looked up on the `PATH`,
+  such as `node`, `python3` or `sh`, which is the machine's own program and not covered by
+  approval, or a `./` path; every element containing a `/` must be a `./` path naming a file in the
+  mode's folder, passed as its absolute path, so `scripts/check.js`, an absolute path or `../` makes
+  the mode broken) and an
   optional time limit (1–600 seconds, 60 by default). The model sees each as
   `<id with - as _>__<name>` (`release-check`'s `status` is `release_check__status`), so no two
   modes' tools collide. While the mode is on, the model has those tools; turning it off takes them
@@ -512,16 +518,18 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   JSON on its standard input, with `SOVA_MODE_ID`, `SOVA_MODE_DIR`, `SOVA_PROJECT_ROOT` and
   `SOVA_TOOL_NAME` set, in a process group of its own that is killed whole at the time limit or
   when the turn is stopped, and gives the model its exit code, its output and its errors, each
-  cut at 256 KB with the cut marked. A `./` file that is a symlink leading out of the mode's folder
-  is refused at the call and runs nothing. While the chat's sandbox is On
+  cut at 256 KB with the cut marked. A `./` file that is a symlink leading out of the mode's folder,
+  or any argument holding a `/` that isn't a `./` folder path, is refused at the call and runs
+  nothing. While the chat's sandbox is On
   (§chat.sandbox/states), a project tool call runs nothing either: it is refused, telling the model
   to ask the user to turn the sandbox off, since the sandbox confines only the chat's own tools. Sova loads no code from the project into the chat itself: a tool is a program it runs.
 - **Approval.** A mode with tools needs the user's approval before it is first turned on, and
-  again whenever its tools change: the declared tools, or the content of any file in the mode's
-  folder that their commands name. An
-  edit to the instructions or reference files alone never asks again, and a mode without tools
-  never needs approval. What you approve is what you saw: the approval records a fingerprint of the
-  declared tools and their programs, and it is refused when the folder changed since the menu
+  again whenever its tools or its folder change: the declared tools, or any file in the mode's
+  folder, at any depth, hidden files included (a symlink counts as the path it points to), except
+  `MODE.md` itself. So a script that sources a helper beside it, or a program that imports a
+  sibling, can't change under an approval. Editing the instructions in `MODE.md` alone never asks
+  again, and a mode without tools never needs approval. What you approve is what you saw: the
+  approval records a fingerprint of the declared tools and every file in the folder, and it is refused when the folder changed since the menu
   showed them. Approvals are kept per user in Sova's state root, outside every repo, by checkout
   and mode, the last 8 approved fingerprints each, so switching a branch back to a version already
   approved doesn't ask again. Sova can't tell
@@ -535,9 +543,9 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
     already approved; it never asks there (§chat.mode-menu/terminal).
   - When the Overseer turns a mode on, that counts as the approval: nothing waits for you, and the
     approval is recorded as if you had given it.
-  - If a tool's program changes on disk after its approval while the mode is on, the next call of
-    that tool runs nothing: it is refused, telling the model the program changed and needs
-    re-approval, and the row says its tools changed since you approved them. Turning the mode off
+  - If any file in the folder changes on disk after its approval while the mode is on, the next
+    call of any of its tools runs nothing: it is refused, telling the model the mode's files changed
+    and need re-approval, and the row says its tools changed since you approved them. Turning the mode off
     and on again asks for approval of what it has now, and then the calls run.
 - **Reaching the model.** A project mode's block reaches the model the same way a built-in mode's
   does (§chat.mode-menu/minor-toggle-keeps-prompt). It is in the system prompt when it was on at
@@ -549,7 +557,7 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   that copy when the worker can run commands (it has `bash`). A worker that can't, and a worker on
   a remote target, gets the block without the tools; a worker on its worktree's own agent dir gets
   neither from the parent (§chat.worktrees/worktree-config). In a worker the tools refuse
-  exactly as in the chat: a program changed since its approval, or the worker's sandbox On. A
+  exactly as in the chat: its files changed since its approval, or the worker's sandbox On. A
   worker never reads the folder, and never turns a project mode on itself: it is refused with "a
   worker gets its project modes from the session that started it". A chat hands its workers at most 8 modes, built-in and project
   together.

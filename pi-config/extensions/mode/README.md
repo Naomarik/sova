@@ -664,8 +664,9 @@ product claim is §chat.mode-menu/project-modes.
   JSON array; lines starting with whitespace continue a value), then a non-empty body. A tool is
   `{name, description, params?, command, timeoutS?}`: at most 16, `name` lowercase with single
   underscores (at most 32), `params` a JSON schema of `type: "object"`, `command` an argv whose
-  first element is a program on `PATH` or a `./` path, every `./` argument a file inside the mode
-  folder (passed as its absolute path), `timeoutS` 1–600 (default 60). The model sees a tool as
+  first element a bare program name on `PATH` (the machine's own, not covered by approval) or a
+  `./` path; every element containing `/` must be a `./` file inside the mode folder (passed as its
+  absolute path; `scripts/x.js`, absolute paths and `../` are parse errors), `timeoutS` 1–600 (default 60). The model sees a tool as
   `projectToolName(id, name)`: the id with `-` as `_`, `__`, the name. There is no key that turns
   a mode on: a mode is on only when the user (`/mode`, Sova's menu) or the Overseer turns it on.
 - **Discovery** (`project-discovery.ts`, node builtins only): `discoverProjectModes(cwd)` lists
@@ -696,8 +697,11 @@ product claim is §chat.mode-menu/project-modes.
   writes: a mode with tools turns on only when that exact `toolsHash` is approved for its
   checkout, otherwise it is refused ("Minor mode <id> not turned on: <id> runs the project's own
   tools: approve it from a Sova chat's mode menu first"); it never asks in a terminal. A worker
-  never turns a project mode on itself: it gets them from the session that started it. `toolsHash` covers the declared tools and the bytes of every `./` file
-  they name, so editing the body or a reference file never asks again.
+  never turns a project mode on itself: it gets them from the session that started it. `toolsHash` covers the declared tools and every file in the mode folder,
+  recursively, dotfiles included, except the top-level `MODE.md` (`./path sha` lines, sorted; a
+  symlink hashes as its target path), so a sourced helper or an imported sibling can't change
+  under an approval; editing the body never asks again. A mode with tools past 1000 files or 50 MB
+  is broken. Discovery and the call-time check both hash through `toolsHashOf`.
 - **Workers.** A mode with `workers: yes` is in the worker prompt after spec's block, from the
   parent's snapshot, with its tools when the worker has `bash` (a read-only or remote worker gets the
   block only; a worker on its worktree's own config gets neither; the tools refuse in a worker as in the parent); a worker carries at most 8 modes, built-in and project.

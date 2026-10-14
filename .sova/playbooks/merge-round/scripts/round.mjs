@@ -69,9 +69,10 @@ export function conflictedFiles(stdout) {
 }
 
 /** The question for an owner. It never holds the sha: the owner must name the head it checked.
+ *  READY also says the user blessed this merge: an owner whose user hasn't said to merge answers NOT READY.
  *  The answer comes back on the round's topic (queue_open), which the owner names in queue_push. */
 export const askText = (branch, topic) =>
-  `Is ${branch} ready to merge at its current head? Reply with queue_push, topic "${topic}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why>.`;
+  `Is ${branch} ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${topic}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it).`;
 
 /** A topic name as the server's queue_open makes it (shared/topic-message.ts TOPIC_NAME_RE). */
 export const TOPIC_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}-[a-z0-9]{6}$/;

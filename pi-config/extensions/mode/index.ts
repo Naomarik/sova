@@ -638,7 +638,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		// The head, and with it the project head, while either differs from the active set (restoreHead).
 		if (head !== undefined && (head.join(",") !== active.minorModes.join(",") || refsKey(projectHead ?? []) !== refsKey(projectModesOf(active)))) {
 			data.head = [...head];
-			data.projectHead = [...(projectHead ?? [])];
+			// Absent reads as none (restoreHead), so a chat without project modes writes the entries it always did.
+			if (projectHead && projectHead.length > 0) data.projectHead = [...projectHead];
 		}
 		try {
 			pi.appendEntry<ModeMarker>(MODE_ENTRY_TYPE, data);

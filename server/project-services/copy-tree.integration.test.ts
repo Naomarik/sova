@@ -3,7 +3,7 @@
 // BSD cp's clone flag on macOS (which rejects --reflink), and a real copy on this host.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -25,11 +25,43 @@ test("this host's cp copies the contents, symlinks as symlinks, into an existing
   assert.equal(readlinkSync(join(dst, "link")), "sub/f.txt");
 });
 
+const script = join(import.meta.dirname, "..", "..", "scripts", "copy-tree.mjs");
+
 test("scripts/copy-tree.mjs makes the folder and copies into it", () => {
   const src = join(tmp, "src2");
   mkdirSync(src);
   writeFileSync(join(src, "a"), "1");
   const dst = join(tmp, "made", "here");
-  execFileSync(process.execPath, [join(import.meta.dirname, "..", "..", "scripts", "copy-tree.mjs"), src, dst]);
+  execFileSync(process.execPath, [script, src, dst]);
   assert.equal(readFileSync(join(dst, "a"), "utf8"), "1");
+});
+
+// Two pnpm node_modules from one store hold hardlinks of the same files: cp onto them refuses ("are
+// the same file"). The script replaces the destination instead, so it ends an exact copy.
+test("scripts/copy-tree.mjs replaces a destination holding hardlinks of the source and files it lacks", () => {
+  const src = join(tmp, "src3");
+  const dst = join(tmp, "dst3");
+  mkdirSync(join(src, "pkg"), { recursive: true });
+  writeFileSync(join(src, "pkg", "index.js"), "new");
+  writeFileSync(join(src, "top"), "top");
+  mkdirSync(join(dst, "pkg"), { recursive: true });
+  linkSync(join(src, "pkg", "index.js"), join(dst, "pkg", "index.js"));
+  linkSync(join(src, "top"), join(dst, "top"));
+  writeFileSync(join(dst, "extra"), "stale");
+  assert.equal(statSync(join(dst, "top")).ino, statSync(join(src, "top")).ino, "the destination starts as hardlinks of the source");
+  execFileSync(process.execPath, [script, src, dst], { stdio: "pipe" });
+  assert.deepEqual(readdirSync(dst).sort(), ["pkg", "top"]);
+  assert.equal(readFileSync(join(dst, "pkg", "index.js"), "utf8"), "new");
+  assert.equal(readFileSync(join(dst, "top"), "utf8"), "top");
+  assert.deepEqual(readdirSync(tmp).filter((f) => f.startsWith("dst3.")), [], "no temporary sibling left behind");
+});
+
+test("scripts/copy-tree.mjs leaves the destination as it was when the copy fails", () => {
+  const dst = join(tmp, "dst4");
+  mkdirSync(dst);
+  writeFileSync(join(dst, "keep"), "kept");
+  assert.throws(() => execFileSync(process.execPath, [script, join(tmp, "no-such-src"), dst], { stdio: "pipe" }));
+  assert.equal(readFileSync(join(dst, "keep"), "utf8"), "kept");
+  assert.equal(existsSync(join(dst, "no-such-src")), false);
+  assert.deepEqual(readdirSync(tmp).filter((f) => f.startsWith("dst4.")), [], "no temporary sibling left behind");
 });

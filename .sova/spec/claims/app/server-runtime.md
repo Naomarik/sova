@@ -151,3 +151,11 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   `server/tier-guard.test.ts` proves each refusal on both runtimes: an ESM named-import `spawn`,
   `execFileSync`, `net.connect`, `http.createServer().listen`, a `fetch` to localhost (and Bun's
   `Bun.connect`, `Bun.spawn`, `Bun.serve`), and a dynamic import of `server/index.ts`.
+- **No real Claude program.** Every test process the runner starts, in either tier and on either
+  runtime, finds a stand-in `claude` (`scripts/fake-claude.mjs`) first on its `PATH`, so code under
+  test that runs the Claude program (§app.claude-code-provider/one-program) never reaches the
+  installed CLI or a paid model, whichever file starts it. A test that needs another `claude` sets
+  its own `PATH`. A unit file whose in-process chats load this tree's pi-config extensions links
+  them through `server/testing/agent-dir.ts`, whose topic-outline settings run the outline's check
+  at once after each turn and never call a summarizer model on their own: a summary is a model
+  call, and the unit tier starts no program.

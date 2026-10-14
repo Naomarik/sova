@@ -61,6 +61,7 @@ Paths in "Where" are under `server/`.
 | P23 turn-end-loadout | ordering | `join` (pi-config/extensions/link/index.ts) | `agentLoop`, `AgentSession._installAgentNextTurnRefresh`, `AgentSession._preparePromptAndToolLoadout`, `ExtensionAPI.registerTool` | pi offers a documented hook for changing the tool set before a run's next request |
 | P24 own-code-discovery | monkey-patch | `patchResolve` (harness/pi/own-code.ts), `installOwnCode` (harness/pi/own-code.ts) | `DefaultPackageManager.resolve`, `DefaultResourceLoader.reload`, `DefaultResourceLoader.loadCurrentExtensionSet`, `createAgentSessionServices` | pi's loader takes a path-mapping hook for discovered extensions |
 | P25 request-start | monkey-patch | `hearRequests` (harness/pi/session.ts), `keepHearingRequests` (harness/pi/session.ts), `PiHarnessSession.subscribe` (harness/pi/session.ts) | `Agent.streamFunction`, `StreamOptions.onPayload`, `createAgentSession` | pi emits a request-sent event of its own |
+| P26 native-extension-load | semantic | `extensionDepDrift` (harness/pi/own-code.ts) | `loadExtensions`, `getAliases`, jiti `tryNative` | pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -204,6 +205,12 @@ Canary: `P22 declared-tools: agent.state.tools is the declared set with the load
 Within one run pi (1.0.3, `pi-agent-core` `agent-loop.js`) emits `turn_end` (an extension's handler runs in the `finishTurn` boundary before it), then polls `getSteeringMessages`, then runs `prepareNextTurn` — `AgentSession._installAgentNextTurnRefresh` builds the next request's prompt and tool loadout there from `getActiveToolNames()` (`_preparePromptAndToolLoadout`) — and only then emits `turn_start`. So a tool an extension registers in a `turn_end` handler is declared (`toolsAdded`) in the very next request of the same run, the one that carries a message steered during the step; a tool registered at `turn_start` waits for the request after. The `link` extension turns the link tools on at `turn_end` for a session linked mid-run, so the partner's steered message arrives with the tools to answer it (§mesh.links/tools, §mesh.links/delivery).
 
 Canary: `P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not`.
+
+### P26 native-extension-load
+
+Under Bun, pi's extension loader (`loadExtensions`, jiti with `moduleCache: false` and pi's `getAliases()`) leaves jiti's `tryNative` at its default, `"Bun" in globalThis`: it imports each extension natively first, which ignores the aliases, and translates it only when that throws. An extension whose bare imports resolve from its real path is then a plain module: Bun keys it by its real path, so extensions share one instance of a file they have in common, with each other and with Sova's own imports of it. One that can't resolve them is translated, with a private copy of every file it imports (and jiti's Babel stays resident). So Sova's package.json names pi-ai, pi-tui and typebox at pi's own versions, and `extensionDepDrift` checks that they resolve from the copy's extensions to pi's own copies (§app.chat-processes/extension-loading).
+
+Canary: `P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own`.
 
 ### T1 scripted-model (test-only)
 

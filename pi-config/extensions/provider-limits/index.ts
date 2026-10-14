@@ -13,7 +13,9 @@
  * request waits, its status bar says so.
  */
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getApiProvider, type Api, type Model } from "@earendil-works/pi-ai";
+// The compat entry: getApiProvider is not on pi-ai's root, which pi's loader aliases to compat only
+// when it translates an extension; named directly, the extension also loads as a plain module.
+import { getApiProvider, type Api, type Model } from "@earendil-works/pi-ai/compat";
 import { WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT } from "../mode/events.ts";
 import { limitsInEffect, registerSession, unregisterSession, validProviderId, waitingText, type RequestKind } from "./gate.ts";
 import { gateStreamSimple, type StreamSimple } from "./stream.ts";

@@ -68,6 +68,12 @@ Extensions with no guide, and the contract Sova parses where there is one:
   claude-code bridge, the provider-limits gate or `LoginUsers` included) reaches a chat when it reloads onto
   the new code after that restart, never before. Say a change is not live yet, and restart under AGENTS.md's
   restart rules.
+- **Plain-module imports.** In a Sova chat (Bun) pi imports each extension natively and translates it
+  only when that fails, at a cost in memory and open time (quirk P26). So an extension imports by name only
+  what Sova's `package.json` lists (`@earendil-works/pi-coding-agent`, `pi-ai`, `pi-tui`, `typebox`), and
+  only from an entry that exports the name: pi-ai's legacy names (`getApiProvider`, `getModel`, …) are on
+  `@earendil-works/pi-ai/compat`, not its root. A new dependency is added to Sova's `package.json` at pi's
+  own version. `server/harness/pi/extension-deps.integration.test.ts` fails on any extension pi translates.
 - **No new extension for Sova features.** A new Sova agent feature is never a new pi-config extension, and
   never a new call to an extension's command handler; the existing ones are grandfathered (see
   [the harness guide](../server/harness/overview.md)).

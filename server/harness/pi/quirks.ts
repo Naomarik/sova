@@ -388,6 +388,17 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi emits a request-sent event of its own",
   },
   {
+    id: "P26",
+    name: "native-extension-load",
+    kind: "semantic",
+    relies:
+      "Under Bun pi's extension loader leaves jiti's tryNative at its default (on under Bun): it imports each extension natively first, ignoring its aliases, and translates it only when that throws. So an extension whose bare imports resolve from its real path is a plain module that shares one instance of a common file with other extensions and with Sova's own imports; one that can't is translated, with private copies.",
+    pi: ["loadExtensions", "getAliases", "jiti tryNative"],
+    where: [{ file: "server/harness/pi/own-code.ts", symbol: "extensionDepDrift" }],
+    canary: "P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own",
+    retireWhen: "pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

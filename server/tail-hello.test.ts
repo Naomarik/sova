@@ -3,14 +3,16 @@
 // A throwaway PI_CODING_AGENT_DIR in the OS temp dir and an ephemeral loopback port; ~/.pi untouched.
 // The /ws/chat and /ws/watch hellos over real WebSockets: tail-hello.integration.test.ts.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import WebSocket from "ws";
 import type { AlignDocInfo, TranscriptItem } from "../shared/protocol";
+import { largeSessionText } from "./harness/pi/golden/fixtures/large";
+import { fixtureSets } from "./harness/pi/golden/golden";
 import { piSession } from "./harness/pi/testing/handle";
 import { until as waitUntil } from "./test-wait";
 
@@ -163,17 +165,23 @@ describe("cutTail", () => {
   });
 
   // The property that can't pass by accident: the rows, put back together, are the rows a whole
-  // hello carries, on every real session copy there is and on a synthetic branch whose
-  // whole-branch rules (newest align doc, newest explain run, running model) straddle the seam.
-  const copies = join(homedir(), ".cache", "sova-vscroll", "sessions");
-  const files = existsSync(copies) ? readdirSync(copies).filter((f) => f.endsWith(".jsonl")) : [];
-  test(`tail + history == normalizeEntries(branch) on ${files.length} session copies`, { skip: files.length === 0 && "no session copies" }, () => {
-    for (const f of files) {
-      const items = normalizeEntries(activeBranch(parseLines(readFileSync(join(copies, f), "utf8"))));
+  // hello carries, on the generated large session, on every real session in the private golden set
+  // when there is one (golden/README.md), and on a synthetic branch whose whole-branch rules (newest
+  // align doc, newest explain run, running model) straddle the seam.
+  const real = fixtureSets().find((s) => s.name === "real")?.fixtures ?? [];
+  test(`tail + history == normalizeEntries(branch) on the large session and ${real.length} real ones`, () => {
+    // 301 turns: the large session rewinds at turn 300, leaving a ~1.2 MB branch of rows.
+    const large = normalizeEntries(activeBranch(parseLines(largeSessionText(301))));
+    const largeCut = cutTail(large);
+    assert.ok(largeCut.older > 0 && largeCut.history.length > 2, `cut into ${largeCut.history.length} chunks`);
+    assert.deepEqual(reassemble(largeCut), large);
+    assert.notEqual(largeCut.items[0]!.kind, "tool-result");
+    for (const f of real) {
+      const items = normalizeEntries(activeBranch(parseLines(readFileSync(f.path, "utf8"))));
       const cut = cutTail(items);
-      assert.deepEqual(reassemble(cut), items, f);
-      assert.ok(cut.items.length > 0 || items.length === 0, f);
-      if (cut.older > 0) assert.notEqual(cut.items[0]!.kind, "tool-result", f);
+      assert.deepEqual(reassemble(cut), items, f.name);
+      assert.ok(cut.items.length > 0 || items.length === 0, f.name);
+      if (cut.older > 0) assert.notEqual(cut.items[0]!.kind, "tool-result", f.name);
     }
   });
 

@@ -37,6 +37,7 @@ import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
+import { whenListed } from "./listed.mjs";
 import { selfHosted } from "./self-hosted.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -225,9 +226,7 @@ async function newPage() {
   await ctx.addInitScript(RECORDER);
   const page = await ctx.newPage();
   if (!paths.size) {
-    const list = await api("/api/sessions");
-    for (const s of list.sessions ?? list) if (SESSIONS.includes(s.id)) paths.set(s.id, s.path);
-    for (const id of SESSIONS) assert(paths.has(id), `the fixture ${id} isn't listed by the server`);
+    for (const [id, s] of await whenListed(api, SESSIONS)) paths.set(id, s.path);
   }
   return { ctx, page };
 }
@@ -387,12 +386,8 @@ try {
       }
       writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
       utimesSync(file, new Date(t0), new Date(t0));
-      for (let i = 0; i < 50; i++) {
-        const list = await api("/api/sessions");
-        if ((list.sessions ?? list).some((s) => s.path === file)) return file;
-        await sleep(300);
-      }
-      throw new Error(`the server never listed ${file}`);
+      await whenListed(api, [file], "path");
+      return file;
     };
     const openPath = async (page, path) => {
       const hash = `#/s/${encodeURIComponent(path)}`;

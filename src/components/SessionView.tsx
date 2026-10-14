@@ -103,6 +103,9 @@ export function SessionView(props: {
   autofocus?: boolean;
   /** Set when this view is one pane of a workspace. */
   paneId?: string;
+  /** Whether this view is on screen (absent: always): a workspace tab behind another isn't, and
+      its chat, closed while quiet, opens asleep until it is (§chat.transcript/instant-open). */
+  front?: () => boolean;
   /** The user's word for this member inside its group (`GroupMember.label`), when it has one:
       the pane head shows it in place of the title, and it is what the pane is called to AT. */
   label?: () => string | null;
@@ -469,6 +472,7 @@ export function SessionView(props: {
                       author={author()}
                       force={c().force}
                       autofocus={c().autofocus}
+                      front={props.front}
                       onModel={(m) => {
                         setChatModel(m);
                         // The sidebar row reads the list: re-read it after a switch.

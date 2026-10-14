@@ -188,6 +188,10 @@ export function ChatView(props: {
   /** Reconnect past the server's recent-write guard (never past a live TUI). */
   force: boolean;
   autofocus?: boolean;
+  /** Whether this view is in front (absent: always): a chat opened on its own, or a workspace pane on
+      screen. Opening a chat in front starts it; a workspace tab behind another opens asleep and
+      starts when brought to the front (§chat.transcript/instant-open). */
+  front?: () => boolean;
   onModel(model: string | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   /** A run just started here: the list's `busy` is stale until it's refetched. */
@@ -721,8 +725,10 @@ export function ChatView(props: {
         () => {},
       );
   // Whether the server holds the chat is the list's to say (its row's `chat`): the first connect
-  // waits for the row too, within the same bound, so a chat closed while quiet opens asleep
-  // (lib/chat-wait startsAsleep) and opening it to read starts no process.
+  // waits for the row too, within the same bound, so a chat closed while quiet opens asleep in a
+  // view that isn't in front (lib/chat-wait startsAsleep). In front, opening it starts it.
+  // A memo, so the wake below runs on a change of the value, never on a re-read of its inputs.
+  const inFront = createMemo(() => props.front?.() ?? true);
   let rowHere!: () => void;
   const listed = new Promise<void>((r) => (rowHere = r));
   if (!props.summary) rowHere();
@@ -735,6 +741,7 @@ export function ChatView(props: {
         special: !!props.overseer || !!props.projectOverseer,
         force: !!props.force,
         rows: (untrack(items)?.length ?? 0) > 0,
+        front: untrack(inFront),
       });
       if (asleep) {
         setWait(waitOnSleep(untrack(wait)));
@@ -1162,6 +1169,9 @@ export function ChatView(props: {
     if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
   };
   createEffect(on(socket.status, (status) => (status === "failed" || status === "closed") && !untrack(wait).asleep && giveUpWake(), { defer: true }));
+  // Brought to the front (a workspace tab), a chat asleep is being opened: start it
+  // (§chat.transcript/instant-open), as a send would.
+  createEffect(on(inFront, (front) => front && wake(), { defer: true }));
   // Someone else opened the chat meanwhile (another tab, a worker's report): connect to it.
   createEffect(
     on(

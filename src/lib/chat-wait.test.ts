@@ -178,9 +178,13 @@ test("heldWhileAsleep: the closed process still listed never wakes the tab; held
   assert.deepEqual(r, { sawGone: true, connect: true }, "someone else opened it");
 });
 
-test("startsAsleep: a chat the server doesn't hold opens asleep over its rows from the file; otherwise it connects as before", () => {
-  const ordinary = { special: false, force: false, rows: true };
-  assert.equal(startsAsleep({}, ordinary), true, "not held: reading it starts nothing");
+test("startsAsleep: opening a chat in front starts it, held or not; a chat the server doesn't hold opens asleep only behind another tab", () => {
+  const front = { special: false, force: false, rows: true, front: true };
+  assert.equal(startsAsleep({}, front), false, "not held, in front: opening it starts it");
+  assert.equal(startsAsleep({ chat: { model: null } }, front), false);
+  assert.equal(startsAsleep({ live: { pid: 1 } }, front), false, "open in a terminal: the refusal makes it read only");
+  const ordinary = { special: false, force: false, rows: true, front: false };
+  assert.equal(startsAsleep({}, ordinary), true, "not held, a workspace tab behind another: nothing starts until it is in front");
   assert.equal(startsAsleep({ chat: { model: null } }, ordinary), false, "held: connecting starts nothing either");
   assert.equal(startsAsleep(undefined, ordinary), false, "its row not known yet");
   assert.equal(startsAsleep({}, { ...ordinary, rows: false }), false, "nothing to show (a new chat, a failed read): the hello brings it");

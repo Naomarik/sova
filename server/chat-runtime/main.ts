@@ -82,6 +82,8 @@ const stop = (signal: string) => {
 process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
 
+// No terminal drawing code in a chat process (§app.chat-processes/no-terminal-drawing): before pi loads.
+(await import("../harness/pi/headless")).installHeadless();
 const { ChatRuntimeHost, RELOAD_MESSAGE, warmChatRuntime } = await import("./host");
 await warmChatRuntime();
 if (!exiting) {

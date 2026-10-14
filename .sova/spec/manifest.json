@@ -675,8 +675,8 @@
         "src/lib/readiness.test.ts"
       ],
       "agreed": {
-        "by": "omar (al_1 go-ahead)",
-        "at": "2026-10-13T21:40Z"
+        "by": "user",
+        "at": "2026-10-14T12:32Z"
       }
     },
     "§app.session-list/archive-by-date": {
@@ -716,7 +716,11 @@
         "shared/protocol.ts",
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:32Z"
+      }
     },
     "§app.session-list/groups": {
       "kind": "behavior",
@@ -733,7 +737,11 @@
         "src/lib/group-open.test.ts",
         "src/lib/session-groups.ts",
         "src/lib/session-groups.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
+      }
     },
     "§app.session-list/recent": {
       "kind": "behavior",
@@ -748,8 +756,8 @@
         "src/lib/home-sessions.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
       }
     },
     "§app.session-list/regions-top-and-archive": {
@@ -758,7 +766,7 @@
         "§app.session-list/recent"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
@@ -776,11 +784,14 @@
         "src/components/SessionDetails.tsx",
         "src/App.tsx",
         "src/lib/optimistic-archive.ts",
-        "src/lib/optimistic-archive.test.ts"
+        "src/lib/optimistic-archive.test.ts",
+        "src/app.css",
+        "src/lib/drag-archive.test.ts",
+        "src/components/AgentsView.tsx"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
       }
     },
     "§app.session-list/search": {
@@ -2589,7 +2600,11 @@
         "§app.session-list/recent",
         "§mesh.ui/card",
         "§app.extensions/cards"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
+      }
     },
     "§chat.transcript/live-watch": {
       "kind": "behavior",
@@ -3280,7 +3295,8 @@
         "src/lib/spine.ts",
         "src/lib/storage-keys.ts",
         "src/components/Sidebar.tsx",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/archive.ts"
       ],
       "requires": [
         "§app.session-list/recent",
@@ -3288,7 +3304,11 @@
         "§app.shell/spine-column",
         "§app.session-list/working-now",
         "§app.insights/token-velocity"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
+      }
     },
     "§app.shell/spine-column": {
       "kind": "behavior",
@@ -5369,7 +5389,11 @@
         "§app.session-list/recent",
         "§app.session-list/groups",
         "§app.session-list/spine"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
+      }
     },
     "§teams.defaults/command": {
       "kind": "behavior",
@@ -7270,8 +7294,8 @@
         "server/worker-sessions.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
       }
     },
     "§app.session-list/organizations": {
@@ -7299,7 +7323,11 @@
         "server/session-feed.ts",
         "src/lib/built-once.ts",
         "src/lib/built-once.browser.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
+      }
     },
     "§app.project-overseer/coding-mode": {
       "kind": "behavior",
@@ -9709,7 +9737,11 @@
         "src/components/SessionTitleSettings.tsx",
         "server/overseer-tools.ts",
         "server/overseer-tools.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:32Z"
+      }
     },
     "§chat.markdown/vis-wireframe": {
       "kind": "behavior",
@@ -11759,8 +11791,8 @@
         "§chat.profiles/singleton"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
       }
     },
     "§chat.profiles/applying": {
@@ -11896,7 +11928,11 @@
       "requires": [
         "§chat.profiles/enforcement",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:33Z"
+      }
     },
     "§chat.profiles/singleton": {
       "kind": "behavior",
@@ -12322,7 +12358,11 @@
         "src/lib/optimistic-archive.test.ts",
         "src/lib/archive-block.ts",
         "src/lib/archive-block.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:32Z"
+      }
     },
     "§chat.markdown/vis-wireframe-items": {
       "kind": "behavior",
@@ -14584,7 +14624,7 @@
     "§app.projects/list": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/projects/routes.ts",
         "shared/projects.ts",
@@ -14603,7 +14643,11 @@
       ],
       "requires": [
         "§app.session-list/organizations"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T12:32Z"
+      }
     },
     "§app.projects/placement": {
       "kind": "behavior",
@@ -19203,7 +19247,10 @@
         "src/lib/drag-archive.ts",
         "src/components/Sidebar.tsx",
         "src/lib/summary-diff.ts",
-        "server/build-loadout.ts"
+        "server/build-loadout.ts",
+        "src/lib/drag-archive.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/components/SessionDetails.tsx"
       ],
       "requires": [
         "§app.projects/list",
@@ -19215,8 +19262,8 @@
         "§app.projects/seam"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T07:55Z"
+        "by": "user",
+        "at": "2026-10-14T12:32Z"
       }
     },
     "§app.server-runtime/pi-workers": {

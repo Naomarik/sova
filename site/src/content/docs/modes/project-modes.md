@@ -90,7 +90,7 @@ Each entry in `tools` has:
 | `name` | Lowercase letters and digits, words joined by single underscores, at most 32 characters. |
 | `description` | What the tool does, for the agent. |
 | `params` | Optional. A JSON schema for the arguments, with `"type": "object"`. With none, the tool takes no arguments. |
-| `command` | The command line, as a JSON array. The first element is a program on the `PATH` (`node`, `bash`) or a `./` path in the mode folder. Every element that starts with `./` is a file in the mode folder, and Sova passes its absolute path. |
+| `command` | The command line, as a JSON array. The first element is either a bare program name looked up on the `PATH` (`node`, `python3`, `bash`), which is the machine's own program and isn't covered by approval, or a `./` path in the mode folder. Every element that contains a `/` must be a `./` path to a file in the mode folder, and Sova passes its absolute path: `scripts/check.js`, an absolute path or `../` is an error. |
 | `timeoutS` | Optional. The time limit in seconds, 1 to 600. The default is 60. |
 
 A mode declares at most 16 tools. The agent sees each one as the mode's id, with hyphens turned
@@ -119,9 +119,12 @@ menu its row reads **Asks before turning on: it runs {n} tool(s).** Turning it o
 with each tool's name, description and command line, and where it runs from. **Approve and Turn
 On** approves exactly those tools and turns the mode on; **Cancel** changes nothing.
 
-Sova asks again when the mode's tools change: a tool declaration, or a file in the mode folder that
-a command names. Editing the instructions or the reference files never asks again, and a mode with
-no tools never asks at all. Sova can't tell who wrote a file, so it asks about modes you or your
+Approval covers **everything in the mode's folder**: the tool declarations and every file in the
+folder, at any depth, hidden files included, except `MODE.md` itself. So a script that sources a
+helper beside it, or a program that imports a sibling, can't change without asking. Sova asks again
+when any of that changes; editing the instructions in `MODE.md` never asks again, and a mode with
+no tools never asks at all. Keep a mode with tools small: a folder of more than 1000 files or 50 MB
+can't be turned on. Sova can't tell who wrote a file, so it asks about modes you or your
 agent wrote too.
 
 Approvals are kept in Sova's own state, outside every repository. Sova remembers the last 8 approved versions of
@@ -129,22 +132,22 @@ each mode in each checkout, so switching back to a branch whose tools you alread
 ask again. When the Overseer turns a mode on
 for you, that counts as your approval.
 
-If a tool's program changes on disk while the mode is on, Sova refuses to run it. The agent is told
-the program changed, and the row reads **Its tools changed since you approved them, so they won't
+If any file in the folder changes on disk while the mode is on, Sova refuses to run its tools. The agent is told
+the mode's files changed, and the row reads **Its tools changed since you approved them, so they won't
 run.** Turn the mode off and on to approve the new version.
 
 ## What a chat keeps
 
 When you turn a mode on, the chat saves a copy of its `MODE.md` (the description, instructions and
-tools) in its own history, with a fingerprint of the files its tools run. It works from that copy
+tools) in its own history, and for a mode with tools a fingerprint of everything else in its folder. It works from that copy
 until you turn the mode off, through reloads, server restarts and compaction. It never reads
 `MODE.md` again for it.
 
 So an edit to `MODE.md` doesn't reach a chat that already has the mode on. The row says **Changed
-since you turned it on.** Turn the mode off and on to load the changes. An edit to a file a tool
-runs marks the mode changed too, and stops that tool (see above). Reference files aren't copied:
-the agent reads them from the folder when it needs them, so an edit to one reaches the chat right
-away. If the mode's folder is deleted, the chat keeps its copy, and the row says **Removed from the
+since you turned it on.** Turn the mode off and on to load the changes. The other files in the folder
+aren't copied: the agent reads them when it needs them, so an edit to one reaches the chat right
+away. In a mode with tools, that edit also marks the mode changed and stops its tools until you
+approve it again (see above). If the mode's folder is deleted, the chat keeps its copy, and the row says **Removed from the
 project.**, until you turn it off.
 
 The instructions reach the agent the same way a built-in mode's do: turning a mode on in the middle
@@ -178,8 +181,9 @@ A folder that isn't a usable mode stays in the menu, marked **Can't turn on**, w
 
 - the folder's name isn't a valid id, or is a built-in mode's name;
 - it has no `MODE.md`;
-- `MODE.md` doesn't parse: no frontmatter, an unknown key, a bad tool, a `./` file a tool names
-  that isn't there, no instructions.
+- `MODE.md` doesn't parse: no frontmatter, an unknown key, a bad tool (a path argument that isn't
+  `./`, a `./` file that isn't there), no instructions;
+- a mode with tools whose folder holds more than 1000 files or 50 MB.
 
 One broken folder never hides the others.
 
@@ -242,6 +246,7 @@ project**. Sova shows the `status` tool and its command line; approve it. Then a
 version 1.4.0 ready. It calls `release_check__status` with `{"version": "1.4.0"}` and gets back the
 script's exit code and output.
 
-Change `checklist.md` and nothing is asked again: it's a reference file, so the agent reads the new
-version the next time it opens it. Change `status.sh` and the chat stops running the tool until you turn the
-mode off and on and approve it again.
+Change the instructions in `MODE.md` and nothing is asked again: the chat picks them up the next
+time you turn the mode off and on. Change `status.sh`, or even `checklist.md`, and the chat stops
+running the tool until you turn the mode off and on and approve it again: approval covers the whole
+folder.

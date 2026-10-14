@@ -19,7 +19,8 @@ export interface StepHunk {
   rows: { kind: "add" | "del" | "ctx"; text: string }[];
 }
 
-/** One file of the diff. `hunks` null: its patch isn't loaded (or too big), so the file is one unit. */
+/** One file of the diff. `hunks` null: its patch isn't loaded (or too big); null or empty (a
+    rename, mode change or empty file with no line changes), the file is one unit. */
 export interface StepFile {
   path: string;
   oldPath?: string;
@@ -44,7 +45,7 @@ export interface Turn {
   edits: TurnEdit[];
 }
 
-/** A hunk by file and index; -1 is the whole file when its hunks are unknown. */
+/** A hunk by file and index; -1 is the whole file (its hunks unknown, or it has none). */
 export interface HunkRef {
   path: string;
   hunk: number;
@@ -59,17 +60,23 @@ export interface Step {
   hunks: HunkRef[];
   /** Files in diff order, each once. */
   files: string[];
-  /** Earlier step numbers this one builds on. */
-  buildsOn: number[];
   source: "turn" | "agent" | "other";
+  /** Commits that made this step's hunks (full ids), oldest first; empty without origins. */
+  commits: string[];
+  /** Some of its hunks' commits couldn't be read (timed out, or that patch isn't loaded). */
+  commitsUnknown?: true;
+  /** An agent step left holding nothing: everything it names is held by earlier steps
+      (`heldBy`), or nothing it names is in this diff. */
+  empty?: "taken" | "gone";
+  /** For `empty: "taken"`: the earlier steps holding what it names, ascending. */
+  heldBy?: number[];
 }
 
 export interface StepPlan {
+  /** Agent steps: every one, at its own number (empty ones included). Turn steps: numbered in order. */
   steps: Step[];
   /** Hunks no step claimed, or null when there are none. */
   other: Step | null;
-  /** Agent-written steps that matched nothing in the diff, by title. */
-  unmatched: string[];
   /** Step numbers per file path, ascending. */
   byFile: Record<string, number[]>;
 }
@@ -78,7 +85,7 @@ export interface StepPlan {
 export interface AgentStepInput {
   title: string;
   why?: string;
-  /** 1-based numbers of earlier steps, as the agent numbered them. */
+  /** Older cards carry it; ignored (commits replace it). */
   buildsOn?: number[];
   /** Repo-relative paths; a start is the hunk header's number (`@@ -oldStart +newStart @@`), and a
       ref with neither is every hunk of the file. */
@@ -302,17 +309,73 @@ function attribute(h: StepHunk, candidates: TurnEdit[][]): number {
   return -1;
 }
 
+/** A file with no hunks to name (unknown, or none: no line changes) is one whole-file unit. */
+const isWhole = (file: StepFile) => file.hunks === null || file.hunks.length === 0;
+
 function refsOf(file: StepFile): HunkRef[] {
-  return file.hunks === null ? [{ path: file.path, hunk: -1 }] : file.hunks.map((_, i) => ({ path: file.path, hunk: i }));
+  return isWhole(file) ? [{ path: file.path, hunk: -1 }] : file.hunks!.map((_, i) => ({ path: file.path, hunk: i }));
 }
 
-/** Numbers, files, "builds on" and the per-file index, from claimed hunks in diff order. */
-function finish(
-  drafts: { id: string; title: string; note?: string; hunks: HunkRef[]; source: Step["source"]; buildsOn?: number[] }[],
-  leftovers: HunkRef[],
-  diffOrder: string[],
-  unmatched: string[],
-): StepPlan {
+/**
+ * Which commits made each unit, from the patch reads (§chat.changes/steps): per file, one list of
+ * commit ids per unit in patch order (a file with no hunks has one, the whole file's), or
+ * "unknown" when its history read failed. A file not in `files` hasn't been read.
+ */
+export interface StepOrigins {
+  files: ReadonlyMap<string, readonly (readonly string[])[] | "unknown">;
+  commits: ReadonlyMap<string, { subject: string; authorTime: number }>;
+}
+
+/** What a patch read with origins carries (DiffFilePatch's fields, structurally). */
+export interface PatchOrigins {
+  path: string;
+  hunkCommits?: number[][];
+  commits?: { sha: string; subject: string; authorTime: number }[];
+  originsUnknown?: true;
+}
+
+/** StepOrigins from patch reads; a read with neither origins nor "unknown" is left out (not read). */
+export function stepOrigins(patches: Iterable<PatchOrigins>): StepOrigins {
+  const files = new Map<string, string[][] | "unknown">();
+  const commits = new Map<string, { subject: string; authorTime: number }>();
+  for (const p of patches) {
+    if (p.originsUnknown) {
+      files.set(p.path, "unknown");
+      continue;
+    }
+    if (!p.hunkCommits || !p.commits) continue;
+    const list = p.commits;
+    for (const c of list) commits.set(c.sha, { subject: c.subject, authorTime: c.authorTime });
+    if (p.hunkCommits.some((u) => u.some((i) => !list[i]))) files.set(p.path, "unknown");
+    else files.set(p.path, p.hunkCommits.map((u) => u.map((i) => list[i]!.sha)));
+  }
+  return { files, commits };
+}
+
+/** A step's commits: its units' commits together, no repeats, oldest first (ties as first seen). */
+function commitsOf(hunks: HunkRef[], origins: StepOrigins | undefined): Pick<Step, "commits" | "commitsUnknown"> {
+  if (!origins) return { commits: [] };
+  const seen: string[] = [];
+  const add = (shas: readonly string[]) => {
+    for (const sha of shas) if (!seen.includes(sha)) seen.push(sha);
+  };
+  let unknown = false;
+  for (const r of hunks) {
+    const units = origins.files.get(r.path);
+    if (units === undefined || units === "unknown") unknown = true;
+    else if (r.hunk < 0) units.forEach(add);
+    else if (r.hunk < units.length) add(units[r.hunk]!);
+    else unknown = true;
+  }
+  const time = (sha: string) => origins.commits.get(sha)?.authorTime ?? Number.POSITIVE_INFINITY;
+  const commits = seen.map((sha, i) => ({ sha, i })).sort((a, b) => time(a.sha) - time(b.sha) || a.i - b.i).map((c) => c.sha);
+  return unknown ? { commits, commitsUnknown: true } : { commits };
+}
+
+type Draft = { id: string; title: string; note?: string; hunks: HunkRef[]; source: Step["source"]; empty?: Step["empty"]; heldBy?: number[] };
+
+/** Numbers, files, commits and the per-file index, from claimed hunks in diff order. */
+function finish(drafts: Draft[], leftovers: HunkRef[], diffOrder: string[], origins: StepOrigins | undefined): StepPlan {
   const order = new Map(diffOrder.map((p, i) => [p, i]));
   const sortRefs = (refs: HunkRef[]) =>
     refs.sort((a, b) => (order.get(a.path) ?? 0) - (order.get(b.path) ?? 0) || a.hunk - b.hunk);
@@ -323,17 +386,25 @@ function finish(
     const n = steps.length + 1;
     const hunks = sortRefs(d.hunks);
     const files = filesOf(hunks);
-    const buildsOn =
-      d.buildsOn ??
-      steps.filter((s) => s.files.some((f) => files.includes(f))).map((s) => s.n);
-    steps.push({ n, id: d.id, title: d.title, note: d.note, hunks, files, buildsOn, source: d.source });
+    steps.push({
+      n,
+      id: d.id,
+      title: d.title,
+      note: d.note,
+      hunks,
+      files,
+      source: d.source,
+      ...commitsOf(hunks, origins),
+      ...(d.empty ? { empty: d.empty } : {}),
+      ...(d.heldBy ? { heldBy: d.heldBy } : {}),
+    });
     for (const f of files) (byFile[f] ??= []).push(n);
   }
   const rest = sortRefs(leftovers);
   const other: Step | null = rest.length
-    ? { n: 0, id: "other", title: OTHER_TITLE, hunks: rest, files: filesOf(rest), buildsOn: [], source: "other" }
+    ? { n: 0, id: "other", title: OTHER_TITLE, hunks: rest, files: filesOf(rest), source: "other", ...commitsOf(rest, origins) }
     : null;
-  return { steps, other, unmatched, byFile };
+  return { steps, other, byFile };
 }
 
 /**
@@ -341,7 +412,7 @@ function finish(
  * titled from its prompt. Turns whose edits are all gone from the diff (committed before the
  * compared range, or undone) are left out.
  */
-export function stepsFromTurns(turns: Turn[], files: StepFile[], cwd: string, root: string): StepPlan {
+export function stepsFromTurns(turns: Turn[], files: StepFile[], cwd: string, root: string, origins?: StepOrigins): StepPlan {
   const claimed = turns.map(() => [] as HunkRef[]);
   const leftovers: HunkRef[] = [];
   const mapped = turns.map((t) => t.edits.map((e) => ({ ...e, repo: repoPath(e.path, cwd, root) })));
@@ -356,12 +427,12 @@ export function stepsFromTurns(turns: Turn[], files: StepFile[], cwd: string, ro
         edits.push(mine);
       }
     });
-    if (file.hunks === null) {
+    if (isWhole(file)) {
       const last = touching.at(-1);
       (last === undefined ? leftovers : claimed[last]!).push({ path: file.path, hunk: -1 });
       continue;
     }
-    file.hunks.forEach((h, hi) => {
+    file.hunks!.forEach((h, hi) => {
       const k = touching.length ? attribute(h, edits) : -1;
       (k < 0 ? leftovers : claimed[touching[k]!]!).push({ path: file.path, hunk: hi });
     });
@@ -369,7 +440,7 @@ export function stepsFromTurns(turns: Turn[], files: StepFile[], cwd: string, ro
   const drafts = turns
     .map((t, i) => ({ id: `turn:${t.id}`, title: t.title, hunks: claimed[i]!, source: "turn" as const }))
     .filter((d) => d.hunks.length > 0);
-  return finish(drafts, leftovers, files.map((f) => f.path), []);
+  return finish(drafts, leftovers, files.map((f) => f.path), origins);
 }
 
 /** Does an agent's hunk ref name this hunk: the header's own number, else a line inside its range. */
@@ -382,47 +453,47 @@ function refMatches(ref: AgentStepInput["hunks"][number], h: StepHunk): boolean 
 
 /**
  * The agent's own steps, checked against the real diff: each hunk goes to the first step holding
- * a ref that names it (a ref with no start names every hunk of its file), what nobody names goes
- * to "Other changes". A step that names nothing is dropped and listed in `unmatched`; "builds on"
- * keeps only earlier steps that survived, renumbered. Paths are relative to `root`.
+ * a ref that names it (a ref with no start names every hunk of its file; a whole-file unit takes
+ * any ref to its file), what nobody names goes to "Other changes". Every step keeps the agent's
+ * number; one left holding nothing is `empty`: "taken" when what it names is held by earlier
+ * steps, else "gone". Paths are relative to `root`. The agent's buildsOn is ignored.
  */
-export function stepsFromAgent(input: AgentStepInput[], files: StepFile[], root: string): StepPlan {
-  const taken = new Set<string>();
+export function stepsFromAgent(input: AgentStepInput[], files: StepFile[], root: string, origins?: StepOrigins): StepPlan {
+  /** Unit key → 1-based number of the step holding it. */
+  const owner = new Map<string, number>();
   const key = (r: HunkRef) => `${r.hunk}\u0000${r.path}`;
   const byPath = new Map<string, StepFile>();
   for (const f of files) {
     byPath.set(f.path, f);
     if (f.oldPath) byPath.set(f.oldPath, f);
   }
-  type Draft = { id: string; title: string; note?: string; hunks: HunkRef[]; source: "agent"; buildsOn?: number[] };
-  const kept: { index: number; draft: Draft }[] = [];
-  const unmatched: string[] = [];
-  input.forEach((s, index) => {
+  const drafts: Draft[] = input.map((s, index) => {
     const hunks: HunkRef[] = [];
+    const heldBy = new Set<number>();
     for (const ref of s.hunks) {
       const p = repoPath(ref.path, root, root);
       const file = p === null ? undefined : byPath.get(p);
       if (!file) continue;
       const refs = refsOf(file).filter((r) => r.hunk < 0 || refMatches(ref, file.hunks![r.hunk]!));
       for (const r of refs) {
-        if (taken.has(key(r))) continue;
-        taken.add(key(r));
-        hunks.push(r);
+        const held = owner.get(key(r));
+        if (held === undefined) {
+          owner.set(key(r), index + 1);
+          hunks.push(r);
+        } else if (held !== index + 1) heldBy.add(held);
       }
     }
-    if (hunks.length === 0) unmatched.push(stepTitle(s.title));
-    else kept.push({ index, draft: { id: `agent:${index}`, title: stepTitle(s.title), note: s.why?.trim() || undefined, hunks, source: "agent", buildsOn: s.buildsOn } });
+    const draft: Draft = { id: `agent:${index}`, title: stepTitle(s.title), note: s.why?.trim() || undefined, hunks, source: "agent" };
+    if (hunks.length === 0) {
+      if (heldBy.size) {
+        draft.empty = "taken";
+        draft.heldBy = [...heldBy].sort((a, b) => a - b);
+      } else draft.empty = "gone";
+    }
+    return draft;
   });
-  // The agent numbered its steps 1..input.length; map those to the kept steps' new numbers.
-  const renumber = new Map(kept.map((k, i) => [k.index + 1, i + 1]));
-  const drafts = kept.map((k, i) => ({
-    ...k.draft,
-    buildsOn: k.draft.buildsOn
-      ? [...new Set(k.draft.buildsOn.map((b) => renumber.get(b)).filter((b): b is number => b !== undefined && b < i + 1))].sort((a, b) => a - b)
-      : undefined,
-  }));
-  const leftovers = files.flatMap(refsOf).filter((r) => !taken.has(key(r)));
-  return finish(drafts, leftovers, files.map((f) => f.path), unmatched);
+  const leftovers = files.flatMap(refsOf).filter((r) => !owner.has(key(r)));
+  return finish(drafts, leftovers, files.map((f) => f.path), origins);
 }
 
 /** The hunk indexes of `path` in a step, or null for the whole file (its hunks weren't known). */

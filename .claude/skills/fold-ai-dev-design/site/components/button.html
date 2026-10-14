@@ -85,6 +85,21 @@
 <p class="text-muted">Small is allowed only inside an already-tapped context — a popover, a desktop table cell —
 never as the sole action on a touch surface.</p></div>
       </section>
+      <section class="docs-section" id="split">
+        <h2 class="docs-h2">Split</h2>
+        <div class="docs-demo">
+<div class="button-row">
+  <div class="button-split">
+    <a class="button" href="#">Overseer</a>
+    <button class="button button-icon" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Project overseers">▾</button>
+  </div>
+  <div class="button-split">
+    <a class="button" href="#">Overseer</a>
+  </div>
+</div>
+<p class="text-muted">A main action and its ▾ menu, joined: one outline, a thin divider, two 44px targets. Without
+the menu the main part stands alone with both rounded ends.</p></div>
+      </section>
       <section class="docs-section" id="states">
         <h2 class="docs-h2">States</h2>
         <div class="docs-demo">
@@ -131,6 +146,7 @@ never as the sole action on a touch surface.</p></div>
           <tr><td class="text-mono">.button-ghost</td><td>Borderless, muted</td><td>Cancel and tertiary</td></tr>
           <tr><td class="text-mono">.button-sm / .button-lg</td><td>36px / 52px</td><td>Label size shifts with it</td></tr>
           <tr><td class="text-mono">.button-icon</td><td>Square 44px</td><td>Requires <code>aria-label</code></td></tr>
+          <tr><td class="text-mono">.button-split</td><td>Joins a main <code>.button</code> and its ▾ <code>.button-icon</code></td><td>One outline, <code>--stroke-thin</code> divider; neither part shrinks</td></tr>
           <tr><td class="text-mono">.button-row</td><td>Demo helper — wrapping row</td><td>Demo only</td></tr>
           <tr><td class="text-mono">.is-hover / .is-focus / .is-active / .is-disabled</td><td>Static states on <code>.button</code></td><td><b>Demo only</b> — production uses pseudo-classes</td></tr>
           </tbody>
@@ -159,7 +175,7 @@ never as the sole action on a touch surface.</p></div>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Fill a destructive button</b> — it becomes the most inviting target on screen.</li><li><b>Use `.button-sm` as the only action on a touch surface</b> — 36px is below the 44px minimum.</li><li><b>Ship the `.is-*` state helpers in production</b> — they are documentation scaffolding; use the real pseudo-classes.</li></ul>
+            <ul><li><b>Fill a destructive button</b> — it becomes the most inviting target on screen.</li><li><b>Put the ▾ inside the main part of a split button</b> — a button nested in a button or link loses its role and its own target.</li><li><b>Use `.button-sm` as the only action on a touch surface</b> — 36px is below the 44px minimum.</li><li><b>Ship the `.is-*` state helpers in production</b> — they are documentation scaffolding; use the real pseudo-classes.</li></ul>
           </div>
         </div>
       </section>

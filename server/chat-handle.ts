@@ -624,9 +624,10 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
 }
 
 /** The server-hosted tools of an ordinary chat in a process of its own, hosted here: their
-    declarations go to the chat in its `open`, in loadout order. `title`: the chat's name now. */
-export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => string, powers = false): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title })];
+    declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
+    (its pi session name, often none), used only when the session's display title can't be read. */
+export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) })];
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   // A powers profile's queue_open (its own extension registers it, from this declaration) and its
   // sends, a server action (§app.chat-processes/server-actions).
@@ -636,6 +637,13 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => s
   }
   serveTools(chatId, specs);
   return specs.map(declOfTool);
+}
+
+/** A pusher's title, the one Sova shows for its session (§chat.topics/push): its display title, else
+    the title its chat reports, else "Untitled"; never blank. */
+async function senderTitle(path: string, known: () => string | undefined): Promise<string> {
+  const { displayTitleOf } = await import("./sessions-index"); // it imports this module
+  return (await displayTitleOf(path))?.trim() || known()?.trim() || "Untitled";
 }
 
 /** `@powers.send`: a powers chat's session_send, run here with its invitations (PowersHost.send). */

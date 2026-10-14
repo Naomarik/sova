@@ -762,7 +762,9 @@ virtualized.
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
   the transcript" still means the thread has no row for the entry: said by a list that reaches
-  the top of the branch, or when the server finds no such row on it.
+  the top of the branch, or when the server finds no such row on it. It is also said when the
+  rows down to it can't be fetched (the server unreachable, the file unreadable), so a jump never
+  waits silently (§chat.timeline/jumping).
   Rows never drawn have estimated heights, so a jump lands once and holds its row in the middle
   while the rows around it are drawn (§chat.transcript/jump-landing).
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
@@ -929,7 +931,8 @@ end, whether or not its process is running. When it isn't (the list's row for it
 ordinary chat whose rows are on screen opens asleep, as a tab does after an idle stop ("A chat closed
 while its tab is open", below): opening it to read starts no process, whether by a click in the
 list, a reload, a tab the browser discarded coming back or a restored session, and the first send or
-other action starts it. Otherwise the process starts behind the rows (§app.chat-processes/idle-stop):
+other action starts it, a jump to a row the tab doesn't hold and scrolling up for older rows
+included ("A chat closed while its tab is open", below). Otherwise the process starts behind the rows (§app.chat-processes/idle-stop):
 the row isn't known within about 1.5 s, there are no rows to show (a new chat, a read that failed or
 hasn't answered), a terminal has it open, it is the Overseer, a project overseer or a baton
 session, or it is a forced reopen. The Overseer, a project overseer, a baton session, a chat whose
@@ -943,7 +946,9 @@ unchanged.
   once instead; the file is read first only when it changed after they were kept (its
   `lastActiveAt`). A file read that fails opens the socket as before, and so does one that hasn't
   answered within about 1.5 s: the socket then names no row, and rows the read brings after the
-  chat's `hello` are not shown.
+  chat's `hello` are not shown. A load of older rows asked before the chat's `hello` (a scroll up,
+  a jump, §chat.timeline/jumping) waits for it about 1.5 s at most, then reads the file's newest
+  rows itself and goes on from them, so a slow or failed start never leaves it waiting.
 - **Nothing downloaded twice.** The socket names the last row the view holds
   (`/ws/chat?…&have=<row id>`), and the chat's `hello` carries its state and only the rows after
   that one (its `after` names it). Rows after it (a reply streaming, entries written between the
@@ -972,7 +977,12 @@ unchanged.
   shows at once, the "Connecting to chat…" note floats meanwhile, and the message goes to the chat
   once, when its `hello` comes. So does a change of model, thinking level, Claude login, mode or
   sandbox, opening the mode menu, or a rewind, regenerate, Remove of a queued message or
-  `/compact`, each sent once the chat is ready.
+  `/compact`, each sent once the chat is ready. So does a jump to a row the tab doesn't hold
+  (§chat.timeline/jumping) and the reader scrolling up by hand (a wheel, a touch, a key, a
+  scrollbar drag) to rows not fetched yet: the chat starts, and the rows land once its `hello`
+  says what lies above them, or from the file if it hasn't within about 1.5 s ("Rows from the file
+  first", above). A list fetching on its own (too short to fill the view), one that already reaches
+  the top, and a jump to a row already held start nothing.
   When something else opens the chat meanwhile (another tab, a worker's report), the tab connects
   to it. Reloading the page, or opening the chat again, opens it asleep the same way (above).
   Archiving a chat tells its open tabs the same way (`closed`), so no tab reconnects and starts the

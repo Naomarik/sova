@@ -99,7 +99,10 @@ watcher doesn't watch this directory either.
 - Two opt-in knobs on the fake, for checking what a model was sent: `FAKE_CLAUDE_ONESHOT=1` makes a one-shot
   `-p` run (no `--input-format stream-json`, such as a memory summary) answer a result envelope
   ("Fake summary: …"; `FAKE_CLAUDE_ONESHOT_MS=<ms>` holds each answer), and `FAKE_CLAUDE_RECORD=<file>`
-  appends each run's argv with the initialize request, user frame or one-shot input it was sent. Unset,
+  appends each run's argv with the initialize request, user frame or one-shot input it was sent. With it set,
+  each user frame is preceded by a `tools/list` to the host's SDK MCP server (the initialize's
+  `sdkMcpServers`), as the real CLI asks, and its line carries `tools`: the names the model was offered
+  that turn (`server/overseer-memory-claude.integration.test.ts` reads them). Unset,
   the fake behaves as before. Its `claude` shim execs `node` from PATH: where mise's shims refuse a
   folder (a chat's code copy), write the shim with the absolute node path.
 - `SOVA_CLAUDE_ACCOUNTS_DEV=1` lets `.agent/claude-accounts-dev.json` (`{"forceLimit": [ids], "forceAuth":

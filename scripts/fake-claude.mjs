@@ -28,7 +28,11 @@
 //   With FAKE_CLAUDE_RECORD=<file>, every -p run appends to <file> one JSON line per request: its
 //                                  argv, and the initialize request, user frame or one-shot input it
 //                                  was sent (the system prompt rides in the argv or the initialize),
-//                                  so a test reads what the "model" saw.
+//                                  so a test reads what the "model" saw. With it set, each user
+//                                  frame is first answered by asking the host's SDK MCP server (the
+//                                  initialize's sdkMcpServers) for tools/list over the control channel,
+//                                  as the real CLI does, and the line carries `tools`: the tool names
+//                                  the model was offered for that turn.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -107,12 +111,39 @@ if (args[0] === "auth" && args[1] === "login") {
   // A fork (--resume <id> --fork-session) is a new session; --session-id names it when given.
   const sessionId = flag("--session-id") ?? (args.includes("--fork-session") ? randomUUID() : flag("--resume")) ?? randomUUID();
   const who = basename(dir);
+  /** The host's SDK MCP servers, named by the initialize; asked for tools/list when recording. */
+  let sdkServers = [];
+  /** Our own control_requests to the host, waiting for their control_response. */
+  const asked = new Map();
+  let askedSeq = 0;
+  const ask = (request) => new Promise((resolve) => {
+    const id = `fake-${++askedSeq}`;
+    asked.set(id, resolve);
+    out({ type: "control_request", request_id: id, request });
+  });
+  /** The tool names the host's MCP servers offer now (bare, as tools/list publishes them). */
+  const offeredTools = async () => {
+    const names = [];
+    for (const server of sdkServers) {
+      const r = await ask({ subtype: "mcp_message", server_name: server, message: { jsonrpc: "2.0", id: askedSeq + 1, method: "tools/list" } });
+      for (const t of r?.response?.mcp_response?.result?.tools ?? []) names.push(t.name);
+    }
+    return names;
+  };
   const rl = createInterface({ input: process.stdin });
   rl.on("line", (line) => {
     let frame;
     try { frame = JSON.parse(line); } catch { return; }
+    if (frame.type === "control_response") {
+      const resolve = asked.get(frame.response?.request_id);
+      if (resolve) { asked.delete(frame.response.request_id); resolve(frame.response); }
+      return;
+    }
     if (frame.type === "control_request") {
-      if (frame.request?.subtype === "initialize") record({ argv: args, initialize: frame.request });
+      if (frame.request?.subtype === "initialize") {
+        record({ argv: args, initialize: frame.request });
+        sdkServers = Array.isArray(frame.request.sdkMcpServers) ? frame.request.sdkMcpServers : [];
+      }
       // Discovery (buildDiscoveryArgv) reads the initialize answer's model list; the fake offers
       // exactly one so a hermetic server can put a session on claude-code-cli without Anthropic.
       const models = frame.request?.subtype === "initialize" ? [{ value: "fake-opus", displayName: "Fake Opus", supportedEffortLevels: ["low", "medium", "high"] }] : undefined;
@@ -120,7 +151,10 @@ if (args[0] === "auth" && args[1] === "login") {
       return;
     }
     if (frame.type !== "user") return;
-    record({ argv: args, frame });
+    if (process.env.FAKE_CLAUDE_RECORD && sdkServers.length) offeredTools().then((tools) => { record({ argv: args, frame, tools }); turn(frame); });
+    else { record({ argv: args, frame }); turn(frame); }
+  });
+  function turn(frame) {
     const uuid = frame.uuid;
     out({ type: "system", subtype: "init", session_id: sessionId, model: "fake", mcp_servers: [] });
     if (uuid) out({ type: "user", isReplay: true, uuid, session_id: sessionId, message: frame.message });
@@ -156,7 +190,7 @@ if (args[0] === "auth" && args[1] === "login") {
     out({ type: "assistant", message: { model: "fake", role: "assistant", content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 8 } }, parent_tool_use_id: null, session_id: sessionId });
     out({ type: "result", subtype: "success", is_error: false, result: text, num_turns: 1, session_id: sessionId, usage: { input_tokens: 10, output_tokens: 8 }, ...correlate });
     }
-  });
+  }
   rl.on("close", () => process.exit(0));
 } else {
   process.stderr.write(`fake claude: unsupported arguments ${JSON.stringify(args)}\n`);

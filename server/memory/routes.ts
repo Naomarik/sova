@@ -5,8 +5,9 @@ import type { HEntry } from "../../shared/harness";
 import type { MemoryOutline, MemoryStatus, OverseerMemoryInfo } from "../../shared/protocol";
 import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../../shared/memory";
 import { stateView } from "../harness/state-view";
-import { MEMORY, MODE } from "../harness/state-kinds";
-import { readOverseerSettings, writeOverseerSettings } from "../overseer-store";
+import { MEMORY, MODE, OVERSEER } from "../harness/state-kinds";
+import { isOverseerId, readOverseerSettings, writeOverseerSettings } from "../overseer-store";
+import { projectOverseerOfPath, projectOverseerPaths, readPoSettings } from "../project-overseer-store";
 import type { ChatHandle } from "../chat-handle";
 import type { DelegateSources } from "../delegate";
 import { delegateOptions } from "../delegate";
@@ -28,14 +29,23 @@ export interface MemoryRouteDeps {
 
 const idOfPath = (path: string): string | undefined => /_([0-9a-f-]{36})\.jsonl$/i.exec(path)?.[1];
 
+/** The overseer's setting in force when the file is an overseer's (the Overseer's or a project overseer's): its own
+    switch, saved or on with UniiChat at 128 KB, never a mode. Undefined for every other chat. */
+function overseerMemoryOfFile(path: string, id: string, view: ReturnType<typeof stateView>): OverseerMemorySetting | undefined {
+  if (isOverseerId(id) && view.has(OVERSEER)) return overseerMemoryOf(readOverseerSettings().memory);
+  const po = projectOverseerOfPath(path, id);
+  return po ? overseerMemoryOf(readPoSettings(projectOverseerPaths(po.projectId)).memory) : undefined;
+}
+
 /** The outline of a chat no one holds: read from its file and sidecar, building nothing. */
 async function coldOutline(path: string, deps: MemoryRouteDeps): Promise<{ outline: MemoryOutline; engine: MemoryEngine } | null> {
   const id = idOfPath(path);
   if (!id) return null;
   const branch = await deps.readBranch(path);
   const view = stateView(branch);
-  const choice = choiceOf(view.latest(MEMORY)?.data ?? null);
-  const on = view.latest(MODE)?.data.active?.minorModes.includes("memory") ?? false;
+  const overseer = overseerMemoryOfFile(path, id, view);
+  const choice = overseer ? { type: overseer.type, size: overseer.size } : choiceOf(view.latest(MEMORY)?.data ?? null);
+  const on = overseer ? overseer.on : (view.latest(MODE)?.data.active?.minorModes.includes("memory") ?? false);
   const engine = new MemoryEngine(id, new MemoryStore(memoryDir(id)), { summarize: async () => { throw new Error("not held"); }, concurrency: 0 });
   engine.sync(branch);
   const lines = choice.type === "uniichat" ? engine.currentView() : zoomableLines(branch);

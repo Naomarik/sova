@@ -1,6 +1,6 @@
 // Press-and-hold on a session row: the timer that lifts one row, on a mouse and under a thumb
 // alike, and the window that swallows what the hold leaves behind. A lifted row released in place
-// becomes a selection; one that moves becomes a drag (drag-overlay.ts wraps this for both).
+// does nothing; one that moves becomes a drag (drag-overlay.ts wraps this for both).
 // Framework-free and clock-injected, so the rules below are testable without a browser, and
 // `suppressed()` says what to do with the click and the context menu the hold leaves behind.
 
@@ -17,7 +17,7 @@ export const HOLD_MOVE_PX = 10;
  *
  * It runs from the RELEASE, never from the moment the hold fired. A press may be held for as long
  * as the user likes; a window started when it fired would have run out by the time the finger came
- * up, and the click would reach the row and toggle it straight back off. A 3s press is an ordinary
+ * up, and the click would reach the row and open it under the gesture. A 3s press is an ordinary
  * press, not a special case.
  */
 export const HOLD_SUPPRESS_MS = 1000;
@@ -111,7 +111,7 @@ export function createHoldGesture(opts: HoldOptions): HoldGesture {
       if (!origin || fired) return; // no press to speak of, or the hold already fired
       if (Math.abs(at.x - origin.x) <= tolerance && Math.abs(at.y - origin.y) <= tolerance) return;
       stopTimer();
-      origin = null; // moved: this press is a drag or a scroll, never a selection
+      origin = null; // moved: this press is a drag or a scroll, never a hold
     },
     cancel() {
       release();

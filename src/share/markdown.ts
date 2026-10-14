@@ -23,7 +23,7 @@ export const SHARE_VIS_KINDS: ReadonlySet<string> = new Set(["flow", "chart", "m
 export const BROKEN_DRAWING = "A drawing couldn't be shown here.";
 
 /** The drawings a session share draws (§app/session-share/content): the figures plus the technical
-    kinds that draw safely there. `svg` draws as an image (no script, no network); `code` and
+    kinds that draw safely there. `svg` draws as a still image (no script, no network); `code` and
     `html` show as their source, since the highlighter isn't in this build and a session share runs
     no frame. */
 export const SESSION_VIS_KINDS: ShareVisKinds = {
@@ -31,7 +31,8 @@ export const SESSION_VIS_KINDS: ShareVisKinds = {
   image: new Set(["svg"]),
   source: new Set(["code", "html"]),
 };
-/** Which fences a page draws: `drawn` mounts a figure, `image` draws an svg as an <img>, `frame`
+/** Which fences a page draws: `drawn` mounts a figure, `image` mounts a figure whose drawing is
+    an <img> of the svg (src/vis/kinds/frame/ImageView.tsx, never the document in the page), `frame`
     mounts a sandboxed frame (`vis html`), `source` shows the parsed document as escaped text. Any
     other kind is the one quiet line. */
 export interface ShareVisKinds {
@@ -46,8 +47,6 @@ const BATON_HTML_KINDS: ShareVisKinds = { ...BATON_KINDS, frame: new Set(["html"
     session can draw interactive drawings (the view's `drawings.html`); never `code`. */
 export const batonKinds = (html: boolean): ShareVisKinds => (html ? BATON_HTML_KINDS : BATON_KINDS);
 
-/** An svg drawn as an image needs its namespace, or the browser shows a broken image. */
-const withXmlns = (svg: string): string => svg.replace(/^((?:<\?xml[^>]*>\s*)?)<svg(?![^>]*\sxmlns=)/i, '$1<svg xmlns="http://www.w3.org/2000/svg"');
 const SOURCE_CAPTION: Record<string, string> = { html: "An interactive drawing, shown as its source.", code: "Code" };
 
 export interface ShareVisual {
@@ -90,18 +89,13 @@ md.renderer.rules.fence = (tokens, idx, options, e, self) => {
   const r = drawn.has(kind) || image?.has(kind) || frame?.has(kind) || source?.has(kind) ? parseVis(word, t.content) : null;
   if (!r?.ok) return `<p class="share-vis-broken">${BROKEN_DRAWING}</p>\n`;
   const title = (r.spec as { title?: string }).title;
-  if (image?.has(kind)) {
-    const svg = withXmlns((r.spec as unknown as { source: string }).source);
-    const alt = esc(title ?? "A drawing");
-    return `<figure class="share-vis-image">${title ? `<figcaption class="share-vis-caption">${esc(title)}</figcaption>` : ""}<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}" alt="${alt}"></figure>\n`;
-  }
   if (source?.has(kind)) {
     const spec = r.spec as unknown as { source?: string; lines?: string[] };
     const text = spec.lines ? spec.lines.join("\n") : (spec.source ?? "");
     const caption = title ?? SOURCE_CAPTION[kind] ?? "Source";
     return `<figure class="share-vis-source"><figcaption class="share-vis-caption">${esc(caption)}</figcaption><pre><code>${esc(text)}</code></pre></figure>\n`;
   }
-  // A figure, or a frame: both mount into a placeholder (vis.tsx).
+  // A figure, an svg image or a frame: each mounts into a placeholder (vis.tsx).
   const i = env.visuals.push({ kind, spec: r.spec }) - 1;
   return `<div class="md-vis" data-vis="${i}" data-vis-key="${hash(`${kind}\0${t.content}`)}"></div>\n`;
 };

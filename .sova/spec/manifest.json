@@ -92,6 +92,29 @@
         "at": "2026-10-13T05:04Z"
       }
     },
+    "§app.chat-processes/extension-loading": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "pi-config/extensions/provider-limits/index.ts",
+        "server/harness/pi/own-code.ts",
+        "server/harness/pi/extension-deps.test.ts",
+        "server/harness/pi/extension-deps.integration.test.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/contract.test.ts"
+      ],
+      "requires": [
+        "§app.chat-processes/code-generations"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:53Z"
+      }
+    },
     "§app.chat-processes/idle-stop": {
       "kind": "behavior",
       "authority": "accepted",
@@ -100,7 +123,13 @@
         "server/chat-runtime/supervisor.test.ts",
         "server/chat-runtime/host.ts",
         "scripts/stop-chats.ts",
-        "server/chat-runtime/host.test.ts"
+        "server/chat-runtime/host.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts",
+        "server/chat-handle-remote.ts",
+        "scripts/chat-runtime-trial/run.mjs",
+        "server/chat-runtime/trial-crash-idle.integration.test.ts",
+        "scripts/e2e/quiet-close.mjs"
       ],
       "requires": [
         "§app/chat-processes",
@@ -108,10 +137,32 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T15:33Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:32Z"
       },
       "evidence": "verified"
+    },
+    "§app.chat-processes/no-terminal-drawing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/harness/pi/headless.ts",
+        "server/harness/pi/headless-files.json",
+        "server/harness/pi/headless.test.ts",
+        "server/harness/pi/headless.integration.test.ts",
+        "server/chat-runtime/main.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/contract.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:53Z"
+      }
     },
     "§app.chat-processes/one-writer": {
       "kind": "behavior",
@@ -231,15 +282,18 @@
         "server/chat-host.ts",
         "pi-config/extensions/claude-code/provider/children.ts",
         "server/chat-runtime/generations.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/chat-runtime/gc-timer.ts",
+        "server/chat-runtime/gc-timer.test.ts",
+        "server/chat-runtime/main.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§app.claude-code-provider/continuity"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:51Z"
+        "by": "naomarik",
+        "at": "2026-10-14T09:38Z"
       }
     },
     "§app.chat-processes/survives-restart": {
@@ -1280,8 +1334,8 @@
         "src/design/base.css"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T15:33Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:32Z"
       }
     },
     "§chat.composer/memory-status": {
@@ -1726,8 +1780,13 @@
         "server/index.ts",
         "server/app.ts",
         "pi-config/extensions/mode/index.ts",
-        "src/components/Thread.tsx"
-      ]
+        "src/components/Thread.tsx",
+        "server/quiet-close-actions.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T13:46Z"
+      }
     },
     "§chat.mode-menu/memory-panel": {
       "kind": "behavior",
@@ -2548,11 +2607,19 @@
         "server/tail-hello.integration.test.ts",
         "src/lib/unacked-sends.ts",
         "src/lib/unacked-sends.test.ts",
-        "scripts/e2e/instant-open.mjs"
+        "scripts/e2e/instant-open.mjs",
+        "server/app.ts",
+        "server/sessions-index.ts",
+        "server/chat-handle.ts",
+        "server/chat-host.ts",
+        "server/archive-quiet-close.test.ts",
+        "server/quiet-close-actions.test.ts",
+        "server/chat-host.test.ts",
+        "scripts/e2e/quiet-close.mjs"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T18:51Z"
+        "by": "naomarik",
+        "at": "2026-10-14T13:32Z"
       },
       "evidence": "verified"
     },
@@ -3593,8 +3660,14 @@
         "src/lib/sandbox.ts",
         "server/overseer-tools.ts",
         "server/sandbox-state.ts",
-        "pi-config/extensions/subagents/index.ts"
-      ]
+        "pi-config/extensions/subagents/index.ts",
+        "server/app.ts",
+        "server/quiet-close-actions.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T13:46Z"
+      }
     },
     "§app.sessions-extension/agent-dir": {
       "kind": "behavior",
@@ -3692,11 +3765,12 @@
         "server/worker-restore.ts",
         "shared/protocol.ts",
         "pi-config/extensions/subagents/claude-workers.ts",
-        "pi-config/extensions/subagents/claude-workers.test.ts"
+        "pi-config/extensions/subagents/claude-workers.test.ts",
+        "server/quiet-close-actions.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-14T13:46Z"
       }
     },
     "§app.worker-restore/transcript-protocol": {
@@ -9413,7 +9487,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T02:39Z"
+        "at": "2026-10-14T08:11Z"
       }
     },
     "§app.resource-monitor/entry-button": {
@@ -9449,26 +9523,31 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-14T08:11Z"
       }
     },
     "§app.resource-monitor/platform-fallback": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.resource-monitor/sampling-and-history"
       ],
       "code": [
         "server/resource-monitor.ts",
         "server/resource-monitor-proc.ts",
-        "src/lib/monitor-view.ts"
-      ]
+        "src/lib/monitor-view.ts",
+        "server/resource-monitor.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:11Z"
+      }
     },
     "§app.resource-monitor/sampling-and-history": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [],
       "code": [
         "server/resource-monitor.ts",
@@ -9481,7 +9560,11 @@
         "server/resource-monitor-history.test.ts",
         "server/resource-monitor.test.ts",
         "server/resource-monitor.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:11Z"
+      }
     },
     "§app.resource-monitor/screen": {
       "kind": "behavior",
@@ -9501,7 +9584,11 @@
         "src/lib/api.ts",
         "server/session-titles.ts",
         "server/sessions-index.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-14T08:11Z"
+      }
     },
     "§app/resource-monitor": {
       "kind": "surface",
@@ -16571,7 +16658,8 @@
         "server/harness/pi/golden/fixtures/make-synthetic.ts",
         "server/harness/pi/golden/fixtures/large.ts",
         "scripts/harness-golden.mjs",
-        "scripts/harness-golden/faux-record.mjs"
+        "scripts/harness-golden/faux-record.mjs",
+        "server/harness/pi/reader-retention.test.ts"
       ],
       "requires": [
         "§app.harness/boundary"

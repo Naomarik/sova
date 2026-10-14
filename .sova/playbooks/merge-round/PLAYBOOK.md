@@ -26,7 +26,7 @@ This file is the round's table of contents. Read each detail file when the round
 | A merge, check or push fails oddly; a leak-scan hit to scrub | `references/traps.md` |
 
 ## Ask the user first
-Everything else you do without asking: a branch whose owner answered `READY` at its current head, checked green, lands and pushes. That answer is the OK; no other permission is stored or needed, and you don't ask the user again for it.
+Everything else you do without asking: a branch whose owner answered `READY` at its current head, checked green, lands and pushes. `READY` means the owner's user told it to merge that branch (the ask says so): that answer is the OK; no other permission is stored or needed, and you don't ask the user again for it. An owner's "ready to merge" without the user's go-ahead is `NOT READY`, however green, and a big feature never lands on checks alone. If you have reason to doubt an owner's READY carries that go-ahead (its transcript shows none), ask the user before landing.
 - Rewriting unpushed commits to scrub a leak-scan hit, each case.
 - Waiving a leak-scan hit, each time it comes back.
 - What to do about names already public on origin.

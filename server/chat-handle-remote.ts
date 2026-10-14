@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type ChatReply, noAnswer, type ServerToolCall, unsentRefusal } from "../shared/chat-runtime";
 import type { ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
-import type { ChatClientMessage, ChatServerMessage } from "../shared/protocol";
+import { CHAT_CLOSED_CLOSE_CODE, type ChatClientMessage, type ChatServerMessage } from "../shared/protocol";
 import {
   answerChatAsk,
   type ChatClient,
@@ -179,6 +179,9 @@ export class RemoteChatHandle extends ChatHandle {
     on("client.send", (f) => {
       const c = this.clients.get(f.clientId);
       if (!c) return;
+      // Closing quietly (an archive): the chat's own goodbye, "reconnect", never reaches a pane;
+      // everything before it (an ack, a refusal) does, in order.
+      if (this.quietClose && isReconnectGoodbye(f.json)) return;
       if (c.sendRaw) c.sendRaw(f.json);
       else c.send(JSON.parse(f.json));
     });
@@ -374,11 +377,27 @@ export class RemoteChatHandle extends ChatHandle {
   endPanes(message: string, code: "internal" | "reloaded" = "internal"): void {
     this.closePanes({ type: "error", code, message }, code === "internal" ? "chat process stopped" : "chat closed");
   }
+  /** An archive is about to drain the chat: from here its goodbye ("reconnect") is kept from the
+      panes, which are told `closed` once the drain returned (closePanesQuietly). */
+  beginQuietClose(): void {
+    this.quietClose = true;
+  }
+  /** An archive's drain is under way (beginQuietClose). */
+  get closingQuietly(): boolean {
+    return this.quietClose;
+  }
+  private quietClose = false;
   /** The chat closed for being quiet (§app.chat-processes/idle-stop) or was archived: each pane is
-      told so, then its socket closes. A pane that knows the word keeps what it shows and doesn't
-      reconnect; one that doesn't reconnects on the close, as it always did. The handle is done. */
+      told so, then its socket closes with a code no tab retries (CHAT_CLOSED_CLOSE_CODE), so a tab on
+      an older bundle stays down too. Only the panes: the handle's calls are its owner's to end, after
+      the chat's drain (endPanes), so a call the chat took is never failed before it answers. */
   closePanesQuietly(reason: "idle" | "archived"): void {
-    this.closePanes({ type: "closed", reason }, "chat closed");
+    for (const c of this.clients.values()) {
+      c.send({ type: "closed", reason });
+      c.close?.(CHAT_CLOSED_CLOSE_CODE, "chat closed");
+    }
+    this.clients.clear();
+    this.ids.clear();
   }
   private closePanes(last: ChatServerMessage, reason: string): void {
     this.ended = true;
@@ -486,5 +505,17 @@ export class RemoteChatHandle extends ChatHandle {
     } finally {
       this.running.delete(call.effectId);
     }
+  }
+}
+
+/** The chat's "this chat is going, reconnect" to a pane (its dispose's broadcast, or a message refused
+    after it): `{type:"error", code:"reloaded"}`. */
+function isReconnectGoodbye(json: string): boolean {
+  if (!json.includes('"reloaded"')) return false;
+  try {
+    const m = JSON.parse(json) as { type?: unknown; code?: unknown };
+    return m.type === "error" && m.code === "reloaded";
+  } catch {
+    return false;
   }
 }

@@ -2234,6 +2234,11 @@ export interface HelloLive {
  */
 export type ChatCodeState = "current" | "older" | "reloading" | "failed";
 
+/** The close code of a chat socket after `closed` (§app.chat-processes/idle-stop): one the web app's
+    socket never retries (src/lib/socket.ts PERMANENT_CLOSE, as for 4422 "config"), so a tab on an
+    older bundle, which doesn't know `closed`, stays down too instead of reopening the chat. */
+export const CHAT_CLOSED_CLOSE_CODE = 4422;
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */

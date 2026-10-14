@@ -94,7 +94,7 @@ export function projectModesInfo(
 /** What a switch to the on set `wanted` asks for, checked before anything is applied. */
 export type ProjectSwitchCheck =
   | { error: string }
-  | { needsApproval: ProjectMinorInfo[] }
+  | { needsApproval: ProjectMinorInfo[]; stale: string[] }
   | { ok: true; ids: string[]; record: { id: string; hash: string }[] };
 
 /**
@@ -115,6 +115,7 @@ export function checkProjectSwitch(
   const ids = [...new Set(wanted)];
   const needs: ProjectMinorInfo[] = [];
   const record: { id: string; hash: string }[] = [];
+  const stale: string[] = [];
   for (const id of ids) {
     if (currentOn.includes(id)) continue;
     const problem = listing.problems.find((p) => p.id === id);
@@ -123,13 +124,25 @@ export function checkProjectSwitch(
     if (!mode) return { error: `No project mode "${id}" in this chat's project` };
     if (mode.toolsHash === "" || approved(listing.root!, id, mode.toolsHash)) continue;
     if (overseer || approve.some((a) => a.id === id && a.hash === mode.toolsHash)) record.push({ id, hash: mode.toolsHash });
-    else needs.push(infoOf(mode, listing.root, approved));
+    else {
+      if (approve.some((a) => a.id === id)) stale.push(id);
+      needs.push(infoOf(mode, listing.root, approved));
+    }
   }
-  if (needs.length > 0) return { needsApproval: needs };
+  if (needs.length > 0) return { needsApproval: needs, stale };
   return { ok: true, ids, record };
 }
 
 /** Validate a body's `projectModes` (ids only; whether they exist is the chat's to check). */
+/** The 409's sentence: tools changed since the user looked (an approve with an old hash), else not approved yet. */
+export function approvalNeededText(check: { needsApproval: ProjectMinorInfo[]; stale: string[] }): string {
+  const fresh = check.needsApproval.map((m) => m.id).filter((id) => !check.stale.includes(id));
+  const parts: string[] = [];
+  if (check.stale.length > 0) parts.push(`The tools of ${check.stale.join(", ")} changed since you looked; check them again.`);
+  if (fresh.length > 0) parts.push(`Approve the tools of ${fresh.join(", ")} to turn ${fresh.length === 1 ? "it" : "them"} on.`);
+  return parts.join(" ");
+}
+
 export function parseProjectModes(value: unknown): string[] | { error: string } {
   if (!Array.isArray(value)) return { error: "projectModes must be an array" };
   const bad = value.filter((v) => !isProjectModeId(v));

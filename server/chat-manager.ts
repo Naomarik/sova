@@ -72,7 +72,7 @@ function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable"; size: nu
   return m ? { v: 1, type: m.type, size: m.size } : null;
 }
 import { withWebMinors } from "./memory/permit";
-import { checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
+import { approvalNeededText, checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
 import { isApproved, recordApproval } from "./project-mode-approvals";
 import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
 import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
@@ -2113,8 +2113,7 @@ class ChatSession {
       const check = checkProjectSwitch(listing, this.projectOn().map((r) => r.id), patch.projectModes, patch.approve ?? [], patch.approvedBy === "overseer", isApproved);
       if ("error" in check) throw new ModeRefusedError(check.error);
       if ("needsApproval" in check) {
-        const names = check.needsApproval.map((m) => m.id).join(", ");
-        return { ...this.modeResult(), error: `Approve the tools of ${names} to turn ${check.needsApproval.length === 1 ? "it" : "them"} on.`, needsApproval: check.needsApproval };
+        return { ...this.modeResult(), error: approvalNeededText(check), needsApproval: check.needsApproval };
       }
       for (const a of check.record) recordApproval(listing.root!, a.id, a.hash, patch.approvedBy === "overseer" ? "overseer" : "user");
     }

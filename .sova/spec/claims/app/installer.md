@@ -7,10 +7,13 @@ downloads into the install directory (§app.installer/bun), it installs no toolc
 package, and it never uses sudo. It
 clones the requested ref (§app.installer/ref) into an install directory of its own (default `~/.local/share/sova`),
 installs its dependencies and builds it in a staging directory beside it, promotes the build only
-after it succeeded (the previous install kept until then, and restored on failure), and writes a
+after it succeeded (the previous install kept until then, and restored on failure; with
+`SOVA_KEEP_PREVIOUS=<path>` the replaced install is moved to that path instead of deleted, which is
+how an upgrade from Settings keeps it until the new version answers, §app.updates/upgrade), and writes a
 `sova` launcher (default `~/.local/bin/sova`). The launcher runs the server on that Bun (`sova
 --node` runs it on Node instead), on `PORT` when set, else the install's port (`--port`, default
-`4800`, the port its closing message names), except `sova token`,
+`4800`, the port its closing message names), and tells the server its own path in
+`SOVA_LAUNCHER` (§app.updates/running), except `sova token`,
 which prints the install's access token, and `sova app` (or `sova open`), which opens the app
 already unlocked in a window of its own, starting the server first when it is not running
 (§app.access/callers); its closing message says both. Beside the launcher it writes an entry in

@@ -4295,7 +4295,7 @@ export type LlmFeedMessage =
   | { type: "llm_local"; host: string; instance: string; local: LlmInflight }
   | { type: "error"; message: string };
 
-// --- Git diffs (server/git-diff.ts, §chat.diff) ---------------------------------------------------
+// --- Git diffs (server/git-diff.ts, §chat.changes/endpoint) ---------------------------------------
 //
 // Read-only. The client names WHAT to compare, never a ref: the server resolves every ref itself,
 // and every folder must be one the named session already knows (its header cwd, its tracked
@@ -4303,20 +4303,37 @@ export type LlmFeedMessage =
 // anything else is refused (400). `sessionPath` is SessionSummary.path.
 //
 // GET /api/diff/summary?<scope>                 -> 200 DiffSummary; 400 { error } (bad or unknown scope)
-// GET /api/diff/patch?<scope>&file=<path>[&old=<oldPath>][&context=1]
+// GET /api/diff/patch?<scope>&file=<path>[&old=<oldPath>][&context=1][&origins=1]
 //                                               -> 200 DiffFilePatch; 400 { error }; 404 { error } (not in the diff)
 //    `context=1` adds `oldText`, the file's old side whole (for expanding folded context).
+//    `origins=1` adds the commits each hunk came from (`hunkCommits`, `commits`, or `originsUnknown`).
 // <scope> as query parameters: kind=worktree&session=<sessionPath>&path=<worktreePath>
+//                                 [&base=<oid>&head=<oid>[&baseRef=<label>][&branch=<label>]]
 //                            | kind=commit&session=<sessionPath>&path=<repoPath>&sha=<hex sha>
+//                            | kind=merge&session=<sessionPath>&path=<repoPath>&sha=<full sha>
 //                            | kind=dirty&session=<sessionPath>&path=<cwd>
+//    each optionally followed by repeatable &paths=<repo-relative path or folder>.
 // (`diffScopeQuery` below builds it.) Both send Cache-Control: no-store. No route reads a file or a
 // blob by a name the client gives: contents leave only as a file's patch and its own old side.
 
-/** What a diff compares. */
-export type DiffScope =
-  /** A worktree's branch (committed HEAD) against its merge-base with its base branch (the tracked
-      worktree's `baseBranch`, else master, else main, else origin/HEAD's target). */
-  | { kind: "worktree"; sessionPath: string; worktreePath: string }
+/** A pinned worktree comparison: the two commits a show_changes card saved (its details'
+    `scope.base` / `scope.head`, full oids), both checked to be commits in that repository. The
+    labels are display text only (the card's `baseRef` and `branch`), never resolved. */
+export interface DiffPin {
+  base: string;
+  head: string;
+  baseRef?: string;
+  branch?: string;
+}
+
+/** What a diff compares. Every kind may carry `paths`: repository-relative files or folders (a
+    file matches one that is its path or a folder above it, by its new path); the diff is narrowed
+    to them before the file cap, so a narrowed view is complete when the narrowed set fits. */
+export type DiffScope = (
+  /** A worktree's branch (committed HEAD) against its review base, chosen by the rule the
+      show_changes tool uses (pi-config/extensions/worktrees/git.ts reviewBase). With `pin`, the
+      card's saved base..head instead, recomputing nothing. */
+  | { kind: "worktree"; sessionPath: string; worktreePath: string; pin?: DiffPin }
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
@@ -4326,17 +4343,39 @@ export type DiffScope =
       base when that is an ancestor of the tip and not the tip itself, else its first parent. */
   | { kind: "merge"; sessionPath: string; repoPath: string; sha: string }
   /** The repository containing `cwd`: index + working tree (untracked files as added) against HEAD. */
-  | { kind: "dirty"; sessionPath: string; cwd: string };
+  | { kind: "dirty"; sessionPath: string; cwd: string }
+) & { paths?: string[] };
 
 /** The scope's query string (no leading `?`). */
 export function diffScopeQuery(s: DiffScope): string {
   const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
-  if (s.kind === "worktree") q.set("path", s.worktreePath);
-  else if (s.kind === "commit" || s.kind === "merge") {
+  if (s.kind === "worktree") {
+    q.set("path", s.worktreePath);
+    if (s.pin) {
+      q.set("base", s.pin.base);
+      q.set("head", s.pin.head);
+      if (s.pin.baseRef) q.set("baseRef", s.pin.baseRef);
+      if (s.pin.branch) q.set("branch", s.pin.branch);
+    }
+  } else if (s.kind === "commit" || s.kind === "merge") {
     q.set("path", s.repoPath);
     q.set("sha", s.sha);
   } else q.set("path", s.cwd);
+  for (const p of s.paths ?? []) q.append("paths", p);
   return q.toString();
+}
+
+/** A commit a file's changes came from (`origins=1`). */
+export interface DiffCommit {
+  /** Full oid. */
+  sha: string;
+  subject: string;
+  /** Epoch ms. */
+  authorTime: number;
+  /** Its place in the whole comparison, oldest first (`rev-list --topo-order --reverse base..head`),
+      the same in every file's read, so commits of different files sort together; a commit scope's
+      one commit is 0. Absent when that order could not be read in time. */
+  order?: number;
 }
 
 /** M modified, A added (untracked, in the dirty scope), D deleted, R renamed (maybe also edited),
@@ -4401,6 +4440,17 @@ export interface DiffFilePatch {
   /** With `context=1` only: the old side's whole text, the blob `oldOid` names. Absent when the
       patch has no single old side, or that side is binary or past 8 MB. */
   oldText?: string;
+  /** With `origins=1`, worktree/merge/commit scopes only (never dirty): indices into `commits`, one
+      list per unit in patch order: one per hunk; a file with no hunks (binary, `tooLarge`,
+      rename-, mode-only or empty) has exactly one list, the whole file's. A list may be empty. */
+  hunkCommits?: number[][];
+  /** With `origins=1`: this file's commits, ancestors first (the order of
+      `rev-list --topo-order --reverse base..head`; by `authorTime`, then sha, if that can't be read). A commit
+      scope gives its one commit, every unit `[0]`. */
+  commits?: DiffCommit[];
+  /** With `origins=1`: the history read timed out or failed, so neither `hunkCommits` nor
+      `commits` is present. The patch itself is still whole. */
+  originsUnknown?: true;
   /** As in the summary: a changed HEAD between the two requests shows up here. */
   base: DiffSide;
   head: DiffSide;
@@ -4966,4 +5016,115 @@ export interface VoiceTranscript {
   /** whisper's own time for this clip, ms. */
   ms: number;
   audioSec: number;
+}
+
+// ---- Updates (Settings → General) ---------------------------------------------------------------------
+
+/** Where updates come from: always a ref of Sova's own repository. */
+export type UpdateSource = { kind: "stable" } | { kind: "master" } | { kind: "branch"; branch: string };
+
+/** The Updates form of Settings → General, as `<stateRoot>/updates.json` keeps it. */
+export interface UpdatesSettings {
+  source: UpdateSource;
+  /** Check once a day (default on). */
+  autoCheck: boolean;
+  /** Upgrade when a check finds an update this copy can install (default off). */
+  autoUpgrade: boolean;
+}
+
+/** What kind of copy this server runs from. */
+export type InstallKind = "installer" | "developer" | "check-only";
+
+/** What this server runs. */
+export interface UpdatesRunning {
+  /** The checkout's commit now (null: no git checkout). */
+  head: string | null;
+  /** The commit this server started on (`GET /api/health`'s head). */
+  startedHead: string | null;
+  /** The release tag at the commit, when it is one ("v0.3.2"). */
+  version: string | null;
+  /** The newest release the commit contains, and how many commits past it. */
+  baseVersion: string | null;
+  pastBase: number | null;
+  /** The branch checked out (null: detached). */
+  branch: string | null;
+  kind: InstallKind;
+  /** May this copy upgrade itself from here. */
+  canUpgrade: boolean;
+  /** Why not, in a sentence, when it can't. */
+  whyNot: string | null;
+}
+
+/** What a check found newer, or not. */
+export interface UpdateTarget {
+  sha: string;
+  /** The ref's name as the button says it: "v0.3.3", "master", "feat/x". */
+  label: string;
+  /** The numbered release at the commit (Stable). */
+  version: string | null;
+  /** Commits from the running commit to it (null when unknown). */
+  count: number | null;
+  /** Its newest commit's subject. */
+  subject: string | null;
+  /** That release's section of CHANGELOG.md at the release (Stable). */
+  notes: string | null;
+  notesUrl: string | null;
+}
+
+export type UpdateCheckResult =
+  | { state: "up-to-date" }
+  | { state: "available"; target: UpdateTarget; rewritten?: boolean }
+  | { state: "ahead"; message: string }
+  | { state: "diverged"; target: UpdateTarget; message: string };
+
+export interface UpdateCheck {
+  at: string;
+  ok: boolean;
+  source: UpdateSource;
+  /** The running commit the check compared. */
+  head: string | null;
+  result?: UpdateCheckResult;
+  error?: string;
+}
+
+export type UpdateStep = "starting" | "downloading" | "installing" | "building" | "restarting" | "verifying" | "rolling-back" | "done";
+
+/** One upgrade job, as its runner records it under `<stateRoot>/updates/jobs/<id>/`. */
+export interface UpdateJob {
+  id: string;
+  kind: "installer" | "developer";
+  from: { sha: string | null; label: string };
+  to: { sha: string; label: string };
+  auto: boolean;
+  startedAt: string;
+  step: UpdateStep;
+  state: "running" | "succeeded" | "failed" | "rolled-back";
+  /** What happened, in a sentence (a failure says what failed and what it left). */
+  detail: string | null;
+  logPath: string;
+  endedAt: string | null;
+}
+
+/** `GET /api/updates`. */
+export interface UpdatesState {
+  settings: UpdatesSettings;
+  running: UpdatesRunning;
+  lastCheck: UpdateCheck | null;
+  checking: boolean;
+  /** SOVA_UPDATES_CHECK=off (or a test process): no check runs. */
+  checksOff: boolean;
+  nextCheckAt: string | null;
+  /** The running job, else the last one. */
+  job: UpdateJob | null;
+  /** The last check found an update this copy can install (the Settings dot). */
+  available: boolean;
+  /** Why the last automatic upgrade didn't start, until the next check. */
+  autoRefusal: string | null;
+}
+
+/** `POST /api/updates/apply`. */
+export interface UpdateApplyRequest {
+  /** The commit the button offered: refused when the last check found another. */
+  target: string;
+  confirm: true;
 }

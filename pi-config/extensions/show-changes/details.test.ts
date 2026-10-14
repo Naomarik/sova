@@ -55,6 +55,22 @@ test("the normalizer refuses anything off, never throws", () => {
 	assert.equal(normalizeShowChangesDetails(hostile), undefined);
 });
 
+test("a saved v1 card whose steps carry the old buildsOn still normalizes (cards made before it was dropped)", () => {
+	const saved = {
+		v: 1,
+		scope: { kind: "worktree", worktreePath: "/r/wt", root: "/r/wt", branch: "feat/x", head: A, base: B, baseRef: "master" },
+		steps: [
+			{ title: "Limiter", hunks: [{ path: "server/limit.ts" }] },
+			{ title: "Wire it", buildsOn: [1], hunks: [{ path: "server/routes.ts" }] },
+		],
+	};
+	const out = normalizeShowChangesDetails(saved);
+	assert.ok(out, "an old card must keep opening");
+	assert.equal(out.steps?.length, 2);
+	// What the viewer pins a branch card to (§ show-changes-card): the saved base..head.
+	assert.deepEqual(out.scope, saved.scope);
+});
+
 test("repo paths: relative, posix, no dot segments", () => {
 	for (const p of ["a", "a/b.ts", "dir/", ".github/x.yml", "a..b"]) assert.ok(isRepoPath(p), p);
 	for (const p of ["", "/abs", "a//b", "./a", "a/../b", "..", "a\\b", "a/\n", "dir//"]) assert.ok(!isRepoPath(p), JSON.stringify(p));
@@ -74,7 +90,7 @@ test("input: a valid call becomes a request; paths are tidied", () => {
 		paths: ["./server/", "server/", "src/a.ts"],
 		steps: [
 			{ title: "Limiter", hunks: [{ path: "./server/limit.ts" }] },
-			{ title: "Wire", buildsOn: [1], hunks: [{ path: "server/routes.ts", newStart: 120 }] },
+			{ title: "Wire", hunks: [{ path: "server/routes.ts", newStart: 120 }] },
 		],
 	});
 	assert.deepEqual(req, {
@@ -84,7 +100,7 @@ test("input: a valid call becomes a request; paths are tidied", () => {
 		paths: ["server/", "src/a.ts"],
 		steps: [
 			{ title: "Limiter", hunks: [{ path: "server/limit.ts" }] },
-			{ title: "Wire", buildsOn: [1], hunks: [{ path: "server/routes.ts", newStart: 120 }] },
+			{ title: "Wire", hunks: [{ path: "server/routes.ts", newStart: 120 }] },
 		],
 	});
 	assert.deepEqual(checkShowChangesParams({ scope: "commit", commit: "HEAD~1" }), { scope: "commit", commit: "HEAD~1" });
@@ -101,7 +117,8 @@ test("input: each refusal says what to fix", () => {
 	refuse({ scope: "dirty", paths: ["/etc/passwd"] }, /relative to the repository/);
 	refuse({ scope: "dirty", paths: ["a/../../b"] }, /no "\." or "\.\." segment/);
 	refuse({ scope: "dirty", steps: [{ title: "x", hunks: [] }] }, /steps\[0\]\.hunks must list at least one hunk/);
-	refuse({ scope: "dirty", steps: [{ title: "x", buildsOn: [1], hunks: [{ path: "a" }] }] }, /not an earlier step's number .*this is step 1/);
+	// buildsOn is no longer part of a call (pi's schema check refuses it first; this is the same answer).
+	refuse({ scope: "dirty", steps: [{ title: "x", hunks: [{ path: "a" }] }, { title: "y", buildsOn: [1], hunks: [{ path: "b" }] }] }, /steps\[1\]: unknown field "buildsOn" \(allowed: title, why, hunks\)/);
 	refuse({ scope: "dirty", steps: [{ title: "x", hunks: [{ path: "a/" }] }] }, /must name a file, not a directory/);
 	refuse({ scope: "dirty", steps: [{ title: "x", hunks: [{ path: "a", newStart: 1.5 }] }] }, /newStart must be a line number/);
 	refuse(

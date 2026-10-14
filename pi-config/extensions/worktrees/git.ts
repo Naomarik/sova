@@ -211,6 +211,140 @@ export async function mergedReviewBase(git: Git, cwd: string, head: string, targ
 	return (await git(["merge-base", "--is-ancestor", trackedBase, head], cwd)).code === 0 ? { base: trackedBase } : undefined;
 }
 
+/**
+ * The limits both engines that read a review diff share: the `show_changes` tool and Sova's diff
+ * endpoint (server/git-diff.ts), so the agent's card never promises more than the viewer shows.
+ * `gitTimeoutMs` bounds each listing read (resolve, changed files, untracked files); `maxFiles` is
+ * the most files a comparison lists (past it the tool refuses unless `paths` narrows it);
+ * `patchCap` is one file's patch (past it the file is one whole-file unit); `untrackedRead` is the
+ * most of one untracked file read, and `untrackedBudget` the untracked bytes one comparison reads.
+ */
+export const REVIEW_LIMITS = Object.freeze({
+	gitTimeoutMs: 5_000,
+	maxFiles: 3_000,
+	patchCap: 1024 * 1024,
+	untrackedRead: 1024 * 1024,
+	untrackedBudget: 16 * 1024 * 1024,
+});
+
+/** What reviewBase knows of the tracked worktree at that folder, if the session tracks one. */
+export interface ReviewBaseTracked {
+	/** The branch it was created from. */
+	baseBranch?: string;
+	/** The commit it was created from (a full sha). */
+	base?: string;
+}
+
+export interface ReviewBaseFound {
+	ok: true;
+	/** Full sha of the comparison's base side. */
+	base: string;
+	/**
+	 * How the base was chosen: `merge-base` with a base branch, `merged` (what the merge that
+	 * brought the branch in added, mergedReviewBase), or `created-from` (the tracked base commit).
+	 */
+	how: "merge-base" | "merged" | "created-from";
+	/**
+	 * The tool's name for the base: the branch (`master`, `origin/main`), `<branch> before <sha7>`
+	 * for a merged branch with a landing commit, else `<sha7> (created from)`.
+	 */
+	label: string;
+	/** The base branch's short name (`master`, `origin/main`); absent for `created-from`. */
+	ref?: string;
+	/** Its full ref (`refs/heads/master`, `refs/remotes/origin/main`) and tip sha; absent for `created-from`. */
+	tipRef?: string;
+	tip?: string;
+	/** For `merged`: the commit that brought the branch in, when there is one. */
+	landing?: string;
+}
+
+/**
+ * Why there is no base: `detached` (HEAD on no branch); `on-base-branch` (the checkout is on a base
+ * candidate itself, e.g. master, and nothing else applied); `no-history` (a base branch exists but
+ * none shares history with HEAD, and no tracked base commit applied); `no-base` (no base branch
+ * and no usable tracked base commit).
+ */
+export interface ReviewBaseRefused {
+	ok: false;
+	refusal: "detached" | "on-base-branch" | "no-history" | "no-base";
+}
+
+export type ReviewBase = ReviewBaseFound | ReviewBaseRefused;
+
+const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * The one rule for what a branch is reviewed against, shared by the `show_changes` tool and Sova's
+ * diff endpoint. `head` is HEAD's full sha in `root`, `branch` its short branch name (none:
+ * detached). The base is the merge-base of HEAD with the first of: the tracked base branch (a
+ * plain name), `master`, `main` (each skipped when it is the current branch, missing, or shares
+ * no history), then the branch `origin/HEAD` names (unless it is `origin/<branch>`). Once found,
+ * an already merged branch is compared against what its merge brought in (mergedReviewBase). With
+ * no base branch that shares history, the tracked base commit when it is a full sha, an ancestor
+ * of HEAD and not HEAD itself (`<sha7> (created from)`). Never throws: a failing git reads as
+ * "not there".
+ */
+export async function reviewBase(git: Git, root: string, at: { head: string; branch?: string | null; tracked?: ReviewBaseTracked }): Promise<ReviewBase> {
+	const { head, tracked } = at;
+	const branch = at.branch || undefined;
+	if (!branch) return { ok: false, refusal: "detached" };
+	const out = async (args: string[]) => {
+		const r = await git(args, root);
+		return r.code === 0 ? r.stdout.trim() || undefined : undefined;
+	};
+	const wanted = tracked?.baseBranch && /^[\w./-]+$/.test(tracked.baseBranch) && !tracked.baseBranch.startsWith("-") ? tracked.baseBranch : undefined;
+	let onBase = false;
+	let sawBranch = false;
+	let found: { ref: string; tipRef: string; tip: string; mergeBase: string } | undefined;
+	const seen = new Set<string>();
+	for (const name of [wanted, "master", "main"]) {
+		if (!name || seen.has(name)) continue;
+		seen.add(name);
+		if (name === branch) {
+			onBase = true;
+			continue;
+		}
+		const tipRef = `refs/heads/${name}`;
+		const tip = await out(["rev-parse", "--verify", "--quiet", `${tipRef}^{commit}`]);
+		if (!tip) continue;
+		sawBranch = true;
+		const mergeBase = await out(["merge-base", head, tip]);
+		if (mergeBase) {
+			found = { ref: name, tipRef, tip, mergeBase };
+			break;
+		}
+	}
+	if (!found) {
+		const origin = await out(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+		if (origin?.startsWith("refs/remotes/")) {
+			if (origin === `refs/remotes/origin/${branch}`) onBase = true;
+			else {
+				const tip = await out(["rev-parse", "--verify", "--quiet", `${origin}^{commit}`]);
+				if (tip) {
+					sawBranch = true;
+					const mergeBase = await out(["merge-base", head, tip]);
+					if (mergeBase) found = { ref: origin.slice("refs/remotes/".length), tipRef: origin, tip, mergeBase };
+				}
+			}
+		}
+	}
+	if (found) {
+		const { ref, tipRef, tip, mergeBase } = found;
+		const merged = await mergedReviewBase(git, root, head, tip, mergeBase, tracked?.base);
+		if (merged && FULL_SHA.test(merged.base)) {
+			return merged.landing
+				? { ok: true, base: merged.base, how: "merged", label: `${ref} before ${merged.landing.slice(0, 7)}`, ref, tipRef, tip, landing: merged.landing }
+				: { ok: true, base: merged.base, how: "merged", label: `${merged.base.slice(0, 7)} (created from)`, ref, tipRef, tip };
+		}
+		return { ok: true, base: mergeBase, how: "merge-base", label: ref, ref, tipRef, tip };
+	}
+	const created = tracked?.base;
+	if (created && FULL_SHA.test(created) && created !== head && (await git(["merge-base", "--is-ancestor", created, head], root)).code === 0) {
+		return { ok: true, base: created, how: "created-from", label: `${created.slice(0, 7)} (created from)` };
+	}
+	return { ok: false, refusal: onBase ? "on-base-branch" : sawBranch ? "no-history" : "no-base" };
+}
+
 export interface MergeRequest {
 	tree: Pick<TrackedWorktree, "path" | "branch">;
 	target: string;

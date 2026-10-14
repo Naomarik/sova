@@ -83,18 +83,11 @@ function hunk(v: unknown, where: string): ShowChangesHunkRef {
 
 function step(v: unknown, i: number, seen: Map<string, number>): ShowChangesStep {
 	const where = `steps[${i}]`;
-	need(isRecord(v), `${where} must be an object {title, why?, buildsOn?, hunks}`);
+	need(isRecord(v), `${where} must be an object {title, why?, hunks}`);
 	const r = v as Record<string, unknown>;
-	onlyKeys(r, ["title", "why", "buildsOn", "hunks"], where);
+	onlyKeys(r, ["title", "why", "hunks"], where);
 	const out: ShowChangesStep = { title: text(r.title, `${where}.title`), hunks: [] };
 	if (r.why !== undefined) out.why = text(r.why, `${where}.why`);
-	if (r.buildsOn !== undefined) {
-		need(Array.isArray(r.buildsOn), `${where}.buildsOn must be an array of step numbers`);
-		const b = r.buildsOn as unknown[];
-		for (const k of b) need(Number.isInteger(k) && (k as number) >= 1 && (k as number) <= i, `${where}.buildsOn: ${JSON.stringify(k)} is not an earlier step's number (steps are numbered from 1; this is step ${i + 1})`);
-		need(new Set(b).size === b.length, `${where}.buildsOn names a step twice`);
-		if (b.length) out.buildsOn = b as number[];
-	}
 	need(Array.isArray(r.hunks) && r.hunks.length > 0, `${where}.hunks must list at least one hunk`);
 	const hs = r.hunks as unknown[];
 	need(hs.length <= SHOW_CHANGES_LIMITS.hunksPerStep, `${where}.hunks: at most ${SHOW_CHANGES_LIMITS.hunksPerStep}`);

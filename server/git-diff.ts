@@ -1,14 +1,16 @@
 // Git diffs for the changes viewer and merge cards (GET /api/diff/summary|patch,
 // shared/protocol.ts DiffScope / DiffSummary / DiffFilePatch).
 //
-// Three comparisons, all chosen here, never a ref from the client:
-//  - worktree: the worktree's committed HEAD against its merge-base with its base branch (the
-//    tracked worktree's `baseBranch` when that branch exists, else server/worktrees.ts pickBase:
-//    master, main, origin/HEAD's target). Once the branch is merged that merge-base is HEAD
-//    itself; then, for a branch with commits beyond its tracked base, HEAD against what its merge
-//    brought in (pi-config/extensions/worktrees/git.ts mergedReviewBase: the merge-base with the
-//    first parent of the base branch's first-parent commit that landed it, labelled "master before
-//    <sha>"; after a fast-forward the tracked base commit, when it is an ancestor);
+// Four comparisons, all chosen here; the only refs a client names are a pinned card's two oids:
+//  - worktree: the worktree's committed HEAD against the base pi-config/extensions/worktrees/git.ts
+//    reviewBase picks, the one rule the show_changes tool shares: the merge-base with the tracked
+//    worktree's `baseBranch`, else master, else main, else origin/HEAD's target (each skipped when
+//    it is the branch itself or shares no history); once merged, what its merge brought in
+//    (mergedReviewBase, "master before <sha>"); else the tracked base commit it was created from,
+//    "<sha> (created from)". A checkout on its own base branch is the empty HEAD..HEAD; a detached
+//    HEAD or a branch with no base is refused. With `pin` (a show_changes card's saved base and
+//    head, full oids, each checked to be a commit in that repository) it is that head against that
+//    base, labelled with the card's own words, which never reach git;
 //  - commit: one commit (hex sha, resolved to a commit) against its first parent, a root commit
 //    against the empty tree;
 //  - merge: what a merge card's merge brought in. The folder and full sha must be a merge card
@@ -25,8 +27,20 @@
 // gone (a merged worktree, removed) reads from the first existing known folder whose repository
 // has that commit, the session's own folder first.
 //
-// Read-only, with server/worktrees.ts's discipline: plumbing only (diff-tree, diff-index,
-// ls-files, cat-file, rev-parse, for-each-ref, merge-base, rev-list), `--no-ext-diff --no-textconv`,
+// Any comparison may carry `paths` (checked as the tool checks its own, at most its limit): files
+// are kept by their new path when it is one of them or under one, after the unrestricted listing
+// (so rename detection is the tool's) and before the MAX_DIFF_FILES cut.
+//
+// A patch read may ask for its commits (`origins`, §chat.changes/steps): blame over base..head for
+// the hunks' added lines (boundary lines count for none), a reverse blame and the ancestry path for
+// a hunk that only removes lines, and `log base..head -- path oldPath` for a whole-file unit
+// (binary, too large, no hunks) or a deleted file. A commit scope names its one commit; the dirty
+// scope has none. All of it within ORIGINS_DEADLINE_MS; past that, or on a failed read, the patch
+// still comes, marked `originsUnknown`.
+//
+// Read-only, with server/worktrees.ts's discipline: plumbing (diff-tree, diff-index, ls-files,
+// cat-file, rev-parse, for-each-ref, merge-base, rev-list, symbolic-ref) plus the read-only
+// porcelain blame and log for origins, `--no-ext-diff --no-textconv`,
 // `-c core.fsmonitor=false --no-optional-locks` (and GIT_OPTIONAL_LOCKS=0), literal pathspecs,
 // execFile (no shell). diff-index against the working tree does not refresh the index, so a file
 // whose stat changed but whose content did not is listed by --raw with no numstat line: it is
@@ -46,30 +60,36 @@
 import { spawn } from "node:child_process";
 import { lstat, open, readFile, readlink, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
-import type { DiffFilePatch, DiffFileStatus, DiffFileSummary, DiffScope, DiffSide, DiffSummary } from "../shared/protocol";
-import { mergedReviewBase } from "../pi-config/extensions/worktrees/git.ts";
+import type { DiffCommit, DiffFilePatch, DiffFileStatus, DiffFileSummary, DiffPin, DiffScope, DiffSide, DiffSummary } from "../shared/protocol";
+import { isRepoPath, isSha, SHOW_CHANGES_LIMITS } from "../pi-config/extensions/show-changes/details.ts";
+import { mergedReviewBase, REVIEW_LIMITS, reviewBase } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, normalizeMergeDetails, type TrackedWorktree, type WorktreeMergeDetails, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
 import { lineEntry } from "./harness/pi/reader";
 import { WORKTREES } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
-import { candidatesOf, pickBase } from "./worktrees";
+import { candidatesOf } from "./worktrees";
 
-const GIT_TIMEOUT_MS = 5_000;
+// The limits the show_changes tool shares (pi-config/extensions/worktrees/git.ts REVIEW_LIMITS).
+const GIT_TIMEOUT_MS = REVIEW_LIMITS.gitTimeoutMs;
 const MAX_CONCURRENT = 4;
 /** Most files one summary lists; `totals` still counts the rest. */
-export const MAX_DIFF_FILES = 3_000;
+export const MAX_DIFF_FILES = REVIEW_LIMITS.maxFiles;
 /** --raw / --numstat / ls-files output. */
 const LIST_CAP = 8 * 1024 * 1024;
 /** One file's patch; past it the file is `tooLarge`. */
-export const PATCH_CAP = 1024 * 1024;
+export const PATCH_CAP = REVIEW_LIMITS.patchCap;
 /** A file's old side, sent whole for expanding folded context; past it the side is not sent. */
 export const BLOB_CAP = 8 * 1024 * 1024;
 /** An untracked file past this is not diffed (`tooLarge`), and is counted only this far. */
-export const MAX_UNTRACKED_READ = PATCH_CAP;
+export const MAX_UNTRACKED_READ = REVIEW_LIMITS.untrackedRead;
 /** Untracked bytes one summary reads in all; the files after it are `tooLarge` and uncounted. */
-export const UNTRACKED_BUDGET = 16 * 1024 * 1024;
+export const UNTRACKED_BUDGET = REVIEW_LIMITS.untrackedBudget;
+/** All of one patch's origins reads together (each git is bounded by GIT_TIMEOUT_MS as well). */
+const ORIGINS_DEADLINE_MS = GIT_TIMEOUT_MS;
+/** A pinned card's labels: display text, at most this long. */
+const MAX_LABEL = 200;
 /** Session files whose known folders are remembered. */
 const MAX_SESSIONS = 64;
 
@@ -160,22 +180,57 @@ export function checkRelPath(p: unknown): string {
   return p;
 }
 
-/** The scope from query parameters (`diffScopeQuery`); shape only, nothing trusted yet. */
-export function scopeFromQuery(q: (name: string) => string | undefined): DiffScope {
+/** The scope from query parameters (`diffScopeQuery`); shape only, nothing trusted yet. `all`
+    reads a repeatable parameter (`paths`). */
+export function scopeFromQuery(q: (name: string) => string | undefined, all: (name: string) => string[] | undefined = () => undefined): DiffScope {
   const kind = q("kind");
   const sessionPath = q("session");
   const path = q("path");
   if (!sessionPath) throw new DiffError("Missing ?session= (a session path)");
   if (!path) throw new DiffError("Missing ?path=");
-  if (kind === "worktree") return { kind, sessionPath, worktreePath: path };
-  if (kind === "dirty") return { kind, sessionPath, cwd: path };
+  const paths = pathsFromQuery(all("paths"));
+  const narrowed = paths ? { paths } : {};
+  if (kind === "worktree") {
+    const pin = pinFromQuery(q);
+    return { kind, sessionPath, worktreePath: path, ...(pin ? { pin } : {}), ...narrowed };
+  }
+  if (kind === "dirty") return { kind, sessionPath, cwd: path, ...narrowed };
   if (kind === "commit" || kind === "merge") {
     const sha = q("sha");
     if (!sha || !HEX.test(sha) || sha.length < 4 || sha.length > 64) throw new DiffError("Invalid ?sha= (hex, 4 to 64 characters)");
-    return { kind, sessionPath, repoPath: path, sha: sha.toLowerCase() };
+    return { kind, sessionPath, repoPath: path, sha: sha.toLowerCase(), ...narrowed };
   }
   throw new DiffError("Invalid ?kind= (worktree, commit, merge or dirty)");
 }
+
+/** `&paths=`: each a repository-relative file or folder as the show_changes tool checks them, at
+    most its limit; repeats dropped; none is no narrowing. */
+function pathsFromQuery(raw: string[] | undefined): string[] | undefined {
+  if (!raw?.length) return undefined;
+  if (raw.length > SHOW_CHANGES_LIMITS.paths) throw new DiffError(`Too many ?paths= (at most ${SHOW_CHANGES_LIMITS.paths})`);
+  for (const p of raw) if (!isRepoPath(p)) throw new DiffError("Invalid ?paths= (a repository-relative file or folder)");
+  return [...new Set(raw)];
+}
+
+/** A pinned worktree card's `base` and `head` (both full oids, or neither) and its labels. */
+function pinFromQuery(q: (name: string) => string | undefined): DiffPin | undefined {
+  const base = q("base")?.toLowerCase();
+  const head = q("head")?.toLowerCase();
+  if (base === undefined && head === undefined) return undefined;
+  if (!isSha(base) || !isSha(head)) throw new DiffError("Invalid ?base=/?head= (both full commit ids)");
+  const pin: DiffPin = { base, head };
+  for (const k of ["baseRef", "branch"] as const) {
+    const v = q(k);
+    if (v === undefined || v === "") continue;
+    if (v.length > MAX_LABEL || /[\x00-\x1f\x7f]/.test(v)) throw new DiffError(`Invalid ?${k}= (display text, at most ${MAX_LABEL} characters)`);
+    pin[k] = v;
+  }
+  return pin;
+}
+
+/** The show_changes tool's path filter: the file is one of `paths` or under one of them. */
+export const inPaths = (file: string, paths: readonly string[] | undefined): boolean =>
+  !paths?.length || paths.some((p) => file === p || file.startsWith(p.endsWith("/") ? p : `${p}/`));
 
 /** A resolved comparison: where to run git and the two sides. `base` is always a tree-ish oid. */
 interface Resolved {
@@ -231,15 +286,23 @@ export interface DiffDeps {
   now?: () => number;
   /** UNTRACKED_BUDGET, smaller for tests. */
   untrackedBudget?: number;
+  /** MAX_DIFF_FILES, smaller for tests. */
+  maxFiles?: number;
+  /** ORIGINS_DEADLINE_MS, smaller for tests. */
+  originsDeadlineMs?: number;
 }
 
 export class GitDiffs {
   private readonly run: RawGitRunner;
   private readonly now: () => number;
   private readonly untrackedBudget: number;
+  private readonly maxFiles: number;
+  private readonly originsDeadlineMs: number;
   private readonly sessionKnownFn: (sessionPath: string) => Promise<Known | null>;
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: Known }>();
   private readonly emptyTrees = new Map<string, string>();
+  /** Commit oids are immutable, so a comparison's topological order never changes. */
+  private readonly topoCache = new Map<string, Map<string, number>>();
   private running = 0;
   private readonly waiting: (() => void)[] = [];
 
@@ -247,6 +310,8 @@ export class GitDiffs {
     this.run = deps.run ?? execGitRaw;
     this.now = deps.now ?? Date.now;
     this.untrackedBudget = deps.untrackedBudget ?? UNTRACKED_BUDGET;
+    this.maxFiles = deps.maxFiles ?? MAX_DIFF_FILES;
+    this.originsDeadlineMs = deps.originsDeadlineMs ?? ORIGINS_DEADLINE_MS;
     this.sessionKnownFn = deps.sessionKnown ?? ((p) => this.readKnown(p));
   }
 
@@ -303,9 +368,11 @@ export class GitDiffs {
     }
     if (!(await isDir(dir))) {
       // A merged worktree is often removed after the merge, but its commit lives on in the
-      // repository: read it from another folder the session knows that has it.
-      if (scope.kind === "commit" || scope.kind === "merge") {
-        const top = await this.topHolding(known, scope.sha);
+      // repository: read it from another folder the session knows that has it. So is a pinned
+      // card's saved head.
+      const sha = scope.kind === "commit" || scope.kind === "merge" ? scope.sha : scope.kind === "worktree" ? scope.pin?.head : undefined;
+      if (sha) {
+        const top = await this.topHolding(known, sha);
         if (top) return { top, known, card };
       }
       throw new DiffError("That folder does not exist", 404);
@@ -407,40 +474,46 @@ export class GitDiffs {
         head,
       };
     }
+    if (scope.kind === "worktree" && scope.pin) {
+      // A card's saved comparison: both must be commits here before anything else reads them.
+      const { pin } = scope;
+      const commit = async (oid: string) => {
+        if (!isOid(oid)) return null;
+        const r = await this.git(top, ["rev-parse", "--verify", "-q", "--end-of-options", `${oid}^{commit}`]);
+        const out = r.stdout.toString("utf8").trim();
+        return r.code === 0 && out === oid ? out : null;
+      };
+      const [base, head] = await Promise.all([commit(pin.base), commit(pin.head)]);
+      if (!base || !head) throw new DiffError("No such commit in that repository", 404);
+      return {
+        scope,
+        top,
+        base: { label: pin.baseRef ?? base.slice(0, 7), oid: base, treeish: base },
+        head: { label: pin.branch ?? head.slice(0, 7), oid: head, treeish: head },
+      };
+    }
     const head = await this.headOid(top);
     if (!head) throw new DiffError("No commits on HEAD", 404);
     const symbolic = (await this.git(top, ["symbolic-ref", "-q", "HEAD"])).stdout.toString("utf8").trim();
     const branch = symbolic.startsWith("refs/heads/") ? symbolic.slice("refs/heads/".length) : null;
     const tracked = known.trees.filter((t) => canonical(t.path) === canonical(top)).at(-1);
-    const wanted = tracked?.baseBranch && /^[\w./-]+$/.test(tracked.baseBranch) && !tracked.baseBranch.startsWith("-") ? `refs/heads/${tracked.baseBranch}` : null;
-    const refsOut = await this.gitText(
-      top,
-      ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", ...(wanted ? [wanted] : []), "refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD"],
-      "reading the base branch",
-    );
-    let base: { name: string; oid: string } | null = null;
-    if (wanted) {
-      const line = refsOut.split("\n").find((l) => l.split("\0")[0] === wanted);
-      const oid = line?.split("\0")[1];
-      if (oid) base = { name: tracked!.baseBranch!, oid };
+    // The one rule the show_changes tool shares; once merged, what the merge brought in.
+    const rb = await reviewBase(this.gitLines, top, { head, branch, tracked: tracked ? { baseBranch: tracked.baseBranch, base: tracked.base } : undefined });
+    const headSide = { label: branch ?? head.slice(0, 7), oid: head, treeish: head };
+    if (!rb.ok) {
+      if (rb.refusal === "on-base-branch" && branch) return { scope, top, base: { label: `${branch} (merge-base)`, oid: head, treeish: head }, head: headSide };
+      throw new DiffError(
+        rb.refusal === "detached"
+          ? "HEAD is not on a branch: no base to compare it against"
+          : rb.refusal === "no-history"
+            ? "No common history with the base branch, and no commit it was created from"
+            : "No base branch (master, main or origin/HEAD) in that repository, and no commit it was created from",
+        404,
+      );
     }
-    base ??= pickBase(refsOut);
-    if (!base) throw new DiffError("No base branch (master, main or origin/HEAD) in that repository", 404);
-    const mb = await this.git(top, ["merge-base", base.oid, head]);
-    const mbOid = mb.stdout.toString("utf8").trim();
-    if (mb.code !== 0 || !isOid(mbOid)) throw new DiffError(mb.code === 1 ? "No common history with the base branch" : gitError("merge-base", mb), mb.code === 1 ? 404 : 500);
-    // Already merged: what the merge brought in, not the empty HEAD..HEAD.
-    const merged = await mergedReviewBase(this.gitLines, top, head, base.oid, mbOid, tracked?.base);
-    const baseSide =
-      merged && isOid(merged.base)
-        ? { label: merged.landing ? `${base.name} before ${merged.landing.slice(0, 7)}` : `${merged.base.slice(0, 7)} (created from)`, oid: merged.base }
-        : { label: `${base.name} (merge-base)`, oid: mbOid };
-    return {
-      scope,
-      top,
-      base: { ...baseSide, treeish: baseSide.oid },
-      head: { label: branch ?? head.slice(0, 7), oid: head, treeish: head },
-    };
+    if (!isOid(rb.base)) throw new DiffError("could not resolve the base", 500);
+    const label = rb.how === "merge-base" ? `${rb.ref ?? rb.label} (merge-base)` : rb.label;
+    return { scope, top, base: { label, oid: rb.base, treeish: rb.base }, head: headSide };
   }
 
   /** The diff command's leading args for this comparison (before options and pathspecs). */
@@ -462,7 +535,9 @@ export class GitDiffs {
     if (num.code !== 0 && !num.cut) throw new DiffError(gitError("diff --numstat", num), 500);
     const counts = parseNumstatZ(num.stdout.toString("utf8"));
     const files: DiffFileSummary[] = [];
+    const paths = scope.paths;
     for (const e of parseRawZ(raw.stdout.toString("utf8"))) {
+      if (!inPaths(e.path, paths)) continue;
       const n = counts.get(e.path);
       if (!n) {
         // Listed by --raw with no numstat line: a stat-only change in the working tree (content equal).
@@ -475,8 +550,8 @@ export class GitDiffs {
       const untracked = await this.untracked(r.top);
       cut ||= untracked.cut;
       const listed = new Set(files.map((f) => f.path));
-      const budget = { bytes: this.untrackedBudget, files: MAX_DIFF_FILES };
-      for (const path of untracked.paths) if (!listed.has(path)) files.push(await this.untrackedSummary(r.top, path, budget));
+      const budget = { bytes: this.untrackedBudget, files: this.maxFiles };
+      for (const path of untracked.paths) if (!listed.has(path) && inPaths(path, paths)) files.push(await this.untrackedSummary(r.top, path, budget));
       files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     }
     const totals = { files: files.length, added: 0, removed: 0 };
@@ -489,11 +564,11 @@ export class GitDiffs {
       repo: r.top,
       base: side(r.base),
       head: side(r.head),
-      files: files.slice(0, MAX_DIFF_FILES),
+      files: files.slice(0, this.maxFiles),
       totals,
       generatedAt: this.now(),
     };
-    if (cut || files.length > MAX_DIFF_FILES) out.truncated = true;
+    if (cut || files.length > this.maxFiles) out.truncated = true;
     return out;
   }
 
@@ -517,10 +592,12 @@ export class GitDiffs {
   }
 
   /** One file's patch. With `context`, also its old side's whole text (`oldText`), read by the
-      blob oid this patch names, so folded unchanged lines can open. */
-  async patch(scope: DiffScope, file: string, oldFile?: string, opts: { context?: boolean } = {}): Promise<DiffFilePatch> {
+      blob oid this patch names, so folded unchanged lines can open. With `origins`, the commits
+      each of its units came from (`hunkCommits`, `commits`), or `originsUnknown`. */
+  async patch(scope: DiffScope, file: string, oldFile?: string, opts: { context?: boolean; origins?: boolean } = {}): Promise<DiffFilePatch> {
     const path = checkRelPath(file);
     const oldPath = oldFile === undefined || oldFile === "" || oldFile === path ? undefined : checkRelPath(oldFile);
+    if (!inPaths(path, scope.paths)) throw new DiffError("That file is not in this diff", 404);
     const r = await this.resolve(scope);
     const specs = oldPath ? [oldPath, path] : [path];
     const res = await this.git(
@@ -536,7 +613,8 @@ export class GitDiffs {
       const e = parseRawZ(raw.stdout.toString("utf8")).find((x) => x.path === path);
       if (!e) throw new DiffError("That file is not in this diff", 404);
       const s = fileOf(e, undefined);
-      return { path, ...(s.oldPath ? { oldPath: s.oldPath } : {}), status: s.status === "B" ? "M" : s.status, tooLarge: { bytes: res.stdout.length, cap: PATCH_CAP }, ...oids(s), ...sides };
+      const big: DiffFilePatch = { path, ...(s.oldPath ? { oldPath: s.oldPath } : {}), status: s.status === "B" ? "M" : s.status, tooLarge: { bytes: res.stdout.length, cap: PATCH_CAP }, ...oids(s), ...sides };
+      return opts.origins ? { ...big, ...(await this.origins(r, big, s.status === "D")) } : big;
     }
     const sections = splitPatch(res.stdout.toString("utf8")).filter((s) => s.path === path && (!oldPath || s.oldPath === oldPath || s.oldPath === path));
     if (sections.length === 0) {
@@ -563,6 +641,126 @@ export class GitDiffs {
     if (opts.context && out.patch && sections.length === 1 && first.oldOid) {
       const text = await this.oldSide(r.top, first.oldOid);
       if (text !== null) out.oldText = text;
+    }
+    return opts.origins ? { ...out, ...(await this.origins(r, out, sections.some((x) => x.status === "D") && sections.length === 1)) } : out;
+  }
+
+  /** The commits each unit of `p` came from (§chat.changes/steps): none for the working tree, the
+      one commit for a commit scope, else from history within ORIGINS_DEADLINE_MS. */
+  private async origins(r: Resolved, p: DiffFilePatch, deleted: boolean): Promise<Pick<DiffFilePatch, "hunkCommits" | "commits" | "originsUnknown">> {
+    const head = r.head.treeish ? r.head.oid : undefined;
+    if (!head) return {};
+    const hunks = p.patch ? patchHunks(p.patch) : [];
+    const units = Math.max(1, hunks.length);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((done) => (timer = setTimeout(() => done(null), this.originsDeadlineMs)));
+    try {
+      const work =
+        r.scope.kind === "commit"
+          ? Promise.resolve(Array.from({ length: units }, () => [head]))
+          : this.unitCommits(r.top, r.base.oid, head, p, hunks, deleted || !p.patch || hunks.length === 0);
+      const shasPerUnit = await Promise.race([work.catch(() => null), late]);
+      if (!shasPerUnit) return { originsUnknown: true };
+      const all = [...new Set(shasPerUnit.flat())];
+      const info = all.length ? await Promise.race([this.commitInfo(r.top, all).catch(() => null), late]) : [];
+      if (!info || info.length !== all.length) return { originsUnknown: true };
+      // Ancestors first (`rev-list --topo-order --reverse`), so commits made in the same second
+      // keep parent before child; by author time where that order can't be read.
+      // `order` is the commit's place in the whole comparison, the same in every file's read.
+      const topo =
+        r.scope.kind === "commit" ? new Map([[head, 0]]) : info.length ? await Promise.race([this.topoOrder(r.top, r.base.oid, head).catch(() => null), late]) : null;
+      for (const c of info) {
+        const n = topo?.get(c.sha);
+        if (n !== undefined) c.order = n;
+      }
+      const rank = (c: DiffCommit) => c.order ?? Number.MAX_SAFE_INTEGER;
+      info.sort((a, b) => rank(a) - rank(b) || a.authorTime - b.authorTime || (a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0));
+      const at = new Map(info.map((c, i) => [c.sha, i]));
+      return { commits: info, hunkCommits: shasPerUnit.map((u) => [...new Set(u)].map((sha) => at.get(sha)!).sort((a, b) => a - b)) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Per unit, the shas it came from in `base..head` (just `head`'s history without a base). Throws
+      on a failed read. */
+  private async unitCommits(top: string, base: string | undefined, head: string, p: DiffFilePatch, hunks: PatchHunk[], whole: boolean): Promise<string[][]> {
+    const range = base ? `${base}..${head}` : head;
+    const specs = p.oldPath ? [p.path, p.oldPath] : [p.path];
+    const read = async (args: string[]) => {
+      const res = await this.git(top, args);
+      if (res.code !== 0) throw new Error(gitError(args[0]!, res));
+      return res.stdout.toString("utf8");
+    };
+    const touching = async () => (await read(["log", "--format=%H", range, "--", ...specs])).split("\n").filter(isOid);
+    if (whole) {
+      const all = await touching();
+      return Array.from({ length: Math.max(1, hunks.length) }, () => all);
+    }
+    const out: string[][] = hunks.map(() => []);
+    // Added lines: who last wrote them within the range (a boundary line, older than base, counts for none).
+    const adding = hunks.filter((h) => h.added.length > 0);
+    if (adding.length > 0) {
+      const ls = adding.flatMap((h) => ["-L", `${h.newStart},${h.newStart + Math.max(1, h.newLines) - 1}`]);
+      const lines = parseBlame(await read(["blame", "--porcelain", "--incremental", ...ls, range, "--", p.path]), false);
+      hunks.forEach((h, i) => {
+        for (const n of h.added) {
+          const sha = lines.get(n);
+          if (sha) out[i]!.push(sha);
+        }
+      });
+    }
+    // A hunk that only removes lines: the commit that removed them, the first on the ancestry path
+    // from the last commit that still held each line (a reverse blame) that touched the file.
+    const removing = hunks.map((h, i) => ({ h, i })).filter(({ h }) => h.added.length === 0 && h.removed.length > 0);
+    if (removing.length > 0) {
+      try {
+        if (!base) throw new Error("no base to walk from");
+        const ls = removing.flatMap(({ h }) => ["-L", `${h.oldStart},${h.oldStart + Math.max(1, h.oldLines) - 1}`]);
+        const last = parseBlame(await read(["blame", "--reverse", "--porcelain", "--incremental", ...ls, range, "--", p.oldPath ?? p.path]), true);
+        const removedBy = new Map<string, string | undefined>();
+        for (const { h, i } of removing) {
+          for (const n of h.removed) {
+            const holder = last.get(n);
+            if (!holder) continue;
+            if (!removedBy.has(holder)) {
+              const next = (await read(["rev-list", "--ancestry-path", "--topo-order", "--reverse", `${holder}..${head}`, "--", ...specs])).split("\n").find(isOid);
+              removedBy.set(holder, next);
+            }
+            const sha = removedBy.get(holder);
+            if (sha) out[i]!.push(sha);
+          }
+        }
+      } catch {
+        const all = await touching();
+        for (const { i } of removing) out[i] = all;
+      }
+    }
+    return out;
+  }
+
+  /** Each commit of `base..head` (all of `head`'s history without a base) → its place, oldest first. */
+  private async topoOrder(top: string, base: string | undefined, head: string): Promise<Map<string, number>> {
+    // Every patch read of one comparison asks for the same order: kept for the last few.
+    const key = `${top}\0${base ?? ""}\0${head}`;
+    const hit = this.topoCache.get(key);
+    if (hit) return hit;
+    const res = await this.git(top, ["rev-list", "--topo-order", "--reverse", base ? `${base}..${head}` : head, "--"]);
+    if (res.code !== 0) throw new Error(gitError("rev-list", res));
+    const order = new Map(res.stdout.toString("utf8").split("\n").filter(isOid).map((sha, i) => [sha, i]));
+    this.topoCache.set(key, order);
+    while (this.topoCache.size > 16) this.topoCache.delete(this.topoCache.keys().next().value!);
+    return order;
+  }
+
+  /** Each commit's subject and author time, in no particular order. */
+  private async commitInfo(top: string, shas: string[]): Promise<DiffCommit[]> {
+    const res = await this.git(top, ["log", "--no-walk=unsorted", "--format=%H%x00%at%x00%s", ...shas, "--"]);
+    if (res.code !== 0) throw new Error(gitError("log", res));
+    const out: DiffCommit[] = [];
+    for (const line of res.stdout.toString("utf8").split("\n")) {
+      const [sha, at, subject] = line.split("\0");
+      if (sha && isOid(sha) && at && /^\d+$/.test(at)) out.push({ sha, subject: subject ?? "", authorTime: Number(at) * 1000 });
     }
     return out;
   }
@@ -785,6 +983,64 @@ function headerPaths(line: string): { old: string; new: string } | null {
   const a = rest.slice(2, 2 + n);
   const b = rest.slice(n + 5);
   return a === b ? { old: a, new: b } : null;
+}
+
+interface PatchHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  /** New-side line numbers of its `+` lines; old-side ones of its `-` lines. */
+  added: number[];
+  removed: number[];
+}
+
+/** The hunks of a patch (every section), in order, with the lines each adds and removes. */
+export function patchHunks(patch: string): PatchHunk[] {
+  const out: PatchHunk[] = [];
+  let h: PatchHunk | undefined;
+  let o = 0;
+  let n = 0;
+  for (const line of patch.split("\n")) {
+    const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (m) {
+      h = { oldStart: Number(m[1]), oldLines: m[2] === undefined ? 1 : Number(m[2]), newStart: Number(m[3]), newLines: m[4] === undefined ? 1 : Number(m[4]), added: [], removed: [] };
+      out.push(h);
+      o = h.oldStart;
+      n = h.newStart;
+      continue;
+    }
+    if (!h) continue;
+    if (line.startsWith("diff --git ")) h = undefined;
+    else if (line.startsWith("+")) h.added.push(n++);
+    else if (line.startsWith("-")) h.removed.push(o++);
+    else if (line.startsWith(" ")) {
+      o++;
+      n++;
+    }
+  }
+  return out;
+}
+
+/** `blame --porcelain --incremental`: final line number → commit. Without `reverse`, a line of a
+    boundary commit (older than the range) is left out. */
+function parseBlame(text: string, reverse: boolean): Map<number, string> {
+  const groups: { sha: string; final: number; count: number }[] = [];
+  const boundary = new Set<string>();
+  let sha: string | undefined;
+  for (const line of text.split("\n")) {
+    const m = /^([0-9a-f]{40}|[0-9a-f]{64}) \d+ (\d+) (\d+)$/.exec(line);
+    if (m) {
+      sha = m[1]!;
+      groups.push({ sha, final: Number(m[2]), count: Number(m[3]) });
+    } else if (line === "boundary" && sha) boundary.add(sha);
+  }
+  const out = new Map<number, string>();
+  for (const g of groups) {
+    if (!reverse && boundary.has(g.sha)) continue;
+    for (let i = 0; i < g.count; i++) out.set(g.final + i, g.sha);
+  }
+  return out;
 }
 
 function looksBinary(buf: Buffer): boolean {

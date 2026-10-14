@@ -1159,7 +1159,10 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           });
           /** An align result that changed an alignment: its card, as soon as the result lands. */
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
+          /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
+          const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
           return (
+            <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
             <Show
               when={!card()?.card}
@@ -1186,6 +1189,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
             </Show>
             </Show>
           );

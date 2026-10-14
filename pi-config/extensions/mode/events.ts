@@ -1,6 +1,6 @@
 /**
  * Event-bus contracts (pi.events) between the mode extension and the subagents extension. Imports
- * nothing: both sides import this file, and so can an older or newer copy of either (a worktree's
+ * only project-format.ts, which imports nothing: both sides import this file, and so can an older or newer copy of either (a worktree's
  * own mode extension talks to the parent's worker marker), so every payload is versioned and a
  * listener ignores what it doesn't recognise.
  */
@@ -11,6 +11,8 @@
  * the subagents extension caches the newest one and appends `prompt` to each worker it starts,
  * without interpreting it. Like the sandbox's state event (sandbox/state.ts).
  */
+import { isProjectModeId, isProjectModeSnapshot, type ProjectModeSnapshot } from "./project-format.ts";
+
 export const MODE_WORKER_EVENT = "mode:worker";
 export const MODE_WORKER_DISCOVER_EVENT = "mode:worker-discover";
 
@@ -20,6 +22,12 @@ export interface ModeWorkerEvent {
 	minorModes: string[];
 	/** The text to append to a worker's system prompt; absent when none of its modes reaches workers. */
 	prompt?: string;
+	/**
+	 * The project modes a worker is given (§chat.mode-menu/workers): `workers: yes`, within the cap beside
+	 * `minorModes`, their blocks already in `prompt`. Their saved copies, so a worker's tools are the parent's.
+	 * Absent when none. A namespace of their own: never in `minorModes`.
+	 */
+	projectModes?: ProjectModeSnapshot[];
 }
 
 /** The event as a listener should trust it, or undefined for anything malformed or of another version. */
@@ -28,7 +36,14 @@ export function parseModeWorkerEvent(data: unknown): ModeWorkerEvent | undefined
 	const e = data as Record<string, unknown>;
 	if (e.version !== 1 || !Array.isArray(e.minorModes) || e.minorModes.some((m) => typeof m !== "string" || m === "")) return undefined;
 	if (e.prompt !== undefined && (typeof e.prompt !== "string" || e.prompt.trim() === "")) return undefined;
-	return { version: 1, minorModes: [...(e.minorModes as string[])], ...(e.prompt === undefined ? {} : { prompt: e.prompt as string }) };
+	// Project modes are additive: a malformed list drops itself, never the event.
+	const projects = Array.isArray(e.projectModes) && e.projectModes.every((p) => isProjectModeSnapshot(p) && isProjectModeId(p.id)) ? (e.projectModes as ProjectModeSnapshot[]) : [];
+	return {
+		version: 1,
+		minorModes: [...(e.minorModes as string[])],
+		...(e.prompt === undefined ? {} : { prompt: e.prompt as string }),
+		...(projects.length > 0 ? { projectModes: [...projects] } : {}),
+	};
 }
 
 /**

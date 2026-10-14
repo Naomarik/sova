@@ -92,6 +92,9 @@ import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } 
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
+
+/** The modes a worker's chip lists: its built-in minor modes, then the project modes it carries (by id). */
+const givenModesOf = (modes: ModeWorkerEvent): string[] => [...modes.minorModes, ...(modes.projectModes ?? []).map((p) => p.id)];
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
 import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
@@ -1362,7 +1365,7 @@ export function registerSubagents(
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
 					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined,
-					givenModes: modePrompt ? [...modes!.minorModes] : [], landed: false };
+					givenModes: modePrompt ? givenModesOf(modes!) : [], landed: false };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1427,7 +1430,7 @@ export function registerSubagents(
 				flags: piFlags,
 				treeConfig,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
-				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
+				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? givenModesOf(modes!) : [],
 				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
 				landed: specOn && !remote && writesCode(tools),
 			};

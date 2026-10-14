@@ -26,6 +26,10 @@ export function createOlderRows(o: {
   /** False: never fetch the rest in the background, whatever the hello says; only what is
       scrolled to or jumped to (the Overseer, §app.overseer/transcript-window). */
   prefetch?: boolean;
+  /** The reader asked for rows above the list: a jump's, or a chunk they scrolled up to. A chat
+      view starts its chat here when it is asleep (§chat.transcript/instant-open); a watch view
+      passes none and starts nothing. */
+  want?: () => void;
   /** LOAD_WAIT_MS, for tests. */
   loadWaitMs?: number;
 }) {
@@ -114,11 +118,16 @@ export function createOlderRows(o: {
 
   const api: OlderRowsApi = {
     left: () => older()?.left ?? null,
-    more: () => (older() ? void loader.more() : void whenKnown().then(() => loader.more())),
+    more: (ask) => {
+      if (ask?.byHand && older()?.left !== 0) o.want?.();
+      if (older()) void loader.more();
+      else void whenKnown().then(() => loader.more());
+    },
     // Never waits for good, and never throws: a load that can't land says "stale", and a jump
     // that is still "stale" on its retry says it can't land (lib/jump jumpWhenArrived).
     load: async (target) => {
       try {
+        o.want?.();
         await whenKnown();
         return await loader.to(target);
       } catch {

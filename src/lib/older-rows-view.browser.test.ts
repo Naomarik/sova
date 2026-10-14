@@ -135,8 +135,9 @@ test("a hello after a row the list doesn't hold leaves the list alone and reads 
 function keptView(loadWaitMs = 5) {
   return solid.createRoot((dispose) => {
     const [items, setItems] = solid.createSignal<TranscriptItem[] | null>(branch.slice(2).map((it) => ({ ...it })));
-    const rows = createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false, loadWaitMs });
-    return { rows, items, dispose };
+    const wants: string[] = [];
+    const rows = createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false, loadWaitMs, want: () => wants.push("want") });
+    return { rows, items, wants, dispose };
   });
 }
 /** The file: its newest 2 rows as the tail (2 above them), the range down to a row on `from`. */
@@ -178,5 +179,32 @@ test("a load before any hello whose file reads fail says stale (the jump then sa
   };
   const v = keptView();
   assert.equal(await v.rows.api.load({ entry: "u1" }), "stale");
+  v.dispose();
+});
+
+// §chat.transcript/instant-open: a jump, or the reader scrolling up, is what starts a sleeping chat
+// (the view's `want`); a short list filling itself, or a list that reaches the top, starts nothing.
+test("want: every load asks; a scroll-up chunk asks only by the reader's hand and only while rows remain above", async () => {
+  serveFile();
+  const v = keptView();
+  v.rows.api.more();
+  assert.deepEqual(v.wants, [], "a fill the list asked for itself starts nothing");
+  v.rows.api.more({ byHand: true });
+  assert.deepEqual(v.wants, ["want"], "unknown above, scrolled to by hand");
+  await v.rows.api.load({ entry: "u1" });
+  assert.deepEqual(v.wants, ["want", "want"], "a jump asks");
+  assert.equal(v.rows.whole(), true);
+  v.rows.api.more({ byHand: true });
+  assert.equal(v.wants.length, 2, "nothing above: scrolling up asks nothing");
+  v.dispose();
+});
+
+test("a load in a view with no want (a watch view) still lands, starting nothing", async () => {
+  serveFile();
+  const v = solid.createRoot((dispose) => {
+    const [items, setItems] = solid.createSignal<TranscriptItem[] | null>(branch.slice(2).map((it) => ({ ...it })));
+    return { rows: createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false, loadWaitMs: 5 }), dispose };
+  });
+  assert.equal(await v.rows.api.load({ entry: "u1" }), "here");
   v.dispose();
 });

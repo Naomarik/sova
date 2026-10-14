@@ -108,7 +108,8 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
 
 In the Overseer only, the foot ends with the **Quick Actions** button instead of the mode switch,
 which the Overseer doesn't have (§app.overseer/hosting). It opens the quick-action flyout
-(§app.overseer/quick-actions). No other chat has it.
+(§app.overseer/quick-actions). No other chat has it. A project overseer's foot, which has no
+mode switch either, ends with its memory switch in that slot (§app.project-overseer/memory-switch).
 
 ```html
 <div class="composer-foot">

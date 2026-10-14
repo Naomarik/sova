@@ -124,7 +124,9 @@ or why it can't be resumed).
 A restored worker starts again only when asked, one worker id at a time: by the parent agent's
 `agent_resume {id}` tool, or by the `/agent-resume <id>` command. Sova's own buttons are gone (the
 session pane and the Agents board have none); `POST /api/workers/resume`, which sends that
-command, stays on the server with no caller in the app. There is **no automatic resume**, not at session open, not at the
+command, stays on the server with no caller in the app. It opens the parent chat when the server
+holds none (one closed for being quiet, §app.chat-processes/idle-stop), as a send would, and never
+answers "open the chat first". There is **no automatic resume**, not at session open, not at the
 next prompt, and not for team members.
 
 - **Same worker.** It keeps its id, name, team membership and role, and continues its own transcript: its chat reopens its session file, a Claude Code worker included, through the same factory as a spawn (§app.chat-processes/workers). Its spawn

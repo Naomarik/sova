@@ -2234,6 +2234,11 @@ export interface HelloLive {
  */
 export type ChatCodeState = "current" | "older" | "reloading" | "failed";
 
+/** The close code of a chat socket after `closed` (§app.chat-processes/idle-stop): one the web app's
+    socket never retries (src/lib/socket.ts PERMANENT_CLOSE, as for 4422 "config"), so a tab on an
+    older bundle, which doesn't know `closed`, stays down too instead of reopening the chat. */
+export const CHAT_CLOSED_CLOSE_CODE = 4422;
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -2382,6 +2387,12 @@ export type ChatServerMessage =
   | { type: "queue_removed"; id: string; itemId: string; text: string }
   /** The removal was refused and the item is untouched; to the requester only. */
   | { type: "queue_remove_refused"; id: string; itemId: string; reason: QueueRemoveRefusal; message: string }
+  /** The chat's process closed for being quiet (§app.chat-processes/idle-stop), or the chat was
+      archived, and the server closes this socket next. The tab keeps what it shows and doesn't
+      reconnect: the chat starts again only when the tab needs it (a send), or when something else
+      opened it (§chat.transcript/instant-open). A client that doesn't know it reconnects on the
+      close, as before. */
+  | { type: "closed"; reason: "idle" | "archived" }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
@@ -4395,13 +4406,16 @@ export interface DiffFilePatch {
 // ── Resource monitor (§app/resource-monitor) ─────────────────────────────────────────────────
 // GET /api/monitor → MonitorSnapshot; GET /api/monitor/history?since=<ms>&res=5s|30s → MonitorHistory.
 // Read-only. CPU percentages are of ONE core (100 = one core busy; a 16-core host tops out at 1600),
-// averaged over the last tick (5s). Memory is RSS in bytes; swap is VmSwap in bytes.
+// averaged over the last tick (5s). `rssBytes` is RSS in bytes; `privBytes` (and every `*Bytes` part of
+// Sova's memory) is each process's own memory: private resident memory (RssAnon) on Linux, RSS on
+// macOS (`scope: "ps"`). Swap is VmSwap in bytes.
 
 /** How the measured set was chosen. `unit`: the server runs in a dedicated systemd service
     cgroup (/proc/self/cgroup ends in `.service`), so every process in it is measured, and the
     unit's own cgroup totals are reported. `tree`: the server's descendant tree only (dev,
-    hermetic). `none`: no /proc (not Linux): only the server's own Node numbers. */
-export type MonitorScope = "unit" | "tree" | "none";
+    hermetic). `ps`: no /proc (macOS): processes listed by one `ps` per tick, resident memory only,
+    no per-process swap. `none`: neither: only the server's own Node numbers. */
+export type MonitorScope = "unit" | "tree" | "ps" | "none";
 
 /** How a process was charged to its session/worker, strongest first. Exact: `worker-pid` the
     runtime's in-process worker pid; `session-id` a `claude --resume/--session-id` uuid (a
@@ -4416,10 +4430,23 @@ export type MonitorVia =
   | "worker-pid" | "session-id" | "team-env" | "env" | "descendant" | "sid"
   | "exited-tools" | "cwd";
 
-/** Coarse kind of a process from its argv, parsed once per process. */
+/** Coarse kind of a process from its argv, parsed once per process. `sova-runtime`: a chat's own
+    process (the pid its chat reports, else argv `server/chat-runtime/main.ts`); `sova-helper`: the
+    server's usage helper (`server/usage-helper/main.ts`). */
 export type MonitorProcKind =
-  | "server" | "claude-worker" | "claude-provider"
+  | "server" | "claude-worker" | "claude-provider" | "sova-runtime" | "sova-helper"
   | "node" | "java" | "python" | "browser" | "shell" | "build" | "other";
+
+/** Sova's own memory, split four ways that add up to `total`: every measured process is in exactly
+    one part. `backend`: the server and its usage helper; `runtime`: each chat's own process;
+    `wrapped`: each Claude Code CLI; `tools`: everything else measured. */
+export interface MonitorMemory {
+  total: number;
+  backend: { bytes: number; procs: number };
+  runtime: { bytes: number; count: number };
+  wrapped: { bytes: number; count: number };
+  tools: { bytes: number };
+}
 
 /** Linux pressure-stall `some avg10` (and `full avg10` where it exists), in percent. */
 export interface MonitorPressure {
@@ -4437,6 +4464,8 @@ export interface MonitorProc {
   /** Own CPU% over the last tick, including reaped children's time (cutime/cstime). */
   cpuPct: number;
   rssBytes: number;
+  /** The process's own memory (see the header). Absent from an older server. */
+  privBytes?: number;
   /** Absent until first read (VmSwap is read at most every 30s per process). */
   swapBytes?: number;
   /** Epoch ms the process started. */
@@ -4464,6 +4493,12 @@ export interface MonitorWorker {
   /** Whole subtree (the worker process and every descendant, plus reaped children's time). */
   cpuPct: number;
   rssBytes: number;
+  /** Own memory of the whole subtree, and its split: `runtime` its chat process, `wrapped` its
+      Claude Code CLI, `tools` the rest; the three add up to `privBytes`. Absent from an older server. */
+  privBytes?: number;
+  runtimeBytes?: number;
+  wrappedBytes?: number;
+  toolsBytes?: number;
   swapBytes: number;
   procCount: number;
   /** The heaviest descendants (not the worker process itself), by CPU then RSS, at most 5. */
@@ -4478,13 +4513,22 @@ export interface MonitorSession {
   cwd?: string;
   /** Hosted in this server (its tool children are the server's children). */
   hosted: boolean;
+  /** What its chat runs on, when its chat says: Claude Code (a wrapped CLI) or a pi model. */
+  backend?: "claude-code" | "pi";
   /** Totals over the session's own processes and all its workers. */
   cpuPct: number;
   rssBytes: number;
+  /** Own memory of all of it; `runtimeBytes`, `wrappedBytes` and `toolsBytes` split the session's
+      own processes (not its workers'), so those three plus each worker's `privBytes` add up to it.
+      Absent from an older server. */
+  privBytes?: number;
+  runtimeBytes?: number;
+  wrappedBytes?: number;
+  toolsBytes?: number;
   swapBytes: number;
   procCount: number;
-  /** Processes charged to the session itself, not to a worker (hosted bash tools, the Claude
-      Code provider process), heaviest first, at most 5; `own*` are their totals. */
+  /** Processes charged to the session itself, not to a worker: its chat's runtime and Claude Code
+      provider process (always listed), then its heaviest tools, at most 5 of those; `own*` are their totals. */
   own: MonitorProc[];
   ownCpuPct: number;
   ownRssBytes: number;
@@ -4496,6 +4540,8 @@ export interface MonitorSession {
 export interface MonitorBucket {
   cpuPct: number;
   rssBytes: number;
+  /** Own memory over the same processes. Absent from an older server. */
+  privBytes?: number;
   swapBytes: number;
   procCount: number;
   /** Heaviest first, at most 20. */
@@ -4548,7 +4594,13 @@ export interface MonitorSnapshot {
     /** Event-loop delay over the last tick, ms. */
     eventLoop: { p50: number; p99: number; max: number };
     uptimeSec: number;
+    /** Its own memory (absent where no process can be listed, or from an older server). */
+    privBytes?: number;
+    /** Its long-lived helpers (the usage helper), part of the backend, never Not attributed. */
+    helpers?: MonitorProc[];
   };
+  /** Sova's own memory and its split (absent where no process can be listed, or from an older server). */
+  memory?: MonitorMemory;
   /** Over every measured process (the unit's or the tree's), server included. */
   totals: { cpuPct: number; rssBytes: number; swapBytes: number; procCount: number };
   /** Heaviest first by CPU. Hosted sessions with no processes and no workers are omitted. */
@@ -4582,7 +4634,10 @@ export interface MonitorPointProc {
 }
 
 /** One history point. At `30s` resolution `cpuPct` is the window's mean and `cpuPctMax` its
-    highest tick; memory figures are the window's maximum. */
+    highest tick; memory figures are the window's maximum, and `mem` is taken from the tick where
+    `sovaBytes` peaked, so it always adds up to it. A point with `sovaBytes` counts its groups',
+    workers' and top processes' memory as own memory; one without (written before own memory was
+    counted) as RSS. */
 export interface MonitorPoint {
   at: number;
   cpuPct: number;
@@ -4591,6 +4646,9 @@ export interface MonitorPoint {
   swapBytes: number;
   /** `unit` scope only. */
   anonBytes?: number;
+  /** Sova's own memory (`MonitorSnapshot.memory.total`), and its parts [backend, runtime, wrapped, tools]. */
+  sovaBytes?: number;
+  mem?: [number, number, number, number];
   load1: number;
   /** Server event-loop max delay, ms. */
   loopMaxMs: number;

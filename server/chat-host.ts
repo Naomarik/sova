@@ -272,8 +272,10 @@ export class ChatHostRouter {
       reconnecting until they need it (§chat.transcript/instant-open). */
   private forget(path: string, cause?: ExitCause): void {
     const h = this.remotes.get(path);
-    if (cause === "idle") h?.closePanesQuietly("idle");
-    else h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
+    // An archive's own exit can come before its close finishes: its panes are told `closed` either way.
+    if (cause === "idle" || h?.closingQuietly) h?.closePanesQuietly(cause === "idle" ? "idle" : "archived");
+    // Panes told `closed` are gone from the handle already: this ends its calls only.
+    h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) {
       this.paths.delete(h.mirror.sessionId);
       this.workers.parentUnlinked(h);
@@ -671,12 +673,14 @@ export class ChatHostRouter {
     const h = this.remotes.get(path);
     if (!h || h.closed) return false;
     const sid = h.mirror.sessionId;
-    // An archive: its tabs are told first, so the chat's own goodbye (`reloaded`, from its dispose)
-    // reaches none of them and none reconnects, which would start the archived chat again.
-    if (opts.quiet) h.closePanesQuietly(opts.quiet);
+    // An archive: the chat's own goodbye (`reloaded`, from its dispose) reaches no tab, so none
+    // reconnects, which would start the archived chat again. Its tabs keep everything before it (an
+    // ack for a send it took) and are told `closed` once the drain returned; its calls end after that.
+    if (opts.quiet) h.beginQuietClose();
     this.sup.expectExit(sid, "archived");
     const r = await h.drain("archived", { force: true, message });
     if (!r.ok) await this.sup.stop(sid, "archived").catch(() => {});
+    if (opts.quiet) h.closePanesQuietly(opts.quiet);
     this.forget(path);
     return true;
   }

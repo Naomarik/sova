@@ -31,6 +31,9 @@ const { procStart, setProcStartForTest } = await import("./chat-runtime/writer-l
 setProcStartForTest((pid) => procStart(pid, "linux"));
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { LINK_MEMBER_ENTRY } = await import("../shared/mesh-links");
+const { CHAT_CLOSED_CLOSE_CODE } = await import("../shared/protocol");
+const { isPermanentClose } = await import("../src/lib/socket");
+const { UNREACHABLE } = await import("./chat-handle-remote");
 
 after(async () => {
   await disposeAllChats();
@@ -232,7 +235,8 @@ test("idle stop: a quiet chat with a tab attached closes after the idle time; th
   assert.equal(t.router.get(s.path), undefined, "the router is done with it");
   // The tab: told it closed, never told to reconnect; its socket closed by the server.
   assert.deepEqual(got.filter((m) => m.type === "closed" || m.type === "error"), [{ type: "closed", reason: "idle" }]);
-  assert.deepEqual(closes, [4500]);
+  assert.deepEqual(closes, [CHAT_CLOSED_CLOSE_CODE], "a code no tab retries: an older bundle, which doesn't know `closed`, stays down too");
+  assert.ok(isPermanentClose(CHAT_CLOSED_CLOSE_CODE));
   // Nothing starts it again on its own.
   ahead += 60 * 60_000;
   await sup.tick();
@@ -259,9 +263,37 @@ test("archive: a tab on the chat is told it closed, never to reconnect (which wo
   await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(t.exits, ["archived"]);
   assert.deepEqual(got.filter((m) => m.type === "closed" || m.type === "error"), [{ type: "closed", reason: "archived" }], "no `reloaded`: a tab that reconnects reopens the chat");
-  assert.deepEqual(closes, [4500]);
+  assert.deepEqual(closes, [CHAT_CLOSED_CLOSE_CODE], "a code no tab retries: an older bundle, which doesn't know `closed`, stays down too");
+  assert.ok(isPermanentClose(CHAT_CLOSED_CLOSE_CODE));
   assert.equal(t.router.get(s.path), undefined);
   assert.equal(t.driver.started.length, 1);
+  t.router.detach();
+});
+
+test("archive: what the chat took before it closed reaches its tab first (a send's answer) or its caller (a call's), never handed back as unreachable", async () => {
+  const t = setup({ later: true });
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  const got: { type: string; clientId?: string; code?: string }[] = [];
+  const client = { wire: 2 as const, send: (m: unknown) => void got.push(m as never), close: () => {} };
+  h.attach(client);
+  for (let i = 0; i < 50 && !got.some((m) => m.type === "hello"); i++) await new Promise((r) => setTimeout(r, 20));
+  // A send from the tab and a call from the server, both on their way when the archive starts.
+  h.clientMessage(client, { type: "prompt", text: "taken before the archive", clientId: "c-taken" } as never);
+  const call = h.send({ text: "a server's send", origin: "server" }).then(
+    (r) => ({ ok: true as const, r }),
+    (err: unknown) => ({ ok: false as const, message: err instanceof Error ? err.message : String(err) }),
+  );
+  await t.router.close(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
+  await new Promise((r) => setTimeout(r, 100));
+  const named = got.findIndex((m) => m.clientId === "c-taken");
+  const closed = got.findIndex((m) => m.type === "closed");
+  assert.ok(closed >= 0, "told closed");
+  assert.ok(named >= 0 && named < closed, `the chat's answer to the send reached the tab before \`closed\`: ${JSON.stringify(got.slice(-6))}`);
+  assert.notEqual(got[named]!.code, "refused", "the chat took it");
+  assert.ok(!got.some((m) => m.type === "error" && m.code === "reloaded"), "no reconnect");
+  const outcome = await call;
+  assert.ok(outcome.ok || !outcome.message.includes(UNREACHABLE), `a call the chat took is answered by it, never failed as unreachable: ${JSON.stringify(outcome)}`);
   t.router.detach();
 });
 

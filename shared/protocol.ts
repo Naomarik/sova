@@ -4355,6 +4355,10 @@ export interface DiffCommit {
   subject: string;
   /** Epoch ms. */
   authorTime: number;
+  /** Its place in the whole comparison, oldest first (`rev-list --topo-order --reverse base..head`),
+      the same in every file's read, so commits of different files sort together; a commit scope's
+      one commit is 0. Absent when that order could not be read in time. */
+  order?: number;
 }
 
 /** M modified, A added (untracked, in the dirty scope), D deleted, R renamed (maybe also edited),

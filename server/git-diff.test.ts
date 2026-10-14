@@ -809,6 +809,15 @@ describe("commits per hunk (origins)", () => {
     const p = await diffs(() => [dir], [{ path: dir, baseBranch: "master", base }]).patch({ kind: "worktree", sessionPath: SESSION, worktreePath: dir }, "s.txt", undefined, { origins: true });
     assert.deepEqual(p.commits!.map((c) => c.sha), [parent, child]);
     assert.deepEqual(shasOf(p), [[parent], [child]]);
+    // `order` places commits of different files in one comparison-wide order.
+    const other = commitAt(dir, 2_000, "other file", { "o.txt": "o\n" });
+    const d = diffs(() => [dir], [{ path: dir, baseBranch: "master", base }]);
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
+    const [s1, o1] = await Promise.all([d.patch(scope, "s.txt", undefined, { origins: true }), d.patch(scope, "o.txt", undefined, { origins: true })]);
+    assert.deepEqual(s1.commits!.map((c) => c.order), [0, 1]);
+    assert.deepEqual(o1.commits!.map((c) => [c.sha, c.order]), [[other, 2]]);
+    const one = await d.patch({ kind: "commit", sessionPath: SESSION, repoPath: dir, sha: other }, "o.txt", undefined, { origins: true });
+    assert.equal(one.commits![0]!.order, 0);
   });
 
   it("marks commits unknown when the history read fails or runs out of time, and still sends the patch", async () => {

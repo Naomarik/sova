@@ -301,6 +301,8 @@ export class GitDiffs {
   private readonly sessionKnownFn: (sessionPath: string) => Promise<Known | null>;
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: Known }>();
   private readonly emptyTrees = new Map<string, string>();
+  /** Commit oids are immutable, so a comparison's topological order never changes. */
+  private readonly topoCache = new Map<string, Map<string, number>>();
   private running = 0;
   private readonly waiting: (() => void)[] = [];
 
@@ -664,9 +666,15 @@ export class GitDiffs {
       if (!info || info.length !== all.length) return { originsUnknown: true };
       // Ancestors first (`rev-list --topo-order --reverse`), so commits made in the same second
       // keep parent before child; by author time where that order can't be read.
-      const topo = info.length > 1 ? await Promise.race([this.topoOrder(r.top, r.base.oid, head).catch(() => null), late]) : null;
-      const rank = (sha: string) => topo?.get(sha) ?? Number.MAX_SAFE_INTEGER;
-      info.sort((a, b) => rank(a.sha) - rank(b.sha) || a.authorTime - b.authorTime || (a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0));
+      // `order` is the commit's place in the whole comparison, the same in every file's read.
+      const topo =
+        r.scope.kind === "commit" ? new Map([[head, 0]]) : info.length ? await Promise.race([this.topoOrder(r.top, r.base.oid, head).catch(() => null), late]) : null;
+      for (const c of info) {
+        const n = topo?.get(c.sha);
+        if (n !== undefined) c.order = n;
+      }
+      const rank = (c: DiffCommit) => c.order ?? Number.MAX_SAFE_INTEGER;
+      info.sort((a, b) => rank(a) - rank(b) || a.authorTime - b.authorTime || (a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0));
       const at = new Map(info.map((c, i) => [c.sha, i]));
       return { commits: info, hunkCommits: shasPerUnit.map((u) => [...new Set(u)].map((sha) => at.get(sha)!).sort((a, b) => a - b)) };
     } finally {
@@ -733,9 +741,16 @@ export class GitDiffs {
 
   /** Each commit of `base..head` (all of `head`'s history without a base) → its place, oldest first. */
   private async topoOrder(top: string, base: string | undefined, head: string): Promise<Map<string, number>> {
+    // Every patch read of one comparison asks for the same order: kept for the last few.
+    const key = `${top}\0${base ?? ""}\0${head}`;
+    const hit = this.topoCache.get(key);
+    if (hit) return hit;
     const res = await this.git(top, ["rev-list", "--topo-order", "--reverse", base ? `${base}..${head}` : head, "--"]);
     if (res.code !== 0) throw new Error(gitError("rev-list", res));
-    return new Map(res.stdout.toString("utf8").split("\n").filter(isOid).map((sha, i) => [sha, i]));
+    const order = new Map(res.stdout.toString("utf8").split("\n").filter(isOid).map((sha, i) => [sha, i]));
+    this.topoCache.set(key, order);
+    while (this.topoCache.size > 16) this.topoCache.delete(this.topoCache.keys().next().value!);
+    return order;
   }
 
   /** Each commit's subject and author time, in no particular order. */

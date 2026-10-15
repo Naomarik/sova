@@ -95,3 +95,18 @@ Static output, no Functions and no adapter.
 | Environment variable | `NODE_VERSION` = `22.19.0` or later |
 
 Leave Cloudflare Web Analytics off: the page promises no analytics.
+
+The Pages project is not connected to Git: a push to master deploys nothing. Deploy by hand with
+wrangler, from a build of the commit you mean to publish (a `git archive` of it, so no checkout
+is touched):
+
+```sh
+cd site
+pnpm install --frozen-lockfile
+SOVA_SITE_URL=<the site's address> pnpm run build
+node scripts/check-docs-leaks.mjs
+wrangler pages deploy dist --project-name <the Pages project> --branch main --commit-hash <sha>
+```
+
+`--branch main` is the project's production branch; any other branch name makes a preview
+deploy. Then check the live pages (the release playbook's publish step lists the checks).

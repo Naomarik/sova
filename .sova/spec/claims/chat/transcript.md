@@ -709,7 +709,12 @@ virtualized.
     whole entries, never opening on a tool
     result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
     it's taller or reaches the top. While older rows remain, a line's height is held at the top
-    of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
+    of the transcript, so what appears in it never moves the view. Whether that line is there is
+    settled before the first frame, from the rows the view opens with and what is known to be
+    above them (rows kept from the last visit, the file's newest rows, or the `hello`): a
+    transcript with older rows has it from its first frame, and one that opens on the whole
+    branch never has it; nothing learned later adds it. It goes with the build of the last rows
+    above, which keeps the view where it is. When a fetch (this one, or a
     jump's) takes longer than 0.4 s, a short bar sweeps in that line: the skeleton sweep, with no
     text; screen readers hear it as "Loading older messages" (a status region). The line sticks to
     the top of the view, over the rows, taking no pointer, so a jump fetching from the end shows

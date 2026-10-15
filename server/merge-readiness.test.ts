@@ -294,6 +294,12 @@ test("noCommits (§chat.changes/entry): set exactly when the branch has no commi
   // A turn running hides the "no commits yet" words, never the fact.
   const running = (await r.computeReadiness(summary(path, { busy: true }), facts!))?.trees[0];
   assert.equal(running?.noCommits, true);
+  // Git couldn't count (no base found, or rev-list failed): `ahead` absent is not zero commits.
+  status = { path: "/wt/agents-row-dropdown", source: "session", exists: true, dirty: false, head: "h9" };
+  const uncounted = (await r.computeReadiness(summary(path), facts!))?.trees[0];
+  assert.equal(uncounted?.noCommits, undefined);
+  assert.deepEqual([uncounted?.state, uncounted?.why], ["in-progress", r.COMMITS_UNCOUNTED]);
+  status = { ...status, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 0, behind: 0, head: "b0" };
   // A change and its revert: two commits ahead, an empty net diff. Commits count, never the diff.
   status = { ...status, ahead: 2, added: 0, removed: 0, head: "h2" };
   const cancelled = (await r.computeReadiness(summary(path), facts!))?.trees[0];

@@ -111,10 +111,14 @@ export const NO_COMMITS = "no commits yet";
 export const CLEANED_UP = "cleaned up";
 export const REMOVED_EMPTY = "no commits";
 
-/** A readable branch with no commit of its own past its base: the fact NO_COMMITS says, and the one
-    the Session tab hides a row's Review Changes on (§chat.changes/entry). Merged needs a commit of
-    its own, so a merged branch is never empty. */
-export const hasNoCommits = (t: Pick<TreeFacts, "readable" | "merged" | "ahead">): boolean => t.readable && !t.merged && !t.ahead;
+/** Why a branch whose commits git couldn't count (no base found, or the count failed): never "no
+    commits yet", which would claim zero, and never ready, which needs a commit ahead. */
+export const COMMITS_UNCOUNTED = "commits not counted";
+
+/** A readable branch git counted zero commits past its base: the fact NO_COMMITS says, and the one
+    the Session tab hides a row's Review Changes on (§chat.changes/entry). An uncounted branch
+    (`ahead` absent) is not one. Merged needs a commit of its own, so a merged branch is never empty. */
+export const hasNoCommits = (t: Pick<TreeFacts, "readable" | "merged" | "ahead">): boolean => t.readable && !t.merged && t.ahead === 0;
 
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
@@ -153,6 +157,7 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   const dirty = t.dirty ? (t.dirtyCount ?? DIRTY_MAX) : 0;
   if (dirty >= DIRTY_MAX) return { state: "in-progress", why: t.dirtyCount ? uncommittedWords(t.dirtyCount, t.dirtyFiles) : "uncommitted changes" };
   if (hasNoCommits(t)) return { state: "in-progress", why: NO_COMMITS };
+  if (t.ahead === undefined) return { state: "in-progress", why: COMMITS_UNCOUNTED };
   if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
   if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };

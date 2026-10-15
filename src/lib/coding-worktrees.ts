@@ -108,9 +108,11 @@ export function codingRows(recorded: readonly CodingSession[] | undefined, fromL
 export const READING_BRANCH = "Reading its branch";
 
 /** Merge Branch and Remove Worktree on a row: false when not offered, null when it can run, else the disabled reason.
-    Before its branch facts arrive, a row with a recorded branch (not removed) offers both, disabled. */
-export function rowGestures(r: CodingRow): { merge: Gate | false; remove: Gate | false } {
-  if (!r.facts || r.state === undefined) {
+    Before its branch facts arrive, a row with a recorded branch (not removed) offers both, disabled. `fresh`: the
+    facts came from this page's own branch read; remembered ones (a reopened project, lib/page-cache) are shown but
+    never acted on, so until the first fresh read lands both gestures are disabled too. */
+export function rowGestures(r: CodingRow, fresh: boolean): { merge: Gate | false; remove: Gate | false } {
+  if (!fresh || !r.facts || r.state === undefined) {
     const offered = !!r.branch && !r.removedAt;
     return { merge: offered ? READING_BRANCH : false, remove: offered ? READING_BRANCH : false };
   }

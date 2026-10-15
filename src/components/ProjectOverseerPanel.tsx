@@ -1007,7 +1007,7 @@ function CodingSessions(props: {
   /** A refusal stays under its own row. */
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const act = async (w: CodingRow, fn: () => Promise<ProjectWorktrees>, done: string) => {
-    if (working()) return;
+    if (working() || !po().worktrees.fresh()) return;
     setWorking(w.sessionId);
     try {
       po().worktrees.set(await fn());
@@ -1075,7 +1075,8 @@ function CodingSessions(props: {
             const armed = () => confirming() === row.sessionId;
             const folder = () => (row.worktree ? tildePath(row.worktree, home()) : "");
             const title = () => row.title || UNTITLED_CODING;
-            const gestures = () => rowGestures(row);
+            // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
+            const gestures = () => rowGestures(row, po().worktrees.fresh());
             const facts = () => (row.facts && row.state !== undefined ? (row as CodingRow & CodingWorktree) : null);
             return (
               <li class="list-row orgs-row project-worktree">
@@ -1147,7 +1148,7 @@ function CodingSessions(props: {
                   </ActionMenu>
                 </Show>
                 <Show when={errors()[row.sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
-                <Show when={armed() && facts()}>
+                <Show when={armed() && facts() && po().worktrees.fresh()}>
                   <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
                     <p class="orgs-line">
                       <Show

@@ -12,6 +12,9 @@ export interface Poll<T> {
   error: Accessor<string | null>;
   /** True until the first fetch settles (either way), even while a remembered value shows. */
   pending: Accessor<boolean>;
+  /** The value shown came from this poll (a fetch or `set`), not from what the tab remembered: false
+      until then, a failed fetch included. Nothing may act on a remembered value (lib/page-cache). */
+  fresh: Accessor<boolean>;
   /** Fetch now and restart the timer (backoff reset). */
   refetch(): void;
   /** Adopt a value obtained elsewhere (a request that returns the new state) as the latest result:
@@ -37,6 +40,7 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
   const data = () => store.value;
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(true);
+  const [fresh, setFresh] = createSignal(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let failures = 0;
   let run = 0;
@@ -55,6 +59,7 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
       if (mine !== run || stopped) return;
       failures = 0;
       setStore("value", reconcile(next, { key: "id" }) as never);
+      setFresh(true);
       keep(next);
       setError(null);
     } catch (err) {
@@ -83,6 +88,7 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
     data,
     error,
     pending,
+    fresh,
     refetch() {
       failures = 0;
       void tick();
@@ -92,6 +98,7 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
       ++run;
       failures = 0;
       setStore("value", reconcile(value, { key: "id" }) as never);
+      setFresh(true);
       keep(value);
       setError(null);
       setPending(false);

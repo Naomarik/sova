@@ -510,18 +510,23 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-project-name > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .org-project-icon { flex: none; width: 16px; height: 16px; color: var(--color-ink-muted); }
 .org-project-name:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: var(--r-xs); }
-/* The Projects region (§app.projects/list): its head's Add Project and page link are quiet 44px
-   icons like an org head's; a project's name opens its page. */
+/* The Projects region (§app.projects/list): its head's page link is a quiet 44px
+   icon like an org head's; a project's name opens its page. */
 .sidebar-projects .sidebar-region-head > .org-link {
   flex: none;
   color: var(--color-ink-muted);
 }
-.sidebar-projects .sidebar-region-head > button.org-link { margin-left: auto; }
-.sidebar-projects .sidebar-region-head > a.org-link { margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
+.sidebar-projects .sidebar-region-head > a.org-link { margin-left: auto; margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
 .sidebar-projects .sidebar-region-head > .org-link:hover,
 .sidebar-projects .sidebar-region-head > .org-link:focus-visible { color: var(--color-ink); }
 .sidebar-projects .sidebar-region-head > .org-link .icon { width: 16px; height: 16px; }
 .project-region-link { color: inherit; text-decoration: none; }
+/* A project heading's fold (§app.projects/list): a quiet 44px twist before the name, turned while open. */
+.org-project-label > .project-fold { flex: none; margin-left: calc(var(--space-3) * -1); color: var(--color-ink-muted); }
+.org-project-label > .project-fold:hover,
+.org-project-label > .project-fold:focus-visible { color: var(--color-ink); }
+.project-fold .icon-twist { width: 16px; height: 16px; transition: transform var(--dur-fast) var(--ease-standard); }
+.project-fold[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
 .project-region-link:hover { text-decoration: underline; }
 .org-finished { border-top: var(--stroke-thin) solid var(--color-border); }
 

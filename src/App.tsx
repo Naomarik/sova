@@ -44,6 +44,8 @@ import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { movedOrgHash, orgsRouteFromHash } from "./lib/orgs-route";
 import { projectsRouteFromHash } from "./lib/projects-route";
+import { projectSummaryKey, recall } from "./lib/page-cache";
+import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { ProjectsView } from "./components/ProjectsView";
@@ -387,6 +389,12 @@ export function App() {
     return r;
   };
   const [projectsRoute, setProjectsRoute] = createSignal(projectsRouteOf(location.hash));
+  /** On a project's page (this host's), its root as this tab last read it: New Session opens on that project. */
+  const pageProjectRoot = (): string | null => {
+    const r = projectsRoute();
+    if (!r || r.kind === "list" || r.host) return null;
+    return recall<ProjectSummary>(projectSummaryKey(r.projectId))?.root ?? null;
+  };
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -1244,7 +1252,7 @@ export function App() {
               </Match>
               {/* Projects, placed or not (#/projects[/<project>[/<tab>|/overseer]]). Not keyed: ProjectsView keys each page. */}
               <Match when={projectsRoute()}>
-                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} />}
+                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} />}
               </Match>
               {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/people/<person>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
@@ -1353,7 +1361,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders())) ?? ""}
+            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}

@@ -34,8 +34,11 @@ export function newSessionCwd(
   current: Located | null | undefined,
   sessions: readonly (Located & { lastActiveAt: string })[],
   offers: (cwd: string) => boolean = () => true,
+  /** The root of the project whose page is open (§app/new-session-dialog, Prefill): the dialog opens on it. */
+  projectRoot: string | null = null,
 ): string | null {
   if (current?.cwd && !current.overseer && offers(current.cwd)) return current.cwd;
+  if (projectRoot && offers(projectRoot)) return projectRoot;
   const latest = sessions
     .filter((s) => !s.overseer && !!s.cwd && offers(s.cwd))
     .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0];

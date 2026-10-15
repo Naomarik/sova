@@ -4,8 +4,9 @@
 import type { HEntry } from "../../shared/harness";
 import type { MemoryLine, MemoryMessage, MemoryStatus } from "../../shared/protocol";
 import { memoryViewContent } from "../../pi-config/extensions/claude-code/provider/memory-view.ts";
+import { expandIds, shortenedIds, uuidsIn } from "./ids";
 import { inputStart, messagesBefore, messagesOf, type LogMessage } from "./log";
-import { COMPACTION_GUIDE, leafTask, mergeTask, TURN_GUIDE, zoomableSummary } from "./prompts";
+import { COMPACTION_GUIDE, idRetry, leafTask, mergeTask, TURN_GUIDE, zoomableSummary } from "./prompts";
 import { MemoryStore, type MemoryFileState } from "./store";
 import type { SummaryCall, SummaryResult } from "./summarizer";
 import { problemOf } from "./summarizer";
@@ -23,6 +24,7 @@ import {
   LIMIT,
   lineOf,
   mergeView,
+  oneLine,
   parentReady,
   readyMerges,
   splitView,
@@ -43,6 +45,8 @@ export const PREPARE_SLACK = 16;
 export const CONCURRENCY = 4;
 /** Consecutive failed summaries after which the queue pauses until the next message. */
 export const FAILURE_PAUSE = 3;
+/** Calls one summary may take when its line shortens an id of its source (§chat.memory/summarizer). */
+export const ID_ATTEMPTS = 2;
 
 export interface EngineDeps {
   summarize(call: SummaryCall): Promise<SummaryResult>;
@@ -74,6 +78,8 @@ export class MemoryEngine implements Tree {
   private nodes = new Map<string, TreeNode>();
   private state: MemoryFileState;
   private log: LogMessage[] = [];
+  /** Each message's UUIDs, by its source, for showing lines with ids whole (§chat.memory/full-ids). */
+  private idCache = new Map<string, { text: string; ids: string[] }>();
   private leafQueue: number[] = [];
   private mergeQueue: NodeRef[] = [];
   private queued = new Set<string>();
@@ -121,6 +127,7 @@ export class MemoryEngine implements Tree {
   sync(branch: readonly HEntry[]): void {
     if (this.disposed) return;
     this.log = messagesOf(branch);
+    if (this.idCache.size > 2 * this.log.length + 64) this.idCache.clear();
     let d = this.log.length;
     for (const n of this.nodes.values()) {
       if (n.l !== 0) continue;
@@ -243,7 +250,7 @@ export class MemoryEngine implements Tree {
       const short = `${m.kind}: ${m.text}`;
       // A message that fits is its own line, word for word, with no model call.
       if (bytes(short) <= LIMIT) return this.put({ l, i, text: short, size: bytes(short), src: m.src }, generation);
-      const text = await this.summarizeNode(i, leafTask(i, m.kind, m.text));
+      const text = await this.summarizeNode(i, leafTask(i, m.kind, m.text), m.text);
       return this.put({ l, i, text, size: bytes(text), src: m.src }, generation);
     }
     const a = this.get(l - 1, 2 * i);
@@ -252,19 +259,41 @@ export class MemoryEngine implements Tree {
     const joined = `${a.text}\n${b.text}`;
     if (bytes(joined) <= LIMIT) return this.put({ l, i, text: joined, size: bytes(joined) }, generation);
     const half = 2 ** (l - 1);
-    const text = await this.summarizeNode(end([l, i]), mergeTask(first([l, i]), half, a.text.replace(/\n/g, " "), b.text.replace(/\n/g, " ")));
+    // The two lines as a reader sees them, ids whole where certain (§chat.memory/full-ids).
+    const sa = this.shownText(a, [l - 1, 2 * i]).replace(/\n/g, " ");
+    const sb = this.shownText(b, [l - 1, 2 * i + 1]).replace(/\n/g, " ");
+    const text = await this.summarizeNode(end([l, i]), mergeTask(first([l, i]), half, sa, sb), `${sa}\n${sb}`);
     return this.put({ l, i, text, size: bytes(text) }, generation);
   }
 
-  /** One summary with the compaction view up to message `cut` as its context, cached by its stable prefix. */
-  private async summarizeNode(cut: number, task: string): Promise<string> {
+  /**
+   * One summary with the compaction view up to message `cut` as its context, cached by its stable prefix.
+   * A line that holds a UUID of `source` only shortened is asked for again (up to ID_ATTEMPTS calls, the
+   * task naming the UUIDs); the line shortening fewest is kept, the first on a tie (§chat.memory/summarizer).
+   */
+  private async summarizeNode(cut: number, task: string, source: string): Promise<string> {
     const lines = this.state.cview.filter((r) => end(r) <= cut).map((r) => lineOf(this, r));
     const { system, newer } = this.cviewSplit(lines);
-    const prompt = newer.length ? `<chat> (continued: the newest lines)\n${newer.join("\n")}\n</chat>\n\n${task}` : `${task}`;
-    const result = await this.deps.summarize({ system, prompt, sessionId: this.sessionId, ...(this.deps.cwd ? { cwd: this.deps.cwd } : {}) });
-    const line = acceptLine(result.text);
-    if (!line) throw new Error("the summarizer returned an empty line");
-    return line;
+    const head = newer.length ? `<chat> (continued: the newest lines)\n${newer.join("\n")}\n</chat>\n\n` : "";
+    const ids = uuidsIn(source);
+    let best: { line: string; short: number } | undefined;
+    let short: string[] = [];
+    for (let attempt = 0; attempt < ID_ATTEMPTS; attempt++) {
+      const prompt = `${head}${task}${attempt ? idRetry(short) : ""}`;
+      let line: string;
+      try {
+        const result = await this.deps.summarize({ system, prompt, sessionId: this.sessionId, ...(this.deps.cwd ? { cwd: this.deps.cwd } : {}) });
+        line = acceptLine(result.text);
+        if (!line) throw new Error("the summarizer returned an empty line");
+      } catch (err) {
+        if (best) return best.line; // a failed second call keeps the first line
+        throw err;
+      }
+      short = shortenedIds(line, ids);
+      if (!best || short.length < best.short) best = { line, short: short.length };
+      if (!short.length) break;
+    }
+    return best!.line;
   }
 
   /**
@@ -329,6 +358,33 @@ export class MemoryEngine implements Tree {
     }
   }
 
+  // ---- ids shown whole ---------------------------------------------------------------------------
+
+  /** The UUIDs in messages first(ref)..end(ref)-1 as logged. */
+  private idsOf(ref: NodeRef): string[] {
+    const out = new Set<string>();
+    const to = Math.min(end(ref), this.log.length);
+    for (let k = first(ref); k < to; k++) {
+      const m = this.log[k]!;
+      let hit = this.idCache.get(m.src);
+      if (!hit || hit.text !== m.text) this.idCache.set(m.src, (hit = { text: m.text, ids: uuidsIn(m.text) }));
+      for (const id of hit.ids) out.add(id);
+    }
+    return [...out];
+  }
+
+  /** A node's stored text as it is shown: ids whole where its own messages make that certain. */
+  private shownText(n: TreeNode, ref: NodeRef): string {
+    return /[0-9a-fA-F]{8}/.test(n.text) ? expandIds(n.text, this.idsOf(ref)) : n.text;
+  }
+
+  /** A view line as the model (and the outline) is shown it (§chat.memory/full-ids). */
+  shownLine(ref: NodeRef): string {
+    const n = this.get(ref[0], ref[1]);
+    if (!n) return lineOf(this, ref);
+    return `${first(ref)}+${count(ref)}|${oneLine(this.shownText(n, ref))}`;
+  }
+
   // ---- a turn -------------------------------------------------------------------------------------
 
   /**
@@ -358,7 +414,7 @@ export class MemoryEngine implements Tree {
     view = extendView(view, T);
     const max = sizeKB * 1024;
     const merged = mergeView(this, view, T, max, max / 2, this.state.merging);
-    const lines = merged.view.map((r) => lineOf(this, r));
+    const lines = merged.view.map((r) => this.shownLine(r));
     const cost = { fixed: promptBytes + bytes(TURN_GUIDE), sent: this.state.prefixSent ?? 0 };
     const split = splitView(lines, this.state.prefix, builtPrefix(this, merged.view).length, cost);
     this.state = { ...this.state, view: merged.view, merging: merged.merging, prefix: split.prefix, prefixSent: split.sent };
@@ -367,7 +423,7 @@ export class MemoryEngine implements Tree {
     return {
       content: memoryViewContent(TURN_GUIDE, split.prefix, split.tail),
       messages: T,
-      bytes: viewBytes(this, merged.view),
+      bytes: linesBytes(lines),
       lines: lines.length,
       rebased: split.rebased,
       merges: merged.merges,
@@ -398,7 +454,7 @@ export class MemoryEngine implements Tree {
     const merged = mergeView(this, extendView([], T), T, size, size, true);
     if (viewBytes(this, merged.view) > 2 * size) return undefined;
     this.emit();
-    return { summary: zoomableSummary(merged.view.map((r) => lineOf(this, r)), T), messages: T, lines: merged.view };
+    return { summary: zoomableSummary(merged.view.map((r) => this.shownLine(r)), T), messages: T, lines: merged.view };
   }
 
   // ---- recall -------------------------------------------------------------------------------------
@@ -409,8 +465,8 @@ export class MemoryEngine implements Tree {
     if (n === 1) return messageText(this.log[id]!);
     const half = n / 2;
     const l = Math.log2(n) - 1;
-    const out = [lineOf(this, [l, id / half])];
-    if (id + half < this.log.length) out.push(lineOf(this, [l, id / half + 1]));
+    const out = [this.shownLine([l, id / half])];
+    if (id + half < this.log.length) out.push(this.shownLine([l, id / half + 1]));
     return out.join("\n");
   }
 
@@ -434,7 +490,7 @@ export class MemoryEngine implements Tree {
     return {
       id: first(ref),
       n: count(ref),
-      text: n ? n.text : null,
+      text: n ? this.shownText(n, ref) : null,
       entryId: this.log[first(ref)]?.entryId ?? null,
       lastEntryId: this.log[lastAt]?.entryId ?? null,
     };
@@ -446,8 +502,9 @@ export class MemoryEngine implements Tree {
     return extendView(view, this.log.length);
   }
 
+  /** A view's size as it is shown (ids whole), each line with its newline. */
   viewBytesOf(view: readonly NodeRef[]): number {
-    return viewBytes(this, view);
+    return linesBytes(view.map((r) => this.shownLine(r)));
   }
 
   /** The two lines under line id+n, or message id whole, for the outline. */
@@ -493,6 +550,13 @@ export class MemoryEngine implements Tree {
       check();
     });
   }
+}
+
+/** Lines' size, each with its newline. */
+function linesBytes(lines: readonly string[]): number {
+  let n = 0;
+  for (const l of lines) n += bytes(l) + 1;
+  return n;
 }
 
 /** A message whole, as zoom(id, 1) gives it. */

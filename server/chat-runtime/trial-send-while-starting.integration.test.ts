@@ -3,6 +3,7 @@
 // scripts/chat-runtime-trial/trial-test.ts): a socket that sends to a chat closed while quiet and
 // closes at once still has its model switch and message run, in order; one client id on two
 // sockets runs once; a refusal with no socket left goes back as the session's saved draft.
+// Frames a going page POSTs (/api/chat/frames) take the same path: in order, a repeat once.
 import { trialSuite } from "../../scripts/chat-runtime-trial/trial-test";
 
 trialSuite("a message sent while its chat starts", [["tsend", "tsend: delivered after the socket left, once, refusals back as the draft"]]);

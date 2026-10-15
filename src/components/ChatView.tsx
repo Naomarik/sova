@@ -188,6 +188,8 @@ export function ChatView(props: {
   /** Reconnect past the server's recent-write guard (never past a live TUI). */
   force: boolean;
   autofocus?: boolean;
+  /** Whether this view is on screen (absent: always); a workspace tab behind another isn't. */
+  front?: () => boolean;
   onModel(model: string | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   /** A run just started here: the list's `busy` is stale until it's refetched. */
@@ -1151,6 +1153,9 @@ export function ChatView(props: {
     if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
   };
   createEffect(on(socket.status, (status) => (status === "failed" || status === "closed") && !untrack(wait).asleep && giveUpWake(), { defer: true }));
+  // Brought to the front (a workspace tab), a chat that slept is being opened: start it, as a send would.
+  const inFront = createMemo(() => props.front?.() ?? true);
+  createEffect(on(inFront, (front) => front && wake(), { defer: true }));
   // Someone else opened the chat meanwhile (another tab, a worker's report): connect to it.
   createEffect(
     on(

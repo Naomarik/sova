@@ -21,7 +21,7 @@ The **major mode** is one of two:
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
 | [codemode](/docs/modes/codemode/) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
-| memory | A cheap model folds the chat's messages into short summaries, and the model opens any of them back to the original message, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
+| [memory](/docs/modes/memory/) | A cheap model folds the chat's messages into one-line summaries, and the model opens any of them back to the original message with its `zoom` tool, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
 
 A project can also ship minor modes of its own, with instructions and its own command-line tools,
 in its `.sova/minor-modes/` folder. Chats in that project list them in their own group, and none is
@@ -45,9 +45,9 @@ Press it to open the menu. It has these groups:
   switching anything, so you can set Delegate up before you turn it on.
 - **Minor modes**: align, spec, vis, codemode and memory, each with its description. Toggling one
   keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
-  opens its spec writer settings. Memory is listed only in a chat whose runtime can run it; its
-  row has a chevron, **Memory type**, that opens a panel to choose the chat's memory type and
-  summary size.
+  opens Settings → Subagents at its spec writer section. Memory is the last row, listed only in a
+  chat whose runtime can run it; its row has a chevron, **Memory type**, that opens a panel to
+  choose the chat's [memory type and summary size](#memory).
 - **This project · {name}**, only in a chat whose project has [project modes](/docs/modes/project-modes/):
   one row per mode, with its description and, when it applies, its state, such as **Asks before
   turning on** for a mode with tools you haven't approved.
@@ -75,7 +75,8 @@ has (except align in Delegate, which changes one paragraph of Delegate's instruc
 the transcript. This keeps the model provider's prompt cache, so a toggle doesn't re-send the whole
 conversation. Turning **align**, **vis** or **codemode** on or off does change the agent's tools:
 align adds its `align` tool, vis its drawing tools, and codemode its `codemode` tool. A project mode
-with tools adds or removes its own tools the same way.
+with tools adds or removes its own tools the same way. **memory** sends no note at all: it changes
+the history the model is sent from the next turn, and adds its `zoom` and `date` tools.
 
 Each switch is recorded in the session. It draws nothing in the thread, but it shows in the Session
 pane's Changes and as a marker on the Timeline.
@@ -89,8 +90,9 @@ follows it; its first switch pins that chat to its own modes from then on.
 you ask for exactly that:
 
 - **Save as default** in the menu. It makes this chat's major mode, strict flag, minor modes and
-  subagent profile what new sessions start from. Project modes are never part of the default. It reads **Already the default**, and can't be
-  pressed, when all four already match.
+  subagent profile what new sessions start from, with its memory type and size. Project modes are
+  never part of the default. It reads **Already the default**, and can't be pressed, when all of
+  these already match.
 - `/mode default` in a terminal, which saves the current session's mode (not its subagent profile).
 
 A saved default reaches new sessions, in the TUI and in Sova, from their next start. It also
@@ -104,9 +106,9 @@ switch made either way is the same switch.
 
 | Command | What it does |
 |---|---|
-| `/mode` | Opens the command palette at its **Mode** category: the major modes, one row per minor mode, one row per project mode, the alignment viewer, and save as default. It never switches anything by itself |
+| `/mode` | Opens the command palette at its **Mode** category: the major modes, one row per minor mode (memory has none), one row per project mode, the alignment viewer, and save as default. It never switches anything by itself |
 | `/mode normal`, `/mode delegate` | Switch this session's major mode |
-| `/mode align`, `/mode vis on`, `/mode spec off` | Toggle a minor mode, or set it on or off |
+| `/mode align`, `/mode vis on`, `/mode spec off` | Toggle a minor mode, or set it on or off. `/mode memory on` is refused: memory is turned on from a Sova chat's mode menu |
 | `/mode project:<id>`, `/mode project:<id> on`, `/mode project:<id> off` | Toggle one of the project's own [project modes](/docs/modes/project-modes/), or set it on or off |
 | `/mode status` | List this session's modes, the default, its subagent profile and routing, its spec writer, its project modes and its alignments |
 | `/mode default` | Save this session's major mode, strict flag and built-in minor modes as the default for new sessions (never a project mode) |
@@ -119,10 +121,11 @@ You can change the first, and give each minor mode a key of its own, in `~/.pi/a
 
 To start a session in a mode without changing the default, launch pi with `pi --major delegate`
 or `pi --minor align,spec`. A session's own saved mode wins over these flags. `--minor` names only
-built-in modes.
+built-in modes, and drops memory with a warning.
 
-The terminal's status line shows the mode, then `strict` when it's on in Delegate, then each
-minor mode that is on, project modes after the built-in ones.
+The terminal's status line shows the mode, then, in Delegate, any profiles that have fallen back or
+ask, and `strict` when it's on, then each minor mode that is on, project modes after the built-in
+ones, then `writer:fallback` or `writer:ask` while spec's writer is off its first route.
 
 ## What workers get
 
@@ -161,15 +164,45 @@ and every other tool stay, and the agent's instructions read the same either way
 - Sova never sets it: a switch from the menu can't carry it, and project coding sessions never set
   it. Workers are never strict.
 
+## memory
+
+Memory lets a chat outgrow its context. A cheap model, the summarizer, folds each message into a
+one-line summary, and older lines into lines that cover more. The model reads those lines instead of
+the whole history, and opens any of them back down to the original message with its `zoom` tool
+(`date` gives a message's date and time). Each recall shows as a tool row, such as "Recalled
+messages 40–47". The transcript you read never changes, so turning memory off gives the model the
+chat's full history back.
+
+Each chat picks one of two types in the **Memory type** panel:
+
+- **UniiChat**, by Victor Taelin: one chat that never ends. Every turn sends the summary lines of
+  the whole chat before it, then the turn itself. The lines grow to the chat's size, 128 KB by
+  default, then merge down to half of it.
+- **Zoomable compaction**, Sova's: the chat runs as without memory until it would compact. Then the
+  compacted part becomes summary lines the model can open, instead of a one-off summary. Its size is
+  the size of those lines, 32 KB by default.
+
+The type and size are this chat's own, kept while memory is off, and Save as default saves them.
+Turning memory on in a chat that already has messages prepares it in the background ("Preparing
+memory: 120 of 480 messages"); its turns go out as without memory until that's done. The Session
+pane's Memory outline shows the lines the model sees now. Settings → Memory picks the summarizer's
+model, with a fallback.
+
+Only a Sova chat's mode menu turns memory on, whatever the chat's model. A terminal can turn it off
+but not on, a terminal session that starts from a default with memory drops it, and workers and
+coding sessions never get it. The Overseer and each project overseer have a memory switch of their
+own instead, on by default. See [Memory](/docs/modes/memory/).
+
 ## Sessions that choose their own mode
 
 - **The Overseer** is always in normal mode with no minor modes, and no project modes. Its composer has no mode switch:
-  its **Quick Actions** button takes that place, and a typed `/mode` answers "The Overseer is
-  always in normal mode."
-- **A project's coding sessions** start in the mode set on the project page, pinned from their
-  first message. **Automatic**, the default, is normal mode, with spec on when the project has a
-  spec (a `.sova/spec/manifest.json` file). The project overseer can't turn on Delegate unless you
-  allow it on the project page, can't turn on align (nobody answers a coding session's questions),
-  and can't turn spec off while the project's setting has it on. A coding session's mode never names a
-  project mode. You can still switch a coding
-  session yourself from its mode menu, like any chat.
+  its **Quick Actions** button takes that place, with its memory switch just before it, and a
+  typed `/mode` answers "The Overseer is always in normal mode."
+- **A project's coding sessions** start in this computer's default mode and subagent profile,
+  pinned from their first message, so a later change to the default never moves them. A project has
+  no mode setting of its own: its page names the mode its coding sessions start in, and Save as
+  default in any chat's mode menu changes it. Either Overseer can start or message a coding session
+  in any major mode, minor modes (never memory) and subagent profile, for that session only. Neither
+  answers alignment questions: while a session waits on your answers, they can't turn its align off.
+  A coding session's mode never names a project mode, and never sets strict. You can still switch a
+  coding session yourself from its mode menu, like any chat.

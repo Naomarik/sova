@@ -2022,7 +2022,7 @@
         "§design/menu-rows"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ModeMenu.tsx",
         "src/components/MemoryTypePanel.tsx",
@@ -2583,7 +2583,7 @@
     "§chat.transcript/message-actions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/MessageActions.tsx",
         "src/lib/message-reveal.ts",
@@ -2893,7 +2893,7 @@
     "§design.copy-deck/mode-menu": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "about": [
         "§chat/mode-menu"
       ]
@@ -3346,7 +3346,7 @@
     "§chat.playbooks/what-gets-sent": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/playbooks.ts",
         "src/components/PlaybooksDialog.tsx",
@@ -4607,10 +4607,28 @@
         "at": "2026-10-14T17:06Z"
       }
     },
+    "§app.overseer/file-writes": {
+      "kind": "behavior",
+      "requires": [
+        "§app.overseer/tools"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/overseer-file-tools.ts",
+        "server/overseer-deny.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-prompt.md",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-file-tools.test.ts"
+      ]
+    },
     "§app.overseer/hosting": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer.ts",
         "server/chat-manager.ts",
@@ -4820,7 +4838,7 @@
     "§app.overseer/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-deny.ts",
@@ -5365,7 +5383,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -6487,7 +6505,7 @@
     "§app.project-overseer/identity": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/project-overseer.ts",
         "server/project-overseer-store.ts",
@@ -6524,8 +6542,8 @@
         "§chat/images"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
+        "by": "user (go-ahead: fix the spec, docs audit)",
+        "at": "2026-10-15T22:32Z"
       }
     },
     "§app.project-overseer/memory-switch": {
@@ -7024,7 +7042,7 @@
         "§chat.worktrees/entry"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/worktrees/index.ts",
         "pi-config/extensions/worktrees/git.ts",
@@ -8630,7 +8648,7 @@
     "§chat.alignment/session-mark": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/align-state.ts",
         "server/align-state.test.ts",
@@ -11946,7 +11964,7 @@
     "§chat.profiles/model": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "shared/profiles.ts",
         "server/profiles-store.ts",
@@ -11967,7 +11985,7 @@
     "§chat.profiles/picker": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/ProfilePicker.tsx",
         "src/components/ChatView.tsx",
@@ -11975,7 +11993,6 @@
         "src/lib/change-rows.ts",
         "src/lib/api.ts",
         "src/app.css",
-        "src/components/ProfilePlaybookCard.tsx",
         "src/components/ProfileGrid.tsx",
         "server/session-profile-routes.ts",
         "server/profiles-store.ts",
@@ -12143,17 +12160,12 @@
     "§chat.profiles/playbook": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "shared/playbooks.ts",
-        "src/components/ProfilePlaybookCard.tsx",
-        "server/overseer-tools.ts",
-        "src/lib/playbooks.ts",
-        "src/components/ProfilePicker.tsx",
-        "src/components/ChatView.tsx",
-        "src/components/Composer.tsx",
+        "shared/profiles.ts",
         "server/session-profiles-runtime.test.ts",
-        "src/app.css"
+        "server/overseer-tools.ts",
+        "src/components/ProfilePicker.tsx"
       ],
       "requires": [
         "§chat.profiles/projects",

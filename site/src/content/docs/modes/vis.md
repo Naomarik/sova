@@ -83,15 +83,17 @@ Sova's own page:
 - **In the chat**, in the agent's replies.
 - **On shared pages**, where Sova draws every kind but `vis code`. A free-form `vis html` block
   draws there only when the session allows it, and `vis svg` shows as a static image. Shared pages
-  show no warning lines, and a block they can't draw becomes one quiet line.
+  show no Source or Copy and no warning lines, and a block they can't draw becomes one quiet line.
+- **On alignment cards**, with [align](/docs/modes/align/) on and **Visuals** switched on in
+  Settings → Alignment, where the agent can draw a question's wireframe or flow.
 
 ## What the agent gets
 
 With vis on, the agent has a short entry in its instructions: when to draw, and one line per kind.
 Each kind's exact syntax comes from a `vis_guide` tool, which the agent calls before the first
 drawing of a kind in a chat, so a reply that draws nothing carries no drawing grammar. A
-`vis_check` tool lets it test a free-form block before sending it. Both tools come and go with the
-mode.
+`vis_check` tool, in chats Sova runs, lets it test a free-form block before sending it. Both tools
+come and go with the mode, and a chat with align on that started with Visuals has them too.
 
 Turning vis on in the middle of a chat reaches the agent from its next message. Workers don't get
 vis: drawings are for you, and a worker's replies are read by its parent session.

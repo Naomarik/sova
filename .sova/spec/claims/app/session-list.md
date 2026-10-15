@@ -737,6 +737,10 @@ thing it waits on being done.
   Outreach", opening Settings → Outreach, with an **Open Outreach Settings** button under it. The
   head's count includes it, and its title names it ("… and 1 deploy item and WhatsApp sending." /
   "WhatsApp sending waiting on you.").
+- **Not here: a project's own items.** A held act, a conflict to settle, a project whose
+  stakeholder left and a WhatsApp message that wasn't sent belong to a project, not a session: they
+  list in the Organizations region's own Needs you (§app.session-list/organizations), after its
+  session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds).
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
   ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist

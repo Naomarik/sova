@@ -78,11 +78,11 @@ export const askText = (branch, topic, drafts = []) =>
 /** The notice for a landed branch's owner. Drafts left unpromoted are named, with where their copy was kept. */
 export const landedText = (branch, sha, drafts = [], kept = null) =>
   `${branch} is merged into master at ${sha.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.` +
-  (drafts.length ? ` Its spec drafts weren't promoted: ${draftsShown(drafts)}. Promote them now, on a fresh branch from master: copy each draft's folder from ${kept}/ into that worktree's .sova/spec/drafts/, then promote and commit it.` : "");
+  (drafts.length ? ` Its spec drafts ${drafts.some((d) => !d.ids) ? "may not be" : "weren't"} promoted: ${draftsShown(drafts)}. Promote them now, on a fresh branch from master: copy each draft's folder from ${kept}/ into that worktree's .sova/spec/drafts/, then promote and commit it.` : "");
 
-/** Drafts with records not yet promoted, each named with up to four of its § ids. */
+/** Drafts not confirmed promoted, each named with up to four of its § ids, or "status unreadable" (ids null). */
 export const draftsShown = (drafts) =>
-  drafts.map(({ name, ids }) => `${name} (${ids.slice(0, 4).join(", ")}${ids.length > 4 ? `, +${ids.length - 4} more` : ""})`).join("; ");
+  drafts.map(({ name, ids }) => `${name} (${!ids ? "status unreadable" : `${ids.slice(0, 4).join(", ")}${ids.length > 4 ? `, +${ids.length - 4} more` : ""}`})`).join("; ");
 
 /** A topic name as the server's queue_open makes it (shared/topic-message.ts TOPIC_NAME_RE). */
 export const TOPIC_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}-[a-z0-9]{6}$/;
@@ -1185,9 +1185,11 @@ class Round {
   /** Each draft in `tree`, by name, with the ids its status says aren't promoted yet (null: unreadable).
    *  None without a spec or the spec tools. */
   async draftStatuses(tree) {
-    if (!tree || !existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, "sova-spec-draft.mjs"))) return [];
+    if (!tree) return [];
     let drafts = [];
     try { drafts = readdirSync(join(tree, DRAFTS), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch {}
+    // Without a spec or the draft tool no status can be read: each draft is unreadable, never "none".
+    if (!existsSync(join(tree, MANIFEST)) || !existsSync(join(this.specCore, "sova-spec-draft.mjs"))) return drafts.sort().map((name) => ({ name, pending: null }));
     const out = [];
     for (const name of drafts.sort()) {
       const s = await run(process.execPath, [join(this.specCore, "sova-spec-draft.mjs"), "status", name, "--root", tree, "--json"], { cwd: tree, timeoutMs: 120_000 });
@@ -1201,9 +1203,10 @@ class Round {
     return out;
   }
 
-  /** The drafts in `tree` with records not yet promoted, as [{ name, ids }]. */
-  async unpromoted(tree) {
-    return (await this.draftStatuses(tree)).filter((d) => d.pending?.length).map((d) => ({ name: d.name, ids: d.pending }));
+  /** The drafts in `tree` with records not yet promoted, as [{ name, ids }]; with `unreadable`, also
+   *  those whose status can't be read (ids null): every draft not confirmed promoted. */
+  async unpromoted(tree, { unreadable = false } = {}) {
+    return (await this.draftStatuses(tree)).filter((d) => d.pending?.length || (unreadable && d.pending === null)).map((d) => ({ name: d.name, ids: d.pending }));
   }
 
   async land() {
@@ -1278,7 +1281,7 @@ class Round {
       restart ? "A restart is needed: round.mjs restart-check." : "No restart needed: only the build.",
     ];
     // Removing the worktree deletes its drafts (local files): a copy of each unpromoted one is kept first.
-    const drafts = await this.unpromoted(tree);
+    const drafts = await this.unpromoted(tree, { unreadable: true });
     let kept = null;
     let keptWhy = null;
     if (drafts.length) {

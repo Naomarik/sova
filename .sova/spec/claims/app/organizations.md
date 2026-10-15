@@ -395,6 +395,20 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     Requirements), `{n} decisions` (Requirements; its `title` says how many are ready to promote),
     `{n} gaps` (open gap ideas, with " · {n} ideas" for the other open ideas, Requirements) and `{n} to-dos` (open, Overview). A count not read yet
     is left out, never shown as 0.
+- **Shows up at once.** The head, the overseer line's buttons (Run Now, Open Overseer), the count
+  strip, the tabs, every card's frame and heading, and New Coding Session show the moment the page
+  opens; nothing on it waits for another part. Each card and count fills in on its own as its read
+  answers. While a part is still loading it shows placeholder shapes in the design system's
+  skeleton (`.skeleton`, `.skeleton-line`), with no words: the overseer line, each card's body, and
+  a count chip is left out until it is read. A part that can't be read says so in its own words
+  with **Retry** ("Couldn't read the coding sessions.", "Couldn't read the overseer."), and the rest
+  of the page is unaffected. Run Now and Open Overseer (or Start Overseer) act once the overseer's
+  own state has answered, a read that runs no git (§app.project-overseer/coding-worktrees,
+  **Read in two steps**), so they never wait on the coding sessions' branches.
+- **Reopening a project** in the same browser tab shows what that tab last saw of it at once (the
+  overseer line, the coding sessions with their branches, the counts, the cost, the cards), then
+  updates each part in place as its fresh read answers. Nothing of it is kept once the tab closes
+  or reloads, and nothing is written anywhere.
 - **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Cost · Settings, the org page's tab strip
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:

@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { OrgError } from "./org-error";
-import { projectCostAnswer } from "./project-costs";
+import { projectCostLatest } from "./project-costs";
 
 /**
  * A project's cost at API prices (§app.project-costs/card). The operator's main listener only: the
@@ -25,7 +25,8 @@ export function registerProjectCostRoutes(app: Hono<any>): void {
   app.get(
     "/api/projects/:pid/costs",
     handle(async (c) => {
-      const a = await projectCostAnswer(c.req.param("pid") ?? "");
+      // The last count at once, recounted behind it; `?fresh=1` (Refresh Project) waits for a new one.
+      const a = await projectCostLatest(c.req.param("pid") ?? "", { fresh: c.req.query("fresh") === "1" });
       return new Response(new Uint8Array(a.body), { status: a.status, headers: { "Content-Type": "application/json; charset=utf-8", ...NO_STORE } });
     }),
   );

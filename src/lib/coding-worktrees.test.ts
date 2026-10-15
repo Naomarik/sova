@@ -72,20 +72,22 @@ const rec = (over: Partial<CodingSession> = {}): CodingSession => ({
 test("branch gestures stay disabled while a row has no branch facts, and follow git's once they arrive", () => {
   const [before] = codingRows([rec()], [], undefined);
   assert.equal(before!.facts, false);
-  assert.deepEqual(rowGestures(before!), { merge: READING_BRANCH, remove: READING_BRANCH }, "both disabled, saying why");
+  assert.deepEqual(rowGestures(before!, true), { merge: READING_BRANCH, remove: READING_BRANCH }, "both disabled, saying why");
   // A merged row would offer no Merge: until git says so, neither can run.
   const [merged] = codingRows([rec({ mergedAt: "2026-09-27T11:00:00Z" })], [], undefined);
-  assert.deepEqual(rowGestures(merged!), { merge: READING_BRANCH, remove: READING_BRANCH });
+  assert.deepEqual(rowGestures(merged!, true), { merge: READING_BRANCH, remove: READING_BRANCH });
   // Nothing to offer: a row in the root, a removed one.
-  assert.deepEqual(rowGestures(codingRows([rec({ branch: null, later: true })], [], undefined)[0]!), { merge: false, remove: false });
-  assert.deepEqual(rowGestures(codingRows([rec({ removedAt: "2026-09-27T11:00:00Z" })], [], undefined)[0]!), { merge: false, remove: false });
+  assert.deepEqual(rowGestures(codingRows([rec({ branch: null, later: true })], [], undefined)[0]!, true), { merge: false, remove: false });
+  assert.deepEqual(rowGestures(codingRows([rec({ removedAt: "2026-09-27T11:00:00Z" })], [], undefined)[0]!, true), { merge: false, remove: false });
   // The facts arrive: git's gates.
   const [after] = codingRows([rec()], [], [wt()]);
   assert.equal(after!.facts, true);
-  assert.deepEqual(rowGestures(after!), { merge: null, remove: null });
-  assert.deepEqual(rowGestures(codingRows([rec()], [], [wt({ state: "merged", merged: true })])[0]!), { merge: false, remove: null });
+  assert.deepEqual(rowGestures(after!, true), { merge: null, remove: null });
+  // The same facts remembered from an earlier visit, before this page's own branch read: shown, never acted on.
+  assert.deepEqual(rowGestures(after!, false), { merge: READING_BRANCH, remove: READING_BRANCH });
+  assert.deepEqual(rowGestures(codingRows([rec()], [], [wt({ state: "merged", merged: true })])[0]!, true), { merge: false, remove: null });
   // The recorded row's working state is the fresher one.
-  assert.deepEqual(rowGestures(codingRows([rec({ running: true })], [], [wt()])[0]!), { merge: "Session working", remove: "Session working" });
+  assert.deepEqual(rowGestures(codingRows([rec({ running: true })], [], [wt()])[0]!, true), { merge: "Session working", remove: "Session working" });
 });
 
 test("rows: the session list's before any read, the recorded ones after, git's facts merged in by session", () => {

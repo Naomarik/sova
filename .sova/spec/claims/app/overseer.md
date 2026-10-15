@@ -69,15 +69,17 @@ are atomic tmp+rename.
   (§app.overseer/todos), never a todo's text.
 - **Fixed at opening, live through the run note.** The prompt is rendered with the values as they
   were when the conversation opened (the time it opened, the notes, the limits, the ideas table of
-  contents, the todos counts and the extra system prompt) and stays byte for byte the same for the
+  contents, the todos counts, the extra system prompt and the form of its id rule, which follows its
+  memory switch, §app.overseer/verify-first) and stays byte for byte the same for the
   whole conversation, across runs, runtimes and server restarts, so the provider's cache holds and a
   Claude Code chat never restarts for it. The opening values are kept in the first run note's
-  details on the branch. The notes, the limits, the ideas table of contents, the todos counts and the
-  extra system prompt are still read again at the start of every run: when one differs from what the
+  details on the branch; a value the prompt gained after a conversation opened takes, for that
+  conversation, its value when its runtime opened. The notes, the limits, the ideas table of
+  contents, the todos counts, the extra system prompt and the id rule's form are still read again at the start of every run: when one differs from what the
   Overseer was last told (the prompt's opening text, or the newest run note since the last compaction
   that gave it), the run note (§app.overseer/run-note) gives its whole current text, which replaces
   the prompt's, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a
-  Settings save reaches the Overseer from its next run (the next message, brief or wake-up), with no
+  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up), with no
   `/clear`. A run an extension's message starts (an `/explain` result, a worker's report) has no run
   note and gets them at the next run that has one. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
@@ -630,7 +632,8 @@ session is on which branch survives a compaction and a restart:
   and the kind of the last brief that named it and when. A line before the rows says which sessions
   these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
   one with `sova_session` before saying what it is doing.
-- **Memory first.** While the Overseer's memory is on (§chat.memory/overseer), every run note adds,
+- **Memory first.** While the Overseer's memory is on (§chat.memory/overseer: the switch in force,
+  on when never set, the one its `zoom` and `date` tools follow), every run note adds,
   after the sessions in play (alone when none is in play) and before the cards: "Any other session
   or fact this chat has seen: zoom its line down to the message (full ids, exact words) before any
   other tool." With memory off it is left out: `zoom` is not among its tools then.
@@ -1309,10 +1312,14 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
   `sova_attention` in the same turn, and drop or replace a card that no longer applies before
   listing cards.
 - **A brief is a snapshot** of when it was sent.
-- **Ids are copied** verbatim from a tool's output in the same turn (a `zoom` result counts), never
-  typed, shortened or pieced together. A summary line's short id is followed down, with `zoom`, to
-  the message that has it whole; `sova_list_sessions` searches only for a session memory never
-  names.
+- **Ids are copied** verbatim from a tool's output in the same turn, never typed. The rule has two
+  forms, by the Overseer's memory switch in force (§chat.memory/overseer, on when never set):
+  with memory on, a `zoom` result counts as a source, a summary line's short id is followed down
+  with `zoom` to the message that has it whole, and `sova_list_sessions` searches only for a
+  session memory never names; with memory off, it names `sova_list_sessions`, `sova_attention`
+  and `sova_session` as the sources and, when unsure, a `sova_list_sessions` search first, and
+  never names `zoom`. The form is an opening value of the prompt, and a switch change reaches the
+  next run as that rule's new text under the run note's `[changed]` (§app.overseer/hosting).
 - **Checks are reported as said.** "Tests pass" from a session is relayed as what the session
   says, unless `sova_session` shows a check that passed after the worktree's newest commit.
 - **A promise has a trigger.** Every "I'll …" is backed in the same turn by something that will

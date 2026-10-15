@@ -924,7 +924,11 @@
         "src/lib/model-policy-draft.ts",
         "src/lib/settings-draft.ts",
         "src/lib/settings-draft.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T04:52Z"
+      }
     },
     "§app.settings-dialog/modes": {
       "kind": "behavior",
@@ -938,7 +942,11 @@
         "src/components/SettingsDialog.tsx",
         "src/components/SubagentProfilesSettings.tsx",
         "server/subagent-profiles.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T04:52Z"
+      }
     },
     "§app.settings-dialog/one-height": {
       "kind": "behavior",
@@ -1241,7 +1249,11 @@
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
         "src/lib/settings-nav.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T04:52Z"
+      }
     },
     "§app/shell": {
       "kind": "surface",
@@ -5635,7 +5647,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T15:54Z"
+        "at": "2026-10-15T04:52Z"
       }
     },
     "§design.copy-deck/settings-experimental": {
@@ -11279,7 +11291,11 @@
       "requires": [
         "§app.provider-limits/file",
         "§app.settings-dialog/models"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T04:52Z"
+      }
     },
     "§app.provider-limits/stale": {
       "kind": "behavior",
@@ -14372,7 +14388,11 @@
         "src/lib/subagent-editor.test.ts",
         "src/components/WorkerSlotRow.tsx",
         "src/lib/team-form.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T04:52Z"
+      }
     },
     "§chat/subagent-profiles": {
       "kind": "surface",

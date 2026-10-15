@@ -201,7 +201,7 @@ profile in its mode menu; new chats start on the default."
   from discovery, a changed worker its backend can't run is refused, one that can't be checked or
   that the policy denies saves with a note. The dialog's Save Changes saves the library; unsaved
   edits hold a close. Going back keeps them: the list then offers only that profile's Edit, so
-  another profile can't be opened over them, and Discard Changes or Save Changes frees the rest.
+  another profile can't be opened over them, and Save Changes frees the rest (Cancel discards them and closes the dialog).
 - A save reaches every chat on that profile from its next turn or team action.
 
 ## §chat.subagent-profiles/replaced — When another device's copy changed the library

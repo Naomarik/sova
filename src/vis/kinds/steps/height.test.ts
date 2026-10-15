@@ -39,12 +39,12 @@ const rowsOf = (n: number) => spec(Array.from({ length: n }, (_, i) => `R${i} | 
 test("steps layout: side by side for 2–4 rows without lanes at rows × 180px, else grid above 402px, else the list", () => {
   const cases: [StepsSpec, number, StepsLayout][] = [
     // Both sides of rows × 180.
-    [rowsOf(2), 360, "side"],
-    [rowsOf(2), 359, "rail"],
-    [rowsOf(3), 540, "side"],
-    [rowsOf(3), 539, "grid"],
-    [rowsOf(4), 720, "side"],
-    [rowsOf(4), 719, "grid"],
+    [rowsOf(2), 368, "side"],
+    [rowsOf(2), 367, "rail"],
+    [rowsOf(3), 556, "side"],
+    [rowsOf(3), 555, "grid"],
+    [rowsOf(4), 744, "side"],
+    [rowsOf(4), 743, "grid"],
     // Both sides of 402, where side by side doesn't apply.
     [rowsOf(3), STEPS_NARROW + 1, "grid"],
     [rowsOf(3), STEPS_NARROW, "rail"],
@@ -131,10 +131,10 @@ test("steps height: deterministic, and never grows as the pane widens within a l
     [SCENARIOS, 296, STEPS_NARROW],
     [SCENARIOS, STEPS_NARROW + 1, 1100],
     [REPRO, 296, STEPS_NARROW],
-    [REPRO, STEPS_NARROW + 1, 539],
-    [REPRO, 540, 1100],
-    [GUIDE, 296, 359],
-    [GUIDE, 360, 1100],
+    [REPRO, STEPS_NARROW + 1, 555],
+    [REPRO, 556, 1100],
+    [GUIDE, 296, 367],
+    [GUIDE, 368, 1100],
   ];
   for (const [s, from, to] of ranges) {
     let last = Infinity;
@@ -156,7 +156,7 @@ test("steps height: fixtures at 1100, 720 and 380 (content widths 1076, 696, 356
   const repro = at(REPRO);
   assert.deepEqual(repro.map(([l]) => l), ["side", "side", "rail"]);
   assert.equal(repro[0]![1], 29 + 5 * 42 + 9);
-  // GUIDE: 2 rows need 360px side by side, so 356 takes the list.
+  // GUIDE: 2 rows need 368px side by side (2 × 180 plus the gap), so 356 takes the list.
   assert.deepEqual(at(GUIDE).map(([l]) => l), ["side", "side", "rail"]);
   assert.equal(at(GUIDE)[0]![1], 29 + 4 * 42 + 28 + 9);
   assert.deepEqual(at(SCENARIOS).map(([l]) => l), ["grid", "grid", "rail"]);

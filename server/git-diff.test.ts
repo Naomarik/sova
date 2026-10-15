@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { WorktreeMergeDetails } from "../pi-config/extensions/worktrees/state.ts";
 import type { DiffScope } from "../shared/protocol";
+import { agentRoot } from "./state-root";
+import { knownRoots, sessionFolderCandidates } from "../pi-config/extensions/show-changes/folders.ts";
 import { DiffError, execGitRaw, GitDiffs, knownFoldersOf, MAX_UNTRACKED_READ, PATCH_CAP, parseNumstatZ, parseRawZ, quotePath, scopeFromQuery, splitPatch } from "./git-diff";
 
 const git = (cwd: string, ...args: string[]) =>
@@ -539,6 +541,33 @@ describe("session folders", () => {
     const k = knownFoldersOf(text);
     assert.deepEqual(k.roots.sort(), ["/w/main", "/w/t0", "/w/t1"]);
     assert.equal(k.trees[0]!.baseBranch, "master");
+  });
+
+  it("the show_changes tool's roots are the viewer's, from the same session file, case by case", () => {
+    // The tool reads its own session's entries (pi-config/extensions/show-changes/folders.ts); the
+    // viewer reads the file through the harness reader. Both end in folders.ts's knownRoots, so a
+    // card the tool opens is a card the viewer opens; this pins the two readings of the file.
+    const tree = (path: string, status: string) => ({ path, branch: "feat/x", base: "abc", status, session: "s", how: "created", at: 1 });
+    const merge = (path: string) => ({ version: 1, path, branch: "feat/m", target: "master", sha: "a".repeat(40), commits: 1, added: 1, removed: 0, fastForward: false, how: "tool" });
+    const manifest = (workerId: string, cwd: string) => ({ type: "custom", customType: "subagents-worker-manifest", data: { v: 1, kind: "worker-manifest", workerId, backend: "pi", at: 1, spec: { cwd } } });
+    const entries: unknown[] = [
+      { type: "custom", customType: "worktrees", data: { version: 1, trees: [tree("/w/dropped", "dropped")] } },
+      manifest("w1", "/w/worker"),
+      { type: "custom", customType: "worktrees", data: { version: 1, trees: [tree("/w/active/", "active"), { ...tree("/w/merged-tree", "merged"), merge: { target: "master", sha: "b".repeat(40), at: 2, how: "tool" } }] } },
+      { type: "custom", customType: "worktrees", data: { version: 1, trees: [{ path: "/w/malformed" }] } },
+      { type: "custom_message", customType: "worktree-merge", content: "m", display: true, details: merge("/w/merged") },
+      { type: "custom_message", customType: "worktree-merge", content: "m", display: true, details: merge("relative/merged") },
+      // A merge card inside a message is not a merge record; a mention in text names nothing.
+      { type: "message", message: { role: "custom", customType: "worktree-merge", content: "m", display: true, details: merge("/w/in-message"), timestamp: 1 } },
+      { type: "message", message: { role: "user", content: "see /w/mentioned worktree" } },
+      manifest("w2", join(agentRoot(), "sova", "targets", "box", "repo")),
+      manifest("w3", "/w/main"),
+    ];
+    const text = [JSON.stringify({ type: "session", version: 3, id: "s", cwd: "/w/main" }), ...entries.map((e) => JSON.stringify(e))].join("\n");
+    const viewer = knownFoldersOf(text).roots;
+    const tool = knownRoots(sessionFolderCandidates("/w/main", entries), agentRoot());
+    assert.deepEqual(tool, viewer);
+    assert.deepEqual(viewer, ["/w/main", "/w/worker", "/w/dropped", "/w/active", "/w/merged-tree", "/w/merged"]);
   });
 });
 

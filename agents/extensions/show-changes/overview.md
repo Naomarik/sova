@@ -10,7 +10,7 @@ commit, optionally as agent-written steps. The browser imports its details check
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/show-changes/README.md).
-- Tests: `cd pi-config/extensions/show-changes && node --test details.test.ts git.test.ts coverage.test.ts && node tests/run.mjs`.
+- Tests: `cd pi-config/extensions/show-changes && node --test details.test.ts git.test.ts coverage.test.ts folders.test.ts && node tests/run.mjs`.
 
 ## What Sova relies on
 
@@ -26,12 +26,20 @@ commit, optionally as agent-written steps. The browser imports its details check
 - `git.ts` and `hunks.ts` take the worktree base and the limits from worktrees' `reviewBase` and `REVIEW_LIMITS`
   (see [worktrees](../worktrees/overview.md)), the rule and limits Sova's diff endpoint uses too, so a card never
   opens a viewer that refuses it or shows less.
+- `folders.ts` (node builtins, `../worktrees/state.ts`, `../subagents/worker-transcript.ts`, `../remote/argv.ts`):
+  the one rule for which folders the changes viewer opens for a session (`knownRoots`, `folderKnown`).
+  `server/git-diff.ts` imports it for its folder check; the tool refuses any other folder with the same rule, so it
+  never reports a card the viewer refuses. Each side reads the session its own way (the server through the harness
+  reader, the tool from pi's entries via `sessionFolderCandidates`); `server/git-diff.test.ts` "the show_changes
+  tool's roots are the viewer's" pins the two readings to one result.
 - Saved details may carry a step's old `buildsOn`: the tool no longer takes it, but `normalizeShowChangesDetails`
   keeps accepting it forever so old cards open; no reader shows it.
 
 ## When you change it, also update
 
 - The details shape: `normalizeShowChangesDetails`, the README, and the web's reader in the same branch.
+- Which folders the viewer opens: `folders.ts` only, never a copy; a new kind of root needs both readings of the
+  session (`knownFoldersOf` in `server/git-diff.ts`, `sessionFolderCandidates` here) and the pin test's cases.
 - The review base or limits: change `reviewBase`/`REVIEW_LIMITS` in `../worktrees/git.ts`, never a copy here.
 - Hunk matching in `coverage.ts` or `src/lib/changes-steps.ts`: the other one, then run
   `pnpm test -- src/lib/show-changes-coverage.test.ts`.

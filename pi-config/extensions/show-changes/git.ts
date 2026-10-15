@@ -8,7 +8,8 @@ import { execFile } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { REVIEW_LIMITS, reviewBase } from "../worktrees/git.ts";
-import { canonical, isWithin, normalizeActive, normalizeMergeDetails, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../worktrees/state.ts";
+import { canonical } from "../worktrees/state.ts";
+import { folderKnown } from "./folders.ts";
 import { isSha, type ShowChangesScope } from "./details.ts";
 import { ShowChangesError, type ShowChangesRequest } from "./input.ts";
 
@@ -112,30 +113,10 @@ export function pickDir(req: Pick<ShowChangesRequest, "scope" | "worktree">, cwd
 	return { dir: cwd };
 }
 
-/**
- * The folders Sova's viewer opens for this session (server/git-diff.ts `knownFoldersOf`): the
- * session's folder, every worktree any `worktrees` entry in the file names (any status), and every
- * merge card's folder. Its workers' folders are left out: the subagents gate starts a worker only
- * inside the session's folder or an active tracked worktree, which this list already holds.
- */
-export function knownFolders(cwd: string, entries: readonly unknown[]): string[] {
-	const roots = [cwd];
-	for (const raw of entries) {
-		const e = raw as { type?: unknown; customType?: unknown; data?: unknown; details?: unknown } | null;
-		if (e?.type === "custom" && e.customType === WORKTREES_ENTRY_TYPE) for (const t of normalizeActive(e.data)?.trees ?? []) roots.push(t.path);
-		else if (e?.type === "custom_message" && e.customType === WORKTREE_MERGE_MESSAGE) {
-			const m = normalizeMergeDetails(e.details);
-			if (m) roots.push(m.path);
-		}
-	}
-	return [...new Set(roots)];
-}
-
-/** Why the viewer would refuse `dir` (a folder outside every known one), or undefined. */
+/** Why the viewer would refuse `dir` (a folder at or below none of `roots`, folders.ts's rule), or undefined. */
 export function unknownFolderRefusal(dir: string, roots: readonly string[]): string | undefined {
-	const at = canonical(dir);
-	if (roots.some((r) => isWithin(at, canonical(r)))) return undefined;
-	return `${at} is outside this session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the worktree tool) and show that`;
+	if (folderKnown(dir, roots)) return undefined;
+	return `${canonical(dir)} is outside this session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the worktree tool) and show that`;
 }
 
 /** Resolve the request's scope against `dir`: the repository's top level and full shas. */

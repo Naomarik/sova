@@ -9,14 +9,15 @@
  * Local sessions only: a session whose tools run on a remote target has no local repository.
  */
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, getAgentDir, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { activeTrees, restoreActive } from "../worktrees/state.ts";
 import { normalizeShowChangesDetails, scopeLine, SHOW_CHANGES_LIMITS, SHOW_CHANGES_TOOL, type ShowChangesDetails } from "./details.ts";
 import { coverageRefusal, placeSteps } from "./coverage.ts";
 import { REVIEW_LIMITS } from "../worktrees/git.ts";
-import { changedFiles, type Git, inPaths, knownFolders, type KnownTree, pickDir, resolveScope, runGit, unknownFolderRefusal } from "./git.ts";
+import { knownRoots, sessionFolderCandidates } from "./folders.ts";
+import { changedFiles, type Git, inPaths, type KnownTree, pickDir, resolveScope, runGit, unknownFolderRefusal } from "./git.ts";
 import { readHunks } from "./hunks.ts";
 import { checkShowChangesParams, ShowChangesError } from "./input.ts";
 
@@ -74,6 +75,8 @@ export const SHOW_CHANGES_PARAMETERS = Type.Object(
 
 export interface ShowChangesOptions {
 	git?: Git;
+	/** pi's agent dir (default getAgentDir()), where remote targets' placeholders live. */
+	agentDir?: () => string;
 }
 
 /** The session's active tracked worktrees (the worktrees extension's entry on this branch). */
@@ -90,13 +93,23 @@ function knownTrees(ctx: ExtensionContext): KnownTree[] {
 	}
 }
 
-/** Every entry in the session file, as the viewer reads it (all branches), or the branch alone. */
-function sessionEntries(ctx: ExtensionContext): readonly unknown[] {
+/**
+ * The folders the viewer opens for this session (folders.ts, the rule Sova's diff endpoint uses):
+ * read from the session header's cwd and every entry in the file, all branches, as the viewer
+ * reads the file. A remote target's local placeholder (<agent dir>/sova/targets/…) is never one.
+ */
+function sessionRoots(ctx: ExtensionContext, agentDir: string): string[] {
+	const sm = ctx.sessionManager;
+	let cwd: unknown = ctx.cwd;
+	let entries: readonly unknown[] = [];
 	try {
-		return ctx.sessionManager.getEntries?.() ?? ctx.sessionManager.getBranch();
+		const header = sm.getHeader?.();
+		if (header) cwd = header.cwd;
+		entries = sm.getEntries?.() ?? sm.getBranch();
 	} catch {
-		return [];
+		// an unreadable session: its folder alone
 	}
+	return knownRoots(sessionFolderCandidates(cwd, entries), agentDir);
 }
 
 /** The reply the model reads: what opened, the files, and how many hunks the steps placed. */
@@ -131,6 +144,7 @@ export function renderShowChangesResult(result: { content?: unknown; details?: u
 
 export default function showChanges(pi: ExtensionAPI, options: ShowChangesOptions = {}) {
 	const git = options.git ?? runGit;
+	const agentDir = options.agentDir ?? getAgentDir;
 	let remote = false;
 
 	pi.events?.on(REMOTE_SESSION_EVENT, () => {
@@ -156,7 +170,7 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 				const req = checkShowChangesParams(params);
 				const { dir, tree } = pickDir(req, ctx.cwd, knownTrees(ctx));
 				// The viewer opens only folders the session knows: refuse any other rather than open a card it would refuse.
-				const unknown = unknownFolderRefusal(dir, knownFolders(ctx.cwd, sessionEntries(ctx)));
+				const unknown = unknownFolderRefusal(dir, sessionRoots(ctx, agentDir()));
 				if (unknown) throw new ShowChangesError(unknown);
 				const scope = await resolveScope(git, req, dir, tree);
 				const all = await changedFiles(git, scope);

@@ -46,6 +46,10 @@ export interface ModeControl {
   /** Resolves once this chat is open: a chat closed while quiet wakes for what the menu asks of it
       (§chat.transcript/instant-open); rejects when it doesn't start. Absent: always open. */
   ready?: () => Promise<void>;
+  /** A switch is on its way to this chat: a chat closed while quiet starts for it, and the server
+      opens it for the request itself, so the request never waits for this view
+      (§chat.transcript/send-while-starting). Absent: nothing to start. */
+  wake?: () => void;
 }
 
 /** radio: the major mode; check: a minor mode; project: one of this project's own minor modes;
@@ -113,6 +117,8 @@ const memoryOf = (m: ModeInfo): ChatMemoryChoice | null => (m.memory ? { type: m
 export function ModeMenu(props: { control: ModeControl }) {
   /** This chat open for what the menu asks of it (ModeControl.ready). */
   const chatReady = () => props.control.ready?.() ?? Promise.resolve();
+  /** A write goes now: the server opens the chat for it; the view connects meanwhile. */
+  const wakeChat = () => props.control.wake?.();
   const paneId = usePaneId();
   /** A peer session's profiles and library are its host's. */
   const host = useHostScope();
@@ -261,7 +267,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setMemError(null);
     try {
-      await chatReady();
+      wakeChat();
       setInfo(await postMode({ memory: patch }, props.control.path));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -363,7 +369,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
-      await chatReady();
+      wakeChat();
       setInfo(await postMode(patch, props.control.path)); // this chat's "mode" message follows over the socket
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -449,7 +455,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setSaving(true);
     setError(null);
     try {
-      await chatReady();
+      wakeChat();
       const written = await saveModeDefault(props.control.path); // the file as written, not this chat's copy
       setDefaultMode(shownOf(written));
       setDefaultMemory(memoryOf(written));
@@ -470,7 +476,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     setBusy(true);
     setError(null);
     try {
-      await chatReady();
+      wakeChat();
       const r = await pickSubagentProfile(props.control.path, id, host());
       setProfiles(r);
       closePicker();

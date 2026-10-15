@@ -23,6 +23,12 @@ import { wireOf } from "./wire-rows";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
 import { HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
 import { unsentRefusal } from "../shared/chat-runtime";
+import { HeldSends, type Unsent } from "../shared/held-sends";
+import { putBackDraft } from "./drafts";
+
+/** How long a chat socket that closed stays in its chat to hear what became of the messages it
+    sent (§chat.transcript/send-while-starting): taken, or refused and put back as the draft. */
+export const GONE_LISTEN_MS = 120_000;
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
@@ -56,19 +62,49 @@ export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefine
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string): Promise<void> {
+  const id = idOf(path);
+  // What this socket sent and the chat hasn't answered yet (§chat.transcript/send-while-starting).
+  // Once the socket is gone, a refusal can't reach any tab: its text goes back as the draft.
+  const held = new HeldSends();
+  let gone = false;
+  const heard = (back: Unsent[]) => {
+    if (gone && back.length) putBackDraft(id, back.map((u) => u.text));
+    if (gone && held.size === 0) leave();
+  };
   const client: ChatClient = {
-    send: (msg) => sendJson(ws, msg),
-    sendRaw: (json) => sendRaw(ws, json),
+    send: (msg) => {
+      if (held.listening) heard(held.heard(msg));
+      sendJson(ws, msg);
+    },
+    sendRaw: (json) => {
+      if (held.listening) heard(held.heardJson(json));
+      sendRaw(ws, json);
+    },
     close: (code, reason) => ws.close(code, reason),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
     ...(have ? { have } : {}),
   };
-  // Buffer messages that arrive while the runtime is still opening.
+  // Buffer messages that arrive while the runtime is still opening. They run, in order, once it
+  // is open, even when the socket has closed by then (a tab that left or reloaded).
   const early: ChatClientMessage[] = [];
   let chat: Awaited<ReturnType<typeof acquireChatHandle>> | null = null;
-  let gone = false;
+  /** Out of the chat for good: at the socket's close, or once what it sent is answered. */
+  let left = false;
+  let listen: NodeJS.Timeout | undefined;
+  const leave = () => {
+    if (left) return;
+    left = true;
+    clearTimeout(listen);
+    chat?.detach(client);
+  };
+  /** The socket closed with sends unanswered: stay to hear them, for a while. */
+  const stayToHear = () => {
+    if (held.size === 0) return leave();
+    listen = setTimeout(leave, GONE_LISTEN_MS);
+    listen.unref?.();
+  };
   ws.on("message", (data) => {
     let msg: ChatClientMessage;
     try {
@@ -78,18 +114,18 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
+    held.sent(msg);
     if (chat) chat.clientMessage(client, msg);
     else early.push(msg);
   });
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
   // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
-  const id = idOf(path);
   trackViewer(id, 1);
   nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
   ws.on("close", () => {
     gone = true;
     trackViewer(id, -1);
-    chat?.detach(client);
+    if (chat) stayToHear();
   });
 
   try {
@@ -101,18 +137,24 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     const busy = err instanceof BusyError;
     const config = err instanceof ConfigError;
     const code = busy ? err.code : config ? "config" : "internal";
-    // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer.
-    for (const refusal of heldRefusals(early.splice(0))) client.send(refusal);
+    // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer,
+    // or, with no tab left to hear it, to the session's saved draft.
+    const refusals = heldRefusals(early.splice(0));
+    if (gone) putBackDraft(id, held.takeAll().map((u) => u.text));
+    else for (const refusal of refusals) client.send(refusal);
     client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
     ws.close(busy ? 4409 : config ? 4422 : 4500, busy ? "busy" : config ? "config" : "open failed");
     return;
   }
-  if (gone) {
-    chat.detach(client); // triggers idle disposal if nobody else is attached
+  if (gone && early.length === 0) {
+    chat.detach(client);
     return;
   }
+  // Gone or not, the chat takes what the socket sent while it opened, in order, and this socket
+  // stays in it until each send is answered (stayToHear).
   chat.attach(client);
   for (const msg of early.splice(0)) chat.clientMessage(client, msg);
+  if (gone) stayToHear();
 }
 
 /** The refusals for messages a pane sent while its chat was opening, when it didn't open. */

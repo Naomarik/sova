@@ -6,6 +6,7 @@ import { fetchDraft, putDraft } from "./api";
 import type { SessionSummary, UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
+import { registerPutBack } from "./chat-outbox";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
 import { readKey, writeKey } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
@@ -194,6 +195,12 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
   syncPresence(path);
   return local();
 }
+
+// A message its chat refused after its view closed (lib/chat-outbox): back in that chat's draft,
+// ahead of what the draft holds, quietly (§chat.transcript/send-while-starting).
+registerPutBack((path, texts) => {
+  void loadDraft(path).then((d) => setDraftText(path, [...texts, ...(d.text.trim() ? [d.text] : [])].join("\n\n")));
+});
 
 /** Sends every pending draft save now. */
 export function flushDrafts(): void {

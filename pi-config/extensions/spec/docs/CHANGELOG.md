@@ -516,6 +516,20 @@ would list master's changes instead.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
+### 2026-10-16
+
+- **Promote before calling the branch ready.**
+  - Commit: the one titled "spec mode and merge round: promote before landing", branch
+    `feat/promote-before-landing`; not on master yet: the merge round folds it in.
+  - Changed:
+    - `mode/spec-mode.md` "Before finishing": "Promote on your own branch before you call it ready to
+      land; nothing at landing promotes for you." It names no project's merge process (constraint
+      1); the guide's word cap 868 → 886;
+    - the site docs (`modes/spec.md`) say the same.
+  - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check reworded. Base: 42742be6.
+  - Goal 4 (code and spec agree after building). Not measured with the replay harness: the case is a
+    session (a4b4a865) that left two drafts unpromoted, believing landing would promote them.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -639,3 +653,6 @@ The tools are Node standard library only. Nothing is installed.
    - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
+10. **The 2026-10-16 mode text.** "Before finishing" in `mode/spec-mode.md` now tells the session to
+    promote on its own branch before it calls that branch ready to land. A project that points its
+    agents at `mode/spec-mode.md` gets it with this upgrade.

@@ -31,7 +31,7 @@ const LIST_FILES = 40;
 
 export const SHOW_CHANGES_DESCRIPTION = `Open Sova's changes viewer for the user on git changes: a file tree, the change as numbered steps, one diff at a time. Read-only.
 
-When the diff has more than one hunk, every hunk must be in exactly one step, or the call is refused, opening nothing, with the hunks still to place. Read the diff first with plain \`git diff\` or \`git show\` (default context, never -U0): a hunk's numbers are in its @@ -a,b +c,d @@ header.
+When the diff has more than one hunk, every hunk must be in exactly one step, or the call is refused, opening nothing, with the hunks still to place. Read the diff first with plain \`git diff\` (for a branch, \`git diff master...<branch>\`, three dots) or \`git show\` (default context, never -U0): a hunk's numbers are in its @@ -a,b +c,d @@ header.
 
 Example: {"scope": "worktree", "title": "Rate limits on the export API", "steps": [{"title": "Token bucket", "why": "one limiter shared by every route", "hunks": [{"path": "server/limit.ts"}]}, {"title": "Apply it to /export", "hunks": [{"path": "server/routes.ts", "newStart": 120}, {"path": "server/routes.test.ts"}]}]}`;
 

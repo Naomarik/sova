@@ -105,6 +105,7 @@ import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
+import { overseerMemoryOf } from "./memory/settings";
 import { playbookReviews } from "./projects/playbook-review";
 import { deployAttentionItems } from "./project-services/deploy-attention";
 
@@ -762,7 +763,7 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
 export async function runNoteMessage(branch: readonly HEntry[], now = new Date(), prompt: { changed?: string; opening?: OpeningDetails } = {}): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
   const cardsText = cardsNote(cardsOnBranch(branch), false, sessionActivity());
   // The switch its recall tools follow (§chat.memory/overseer): zoom is named only while it has it.
-  const memory = readOverseerSettings().memory?.on === true;
+  const memory = overseerMemoryOn();
   let note: { content: string; details: unknown };
   try {
     const prompted = touchedHere();
@@ -878,10 +879,34 @@ export function countRunning(paths: Iterable<string>, isRunning: (path: string) 
 }
 
 
+/** The Overseer's memory switch in force (§chat.memory/overseer): on when never set. The one its
+    recall tools follow (chat-manager's overseerMemoryNow), read for the prompt and the run note. */
+export const overseerMemoryOn = (settings: OverseerSettings = readOverseerSettings()): boolean => overseerMemoryOf(settings.memory).on;
+
+/** The prompt's id rule with memory on (§app.overseer/verify-first): zoom output is a source, and a
+    search only for a session memory never names. Wording chosen by an A/B evaluation of recall. */
+export const ID_RULE_MEMORY = `- **Ids are copied, never typed.** Take a session id verbatim from a tool's output in this turn,
+  \`zoom\` included. Never type, shorten, complete or piece one together. A summary line's short id
+  points to the message that has it whole: zoom down to it. Search with \`sova_list_sessions\` only
+  when memory never names the session. A hidden \`[ids]\` note naming an id from your last reply as
+  no session here means that link was wrong: correct it at the start of your next reply, with the
+  id copied from a tool.`;
+
+/** The prompt's id rule with memory off: no zoom to name, so a search when unsure. */
+export const ID_RULE_PLAIN = `- **Ids are copied, never typed.** Take a session id verbatim from a tool's output in this turn
+  (\`sova_list_sessions\`, \`sova_attention\`, \`sova_session\`). Never type, shorten or piece one
+  together from memory; when unsure, \`sova_list_sessions\` with a query first. A hidden \`[ids]\`
+  note naming an id from your last reply as no session here means that link was wrong: correct it
+  at the start of your next reply, with the id copied from a tool.`;
+
+/** The id rule's form for the memory switch in force. */
+export const idRule = (settings: OverseerSettings): string => (overseerMemoryOn(settings) ? ID_RULE_MEMORY : ID_RULE_PLAIN);
+
 /**
  * The values the Overseer's prompt is rendered from, as they are now: the time, the standing notes,
  * the ideas' table of contents, the todos' counts, the caps and `EXTRA` (the user's extra
- * instructions as their prompt part, redacted; empty when none). A conversation keeps the values it
+ * instructions as their prompt part, redacted; empty when none) and `IDS`, the id rule's form for the
+ * memory switch (§app.overseer/verify-first). A conversation keeps the values it
  * opened with (overseer-opening.ts); what changed since is told in its run note.
  */
 export function overseerValues(settings: OverseerSettings, now = new Date(), redactor: () => Redactor = serverRedactor): Record<string, string> {
@@ -894,6 +919,7 @@ export function overseerValues(settings: OverseerSettings, now = new Date(), red
     TODOS: promptTodos(readTodos()),
     CAPS: `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started; at most ${c.concurrentSessions} sessions you started running at once`,
     EXTRA: extraInstructions(settings.extraSystemPrompt, redactor).join(""),
+    IDS: idRule(settings),
   };
 }
 
@@ -905,6 +931,7 @@ export function overseerLiveParts(values: Readonly<Record<string, string>>): Liv
     { key: "IDEAS", title: "Ideas backlog (its table of contents)", text: v("IDEAS") },
     { key: "TODOS", title: "Todos checklist", text: v("TODOS") },
     { key: "CAPS", title: "Limits per message from the user", text: v("CAPS") },
+    { key: "IDS", title: "Ids are copied, never typed", text: v("IDS") },
     { key: "EXTRA", title: "The user's extra instructions for you", text: v("EXTRA").replace(/^# The user's extra instructions for you\n\n/, "") },
   ];
 }
@@ -920,6 +947,7 @@ export function renderOverseerPrompt(
   values: Readonly<Record<string, string>> = overseerValues(settings, now, redactor),
 ): string {
   return template
+    .replaceAll("{{IDS}}", values.IDS ?? idRule(settings))
     .replaceAll("{{TOOLS}}", toolCatalogue(tools))
     .replaceAll("{{IDEAS}}", values.IDEAS ?? "")
     .replaceAll("{{TODOS}}", values.TODOS ?? "")
@@ -959,6 +987,9 @@ class LivePrompt {
   private base: string[] = [];
   /** The conversation's opening values, once a run has read them from its branch or set them. */
   private opened?: Record<string, string>;
+  /** The values when this runtime opened: a value the prompt gained after the conversation opened
+      (its recorded opening lacks it) takes this one, so it stays fixed for the runtime too. */
+  private atOpen?: Record<string, string>;
   constructor(
     private readonly tools: { name: string; promptSnippet?: string; description: string }[],
     private readonly template: string,
@@ -974,7 +1005,7 @@ class LivePrompt {
       until a branch is known: the loader asks before the conversation is read). */
   private opening(branch?: readonly HEntry[]): Record<string, string> {
     const recorded = branch ? openingOn(branch) : undefined;
-    if (recorded) return (this.opened = recorded);
+    if (recorded) return (this.opened = { ...(this.atOpen ??= overseerValues(readOverseerSettings(), this.openedAt)), ...recorded });
     if (this.opened) return this.opened;
     const now = overseerValues(readOverseerSettings(), this.openedAt);
     if (branch) this.opened = now;

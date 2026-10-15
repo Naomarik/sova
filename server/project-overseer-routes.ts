@@ -8,8 +8,9 @@ import { gapsOf } from "./projects/contributions";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, startCoding } from "./project-overseer";
-import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, removeCodingWorktree, startCoding } from "./project-overseer";
+import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSettings, writePoSettings } from "./project-overseer-store";
+import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -75,6 +76,23 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   app.patch(base, handle(async (c) => {
     const p = pathsOf(c);
     return c.json(await patchProjectOverseer(p.projectId, await body(c)), 200, NO_STORE);
+  }));
+  // Its memory switch: the Overseer's route's shape, its own overseer.json.
+  app.get(`${base}/memory`, handle(async (c) => {
+    const p = pathsOf(c);
+    const chat = await projectOverseerChat(p.projectId);
+    return c.json(overseerMemoryInfo(readPoSettings(p).memory, await chat?.memoryStatus()), 200, NO_STORE);
+  }));
+  app.put(`${base}/memory`, handle(async (c) => {
+    const p = pathsOf(c);
+    let b: unknown;
+    try {
+      b = await c.req.json();
+    } catch {
+      return c.json({ error: "Expected JSON body { on?, type?, size? }" }, 400);
+    }
+    const out = await putOverseerMemorySwitch(readPoSettings(p).memory, b, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(p.projectId));
+    return "error" in out ? c.json({ error: out.error }, 400) : c.json(out, 200, NO_STORE);
   }));
   app.post(`${base}/clear`, handle(async (c) => {
     const p = pathsOf(c);

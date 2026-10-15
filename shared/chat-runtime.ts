@@ -350,7 +350,7 @@ export interface ChatMethods {
     result: { state: "unavailable" } | { state: "no-engine" } | { state: "ok"; open: MemoryOpen } | { state: "refused"; error: string };
   };
   memoryStatus: { args: Record<string, never>; result: OverseerMemoryInfo["status"] };
-  /** The Overseer's memory setting changed (overseer.json): turned on now, or changed otherwise. */
+  /** An overseer's memory setting changed (its overseer.json): turned on now, or changed otherwise. */
   memorySettingsChanged: { args: { turnedOn: boolean }; result: null };
   resumeWorker: { args: { id: string }; result: { ok: true } | { ok: false; status: 404 | 409; error: string } };
   workerInfo: { args: { id: string }; result: WorkerInfo | null };
@@ -437,6 +437,9 @@ export interface SpecialSpec {
   model: string | null;
   thinking: string | null;
   memory?: true;
+  /** The file whose `memory` is this loadout's own memory switch (a project overseer's overseer.json),
+      read at each of its turns; absent = the Overseer's own (the state root's). */
+  memorySettings?: string;
   attribution?: true;
   background?: true;
   replyText?: true;

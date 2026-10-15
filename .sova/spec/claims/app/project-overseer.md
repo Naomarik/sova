@@ -33,7 +33,8 @@ which is also its live view: its tool calls render as tool cards as they happen.
   limits (§app.project-overseer/autonomy-levels).
 - Its settings and working files are in its engine's dir under `projects/<projectId>/overseer/`:
   `overseer.json` (autonomy, model, thinking, the coding sessions' model and thinking, the
-  limits, the pace, the hold, watch on/off, extra instructions; §app.project-overseer/limits),
+  limits, the pace, the hold, watch on/off, extra instructions, its memory switch;
+  §app.project-overseer/limits, §app.project-overseer/memory-switch),
   `notes.md`, `ideas/` and `todos.json`, committed with the org's workspace commits
   (§app.organizations/workspace-repo). Its conversation and history, the sessions it started (and,
   as `operator-coding` sessions that no cap counts, the ones the operator started with Start Coding
@@ -46,7 +47,8 @@ which is also its live view: its tool calls render as tool cards as they happen.
 - **Loadout.** No pi-config extension, skill or prompt template loads (no mode; a mode switch is
   refused); the project's own context files do, and only those inside the project root: never the
   agent dir's or a folder's above the root (the home folder's `AGENTS.md`). Its tools
-  (§app.project-overseer/tools) plus read-only `read`, `grep`, `find` and `ls` **confined to the
+  (§app.project-overseer/tools), memory's `zoom` and `date` while its memory is on
+  (§chat.memory/overseer), plus read-only `read`, `grep`, `find` and `ls` **confined to the
   project root**: every path, as written (`..`, `~`, absolute) and at its realpath (a symlink in the
   root that leads out), must be inside the root, and none may be inside an attached org's
   workspace (the roster's contacts, every project's transcripts) or pi's or Sova's state (the
@@ -97,6 +99,31 @@ which is also its live view: its tool calls render as tool cards as they happen.
   (pi's `clampThinkingLevel`: the nearest level the model offers above it, else the nearest below)
   and saves that, so `overseer.json` says what runs. A model Sova can't list
   is not judged.
+
+## §app.project-overseer/memory-switch — Its memory switch
+
+Each project overseer has memory (§chat.memory/overseer) on the same terms as the Overseer: on by
+default (UniiChat at 128 KB) for every project overseer that hasn't chosen, existing ones
+included, and off once someone switches it off, across Clear. Its switch is `GET`/`PUT
+/api/projects/:pid/overseer/memory` `{on, type, size}` (the answer as `/api/overseer/memory`'s,
+404 for an unknown project, 400 for a bad body), saved as `memory` in that project's
+overseer `overseer.json` (§app.project-overseer/identity) and read at each of its turns; a
+`PATCH …/overseer` of its other settings keeps it. The summaries stay in this host's agent dir,
+beside the conversation (§chat.memory/log).
+
+- **The button.** On its chat page (§app.project-overseer/page), its composer foot carries the
+  Overseer's memory button and popover (§app.overseer/memory-switch) at its right end, named
+  "Project overseer memory: on" or "…: off": the `memory` checkbox row, the types and Summary
+  size. A failed read shows "Couldn't read the project overseer's memory.", a refused write
+  "Couldn't change the project overseer's memory." with the reason; the foot line reads "From the
+  project overseer's next turn. Its coding sessions never get memory."
+- **Its turns.** Switched on (or on by default) in a conversation with history, it is prepared in
+  the background from its next turn (§chat.memory/preparing) and its run-status row shows
+  "Preparing memory: n of m messages"; then every run, its watch-loop looks included, gets the view
+  in place of the early turns, and `zoom` and `date` are among its tools, on Claude Code as on pi.
+  Switched off, its next turn sends its full history again.
+- Its mode switch stays refused (§chat.memory/where), and the coding sessions it starts never get
+  memory.
 
 ## §app.project-overseer/page — Its chat page
 

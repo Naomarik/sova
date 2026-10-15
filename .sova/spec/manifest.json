@@ -1807,7 +1807,16 @@
       "code": [
         "server/memory/routes.ts",
         "server/overseer.ts",
-        "server/memory/settings.test.ts"
+        "server/memory/settings.test.ts",
+        "server/memory/settings.ts",
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "shared/chat-runtime.ts",
+        "server/overseer-memory.integration.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/testing/overseer-memory.ts",
+        "server/overseer-memory-claude.integration.test.ts",
+        "server/memory/overseer-outline.test.ts"
       ]
     },
     "§chat.memory/preparing": {
@@ -1819,7 +1828,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/memory/engine.ts"
+        "server/memory/engine.ts",
+        "server/chat-manager.ts",
+        "server/memory/engine.test.ts"
       ]
     },
     "§chat.memory/recall": {
@@ -4651,7 +4662,7 @@
         "§chat.mode-menu/memory-panel"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/OverseerMemoryMenu.tsx",
         "src/components/MemoryTypePanel.tsx",
@@ -6497,6 +6508,32 @@
         "by": "user",
         "at": "2026-10-10T10:06Z"
       }
+    },
+    "§app.project-overseer/memory-switch": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/overseer",
+        "§app.overseer/memory-switch",
+        "§app.project-overseer/identity",
+        "§chat.memory/preparing"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-routes.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "shared/project-overseer.ts",
+        "server/memory/routes.ts",
+        "server/chat-manager.ts",
+        "src/components/OverseerMemoryMenu.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "src/app.css",
+        "server/overseer-memory.integration.test.ts",
+        "server/project-overseer.test.ts"
+      ]
     },
     "§app.project-overseer/tools": {
       "kind": "behavior",

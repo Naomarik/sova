@@ -29,6 +29,7 @@ const { closeOrgHost, hostOf } = await import("./org-engine");
 const po = await import("./project-overseer");
 const { allBatons } = await import("./baton");
 const store = await import("./project-overseer-store");
+const { projectOverseerMemoryOff } = await import("./testing/overseer-memory");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
 const recovery = await import("./wrapup-recovery");
@@ -52,6 +53,7 @@ describe("the overseer's last run says how it ended", async () => {
   let path = "";
 
   before(async () => {
+    projectOverseerMemoryOff(project.id); // its looks run without memory (no summarizer in the unit tier)
     path = (await po.ensureProjectOverseer(project.id)).path;
     const chat = await acquireChat(path);
     await chat.setModelRef("stub/runaway");
@@ -125,6 +127,7 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
     const p = store.projectOverseerPaths(project.id);
     // No hold (q10): its unattended starts go at once; these tests are about the allowances.
     store.patchPoSettings(p, { holdMin: 0 });
+    projectOverseerMemoryOff(project.id);
     const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
     await chat.setModelRef("stub/runaway");

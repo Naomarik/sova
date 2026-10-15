@@ -507,7 +507,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Saved with notes (banner-warn) | **Saved, with notes.** {warnings as sentences}: "Not verified, because {backend} couldn't list its models ({reason}): {slot}, {slot}…" once per backend, then one per other slot |
 | Close held (banner-warn, above the dialog foot) | **Your Subagents changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
 | Section heading button (small, ghost) | Reset to Defaults — Summaries only; it fills the draft and saves nothing |
-| Dialog footer (every tab) | {status line} · Discard Changes · Save Changes (Saving…) · Cancel — with nothing unsaved: {status line} · Close. The one Save and Discard for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
+| Dialog footer (every tab) | {status line} · Save Changes (Saving…) · Cancel (discards and closes) — with nothing unsaved: {status line} · Close. The one Save for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
 | Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents needs unique, single-line names of at most 48 characters (never "Off"). · Subagents: {name}: {threshold issue}. · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
@@ -546,7 +546,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Backfill buttons | `Tag Last 30 Days` · `Tag All Sessions` · running: `Stop Tagging` · held: Nothing can answer yet, so nothing can be tagged. |
 | Backfill progress | counting: Finding sessions to tag… · Tagged {done} of {total}{ · n failed}. · Tagged {total} sessions{ · n failed}. New sessions are tagged as they finish. · Stopped at {done} of {total}{ · n failed}. {reason} (cancelled: no reason). · Every session from the last 30 days is tagged. · Every session is tagged. |
 | Saved with notes (banner-warn, notes that name neither the fallback nor the features; replaced at the next save) | **Saved, with notes.** {server warnings as sentences} |
-| Buttons | none in the form — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Buttons | none in the form — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
@@ -579,7 +579,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the model policy** The list below may not match the server. Nothing was changed. [Retry] |
-| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the tab; the unsaved switches stay) | **Couldn't save the model policy.** {reason}. Your saved policy is unchanged. |
 
 ## §design.copy-deck/settings-mesh — Settings · Mesh (§mesh.ui/settings)
@@ -588,7 +588,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Load failed (banner-error) | **Couldn't read the mesh settings.** Nothing was changed. {message} |
 | Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. |
-| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
+| Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
 | Save failed (banner-error at the end of the tab; the unsaved changes stay) | **Couldn't save the mesh settings.** {reason}. Your saved settings are unchanged. |
 
 ## §design.copy-deck/settings-experimental — Settings · Experimental (§app.settings-dialog/save-bar)
@@ -598,7 +598,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Intro | Unfinished features. They can change or disappear, and they apply to sessions you start after switching them on — chats already open keep the setup they began with. |
 | Empty state (no switch to show) | No experimental features right now. |
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
-| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 
 ## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)
 

@@ -73,7 +73,8 @@
 //               stays pending and reloads as the reply ends
 //     tsend     §chat.transcript/send-while-starting: on a chat closed while quiet, a model switch and a
 //               message sent on a socket closed at once still run, the switch first; the same client id
-//               on two sockets runs once; a refusal (its model turned off, its folder gone) with no socket
+//               on two sockets runs once; frames POSTed by a page that went (/api/chat/frames) run the
+//               same way, a repeat once; a refusal (its model turned off, its folder gone) with no socket
 //               left goes back as the session's saved draft
 //     t21rx     F14/F15: Reload now and a prompt at once, either order: refused back by clientId and run once
 //               when sent again, or taken first and reloaded at the reply's end; never lost or doubled
@@ -676,6 +677,33 @@ async function tsend() {
   R.check(ack?.type === "send_ack", "tsend: the second socket is answered as taken, not refused");
   two.close();
   one.close();
+
+  // (d) A page that went before its socket opened hands its frames over (POST /api/chat/frames):
+  // no socket at all; they run in order, and the same frames posted again run once.
+  const d = await quietChat();
+  const posted = [
+    { type: "set_model", ref: "trial/m2" },
+    { type: "prompt", text: "TSEND-D say ok", clientId: "tsend-d" },
+  ];
+  const q = `/api/chat/frames?path=${encodeURIComponent(d)}`;
+  const r1 = await c.api(q, { method: "POST", body: JSON.stringify({ frames: posted }) });
+  const r2 = await c.api(q, { method: "POST", body: JSON.stringify({ frames: [posted[1]] }) });
+  R.check(r1?.accepted === 2 && r2?.accepted === 1, `tsend: POST /api/chat/frames accepts the frames (${JSON.stringify([r1, r2])})`);
+  for (let i = 0; i < 60 && !turnAssistants(d, "TSEND-D").some((m) => m.stopReason && m.stopReason !== "toolUse"); i++) await sleep(500);
+  await sleep(2000);
+  R.check(userTurns(d, "TSEND-D") === 1, `tsend: frames posted with no socket run, and the same client id posted twice runs once (${userTurns(d, "TSEND-D")})`);
+  const ed = entries(d);
+  const dSwitch = ed.findIndex((e) => e.type === "model_change" && e.modelId === "m2");
+  const dUser = ed.findIndex((e) => e.type === "message" && e.message?.role === "user" && JSON.stringify(e.message.content).includes("TSEND-D"));
+  R.check(dSwitch >= 0 && dSwitch < dUser, `tsend: posted frames run in order, the switch first (${dSwitch} < ${dUser})`);
+  R.check(turnAssistants(d, "TSEND-D")[0]?.model === "m2", "tsend: the posted message ran on the model posted before it");
+  let bad = null;
+  try {
+    await c.api(q, { method: "POST", body: JSON.stringify({ frames: [{ nope: 1 }] }) });
+  } catch (e) {
+    bad = String(e);
+  }
+  R.check(!!bad && bad.includes("400"), `tsend: a malformed body is refused (${bad?.slice(0, 60)})`);
 
   // (c1) Its model turned off in Settings, with no socket left: the text goes back as the draft.
   const c1 = await quietChat();

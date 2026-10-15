@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -155,6 +156,31 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   chat.attach(client);
   for (const msg of early.splice(0)) chat.clientMessage(client, msg);
   if (gone) stayToHear();
+}
+
+/** At most this many frames in one POST /api/chat/frames. */
+export const POSTED_FRAMES_MAX = 100;
+
+/**
+ * Frames a page handed over as it went (POST /api/chat/frames, §chat.transcript/send-while-starting):
+ * a tab closed or reloaded before its chat socket opened. They take the very path a chat socket's
+ * early frames take (handleChat), on a stand-in socket that is already gone: the chat opens, runs
+ * them in order, takes each client id once, and a refusal goes back as the session's draft.
+ */
+export function deliverFrames(path: string, frames: readonly ChatClientMessage[]): void {
+  const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
+  const ws = gone as unknown as WebSocket;
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2).catch((err) => console.error("[chat/frames]", err));
+  for (const f of frames) gone.emit("message", JSON.stringify(f));
+  gone.emit("close");
+}
+
+/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. */
+export function postedFrames(body: unknown): ChatClientMessage[] | null {
+  const frames = (body as { frames?: unknown } | null)?.frames;
+  if (!Array.isArray(frames) || frames.length === 0 || frames.length > POSTED_FRAMES_MAX) return null;
+  for (const f of frames) if (!f || typeof f !== "object" || Array.isArray(f) || typeof (f as { type?: unknown }).type !== "string") return null;
+  return frames as ChatClientMessage[];
 }
 
 /** The refusals for messages a pane sent while its chat was opening, when it didn't open. */

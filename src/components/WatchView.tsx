@@ -11,7 +11,7 @@ import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from 
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
-import type { WorkingSplit } from "../lib/workers";
+import type { WorkerTally, WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -54,8 +54,11 @@ export function WatchView(props: {
   onAppend?(): void;
   /** Subagents working now (live record); the composer shows them as a status row. */
   workersWorking?: number;
-  /** Every subagent the session has, so that row survives all of them settling. */
+  /** The session's live subagents (before its insight lands, the list count), so that row
+      survives all of them settling. */
   workersTotal?: number;
+  /** Its workers, live and ended: the trigger's ended note. Null: not known yet. */
+  workersTally?: WorkerTally | null;
   /** How that count divides into team members and plain subagents; null: it can't be split. */
   workersSplit?: WorkingSplit | null;
   /** Makes that row a button that toggles the subagents pane. */
@@ -264,6 +267,7 @@ export function WatchView(props: {
           detail={null}
           workersWorking={props.workersWorking}
           workersTotal={props.workersTotal}
+          workersTally={props.workersTally}
           workersSplit={props.workersSplit}
           onShowWorkers={props.onShowWorkers}
           workersOpen={props.workersOpen}

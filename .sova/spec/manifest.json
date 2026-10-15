@@ -8157,8 +8157,16 @@
         "src/lib/live.test.ts",
         "server/chat-entry-id.test.ts",
         "server/transcript-rows.integration.test.ts",
-        "server/app.ts"
-      ]
+        "server/app.ts",
+        "src/lib/scroll-anchor.ts",
+        "src/lib/scroll-anchor.test.ts",
+        "scripts/e2e/transcript-jitter.mjs",
+        "package.json"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-14T23:24Z"
+      }
     },
     "§app.subagents-pane/hidden-workers": {
       "kind": "behavior",

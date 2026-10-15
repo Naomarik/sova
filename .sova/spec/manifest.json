@@ -4293,7 +4293,7 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "scripts/install.sh",
         "scripts/install.test.sh",
@@ -15758,7 +15758,7 @@
         "§app.server-runtime/choice"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "scripts/install.sh",
         "scripts/install.test.sh",
@@ -18253,7 +18253,11 @@
         "§app/notifications",
         "§app.project-overseer/coding-mode",
         "§chat.mode-menu/workers",
-        "§app.overseer/hosting"
+        "§app.overseer/hosting",
+        "§chat.alignment/style",
+        "§chat.alignment/visuals",
+        "§chat.alignment/settings-file",
+        "§app.settings-dialog/alignment"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18272,7 +18276,9 @@
         "§chat.alignment-review/prompt",
         "§chat.alignment-review/route",
         "§chat.alignment-review/card",
-        "§chat.alignment-review/tui"
+        "§chat.alignment-review/tui",
+        "§chat.alignment/tui",
+        "§app.settings-dialog/alignment"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18294,7 +18300,11 @@
         "§chat.model-menu/trigger",
         "§chat.model-menu/states",
         "§chat.model-menu/saved-default",
-        "§chat.changes/tool-card-diff"
+        "§chat.changes/tool-card-diff",
+        "§chat.composer/behavior",
+        "§chat.model-menu/favorites",
+        "§chat.model-menu/menu",
+        "§chat.model-menu/errors"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18337,7 +18347,9 @@
         "§chat.mode-menu/strict",
         "§design.copy-deck/settings-modes-delegate",
         "§app.project-overseer/coding-mode",
-        "§app.overseer/hosting"
+        "§app.overseer/hosting",
+        "§app.chat-processes/workers",
+        "§app.chat-processes/survives-restart"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18372,7 +18384,9 @@
         "§chat/subagent-profiles",
         "§chat.mode-menu/codemode",
         "§chat.markdown/visuals",
-        "§tools/spec"
+        "§tools/spec",
+        "§chat/memory",
+        "§chat.memory/where"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18396,7 +18410,13 @@
         "§app.installer/bun",
         "§app.access/token",
         "§app.access/callers",
-        "§app.installer/ref"
+        "§app.installer/ref",
+        "§app.installer/app-entry",
+        "§app.server-runtime/choice",
+        "§app/updates",
+        "§app.updates/source",
+        "§app.updates/upgrade",
+        "§app.updates/auto-upgrade"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18407,6 +18427,40 @@
         "by": "naomarik",
         "at": "2026-10-11T11:27Z"
       }
+    },
+    "§site.docs/memory": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.memory/types",
+        "§chat.memory/where",
+        "§chat.memory/choice",
+        "§chat.memory/log",
+        "§chat.memory/tree",
+        "§chat.memory/summarizer",
+        "§chat.memory/turn",
+        "§chat.memory/recall",
+        "§chat.memory/full-ids",
+        "§chat.memory/preparing",
+        "§chat.memory/zoomable",
+        "§chat.memory/status",
+        "§chat.memory/settings",
+        "§chat.memory/help",
+        "§chat.memory/overseer",
+        "§chat.mode-menu/memory-panel",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§app.settings-dialog/memory",
+        "§app.subagents-pane/memory-outline",
+        "§chat.composer/memory-status",
+        "§app.overseer/memory-switch",
+        "§app.project-overseer/memory-switch",
+        "§app.claude-code-provider/no-memory"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/memory.md"
+      ]
     },
     "§site.docs/modes": {
       "kind": "behavior",
@@ -18428,7 +18482,17 @@
         "§app.project-overseer/coding-mode",
         "§chat/memory",
         "§chat.mode-menu/memory-panel",
-        "§chat.mode-menu/project-modes"
+        "§chat.mode-menu/project-modes",
+        "§chat.memory/types",
+        "§chat.memory/where",
+        "§chat.memory/choice",
+        "§chat.memory/recall",
+        "§chat.memory/preparing",
+        "§chat.memory/status",
+        "§chat.memory/settings",
+        "§chat.memory/overseer",
+        "§app.project-overseer/memory-switch",
+        "§app.overseer/memory-switch"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18450,7 +18514,15 @@
         "§app.notifications/delivery",
         "§app.notifications/settings",
         "§app.settings-dialog/overseer",
-        "§chat/merge-round"
+        "§chat/merge-round",
+        "§app.chat-processes/workers",
+        "§chat.worktrees/readiness",
+        "§app.project-runtime/review",
+        "§app.project-services/deploy-status",
+        "§app.outreach/sender-health",
+        "§app.baton/needs-you",
+        "§chat.schedules/where-shown",
+        "§app.session-list/regions-top-and-archive"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18484,7 +18556,12 @@
         "§app.overseer/proactivity",
         "§app.overseer/dialog-answers",
         "§app.settings-dialog/overseer",
-        "§chat/merge-round"
+        "§chat/merge-round",
+        "§app.overseer/memory-switch",
+        "§chat.mode-menu/project-modes",
+        "§app.overseer/links-tools",
+        "§app.overseer/org-writes",
+        "§app.overseer/file-writes"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18511,7 +18588,8 @@
         "§chat.transcript/live-watch",
         "§chat/composer",
         "§app.session-list/regions-top-and-archive",
-        "§chat.transcript/message-actions"
+        "§chat.transcript/message-actions",
+        "§app.shell/overview"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18532,7 +18610,12 @@
         "§chat.schedules/where-shown",
         "§chat/merge-round",
         "§chat.merge-round/round",
-        "§chat.worktrees/merge-board"
+        "§chat.worktrees/merge-board",
+        "§chat.playbooks/where-playbooks-come-from",
+        "§chat.playbooks/bundles",
+        "§chat.schedules/merge-ready",
+        "§chat.schedules/limit-reset",
+        "§app.overseer/caps"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18579,7 +18662,10 @@
         "§chat.subagent-profiles/settings",
         "§chat.worktrees/worktree-config",
         "§app.project-overseer/coding-mode",
-        "§design.copy-deck/settings-modes-delegate"
+        "§design.copy-deck/settings-modes-delegate",
+        "§tools.spec/unread-landed",
+        "§tools.spec/worker-landed",
+        "§tools.spec/agreed-promotion"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18602,7 +18688,10 @@
         "§chat.subagent-profiles/limit-row",
         "§chat.subagent-profiles/overseer",
         "§chat.alignment-review/route",
-        "§design.copy-deck/settings-modes-delegate"
+        "§design.copy-deck/settings-modes-delegate",
+        "§mesh.sync/profile-library",
+        "§chat.alignment/style",
+        "§app.project-overseer/coding-mode"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18614,13 +18703,39 @@
         "at": "2026-10-14T12:38Z"
       }
     },
+    "§site.docs/updates": {
+      "kind": "behavior",
+      "requires": [
+        "§app/updates",
+        "§app.updates/running",
+        "§app.updates/source",
+        "§app.updates/check",
+        "§app.updates/indicator",
+        "§app.updates/upgrade",
+        "§app.updates/auto-upgrade",
+        "§app.updates/operator",
+        "§app.updates/reload-note",
+        "§app.installer/ref",
+        "§app/installer",
+        "§app/chat-processes"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/updates.md"
+      ]
+    },
     "§site.docs/vis": {
       "kind": "behavior",
       "requires": [
         "§chat.markdown/visuals",
         "§chat.mode-menu/workers",
         "§chat.mode-menu/minor-toggle-keeps-prompt",
-        "§app.overseer/hosting"
+        "§app.overseer/hosting",
+        "§chat.alignment/visuals",
+        "§chat.markdown/vis-wireframe",
+        "§chat.markdown/vis-flow-groups",
+        "§chat.markdown/vis-flow-sections"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
@@ -18653,7 +18768,10 @@
         "§chat.changes/show-changes-tool",
         "§chat.changes/diff-renderer",
         "§chat.changes/tool-card-diff",
-        "§chat/sandbox"
+        "§chat/sandbox",
+        "§chat.changes/endpoint",
+        "§chat.worktrees/merged-state",
+        "§chat.sandbox/states"
       ],
       "authority": "accepted",
       "evidence": "reviewed",

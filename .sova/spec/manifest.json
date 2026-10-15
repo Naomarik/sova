@@ -1130,6 +1130,7 @@
       "code": [
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
+        "src/components/WatchView.tsx",
         "src/lib/known-before-mount.ts",
         "src/lib/known-before-mount.test.ts",
         "src/components/Composer.tsx",
@@ -1222,7 +1223,7 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/components/FolderPicker.tsx",
@@ -1234,7 +1235,11 @@
         "server/targets.test.ts",
         "server/targets.integration.test.ts",
         "src/lib/api.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
+      }
     },
     "§app/session-list": {
       "kind": "surface",
@@ -2935,7 +2940,7 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
@@ -7352,8 +7357,8 @@
         "src/lib/built-once.browser.test.ts"
       ],
       "agreed": {
-        "by": "omar",
-        "at": "2026-10-14T17:06Z"
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
       }
     },
     "§app.project-overseer/coding-mode": {
@@ -7427,8 +7432,17 @@
         "server/project-services/on-merge.integration.test.ts",
         "server/project-coding-later.test.ts",
         "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
-        "statecharts/EVENTS.md"
-      ]
+        "statecharts/EVENTS.md",
+        "server/project-coding-read.ts",
+        "server/project-coding-read.test.ts",
+        "server/project-overseer-fast.integration.test.ts",
+        "server/overseer-org-view.ts",
+        "src/lib/coding-worktrees-fresh.browser.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
+      }
     },
     "§app.requirements/promotion-commit": {
       "kind": "behavior",
@@ -8387,9 +8401,15 @@
         "server/project-costs-routes.ts",
         "server/index.ts",
         "server/app.ts",
-        "shared/costs.ts"
+        "shared/costs.ts",
+        "server/project-costs.ts",
+        "server/project-costs.test.ts"
       ],
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
+      }
     },
     "§app.project-costs/ledger": {
       "kind": "behavior",
@@ -8775,7 +8795,11 @@
       "requires": [
         "§app.project-overseer/coding-worktrees",
         "§app.project-overseer/coding-mode"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
+      }
     },
     "§chat.markdown/visuals": {
       "kind": "behavior",
@@ -13163,7 +13187,7 @@
     "§app.organizations/project-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/archive",
@@ -13190,8 +13214,18 @@
         "src/lib/project-page.test.ts",
         "src/projects.css",
         "src/lib/projects-route.ts",
-        "src/components/ProjectOrgPart.tsx"
-      ]
+        "src/components/ProjectOrgPart.tsx",
+        "src/lib/page-cache.ts",
+        "src/lib/page-cache.test.ts",
+        "src/lib/poll.ts",
+        "src/components/ui.tsx",
+        "src/components/ProjectsView.tsx",
+        "server/project-overseer-fast.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
+      }
     },
     "§chat.playbooks/bundles": {
       "kind": "behavior",
@@ -14699,7 +14733,7 @@
     "§app.projects/list": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/projects/routes.ts",
         "shared/projects.ts",
@@ -14718,7 +14752,11 @@
       ],
       "requires": [
         "§app.session-list/organizations"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:32Z"
+      }
     },
     "§app.projects/placement": {
       "kind": "behavior",
@@ -19372,8 +19410,8 @@
         "§app.projects/seam"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T07:55Z"
+        "by": "user",
+        "at": "2026-10-15T19:57Z"
       }
     },
     "§app.server-runtime/pi-workers": {

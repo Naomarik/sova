@@ -27,7 +27,7 @@ ignores the arguments and opens its terminal monitor (§chat.slash-commands/tui-
 
 The subagents row was plain text: `.run-status`, shown whenever at least 1 worker runs — the
 parent's own turn included (§chat/transcript "Run status") — and, once the parent is idle, also when the
-session has settled workers. It becomes a control. The `<p>` stays, and a
+session has workers it offers (below). It becomes a control. The `<p>` stays, and a
 button takes its contents. The row is no longer only this: §chat/timeline's inputs trigger sits at its
 right end, and the row renders whenever any of streaming, workers or inputs has something:
 
@@ -36,8 +36,9 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   <!-- the row's one live dot, while anything works (§chat.transcript/streaming); never the trigger's -->
   <span class="live-dot" aria-hidden="true"></span>
   <button type="button" class="run-status-link" aria-expanded="false" aria-controls="session-pane"
-          aria-label="2 of 5 subagents working — show subagents" title="2 of 5 subagents working — show subagents">
-    <!-- the ring: working of all, filled clockwise from 12 o'clock; empty once all have settled -->
+          aria-label="2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents"
+          title="2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents">
+    <!-- the ring: working of the live ones, filled clockwise from 12 o'clock; empty while none works -->
     <svg class="workers-ring" viewBox="0 0 14 14" aria-hidden="true">
       <circle class="workers-ring-track" cx="7" cy="7" r="6" fill="none"></circle>
       <circle class="workers-ring-fill" cx="7" cy="7" r="6" fill="none" transform="rotate(-90 7 7)"
@@ -57,10 +58,22 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   live dot: the row's one dot, before everything else in it, says work is in flight, whether the
   parent's turn or only its workers. What the trigger shows instead is a **ring meter**: a static
   14px ring, its arc in ink over a muted track, filled clockwise from 12 o'clock by the share of
-  the session's workers that are working now (2 of 5: two fifths), and **empty** once every one
-  has settled. Wide, the ring, the words — "2 of 5 subagents working", "5 subagents" once all have
-  settled — and the chevron; narrow, the ring and the count, "2/5" while any work, else every one
-  the session has, "5". The words are the same whether or not the parent's own turn runs. With
+  the session's **live** workers that are working now (2 of 5: two fifths), and **empty** while
+  none works. A worker is live until it has ended: one that is done, failed or stopped (status
+  `done`, `error`, `killed`) has ended; every other one — starting, running, stopping, waiting (an
+  idle team member is one) or restored (settled, with no process, but not ended: it can be
+  resumed, §app.worker-restore/restore) — is live for this count. The session's worker list keeps every worker it
+  ever started, so the ended ones are left out of the figure and named in the tooltip instead.
+  Wide, the ring, the words — "2 of 5 subagents working", "5 subagents" while none works, with 5
+  the live ones — and the chevron; narrow, the ring and the count, "2/5" while any work, else the
+  live ones, "5". When none is live but some have ended, the row stays so the pane is still one
+  click away: "18 subagents, all ended" (one: "1 subagent, ended") wide, "18" narrow, the ring empty. The words are the same
+  whether or not the parent's own turn runs. Ended workers are told in the accessible name and
+  tooltip, after the words and a " · ": "18 ended: 16 stopped, 2 failed" — stopped, failed, then
+  done, a kind at 0 left out — or, all ended, "18 subagents, all ended: 16 stopped, 2 failed".
+  When the list doesn't name every ended worker (a live record lists at most 40, the live ones
+  first), the note is the count alone, "18 ended", never a split that doesn't add up; no note
+  when none has ended, or before this view has the session's worker list. With
   team members among the working ones the noun follows them — "2 of 5 team members working", or
   "3 of 5 workers working" for a mix — and the tooltip adds the split, "1 subagent · 2 team
   members", on its own line. A working worker is a team member when the session's teams list
@@ -77,8 +90,8 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   start are the row's gap — 8px wide, 6px narrow, where its parts also sit 4px apart — so its ring
   sits one gap after the row's dot, as the Working state's icon does.
 - **The count changes in place.** The accessible name, which is also the tooltip, is the words
-  plus what the control does: "2 of 5 subagents working — show subagents" ("— show workers" once
-  team members are among them); with one team behind the count, the tooltip adds "Team · {name}"
+  plus the ended note and what the control does: "2 of 5 subagents working · 18 ended: 16
+  stopped, 2 failed — show subagents" ("— show workers" once team members are among the working); with one team behind the count, the tooltip adds "Team · {name}"
   on another line. A watched session with no pane to open shows the same thing as plain text: the
   ring and the words wide; the ring and count narrow, the words visually hidden.
 
@@ -86,8 +99,9 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 |---|---|
 | Parent turn running (or Stopping, a rare state, a compaction), ≥ 1 working | The run status (§chat/transcript) after the row's one dot, **and** this trigger beside it, with no dot of its own: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents". This is how the pane is one click away mid-turn |
 | Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
-| Idle, ≥ 1 working | The row's one dot, then the trigger: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents" |
-| Idle, none working, ≥ 1 settled | The trigger, **no dot in the row**: the empty ring, "5 subagents" wide, "5" narrow; labelled "5 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
+| Idle, ≥ 1 working | The row's one dot, then the trigger: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents" (with ended ones: "2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents") |
+| Idle, none working, ≥ 1 live | The trigger, **no dot in the row**: the empty ring, "5 subagents" wide, "5" narrow (5 live, ended ones left out); labelled "5 subagents — show subagents" (with ended ones: "5 subagents · 18 ended: 16 stopped, 2 failed — show subagents"). The per-worker counts and the Σ are what it's for, and they outlive the work |
+| Idle, none live, ≥ 1 ended | The trigger, no dot: the empty ring, "18 subagents, all ended" wide, "18" narrow; labelled "18 subagents, all ended: 16 stopped, 2 failed — show subagents" |
 | Hover · active | Sunken fill, ink words or count, icons to ink · active also moves 1px down, like `.button` |
 | Focus-visible | The 2px accent ring, at `--r-md` |
 | Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
@@ -97,15 +111,19 @@ parent runs, the trigger stays in the row beside its run status, so watching the
 is one click rather than a wait for the turn to settle.
 
 Opening a chat shows the settled trigger from the view's first frame, with the count the session
-list has for it (its live record's worker total) whenever the chat's
-socket hasn't said otherwise: the socket's count shows while its latest `workers` message since the
-`hello` lists any, or when the list counts none; a `workers` message listing none never takes a
-count the list has down to nothing. The `hello`
-alone changes nothing on the trigger — its runtime's first `workers` can come well after it, or
-not at all while the runtime has no live record yet, or list none while its extension is still
-restoring its workers — so the count never blinks off and back at the `hello`. A working trigger (a filled
-arc) comes only from this chat's own `workers` messages. A watched session's
-trigger reads the same list count until its insight lands.
+list has for it (its live record's worker total, which still counts ended workers, with no ended
+note) whenever the chat's socket hasn't said otherwise: the socket's live count and ended note
+show while its latest `workers` message since the `hello` lists any, or when the list counts
+none; a `workers` message listing none never takes a count the list has down to nothing. The
+socket's first list can lower that figure once, to the live ones. The ended count is the
+message's total less the live ones it lists. The `hello` alone changes nothing on the trigger —
+its runtime's first `workers` can come well after it, or not at all while the runtime has no live
+record yet, or list none while its extension is still restoring its workers — so the row never
+blinks off and back at the `hello`. A working trigger (a filled arc) comes only from this chat's
+own `workers` messages, and it never draws more working than its figure: a figure below the
+working count reads as the working count. A watched session's trigger reads the same list count
+until its insight lands, then the live ones and the ended note from the insight's worker list and
+worker total.
 
 ## §app.subagents-pane/shell-a-third-column — Shell: a third column
 

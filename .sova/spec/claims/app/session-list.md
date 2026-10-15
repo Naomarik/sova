@@ -1666,7 +1666,7 @@ click away from the pane.
 
 Standalone projects (§app.projects/standalone) have a **Projects** region of their own, right
 before Organizations and shaped like it with no organization level: each project's heading with its
-overseer's eye, then its Sessions (§app.projects/list). A standalone project's overseer
+overseer's eye, then its sessions with no group heading, folded by the heading's own arrow (§app.projects/list). A standalone project's overseer
 conversations and coding sessions are listed there and on no ordinary surface, as an
 organization's are here, until a coding session is archived: it then moves to the Archive. The other
 sessions in its folder (`project.kind` `folder`, §app.projects/folder-sessions) are listed in its

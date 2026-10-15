@@ -7,7 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "./details.ts";
 import { runGit } from "./git.ts";
-import showChanges, { renderShowChangesResult } from "./index.ts";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import showChanges, { renderShowChangesResult, serverAgentDir } from "./index.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
@@ -255,6 +256,35 @@ test("the folders the viewer opens: the header's cwd (not the process cwd), work
 	} finally {
 		r.done();
 	}
+});
+
+test("a worktree recorded on another branch of the session is known: the viewer reads the whole file, not the branch", async () => {
+	const r = repo();
+	try {
+		const wt = join(r.root, "wt");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", wt);
+		writeFileSync(join(wt, "a.txt"), "two\n");
+		const base = sh(r.main, "rev-parse", "HEAD");
+		const set = { type: "custom", id: "b1", parentId: "root", customType: "worktrees", data: { version: 1, trees: [{ path: wt, branch: "feat/x", base, status: "active", session: "s1", how: "created", at: 1_790_000_000_000 }] } };
+		const here = { type: "custom", id: "c1", parentId: "root", customType: "note", data: {} };
+		// The file holds both branches; the current branch (c1) never saw the worktree entry (b1).
+		const all = [set, here];
+		const f = fakePi();
+		showChanges(f.pi, { agentDir: () => join(r.root, "agent") });
+		const ctx = { ...f.ctx(r.main), sessionManager: { getHeader: () => ({ type: "session", cwd: r.main }), getEntries: () => all, getBranch: () => [here] } };
+		const out = await f.call(ctx, { scope: "dirty", worktree: wt });
+		assert.equal(out.details.scope.cwd, wt);
+		// The branch alone would not know it.
+		const branchOnly = { ...ctx, sessionManager: { getHeader: () => ({ type: "session", cwd: r.main }), getEntries: () => [here], getBranch: () => [here] } };
+		await assert.rejects(f.call(branchOnly, { scope: "dirty", worktree: wt }), /is outside this session's folder/);
+	} finally {
+		r.done();
+	}
+});
+
+test("placeholders are the hosting server's: a worker with its own agent dir uses SOVA_CHAT_STATE_ROOT", () => {
+	assert.equal(serverAgentDir({ SOVA_CHAT_STATE_ROOT: "/srv/agent/sova", PI_CODING_AGENT_DIR: "/loadout/agent" }), "/srv/agent");
+	assert.equal(serverAgentDir({ PI_CODING_AGENT_DIR: "/srv/agent" }), getAgentDir());
 });
 
 test("refusals: bad input, no repository, a remote session; nothing is shown", async () => {

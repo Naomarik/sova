@@ -23,6 +23,8 @@ describe("the turn guide (§chat.memory/turn)", () => {
     assert.ok(flat.includes("first find its latest mention in the view and zoom, halving n down to the message, before any other tool"), flat);
     assert.ok(flat.includes("Never grep or read this chat's transcript or memory files."), flat);
     assert.ok(!flat.includes("is the truth"), "the old wording is gone");
+    assert.ok(flat.includes("while lines at every n shorten names and numbers."), flat);
+    assert.ok(!/shorten ids/.test(flat), "ids are shown whole (§chat.memory/full-ids), so the guide never says lines shorten them");
   });
 });
 

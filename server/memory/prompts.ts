@@ -41,7 +41,7 @@ note (a branch summary).
 
 Recent lines cover one message each; older lines merge pairs, so n is a power of
 2. Lines are the index, not the record: every message is kept whole under its
-line, tool results included, while lines at every n shorten ids, names and
+line, tool results included, while lines at every n shorten names and
 numbers. ${MEMORY_ZOOM_TOOL}(id, n) opens line id+n into its two lines of n/2, ${MEMORY_ZOOM_TOOL}(id, 1)
 gives message id whole, and ${MEMORY_DATE_TOOL}(id) gives its date and time.
 

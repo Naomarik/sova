@@ -130,18 +130,16 @@ test("a hello after a row the list doesn't hold leaves the list alone and reads 
   v.dispose();
 });
 
-// §chat.timeline/jumping, §chat.transcript/instant-open: a load asked before any hello (rows kept
-// in the tab, the chat still starting or never starting) never waits for good.
-function keptView(loadWaitMs = 5) {
+// §chat.timeline/jumping: a load asked before any hello (rows kept in the tab, the chat still
+// starting or failing to) never waits on the chat.
+function keptView() {
   return solid.createRoot((dispose) => {
     const [items, setItems] = solid.createSignal<TranscriptItem[] | null>(branch.slice(2).map((it) => ({ ...it })));
-    const wants: string[] = [];
-    const rows = createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false, loadWaitMs, want: () => wants.push("want") });
-    return { rows, items, wants, dispose };
+    return { rows: createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false }), items, dispose };
   });
 }
-/** The file: its newest 2 rows as the tail (2 above them), the range down to a row on `from`. */
-function serveFile() {
+
+test("a load before any hello reads the file's newest rows itself, then lands the target", async () => {
   const asked: string[] = [];
   g.fetch = async (url: string) => {
     asked.push(String(url));
@@ -151,11 +149,6 @@ function serveFile() {
       : { items: branch.slice(0, 2), older: 0, olderSummary: summarize([]) };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   };
-  return asked;
-}
-
-test("a load before any hello: past the wait it reads the file's newest rows itself, then lands the target", async () => {
-  const asked = serveFile();
   const v = keptView();
   assert.equal(v.rows.older(), null, "kept rows, nothing said yet about what's above them");
   assert.equal(await v.rows.api.load({ entry: "u1" }), "here");
@@ -164,47 +157,11 @@ test("a load before any hello: past the wait it reads the file's newest rows its
   v.dispose();
 });
 
-test("a load before any hello goes as soon as a paint from the file says what's above, without the wait", async () => {
-  serveFile();
-  const v = keptView(60_000);
-  const loading = v.rows.api.load({ entry: "u1" });
-  v.rows.paint({ items: branch.slice(2), older: 2, olderSummary: summarize(branch.slice(0, 2)) });
-  assert.equal(await loading, "here");
-  v.dispose();
-});
-
-test("a load before any hello whose file reads fail says stale (the jump then says it can't land), never hangs", async () => {
+test("a load before any hello whose file read fails says stale (the jump then says it can't land), never hangs", async () => {
   g.fetch = async () => {
     throw new TypeError("offline");
   };
   const v = keptView();
   assert.equal(await v.rows.api.load({ entry: "u1" }), "stale");
-  v.dispose();
-});
-
-// §chat.transcript/instant-open: a jump, or the reader scrolling up, is what starts a sleeping chat
-// (the view's `want`); a short list filling itself, or a list that reaches the top, starts nothing.
-test("want: every load asks; a scroll-up chunk asks only by the reader's hand and only while rows remain above", async () => {
-  serveFile();
-  const v = keptView();
-  v.rows.api.more();
-  assert.deepEqual(v.wants, [], "a fill the list asked for itself starts nothing");
-  v.rows.api.more({ byHand: true });
-  assert.deepEqual(v.wants, ["want"], "unknown above, scrolled to by hand");
-  await v.rows.api.load({ entry: "u1" });
-  assert.deepEqual(v.wants, ["want", "want"], "a jump asks");
-  assert.equal(v.rows.whole(), true);
-  v.rows.api.more({ byHand: true });
-  assert.equal(v.wants.length, 2, "nothing above: scrolling up asks nothing");
-  v.dispose();
-});
-
-test("a load in a view with no want (a watch view) still lands, starting nothing", async () => {
-  serveFile();
-  const v = solid.createRoot((dispose) => {
-    const [items, setItems] = solid.createSignal<TranscriptItem[] | null>(branch.slice(2).map((it) => ({ ...it })));
-    return { rows: createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false, loadWaitMs: 5 }), dispose };
-  });
-  assert.equal(await v.rows.api.load({ entry: "u1" }), "here");
   v.dispose();
 });

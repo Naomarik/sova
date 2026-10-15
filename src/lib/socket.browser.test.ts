@@ -103,32 +103,6 @@ test("afterMs: a read that lands first connects at once, and the timer adds no s
 
 // A chat closed while quiet (§chat.transcript/instant-open, §app.chat-processes/idle-stop).
 
-test("startClosed: a view that opens a chat closed while quiet makes no socket until it wakes it (retry)", async () => {
-  made.length = 0;
-  let asked = 0;
-  const s = solid.createRoot((dispose) => ({
-    socket: createReconnectingSocket("ws://h/g", { onMessage() {}, after: Promise.resolve(), startClosed: () => (asked++, true) }),
-    dispose,
-  }));
-  await new Promise((r) => setTimeout(r, 10));
-  assert.equal(asked, 1, "asked once, at the first connect");
-  assert.equal(made.length, 0, "no socket: opening it to read starts nothing");
-  assert.equal(s.socket.status(), "closed");
-  s.socket.reconnect(); // a reconnect never wakes it
-  assert.equal(made.length, 0);
-  s.socket.retry(); // a wake: a send, a control
-  assert.equal(made.length, 1);
-  s.dispose();
-});
-
-test("startClosed false: the first connect goes as before", async () => {
-  made.length = 0;
-  const s = solid.createRoot((dispose) => ({ socket: createReconnectingSocket("ws://h/h", { onMessage() {}, after: Promise.resolve(), startClosed: () => false }), dispose }));
-  await new Promise((r) => setTimeout(r, 10));
-  assert.equal(made.length, 1);
-  s.dispose();
-});
-
 test("an older bundle, which doesn't know `closed`: the chat's quiet close comes with a code its socket never retries", async () => {
   const { CHAT_CLOSED_CLOSE_CODE } = await import("../../shared/protocol");
   made.length = 0;

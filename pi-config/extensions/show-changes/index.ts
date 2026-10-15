@@ -8,6 +8,7 @@
  *
  * Local sessions only: a session whose tools run on a remote target has no local repository.
  */
+import { dirname } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
@@ -75,8 +76,17 @@ export const SHOW_CHANGES_PARAMETERS = Type.Object(
 
 export interface ShowChangesOptions {
 	git?: Git;
-	/** pi's agent dir (default getAgentDir()), where remote targets' placeholders live. */
+	/** The agent dir of the Sova server hosting this chat, where remote targets' placeholders live (default serverAgentDir). */
 	agentDir?: () => string;
+}
+
+/**
+ * The agent dir of the Sova server hosting this chat, the one the viewer's check uses. A chat runs
+ * with the server's agent dir, except a worker given its own: Sova then names the server's state
+ * root (<agent dir>/sova) in SOVA_CHAT_STATE_ROOT. Outside Sova, pi's own.
+ */
+export function serverAgentDir(env: NodeJS.ProcessEnv = process.env): string {
+	return env.SOVA_CHAT_STATE_ROOT ? dirname(env.SOVA_CHAT_STATE_ROOT) : getAgentDir();
 }
 
 /** The session's active tracked worktrees (the worktrees extension's entry on this branch). */
@@ -144,7 +154,7 @@ export function renderShowChangesResult(result: { content?: unknown; details?: u
 
 export default function showChanges(pi: ExtensionAPI, options: ShowChangesOptions = {}) {
 	const git = options.git ?? runGit;
-	const agentDir = options.agentDir ?? getAgentDir;
+	const agentDir = options.agentDir ?? (() => serverAgentDir());
 	let remote = false;
 
 	pi.events?.on(REMOTE_SESSION_EVENT, () => {

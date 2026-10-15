@@ -37,6 +37,19 @@ Taelin" · "One chat that never ends: every message kept, summarized into lines 
 Taelin" while it is on; Zoomable compaction · "Sova" · "The chat stays as it is; when it would
 compact, older turns become summary lines the model can open instead of a one-off summary".
 
+Sova's UniiChat is an adaptation of Taelin's design, and keeps its name and credit, "UniiChat — by
+Victor Taelin". What it changes, and why:
+
+- **The reader's guide is rewritten** (§chat.memory/turn): it calls the lines an index, not the
+  record, and sends any recall to `zoom` before other tools, because an A/B evaluation of recall
+  found the model answering from the lines or searching elsewhere instead of opening them.
+- **The Overseer's run note adds a memory-first line** (§app.overseer/sessions-in-play): any other
+  session or fact the chat has seen is zoomed down to its message (full ids, exact words) before
+  any other tool, because the Overseer looked sessions up again with its own tools.
+- **Ids are shown whole** (§chat.memory/full-ids): a line's shortened session id is shown whole when
+  its own messages make that certain, because summaries shorten ids and a reader seeing the same
+  short id on every level took it for all memory kept.
+
 ## §chat.memory/where — Where memory can be turned on
 
 Memory runs inside Sova's server, so only Sova turns it on: from an ordinary chat's mode menu
@@ -148,8 +161,8 @@ the turn's first request, and is the same for the turn's every request.
 - **The guide.** It holds no date, id or state, so it stays a stable cache prefix. It tells the
   model the view is the chat's history as an index of one-line summaries, oldest first, with the
   message kinds and that older lines merge pairs; that lines are the index, not the record: every
-  message is kept whole under its line, tool results included, while lines shorten ids, names and
-  numbers. Whenever the model needs anything the chat has seen, it finds the latest mention in the
+  message is kept whole under its line, tool results included, while lines shorten names and
+  numbers (ids are shown whole, §chat.memory/full-ids). Whenever the model needs anything the chat has seen, it finds the latest mention in the
   view and zooms, halving n down to the message, before any other tool and before it acts, guesses
   or asks; it never greps or reads the chat's transcript or memory files, and uses other tools only
   for what the view never mentions or to check what is true now. Its wording was chosen by an A/B
@@ -184,6 +197,26 @@ session, its full id, a branch, a number, what was said), that every message is 
 memory line, and to use it before searching. Each call is a tool row like any other, whose folded line reads what it opened:
 "Recalled messages 40–47", "Recalled message 40", "Date of message 40".
 
+## §chat.memory/full-ids — Ids shown whole
+
+Summary lines often shorten a session id (a UUID such as `0190f3a2-1b2c-7d4e-8f90-a1b2c3d4e5f6`) to
+its first 8 hex digits or a part of it, and the same short id then repeats on every level down to
+the leaf. So a line is shown with its ids whole where its own messages make that certain: in line
+`id+n`, a token of at least 8 hex digits, optionally continued by hyphenated hex groups (such as
+`0190f3a2-1b2c`), standing alone (no letter, digit, `_` or `-` right before or after it), that is not
+itself a whole UUID and begins exactly one of the distinct UUIDs in messages `id` to `id+n−1` as
+logged (§chat.memory/log, tool calls and results included), is shown as that UUID. A token that
+begins none of them, or more than one, is shown as written; no UUID from outside the line's own
+messages is ever used.
+
+It applies wherever a line is shown: a UniiChat turn's view, `zoom`'s two lines, a zoomable
+compaction's summary, and the Memory outline (§chat.memory/status). It never rewrites the stored
+summaries (`tree.jsonl`), and the summarizer never sees it: the two lines a merge is asked to merge
+and the compaction view it reads as context are the stored lines, and the view's merges are decided
+on the stored lines' sizes. A line's shown text depends only on its stored text and its own messages, so it reads
+the same at every turn and the view's cached prefix stays byte-stable; a chat whose saved prefix
+predates it rebases once.
+
 ## §chat.memory/preparing — Turning memory on in a chat with history
 
 Turning memory on in a chat that already has messages prepares it in the background: every message
@@ -215,7 +248,8 @@ the merges still being written), each but off with an optional `problem` sentenc
 /api/memory?path=…` gives the lines the model sees now (UniiChat: the next turn's view; zoomable: the
 newest compaction's lines) with each line's first and last transcript entry, and `GET
 /api/memory/open?path=…&id=&n=` the two lines under a line, or a message whole, for the Session
-pane's read-only Memory outline.
+pane's read-only Memory outline. Their lines read as the model is shown them, ids whole where
+certain (§chat.memory/full-ids).
 
 ## §chat.memory/settings — Settings → Memory
 

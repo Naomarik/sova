@@ -27,7 +27,7 @@ Sova draws it with its own code instead of showing the block's text.
 | `vis tree` | An indented hierarchy |
 | `vis chart` | Bars (grouped or stacked), lines or scatter, on a linear or log axis |
 | `vis timeline` | Dated events in order |
-| `vis steps` | Scenario chains, with a status per row |
+| `vis steps` | Scenario chains, with a status per row or step and an optional outcome; up to 4 chains stand side by side, with equal steps merged |
 | `vis wireframe` | Low-fidelity phone or desktop screens, with arrows between them; a row can pin blocks to its end, let one block fill the room, share its width in set proportions and line its blocks up |
 | `vis matrix` | A comparison grid with yes, no, partial or text cells |
 | `vis code` | An annotated snippet: highlighted, numbered lines with notes |

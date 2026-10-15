@@ -787,21 +787,11 @@ export function HistoryItems(props: {
     // once every row held is built, the next older rows are fetched, and they land above the
     // window, where the fill builds them as any row not built yet.
     const older = props.older;
-    // When the reader last scrolled by hand (a wheel, a touch, a key, a press such as a scrollbar
-    // drag): a fetch they scrolled to is theirs, one a short list makes to fill itself is not.
-    let handAt = -Infinity;
-    const hand = () => (handAt = performance.now());
-    const HAND_TYPES = ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"];
-    for (const type of HAND_TYPES) root.addEventListener(type, hand, { passive: true });
-    onCleanup(() => HAND_TYPES.forEach((type) => root.removeEventListener(type, hand)));
     const check = () => {
-      const left = older ? older.left() : 0;
-      const byHand = performance.now() - handAt < 1_000;
-      // Not known yet what's above (no hello or snapshot, a sleeping chat's kept rows): only the
-      // reader's own scroll asks, and its load waits until that's known (lib/older-rows-view).
-      if ((start() === 0 && (left === null ? !byHand : left <= 0)) || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
+      const left = older?.left() ?? 0;
+      if ((start() === 0 && (left === null || left <= 0)) || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
       if (start() > 0) buildChunk();
-      else older?.more({ byHand });
+      else older?.more();
     };
     root.addEventListener("scroll", check, { passive: true });
     onCleanup(() => root.removeEventListener("scroll", check));
@@ -1410,9 +1400,8 @@ export interface OlderRowsApi {
       the rows the view opened on (kept from the last visit or fetched ahead); null when nothing
       says. Only for what the page lays out before the hello (the older-edge line), never a count. */
   known(): number | null;
-  /** The next chunk above, unless one is on its way. `byHand`: the reader scrolled up to it (a
-      sleeping chat starts then, §chat.transcript/instant-open), not a short list filling itself. */
-  more(o?: { byHand?: boolean }): void;
+  /** The next chunk above, unless one is on its way. */
+  more(): void;
   /** The rows down to a jump's target, in one request. */
   load(target: RowTarget): Promise<"here" | "missing" | "stale">;
   /** A scroll-up fetch is taking long enough to say so. */

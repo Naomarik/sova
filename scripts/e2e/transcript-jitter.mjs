@@ -10,9 +10,8 @@
 // - A long chat, opened fresh and switched back to (its rows kept from the last visit): the
 //   older-edge line is there from the first painted frame with rows, and stays.
 // - A whole chat of 120 rows switched back to, built down to its top by the idle fill before
-//   anything from the server lands (a chat closed while quiet opens asleep and connects nothing;
-//   a running one's hello is held back): the line goes, and the row at the top of the view doesn't
-//   move.
+//   anything from the server lands (its hello is held back): the line goes, and the row at the top
+//   of the view doesn't move.
 //
 // Writes three fixture sessions into the hermetic agent dir (dated ten minutes back, so they're in the
 // sidebar's Recent there until other sessions are newer) and drives a hermetic server
@@ -31,7 +30,6 @@ import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "../sova-token.mjs";
-import { whenListed } from "./listed.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
@@ -387,28 +385,14 @@ try {
       await page.evaluate(() => window.__jit.hold.release());
       await page.waitForTimeout(1500);
     });
-    // Back once its chat has closed while quiet: it opens asleep, and nothing from the server says
-    // what is above the kept rows.
-    await away();
-    spawnSync("bun", [join(ROOT, "scripts/stop-chats.ts"), "--agent-dir", AGENT], { cwd: ROOT, stdio: "ignore" });
-    for (let i = 0; (await whenListed(api, [pathOf(MID)], "path")).get(pathOf(MID)).chat; i++) {
-      assert(i < 100, "the chat did not stop");
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    // The tab's list hears it a moment later (the session feed): until then the view connects.
-    await page.waitForTimeout(6000);
-    const asleep = await back();
-    const woke = !!(await whenListed(api, [pathOf(MID)], "path")).get(pathOf(MID)).chat;
     const dpr = await page.evaluate(() => devicePixelRatio);
     await ctx.close();
     assert(held > 0, "nothing from the running chat's socket was held: its hello landed before the fill, the check compared nothing");
     judge("the running chat, its hello held", running, dpr);
-    assert(!woke, "the chat closed while quiet was started by opening it: the check compared nothing");
-    judge("the chat closed while quiet", asleep, dpr);
   });
 } finally {
   await browser.close().catch(() => {});
-  // The chats the checks started (scrolling up starts a chat closed while quiet).
+  // The chats the checks started.
   spawnSync("bun", [join(ROOT, "scripts/stop-chats.ts"), "--agent-dir", AGENT], { cwd: ROOT, stdio: "ignore" });
   if (cdpPort) {
     try {

@@ -10,7 +10,7 @@ the chat's full history back.
 Owns: the two memory types and their credit, where memory can be turned on, each chat's own type and
 view size, the message log, the summary tree and the view, the summarizer, what a turn sends, the
 recall tools and their rows, preparing an existing chat, zoomable compaction, the memory status and
-outline the web shows, Settings → Memory and the Overseer's switch. Not here: the mode menu's rows
+outline the web shows, Settings → Memory and the overseers' switches. Not here: the mode menu's rows
 and Save as default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
 
@@ -41,7 +41,9 @@ compact, older turns become summary lines the model can open instead of a one-of
 
 Memory runs inside Sova's server, so only Sova turns it on: from an ordinary chat's mode menu
 (`POST /api/mode?path=…`, §chat.mode-menu/how-a-switch-reaches-the-chat), whatever the chat's
-model, and for the Overseer from its own switch (§chat.memory/overseer).
+model, and for the Overseer and each project overseer from that overseer's own switch
+(§chat.memory/overseer). Those switches are the only way: a project overseer's mode switch stays
+refused, and neither overseer has a mode-menu memory row.
 
 - The mode extension declares it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
   a record over every minor mode). Its `/mode memory on` takes effect only while Sova's server is
@@ -75,13 +77,14 @@ model, and for the Overseer from its own switch (§chat.memory/overseer).
 A chat's memory type and view size are its own: a hidden `sova-memory` state record `{v: 1, type,
 size}` (§app.harness/state, newest on the branch wins), written by `POST /api/mode?path=… { memory }`.
 A chat with no record uses the saved default (Settings' memory file `default`), else UniiChat at
-128 KB. The choice is kept while memory is off, survives reopen, rewind (a rewind past the record
+128 KB. An overseer (the Overseer, a project overseer) keeps no record: its type and size are its
+own switch's (§chat.memory/overseer). The choice is kept while memory is off, survives reopen, rewind (a rewind past the record
 falls back to the one before it) and restart, and reaches every tab in the chat's `mode` message
 (`memory`), so a change of type alone is a new `mode` message. `Save as default` saves it with the
 chat's modes; the size accepts any whole number of KB from 8 to 512. Only a chat whose menu can turn
 memory on gets `memory` in its `mode` message and in a switch's result (`ChatModeResult`): a runtime
-without the memory engine (a baton, a project overseer, another special loadout), a session that
-refuses mode switches and the Overseer get none, so their menu shows no memory row, and a `{ memory }`
+without the memory engine (a baton, another special loadout), a session that refuses mode switches
+(a project overseer, whose memory is its own switch's) and the Overseer get none, so their menu shows no memory row, and a `{ memory }`
 or memory-on switch there is refused before anything is written.
 
 ## §chat.memory/log — The message log and its sidecar
@@ -137,11 +140,20 @@ is tried again at the next message; while the summarizer can't run at all the st
 ## §chat.memory/turn — What a UniiChat turn sends
 
 With UniiChat on, each request of a turn sends, after the chat's usual system prompt and tools: one
-**view message** — the memory guide (Taelin's §5, the agent unnamed, device and subagent paragraphs
-left out), then the view of every message before the turn, as `<chat>` lines `id+n|text` — then the
+**view message** — the memory guide, then the view of every message before the turn, as `<chat>` lines `id+n|text` — then the
 chat's standing mode notes, then the turn itself whole (the message that started it, the hidden
 notes it carries, and every reply, tool call, result and steer since). The view is rendered once, at
 the turn's first request, and is the same for the turn's every request.
+
+- **The guide.** It holds no date, id or state, so it stays a stable cache prefix. It tells the
+  model the view is the chat's history as an index of one-line summaries, oldest first, with the
+  message kinds and that older lines merge pairs; that lines are the index, not the record: every
+  message is kept whole under its line, tool results included, while lines shorten ids, names and
+  numbers. Whenever the model needs anything the chat has seen, it finds the latest mention in the
+  view and zooms, halving n down to the message, before any other tool and before it acts, guesses
+  or asks; it never greps or reads the chat's transcript or memory files, and uses other tools only
+  for what the view never mentions or to check what is true now. Its wording was chosen by an A/B
+  evaluation of recall against the earlier wording.
 
 - **Wait.** Before the first request, the turn waits for the newest messages' summaries, at most
   20 seconds, then goes on anyway (a line not summarized yet reads "(not summarized yet: zoom it)");
@@ -167,7 +179,9 @@ the turn's first request, and is the same for the turn's every request.
 While memory is on the model has two tools: `zoom(id, n)` opens line `id+n` into the two lines it was
 made from, and `zoom(id, 1)` gives message `id` whole; `date(id)` gives message `id`'s date and time.
 `n` must be a power of 2 and `id` a multiple of it; a line not built yet opens into its own halves
-or messages. Each call is a tool row like any other, whose folded line reads what it opened:
+or messages. The zoom tool's description says it recalls anything from earlier in the chat (a
+session, its full id, a branch, a number, what was said), that every message is kept whole under its
+memory line, and to use it before searching. Each call is a tool row like any other, whose folded line reads what it opened:
 "Recalled messages 40–47", "Recalled message 40", "Date of message 40".
 
 ## §chat.memory/preparing — Turning memory on in a chat with history
@@ -176,6 +190,12 @@ Turning memory on in a chat that already has messages prepares it in the backgro
 not summarized yet is queued, and until the view covers the chat, turns go out exactly as without
 memory. The status reads "Preparing memory: 120 of 480 messages" (messages summarized of messages
 logged). Memory applies from the first turn after the leaves are built.
+
+A chat whose memory is on but was never prepared (no view built yet: an overseer that is on by
+default and already has history, §chat.memory/overseer, or a chat whose preparing a restart cut
+short) is prepared the same way, with the same status, from the first time the engine reads its
+branch with memory on: its runtime opening, or its next turn. Its turns go out as without memory
+meanwhile; a chat whose view was built once is never prepared again.
 
 ## §chat.memory/zoomable — Zoomable compaction
 
@@ -232,6 +252,20 @@ reusable component.
 ## §chat.memory/overseer — The Overseer's memory
 
 The Overseer has no mode menu; its memory is a switch of its own, `GET`/`PUT /api/overseer/memory`
-`{on, type, size}`, kept in `overseer.json` and read at each of its turns. With it on, the Overseer
-runs the same engine as a chat (its tools include `zoom` and `date`). It never reaches the coding
-sessions the Overseer starts.
+`{on, type, size}`, kept in `overseer.json` (`memory`) and read at each of its turns. Each project
+overseer has the same switch of its own, `GET`/`PUT /api/projects/:pid/overseer/memory`, kept in
+that project's overseer `overseer.json` (§app.project-overseer/identity, §app.project-overseer/memory-switch).
+Changing one never changes the Overseer's or another project's.
+
+- **On by default.** An overseer with no saved choice has memory on, UniiChat at 128 KB, whatever
+  default Settings → Memory saved for ordinary chats; both routes report it so, and so does its
+  Memory outline (`GET /api/memory?path=…`), held or not. Switched off, it
+  stays off until someone switches it on again. Clear keeps the choice: it is the overseer's, not
+  its conversation's. Only its switch writes it: a Settings → Overseer save (and the proactivity
+  cycle, which saves the same settings) keeps the stored switch whatever its body carries.
+- **An existing conversation** on by default is prepared in the background from its runtime's next
+  open or its next turn, whichever comes first (§chat.memory/preparing), its run-status row
+  showing "Preparing memory: n of m messages", and it answers as without memory meanwhile.
+- With it on, the overseer runs the same engine as a chat (its tools include `zoom` and `date`),
+  on Claude Code as on pi. It never reaches the coding sessions either overseer starts
+  (§chat.memory/where).

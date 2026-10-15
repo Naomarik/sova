@@ -1,6 +1,7 @@
 import type { HBlock, HEntry } from "../shared/harness";
 import { OVERSEER_BRIEF_PREFIX, type SessionReadiness } from "../shared/protocol";
 import type { OpeningDetails } from "./overseer-opening";
+import { MEMORY_ZOOM_TOOL } from "../shared/memory";
 import { CARD_TOOL, CARDS_NOTE_MESSAGE, foldCardDetails, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../shared/overseer-card";
 
 /**
@@ -128,6 +129,8 @@ export interface RunNoteInput {
   changed?: string;
   /** The opening values and told fingerprints to record (overseer-opening.ts). */
   opening?: OpeningDetails;
+  /** The Overseer's memory is on (its recall tools are active): the note sends recall to zoom first. */
+  memory?: boolean;
 }
 
 /** The ids the note will ask `session` about: briefed blockers in the window, open cards' sessions,
@@ -142,6 +145,10 @@ export function runNoteSessionIds(branch: readonly HEntry[], now: number, prompt
 /** The run note's first line: the time now, and that the system prompt's is when the conversation opened. */
 export const nowLine = (now: Date): string =>
   `[now] It is ${now.toString()}. The time in your system prompt is when this conversation opened; read elapsed time from this line and from tool ages.`;
+
+/** With memory on, every note's pointer to recall (§app.overseer/sessions-in-play): after the sessions
+    in play, or alone when none is in play. */
+export const MEMORY_FIRST = `Any other session or fact this chat has seen: ${MEMORY_ZOOM_TOOL} its line down to the message (full ids, exact words) before any other tool.`;
 
 /** The note's text and details. */
 export function runNote(input: RunNoteInput): { content: string; details: RunNoteDetails } {
@@ -185,6 +192,7 @@ export function runNote(input: RunNoteInput): { content: string; details: RunNot
 
   const play = sessionsInPlayText(sessionsInPlay(input.branch, now, input.prompted ?? []), input.session, now);
   if (play) parts.push(redact(play));
+  if (input.memory) parts.push(MEMORY_FIRST);
 
   if (input.cardsText) parts.push(input.cardsText);
   return { content: parts.join("\n\n"), details: { v: 1, ...(cleared.length ? { cleared } : {}), ...input.opening } };
@@ -269,7 +277,7 @@ export function sessionsInPlayText(play: readonly InPlay[], session: (id: string
       if (p.brief) bits.push(`last brief: ${p.brief.kind} ${ago(p.brief.at, now)}`);
       return `- ${bits.join(" · ")}`;
     });
-    parts.push(["[sessions in play] Sessions you created, prompted or were briefed about in the last 24 hours, as of now. Still check one with sova_session before saying what it is doing:", ...rows].join("\n"));
+    parts.push(["[sessions in play] Sessions you created, prompted or were briefed about in the last 24 hours. Check one with sova_session before saying what it is doing:", ...rows].join("\n"));
   }
   // Round 3's open follow-ups go here, beside the sessions they watch.
   if (followUps.length) parts.push(["[follow-ups] Your open follow-ups:", ...followUps.map((f) => `- ${f}`)].join("\n"));

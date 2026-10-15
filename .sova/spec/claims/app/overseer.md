@@ -69,15 +69,17 @@ are atomic tmp+rename.
   (§app.overseer/todos), never a todo's text.
 - **Fixed at opening, live through the run note.** The prompt is rendered with the values as they
   were when the conversation opened (the time it opened, the notes, the limits, the ideas table of
-  contents, the todos counts and the extra system prompt) and stays byte for byte the same for the
+  contents, the todos counts, the extra system prompt and the form of its id rule, which follows its
+  memory switch, §app.overseer/verify-first) and stays byte for byte the same for the
   whole conversation, across runs, runtimes and server restarts, so the provider's cache holds and a
   Claude Code chat never restarts for it. The opening values are kept in the first run note's
-  details on the branch. The notes, the limits, the ideas table of contents, the todos counts and the
-  extra system prompt are still read again at the start of every run: when one differs from what the
+  details on the branch; a value the prompt gained after a conversation opened takes, for that
+  conversation, its value when its runtime opened. The notes, the limits, the ideas table of
+  contents, the todos counts, the extra system prompt and the id rule's form are still read again at the start of every run: when one differs from what the
   Overseer was last told (the prompt's opening text, or the newest run note since the last compaction
   that gave it), the run note (§app.overseer/run-note) gives its whole current text, which replaces
   the prompt's, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a
-  Settings save reaches the Overseer from its next run (the next message, brief or wake-up), with no
+  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up), with no
   `/clear`. A run an extension's message starts (an `/explain` result, a worker's report) has no run
   note and gets them at the next run that has one. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
@@ -627,9 +629,14 @@ session is on which branch survives a compaction and a restart:
   as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
   tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
   worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
-  and the kind of the last brief that named it and when. A line before the rows says the table is
-  as of now, and that the Overseer still checks a session with `sova_session` before saying what it
-  is doing.
+  and the kind of the last brief that named it and when. A line before the rows says which sessions
+  these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
+  one with `sova_session` before saying what it is doing.
+- **Memory first.** While the Overseer's memory is on (§chat.memory/overseer: the switch in force,
+  on when never set, the one its `zoom` and `date` tools follow), every run note adds,
+  after the sessions in play (alone when none is in play) and before the cards: "Any other session
+  or fact this chat has seen: zoom its line down to the message (full ids, exact words) before any
+  other tool." With memory off it is left out: `zoom` is not among its tools then.
 - It is computed when the note is written, never kept: a session that leaves the window leaves the
   table. After a compaction it is written once more, with the open cards, after the summary
   (§app.overseer/confirm), even when no card is open. Its text from other sessions is redacted like
@@ -1136,7 +1143,9 @@ memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popov
 the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
 coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
 with the reason, and its memory is unchanged. Its run-status row shows memory's status
-like any chat's (§chat.composer/memory-status).
+like any chat's (§chat.composer/memory-status). With no saved choice it reads on, UniiChat at
+128 KB (§chat.memory/overseer), so a new Overseer's button shows the check. Each project overseer
+has the same button and popover for its own memory (§app.project-overseer/memory-switch).
 
 ## §app.overseer/head-layout — The head at every width
 
@@ -1303,7 +1312,14 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
   `sova_attention` in the same turn, and drop or replace a card that no longer applies before
   listing cards.
 - **A brief is a snapshot** of when it was sent.
-- **Ids are copied** verbatim from a tool's output in the same turn, never typed from memory.
+- **Ids are copied** verbatim from a tool's output in the same turn, never typed. The rule has two
+  forms, by the Overseer's memory switch in force (§chat.memory/overseer, on when never set):
+  with memory on, a `zoom` result counts as a source, a summary line's short id is followed down
+  with `zoom` to the message that has it whole, and `sova_list_sessions` searches only for a
+  session memory never names; with memory off, it names `sova_list_sessions`, `sova_attention`
+  and `sova_session` as the sources and, when unsure, a `sova_list_sessions` search first, and
+  never names `zoom`. The form is an opening value of the prompt, and a switch change reaches the
+  next run as that rule's new text under the run note's `[changed]` (§app.overseer/hosting).
 - **Checks are reported as said.** "Tests pass" from a session is relayed as what the session
   says, unless `sova_session` shows a check that passed after the worktree's newest commit.
 - **A promise has a trigger.** Every "I'll …" is backed in the same turn by something that will
@@ -1313,7 +1329,8 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
 - **Time** comes from tool ages and the run note's time, never from the system prompt's opening
   time.
 
-The project overseer's prompt holds the first and third for its own tools and the project's
+The project overseer's prompt holds the first, and the third as "copied verbatim from a tool's
+output in this turn, never typed or pieced together", for its own tools and the project's
 sessions.
 
 ## §app.overseer/input-source — Sova's own messages are not typed input

@@ -13627,7 +13627,10 @@
       "evidence": "reviewed",
       "code": [
         ".sova/playbooks/merge-round/PLAYBOOK.md",
-        ".sova/playbooks/merge-round/references/push-restart.md"
+        ".sova/playbooks/merge-round/references/push-restart.md",
+        ".sova/playbooks/merge-round/references/round.md",
+        ".sova/playbooks/merge-round/references/check.md",
+        ".sova/playbooks/merge-round/references/land.md"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -13636,8 +13639,8 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "user",
+        "at": "2026-10-15T22:39Z"
       }
     },
     "§chat/merge-round": {
@@ -13667,8 +13670,8 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T03:48Z"
+        "by": "user",
+        "at": "2026-10-15T22:39Z"
       }
     },
     "§app.access/callers": {
@@ -17396,7 +17399,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-12T05:16Z"
+        "at": "2026-10-15T22:39Z"
       }
     },
     "§chat.model-menu/favorites": {
@@ -17916,7 +17919,11 @@
         "src/lib/api.ts",
         "src/app.css"
       ],
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T22:39Z"
+      }
     },
     "§app.baton/files": {
       "kind": "behavior",

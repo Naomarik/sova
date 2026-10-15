@@ -80,7 +80,10 @@ after each landing, since every other branch is then checked against the new mas
   report.
 - **No spec gate.** The round never refuses or holds a landing over the spec: not over drafts left
   unpromoted, unclaimed files or a failing census. Drafts are their sessions' own to promote; the
-  captain promotes none.
+  captain promotes none. What it does instead is tell the owner: the ask names the branch's drafts
+  left unpromoted, to be promoted on the branch before the owner answers, and the notice after a
+  landing names any still left, to be promoted at once on a fresh branch from master. Either way the
+  answer and the landing mean what they always do.
 - **Clean up.** Once a branch is landed and its owner is done with the worktree, the captain removes its worktree from the main checkout
   with exactly the two commands `landed` prints: `git worktree remove -- <path>`, never `--force`,
   then `git branch -d -- <branch>`. Git's own refusals (uncommitted or untracked files, a lock, a
@@ -167,7 +170,12 @@ shell and under a timeout.
   owner asked in the last 10 minutes. Otherwise it records the topic with the ask and prints the text
   to `session_send`: `Is <branch> ready to merge at its current head? Reply with queue_push, topic
   "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
-  never holds the head's sha, and its `next:` line says not to poll. **`reply <branch>`** reads the
+  never holds the head's sha, and its `next:` line says not to poll. When the branch's worktree holds
+  spec drafts with records not yet promoted (each draft's status, as `check` reads it), the text ends
+  with one more sentence naming each such draft with up to four of those § ids, telling the owner to
+  promote them on its branch and commit that before it answers READY, since the merge round never
+  promotes them; with none, or no spec tools, the text is as above. The sentence asks, and never
+  changes what READY or NOT READY means or whether the branch can land. **`reply <branch>`** reads the
   delivered topic batches on stdin (§chat.topics/delivery) — every batch piped, when several arrive
   together — or the owner's `session_read` output. A batch is read only against a recorded ask:
   with none, it is refused. When no piped batch is on the ask's topic the answer is refused as
@@ -208,6 +216,13 @@ shell and under a timeout.
   (a branch its owner merged has no check on record), builds the main checkout, records the restart
   need (one that can't be told counts as needed), and prints the notice for the owner, with the
   sentence "Its worktree folder was removed." to add only when the clean-up's remove succeeds.
+  When the landed branch's worktree still holds drafts with records not yet promoted, it first copies
+  each such draft into `<state root>/playbooks/merge-round/drafts/<head sha>/`, since removing the
+  folder deletes the worktree's own copy, and the notice goes on to name each draft with up to four of
+  those § ids and that folder, telling the owner to promote them now, on a fresh branch from master,
+  by copying them into its worktree's `.sova/spec/drafts/`. A copy that fails withholds the clean up,
+  so the folder and its drafts stay, and the notice names the worktree's own drafts folder instead.
+  With none the notice is unchanged.
   Its `next:` line is the clean-up: `git -C <main checkout> worktree remove -- <path>`, then `git -C
   <main checkout> branch -d -- <branch>`, then `push`. When git's record of that worktree can't
   be written from where the driver runs (a sandboxed captain), it prints instead that the clean-up

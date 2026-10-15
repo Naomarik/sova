@@ -271,7 +271,9 @@ guide fails its test when that rule gains a case the guide doesn't name or drops
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
 (§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
 finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
-first; the census command that line gives lists the rest. A worker's spec brief lists `toc`, `read` and
+first; the census command that line gives lists the rest. It tells the session to promote on its own
+branch before it calls that branch ready to land, since nothing at landing promotes for it, and says
+so without naming any project's merge process. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.
 
@@ -288,7 +290,8 @@ worker's census, never a hook of its own. A foreign § (one that existed before 
 started) whose text the task's change contradicts, or where it changes what a user sees beyond
 that text, is updated in the task's draft without asking, the task's go-ahead covering it, and
 listed in the reply or report as "Also updates §X: <what>"; it is never asked about. Spec mode stands alone: its guide, notes and
-tools never rely on the merge round or a merge captain, and a session promotes its own drafts.
+tools never rely on the merge round or a merge captain, and a session promotes its own drafts, on its
+own branch, before it calls that branch ready to land.
 In the web app, an older reply shows any closing lines it was written with, as written, and an
 older session's spec-turn records draw nothing.
 

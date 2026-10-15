@@ -1749,6 +1749,21 @@
         "server/memory/chat-memory.test.ts"
       ]
     },
+    "§chat.memory/full-ids": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/log"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/ids.ts",
+        "server/memory/engine.ts",
+        "server/memory/ids.test.ts",
+        "server/memory/engine.test.ts"
+      ]
+    },
     "§chat.memory/help": {
       "kind": "behavior",
       "requires": [
@@ -1873,7 +1888,9 @@
         "server/memory/routes.ts",
         "shared/protocol.ts",
         "server/chat-manager.ts",
-        "server/memory/chat.ts"
+        "server/memory/chat.ts",
+        "server/memory/engine.ts",
+        "server/memory/engine.test.ts"
       ]
     },
     "§chat.memory/summarizer": {
@@ -1887,7 +1904,12 @@
       "code": [
         "server/memory/summarizer.ts",
         "server/memory/prompts.ts",
-        "server/memory/settings.test.ts"
+        "server/memory/settings.test.ts",
+        "server/memory/engine.ts",
+        "server/memory/engine.test.ts",
+        "server/memory/prompts.test.ts",
+        "server/memory/ids.ts",
+        "server/memory/ids.test.ts"
       ]
     },
     "§chat.memory/tree": {

@@ -1,10 +1,12 @@
-/* `vis steps`: rows of chains, grouped under lane heads. Every size here is fixed in px (line
-   heights, paddings, the label column, the arrow): ./height.ts computes the drawing's height from
-   the same numbers, so the figure can reserve its space before it draws. Tokens only. */
+/* `vis steps`: three layouts (layout.ts picks one from the content width): paths side by side,
+   an aligned grid of rows, and a numbered list per row on a phone. Every size here is fixed in px
+   (line heights, paddings, columns, arrows): ./height.ts computes the drawing's height from the
+   same numbers, so the figure can reserve its space before it draws. Tokens only. */
 .vis-steps { display: flex; flex-direction: column; gap: var(--space-1); }
 .vis-steps-lane { font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-semibold); color: var(--color-ink-2); overflow-wrap: anywhere; }
 .vis-steps > * + .vis-steps-lane { padding-top: var(--space-2); }
-.vis-steps-row { display: grid; grid-template-columns: 144px minmax(0, 1fr); align-items: start; gap: var(--space-2); padding: 6px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-sm); }
+
+/* A row's head: status mark, then the label (and a marked row's note number). */
 .vis-steps-head { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
 .vis-steps-status { flex: none; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 3px; color: var(--vis-stroke); }
 .vis-steps-status-plain::before { content: ""; width: 10px; height: 10px; box-sizing: border-box; border-radius: var(--r-full); border: 2px solid var(--vis-stroke); }
@@ -12,11 +14,63 @@
 .vis-tone-muted.vis-steps-status-plain::before { border-style: dotted; }
 .vis-steps-label { min-width: 0; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
 .vis-steps-label > .vis-em-badge { vertical-align: 1px; }
-.vis-steps-row.vis-tone-muted .vis-steps-label { color: var(--color-ink-muted); }
-.vis .vis-steps-chain { display: flex; flex-wrap: wrap; row-gap: var(--space-1); margin: 0; padding: 0; list-style: none; min-width: 0; }
-.vis .vis-steps-chain > li { display: flex; align-items: flex-start; max-width: 100%; margin: 0; }
-/* The arrow is the icon, masked to 14px inside its 20px × 24px slot. */
-.vis-steps-arrow.icon { flex: none; width: 20px; height: 24px; -webkit-mask-size: 14px; mask-size: 14px; color: var(--color-ink-muted); }
-.vis-steps-chip { min-width: 0; padding: 2px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-xs); background: var(--color-sunken); font-size: var(--fs-caption); line-height: 18px; color: var(--color-ink); overflow-wrap: anywhere; }
-.vis-steps-chip.vis-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
-@container vis (max-width: 420px) { .vis-steps-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } }
+.vis-steps-muted .vis-steps-label { color: var(--color-ink-muted); }
+
+/* A step: a sunken chip, 18px lines; a toned step takes its tone's fill and border, and the four
+   tones with an icon show it (14px, 6px before the text). Ids, hashes and paths are mono, breaking
+   only after their dashes. */
+.vis-steps-chip { display: flex; align-items: flex-start; gap: 6px; min-width: 0; padding: 2px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-xs); background: var(--color-sunken); font-size: var(--fs-caption); line-height: 18px; color: var(--color-ink); overflow-wrap: anywhere; }
+.vis-steps-chip.vis-steps-toned { border-color: var(--vis-stroke); background: var(--vis-fill); }
+.vis-steps-chip.vis-steps-toned.vis-tone-muted { border-style: dashed; color: var(--color-ink-muted); }
+.vis-steps-chip > .icon, .vis-steps-out > .icon { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--vis-stroke); }
+.vis-steps-text { min-width: 0; flex: 1 1 auto; }
+.vis-steps-mono { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; }
+.vis-steps-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* An outcome: caption, medium, after the steps; a toned one leads with its icon. */
+.vis-steps-out { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-medium); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.vis-steps-out.vis-tone-muted { color: var(--color-ink-muted); }
+
+/* ---- Side by side: one bordered column per row, one grid line per position. ---- */
+.vis .vis-steps-side { display: grid; grid-template-columns: repeat(var(--steps-cols), minmax(0, 1fr)); column-gap: var(--space-2); }
+.vis-steps-side > [role="row"] { display: contents; }
+.vis-steps-colframe { border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-sm); }
+.vis-steps-colhead { padding: 7px 9px 0; min-width: 0; z-index: 1; }
+.vis-steps-cell { position: relative; display: flex; align-items: flex-start; min-width: 0; padding: 18px 9px 0; z-index: 1; }
+.vis-steps-cell > .vis-steps-chip { flex: 1 1 auto; }
+/* A step two or more paths share: one chip across their columns, on the card's own surface. */
+.vis-steps-merged > .vis-steps-chip { justify-content: center; text-align: center; }
+.vis-steps-merged > .vis-steps-chip:not(.vis-steps-toned) { background: var(--color-surface); border-color: var(--color-border-strong); }
+.vis-steps-merged > .vis-steps-chip > .vis-steps-text { flex: 0 1 auto; }
+/* The arrow into a step, in the 18px above it: a 1.5px line ending in a head. */
+.vis-steps-conn { position: absolute; top: 2px; height: 13px; width: 0; border-left: var(--stroke-icon) solid var(--color-ink-muted); transform: translateX(-0.75px); }
+.vis-steps-conn::after { content: ""; position: absolute; left: -4.75px; bottom: -1px; border: 4px solid transparent; border-top: 5px solid var(--color-ink-muted); border-bottom: 0; }
+/* An empty position: the column carries on past it, a dashed line through its 24px. */
+.vis-steps-gap { flex: 1 1 auto; align-self: stretch; min-height: 24px; position: relative; }
+.vis-steps-gap::before { content: ""; position: absolute; left: 50%; top: -18px; bottom: 0; border-left: var(--stroke-icon) dashed var(--color-border-strong); }
+.vis-steps-outcell { padding: 10px 9px 0; min-width: 0; z-index: 1; }
+.vis-steps-foot { height: 9px; grid-column: 1 / -1; }
+
+/* ---- Aligned grid: bordered bands, a 144px label column, equal step columns. ---- */
+.vis-steps-row { display: grid; grid-template-columns: 144px minmax(0, 1fr); align-items: start; gap: var(--space-2); padding: 6px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-sm); }
+.vis-steps-row.vis-steps-has-out { grid-template-columns: 144px minmax(0, 1fr) 120px; }
+.vis-steps-row > .vis-steps-out { padding-top: 3px; }
+.vis .vis-steps-chain { display: grid; grid-template-columns: repeat(var(--steps-cols), minmax(0, 1fr)); column-gap: 20px; row-gap: var(--space-1); align-items: start; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.vis .vis-steps-chain > li { position: relative; display: flex; min-width: 0; margin: 0; }
+.vis-steps-chain > li > .vis-steps-chip { flex: 1 1 auto; }
+/* The arrow sits in the 20px gap before its step: the icon masked to 14px in a 20px × 24px slot. */
+.vis-steps-arrow.icon { position: absolute; left: -20px; top: 0; width: 20px; height: 24px; -webkit-mask-size: 14px; mask-size: 14px; color: var(--color-ink-muted); }
+.vis-steps-chain > li.vis-steps-gapcell { height: 24px; }
+.vis-steps-chain > li.vis-steps-gapcell::before { content: ""; position: absolute; left: -20px; right: 0; top: 11.5px; border-top: var(--stroke-icon) dashed var(--color-border-strong); }
+
+/* ---- Numbered list (a phone): the label above its steps, numbered down a rail. ---- */
+.vis-steps-band { padding: 6px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-sm); }
+.vis .vis-steps-rail { display: flex; flex-direction: column; gap: var(--space-1); margin: 4px 0 0; padding: 0; list-style: none; }
+.vis .vis-steps-rail > li { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--space-2); align-items: start; margin: 0; }
+.vis-steps-rail > li:not(:last-child)::before { content: ""; position: absolute; left: 15.5px; top: 22px; bottom: -6px; border-left: var(--stroke-thin) solid var(--color-border-strong); }
+.vis-steps-rail > li.vis-steps-gapline:not(:last-child)::before, .vis-steps-rail > li.vis-steps-gapline + li::after { border-left-style: dashed; }
+.vis-steps-num { justify-self: center; white-space: nowrap; min-width: 20px; height: 20px; margin-top: 2px; padding: 0 4px; box-sizing: border-box; border-radius: var(--r-full); display: grid; place-items: center; font: var(--fs-micro) / 1 var(--font-mono); color: var(--color-ink-2); background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border-strong); position: relative; z-index: 1; }
+.vis-steps-fold { padding: 3px 0; font-size: var(--fs-caption); line-height: 18px; font-style: italic; color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.vis-steps-gapline .vis-steps-num { border-style: dashed; }
+.vis-steps-gapline .vis-steps-gap { height: 24px; }
+.vis-steps-gapline .vis-steps-gap::before { left: 0; right: 0; top: 11.5px; bottom: auto; border-left: 0; border-top: var(--stroke-icon) dashed var(--color-border-strong); }
+.vis-steps-rail > li > .vis-steps-out { padding: 3px 0; }

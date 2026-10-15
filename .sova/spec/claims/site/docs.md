@@ -86,7 +86,7 @@ rendered to static HTML when the examples are generated (`pnpm run vis-examples`
 a copy of the vis styles scoped to the examples, so the page matches the app, runs no script, and
 follows the site's light/dark toggle through the same tokens. Every example parses with no
 warnings, or the generator fails, and it writes the same bytes on every run. A kind that lays
-out for its pane's width (flow, state, sequence, chart, matrix) is drawn for the docs column and
+out for its pane's width (flow, state, sequence, chart, matrix, steps) is drawn for the docs column and
 for a 320px phone, and the page shows the one that fits its figure's width. Interactive parts
 show their first state and do nothing: a sequence's **Step Through** button is disabled. A `vis
 svg` example is drawn in place, as its frame would show it; a `vis html` example shows only its

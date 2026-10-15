@@ -84,6 +84,8 @@ export class MemoryEngine implements Tree {
   private problem: string | undefined;
   private waiters = new Set<() => void>();
   private preparing = false;
+  /** Whether sync has run once (the first one decides whether a never-built chat starts preparing). */
+  private synced = false;
   private updating: number | undefined;
   private disposed = false;
 
@@ -130,6 +132,12 @@ export class MemoryEngine implements Tree {
     for (let i = 0; i < this.log.length; i++) if (!this.get(0, i)) this.enqueueLeaf(i);
     for (const ref of readyMerges(this.nodes.values(), this)) this.enqueueMerge(ref);
     this.failures = 0;
+    // The first sync of a chat whose view was never built (memory on by default in a chat with history, or a
+    // preparing a restart cut short): it is prepared as if memory were just turned on.
+    if (!this.synced) {
+      this.synced = true;
+      if (covered(this.state.view) === 0 && this.unbuiltLeaves(this.log.length) > PREPARE_SLACK) this.preparing = true;
+    }
     this.pump();
     this.emit();
   }

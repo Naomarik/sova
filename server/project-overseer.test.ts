@@ -10,6 +10,7 @@ import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/
 import { stateView } from "./harness/state-view";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
 import { linkPiConfigExtensions } from "./testing/agent-dir";
+import { MEMORY_TOOLS } from "../shared/memory";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -88,13 +89,24 @@ describe("a project overseer", async () => {
     assert.equal(chat.overseer, false, "not the Overseer");
     // A placed project: the org part's reads (no statechart act names them) come with its tools, and so do the
     // org history's (sova_history, sova_decide).
-    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", ...PO_BUILTINS])].sort();
+    // Its memory is on by default: the recall tools come with it.
+    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", ...PO_BUILTINS, ...MEMORY_TOOLS])].sort();
     assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), want);
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash or extension tool");
     for (const t of ["write", "edit"]) assert.ok(want.includes(t), t);
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
-    assert.deepEqual(loaded, ["<inline:sova-project-overseer>"]);
+    assert.deepEqual(loaded, ["<inline:sova-project-overseer>", "<inline:sova-memory>"]);
+    assert.deepEqual(chat.memory.choice(), { on: true, type: "uniichat", size: 128 }, "no saved choice: on, UniiChat at 128 KB");
+    assert.equal(chat.memoryOffered(), false, "no mode-menu memory row");
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
+    await assert.rejects(() => chat.switchMode({ minorModes: ["memory"] } as never), ModeRefusedError);
+    // Its own switch, off: the chat reads it at once, and the rest of this file's turns run without memory
+    // (no summarizer call in the unit tier).
+    const p = store.projectOverseerPaths(project.id);
+    store.writePoSettings(p, { ...store.readPoSettings(p), memory: { on: false, type: "uniichat", size: 128 } });
+    assert.equal(chat.memory.choice().on, false);
+    await po.patchProjectOverseer(project.id, { watch: true });
+    assert.deepEqual(store.readPoSettings(p).memory, { on: false, type: "uniichat", size: 128 }, "a PATCH of its other settings keeps it");
   });
 
   test("the chat tells the operator's sends apart; a fresh runtime is unattended (fail closed)", async () => {
@@ -125,6 +137,8 @@ describe("a project overseer", async () => {
     const info = await po.clearProjectOverseer(project.id);
     assert.notEqual(info.id, before.id);
     assert.equal(info.settings.autonomy, "L2");
+    assert.deepEqual(info.settings.memory, { on: false, type: "uniichat", size: 128 }, "its memory switched off stays off");
+    assert.equal((await acquireChat(info.path!)).memory.choice().on, false, "and the new conversation runs without memory");
     assert.deepEqual(info.history.map((h) => h.id), [before.id]);
     assert.ok(store.projectOverseerOfPath(before.path), "still recognised as its conversation");
     await assert.rejects(() => acquireChat(before.path), BusyError);

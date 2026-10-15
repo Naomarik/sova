@@ -1077,6 +1077,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .memory-type-by { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
 .memory-type-link .popover-item-label { color: var(--color-accent); }
 .memory-size-default { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* A project overseer's memory switch is the foot's last control, alone in its accessory: the accessory
+   already reaches the right edge, so the trigger drops the edge margin it would otherwise be squeezed by. */
+.composer-foot .composer-accessory:not(:has(.quick-actions-trigger)) > .overseer-memory-trigger { margin-right: 0; }
 /* The run-status row's memory piece shrinks before the triggers do, ending in an ellipsis. */
 .run-status > .run-status-memory { flex: 0 1 auto; min-width: 4em; }
 .run-status > .run-status-memory.run-status-link { flex: 0 1 auto; }

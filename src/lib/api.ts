@@ -528,6 +528,10 @@ export const putMemorySettings = (settings: MemorySettings) =>
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
 export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+/** A project overseer's own memory switch: the Overseer's shape. */
+export const getProjectOverseerMemory = (projectId: string) => request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`);
+export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+  request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
     from its next tool call. `on` rides along for a host whose server predates the three states

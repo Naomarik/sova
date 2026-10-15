@@ -488,7 +488,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     title and token counts as last counted, by model, time and token kind, §app.project-costs/ledger),
     `usage.jsonl` (the reconciler's decide calls' usage, §app.project-costs/recording), and the
     overseer's `overseer/` — `overseer.json` (autonomy, models, caps,
-    watch, extra instructions), `notes.md`, `ideas/`, `todos.json` and `files.jsonl` (the files
+    watch, extra instructions, memory), `notes.md`, `ideas/`, `todos.json` and `files.jsonl` (the files
     people sent, by name, size and status, never their bytes, which stay on the host that took
     them, §app/file-intake);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each

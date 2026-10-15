@@ -18,37 +18,39 @@ and again. So recent lines cover one message each, and older lines cover more. A
 message not summarized yet shows as "(not summarized yet: zoom it)". A text too
 long for one message is split over several in a row.`;
 
-const TOOLS = `Tools:
-- ${MEMORY_ZOOM_TOOL}(id, n) opens line id+n into the two lines it was made from;
-- ${MEMORY_ZOOM_TOOL}(id, 1) gives message id whole
-- ${MEMORY_DATE_TOOL}(id) gives the date and time of message id`;
-
-/** The first block of a UniiChat view message: the guide, ahead of the view's lines. */
+/**
+ * The first block of a UniiChat view message: the guide, ahead of the view's lines. It calls the lines
+ * an index and every message kept whole under its line, and sends any recall to zoom first: wording
+ * chosen by an A/B evaluation of recall (§chat.memory/turn).
+ */
 export const TURN_GUIDE = `# Memory
 
-This chat never ends, and you don't see its history as messages. You see your
-memory: the whole chat between you and the user before this turn, oldest first,
-inside <chat> tags, as one-line summaries:
+This chat never ends. You see its history as an index: the whole chat between
+you and the user before this turn, oldest first, inside <chat> tags, as one-line
+summaries:
 
   id+n|text   the n messages from id on, summarized (newlines as spaces)
 
 The view may come in two parts: its older lines here, and its newest lines in
 a second <chat> block marked "(continued: the newest lines)" at the start of the
-turn. Read them as one list. After the view come the standing notes about this
-chat's modes, then this turn's messages, whole.
+turn. Read them as one list.
 
-${KINDS}
+Kinds: user (the user's words), sova (your replies), tool (your tool calls), echo
+(tool results), work (a message you didn't write, such as a worker's report),
+note (a branch summary).
 
-${TREE}
+Recent lines cover one message each; older lines merge pairs, so n is a power of
+2. Lines are the index, not the record: every message is kept whole under its
+line, tool results included, while lines at every n shorten ids, names and
+numbers. ${MEMORY_ZOOM_TOOL}(id, n) opens line id+n into its two lines of n/2, ${MEMORY_ZOOM_TOOL}(id, 1)
+gives message id whole, and ${MEMORY_DATE_TOOL}(id) gives its date and time.
 
-${TOOLS}
-
-The view is your memory, and its latest word on a thing is the truth. Whenever
-you need any information, first find its latest mention in the view and zoom
-until you have it whole, before any other source, and before you act, guess or
-ask. Never grep or search memories manually; ${MEMORY_ZOOM_TOOL} is your only
-allowed mechanism to navigate the tree. Summaries keep little of tool output, so
-say in your reply what you learned that will matter later.`;
+Whenever you need anything the chat has seen, first find its latest mention in
+the view and ${MEMORY_ZOOM_TOOL}, halving n down to the message, before any other tool, and
+before you act, guess or ask. Never grep or read this chat's transcript or
+memory files. Use other tools only for what the view never mentions, or to check
+what is true now. Lines keep little of tool output, so say in your reply what
+you learned that will matter later.`;
 
 /** The summarizer's system prompt, before its stable view prefix (gist §5's compaction half). */
 export const COMPACTION_GUIDE = `You write the memory of an AI agent that works for one user in a single chat

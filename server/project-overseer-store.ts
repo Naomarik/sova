@@ -40,6 +40,7 @@ import { OrgError } from "./org-error";
 import { engineOf, projectDir, projectHost, projectSid, readProject, watchSid } from "./projects/spaces";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
 import { stateRoot } from "./state-root";
+import { parseOverseerMemory } from "./memory/settings";
 
 /**
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
@@ -153,6 +154,8 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     // since the list was saved (not in its confirmKindsKnown) is on, as every kind is by default.
     confirmKinds: Array.isArray(raw.confirmKinds) ? confirmKindsOf(raw.confirmKinds, raw.confirmKindsKnown) : [...d.confirmKinds],
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
+    // Its memory switch, kept only as saved (absent: no choice made, on by default).
+    ...(parseOverseerMemory(raw.memory) ? { memory: parseOverseerMemory(raw.memory)! } : {}),
   };
 }
 

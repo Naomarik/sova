@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/overseer-run-note.test.ts (or npm test). Uses a throwaway
 // PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -141,6 +141,81 @@ describe("the run note (§app.overseer/run-note)", () => {
   });
 });
 
+describe("memory first (§app.overseer/sessions-in-play, §app.overseer/verify-first)", () => {
+  const LINE = "Any other session or fact this chat has seen: zoom its line down to the message (full ids, exact words) before any other tool.";
+  const sent = [{ type: "message", timestamp: iso(NOW.getTime() - 3 * min), message: { role: "toolResult", toolCallId: "c1", toolName: "sova_send", content: [{ type: "text", text: "sent" }], details: { id: "sent" }, isError: false } }];
+  const note = (memory: boolean | undefined, branch: unknown[]) =>
+    runNote({ now: NOW, branch: historyOf(branch), act: { keys: new Set(), complete: true }, session: () => live({ state: "idle" }), cardsText: "[cards] none", ...(memory === undefined ? {} : { memory }) }).content.split("\n\n");
+
+  test("with memory on, the line follows the sessions in play, before the cards", () => {
+    const parts = note(true, sent);
+    assert.match(parts.at(-3)!, /^\[sessions in play\]/);
+    assert.equal(parts.at(-2), LINE);
+    assert.equal(parts.at(-1), "[cards] none");
+  });
+
+  test("with memory on and nothing in play, it stands alone after the time", () => {
+    const parts = note(true, []);
+    assert.equal(parts.length, 3);
+    assert.equal(parts[1], LINE);
+  });
+
+  test("with memory off, zoom is never named", () => {
+    for (const parts of [note(false, sent), note(undefined, sent), note(false, [])]) assert.ok(!parts.join("\n\n").includes("zoom"), parts.join("\n\n"));
+  });
+
+  test("the before_agent_start message follows the Overseer's memory switch in force (on when never set)", async () => {
+    const { readOverseerSettings, writeOverseerSettings } = await import("./overseer-store");
+    const was = readOverseerSettings();
+    try {
+      writeOverseerSettings({ ...was, memory: undefined });
+      assert.ok((await runNoteMessage([], NOW)).message.content.includes(LINE), "no saved choice: memory is on");
+      writeOverseerSettings({ ...was, memory: { on: true, type: "uniichat", size: 64 } });
+      assert.ok((await runNoteMessage([], NOW)).message.content.includes(LINE));
+      writeOverseerSettings({ ...was, memory: { on: false, type: "uniichat", size: 64 } });
+      assert.ok(!(await runNoteMessage([], NOW)).message.content.includes("zoom"));
+    } finally {
+      writeOverseerSettings(was);
+    }
+  });
+
+  describe("the prompt's id rule follows the switch", async () => {
+    const { buildOverseerTools, renderOverseerPrompt, overseerLiveParts, overseerValues } = await import("./overseer");
+    const { readOverseerSettings } = await import("./overseer-store");
+    const { changedText, toldOn } = await import("./overseer-opening");
+    const settings = (memory: { on: boolean } | undefined) => ({ ...readOverseerSettings(), memory: memory && { ...memory, type: "uniichat" as const, size: 64 } });
+    const flat = (t: string) => t.replace(/\s+/g, " ");
+
+    test("memory on (and never set): zoom output is a source, and a search only for what memory never names", () => {
+      for (const s of [settings({ on: true }), settings(undefined)]) {
+        const prompt = flat(renderOverseerPrompt(buildOverseerTools(), s));
+        assert.ok(prompt.includes("Take a session id verbatim from a tool's output in this turn, `zoom` included."), "zoom output is a source");
+        assert.ok(prompt.includes("A summary line's short id points to the message that has it whole: zoom down to it."));
+        assert.ok(prompt.includes("Search with `sova_list_sessions` only when memory never names the session."));
+        assert.ok(prompt.includes("A hidden `[ids]` note naming an id from your last reply as no session here means that link was wrong"));
+        assert.ok(!prompt.includes("when unsure, `sova_list_sessions`"));
+      }
+    });
+
+    test("memory off: the rule names no zoom, and searches when unsure", () => {
+      const prompt = renderOverseerPrompt(buildOverseerTools(), settings({ on: false }));
+      assert.ok(!/\bzoom\b/.test(prompt), "no zoom anywhere in the prompt");
+      assert.ok(flat(prompt).includes("(`sova_list_sessions`, `sova_attention`, `sova_session`). Never type, shorten or piece one together from memory; when unsure, `sova_list_sessions` with a query first."));
+      assert.ok(!prompt.includes("{{IDS}}"));
+    });
+
+    test("fixed at opening: a switch reaches the next run under [changed], never by rewriting the prompt", () => {
+      const opened = overseerValues(settings({ on: true }), NOW);
+      const before = renderOverseerPrompt(buildOverseerTools(), settings({ on: false }), undefined, NOW, undefined, opened);
+      assert.ok(before.includes("`zoom` included"), "the prompt keeps its opening form");
+      const changed = changedText(overseerLiveParts(overseerValues(settings({ on: false }), NOW)), toldOn([], overseerLiveParts(opened))).text ?? "";
+      assert.ok(changed.includes("## Ids are copied, never typed (now)"), changed);
+      assert.ok(flat(changed).includes("when unsure, `sova_list_sessions` with a query first"), changed);
+      assert.equal(changedText(overseerLiveParts(overseerValues(settings({ on: true }), NOW)), toldOn([], overseerLiveParts(opened))).text, undefined, "no change, nothing told");
+    });
+  });
+});
+
 describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
   const { sessionsInPlay, sessionsInPlayText, branchLabels, promptedOnBranch, IN_PLAY_MAX } = await import("./overseer-run-note");
   const now = NOW.getTime();
@@ -190,7 +265,7 @@ describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
       now,
     )!;
     const lines = text.split("\n");
-    assert.match(lines[0]!, /^\[sessions in play\] .*sova_session/);
+    assert.equal(lines[0], "[sessions in play] Sessions you created, prompted or were briefed about in the last 24 hours. Check one with sova_session before saying what it is doing:");
     assert.equal(lines[1], "- [Port the store](sova://s/sent) · sent · working · branch feat/x (ready) · you created or prompted it 40m ago · last brief: error 10m ago");
     assert.equal(lines[2], "- [Old](sova://s/arch) · arch · archived · you created or prompted it 2h ago");
     assert.equal(lines[3], "- gone — the session is gone");

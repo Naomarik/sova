@@ -499,7 +499,7 @@ export function SessionView(props: {
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
                       overseer={props.overseer}
-                      projectOverseer={poControl && !poEarlier ? { onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
+                      projectOverseer={poControl && !poEarlier && po ? { projectId: po.projectId, onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
                       teams={insight.data?.teams}
                     />
                   );

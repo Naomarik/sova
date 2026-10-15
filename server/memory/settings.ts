@@ -106,6 +106,47 @@ export function defaultMemoryChoice(file = memoryFile()): ChatMemoryChoice {
   return loadMemorySettings(file).default ?? { ...BUILTIN_MEMORY_CHOICE };
 }
 
+/** An overseer's memory as saved (`memory` in its overseer.json), or absent: no choice made yet. */
+export interface OverseerMemorySetting {
+  on: boolean;
+  type: ChatMemoryChoice["type"];
+  size: number;
+}
+
+/**
+ * An overseer's memory in force: its saved choice, else on with the built-in
+ * UniiChat at 128 KB, never the default Settings → Memory saved for ordinary chats. The one reading every
+ * overseer path uses (the chat, the routes, the turned-on edge).
+ */
+export function overseerMemoryOf(saved: OverseerMemorySetting | undefined | null): OverseerMemorySetting {
+  return saved ? { on: saved.on, type: saved.type, size: saved.size } : { on: true, ...BUILTIN_MEMORY_CHOICE };
+}
+
+/** A saved overseer memory setting read tolerantly (a stored file's `memory`), or undefined. */
+export function parseOverseerMemory(m: unknown): OverseerMemorySetting | undefined {
+  if (!isRecord(m) || typeof m.on !== "boolean" || !isMemoryType(m.type)) return undefined;
+  const size = m.size;
+  if (typeof size !== "number" || !Number.isInteger(size) || size < MEMORY_SIZE_MIN || size > MEMORY_SIZE_MAX) return undefined;
+  return { on: m.on, type: m.type, size };
+}
+
+/**
+ * A PUT body for an overseer's switch `{ on?, type?, size? }` over its setting in force: the next saved
+ * setting, or the reason the body isn't one. Shared by `/api/overseer/memory` and a project overseer's.
+ */
+export function patchOverseerMemory(current: OverseerMemorySetting, body: unknown): OverseerMemorySetting | { error: string } {
+  const shape = "Expected JSON body { on?, type?, size? }";
+  if (!isRecord(body)) return { error: shape };
+  if (body.on !== undefined && typeof body.on !== "boolean") return { error: "on must be true or false" };
+  let patch: Partial<ChatMemoryChoice> = {};
+  if (body.type !== undefined || body.size !== undefined) {
+    const p = parseMemoryChoice({ type: body.type, size: body.size }, true);
+    if ("error" in p) return p;
+    patch = p;
+  }
+  return { on: typeof body.on === "boolean" ? body.on : current.on, ...applyMemoryPatch({ type: current.type, size: current.size }, patch) };
+}
+
 /** Save `choice` as the default new chats start from, keeping the summarizer. */
 export function saveDefaultMemoryChoice(choice: ChatMemoryChoice, file = memoryFile()): void {
   saveMemorySettings({ ...loadMemorySettings(file), default: { ...choice } }, file);

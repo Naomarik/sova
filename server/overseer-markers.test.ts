@@ -158,7 +158,9 @@ describe("the Overseer file", () => {
     assert.ok(active.includes("sova_attention") && active.includes("sova_card"), active.join(","));
     assert.ok(!active.includes("bash"), "bash must not be active");
     for (const t of ["write", "edit"]) assert.ok(active.includes(t), `${t} is active (guarded, §app.overseer/tools)`);
-    assert.ok(active.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"].includes(n)), active.join(","));
+    // Its memory is on by default: its recall tools, zoom and date, are active too.
+    assert.ok(active.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge", "zoom", "date"].includes(n)), active.join(","));
+    for (const t of ["zoom", "date"]) assert.ok(active.includes(t), `${t} is active while its memory is on`);
     assert.match(piSession(chat).systemPrompt, /You are the one Overseer/);
   });
 

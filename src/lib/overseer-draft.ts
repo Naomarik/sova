@@ -124,7 +124,7 @@ const serverIO: OverseerSaveIO = {
 };
 
 export const NOTES_CONFLICT_MESSAGE =
-  "The Overseer rewrote its standing notes while you were editing them, so your notes weren't saved. Your edit is still in the box: Save Changes again replaces the Overseer's version, and Discard Changes shows it";
+  "The Overseer rewrote its standing notes while you were editing them, so your notes weren't saved. Your edit is still in the box: Save Changes again replaces the Overseer's version, and Cancel drops your edit, so the Overseer's version shows the next time you open Settings";
 
 const store = createDraftStore<OverseerDraft, OverseerDraft, OverseerSaveResult>({
   tab: "overseer",

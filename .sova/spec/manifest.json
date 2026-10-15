@@ -1904,12 +1904,7 @@
       "code": [
         "server/memory/summarizer.ts",
         "server/memory/prompts.ts",
-        "server/memory/settings.test.ts",
-        "server/memory/engine.ts",
-        "server/memory/engine.test.ts",
-        "server/memory/prompts.test.ts",
-        "server/memory/ids.ts",
-        "server/memory/ids.test.ts"
+        "server/memory/settings.test.ts"
       ]
     },
     "§chat.memory/tree": {

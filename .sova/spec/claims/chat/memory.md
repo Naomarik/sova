@@ -49,9 +49,6 @@ Victor Taelin". What it changes, and why:
 - **Ids are shown whole** (§chat.memory/full-ids): a line's shortened session id is shown whole when
   its own messages make that certain, because summaries shorten ids and a reader seeing the same
   short id on every level took it for all memory kept.
-- **The summarizer is checked for ids** (§chat.memory/summarizer): a line that shortens an id of its
-  source is asked for once more, because the summarizer shortened most ids despite the rule to copy
-  them exactly.
 
 ## §chat.memory/where — Where memory can be turned on
 
@@ -129,9 +126,8 @@ Following Taelin's design: message `i` is node `(0, i)`; node `(l, i)` merges `(
 `(l-1, 2i+1)` and covers the 2^l messages from `i·2^l` on, named `id+n`. A source that fits in 512
 bytes is its own node with no model call (two short lines are joined by a newline); every other node
 is one summarizer call asked for 512 bytes with a 512-character ruler, accepted up to 768 bytes, and a
-longer reply is cut at its last sentence end within 768 bytes, never asked again for its length (a
-reply that shortens an id of its source is asked for once more, §chat.memory/summarizer). Each node
-is built once.
+longer reply is cut at its last sentence end within 768 bytes, never asked again. Each node is built
+once.
 
 The view is a list of nodes covering every message, oldest first; each new message appends its line.
 Once the view passes the chat's size it merges, in one batch, the most due sibling pair whose parent
@@ -154,14 +150,6 @@ the chat's **compaction view** (the view merged further, to 16–32 KB, saved be
 it from the prompt cache; the lines after the prefix and the task go in the message. A failed call
 is tried again at the next message; while the summarizer can't run at all the status says why.
 
-The compaction guide says to copy names, numbers, ids, paths and errors exactly, and session ids and
-other UUIDs and hashes whole, never shortened to a prefix. A merge's two lines are given to it with
-their ids shown whole (§chat.memory/full-ids). When a line the summarizer returns holds a UUID of its
-source (the message it compresses, or the two lines it merges) only as a shortened prefix (8 or more
-of its leading hex digits), it is asked once more, the task naming those UUIDs to copy whole. Of the
-two lines the one shortening fewer is kept, the first on a tie, and a second call that fails keeps
-the first. Either way a line is kept: the view shows it with its ids whole where it can.
-
 ## §chat.memory/turn — What a UniiChat turn sends
 
 With UniiChat on, each request of a turn sends, after the chat's usual system prompt and tools: one
@@ -173,8 +161,8 @@ the turn's first request, and is the same for the turn's every request.
 - **The guide.** It holds no date, id or state, so it stays a stable cache prefix. It tells the
   model the view is the chat's history as an index of one-line summaries, oldest first, with the
   message kinds and that older lines merge pairs; that lines are the index, not the record: every
-  message is kept whole under its line, tool results included, while lines shorten ids, names and
-  numbers. Whenever the model needs anything the chat has seen, it finds the latest mention in the
+  message is kept whole under its line, tool results included, while lines shorten names and
+  numbers (ids are shown whole, §chat.memory/full-ids). Whenever the model needs anything the chat has seen, it finds the latest mention in the
   view and zooms, halving n down to the message, before any other tool and before it acts, guesses
   or asks; it never greps or reads the chat's transcript or memory files, and uses other tools only
   for what the view never mentions or to check what is true now. Its wording was chosen by an A/B
@@ -222,10 +210,10 @@ begins none of them, or more than one, is shown as written; no UUID from outside
 messages is ever used.
 
 It applies wherever a line is shown: a UniiChat turn's view, `zoom`'s two lines, a zoomable
-compaction's summary, the two lines a merge is asked to merge (§chat.memory/summarizer), and the
-Memory outline (§chat.memory/status). It never rewrites the stored summaries (`tree.jsonl`); the
-compaction view the summarizer reads as context holds the stored lines, and the view's merges are
-decided on the stored lines' sizes. A line's shown text depends only on its stored text and its own messages, so it reads
+compaction's summary, and the Memory outline (§chat.memory/status). It never rewrites the stored
+summaries (`tree.jsonl`), and the summarizer never sees it: the two lines a merge is asked to merge
+and the compaction view it reads as context are the stored lines, and the view's merges are decided
+on the stored lines' sizes. A line's shown text depends only on its stored text and its own messages, so it reads
 the same at every turn and the view's cached prefix stays byte-stable; a chat whose saved prefix
 predates it rebases once.
 

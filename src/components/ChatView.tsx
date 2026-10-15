@@ -19,6 +19,8 @@ import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { UnackedSends } from "../lib/unacked-sends";
+import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
+import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -734,6 +736,9 @@ export function ChatView(props: {
     after: Promise.all([fromFile, listed]),
     afterMs: FILE_READ_WAIT_MS,
     startClosed() {
+      // A message of this tab's is on its way to the chat (lib/chat-outbox): the chat is starting
+      // for it, so the view connects and shows it (§chat.transcript/send-while-starting).
+      if (sendsOnTheWay(props.path).size) return false;
       const asleep = startsAsleep(untrack(() => props.summary?.()), {
         special: !!props.overseer || !!props.projectOverseer,
         force: !!props.force,
@@ -751,6 +756,9 @@ export function ChatView(props: {
       setWait(waitOnOpen(untrack(wait)));
       // hello follows and replaces everything; dialogs belonged to the old connection.
       if (isReconnect) setDialogs([]);
+      // What the tab asked while no connection was open goes now, oldest first, before the chat's
+      // hello: the server holds it while the chat starts (§chat.transcript/send-while-starting).
+      deliverHeld();
     },
     onMessage(msg) {
       if (loginUnsaid !== undefined && msg.type !== "claude_login") awaitLogin();
@@ -807,8 +815,8 @@ export function ChatView(props: {
           // polled insight, never a list from before the reconnect.
           noteLinks(props.path, null);
           props.onModel(msg.model);
-          // What the tab asked while its chat was closed goes now, once (§chat.transcript/instant-open).
-          wakeQueue.flush();
+          // What the tab waited on (the mode menu's lists) loads now, once (§chat.transcript/instant-open).
+          readers.flush();
           break;
         // The chat closed for being quiet (§app.chat-processes/idle-stop): the rows, draft and
         // composer stay, and no socket is held until something needs the chat (wake).
@@ -1140,8 +1148,13 @@ export function ChatView(props: {
   });
 
   // ---- A chat closed while its tab is open (§chat.transcript/instant-open) ------------------
-  /** What this tab asked of its chat while it was closed, done at the woken chat's hello. */
-  const wakeQueue = new WakeQueue();
+  /** What this tab asked of its chat while no connection was open: written, in order, the moment
+      one opens (§chat.transcript/send-while-starting). A WebSocket still connecting takes no frame. */
+  const outbox = new Outbox(props.path);
+  /** Row requests in the outbox: their answer can't be lost to a connection change before they go. */
+  const heldRequests = new Set<string>();
+  /** Reads that wait for the woken chat's hello (the mode menu's lists): nothing to deliver. */
+  const readers = new WakeQueue();
   /** The list said the server no longer holds the chat since it closed (lib/chat-wait heldWhileAsleep). */
   let sawGone = false;
   /** Something needs the chat: connect, which starts it again. */
@@ -1150,29 +1163,75 @@ export function ChatView(props: {
     setWait(waitOnWake(untrack(wait)));
     socket.retry();
   };
-  /** Whether what the tab asks now waits for a woken chat: asleep, or woken with acts still held (kept in order). */
-  const holding = () => !!untrack(wait).asleep || wakeQueue.size > 0;
-  const holdForWake = (run: () => void, o: { id?: string; dropped?: () => void } = {}) => {
-    wakeQueue.hold(run, o);
+  /** Whether what the tab asks now goes into the outbox: asleep, woken with no connection open yet,
+      or behind frames already kept (they go in order). */
+  const holding = () => {
+    const w = untrack(wait);
+    return !!w.asleep || (!!w.waking && !w.open) || outbox.size > 0;
+  };
+  /** Kept for the connection that wakes the chat, which this starts. */
+  const hold = (frame: Frame) => {
+    outbox.push(frame);
     wake();
+  };
+  /** The outbox, onto the connection that just opened; its sends are that connection's to answer. */
+  const deliverHeld = () => {
+    const conn = untrack(wait).conn;
+    for (const frame of outbox.take()) {
+      if (!socket.send(frame)) break;
+      const { type, clientId, text } = frame;
+      if ((type === "prompt" || type === "steer") && typeof clientId === "string") unacked.sent(clientId, typeof text === "string" ? text : "", conn);
+    }
+    heldRequests.clear();
   };
   /** Resolves once this tab's chat is open: at once, or at the hello of the chat it wakes; rejects when the tab gives up. */
   const chatReady = (): Promise<void> =>
-    holding() ? new Promise((resolve, reject) => holdForWake(resolve, { dropped: () => reject(new Error("The chat didn't start")) })) : Promise.resolve();
-  /** A message for the chat: held while it is closed, else on the socket. */
+    holding()
+      ? new Promise((resolve, reject) => {
+          readers.hold(resolve, { dropped: () => reject(new Error("The chat didn't start")) });
+          wake();
+        })
+      : Promise.resolve();
+  /** A message for the chat: kept for the connection that wakes it while none is open, else on the socket. */
   const chatSend = (msg: Record<string, unknown>): boolean => {
     if (!holding()) return socket.send(msg);
-    holdForWake(() => void socket.send(msg));
+    hold(msg);
     return true;
   };
-  /** The woken chat refused, or the tab gave up connecting: what it held never goes; its sends' rows go back to the composer. */
+  /** The tab gave up connecting (or Stop before anything went): what the outbox kept never goes;
+      its sends' rows go back to the composer, its requests are refused. */
   const giveUpWake = () => {
-    const ids = new Set(wakeQueue.drop());
+    const ids = new Set(sendsOf(outbox.take()).keys());
+    readers.drop();
+    for (const id of [...heldRequests]) {
+      heldRequests.delete(id);
+      settleRequest(id, { ok: false, reason: "disconnected", message: "The chat didn't start. Try again." });
+    }
     if (!ids.size) return;
     restoreUnsent();
     setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && ids.has(e.id))))));
     if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
   };
+  // A view coming back to a chat while a message of this tab's is on its way there shows it as
+  // sending until the chat's own rows say where it is (§chat.transcript/send-while-starting).
+  for (const [id, text] of sendsOnTheWay(props.path)) addPendingPrompt(setLive, text, [], [], id);
+  // A courier's refusal while this view is open comes back to this composer.
+  const stopTakingBack = takeBackHere(props.path, (texts, ids) => {
+    const gone = new Set(ids);
+    setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && gone.has(e.id))))));
+    setRestored({ text: texts.join("\n\n") });
+  });
+  // Closing with something still owed an answer (§chat.transcript/send-while-starting): the
+  // connection, open or still connecting, goes to a courier with what the outbox kept and the sends
+  // on it unanswered, so they are delivered and a refusal still comes back to the draft.
+  onCleanup(() => {
+    stopTakingBack();
+    const frames = outbox.take();
+    const w = untrack(wait);
+    const held = w.open ? unacked.of(w.conn) : new Map<string, string>();
+    if (!frames.length && !held.size) return;
+    courier(props.path, frames, held, chatCourier, socket.release() ?? undefined);
+  });
   createEffect(on(socket.status, (status) => (status === "failed" || status === "closed") && !untrack(wait).asleep && giveUpWake(), { defer: true }));
   // Someone else opened the chat meanwhile (another tab, a worker's report): connect to it.
   createEffect(
@@ -1221,7 +1280,8 @@ export function ChatView(props: {
   /** A dropped connection takes its answers with it; the reconnect's hello shows what happened. */
   const dropRequests = () => {
     for (const id of [...requests.keys()])
-      settleRequest(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
+      if (!heldRequests.has(id))
+        settleRequest(id, { ok: false, reason: "disconnected", message: "The connection dropped. Check the thread, then try again." });
   };
   createEffect(on(socket.status, (status) => status !== "open" && dropRequests(), { defer: true }));
   // A connection that ends waits for its own hello again; one that ends before its hello (its chat
@@ -1244,14 +1304,13 @@ export function ChatView(props: {
   };
   /** Sends a request and waits for its answer. The id is minted here, so no caller can collide. */
   const ask = (kind: RequestKind, message: Record<string, unknown>): Promise<ActionResult> => {
-    // A chat closed while quiet: the request waits for it, then goes as any other.
-    if (holding())
-      return new Promise((resolve) =>
-        holdForWake(() => void ask(kind, message).then(resolve), { dropped: () => resolve(refuseHere("disconnected", "The chat didn't start. Try again.")) }),
-      );
     const id = `${kind}-${++requestSeq}`;
     return new Promise((resolve) => {
-      if (!socket.send({ ...message, id })) return resolve(refuseHere("disconnected", "Not connected. Try again once it reconnects."));
+      // A chat closed while quiet: the request goes on the connection that wakes it, as it opens.
+      if (holding()) {
+        heldRequests.add(id);
+        hold({ ...message, id });
+      } else if (!socket.send({ ...message, id })) return resolve(refuseHere("disconnected", "Not connected. Try again once it reconnects."));
       requests.set(id, { kind, resolve });
       countPending();
     });
@@ -1706,7 +1765,7 @@ export function ChatView(props: {
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => (waitNote() ? blocked()!.text : null), ready: chatReady };
+  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => (waitNote() ? blocked()!.text : null), ready: chatReady, wake };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
@@ -1718,9 +1777,10 @@ export function ChatView(props: {
     pending: sandboxPending,
     set: (state) => {
       setSandboxPending(state);
-      // A chat closed while quiet wakes for it, and the switch goes once it is open.
-      chatReady()
-        .then(() => setSandbox(props.path, state))
+      // A chat closed while quiet wakes for it; the switch goes now, and the server opens the chat
+      // for it (§chat.transcript/send-while-starting).
+      wake();
+      setSandbox(props.path, state)
         .then((r) => {
           if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
           if (!r.sandbox) return;
@@ -1788,30 +1848,10 @@ export function ChatView(props: {
   createEffect(() => props.onTurnError?.(turnError()));
 
   /** `confirm`: the Overseer's confirm card click (that card's tool call id); never set by typing. */
+  /** A chat closed while quiet (§chat.transcript/instant-open) takes the message the same way: it
+      shows now and goes to the server on the connection that wakes the chat, as it opens
+      (§chat.transcript/send-while-starting). A model turned off is said before waking anything. */
   const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string): boolean => {
-    if (!holding()) return sendNow(text, steer, attachments, confirm);
-    // A chat closed while quiet (§chat.transcript/instant-open): the message shows now and goes, once,
-    // when the chat it wakes says its hello. A model turned off is said before waking anything.
-    if (offNow()) return sendNow(text, steer, attachments, confirm);
-    const clientId = newClientId();
-    holdForWake(
-      () => {
-        if (!sendNow(text, steer, attachments, confirm, clientId)) putBack([text]);
-      },
-      { id: clientId },
-    );
-    if (!text.startsWith("/")) {
-      rememberSend(props.path, clientId);
-      batch(() => {
-        addPendingPrompt(setLive, text, [], attachments, clientId);
-        setLive("running", true);
-        setResume((n) => n + 1);
-      });
-    }
-    return true;
-  };
-  /** `id`: the client id a held send's row already shows (send, above). */
-  const sendNow = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string, id?: string) => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
     // spending it on a refusal, and never picks another model for you.
@@ -1827,9 +1867,13 @@ export function ChatView(props: {
     // "/compact [instructions]" is Sova's builtin: a request with its own answer, not a message.
     const compact = compactCommand(text);
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
-    const clientId = id ?? newClientId();
-    if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
-    unacked.sent(clientId, text, untrack(wait).conn);
+    const clientId = newClientId();
+    const frame = steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) };
+    if (holding()) hold(frame);
+    else {
+      if (!socket.send(frame)) return false;
+      unacked.sent(clientId, text, untrack(wait).conn);
+    }
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
@@ -1882,8 +1926,8 @@ export function ChatView(props: {
   };
 
   const abort = () => {
-    // Stop before the woken chat's hello: what the tab held never goes, and its text comes back.
-    if (wakeQueue.size) return giveUpWake();
+    // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.
+    if (outbox.size) return giveUpWake();
     if (socket.send({ type: "abort" })) setLive("stopping", true);
   };
 

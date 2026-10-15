@@ -40,6 +40,10 @@ export interface ReconnectingSocket {
   reconnect(): void;
   /** Close for good; no reconnect. */
   close(): void;
+  /** Stop for good, like close, but hand over the connection (open or still connecting) instead of
+      closing it, or null when there is none: what was sent on it can still be answered
+      (lib/chat-outbox courier). Its handlers are the taker's to set. */
+  release(): WebSocket | null;
 }
 
 export interface SocketHandlers<M> {
@@ -202,5 +206,15 @@ export function createReconnectingSocket<M>(url: string | (() => string), handle
       connect();
     },
     close,
+    release() {
+      const sock = ws;
+      ws = null;
+      stopped = true;
+      clearTimeout(timer);
+      setStatus("closed");
+      if (!sock || (sock.readyState !== WebSocket.OPEN && sock.readyState !== WebSocket.CONNECTING)) return null;
+      sock.onopen = sock.onmessage = sock.onclose = null;
+      return sock;
+    },
   };
 }

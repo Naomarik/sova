@@ -71,6 +71,10 @@
 //               parent's process restart leaves the pane no "not reachable" alert
 //     t21r      F15: a prompt sent as a Reload now's replacement starts makes the drain refuse; the Reload now
 //               stays pending and reloads as the reply ends
+//     tsend     §chat.transcript/send-while-starting: on a chat closed while quiet, a model switch and a
+//               message sent on a socket closed at once still run, the switch first; the same client id
+//               on two sockets runs once; a refusal (its model turned off, its folder gone) with no socket
+//               left goes back as the session's saved draft
 //     t21rx     F14/F15: Reload now and a prompt at once, either order: refused back by clientId and run once
 //               when sent again, or taken first and reloaded at the reply's end; never lost or doubled
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
@@ -153,7 +157,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -606,6 +610,95 @@ async function t3() {
   await sleep(5000);
   R.check(!chatPid(path) || !alive(chatPid(path)), `t3: nothing started it again on its own (${chatPid(path)})`);
   s2.close();
+  await teardown();
+  await boot();
+}
+
+/** §chat.transcript/send-while-starting, end to end over real chat processes. */
+async function tsend() {
+  await teardown();
+  await boot({ idleMs: 3000 });
+  const draftOf = (path) => (readJson(join(sova, "drafts.json"))?.drafts ?? {})[entries(path)[0]?.id]?.text ?? null;
+  /** A chat on m1 with one turn done, then closed for being quiet with no socket. */
+  const quietChat = async (cwd) => {
+    const { path } = await c.api("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: cwd ?? proj }) });
+    const s = await chat(c, path);
+    s.send({ type: "set_model", ref: "trial/m1" });
+    await s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
+    prompt(s, "say ok first");
+    await settled(s, 0, 60000);
+    const pid = chatPid(path);
+    s.close();
+    // 3 s idle, but under a loaded test run the quiet check and the exit take longer.
+    for (let i = 0; i < 180 && alive(pid); i++) await sleep(500);
+    R.check(!alive(pid), `tsend: the chat closed for being quiet (${alive(pid) ? "still alive" : "gone"})`);
+    return path;
+  };
+  /** A socket that sends `msgs` the moment it opens and closes at once, before any hello. */
+  const sendAndLeave = async (path, msgs) => {
+    const raw = c.socket(`/ws/chat?path=${encodeURIComponent(path)}&wire=2&tail=rest`);
+    await raw.opened;
+    for (const m of msgs) raw.send(m);
+    raw.close();
+    return raw;
+  };
+  const userTurns = (path, text) => userEntriesWith(path, text);
+
+  // (a) A model switch, then a message, on a socket closed before the chat said hello.
+  const a = await quietChat();
+  const raw = await sendAndLeave(a, [
+    { type: "set_model", ref: "trial/m2" },
+    { type: "prompt", text: "TSEND-A say ok", clientId: "tsend-a" },
+  ]);
+  R.check(!raw.got.some((m) => m.type === "hello"), "tsend: the socket closed before the chat's hello");
+  for (let i = 0; i < 60 && !turnAssistants(a, "TSEND-A").some((m) => m.stopReason && m.stopReason !== "toolUse"); i++) await sleep(500);
+  R.check(userTurns(a, "TSEND-A") === 1, `tsend: the message sent on a socket that left before the hello landed once (${userTurns(a, "TSEND-A")})`);
+  const es = entries(a);
+  const switchAt = es.findIndex((e) => e.type === "model_change" && e.modelId === "m2");
+  const userAt = es.findIndex((e) => e.type === "message" && e.message?.role === "user" && JSON.stringify(e.message.content).includes("TSEND-A"));
+  R.check(switchAt >= 0 && switchAt < userAt, `tsend: the model switch sent first is applied first (model_change m2 at ${switchAt}, message at ${userAt})`);
+  const reply = turnAssistants(a, "TSEND-A")[0];
+  R.check(reply?.model === "m2", `tsend: the reply ran on the model switched to first (${reply?.model})`);
+
+  // (b) The same client id on two sockets: one user entry.
+  const b = await quietChat();
+  const one = c.socket(`/ws/chat?path=${encodeURIComponent(b)}&wire=2&tail=rest`);
+  await one.opened;
+  one.send({ type: "prompt", text: "TSEND-B say ok", clientId: "tsend-b" });
+  await one.until((m) => m.type === "send_ack" && m.clientId === "tsend-b", 30000, "first socket's ack");
+  const two = c.socket(`/ws/chat?path=${encodeURIComponent(b)}&wire=2&tail=rest`);
+  await two.opened;
+  two.send({ type: "prompt", text: "TSEND-B say ok", clientId: "tsend-b" });
+  const ack = await two.until((m) => (m.type === "send_ack" && m.clientId === "tsend-b") || (m.type === "error" && m.clientId === "tsend-b"), 30000, "second socket's answer").catch(() => null);
+  for (let i = 0; i < 60 && !turnAssistants(b, "TSEND-B").some((m) => m.stopReason && m.stopReason !== "toolUse"); i++) await sleep(500);
+  await sleep(2000);
+  R.check(userTurns(b, "TSEND-B") === 1, `tsend: one client id on two sockets runs once (${userTurns(b, "TSEND-B")} user entries; second answered ${JSON.stringify(ack)?.slice(0, 80)})`);
+  R.check(ack?.type === "send_ack", "tsend: the second socket is answered as taken, not refused");
+  two.close();
+  one.close();
+
+  // (c1) Its model turned off in Settings, with no socket left: the text goes back as the draft.
+  const c1 = await quietChat();
+  await c.api("/api/sessions/draft", { method: "PUT", body: JSON.stringify({ path: c1, text: "earlier draft" }) });
+  await c.api("/api/settings/models", { method: "PUT", body: JSON.stringify({ disabledProviders: [], disabledModels: ["trial/m1"], subagentDisabledProviders: [], subagentDisabledModels: [] }) });
+  await sendAndLeave(c1, [{ type: "prompt", text: "TSEND-C1 refused", clientId: "tsend-c1" }]);
+  for (let i = 0; i < 60 && !(draftOf(c1) ?? "").includes("TSEND-C1"); i++) await sleep(500);
+  R.check(draftOf(c1) === "TSEND-C1 refused\n\nearlier draft", `tsend: a message its turned-off model refused goes back ahead of the saved draft (${JSON.stringify(draftOf(c1))})`);
+  R.check(userTurns(c1, "TSEND-C1") === 0, "tsend: the refused message never ran");
+  await c.api("/api/settings/models", { method: "PUT", body: JSON.stringify({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) });
+
+  // (c2) A chat that can't start (its folder is gone), with no socket left: the text goes back as the draft.
+  const gone = join(scratch, "tsend-gone");
+  mkdirSync(gone, { recursive: true });
+  const c2 = await quietChat(gone);
+  rmSync(gone, { recursive: true, force: true });
+  await sendAndLeave(c2, [{ type: "prompt", text: "TSEND-C2 never started", clientId: "tsend-c2" }]);
+  for (let i = 0; i < 60 && draftOf(c2) === null; i++) await sleep(500);
+  R.check(draftOf(c2) === "TSEND-C2 never started", `tsend: a message whose chat failed to start goes back as the draft (${JSON.stringify(draftOf(c2))})`);
+  const list = await c.api("/api/sessions");
+  const rows = Array.isArray(list) ? list : (list?.sessions ?? []);
+  const listed = rows.find((x) => baseName(x.path) === baseName(c2)) ?? null;
+  R.check(!!listed && (listed.hasDraft === true || !!listed.draftPreview), `tsend: the session list marks its draft (${JSON.stringify({ hasDraft: listed?.hasDraft, draftPreview: listed?.draftPreview })})`);
   await teardown();
   await boot();
 }
@@ -3009,7 +3102,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

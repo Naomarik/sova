@@ -16,7 +16,7 @@ import { activeTrees, restoreActive } from "../worktrees/state.ts";
 import { normalizeShowChangesDetails, scopeLine, SHOW_CHANGES_LIMITS, SHOW_CHANGES_TOOL, type ShowChangesDetails } from "./details.ts";
 import { coverageRefusal, placeSteps } from "./coverage.ts";
 import { REVIEW_LIMITS } from "../worktrees/git.ts";
-import { changedFiles, type Git, inPaths, type KnownTree, pickDir, resolveScope, runGit } from "./git.ts";
+import { changedFiles, type Git, inPaths, knownFolders, type KnownTree, pickDir, resolveScope, runGit, unknownFolderRefusal } from "./git.ts";
 import { readHunks } from "./hunks.ts";
 import { checkShowChangesParams, ShowChangesError } from "./input.ts";
 
@@ -90,6 +90,15 @@ function knownTrees(ctx: ExtensionContext): KnownTree[] {
 	}
 }
 
+/** Every entry in the session file, as the viewer reads it (all branches), or the branch alone. */
+function sessionEntries(ctx: ExtensionContext): readonly unknown[] {
+	try {
+		return ctx.sessionManager.getEntries?.() ?? ctx.sessionManager.getBranch();
+	} catch {
+		return [];
+	}
+}
+
 /** The reply the model reads: what opened, the files, and how many hunks the steps placed. */
 export function replyText(details: ShowChangesDetails, files: readonly string[], hunks: number): string {
 	const lines = [`Opened the changes viewer for the user: ${scopeLine(details.scope)}${details.paths ? `, limited to ${details.paths.join(", ")}` : ""}.`];
@@ -146,6 +155,9 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 				if (remote) throw new ShowChangesError("show_changes is local only; this session runs its tools on a remote target");
 				const req = checkShowChangesParams(params);
 				const { dir, tree } = pickDir(req, ctx.cwd, knownTrees(ctx));
+				// The viewer opens only folders the session knows: refuse any other rather than open a card it would refuse.
+				const unknown = unknownFolderRefusal(dir, knownFolders(ctx.cwd, sessionEntries(ctx)));
+				if (unknown) throw new ShowChangesError(unknown);
 				const scope = await resolveScope(git, req, dir, tree);
 				const all = await changedFiles(git, scope);
 				const files = all.filter((f) => inPaths(f, req.paths));

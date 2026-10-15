@@ -26,6 +26,9 @@ export function createOlderRows(o: {
   /** False: never fetch the rest in the background, whatever the hello says; only what is
       scrolled to or jumped to (the Overseer, §app.overseer/transcript-window). */
   prefetch?: boolean;
+  /** What was known to be above the rows the view opened on, kept with them (lib/transcript-cache
+      `keptOlder`): only for laying out the page before the hello (`api.known`). */
+  kept?: () => Older | null;
   /** The reader asked for rows above the list: a jump's, or a chunk they scrolled up to. A chat
       view starts its chat here when it is asleep (§chat.transcript/instant-open); a watch view
       passes none and starts nothing. */
@@ -118,6 +121,7 @@ export function createOlderRows(o: {
 
   const api: OlderRowsApi = {
     left: () => older()?.left ?? null,
+    known: () => (older() ?? o.kept?.() ?? null)?.left ?? null,
     more: (ask) => {
       if (ask?.byHand && older()?.left !== 0) o.want?.();
       if (older()) void loader.more();

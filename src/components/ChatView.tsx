@@ -1527,17 +1527,23 @@ export function ChatView(props: {
       action strip, so reading the list itself there rebuilt every strip's buttons on each change
       of the list (an append, a turn-end reload, each chunk of a tail-first hello's history). */
   const listHere = createMemo(() => !!items());
+  /** The connection's own reason to wait, or null (lib/chat-wait waitReason). */
+  const waitingReason = (): ComposerReason | null => waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
     const baton = batonGate();
     if (baton) return baton;
+    // This tab woke its chat and the chat hasn't said hello yet: what the person asks now goes to the
+    // server in order, behind what woke it (a model switch, then Send), and the server applies each
+    // before the next (§chat.transcript/send-while-starting). The note still floats (`waitNote`).
+    const waking = !!wait().waking;
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
-    const waiting = waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
+    const waiting = waking ? null : waitingReason();
     if (waiting) return waiting;
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
-    if (pendingModel()) return { icon: "clock", text: "Switching model…" };
+    if (pendingModel() && !waking) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
     // extension's. The server would hold a send meanwhile; saying so is better than a queue row.
     if (compacting() || pending().compact > 0) return { icon: "clock", text: COMPACTING_REASON };
@@ -1546,7 +1552,7 @@ export function ChatView(props: {
 
   /** What the note over the transcript's end says while the chat connects or starts, or null. */
   const waitNote = (): ComposerReason | null => {
-    const reason = blocked();
+    const reason = blocked() ?? (wait().waking ? waitingReason() : null);
     return reason?.quiet ? reason : null;
   };
 
@@ -1744,7 +1750,10 @@ export function ChatView(props: {
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => (waitNote() ? blocked()!.text : null), ready: chatReady, wake };
+  const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => {
+      const r = blocked();
+      return r?.quiet ? r.text : null;
+    }, ready: chatReady, wake };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */

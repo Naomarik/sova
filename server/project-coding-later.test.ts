@@ -109,8 +109,8 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     assert.ok(!lines(made.path).some((e) => e.type === "message"), "nothing was sent");
     const row = readBuild(project.id, made.sessionId)!;
     assert.deepEqual([row.kind, row.later, row.worktree, row.inRoot], ["operator-coding", true, undefined, undefined]);
-    const info = await po.projectOverseerInfo(project.id);
-    const listed = info.worktrees.sessions.find((s) => s.sessionId === made.sessionId)!;
+    const info = await po.projectWorktrees(project.id);
+    const listed = info.sessions.find((s) => s.sessionId === made.sessionId)!;
     assert.deepEqual([listed.state, listed.later, listed.branch, listed.inRoot], ["root", true, null, undefined]);
     assert.equal(offersMerge(listed), false);
     // The overseer's listing says the same.
@@ -158,7 +158,7 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     assert.equal(sovaBranches(), "", "no sova/ branch, ever");
     const [note] = await noteIn(path);
     assert.equal(note?.content, po.codingWorktreeParagraph({ branch: "feat/pay", target: "master" }), "the commit paragraph names the adopted branch");
-    const listed = (await po.projectOverseerInfo(project.id)).worktrees.sessions.find((s) => s.sessionId === sessionId)!;
+    const listed = (await po.projectWorktrees(project.id)).sessions.find((s) => s.sessionId === sessionId)!;
     assert.deepEqual([listed.state, listed.branch, listed.worktree, listed.later], ["open", "feat/pay", mine.path, undefined]);
 
     // A later tree, at a later turn's end: the row keeps the one it adopted, and no second note.
@@ -180,7 +180,7 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     commit(wt.path, "pay.txt", "pay\n");
     const info = await po.mergeCodingWorktree(project.id, sessionId);
     assert.equal(readFileSync(join(client, "pay.txt"), "utf8"), "pay\n");
-    const listed = info.worktrees.sessions.find((s) => s.sessionId === sessionId)!;
+    const listed = info.sessions.find((s) => s.sessionId === sessionId)!;
     assert.deepEqual([listed.state, listed.merged], ["merged", true]);
     await po.removeCodingWorktree(project.id, sessionId);
     assert.equal(existsSync(wt.path), false);
@@ -193,7 +193,7 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     git(client, "checkout", "-q", "-b", "trunk");
     const tree = toolCreate(client, "terminal");
     await writeTreesElsewhere(made.path, [{ ...tree, status: "active", session: made.sessionId, how: "created", at: 1 }]);
-    const listed = (await po.projectOverseerInfo(project.id)).worktrees.sessions.find((s) => s.sessionId === made.sessionId)!;
+    const listed = (await po.projectWorktrees(project.id)).sessions.find((s) => s.sessionId === made.sessionId)!;
     assert.deepEqual([listed.branch, listed.target, listed.worktree, listed.state], ["feat/terminal", "trunk", tree.path, "open"]);
     git(client, "checkout", "-q", "master");
   });
@@ -205,7 +205,7 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     await writeTrees(made.path, [{ ...tree, baseBranch: "master", status: "active", session: made.sessionId, how: "created", at: 1 }]);
     const session = piSession(await acquireChat(made.path)) as unknown as { _emit(e: unknown): void; isStreaming?: boolean };
     Object.defineProperty(session, "isStreaming", { get: () => true, configurable: true });
-    const listed = (await po.projectOverseerInfo(project.id)).worktrees.sessions.find((s) => s.sessionId === made.sessionId)!;
+    const listed = (await po.projectWorktrees(project.id)).sessions.find((s) => s.sessionId === made.sessionId)!;
     assert.equal(listed.branch, "feat/midturn", "adopted on the page's read, mid-turn");
     await new Promise((r) => setTimeout(r, 50));
     assert.deepEqual(notes(made.path), [], "no note while its turn runs");

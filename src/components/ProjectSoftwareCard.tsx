@@ -8,14 +8,14 @@ import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeRunButton, proposedRun } from "./PlaybookReview";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
-import { Chip, Icon } from "./ui";
+import { Chip, Icon, Placeholder } from "./ui";
 
 /** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
 const SOFTWARE_POLL_MS = 15_000;
 const FEED_SHOWN = 5;
 
 /** The page's one read of the registry: the Software card and the proposed run's banner share it. */
-export const createRuntimePoll = (projectId: string): Poll<ProjectRuntimeView> => createPoll(() => getProjectRuntime(projectId), SOFTWARE_POLL_MS);
+export const createRuntimePoll = (projectId: string): Poll<ProjectRuntimeView> => createPoll(() => getProjectRuntime(projectId), SOFTWARE_POLL_MS, { cacheKey: `project:${projectId}:runtime` });
 
 /** The run strip's state chip: working is the live indicator; waiting on you is warn. */
 const STRIP_TONE: Record<string, "accent" | "warn" | "info" | undefined> = { Working: "accent", "Waiting for your answers": "warn", Proposed: "info", Idle: undefined };
@@ -62,7 +62,7 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
         </h2>
         <Show when={poll.data()}>{(v) => <Chip tone={STANDING_CHIP[v().standing].tone}>{STANDING_CHIP[v().standing].word}</Chip>}</Show>
       </div>
-      <Show when={poll.data()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read the software registry. ${poll.error()}` : "Reading the software registry."}</p>}>
+      <Show when={poll.data()} fallback={<Show when={poll.error()} fallback={<Placeholder lines={2} label="Software" />}>{(e) => <p class="orgs-empty">Couldn't read the software registry. {e()}</p>}</Show>}>
         {(v) => (
           <>
             <Show when={failedLine(v())}>{(line) => <p class="orgs-line project-software-failed">{line()}</p>}</Show>

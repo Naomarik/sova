@@ -3,7 +3,8 @@
 // panel renders, so they run under tsx --test.
 
 import type { PromoteResult } from "../../shared/decisions";
-import { codingModeWords, type CodingModeNow, type CodingWorktree } from "../../shared/project-overseer";
+import { codingModeWords, type CodingModeNow, type CodingSession, type CodingWorktree } from "../../shared/project-overseer";
+import type { SessionSummary } from "../../shared/protocol";
 
 /** The read-only line under "Coding sessions' mode": what a coding session started now gets (this computer's
     defaults) and how to change it, split so the mode words go in mono. */
@@ -61,6 +62,61 @@ export const startedBy = (w: Pick<CodingWorktree, "startedBy" | "via" | "playboo
 
 /** Newest first. */
 export const worktreeOrder = (ws: readonly CodingWorktree[]): CodingWorktree[] => [...ws].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+// ---- the list first, git's facts after (§app.project-overseer/coding-worktrees, "Read in two steps") ----
+
+/** A row as the page shows it: the recorded session, with git's facts once the branch read has them (`facts`). */
+export type CodingRow = CodingSession & Partial<Omit<CodingWorktree, keyof CodingSession>> & { facts: boolean };
+
+/** Before any read answers: the project's coding sessions this browser already holds from the session list. */
+export function codingFromList(list: readonly SessionSummary[] | undefined, projectId: string): CodingSession[] {
+  return (list ?? [])
+    .filter((s) => s.project?.kind === "coding" && s.project.projectId === projectId)
+    .map((s) => ({
+      sessionId: s.id,
+      path: s.path,
+      title: s.title && s.title !== "Untitled" ? s.title : "",
+      startedBy: s.project?.operator ? ("operator" as const) : ("overseer" as const),
+      branch: null,
+      base: null,
+      target: null,
+      running: !!s.busy,
+      workers: (s.workers ?? s.live?.workers)?.working ?? 0,
+      createdAt: s.createdAt,
+    }));
+}
+
+/**
+ * The rows the card lists, newest first: the recorded ones (the overseer read, else the session list's), each with
+ * its branch read's facts once they arrive. The recorded row's working state and title are the fresher; the
+ * branch read's own branch, target and adoption win once it has them (a `later` row adopts there). A row only the
+ * branch read knows (started since) is listed too.
+ */
+export function codingRows(recorded: readonly CodingSession[] | undefined, fromList: readonly CodingSession[], trees: readonly CodingWorktree[] | undefined): CodingRow[] {
+  const base = recorded ?? fromList;
+  const byId = new Map((trees ?? []).map((t) => [t.sessionId, t]));
+  const out: CodingRow[] = base.map((r) => {
+    const t = byId.get(r.sessionId);
+    byId.delete(r.sessionId);
+    return t ? { ...t, running: r.running, workers: r.workers, title: r.title || t.title, facts: true } : { ...r, facts: false };
+  });
+  if (recorded) for (const t of byId.values()) out.push({ ...t, facts: true });
+  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** A branch gesture's reason while the row's branch facts haven't arrived. */
+export const READING_BRANCH = "Reading its branch";
+
+/** Merge Branch and Remove Worktree on a row: false when not offered, null when it can run, else the disabled reason.
+    Before its branch facts arrive, a row with a recorded branch (not removed) offers both, disabled. */
+export function rowGestures(r: CodingRow): { merge: Gate | false; remove: Gate | false } {
+  if (!r.facts || r.state === undefined) {
+    const offered = !!r.branch && !r.removedAt;
+    return { merge: offered ? READING_BRANCH : false, remove: offered ? READING_BRANCH : false };
+  }
+  const w = r as CodingRow & Row;
+  return { merge: offersMerge(w) ? mergeGate(w) : false, remove: offersRemove(w) ? removeGate(w) : false };
+}
 
 // ---- the promotion's commit ----------------------------------------------------------------------
 

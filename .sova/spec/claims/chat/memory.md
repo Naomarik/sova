@@ -137,11 +137,20 @@ is tried again at the next message; while the summarizer can't run at all the st
 ## §chat.memory/turn — What a UniiChat turn sends
 
 With UniiChat on, each request of a turn sends, after the chat's usual system prompt and tools: one
-**view message** — the memory guide (Taelin's §5, the agent unnamed, device and subagent paragraphs
-left out), then the view of every message before the turn, as `<chat>` lines `id+n|text` — then the
+**view message** — the memory guide, then the view of every message before the turn, as `<chat>` lines `id+n|text` — then the
 chat's standing mode notes, then the turn itself whole (the message that started it, the hidden
 notes it carries, and every reply, tool call, result and steer since). The view is rendered once, at
 the turn's first request, and is the same for the turn's every request.
+
+- **The guide.** It holds no date, id or state, so it stays a stable cache prefix. It tells the
+  model the view is the chat's history as an index of one-line summaries, oldest first, with the
+  message kinds and that older lines merge pairs; that lines are the index, not the record: every
+  message is kept whole under its line, tool results included, while lines shorten ids, names and
+  numbers. Whenever the model needs anything the chat has seen, it finds the latest mention in the
+  view and zooms, halving n down to the message, before any other tool and before it acts, guesses
+  or asks; it never greps or reads the chat's transcript or memory files, and uses other tools only
+  for what the view never mentions or to check what is true now. Its wording was chosen by an A/B
+  evaluation of recall against the earlier wording.
 
 - **Wait.** Before the first request, the turn waits for the newest messages' summaries, at most
   20 seconds, then goes on anyway (a line not summarized yet reads "(not summarized yet: zoom it)");
@@ -167,7 +176,9 @@ the turn's first request, and is the same for the turn's every request.
 While memory is on the model has two tools: `zoom(id, n)` opens line `id+n` into the two lines it was
 made from, and `zoom(id, 1)` gives message `id` whole; `date(id)` gives message `id`'s date and time.
 `n` must be a power of 2 and `id` a multiple of it; a line not built yet opens into its own halves
-or messages. Each call is a tool row like any other, whose folded line reads what it opened:
+or messages. The zoom tool's description says it recalls anything from earlier in the chat (a
+session, its full id, a branch, a number, what was said), that every message is kept whole under its
+memory line, and to use it before searching. Each call is a tool row like any other, whose folded line reads what it opened:
 "Recalled messages 40–47", "Recalled message 40", "Date of message 40".
 
 ## §chat.memory/preparing — Turning memory on in a chat with history

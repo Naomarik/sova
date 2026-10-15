@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { MEMORY_TOOLS } from "../../shared/memory";
-import { COMPACTION_GUIDE, idRetry, TURN_GUIDE } from "./prompts";
+import { TURN_GUIDE } from "./prompts";
 import { dateTool, zoomTool } from "./tools";
 
 describe("the turn guide (§chat.memory/turn)", () => {
@@ -23,6 +23,8 @@ describe("the turn guide (§chat.memory/turn)", () => {
     assert.ok(flat.includes("first find its latest mention in the view and zoom, halving n down to the message, before any other tool"), flat);
     assert.ok(flat.includes("Never grep or read this chat's transcript or memory files."), flat);
     assert.ok(!flat.includes("is the truth"), "the old wording is gone");
+    assert.ok(flat.includes("while lines at every n shorten names and numbers."), flat);
+    assert.ok(!/shorten ids/.test(flat), "ids are shown whole (§chat.memory/full-ids), so the guide never says lines shorten them");
   });
 });
 
@@ -35,19 +37,5 @@ describe("the recall tools (§chat.memory/recall)", () => {
     );
     assert.deepEqual(zoom.parameters.required, ["id", "n"]);
     assert.equal(dateTool(() => undefined).description, "The date and time of message id in the memory view.");
-  });
-});
-
-describe("the compaction guide (§chat.memory/summarizer)", () => {
-  test("says ids are copied whole, never shortened, and holds no id or date of its own", () => {
-    const flat = COMPACTION_GUIDE.replace(/\s+/g, " ");
-    assert.ok(flat.includes("Copy names, numbers, ids, paths and errors exactly: session ids and other UUIDs and hashes whole, never shortened to a prefix."), flat);
-    assert.doesNotMatch(COMPACTION_GUIDE, /\d{4}-\d{2}|\b[0-9a-f]{8}\b/i);
-  });
-
-  test("the retry names the ids to copy whole", () => {
-    const id = "5c5c5c5c-2222-7333-8444-555566667777";
-    assert.equal(idRetry([id]), `\n\nYour last line shortened this id; copy it whole: ${id}`);
-    assert.match(idRetry([id, id]), /these ids; copy each whole: /);
   });
 });

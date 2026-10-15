@@ -4606,10 +4606,12 @@
         "server/overseer-opening.ts",
         "server/overseer-opening.test.ts",
         "server/overseer-runtime.test.ts",
-        "server/overseer-run-note.ts"
+        "server/overseer-run-note.ts",
+        "server/overseer-run-note.test.ts"
       ],
       "requires": [
-        "§app.overseer/tools"
+        "§app.overseer/tools",
+        "§app.overseer/verify-first"
       ],
       "agreed": {
         "by": "user",
@@ -13813,11 +13815,13 @@
       "code": [
         "server/overseer-prompt.md",
         "server/project-overseer-prompt.md",
-        "server/overseer-run-note.test.ts"
+        "server/overseer-run-note.test.ts",
+        "server/overseer.ts"
       ],
       "requires": [
         "§app.overseer/session-truth",
-        "§app.overseer/run-note"
+        "§app.overseer/run-note",
+        "§chat.memory/overseer"
       ]
     },
     "§chat.topics/delivery": {

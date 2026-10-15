@@ -39,7 +39,7 @@ export const SHOW_CHANGES_PROMPT_SNIPPET = "Show the user git changes in Sova's 
 
 export const SHOW_CHANGES_GUIDELINES = [
 	"When the user asks to see or review changes, call show_changes rather than pasting a diff, then reply in a sentence or two.",
-	"show_changes shows only git changes in this session's checkout or its tracked worktrees. If the change is anywhere else or not in git yet, write it into a tracked worktree first (the worktree tool can create one), or tell the user there is no diff to show.",
+	"show_changes shows only git changes in this session's checkout or its tracked worktrees. If the change is anywhere else or not in git yet, write it into a tracked worktree as uncommitted edits first (the worktree tool can create one), or tell the user there is no diff to show.",
 ];
 
 const Hunk = Type.Object(

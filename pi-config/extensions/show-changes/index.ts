@@ -122,13 +122,14 @@ function sessionRoots(ctx: ExtensionContext, agentDir: string): string[] {
 	return knownRoots(sessionFolderCandidates(cwd, entries), agentDir);
 }
 
+/** The refusal for a comparison with no changed file: the agent tells the user instead of opening an empty card. */
+export function emptyRefusal(scope: string, paths?: readonly string[]): string {
+	return `No changes in this comparison (${scope}${paths ? `, limited to ${paths.join(", ")}` : ""}), so nothing was shown. Tell the user nothing changed there.`;
+}
+
 /** The reply the model reads: what opened, the files, and how many hunks the steps placed. */
 export function replyText(details: ShowChangesDetails, files: readonly string[], hunks: number): string {
 	const lines = [`Opened the changes viewer for the user: ${scopeLine(details.scope)}${details.paths ? `, limited to ${details.paths.join(", ")}` : ""}.`];
-	if (files.length === 0) {
-		lines.push("There are no changes in this scope.");
-		return lines.join("\n");
-	}
 	lines.push(`${files.length} changed file${files.length === 1 ? "" : "s"}:`);
 	for (const f of files.slice(0, LIST_FILES)) lines.push(`  ${f}`);
 	if (files.length > LIST_FILES) lines.push(`  … and ${files.length - LIST_FILES} more`);
@@ -185,6 +186,8 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 				const scope = await resolveScope(git, req, dir, tree);
 				const all = await changedFiles(git, scope);
 				const files = all.filter((f) => inPaths(f, req.paths));
+				// An empty card helps no one: refuse, and have the agent say so instead.
+				if (files.length === 0) throw new ShowChangesError(emptyRefusal(scopeLine(scope), req.paths), true);
 				// The viewer lists at most maxFiles (after the same paths filter): past it, refuse rather than open a cut list.
 				if (files.length > REVIEW_LIMITS.maxFiles) {
 					throw new ShowChangesError(

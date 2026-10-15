@@ -509,6 +509,8 @@ export function ChatView(props: {
   const [workersWorking, setWorkersWorking] = createSignal(0);
   /** The same message's list, so the status row can split the count against this session's teams. */
   const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
+  /** The same message's total: every worker the record counts, the ones its list trims included. */
+  const [workerCount, setWorkerCount] = createSignal(0);
   const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
   /** While a turn runs and its model request waits on its provider's limit, the status says so
       in place of Working (§app.provider-limits/waiting-shown). */
@@ -521,10 +523,11 @@ export function ChatView(props: {
       socket's to say. The hello clears the list, but its runtime's first "workers" can come a
       while after it (none at all while the runtime has no live record yet). */
   const [workersSaid, setWorkersSaid] = createSignal(false);
-  /** How many subagents the settled-workers trigger offers: until the socket says, what the
-      session list counts (lib/known-before-mount), so the status row is there from the first
-      frame and doesn't blink at the hello; never the working count, which only the socket gives. */
-  const workersTotal = () => workersShown(workersSaid(), workerList().length, knownWorkers(props.summary?.() ?? { live: null }));
+  /** How many subagents the trigger counts, with the ended ones beside: the live ones once the
+      socket says, until then what the session list counts (lib/known-before-mount), so the status
+      row is there from the first frame and doesn't blink at the hello; never the working count,
+      which only the socket gives. */
+  const workersCounted = createMemo(() => workersShown(workersSaid(), workerList(), workerCount(), knownWorkers(props.summary?.() ?? { live: null })));
   /** This chat's memory status (WS "memory_status"); null: off, or no message yet (§chat.composer/memory-status). */
   const [memoryStatus, setMemoryStatus] = createSignal<MemoryStatus | null>(null);
   /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
@@ -784,6 +787,7 @@ export function ChatView(props: {
           setLocalWorking(props.path, 0);
           batch(() => {
             setWorkerList([]);
+            setWorkerCount(0);
             setWorkersSaid(false);
           });
           props.onWorkers?.([]);
@@ -814,6 +818,7 @@ export function ChatView(props: {
             setWorkersWorking(msg.working);
             setLocalWorking(props.path, msg.working);
             setWorkerList(msg.workers);
+            setWorkerCount(msg.total);
             setWorkersSaid(true);
           });
           props.onWorkers?.(msg.workers);
@@ -2273,7 +2278,8 @@ export function ChatView(props: {
         memory={memoryRowWords(memoryStatus())}
         detail={runDetail(live)}
         workersWorking={workersWorking()}
-        workersTotal={workersTotal()}
+        workersTotal={workersCounted().total}
+        workersTally={workersCounted().tally}
         workersSplit={workersSplit()}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}

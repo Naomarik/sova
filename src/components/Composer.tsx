@@ -56,7 +56,7 @@ import { livePermits, type Permit } from "../../shared/overseer-grants";
 import type { OverseerCard } from "../../shared/overseer-card";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
-import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
+import { teamNote, type WorkerTally, type WorkingSplit, workersRunningLabel, workersTrigger } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
@@ -137,8 +137,12 @@ export function Composer(props: {
   memory?: { text: string; problem: boolean } | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
-  /** Every subagent this session has, working or settled, so the row survives going idle. */
+  /** This session's live subagents (ended ones left out), working or not, so the row survives
+      going idle; before the session's worker list has come, the list count it falls back to. */
   workersTotal?: number;
+  /** The worker list's live and ended ones: the trigger's ended note, and its row once every
+      worker has ended. Null or absent: no list yet, so no note. */
+  workersTally?: WorkerTally | null;
   /** How that count divides into team members and plain subagents; null: it can't be split. */
   workersSplit?: WorkingSplit | null;
   /** Makes the subagents status row a button that toggles the subagents pane. */
@@ -400,27 +404,18 @@ export function Composer(props: {
     else menu()?.show("sandbox", shield);
   };
 
-  /** The subagents status row: what's working, or — once idle — what the session
-      has, so the pane stays one click away after every worker settles. Its ring draws the
-      working share of every worker the session has; a settled-workers row is only worth
-      offering once the parent is idle. */
-  const workersRow = () => {
-    const working = props.workersWorking ?? 0;
-    // The list's total can lag the socket's working count: never draw more working than there are.
-    const total = Math.max(props.workersTotal ?? 0, working);
-    if (working > 0)
-      return {
-        working,
-        total,
-        n: `${working}/${total}`,
-        text: workersOfLabel(working, total, props.workersSplit),
-        label: showWorkersOfLabel(working, total, props.workersSplit),
-      };
-    if (props.running) return null;
-    if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
-    const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
-    return { working: 0, total, n: `${total}`, text, label: `${text} — show subagents` };
-  };
+  /** The subagents status row: what's working, or — once idle — the live workers (else the
+      ended ones), so the pane stays one click away after every worker settles. Its ring draws the
+      working share of the live workers; an idle row is only worth offering once the parent is idle. */
+  const workersRow = () =>
+    workersTrigger({
+      working: props.workersWorking ?? 0,
+      total: props.workersTotal ?? 0,
+      tally: props.workersTally,
+      split: props.workersSplit,
+      running: props.running,
+      canOpen: !!props.onShowWorkers,
+    });
   /** The subagents trigger shows a count; its tooltip is the words, plus the split of a mix of
       subagents and team members, and the team when there is one. */
   const workersTitle = (words: string) => {
@@ -941,7 +936,7 @@ export function Composer(props: {
                   <Show
                     when={props.onShowWorkers}
                     fallback={
-                      <span class="run-status-workers" title={workersTitle(row().text)}>
+                      <span class="run-status-workers" title={workersTitle(row().say)}>
                         <WorkersRing working={row().working} total={row().total} />
                         <span class="text-num run-status-narrow" aria-hidden="true">{row().n}</span>
                         <span class="run-status-say">{row().text}</span>

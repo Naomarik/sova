@@ -13,7 +13,7 @@ import type { RewindControl } from "../lib/inputs";
 import { activeTab, home, toast } from "../lib/ui-state";
 import { regenerateOutcome, regeneratingTitle, setRegeneratingTitle } from "../lib/auto-title";
 import { regenerateSessionTitle } from "../lib/api";
-import { sessionWorking, workingSplit } from "../lib/workers";
+import { sessionWorking, tallyWorkers, workingSplit } from "../lib/workers";
 import { sessionIdOfPath } from "../lib/links";
 import { paneTitleCost } from "../lib/spend";
 import { createSessionSpend } from "./SessionUsage";
@@ -228,6 +228,11 @@ export function SessionView(props: {
   const working = () => sessionWorking(s());
   /** What's working, by kind: team members and plain subagents are different things. */
   const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
+  /** The insight's workers, live and ended; null until it lands (the trigger then counts the list's). */
+  const tally = createMemo(() => {
+    const d = insight.data;
+    return d ? tallyWorkers(d.workers ?? [], d.workerTotal) : null;
+  });
 
   /**
    * The name this pane is known by, in the head and to AT. In a workspace it is the pre-assembled
@@ -414,7 +419,8 @@ export function SessionView(props: {
                     streaming={!!s().live}
                     onAppend={reloadInsight}
                     workersWorking={working()}
-                    workersTotal={insight.data ? (insight.data.workers?.length ?? 0) : knownWorkers(s())}
+                    workersTotal={tally()?.live ?? knownWorkers(s())}
+                    workersTally={tally()}
                     workersSplit={split()}
                     onShowWorkers={() => props.toggleSubagents(path)}
                     workersOpen={props.paneOn(path, "agents")}

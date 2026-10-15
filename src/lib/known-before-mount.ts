@@ -5,8 +5,9 @@
 // Each is this session's own fact, and each gives way to the view's own read once it lands.
 // Pure: no reactive state, so the rules are testable (known-before-mount.test.ts).
 
-import type { ExplanationInfo, SessionSummary, TranscriptItem } from "../../shared/protocol";
+import type { ExplanationInfo, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { isInput } from "../../shared/row-counts";
+import { tallyWorkers, type WorkerTally } from "./workers";
 
 /** The strip's collapsed row as the session list has it: the newest outline snapshot's lines. */
 export interface KnownOutline {
@@ -40,12 +41,23 @@ export const knownInputs = (s: Pick<SessionSummary, "title" | "originalTitle">):
 export const knownWorkers = (s: Pick<SessionSummary, "workers" | "live">): number => (s.workers ?? s.live?.workers)?.total ?? 0;
 
 /**
- * The settled-workers trigger's count: the socket's list once it has said, else the list's
- * (`known`). A runtime's first "workers" message can come before its subagents extension has
+ * The subagents trigger's count and its tally: the socket's live workers once it has said (the
+ * ended ones only in the tally), else the list's (`known`, which counts ended workers too) with no
+ * tally. A runtime's first "workers" message can come before its subagents extension has
  * restored its workers (it lists none yet, and the next look is seconds later), so a said-empty
  * list doesn't override a known count: the live record says the runtime will list them.
+ * `total` is the message's own count, which covers workers its list trims.
  */
-export const workersShown = (said: boolean, listed: number, known: number): number => (said && (listed > 0 || known === 0) ? listed : known);
+export function workersShown(
+  said: boolean,
+  listed: readonly Pick<WorkerInfo, "status">[],
+  total: number,
+  known: number,
+): { total: number; tally: WorkerTally | null } {
+  if (!said || (listed.length === 0 && known > 0)) return { total: known, tally: null };
+  const tally = tallyWorkers(listed, total);
+  return { total: tally.live, tally };
+}
 
 /**
  * The inputs trigger will show, but its count is not known yet: the count needs what is above the

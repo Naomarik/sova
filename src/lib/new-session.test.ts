@@ -9,6 +9,15 @@ test("newSessionCwd prefers the chat's own folder", () => {
   assert.equal(newSessionCwd({ cwd: "/a" }, [{ cwd: "/b", lastActiveAt: "2026-01-02T00:00:00Z" }]), "/a");
 });
 
+test("newSessionCwd on a project's page: the project's root, after the open session's folder, before the latest session's", () => {
+  const sessions = [{ cwd: "/latest", lastActiveAt: "2026-01-02T00:00:00Z" }];
+  assert.equal(newSessionCwd(undefined, sessions, undefined, "/src/acme"), "/src/acme");
+  assert.equal(newSessionCwd({ cwd: "/a" }, sessions, undefined, "/src/acme"), "/a");
+  // A hidden root is skipped as any hidden prefill is.
+  assert.equal(newSessionCwd(undefined, sessions, (cwd) => !cwd.includes("/."), "/src/.hidden"), "/latest");
+  assert.equal(newSessionCwd(undefined, sessions, undefined, null), "/latest");
+});
+
 test("newSessionCwd falls back to the most recently active session, then to nothing", () => {
   const sessions = [
     { cwd: "/old", lastActiveAt: "2026-01-01T00:00:00Z" },

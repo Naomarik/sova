@@ -55,12 +55,14 @@ test("registers show_changes with its prompt snippet and guidelines", () => {
 	showChanges(f.pi);
 	const t = f.tool();
 	assert.equal(t.name, SHOW_CHANGES_TOOL);
-	assert.match(t.promptSnippet, /diff viewer/);
-	assert.ok(t.promptGuidelines.some((g: string) => /refuses the call otherwise/.test(g)));
-	assert.ok(t.promptGuidelines.some((g: string) => /read the diff yourself/.test(g)));
-	assert.doesNotMatch(t.description, /computes no diff/);
-	assert.match(t.description, /checks the steps against the diff/);
-	assert.ok(t.promptGuidelines.some((g: string) => /instead of pasting diffs/.test(g)));
+	assert.match(t.promptSnippet, /changes viewer/);
+	assert.match(t.description, /every hunk must be in exactly one step, or the call is refused/);
+	assert.match(t.description, /Read the diff first/);
+	assert.ok(t.promptGuidelines.some((g: string) => /rather than pasting a diff/.test(g)));
+	// The viewer opens only the session's checkout and its worktrees: no text may invite another folder.
+	assert.ok(t.promptGuidelines.some((g: string) => /only git changes in this session's checkout or its tracked worktrees/.test(g)));
+	assert.match(t.parameters.properties.worktree.description, /The viewer opens no other folder/);
+	assert.doesNotMatch(JSON.stringify([t.description, t.promptGuidelines, t.parameters]), /or a directory/);
 	assert.equal(t.parameters.additionalProperties, false);
 	// The agent no longer sends "builds on": not in the schema, the description, the guidelines or the example.
 	assert.doesNotMatch(JSON.stringify(t.parameters), /buildsOn/);

@@ -15,7 +15,7 @@ Make these in the release worktree:
 - **`package.json`**: `"version": "X.Y.Z"`. The Mesh page shows it for every host; nothing asserts it.
 - **`site/src/data/site.ts`**: `release = "vX.Y.Z"` (the hero pill and its release-page link). `installRef` stays `"stable"`.
 - **The landing's `verified` stamp** (`site/src/data/site.ts`): only after re-checking every claim on `site/src/pages/index.astro` (and the components and data it renders) against the release branch, as `site/README.md` "What to update" says: set `{ ref: "vX.Y.Z", rev: <the commit you checked, short>, date: <today> }`. A claim you could not check stays stale: name it in the report rather than re-dating the stamp.
-- **`docsVerified`** is the Docs pages' stamp: change it only when a docs audit checked every Docs page against the spec and the code for this release. Otherwise leave it, and say so in the report.
+- **`docsVerified`** is the Docs pages' stamp: change it only through the optional docs step (`references/docs.md`), after the user opted in and accepted every listed page. Otherwise leave it, and say so in the report.
 - **Pinned-version examples**: `git grep -n 'SOVA_REF=v[0-9]' -- README.md docs site/src` and set each to `vX.Y.Z`.
 - **Version-gated wording**: `git grep -n 'vNEXT'` and replace each with `vX.Y.Z` (a doc that says "from vNEXT or later" about a feature this release ships).
 - Nothing in `scripts/install.sh` changes per release: its default is `stable` in every commit.

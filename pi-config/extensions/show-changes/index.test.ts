@@ -221,6 +221,42 @@ test("a folder the viewer won't open is refused, nothing shown; a tracked worktr
 	}
 });
 
+test("the folders the viewer opens: the header's cwd (not the process cwd), workers' folders, never a remote placeholder", async () => {
+	const r = repo();
+	try {
+		// Two other repositories: one a worker runs in, one a worker on a remote target maps to locally.
+		const agentDir = join(r.root, "agent");
+		const mk = (dir: string) => {
+			mkdirSync(dir, { recursive: true });
+			sh(dir, "init", "-q", "-b", "master");
+			sh(dir, "config", "user.email", "t@example.invalid");
+			sh(dir, "config", "user.name", "t");
+			sh(dir, "config", "commit.gpgsign", "false");
+			writeFileSync(join(dir, "w.txt"), "w\n");
+			sh(dir, "add", ".");
+			sh(dir, "commit", "-q", "-m", "w");
+			writeFileSync(join(dir, "w.txt"), "w2\n");
+			return dir;
+		};
+		const worker = mk(join(r.root, "worker"));
+		const placeholder = mk(join(agentDir, "sova", "targets", "box", "repo"));
+		const manifest = (workerId: string, cwd: string) => ({ type: "custom", customType: "subagents-worker-manifest", data: { v: 1, kind: "worker-manifest", workerId, backend: "pi", at: 1, spec: { cwd } } });
+		const entries = [manifest("w1", worker), manifest("w2", placeholder)];
+		const f = fakePi(entries);
+		showChanges(f.pi, { agentDir: () => agentDir });
+		const ctx = (cwd: string, headerCwd: string) => ({ ...f.ctx(cwd), sessionManager: { getHeader: () => ({ type: "session", cwd: headerCwd }), getEntries: () => entries, getBranch: () => entries } });
+		const inWorker = await f.call(ctx(r.main, r.main), { scope: "dirty", worktree: worker });
+		assert.equal(inWorker.details.scope.cwd, worker);
+		await assert.rejects(f.call(ctx(r.main, r.main), { scope: "dirty", worktree: placeholder }), /is outside this session's folder and its worktrees/);
+		// The viewer knows the session by its header's cwd: a process cwd elsewhere (pi's cwd override) is not known.
+		const elsewhere = mk(join(r.root, "elsewhere"));
+		await assert.rejects(f.call(ctx(elsewhere, r.main), { scope: "dirty" }), new RegExp(`^Error: ${elsewhere} is outside`));
+		assert.equal((await f.call(ctx(elsewhere, elsewhere), { scope: "dirty" })).details.scope.cwd, elsewhere);
+	} finally {
+		r.done();
+	}
+});
+
 test("refusals: bad input, no repository, a remote session; nothing is shown", async () => {
 	const r = repo();
 	try {

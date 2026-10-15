@@ -59,16 +59,17 @@
 
 import { spawn } from "node:child_process";
 import { lstat, open, readFile, readlink, stat } from "node:fs/promises";
-import { isAbsolute, join, normalize } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { DiffCommit, DiffFilePatch, DiffFileStatus, DiffFileSummary, DiffPin, DiffScope, DiffSide, DiffSummary } from "../shared/protocol";
 import { isRepoPath, isSha, SHOW_CHANGES_LIMITS } from "../pi-config/extensions/show-changes/details.ts";
+import { folderKnown, knownRoots } from "../pi-config/extensions/show-changes/folders.ts";
 import { mergedReviewBase, REVIEW_LIMITS, reviewBase } from "../pi-config/extensions/worktrees/git.ts";
-import { canonical, isWithin, normalizeMergeDetails, type TrackedWorktree, type WorktreeMergeDetails, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, normalizeMergeDetails, type TrackedWorktree, type WorktreeMergeDetails, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
 import { lineEntry } from "./harness/pi/reader";
 import { WORKTREES } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { resolveSessionPath } from "./paths";
-import { parseTargetCwd } from "./targets";
+import { agentRoot } from "./state-root";
 import { candidatesOf } from "./worktrees";
 
 // The limits the show_changes tool shares (pi-config/extensions/worktrees/git.ts REVIEW_LIMITS).
@@ -249,18 +250,14 @@ interface Known {
   merges: WorktreeMergeDetails[];
 }
 
-/** The folders a session's file names. Lines are pre-filtered by substring; only the header and
-    worktree/worker lines are parsed. */
+/** The folders a session's file names, by the rule the show_changes tool applies too
+    (pi-config/extensions/show-changes/folders.ts `knownRoots`). Lines are pre-filtered by substring;
+    only the header and worktree/worker lines are parsed. */
 export function knownFoldersOf(text: string): Known {
   const { cwd, workerCwds } = candidatesOf(text);
-  const roots: string[] = [];
+  const candidates: unknown[] = [cwd, ...workerCwds];
   const trees: TrackedWorktree[] = [];
   const merges: WorktreeMergeDetails[] = [];
-  const add = (p: unknown) => {
-    if (typeof p === "string" && isAbsolute(p) && !parseTargetCwd(p)) roots.push(normalize(p).replace(/\/+$/, "") || "/");
-  };
-  add(cwd);
-  workerCwds.forEach(add);
   for (const line of text.split("\n")) {
     if (!line.includes("worktree")) continue;
     const h = lineEntry(line);
@@ -268,15 +265,17 @@ export function knownFoldersOf(text: string): Known {
       const set = stateView([h]).latest(WORKTREES)?.data;
       for (const t of set?.trees ?? []) {
         trees.push(t);
-        add(t.path);
+        candidates.push(t.path);
       }
     } else if (h?.kind === "note" && !h.inMessage && h.noteType === WORKTREE_MERGE_MESSAGE) {
       const m = normalizeMergeDetails(h.details);
-      if (m) merges.push(m);
-      add(m?.path);
+      if (m) {
+        merges.push(m);
+        candidates.push(m.path);
+      }
     }
   }
-  return { roots: [...new Set(roots)], trees, merges };
+  return { roots: knownRoots(candidates, agentRoot()), trees, merges };
 }
 
 export interface DiffDeps {
@@ -359,7 +358,7 @@ export class GitDiffs {
     const raw = scope.kind === "worktree" ? scope.worktreePath : scope.kind === "commit" || scope.kind === "merge" ? scope.repoPath : scope.cwd;
     if (typeof raw !== "string" || !isAbsolute(raw) || raw.includes("\0")) throw new DiffError("Invalid ?path= (an absolute folder)");
     const dir = canonical(raw);
-    if (!known.roots.some((r) => isWithin(dir, canonical(r)))) throw new DiffError("That folder is not one this session knows");
+    if (!folderKnown(dir, known.roots)) throw new DiffError("That folder is not one this session knows");
     let card: WorktreeMergeDetails | undefined;
     if (scope.kind === "merge") {
       const sha = scope.sha.toLowerCase();

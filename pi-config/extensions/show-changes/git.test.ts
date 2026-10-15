@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { changedFiles, type Git, inPaths, knownFolders, pickDir, resolveScope, runGit, unknownFolderRefusal } from "./git.ts";
+import { changedFiles, type Git, inPaths, pickDir, resolveScope, runGit, unknownFolderRefusal } from "./git.ts";
 import { parseHunks, readHunks } from "./hunks.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -272,37 +272,19 @@ test("parseHunks: files with no line changes stay (no hunks); a stat-only sectio
 	]);
 });
 
-test("known folders: the session's folder, every worktree any entry names, merge cards; nothing else opens", () => {
+test("unknownFolderRefusal: a folder at or below no root is refused with what to do instead", () => {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "show-changes-known-")));
 	try {
 		const cwd = join(root, "repo");
-		const active = join(root, "wt-a");
-		const dropped = join(root, "wt-b");
-		const merged = join(root, "wt-m");
 		const scratch = join(root, "scratch");
-		const sibling = join(root, "repo2");
-		for (const d of [cwd, active, dropped, merged, scratch, sibling, join(cwd, ".cache", "copy")]) mkdirSync(d, { recursive: true });
-		const tree = (path: string, status: string) => ({ path, branch: `feat/${path.slice(-4)}`, base: "abc1234", status, session: "s1", how: "created", at: 1_790_000_000_000 });
-		const entries = [
-			{ type: "custom", customType: "worktrees", data: { version: 1, trees: [tree(dropped, "dropped")] } },
-			{ type: "custom", customType: "worktrees", data: { version: 1, trees: [tree(active, "active")] } },
-			// A malformed set names nothing, as the viewer reads it.
-			{ type: "custom", customType: "worktrees", data: { version: 1, trees: [{ path: scratch }] } },
-			{
-				type: "custom_message",
-				customType: "worktree-merge",
-				details: { version: 1, path: merged, branch: "feat/m", target: "master", sha: "def5678", commits: 1, added: 1, removed: 0, fastForward: false, how: "tool" },
-			},
-		];
-		const roots = knownFolders(cwd, entries);
-		assert.deepEqual(roots, [cwd, dropped, active, merged]);
-		for (const ok of [cwd, join(cwd, ".cache", "copy"), active, dropped, merged]) assert.equal(unknownFolderRefusal(ok, roots), undefined, ok);
-		// A folder outside them, one that only shares a name prefix, and a symlink out of the cwd are refused.
+		mkdirSync(join(cwd, "sub"), { recursive: true });
+		mkdirSync(scratch);
 		symlinkSync(scratch, join(cwd, "link"));
-		for (const bad of [scratch, sibling, join(cwd, "link")]) {
+		assert.equal(unknownFolderRefusal(join(cwd, "sub"), [cwd]), undefined);
+		for (const bad of [scratch, join(cwd, "link")]) {
 			assert.equal(
-				unknownFolderRefusal(bad, roots),
-				`${realpathSync(bad)} is outside this session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the worktree tool) and show that`,
+				unknownFolderRefusal(bad, [cwd]),
+				`${scratch} is outside this session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the worktree tool) and show that`,
 			);
 		}
 	} finally {

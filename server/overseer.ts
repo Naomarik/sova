@@ -408,7 +408,11 @@ export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveR
   // way (spawn enforces it), with the reason shown.
   const denied = workerDenial(readModelPolicy(), parsed.explorer.backend, parsed.explorer.model);
   if (denied) warnings.push(`Exploratory agent: ${denied}; explorers will be refused until it is allowed.`);
-  writeOverseerSettings(parsed);
+  // The memory switch is its own route's: a settings save keeps the stored one, so a
+  // stale copy of the settings never turns it back on or off.
+  const { memory: _sent, ...rest } = parsed;
+  const stored = readOverseerSettings().memory;
+  writeOverseerSettings({ ...rest, ...(stored ? { memory: stored } : {}) });
   pendingApply = true;
   await applySettingsNow();
   digestMemo = null;

@@ -3082,8 +3082,14 @@ class ChatSession {
     return true;
   }
 
-  /** `msg` waits for `step` (a model switch, a rewind), and so does every browser message after it. */
+  /** `msg` waits for `step` (a model switch, a rewind), and so does every browser message after it.
+      Only when it can go ahead: mid-run (or mid-compaction) both are refused at once, so nothing
+      waits and the refusals keep the order they always had (the session goldens' S14). */
   private waitFor(step: Promise<unknown>): void {
+    if (this.harness.isRunning() || this.isCompacting()) {
+      void step;
+      return;
+    }
     const tail = step.then(
       () => {},
       () => {},

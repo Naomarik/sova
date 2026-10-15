@@ -11,7 +11,8 @@ argument lists through `execFile`, never a shell, with `-c core.fsmonitor=false
 and past either every file is one whole-file unit), refuses a change of more than 3,000 files
 counted within `paths` (the viewer's limit; the refusal says to narrow it with `paths`), refuses a
 change of no files within `paths` (no empty card: the refusal names the comparison and tells the agent
-to tell the user nothing changed there), checks the
+to tell the user nothing changed there, or, for a `worktree` scope whose folder has uncommitted files
+within `paths`, that scope `dirty` shows them), checks the
 steps against the diff's hunks, and returns a short text for the model plus `details` for Sova.
 The base of a `worktree` scope, the timeout, the file limit and the patch caps are
 `../worktrees/git.ts` `reviewBase` and `REVIEW_LIMITS`, the one rule Sova's diff endpoint uses too.

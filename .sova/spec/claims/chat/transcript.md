@@ -1027,9 +1027,14 @@ moves to another chat, home or Back, reloads the page or closes the tab.
   controls stay usable meanwhile, so a model switch then Send goes in that order. A frame never goes on a connection
   that is still connecting: until it opens, the tab keeps it, also in the browser's storage. When
   the view closes first (another chat, home, Back), the tab opens a connection of its own just to
-  deliver it, and stays to hear the answer; when the page goes before any connection opened (a
-  reload, a closed tab), the next page load of Sova delivers what was kept within a day; a
-  message kept longer goes back to its chat's draft instead.
+  deliver it, and stays to hear the answer. When the page goes before its connection opened (a
+  reload, a closed tab), it hands what it kept to the server as it goes, with a request that
+  outlives the page (`POST /api/chat/frames`), and the server runs it as it runs that
+  connection's own frames: in order, each message once, a refusal back as the draft. Sova need
+  not be opened again. Only what that request can't carry (more than about 60 KB, a chat on a
+  peer) stays in the browser for the next page load of Sova, which delivers it within a day; a
+  message kept longer goes back to its chat's draft instead. A page never takes what another
+  open page still holds for its own connection, so nothing asked once runs twice.
 - **The server runs it after the tab has gone.** What a connection sent while its chat was
   opening still reaches the chat, in order, when that connection closes before the chat is ready.
   A model or thinking change, mode or sandbox switch sent before the message is applied before

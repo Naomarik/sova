@@ -2610,11 +2610,13 @@
         "src/App.tsx",
         "server/chat-runtime/trial-send-while-starting.integration.test.ts",
         "scripts/chat-runtime-trial/run.mjs",
-        "scripts/chat-runtime-trial/lib.mjs"
+        "scripts/chat-runtime-trial/lib.mjs",
+        "server/app.ts",
+        "server/mesh/access.ts"
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-15T08:19Z"
+        "at": "2026-10-15T08:50Z"
       }
     },
     "§chat.transcript/states": {

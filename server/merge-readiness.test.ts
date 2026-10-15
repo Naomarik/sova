@@ -283,6 +283,28 @@ test("computeReadiness end to end with git faked: waiting for the OK, then merge
   r.resetReadiness();
 });
 
+test("noCommits (§chat.changes/entry): set exactly when the branch has no commit of its own, running or not; commits that cancel out never set it", async () => {
+  const path = sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]));
+  const fs = await import("node:fs");
+  const { facts } = await r.readReadinessScan(path, fs.statSync(path).size, null);
+  let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 0, behind: 0, dirty: false, head: "b0" };
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0 });
+  const empty = (await r.computeReadiness(summary(path), facts!))?.trees[0];
+  assert.deepEqual([empty?.why, empty?.noCommits], [r.NO_COMMITS, true]);
+  // A turn running hides the "no commits yet" words, never the fact.
+  const running = (await r.computeReadiness(summary(path, { busy: true }), facts!))?.trees[0];
+  assert.equal(running?.noCommits, true);
+  // A change and its revert: two commits ahead, an empty net diff. Commits count, never the diff.
+  status = { ...status, ahead: 2, added: 0, removed: 0, head: "h2" };
+  const cancelled = (await r.computeReadiness(summary(path), facts!))?.trees[0];
+  assert.equal(cancelled?.noCommits, undefined);
+  assert.notEqual(cancelled?.why, r.NO_COMMITS);
+  // Merged (ahead 0 after a fast-forward) has commits of its own.
+  status = { ...status, merged: "ancestor", ahead: 0 };
+  assert.equal((await r.computeReadiness(summary(path), facts!))?.trees[0]?.noCommits, undefined);
+  r.resetReadiness();
+});
+
 test("a merged tree with only untracked files: its state is in progress (running) or stale (idle), and it is still merged for the row's count", async () => {
   const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]);
   const path = sessionFile(lines);

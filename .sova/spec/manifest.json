@@ -2498,8 +2498,8 @@
         "server/chat-host.test.ts"
       ],
       "agreed": {
-        "by": "user (al_1 go-ahead, revised)",
-        "at": "2026-10-14T22:01Z"
+        "by": "user",
+        "at": "2026-10-15T08:19Z"
       },
       "evidence": "verified"
     },
@@ -2583,6 +2583,39 @@
         "src/components/ToolCard.tsx",
         "src/app.css"
       ]
+    },
+    "§chat.transcript/send-while-starting": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/instant-open",
+        "§app.chat-processes/idle-stop",
+        "§chat.transcript/a-queued-message"
+      ],
+      "authority": "accepted",
+      "code": [
+        "server/ws.ts",
+        "server/drafts.ts",
+        "server/chat-manager.ts",
+        "shared/held-sends.ts",
+        "shared/held-sends.test.ts",
+        "src/lib/chat-outbox.ts",
+        "src/lib/chat-outbox.test.ts",
+        "src/lib/chat-courier.ts",
+        "src/components/ChatView.tsx",
+        "src/components/ModeMenu.tsx",
+        "src/lib/socket.ts",
+        "src/lib/unacked-sends.ts",
+        "src/lib/unacked-sends.test.ts",
+        "src/lib/ui-state.ts",
+        "src/App.tsx",
+        "server/chat-runtime/trial-send-while-starting.integration.test.ts",
+        "scripts/chat-runtime-trial/run.mjs",
+        "scripts/chat-runtime-trial/lib.mjs"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T08:19Z"
+      }
     },
     "§chat.transcript/states": {
       "kind": "behavior",

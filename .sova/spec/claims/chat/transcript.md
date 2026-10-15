@@ -969,20 +969,29 @@ unchanged.
   assistive technology only). Nothing is added to the composer: a small note floats over the end
   of the transcript, between its last row and the composer, taking no height: "Connecting to
   chat…", after about 300 ms (so a chat already running never flashes it), or "Reconnecting. Your
-  draft is kept." at once while the connection retries. It goes when the chat is ready.
+  draft is kept." at once while the connection retries. It goes when the chat is ready. A chat
+  this tab woke by asking something of it is the exception: until its `hello`, Send and the model
+  and thinking controls stay usable while the note floats, and what they ask goes to the server in
+  order behind what woke it (§chat.transcript/send-while-starting).
 - **Nothing typed or sent is lost, nor sent twice.** A message sent on a connection whose chat then
   fails to open comes back to the composer: the server refuses each message it held for the chat
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
   the connection ends or reports an internal error before its `hello`. A message sent on an earlier
-  connection, after its `hello`, never comes back this way: that chat may have taken it.
+  connection, after its `hello`, never comes back this way: that chat may have taken it. A message
+  handed to the server for a chat still starting is the server's to deliver from then on, whether
+  or not the tab stays (§chat.transcript/send-while-starting).
 - **A chat closed while its tab is open.** When the chat's process closes for being quiet
   (§app.chat-processes/idle-stop), a tab showing it keeps its rows, draft and composer and closes
   its socket without reconnecting: no note shows and Send stays usable. Nothing the tab does on its
   own starts the chat again, neither a reconnect nor a server restart. Sending does: the message
-  shows at once, the "Connecting to chat…" note floats meanwhile, and the message goes to the chat
-  once, when its `hello` comes. So does a change of model, thinking level, Claude login, mode or
-  sandbox, opening the mode menu, or a rewind, regenerate, Remove of a queued message or
-  `/compact`, each sent once the chat is ready. So does a jump to a row the tab doesn't hold
+  shows at once, the "Connecting to chat…" note floats meanwhile, and the message goes to the
+  server the moment the tab's connection opens, before the chat's `hello`; the server holds it
+  while the chat starts and hands it to the chat once, when it is ready, even if the tab has left
+  by then (§chat.transcript/send-while-starting). So does a change of model, thinking level,
+  Claude login, mode or sandbox, or a rewind, regenerate, Remove of a queued message or
+  `/compact`: each goes to the server at once, in the order it was asked, and is applied before
+  anything asked after it. Opening the mode menu starts the chat too, and its lists load once the
+  chat is ready. So does a jump to a row the tab doesn't hold
   (§chat.timeline/jumping) and the reader scrolling up by hand (a wheel, a touch, a key, a
   scrollbar drag) to rows not fetched yet: the chat starts, and the rows land once its `hello`
   says what lies above them, or from the file if it hasn't within about 1.5 s ("Rows from the file
@@ -1003,6 +1012,40 @@ unchanged.
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
   over them. A start that fails for now keeps them and retries.
+
+## §chat.transcript/send-while-starting — A message sent while its chat starts is the server's to deliver
+
+Pressing Send on a chat whose process isn't running (closed for being quiet while its tab is open,
+§chat.transcript/instant-open) hands the message to the server at once; the server holds it while
+the chat starts and delivers it once the chat is ready, whether the person stays on the chat,
+moves to another chat, home or Back, reloads the page or closes the tab.
+
+- **Straight to the server.** The tab writes the message, and anything asked of that chat before
+  it (a change of model, thinking level, Claude login, mode or sandbox, a rewind, regenerate,
+  Remove of a queued message or `/compact`), on the connection that wakes the chat as soon as it
+  opens, oldest first, without waiting for the chat's `hello`; Send and the model and thinking
+  controls stay usable meanwhile, so a model switch then Send goes in that order. A frame never goes on a connection
+  that is still connecting: until it opens, the tab keeps it, also in the browser's storage. When
+  the view closes first (another chat, home, Back), the tab opens a connection of its own just to
+  deliver it, and stays to hear the answer; when the page goes before any connection opened (a
+  reload, a closed tab), the next page load of Sova delivers what was kept within a day; a
+  message kept longer goes back to its chat's draft instead.
+- **The server runs it after the tab has gone.** What a connection sent while its chat was
+  opening still reaches the chat, in order, when that connection closes before the chat is ready.
+  A model or thinking change, mode or sandbox switch sent before the message is applied before
+  it: a message that arrives while a model switch or a rewind is still under way waits for it.
+- **Exactly once.** The chat takes each message by its client id once: a prompt or steer whose
+  id it has already taken (a view coming back, a second tab, a retry) is answered as taken and
+  never runs again. A view that comes back to the chat while such a message is still on its way
+  connects at once and shows it as `Sending…` (§chat.transcript/a-queued-message) until the
+  chat's own rows say where it is.
+- **What can't be delivered comes back quietly.** When the chat can't take the message (it fails
+  to start, or its model has been turned off in Settings → Models) and no tab is there to hear it,
+  the server puts the text back as that chat's saved draft, ahead of any draft already saved, so
+  the session list shows the chat's draft mark and its composer holds the text when it is opened.
+  No toast or notice says so. A tab still on the chat gets it back through the usual refusal
+  (§chat.transcript/instant-open, "Nothing typed or sent is lost, nor sent twice"); a tab that
+  moved elsewhere in the app puts it back into that chat's draft itself.
 
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 

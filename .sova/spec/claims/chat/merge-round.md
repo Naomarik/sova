@@ -216,10 +216,11 @@ shell and under a timeout.
   (a branch its owner merged has no check on record), builds the main checkout, records the restart
   need (one that can't be told counts as needed), and prints the notice for the owner, with the
   sentence "Its worktree folder was removed." to add only when the clean-up's remove succeeds.
-  When the landed branch's worktree still holds drafts with records not yet promoted, it first copies
+  When the landed branch's worktree still holds drafts not confirmed promoted (records not yet
+  promoted, or a status that can't be read, the spec tools missing included), it first copies
   each such draft into `<state root>/playbooks/merge-round/drafts/<head sha>/`, since removing the
   folder deletes the worktree's own copy, and the notice goes on to name each draft with up to four of
-  those § ids and that folder, telling the owner to promote them now, on a fresh branch from master,
+  those § ids, or "status unreadable", and that folder, telling the owner to promote them now, on a fresh branch from master,
   by copying them into its worktree's `.sova/spec/drafts/`. A copy that fails withholds the clean up,
   so the folder and its drafts stay, and the notice names the worktree's own drafts folder instead.
   With none the notice is unchanged.

@@ -121,8 +121,9 @@ if (bad && c === "check") process.exitCode = 2;
 const a = process.argv.slice(2);
 const rootDir = a[a.indexOf("--root") + 1];
 if (a[0] === "merge-manifest") writeFileSync(rootDir + "/.sova/spec/manifest.json", '{"merged":true}\\n');
-// FAKE_DRAFT_IDS: {draft: [ids not promoted]}; a draft it lists with none has one record already current.
+// FAKE_DRAFT_IDS: {draft: [ids not promoted]}; a draft it lists with none has one record already current;\n// one it lists as "garbage" gets non-JSON.
 const named = process.env.FAKE_DRAFT_IDS ? JSON.parse(process.env.FAKE_DRAFT_IDS)[a[1]] : undefined;
+if (named === "garbage") { console.log("not json"); process.exit(1); }
 const ids = named ? (named.length ? named.map((id) => ({ id, current: "pending" })) : [{ id: "§z/done", current: "already-current" }]) : process.env.FAKE_SPEC_BAD === "1" ? [{ id: "§a/b", current: "pending" }] : [];
 console.log(JSON.stringify({ ids }));
 `);
@@ -1084,6 +1085,55 @@ test("ask and landed name a worktree's unpromoted drafts, only those, and hold n
     assert.equal(none.code, 0, none.out);
     assert.equal(noticeLine(none.out), `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`);
     assert.doesNotMatch(none.out, /Unpromoted drafts kept/);
+  } finally {
+    rmSync(drafts, { recursive: true, force: true });
+    writeFileSync(exclude, was);
+  }
+});
+
+test("landed keeps every draft not confirmed promoted: an unreadable status, or no spec tools, is kept and named", async () => {
+  const branch = "feat/drafts-unread";
+  git(main, "worktree", "add", "-q", wt(branch), "-b", branch);
+  const head = commit(wt(branch), "unread.txt", "u\n", "unread: a file");
+  const exclude = join(main, ".git", "info", "exclude");
+  const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
+  const drafts = join(wt(branch), ".sova", "spec", "drafts");
+  for (const name of ["broken", "fine"]) { mkdirSync(join(drafts, name), { recursive: true }); writeFileSync(join(drafts, name, "draft.json"), `{"name":"${name}"}\n`); }
+  const noticeLine = (out) => { const l = out.split("\n"); return l[l.indexOf(`session_send to ${OWNER}, after the clean up:`) + 1]; };
+  const keptDir = join(agent, "sova", "playbooks", "merge-round", "drafts", head);
+  try {
+    assert.equal((await run(["note", branch, `owner=${OWNER}`, "chip=ready", "idle=yes"])).code, 0);
+    git(main, "merge", "-q", "--no-edit", "--no-ff", branch);
+    const master = git(main, "rev-parse", "master");
+    const BASE = `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`;
+    const TAIL = `Promote them now, on a fresh branch from master: copy each draft's folder from ~/agent/sova/playbooks/merge-round/drafts/${head}/ into that worktree's .sova/spec/drafts/, then promote and commit it.`;
+
+    // One draft's status is non-JSON; the other is fully promoted.
+    const unread = await run(["landed", branch], { env: { FAKE_DRAFT_IDS: JSON.stringify({ broken: "garbage", fine: [] }) } });
+    assert.equal(unread.code, 0, unread.out);
+    assert.equal(noticeLine(unread.out), `${BASE} Its spec drafts may not be promoted: broken (status unreadable). ${TAIL}`);
+    assert.equal(readFileSync(join(keptDir, "broken", "draft.json"), "utf8"), '{"name":"broken"}\n');
+    assert.ok(!existsSync(join(keptDir, "fine")), "a draft confirmed promoted isn't kept");
+    assert.match(unread.out.split("\n").find((l) => l.startsWith("next: ")), /worktree remove -- /, "kept first, so the clean up runs");
+
+    // No spec tools at all: no status can be read, so every draft is kept and named.
+    rmSync(keptDir, { recursive: true, force: true });
+    const noTools = await run(["landed", branch], { env: { SOVA_ROUND_SPEC_CORE: join(root, "no-spec-core") } });
+    assert.equal(noTools.code, 0, noTools.out);
+    assert.equal(noticeLine(noTools.out), `${BASE} Its spec drafts may not be promoted: broken (status unreadable); fine (status unreadable). ${TAIL}`);
+    for (const name of ["broken", "fine"]) assert.equal(readFileSync(join(keptDir, name, "draft.json"), "utf8"), `{"name":"${name}"}\n`);
+
+    // No spec tools and the copy fails: no clean up, so nothing is deleted.
+    rmSync(keptDir, { recursive: true, force: true });
+    chmodSync(dirname(keptDir), 0o555);
+    try {
+      const stuck = await run(["landed", branch], { env: { SOVA_ROUND_SPEC_CORE: join(root, "no-spec-core") } });
+      assert.match(stuck.out, /^Clean up: its unpromoted drafts couldn't be kept \(EACCES\)/m);
+      assert.doesNotMatch(stuck.out, /worktree remove/);
+    } finally {
+      chmodSync(dirname(keptDir), 0o755);
+    }
   } finally {
     rmSync(drafts, { recursive: true, force: true });
     writeFileSync(exclude, was);

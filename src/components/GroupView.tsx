@@ -884,6 +884,7 @@ export function GroupView(props: {
                     path={path}
                     summary={summary}
                     paneId={paneId}
+                    front={() => mode() !== "tabs" || active() === path}
                     /* The pre-assembled name (repeat-suffix aware): one rule for the head, the
                        aria-label and the announcements. */
                     name={() => nameOf(path)}

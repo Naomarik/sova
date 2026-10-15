@@ -80,7 +80,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, startsAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
+import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -190,6 +190,8 @@ export function ChatView(props: {
   /** Reconnect past the server's recent-write guard (never past a live TUI). */
   force: boolean;
   autofocus?: boolean;
+  /** Whether this view is on screen (absent: always); a workspace tab behind another isn't. */
+  front?: () => boolean;
   onModel(model: string | null): void;
   onRefused(kind: ChatRefusal, message: string): void;
   /** A run just started here: the list's `busy` is stale until it's refetched. */
@@ -267,10 +269,7 @@ export function ChatView(props: {
       connection's hello, a list kept from the last visit says nothing about what's above it:
       nothing says a row isn't there, and nothing counts the whole list. */
   // The Overseer's history is the longest there is: it holds only what is shown or jumped to.
-  // A jump to a row not held, or the reader scrolling up for older rows, starts a chat closed
-  // while quiet, as a send does (§chat.transcript/instant-open); the rows land once it says what's
-  // above them, or from the file if it is slow (lib/older-rows-view).
-  const olderRows = createOlderRows({ path: props.path, items, setItems, kept: () => keptOlder(cached, items()), prefetch: !props.overseer, want: () => wake() });
+  const olderRows = createOlderRows({ path: props.path, items, setItems, kept: () => keptOlder(cached, items()), prefetch: !props.overseer });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The branch's inputs: this connection's hello says; before it, the rows kept from the last
@@ -725,32 +724,9 @@ export function ChatView(props: {
         },
         () => {},
       );
-  // Whether the server holds the chat is the list's to say (its row's `chat`): the first connect
-  // waits for the row too, within the same bound, so a chat closed while quiet opens asleep
-  // (lib/chat-wait startsAsleep) and opening it to read starts no process.
-  let rowHere!: () => void;
-  const listed = new Promise<void>((r) => (rowHere = r));
-  if (!props.summary) rowHere();
-  else createEffect(() => props.summary?.() && rowHere());
   const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
-    after: Promise.all([fromFile, listed]),
+    after: fromFile,
     afterMs: FILE_READ_WAIT_MS,
-    startClosed() {
-      // A message of this tab's is on its way to the chat (lib/chat-outbox): the chat is starting
-      // for it, so the view connects and shows it (§chat.transcript/send-while-starting).
-      if (sendsOnTheWay(props.path).size) return false;
-      const asleep = startsAsleep(untrack(() => props.summary?.()), {
-        special: !!props.overseer || !!props.projectOverseer,
-        force: !!props.force,
-        rows: (untrack(items)?.length ?? 0) > 0,
-      });
-      if (asleep) {
-        setWait(waitOnSleep(untrack(wait)));
-        // Not held now: a hold seen from here is someone else's open (heldWhileAsleep).
-        sawGone = true;
-      }
-      return asleep;
-    },
     onOpen(isReconnect) {
       setEverOpened(true);
       setWait(waitOnOpen(untrack(wait)));
@@ -1233,6 +1209,9 @@ export function ChatView(props: {
     courier(props.path, frames, held, chatCourier, socket.release() ?? undefined);
   });
   createEffect(on(socket.status, (status) => (status === "failed" || status === "closed") && !untrack(wait).asleep && giveUpWake(), { defer: true }));
+  // Brought to the front (a workspace tab), a chat that slept is being opened: start it, as a send would.
+  const inFront = createMemo(() => props.front?.() ?? true);
+  createEffect(on(inFront, (front) => front && wake(), { defer: true }));
   // Someone else opened the chat meanwhile (another tab, a worker's report): connect to it.
   createEffect(
     on(

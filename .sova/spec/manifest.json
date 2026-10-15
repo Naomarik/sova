@@ -129,7 +129,6 @@
         "server/chat-handle-remote.ts",
         "scripts/chat-runtime-trial/run.mjs",
         "server/chat-runtime/trial-crash-idle.integration.test.ts",
-        "scripts/e2e/quiet-close.mjs",
         "src/components/ChatView.tsx",
         "src/lib/older-rows-view.ts"
       ],
@@ -854,6 +853,7 @@
     },
     "§app.session-list/session-titles": {
       "kind": "behavior",
+      "requires": [],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
@@ -2495,8 +2495,7 @@
         "server/chat-host.ts",
         "server/archive-quiet-close.test.ts",
         "server/quiet-close-actions.test.ts",
-        "server/chat-host.test.ts",
-        "scripts/e2e/quiet-close.mjs"
+        "server/chat-host.test.ts"
       ],
       "agreed": {
         "by": "user (al_1 go-ahead, revised)",

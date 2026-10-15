@@ -1,5 +1,5 @@
 // Ids shown whole (§chat.memory/full-ids): a summary line's shortened UUID shown whole when the line's own
-// messages make that certain, and the summarizer's check for ids it shortened (§chat.memory/summarizer).
+// messages make that certain.
 // Pure and self-contained (no imports, no state): an evaluation harness may import this file by path.
 
 /** A whole UUID, any version, either case. */
@@ -43,20 +43,4 @@ export function expandIds(line: string, uuids: Iterable<string>): string {
   const ids = distinct(uuids);
   if (!ids.length) return line;
   return line.replace(TOKEN, (token) => soleMatch(token, ids) ?? token);
-}
-
-/**
- * The UUIDs of `source` (`uuids`) that `line` holds only as a shortened prefix: some standalone token
- * begins exactly that UUID, and the line never holds it whole. Lower-cased, in `uuids`' order.
- */
-export function shortenedIds(line: string, uuids: Iterable<string>): string[] {
-  const ids = distinct(uuids);
-  if (!ids.length) return [];
-  const whole = new Set(uuidsIn(line));
-  const short = new Set<string>();
-  for (const m of line.matchAll(TOKEN)) {
-    const hit = soleMatch(m[0], ids);
-    if (hit && !whole.has(hit)) short.add(hit);
-  }
-  return ids.filter((id) => short.has(id));
 }

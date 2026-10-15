@@ -41,7 +41,7 @@ note (a branch summary).
 
 Recent lines cover one message each; older lines merge pairs, so n is a power of
 2. Lines are the index, not the record: every message is kept whole under its
-line, tool results included, while lines at every n shorten ids, names and
+line, tool results included, while lines at every n shorten names and
 numbers. ${MEMORY_ZOOM_TOOL}(id, n) opens line id+n into its two lines of n/2, ${MEMORY_ZOOM_TOOL}(id, 1)
 gives message id whole, and ${MEMORY_DATE_TOOL}(id) gives its date and time.
 
@@ -95,8 +95,7 @@ Use the space up to the limit, and give it by value:
 
 Avoid omissions. Name a minor item in a word or two rather than drop it: an
 absent item can never be found. Copy names, numbers, ids, paths and errors
-exactly: session ids and other UUIDs and hashes whole, never shortened to a
-prefix. Tag each item with its kind ("user: ...; echo: ..."), and credit quoted
+exactly. Tag each item with its kind ("user: ...; echo: ..."), and credit quoted
 text to its real author. Never make anything look further along than it was.
 Non-ASCII characters cost 2-4 bytes.`;
 
@@ -124,12 +123,6 @@ of them from there too.
 ${a}
 ${b}
 </input>`;
-}
-
-/** What a summary's second call adds to its task when the first line shortened UUIDs of its source
-    (§chat.memory/summarizer): the UUIDs to copy whole. */
-export function idRetry(ids: readonly string[]): string {
-  return `\n\nYour last line shortened ${ids.length === 1 ? "this id" : "these ids"}; copy ${ids.length === 1 ? "it" : "each"} whole: ${ids.join(", ")}`;
 }
 
 /** A zoomable compaction's summary: what the lines are and how to open them, then the lines. */

@@ -271,7 +271,7 @@ describe("the engine", () => {
   });
 });
 
-describe("ids shown whole (§chat.memory/full-ids) and the summarizer's id check (§chat.memory/summarizer)", () => {
+describe("ids shown whole (§chat.memory/full-ids)", () => {
   // Synthetic UUIDs: A and B share their first 8 hex digits.
   const A = "0190f3a2-1b2c-7d4e-8f90-a1b2c3d4e5f6";
   const B = "0190f3a2-9a9a-7bbb-8ccc-ddddeeee0001";
@@ -322,7 +322,7 @@ describe("ids shown whole (§chat.memory/full-ids) and the summarizer's id check
     assert.ok(z && z.summary.includes(`0+1|echo: spawned worker ${C}.${P}`) && z.summary.includes(`2+1|user: compare 0190f3a2 and ${B}.`));
 
     const merge = calls.find((c) => c.prompt.includes("merge lines 0+1 and 1+1"));
-    assert.ok(merge && merge.prompt.includes(`echo: spawned worker ${C}.${P}\nsova: worker ${C} running.${P}`), "a merge is given its lines with ids whole");
+    assert.ok(merge && merge.prompt.includes(`echo: spawned worker 5c5c5c5c.${P}\nsova: worker 5c5c5c5c-2222 running.${P}`), "a merge is given its stored lines");
   });
 
   test("a chat whose saved prefix predates full ids rebases once, then keeps it", async () => {
@@ -342,53 +342,12 @@ describe("ids shown whole (§chat.memory/full-ids) and the summarizer's id check
     assert.equal(readMemoryView(t2!.content)!.prefix, readMemoryView(t1!.content)!.prefix);
   });
 
-  const leafWith = (replies: (string | Error)[]) => {
+  test("a line that shortens an id is kept as returned, never asked for again (§chat.memory/tree)", async () => {
     const calls: SummaryCall[] = [];
-    const { e } = engine({
-      summarize: async (c) => {
-        calls.push(c);
-        const r = replies[calls.length - 1] ?? "unexpected";
-        if (r instanceof Error) throw r;
-        return { text: r, model: "fake" };
-      },
-    });
-    return { e, calls };
-  };
-  const source = [user(pad(`check ${A} and ${C}`))];
-
-  test("a line that shortens an id of its source is asked for once more, naming the ids; the better line is kept", async () => {
-    const { e, calls } = leafWith(["user: check 0190f3a2 and 5c5c5c5c.", `user: check ${A} and ${C}.`]);
-    e.sync(source);
+    const { e } = engine({ summarize: shortening(calls) });
+    e.sync([result("agent_spawn", pad(`spawned ${C}`))]);
     await e.idle();
-    assert.equal(calls.length, 2);
-    assert.ok(calls[1]!.prompt.endsWith(`Your last line shortened these ids; copy each whole: ${A}, ${C}`), calls[1]!.prompt.slice(-200));
-    assert.equal(calls[1]!.system, calls[0]!.system, "the cached system prompt is unchanged");
-    assert.equal(e.get(0, 0)!.text, `user: check ${A} and ${C}.`);
-  });
-
-  test("whole ids, or none: one call", async () => {
-    for (const reply1 of [`user: check ${A} and ${C}.`, "user: check two sessions."]) {
-      const { e, calls } = leafWith([reply1]);
-      e.sync(source);
-      await e.idle();
-      assert.equal(calls.length, 1);
-      assert.equal(e.get(0, 0)!.text, reply1);
-    }
-  });
-
-  test("retries run out: the line shortening fewest is kept, the first on a tie; a failed retry keeps the first", async () => {
-    const cases: [(string | Error)[], string][] = [
-      [["user: check 0190f3a2 and 5c5c5c5c.", `user: check ${A} and 5c5c5c5c.`], `user: check ${A} and 5c5c5c5c.`],
-      [["user: check 0190f3a2.", "user: check 5c5c5c5c."], "user: check 0190f3a2."],
-      [["user: check 0190f3a2.", new Error("quota")], "user: check 0190f3a2."],
-    ];
-    for (const [replies, kept] of cases) {
-      const { e, calls } = leafWith(replies);
-      e.sync(source);
-      await e.idle();
-      assert.equal(calls.length, 2);
-      assert.equal(e.get(0, 0)!.text, kept);
-      assert.equal(e.status().problem, undefined);
-    }
+    assert.equal(calls.length, 1);
+    assert.equal(e.get(0, 0)!.text, `echo: spawned worker 5c5c5c5c.${P}`);
   });
 });

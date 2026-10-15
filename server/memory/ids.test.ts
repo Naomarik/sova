@@ -1,8 +1,7 @@
-// Ids shown whole (§chat.memory/full-ids) and the summarizer's id check (§chat.memory/summarizer). Pure:
-// synthetic UUIDs only.
+// Ids shown whole (§chat.memory/full-ids). Pure: synthetic UUIDs only.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { expandIds, shortenedIds, uuidsIn } from "./ids";
+import { expandIds, uuidsIn } from "./ids";
 
 const A = "0190f3a2-1b2c-7d4e-8f90-a1b2c3d4e5f6";
 const B = "0190f3a2-9a9a-7bbb-8ccc-ddddeeee0001"; // shares A's first 8 hex digits
@@ -52,19 +51,5 @@ describe("expandIds", () => {
     assert.equal(once, `a ${C} b ${A} c 0190f3a2`);
     assert.equal(expandIds(line, [C, B, A, C]), once);
     assert.equal(expandIds(line, new Set([B, C, A])), once);
-  });
-});
-
-describe("shortenedIds", () => {
-  test("a UUID of the source the line holds only shortened", () => {
-    assert.deepEqual(shortenedIds("worker 5c5c5c5c started", [A, C]), [C]);
-    assert.deepEqual(shortenedIds("worker 5c5c5c5c-2222 started", [C]), [C]);
-  });
-
-  test("not when the line holds it whole too, drops it, or the prefix is ambiguous", () => {
-    assert.deepEqual(shortenedIds(`worker ${C} (5c5c5c5c)`, [C]), []);
-    assert.deepEqual(shortenedIds("worker started", [C]), []);
-    assert.deepEqual(shortenedIds("session 0190f3a2", [A, B]), []);
-    assert.deepEqual(shortenedIds("worker 5c5c5c5c", []), []);
   });
 });

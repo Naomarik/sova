@@ -4,9 +4,9 @@
 import type { HEntry } from "../../shared/harness";
 import type { MemoryLine, MemoryMessage, MemoryStatus } from "../../shared/protocol";
 import { memoryViewContent } from "../../pi-config/extensions/claude-code/provider/memory-view.ts";
-import { expandIds, shortenedIds, uuidsIn } from "./ids";
+import { expandIds, uuidsIn } from "./ids";
 import { inputStart, messagesBefore, messagesOf, type LogMessage } from "./log";
-import { COMPACTION_GUIDE, idRetry, leafTask, mergeTask, TURN_GUIDE, zoomableSummary } from "./prompts";
+import { COMPACTION_GUIDE, leafTask, mergeTask, TURN_GUIDE, zoomableSummary } from "./prompts";
 import { MemoryStore, type MemoryFileState } from "./store";
 import type { SummaryCall, SummaryResult } from "./summarizer";
 import { problemOf } from "./summarizer";
@@ -45,8 +45,6 @@ export const PREPARE_SLACK = 16;
 export const CONCURRENCY = 4;
 /** Consecutive failed summaries after which the queue pauses until the next message. */
 export const FAILURE_PAUSE = 3;
-/** Calls one summary may take when its line shortens an id of its source (§chat.memory/summarizer). */
-export const ID_ATTEMPTS = 2;
 
 export interface EngineDeps {
   summarize(call: SummaryCall): Promise<SummaryResult>;
@@ -250,7 +248,7 @@ export class MemoryEngine implements Tree {
       const short = `${m.kind}: ${m.text}`;
       // A message that fits is its own line, word for word, with no model call.
       if (bytes(short) <= LIMIT) return this.put({ l, i, text: short, size: bytes(short), src: m.src }, generation);
-      const text = await this.summarizeNode(i, leafTask(i, m.kind, m.text), m.text);
+      const text = await this.summarizeNode(i, leafTask(i, m.kind, m.text));
       return this.put({ l, i, text, size: bytes(text), src: m.src }, generation);
     }
     const a = this.get(l - 1, 2 * i);
@@ -259,41 +257,19 @@ export class MemoryEngine implements Tree {
     const joined = `${a.text}\n${b.text}`;
     if (bytes(joined) <= LIMIT) return this.put({ l, i, text: joined, size: bytes(joined) }, generation);
     const half = 2 ** (l - 1);
-    // The two lines as a reader sees them, ids whole where certain (§chat.memory/full-ids).
-    const sa = this.shownText(a, [l - 1, 2 * i]).replace(/\n/g, " ");
-    const sb = this.shownText(b, [l - 1, 2 * i + 1]).replace(/\n/g, " ");
-    const text = await this.summarizeNode(end([l, i]), mergeTask(first([l, i]), half, sa, sb), `${sa}\n${sb}`);
+    const text = await this.summarizeNode(end([l, i]), mergeTask(first([l, i]), half, a.text.replace(/\n/g, " "), b.text.replace(/\n/g, " ")));
     return this.put({ l, i, text, size: bytes(text) }, generation);
   }
 
-  /**
-   * One summary with the compaction view up to message `cut` as its context, cached by its stable prefix.
-   * A line that holds a UUID of `source` only shortened is asked for again (up to ID_ATTEMPTS calls, the
-   * task naming the UUIDs); the line shortening fewest is kept, the first on a tie (§chat.memory/summarizer).
-   */
-  private async summarizeNode(cut: number, task: string, source: string): Promise<string> {
+  /** One summary with the compaction view up to message `cut` as its context, cached by its stable prefix. */
+  private async summarizeNode(cut: number, task: string): Promise<string> {
     const lines = this.state.cview.filter((r) => end(r) <= cut).map((r) => lineOf(this, r));
     const { system, newer } = this.cviewSplit(lines);
-    const head = newer.length ? `<chat> (continued: the newest lines)\n${newer.join("\n")}\n</chat>\n\n` : "";
-    const ids = uuidsIn(source);
-    let best: { line: string; short: number } | undefined;
-    let short: string[] = [];
-    for (let attempt = 0; attempt < ID_ATTEMPTS; attempt++) {
-      const prompt = `${head}${task}${attempt ? idRetry(short) : ""}`;
-      let line: string;
-      try {
-        const result = await this.deps.summarize({ system, prompt, sessionId: this.sessionId, ...(this.deps.cwd ? { cwd: this.deps.cwd } : {}) });
-        line = acceptLine(result.text);
-        if (!line) throw new Error("the summarizer returned an empty line");
-      } catch (err) {
-        if (best) return best.line; // a failed second call keeps the first line
-        throw err;
-      }
-      short = shortenedIds(line, ids);
-      if (!best || short.length < best.short) best = { line, short: short.length };
-      if (!short.length) break;
-    }
-    return best!.line;
+    const prompt = newer.length ? `<chat> (continued: the newest lines)\n${newer.join("\n")}\n</chat>\n\n${task}` : `${task}`;
+    const result = await this.deps.summarize({ system, prompt, sessionId: this.sessionId, ...(this.deps.cwd ? { cwd: this.deps.cwd } : {}) });
+    const line = acceptLine(result.text);
+    if (!line) throw new Error("the summarizer returned an empty line");
+    return line;
   }
 
   /**

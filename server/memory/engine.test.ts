@@ -1,7 +1,7 @@
 // One chat's memory engine (§chat.memory/log, /tree, /turn, /recall, /preparing, /zoomable) with a fake
 // summarizer: no model call, no process. Files only under a temp dir.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -268,5 +268,127 @@ describe("the engine", () => {
     assert.ok(Buffer.byteLength(out.summary) < 2 * 4 * 1024 + 2000);
     assert.equal(out.lines.reduce((s, [l]) => s + 2 ** l, 0), 48, "the lines cover exactly the compacted messages");
     assert.equal(await e.compactionSummary(b, 0, 4), undefined, "nothing compacted");
+  });
+});
+
+describe("ids shown whole (§chat.memory/full-ids) and the summarizer's id check (§chat.memory/summarizer)", () => {
+  // Synthetic UUIDs: A and B share their first 8 hex digits.
+  const A = "0190f3a2-1b2c-7d4e-8f90-a1b2c3d4e5f6";
+  const B = "0190f3a2-9a9a-7bbb-8ccc-ddddeeee0001";
+  const C = "5c5c5c5c-2222-7333-8444-555566667777";
+  const pad = (s: string) => `${s} ${"w ".repeat(300)}`;
+  /** Long enough that leaves 0 and 1 don't fit one line together: their parent is a merge call. */
+  const P = ` ${"z".repeat(280)}`;
+  /** A summarizer that always shortens: each leaf by its message, each merge alike. */
+  const shortening = (calls: SummaryCall[]) => async (c: SummaryCall) => {
+    calls.push(c);
+    const leaf = /compress message (\d+)/.exec(c.prompt)?.[1];
+    const text = leaf === "0" ? `echo: spawned worker 5c5c5c5c.${P}` : leaf === "1" ? `sova: worker 5c5c5c5c-2222 running.${P}` : leaf === "2" ? "user: compare 0190f3a2 and 0190f3a2-9a." : "worker 5c5c5c5c merged.";
+    return { text, model: "fake" };
+  };
+
+  test("the view, zoom, the outline and a zoomable summary show ids whole; tree.jsonl keeps the stored lines", async () => {
+    const calls: SummaryCall[] = [];
+    const { e, dir } = engine({ summarize: shortening(calls) });
+    const b = [result("agent_spawn", pad(`spawned ${C}`)), reply(pad(`worker ${C}`)), user(pad(`compare ${A} and ${B}`)), reply("ok")];
+    e.sync(b);
+    await e.idle();
+    const tree = readFileSync(join(dir, "tree.jsonl"), "utf8");
+    assert.ok(tree.includes("spawned worker 5c5c5c5c. z") && !tree.includes(C) && !tree.includes(B), "stored lines unchanged");
+
+    const ask = user("which worker?");
+    const turn = await e.turnView([...b, ask], 128);
+    const prefix = readMemoryView(turn!.content)!.prefix;
+    assert.equal(
+      prefix,
+      `<chat>\n0+1|echo: spawned worker ${C}.${P}\n1+1|sova: worker ${C} running.${P}\n2+1|user: compare 0190f3a2 and ${B}.\n3+1|sova: ok\n</chat>`,
+      "unique prefixes whole; the prefix A and B share stays short",
+    );
+    assert.equal(turn!.bytes, Buffer.byteLength(prefix) - "<chat>\n</chat>".length);
+    const again = await e.turnView([...b, ask], 128);
+    assert.deepEqual(again!.content, turn!.content, "byte-stable turn to turn");
+    assert.equal(again!.rebased, false);
+
+    assert.equal(e.zoom(0, 2), `0+1|echo: spawned worker ${C}.${P}\n1+1|sova: worker ${C} running.${P}`);
+    assert.equal(e.zoom(0, 4), `0+2|worker ${C} merged.\n2+2|user: compare 0190f3a2 and ${B}. sova: ok`);
+    assert.equal(e.zoom(2, 1), `2|user: ${pad(`compare ${A} and ${B}`)}`, "a message whole, as logged");
+    const open = e.open(0, 4);
+    assert.ok("lines" in open);
+    assert.deepEqual(open.lines.map((l) => l.text), [`worker ${C} merged.`, `user: compare 0190f3a2 and ${B}.\nsova: ok`]);
+    assert.equal(e.memoryLine([1, 0]).text, `worker ${C} merged.`);
+    assert.equal(e.viewBytesOf([[2, 0]]), Buffer.byteLength(`0+4|worker ${C} merged. user: compare 0190f3a2 and ${B}. sova: ok`) + 1, "the outline's size is the shown lines'");
+
+    const z = await e.compactionSummary(b, 4, 4);
+    assert.ok(z && z.summary.includes(`0+1|echo: spawned worker ${C}.${P}`) && z.summary.includes(`2+1|user: compare 0190f3a2 and ${B}.`));
+
+    const merge = calls.find((c) => c.prompt.includes("merge lines 0+1 and 1+1"));
+    assert.ok(merge && merge.prompt.includes(`echo: spawned worker ${C}.${P}\nsova: worker ${C} running.${P}`), "a merge is given its lines with ids whole");
+  });
+
+  test("a chat whose saved prefix predates full ids rebases once, then keeps it", async () => {
+    const { e, dir, deps } = engine({ summarize: shortening([]) });
+    const b = [result("agent_spawn", pad(`spawned ${C}`)), reply("ok")];
+    e.sync(b);
+    await e.idle();
+    const store = new MemoryStore(dir);
+    store.saveState({ ...store.loadState(), prefix: [`0+1|echo: spawned worker 5c5c5c5c.${P}`, "1+1|sova: ok"], prefixSent: 0 });
+    const fresh = new MemoryEngine(e.sessionId, new MemoryStore(dir), deps);
+    const next = user("next");
+    const t1 = await fresh.turnView([...b, next], 128);
+    assert.equal(t1!.rebased, true);
+    assert.match(readMemoryView(t1!.content)!.prefix, new RegExp(`spawned worker ${C}\\. z`));
+    const t2 = await fresh.turnView([...b, next, reply("done"), user("more")], 128);
+    assert.equal(t2!.rebased, false);
+    assert.equal(readMemoryView(t2!.content)!.prefix, readMemoryView(t1!.content)!.prefix);
+  });
+
+  const leafWith = (replies: (string | Error)[]) => {
+    const calls: SummaryCall[] = [];
+    const { e } = engine({
+      summarize: async (c) => {
+        calls.push(c);
+        const r = replies[calls.length - 1] ?? "unexpected";
+        if (r instanceof Error) throw r;
+        return { text: r, model: "fake" };
+      },
+    });
+    return { e, calls };
+  };
+  const source = [user(pad(`check ${A} and ${C}`))];
+
+  test("a line that shortens an id of its source is asked for once more, naming the ids; the better line is kept", async () => {
+    const { e, calls } = leafWith(["user: check 0190f3a2 and 5c5c5c5c.", `user: check ${A} and ${C}.`]);
+    e.sync(source);
+    await e.idle();
+    assert.equal(calls.length, 2);
+    assert.ok(calls[1]!.prompt.endsWith(`Your last line shortened these ids; copy each whole: ${A}, ${C}`), calls[1]!.prompt.slice(-200));
+    assert.equal(calls[1]!.system, calls[0]!.system, "the cached system prompt is unchanged");
+    assert.equal(e.get(0, 0)!.text, `user: check ${A} and ${C}.`);
+  });
+
+  test("whole ids, or none: one call", async () => {
+    for (const reply1 of [`user: check ${A} and ${C}.`, "user: check two sessions."]) {
+      const { e, calls } = leafWith([reply1]);
+      e.sync(source);
+      await e.idle();
+      assert.equal(calls.length, 1);
+      assert.equal(e.get(0, 0)!.text, reply1);
+    }
+  });
+
+  test("retries run out: the line shortening fewest is kept, the first on a tie; a failed retry keeps the first", async () => {
+    const cases: [(string | Error)[], string][] = [
+      [["user: check 0190f3a2 and 5c5c5c5c.", `user: check ${A} and 5c5c5c5c.`], `user: check ${A} and 5c5c5c5c.`],
+      [["user: check 0190f3a2.", "user: check 5c5c5c5c."], "user: check 0190f3a2."],
+      [["user: check 0190f3a2.", new Error("quota")], "user: check 0190f3a2."],
+    ];
+    for (const [replies, kept] of cases) {
+      const { e, calls } = leafWith(replies);
+      e.sync(source);
+      await e.idle();
+      assert.equal(calls.length, 2);
+      assert.equal(e.get(0, 0)!.text, kept);
+      assert.equal(e.status().problem, undefined);
+    }
   });
 });

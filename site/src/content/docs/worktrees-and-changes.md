@@ -13,21 +13,21 @@ It works the same in pi's terminal UI and in Sova.
 
 There's no button and no command for worktrees: you ask the agent, and it uses its `worktree` tool. It can:
 
-- **Create** a worktree on a new branch, `feat/<name>`. By default the folder is `.worktrees/<repo>-<name>` beside your main checkout, based on the commit your session's folder is on.
-- **Attach** a worktree that already exists, including one another session created. It has to be the worktree's top folder.
+- **Create** a worktree on a new branch, `feat/<name>`. By default the folder is `.worktrees/<repo>-<name>` beside your main checkout, based on the commit your session's folder is on. That branch is kept as the worktree's base branch: when a merge happens outside the tool, it's the first place Sova looks for the worktree's commits.
+- **Attach** a worktree that already exists, including one another session created. It has to be the worktree's top folder, on a branch.
 - **Detach** a worktree. It's marked dropped and stays in the list as history. Nothing is deleted on disk.
-- **Merge** a worktree's branch into its target, `master` (or `main` in a repository without `master`) unless you name another. Where the target is checked out, that checkout must have no uncommitted changes to tracked files. Git fast-forwards when it can and makes a merge commit when it can't. A conflict stops the merge and is reported, and nothing changes. Where the target isn't checked out, only a fast-forward is done.
+- **Merge** a worktree's branch into its target, `master` (or `main` in a repository without `master`) unless you name another, whatever branch the worktree was based on. Where the target is checked out, that checkout must have no uncommitted changes to tracked files. Git fast-forwards when it can and makes a merge commit when it can't. A conflict stops the merge and is reported, and nothing changes. Where the target isn't checked out, only a fast-forward is done.
 - **List** the worktrees with their status.
 
 Only the session's own agent has this tool. Workers and team members never do, and a session whose tools run on a remote target refuses it.
 
-With the session's sandbox on, the agent asks you before it creates, attaches, or merges, naming the path and the branch. If you decline, nothing changes.
+With the session's sandbox on, the agent asks you before it creates, attaches, or merges, naming the path and the branch. If you decline, nothing changes. While the sandbox is on, every active worktree is a folder the session and its workers may write to.
 
 ## Where workers may start
 
 A worker may start only in the session's own folder (or a folder inside it), or inside one of the session's active worktrees. Any other folder is refused, and the refusal names the session's worktrees. This applies to single workers, team members, and resumed workers alike, on pi and on Claude Code.
 
-A pi worker started inside a worktree writes only inside that worktree unless the session's sandbox is Off. Under Subagents only, the default, it can still read the rest of your machine, but its writes go only to the worktree and its own scratch space.
+A worker started inside a worktree, pi or Claude Code, writes only inside that worktree unless the session's sandbox is Off. Under Subagents only, the default, it can still read the rest of your machine, but its writes go only to the worktree and its own scratch space.
 
 A fork of a session starts with the same worktree list. A worktree that came from another session says so in the Session tab.
 
@@ -35,7 +35,7 @@ A chat working in a worktree reads that worktree's own [project modes](/docs/mod
 
 ## The Worktrees section
 
-Open the session pane and its Session tab. Right after Repository, **Worktrees** lists every worktree the session tracks, dropped and merged ones included, with a count line such as "2 active · 1 merged". Each row names the branch and the folder, and has a status chip: Active, Dropped, or Merged "into master at 4ef9f18".
+Open the session pane and its Session tab. Right after Repository, **Worktrees** lists every worktree the session tracks, dropped and merged ones included, with a count line such as "2 active · 1 merged". Each row names the branch and the folder, and has a status chip: Active, Dropped, or Merged "into master at 4ef9f18". A worktree whose folder is gone never reads Active: it reads Merged with a Cleaned up chip when its work is in the main branch, and Removed when it isn't, such as "Removed · not merged".
 
 A worktree the session created or attached also gets a readiness chip, worked out from git with no model call:
 
@@ -43,7 +43,7 @@ A worktree the session created or attached also gets a readiness chip, worked ou
 |---|---|
 | Ready to merge | At least 1 commit ahead, and nothing below holds it back. |
 | Waiting for your OK | Ready, and the session's last reply asks you something, like whether to merge. |
-| In progress | A turn or a worker is running, it has 3 or more uncommitted files, it has no commits yet, it conflicts with its base, or the last test, typecheck, or build failed. |
+| In progress | A turn or a worker is running, it has 3 or more uncommitted files, it has no commits yet, it conflicts with its base, a commit on it is marked unfinished (`WIP`, `TEMP`, `fixup!` and the like), or the last test, typecheck, or build failed. |
 | Blocked | The session waits on your answers to open questions. |
 | Stale | Merged, but the folder has uncommitted changes and nothing is running. |
 
@@ -55,13 +55,13 @@ When the session merges a worktree, with the tool or with plain git during one o
 
 ## Removing merged worktrees
 
-Sova never removes a worktree on its own, and the `worktree` tool's merge leaves the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged" for its repository, with a **Clean Up Merged** button when some can go.
+Sova never removes a worktree on its own, and the `worktree` tool's merge leaves the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged · 1 empty" for its repository (empty ones are leftovers with no commits of their own), with a **Clean Up Merged** button when some merged or empty ones can go. When the Overseer archives a session, it can remove that session's own worktrees too, with the same checks.
 
 The button checks first and shows you what goes and what stays, each kept folder with its reason: not merged, uncommitted files, a session still running there, and so on. Only the folders you confirmed are removed, and only if they're still safe to remove at that moment. Git removes them without force, so it refuses a folder that changed. A branch that git finds in your main branch is deleted too; the others keep their commits.
 
 ## Reviewing what changed
 
-The **changes viewer** shows what a session changed on disk. It only reads: it never writes to your working tree and never runs a git command that changes anything. It opens from 3 places:
+The **changes viewer** shows what a session changed on disk. It only reads: it never writes to your working tree and never runs a git command that changes anything. It shows one comparison: the session's uncommitted changes, a worktree's branch, or one commit. It opens from 3 places:
 
 - The Session tab: **Review Changes** beside "Uncommitted changes" shows them against your last commit, and **Review Changes** on an active worktree's row shows its branch against where it started (or, once merged, what the merge brought in).
 - A merge card's **Review Changes**, for what that merge brought in.

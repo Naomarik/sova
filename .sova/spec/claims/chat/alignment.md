@@ -460,7 +460,7 @@ the row mark, Needs you and push; the next align result that changes a document 
 Files with no `align` tool result are only searched for it, never parsed; after the first one, each
 change parses only the lines appended since (a file that shrank or was rewritten is read again).
 
-- **Row mark.** A row whose session has open questions shows the needs-you mark on line 1 as a
+- **Row mark.** A row whose session has open questions shows the needs-you mark on line 1 as
   the count alone ("3") in the accent, semibold at caption size, with no glyph; the count itself
   is hidden from assistive tech, and the hidden words "3 open questions. " (1: "1 open question. ")
   carry it. The title is "3 open questions in 2 alignments", or, when one alignment asks,

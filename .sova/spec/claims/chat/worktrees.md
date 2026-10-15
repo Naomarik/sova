@@ -32,14 +32,16 @@ by argument list with no shell, locally only (a remote session refuses it).
 
 - **create** `{name, base?, path?}`: `git worktree add -b feat/<name>` from the session repo's
   main checkout, at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path` is
-  given, based on `base` or the session cwd's `HEAD` (whose branch becomes its default merge
-  target). It is tracked as `created`.
+  given, based on `base` or the session cwd's `HEAD`. The branch it is based on (`base` when it names a
+  branch, else the branch the cwd has checked out; none for a commit or a detached HEAD) is kept as
+  its base branch, which is where git first looks for it merged (§chat.worktrees/merged-state); it
+  is not the `merge` default. It is tracked as `created`.
 - **attach** `{path}`: tracks an existing worktree top level (a subdirectory, or a detached HEAD,
   is refused) as `attached`; its base is its fork point from `master` (else `main`). A worktree
   another session created may be attached.
 - **detach** `{path}`: marks it `dropped`. Nothing is deleted on disk.
 - **merge** `{path, target?}`: merges the worktree's branch into `target` (default `master`, or
-  `main` in a repository without `master`) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
+  `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
   a fast-forward is done.

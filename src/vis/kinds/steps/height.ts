@@ -18,7 +18,7 @@ import { emphasisMap } from "../../core/emphasis";
 import type { Tone } from "../../core/grammar";
 import { wrap } from "../../core/text";
 import { htmlMeasure, type Measure, type WeightedMeasure } from "../tree/measure";
-import { GRID, gridCols, gridStepsWidth, monoPieces, railLines, range, sideLines, stepAt, stepRuns, stepsLayout, type Step } from "./layout";
+import { GRID, gridCols, gridStepsWidth, monoPieces, railLines, range, SIDE_GAP, sideLines, stepAt, stepRuns, stepsLayout, type Step } from "./layout";
 import type { StepsOutcome, StepsRow, StepsSpec } from "./parse";
 
 export { STEPS_NARROW } from "./layout";
@@ -34,7 +34,7 @@ const CHIP_X = 16 + 2;
 const CHIP_Y = 4 + 2;
 const ICON = 14 + 6;
 const BAND_Y = 12 + 2;
-const SIDE = { gap: 8, padX: 9, head: 7, conn: 18, gap24: 24, out: 10, foot: 9 } as const;
+const SIDE = { gap: SIDE_GAP, padX: 9, head: 7, conn: 18, gap24: 24, out: 10, foot: 9 } as const;
 const RAIL = { top: 4, num: 32 + 8, pad: 6 } as const;
 /** The tones a step or outcome shows an icon for (icons.ts' TONE_ICON). */
 const ICONED = new Set<Tone>(["ok", "warn", "error", "info"]);

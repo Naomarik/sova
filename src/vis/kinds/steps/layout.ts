@@ -20,11 +20,13 @@ export const STEPS_NARROW = 402;
 /** Side by side: at most this many rows, each given at least this much content width. */
 export const SIDE_MAX_ROWS = 4;
 export const SIDE_MIN_COL = 180;
+/** The gap between side-by-side columns; height.ts and steps.css use the same 8px. */
+export const SIDE_GAP = 8;
 
 export function stepsLayout(spec: StepsSpec, width: number): StepsLayout {
   const rows = spec.items.filter((i) => i.type === "row").length;
   const lanes = spec.items.some((i) => i.type === "lane");
-  if (!lanes && rows >= 2 && rows <= SIDE_MAX_ROWS && width >= rows * SIDE_MIN_COL) return "side";
+  if (!lanes && rows >= 2 && rows <= SIDE_MAX_ROWS && width >= rows * SIDE_MIN_COL + (rows - 1) * SIDE_GAP) return "side";
   return width > STEPS_NARROW ? "grid" : "rail";
 }
 

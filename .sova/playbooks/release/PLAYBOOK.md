@@ -19,6 +19,7 @@ Read each detail file when the release reaches it, every release, never from mem
 |---|---|
 | Start: the version, the branch, the merge round paused | `references/prepare.md` |
 | The per-release edits and the release commit | `references/prepare.md` |
+| Optional, if the user opts in: the Docs pages whose spec sources changed | `references/docs.md` |
 | The pre-release checks, then the live server on the release commit | `references/checks.md` |
 | **Stop.** Then, on the user's word: push, release page, site, outside checks | `references/publish.md` |
 | A bad release: move `stable` back | `references/rollback.md` |
@@ -26,8 +27,9 @@ Read each detail file when the release reaches it, every release, never from mem
 ## The order
 1. Start (`references/prepare.md`): confirm the version with the user, ask them to pause the Merge round, make the release branch.
 2. Per-release edits and the release commit (`references/prepare.md`).
+   - Optional docs step (`references/docs.md`): list the Docs pages whose spec sources changed since `vPREV` and offer to update them; only on the user's yes, re-check them and give the fixes for review, one page per step. A stale page never holds the release.
 3. Pre-release checks on the release commit, then the live server restarted onto it (`references/checks.md`).
-4. **Stop.** Report to the user: the release commit, the checks and their results, the notes, and what publishing will do. Wait for their explicit word to publish. "Looks good" about the notes is not that word; ask.
+4. **Stop.** Report to the user: the release commit, the checks and their results, the notes, every Docs page changed and every page left stale with why (`references/docs.md`), and what publishing will do. Wait for their explicit word to publish. "Looks good" about the notes is not that word; ask.
 5. Publish (`references/publish.md`): the atomic push, the `ls-remote` check, the GitHub release page, the site deploy, then the optional outside checks the user may choose to run.
 
 ## Ask the user first
@@ -36,6 +38,7 @@ Read each detail file when the release reaches it, every release, never from mem
 - The restart of the live server onto the release commit while any session is busy.
 - **Publishing.** Every step in `references/publish.md` waits for the user's explicit word, given after the stop at step 4. That word covers the push, the release page and the site deploy of this release, nothing more.
 - Where the site is hosted and how to deploy it, the first time (record the answer in `site/README.md`, "Deploy").
+- Whether to update the affected Docs pages in this release, and which new features get a page (`references/docs.md`); which page fixes to take.
 - Any of the optional outside checks: the user decides whether to run them.
 - Rolling back, each time.
 
@@ -45,4 +48,4 @@ Read each detail file when the release reaches it, every release, never from mem
 - Push with `--tags`, `--all`, `--mirror`, or a bare `--force`.
 - Publish, deploy the site or move `stable` before the user's word at step 4.
 - Run `systemctl restart` yourself, except the delayed form AGENTS.md allows.
-- Edit `docsVerified` in `site/src/data/site.ts` without a docs audit having checked every Docs page.
+- Edit `docsVerified` in `site/src/data/site.ts` unless the user opted into the docs step and every listed page was re-checked and its fix accepted (`references/docs.md`).

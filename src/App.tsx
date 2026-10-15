@@ -1,4 +1,6 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
+import { deliverStranded, handOverWhenGoing } from "./lib/chat-outbox";
+import { chatCourier } from "./lib/chat-courier";
 import { loadAlignment } from "./lib/alignment-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -160,6 +162,11 @@ function createMediaQuery(query: string) {
 export function App() {
   // Settings → Alignment's saved review switch gates parts of the UI (adversarial review): read once.
   loadAlignment();
+  // What an earlier page couldn't hand the server as it went (a reload or a closed tab while its chat
+  // started) goes now (§chat.transcript/send-while-starting).
+  deliverStranded(chatCourier);
+  // …and what this page holds as it goes is handed to the server then, not left for a next load.
+  handOverWhenGoing(chatCourier);
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);

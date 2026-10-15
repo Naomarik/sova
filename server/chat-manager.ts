@@ -269,6 +269,8 @@ export function warmChatRuntime(): Promise<void> {
 
 /** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+/** How many sends' client ids a chat remembers as taken (ChatSession.takenSends). */
+const TAKEN_SENDS_MAX = 1000;
 
 /** A refusal to write. code per shared/protocol.ts: busy = TUI owns it (force never helps),
  *  recent = unknown writer (reconnect with &force=1), reloaded = another client reloaded the runtime. */
@@ -997,6 +999,13 @@ class ChatSession {
   specialPort: SpecialPort | null = null;
   /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
   private clientSends: Promise<void> = Promise.resolve();
+  /** The client ids of the prompts and steers this chat has taken (§chat.transcript/send-while-starting):
+      `true` once acknowledged, `false` while still being taken. One sent again (a view coming back,
+      a second tab, a retry) never runs twice. Bounded, oldest out. */
+  private readonly takenSends = new Map<string, boolean>();
+  /** The browser messages waiting behind a model switch or a rewind still under way, in arrival
+      order (§chat.transcript/send-while-starting); null when none is. */
+  private behind: Promise<void> | null = null;
   /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
   userTurns: UserTurns | null = null;
   /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
@@ -3049,15 +3058,70 @@ class ChatSession {
       throw err;
     }
     const { queued, turn } = accepted;
-    if (clientId) client.send({ type: "send_ack", clientId, queued });
+    this.ackSend(client, clientId, queued);
     turn.catch(fail);
   }
 
+  /** A send taken: acknowledged to its sender, and remembered so the same id never runs again. */
+  private ackSend(client: ChatClient, clientId: string | undefined, queued: boolean): void {
+    if (!clientId) return;
+    this.takenSends.set(clientId, true);
+    client.send({ type: "send_ack", clientId, queued });
+  }
+
+  /** Whether a prompt or steer by this id was taken (or is being taken) already: a taken one is
+      acknowledged again, never run. Otherwise it is noted as being taken. */
+  private sentBefore(client: ChatClient, clientId: string): boolean {
+    const taken = this.takenSends.get(clientId);
+    if (taken === undefined) {
+      this.takenSends.set(clientId, false);
+      if (this.takenSends.size > TAKEN_SENDS_MAX) this.takenSends.delete(this.takenSends.keys().next().value!);
+      return false;
+    }
+    if (taken) client.send({ type: "send_ack", clientId, queued: this.queue.snapshot().some((it) => it.id === clientId) });
+    return true;
+  }
+
+  /** `msg` waits for `step` (a model switch, a rewind), and so does every browser message after it.
+      Only when it can go ahead: mid-run (or mid-compaction) both are refused at once, so nothing
+      waits and the refusals keep the order they always had (the session goldens' S14). */
+  private waitFor(step: Promise<unknown>): void {
+    if (this.harness.isRunning() || this.isCompacting()) {
+      void step;
+      return;
+    }
+    const tail = step.then(
+      () => {},
+      () => {},
+    );
+    this.behind = tail;
+    void tail.then(() => {
+      if (this.behind === tail) this.behind = null;
+    });
+  }
+
   handle(client: ChatClient, msg: ChatClientMessage): void {
+    // A message after a model switch or a rewind still under way waits for it, so what the person
+    // asked first is applied first (§chat.transcript/send-while-starting). A dialog's answer and a
+    // Stop never wait.
+    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort") {
+      const tail = this.behind.then(() => this.handleNow(client, msg));
+      this.behind = tail;
+      void tail.then(() => {
+        if (this.behind === tail) this.behind = null;
+      });
+      return;
+    }
+    this.handleNow(client, msg);
+  }
+
+  private handleNow(client: ChatClient, msg: ChatClientMessage): void {
     // The failing send's own id rides along when it has one, so the client restores THAT draft and
     // no other; a chat-wide failure still reports without one, exactly as before.
     const clientId = "clientId" in msg && typeof msg.clientId === "string" && msg.clientId ? msg.clientId : undefined;
     const fail = (err: unknown) => {
+      // Refused before it was taken: the same id may be sent again.
+      if (clientId && this.takenSends.get(clientId) === false) this.takenSends.delete(clientId);
       const code = errorCode(err);
       client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(clientId ? { clientId } : {}) });
     };
@@ -3079,12 +3143,14 @@ class ChatSession {
             return;
           }
           this.singletonCleared = true;
-          this.handle(client, msg);
+          this.handleNow(client, msg);
         },
         (err) => fail(err),
       );
       return;
     }
+    // Exactly once: a prompt or steer whose id this chat already took is answered as taken.
+    if ((msg.type === "prompt" || msg.type === "steer") && clientId && this.sentBefore(client, clientId)) return;
     try {
       switch (msg.type) {
         case "prompt":
@@ -3101,7 +3167,7 @@ class ChatSession {
           // reply; it never becomes a queue row. With images it is refused, not sent without them.
           const compact = compactCommand(String(msg.text ?? ""));
           if (compact) {
-            if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+            this.ackSend(client, clientId, false);
             if (msg.images?.length) client.send({ type: "compact_refused", id: clientId ?? "", reason: "internal", message: COMPACT_IMAGES_REFUSAL });
             else this.compact(client, clientId ?? "", compact.instructions).catch(fail);
             return;
@@ -3139,7 +3205,7 @@ class ChatSession {
           const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
-          if (clientId) client.send({ type: "send_ack", clientId, queued });
+          this.ackSend(client, clientId, queued);
           turn.catch(fail);
           return;
         }
@@ -3183,7 +3249,7 @@ class ChatSession {
           this.setThinking(String(msg.level ?? ""), { save: true });
           return;
         case "set_model":
-          this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail);
+          this.waitFor(this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail));
           return;
         case "set_claude_login":
           try {
@@ -3197,7 +3263,7 @@ class ChatSession {
         case "rewind": {
           const refused = this.specialRefuses("rewind");
           if (refused) throw new Error(refused);
-          this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
+          this.waitFor(this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail));
           return;
         }
         case "compact": {
@@ -3299,11 +3365,11 @@ class ChatSession {
     // compaction runs it is held the same way, and goes in when the compaction ends.
     if (this.harness.isRunning() || this.isCompacting()) {
       this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
-      if (clientId) client.send({ type: "send_ack", clientId, queued: true });
+      this.ackSend(client, clientId, true);
       return;
     }
     this.flushDeferredAppends();
-    if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+    this.ackSend(client, clientId, false);
     this.toSdk("client", () => this.tracked(text, () => this.harness.send(text, { images })))
       .catch((err) => {
         if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;

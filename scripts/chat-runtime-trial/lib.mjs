@@ -55,7 +55,11 @@ export const modelsJson = (port) => ({
       baseUrl: `http://127.0.0.1:${port}/v1`,
       api: "openai-completions",
       apiKey: "trial",
-      models: [{ id: "m1", contextWindow: 100000, maxTokens: 4000 }],
+      models: [
+        { id: "m1", contextWindow: 100000, maxTokens: 4000 },
+        // A second model: a switch to it is visible in the file (run.mjs tsend).
+        { id: "m2", contextWindow: 100000, maxTokens: 4000 },
+      ],
     },
   },
 });

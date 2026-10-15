@@ -8,7 +8,7 @@ import type { FlowSpec } from "./kinds/flow/parse";
 import type { LayersSpec } from "./kinds/layers/parse";
 import type { MatrixSpec } from "./kinds/matrix/parse";
 import type { SequenceSpec } from "./kinds/sequence/parse";
-import type { StepsSpec } from "./kinds/steps/parse";
+import type { StepsRow, StepsSpec } from "./kinds/steps/parse";
 import type { TimelineSpec } from "./kinds/timeline/parse";
 import type { TreeSpec } from "./kinds/tree/parse";
 import type { WBlock, WireframeSpec } from "./kinds/wireframe/parse";
@@ -228,14 +228,17 @@ test("a | inside a quoted field: timeline, layers, matrix", () => {
   assert.deepEqual(ok<TimelineSpec>("timeline", '2023 | say "a | b" now').items[0], { type: "event", when: "2023", label: 'say "a', note: 'b" now' });
 });
 
-test("steps: words beside a quoted step are kept as written; a tone after the last is the row's", () => {
+test("steps: words beside a quoted step are kept as written; a tone after a quoted step tones it, after the last the row's too", () => {
   const s = ok<StepsSpec>("steps", '"SAML" error | "Enter domain" -> "Redirect to IdP" -> error "invalid audience"\n"Expired" | "Email" -> "Click after 15 min" -> "Show expiry" error\n"Request link" ok | "Email" -> "Show expiry" error');
   const rows = s.items.map((i) => (i.type === "row" ? [i.label, i.tone ?? null, i.steps] : null));
   assert.deepEqual(rows, [
     ["SAML", "error", ["Enter domain", "Redirect to IdP", 'error "invalid audience"']],
     ["Expired", "error", ["Email", "Click after 15 min", "Show expiry"]],
-    ["Request link", "ok", ["Email", '"Show expiry" error']],
+    ["Request link", "ok", ["Email", "Show expiry"]],
   ]);
+  // Under a toned label the last step's tone is the step's only (it drew as written, quotes and all, before).
+  assert.deepEqual((s.items[2] as StepsRow).stepTones, [null, "error"]);
+  assert.deepEqual((s.items[1] as StepsRow).stepTones, [null, null, "error"]);
   assert.match(err("steps", '"A" | "a" "b" -> c').message, /not two labels: "a" "b" \(join steps with ->\)/);
 });
 
@@ -276,7 +279,10 @@ test("chart: a label ending in a number, when a row settles the width; a tone on
 test("marks naming part of an item: a step, a layer's item or number, a folder without its slash", () => {
   const st = ok<StepsSpec>("steps", '"Sign up" | Email -> "Verify email" -> Done\n"Invite" | "Invite team" -> Done\nmark "Verify email" "x"');
   assert.deepEqual(st.emphasis, [{ key: "0", tone: "accent", note: "x", n: 1 }]);
-  assert.equal(drawn("steps", '"A" | x -> Done\n"B" | y -> Done\nmark Done').warnings[0]!.message, "mark: no row Done, dropped");
+  // A step several rows share marks every one of them (written out the same, or through ^).
+  const shared = drawn("steps", '"A" | x -> Done\n"B" | y -> Done\nmark Done');
+  assert.deepEqual([shared.warnings, (shared.spec as StepsSpec).emphasis], [[], [{ key: "0", tone: "accent" }, { key: "1", tone: "accent" }]]);
+  assert.equal(drawn("steps", '"A" | x -> Done\nmark Nowhere').warnings[0]!.message, "mark: no row Nowhere, dropped");
   const l = ok<LayersSpec>("layers", '7 Application | HTTP, DNS\n6 Presentation | "TLS 1.3", JPEG\n4 Transport | TCP, UDP\nmark 4 "where TCP lives"\nmark TLS 1.3 "tls"');
   assert.deepEqual(l.emphasis, [{ key: "2", tone: "accent", note: "where TCP lives", n: 1 }, { key: "1", tone: "accent", note: "tls", n: 2 }]);
   const tree = '"Tax Returns/"\n  2023/\n  a.pdf\n"Photos/"\npackages/\n  ui/\n';

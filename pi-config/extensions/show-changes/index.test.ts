@@ -214,6 +214,11 @@ test("a folder the viewer won't open is refused, nothing shown; a tracked worktr
 		const byBranch = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "feat/x" });
 		assert.equal(byBranch.details.scope.cwd, wt);
 		assert.match(byBranch.content[0].text, /^Opened the changes viewer/);
+		// The branch has no commits past its base, but its folder has an uncommitted edit: the refusal points at scope dirty.
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "worktree", worktree: "feat/x" }),
+			/^Error: No changes in this comparison \(feat\/x vs .+\), so nothing was shown\. Its folder has 1 uncommitted file: scope dirty shows them\.$/,
+		);
 		mkdirSync(join(r.main, "sub"));
 		writeFileSync(join(r.main, "sub", "s.txt"), "s\n");
 		const inside = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "sub" });

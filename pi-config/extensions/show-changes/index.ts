@@ -122,9 +122,14 @@ function sessionRoots(ctx: ExtensionContext, agentDir: string): string[] {
 	return knownRoots(sessionFolderCandidates(cwd, entries), agentDir);
 }
 
-/** The refusal for a comparison with no changed file: the agent tells the user instead of opening an empty card. */
-export function emptyRefusal(scope: string, paths?: readonly string[]): string {
-	return `No changes in this comparison (${scope}${paths ? `, limited to ${paths.join(", ")}` : ""}), so nothing was shown. Tell the user nothing changed there.`;
+/**
+ * The refusal for a comparison with no changed file: the agent tells the user instead of opening an
+ * empty card, unless a branch comparison's folder has uncommitted files, which scope dirty shows.
+ */
+export function emptyRefusal(scope: string, paths?: readonly string[], uncommitted = 0): string {
+	const head = `No changes in this comparison (${scope}${paths ? `, limited to ${paths.join(", ")}` : ""}), so nothing was shown.`;
+	if (uncommitted > 0) return `${head} Its folder has ${uncommitted} uncommitted file${uncommitted === 1 ? "" : "s"}: scope dirty shows them.`;
+	return `${head} Tell the user nothing changed there.`;
 }
 
 /** The reply the model reads: what opened, the files, and how many hunks the steps placed. */
@@ -187,7 +192,14 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 				const all = await changedFiles(git, scope);
 				const files = all.filter((f) => inPaths(f, req.paths));
 				// An empty card helps no one: refuse, and have the agent say so instead.
-				if (files.length === 0) throw new ShowChangesError(emptyRefusal(scopeLine(scope), req.paths), true);
+				if (files.length === 0) {
+					// A branch with nothing committed past its base may still hold uncommitted edits: point at them.
+					const uncommitted =
+						scope.kind === "worktree"
+							? (await changedFiles(git, { kind: "dirty", cwd: scope.worktreePath, root: scope.root, head: scope.head })).filter((f) => inPaths(f, req.paths)).length
+							: 0;
+					throw new ShowChangesError(emptyRefusal(scopeLine(scope), req.paths, uncommitted), true);
+				}
 				// The viewer lists at most maxFiles (after the same paths filter): past it, refuse rather than open a cut list.
 				if (files.length > REVIEW_LIMITS.maxFiles) {
 					throw new ShowChangesError(

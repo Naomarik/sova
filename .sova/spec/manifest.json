@@ -1834,7 +1834,8 @@
         "server/memory/tools.ts",
         "shared/memory.ts",
         "src/lib/message.ts",
-        "shared/memory.test.ts"
+        "shared/memory.test.ts",
+        "server/memory/prompts.test.ts"
       ]
     },
     "§chat.memory/settings": {
@@ -1909,7 +1910,8 @@
         "server/memory/tree.ts",
         "server/memory/store.ts",
         "server/memory/tree.test.ts",
-        "server/memory/engine.test.ts"
+        "server/memory/engine.test.ts",
+        "server/memory/prompts.test.ts"
       ]
     },
     "§chat.memory/types": {
@@ -13773,7 +13775,8 @@
       "evidence": "reviewed",
       "code": [
         "server/overseer-prompt.md",
-        "server/project-overseer-prompt.md"
+        "server/project-overseer-prompt.md",
+        "server/overseer-run-note.test.ts"
       ],
       "requires": [
         "§app.overseer/session-truth",
@@ -14179,7 +14182,8 @@
         "§app.overseer/confirm",
         "§app.overseer/session-names",
         "§chat.worktrees/readiness",
-        "§app.overseer/tools"
+        "§app.overseer/tools",
+        "§chat.memory/overseer"
       ]
     },
     "§app.insights/sidebar-foot-phone": {

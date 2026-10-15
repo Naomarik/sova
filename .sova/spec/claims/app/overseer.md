@@ -627,9 +627,13 @@ session is on which branch survives a compaction and a restart:
   as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
   tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
   worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
-  and the kind of the last brief that named it and when. A line before the rows says the table is
-  as of now, and that the Overseer still checks a session with `sova_session` before saying what it
-  is doing.
+  and the kind of the last brief that named it and when. A line before the rows says which sessions
+  these are (created, prompted or briefed about in the last 24 hours), and that the Overseer checks
+  one with `sova_session` before saying what it is doing.
+- **Memory first.** While the Overseer's memory is on (§chat.memory/overseer), every run note adds,
+  after the sessions in play (alone when none is in play) and before the cards: "Any other session
+  or fact this chat has seen: zoom its line down to the message (full ids, exact words) before any
+  other tool." With memory off it is left out: `zoom` is not among its tools then.
 - It is computed when the note is written, never kept: a session that leaves the window leaves the
   table. After a compaction it is written once more, with the open cards, after the summary
   (§app.overseer/confirm), even when no card is open. Its text from other sessions is redacted like
@@ -1303,7 +1307,10 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
   `sova_attention` in the same turn, and drop or replace a card that no longer applies before
   listing cards.
 - **A brief is a snapshot** of when it was sent.
-- **Ids are copied** verbatim from a tool's output in the same turn, never typed from memory.
+- **Ids are copied** verbatim from a tool's output in the same turn (a `zoom` result counts), never
+  typed, shortened or pieced together. A summary line's short id is followed down, with `zoom`, to
+  the message that has it whole; `sova_list_sessions` searches only for a session memory never
+  names.
 - **Checks are reported as said.** "Tests pass" from a session is relayed as what the session
   says, unless `sova_session` shows a check that passed after the worktree's newest commit.
 - **A promise has a trigger.** Every "I'll …" is backed in the same turn by something that will
@@ -1313,7 +1320,8 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
 - **Time** comes from tool ages and the run note's time, never from the system prompt's opening
   time.
 
-The project overseer's prompt holds the first and third for its own tools and the project's
+The project overseer's prompt holds the first, and the third as "copied verbatim from a tool's
+output in this turn, never typed or pieced together", for its own tools and the project's
 sessions.
 
 ## §app.overseer/input-source — Sova's own messages are not typed input

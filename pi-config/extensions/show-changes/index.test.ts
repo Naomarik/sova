@@ -188,6 +188,39 @@ test("worktree scope follows the tracked worktree from the session cwd; paths fi
 	}
 });
 
+test("a folder the viewer won't open is refused, nothing shown; a tracked worktree by branch, or a folder inside the cwd, opens", async () => {
+	const r = repo();
+	try {
+		// The real failure: a scratch repository outside the session's folders, with the change uncommitted.
+		const scratch = join(r.root, "scratch");
+		mkdirSync(scratch);
+		sh(scratch, "init", "-q", "-b", "master");
+		writeFileSync(join(scratch, "a.txt"), "new\n");
+		const wt = join(r.root, "wt");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", wt);
+		writeFileSync(join(wt, "a.txt"), "two\n");
+		const base = sh(r.main, "rev-parse", "HEAD");
+		const entries = [{ type: "custom", customType: "worktrees", data: { version: 1, trees: [{ path: wt, branch: "feat/x", base, status: "active", session: "s1", how: "created", at: 1_790_000_000_000 }] } }];
+		const f = fakePi(entries);
+		showChanges(f.pi);
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "dirty", worktree: scratch }),
+			(e: Error) => {
+				assert.equal(e.message, `${scratch} is outside this session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the worktree tool) and show that. Nothing was shown.`);
+				return true;
+			},
+		);
+		const byBranch = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "feat/x" });
+		assert.equal(byBranch.details.scope.cwd, wt);
+		assert.match(byBranch.content[0].text, /^Opened the changes viewer/);
+		mkdirSync(join(r.main, "sub"));
+		const inside = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "sub" });
+		assert.equal(inside.details.scope.cwd, join(r.main, "sub"));
+	} finally {
+		r.done();
+	}
+});
+
 test("refusals: bad input, no repository, a remote session; nothing is shown", async () => {
 	const r = repo();
 	try {

@@ -37,6 +37,7 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
+import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
 import { acquireChatHandle, type ChatHandle, chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
@@ -1109,6 +1110,21 @@ export function buildApp(deps: AppDeps) {
       if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
       throw err;
     }
+  });
+
+  // Frames a page handed over as it went (a tab closed or reloaded before its chat socket opened,
+  // §chat.transcript/send-while-starting): a keepalive request, answered before they run. They take
+  // a chat socket's own path (server/ws.ts deliverFrames): in order, each client id once, a refusal
+  // put back as the session's draft.
+  app.post("/api/chat/frames", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const frames = postedFrames(await c.req.json().catch(() => null));
+    if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    sessionsChanged();
+    deliverFrames(path, frames);
+    return c.json({ accepted: frames.length }, 202);
   });
 
   // The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs

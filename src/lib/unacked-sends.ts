@@ -47,6 +47,13 @@ export class UnackedSends {
     return out;
   }
 
+  /** The sends made on connection `conn` still unanswered, by client id, oldest first; kept here. */
+  of(conn: number): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const [id, text] of this.texts) if (this.conns.get(id) === conn) out.set(id, text);
+    return out;
+  }
+
   /** Connection `conn` ended before its chat's hello: the texts sent on it alone, oldest first, each
       once. Sends made on an earlier connection stay: that chat may have taken them. */
   takeFrom(conn: number, handedBack: Set<string>): string[] {

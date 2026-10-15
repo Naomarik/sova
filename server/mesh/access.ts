@@ -238,6 +238,8 @@ const SESSION_PREFIXES = [
   "workers",
   "worktrees",
   "sandbox",
+  // A going page's chat frames (POST /api/chat/frames): what /ws/chat itself takes, so the same need.
+  "chat",
   "diff",
   "explanations",
   "insights",

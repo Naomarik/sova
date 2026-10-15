@@ -486,7 +486,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.equal(row.kind, "operator-coding");
     assert.equal(row.via, "overseer");
     const info = await po.projectOverseerInfo(project.id);
-    assert.equal(info.worktrees.sessions.find((s) => s.sessionId === row.sessionId)?.via, "overseer");
+    assert.equal(info.coding.find((s) => s.sessionId === row.sessionId)?.via, "overseer");
     // The page's own Start Coding Session still needs an item.
     const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);

@@ -18,8 +18,10 @@ import {
   type CodingStartResult,
   type ItemCodeInput,
   type ItemCodeResult,
+  type CodingSession,
   type CodingWorktree,
   type CodingModeNow,
+  type ProjectWorktrees,
   type ProjectCodingMode,
   type ProjectOverseerInfo,
   type ProjectMessageResult,
@@ -28,7 +30,7 @@ import {
 } from "../shared/project-overseer";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
+import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
 import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
 import type { HEntry, ToolSpec } from "../shared/harness";
@@ -39,6 +41,7 @@ import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefa
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
+import { readCodingPass } from "./project-coding-read";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
@@ -55,7 +58,7 @@ import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
+import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { MEMORY_TOOLS } from "../shared/memory";
@@ -298,60 +301,102 @@ function codingOf(projectId: string): { sessionId: string; path: string | null; 
 /** A listing's title, or "" for a session nobody has written in yet (its derived "Untitled"). */
 const listedTitle = (t: string | undefined): string => (t && t !== "Untitled" ? t : "");
 
-/** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
-async function codingWorktrees(projectId: string, root: string): Promise<CodingWorktree[]> {
-  const out: CodingWorktree[] = [];
-  for (const b of readBuilds(projectId)) {
+/** One coding session as the project records it: no git (the page's first read, §app.project-overseer/coding-worktrees). */
+async function codingRow(r: BuildRow, titles: Record<string, string>): Promise<CodingSession> {
+  const path = r.path ?? null;
+  return {
+    sessionId: r.sessionId,
+    path,
+    // A title given here (a rename, Start coding session's) first; then the one it started with,
+    // which travels in the repo (another host has no file and no title store for it); then the
+    // listing's own (the first message, which ends with Sova's commit paragraph); none before the
+    // first message (New Coding Session), and the page says "Untitled coding session".
+    // The listing's title from its memoized summary (one stat), not a whole session row: this read is the page's fast one.
+    title: titles[r.sessionId] || r.title || (path ? listedTitle(await displayTitleOf(path).catch(() => undefined)) : ""),
+    startedBy: buildStartedBy(r),
+    ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
+    ...(r.onboard ? { playbook: true as const } : {}),
+    branch: r.worktree?.branch ?? null,
+    ...(r.inRoot ? { inRoot: r.inRoot } : {}),
+    ...(r.later && !r.worktree ? { later: true as const } : {}),
+    base: r.worktree?.base ?? null,
+    target: r.worktree?.target ?? null,
+    ...(r.merged ? { mergedAt: r.merged.at } : {}),
+    ...(r.removed ? { removedAt: r.removed } : {}),
+    running: path ? isSessionBusy(path) : false,
+    workers: path ? workingSubagents(path) : 0,
+    createdAt: r.createdAt,
+  };
+}
+
+const newestFirst = <T extends { createdAt: string }>(rows: T[]): T[] => rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+/** Every coding session the project started (both kinds), as recorded, newest first: no git. */
+async function codingSessions(projectId: string): Promise<CodingSession[]> {
+  const titles = readSessionTitles();
+  const out: CodingSession[] = [];
+  for (const r of readBuilds(projectId)) out.push(await codingRow(r, titles));
+  return newestFirst(out);
+}
+
+/** Git's reading of one worktree; tests stand in a slow one (the page's first read must never wait on it). */
+let worktreeReader: typeof readWorktree = readWorktree;
+export function setWorktreeReaderForTest(fn: typeof readWorktree | null): void {
+  worktreeReader = fn ?? readWorktree;
+}
+
+/**
+ * Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first:
+ * the page's second read. `later` builds adopt one at a time; the git reads run side by side (at most
+ * WORKTREE_READS_AT_ONCE), the repository's top read once; the statechart and the merged cache hear each reading one at a time.
+ */
+async function codingWorktrees(projectId: string, root: string, repo?: Awaited<ReturnType<typeof gitRootOf>>): Promise<CodingWorktree[]> {
+  const titles = readSessionTitles();
+  const top = (r => ("reason" in r ? root : r.top))(repo ?? (await gitRootOf(root)));
+  const out = await readCodingPass(readBuilds(projectId), {
     // A `later` build adopts the worktree its session made on this read too (one run in a terminal never tells Sova its turn ended).
-    const r = b.later && (await adoptWorktree(projectId, buildSid(projectId, b.sessionId), b.sessionId)) ? (readBuild(projectId, b.sessionId) ?? b) : b;
-    const path = r.path ?? null;
-    const common = {
-      sessionId: r.sessionId,
-      path,
-      // A title given here (a rename, Start coding session's) first; then the one it started with,
-      // which travels in the repo (another host has no file and no title store for it); then the
-      // listing's own (the first message, which ends with Sova's commit paragraph); none before the
-      // first message (New Coding Session), and the page says "Untitled coding session".
-      title: readSessionTitles()[r.sessionId] || r.title || (path ? listedTitle((await getSessionSummary(path).catch(() => null))?.title) : ""),
-      startedBy: buildStartedBy(r),
-      ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
-      ...(r.onboard ? { playbook: true as const } : {}),
-      running: path ? isSessionBusy(path) : false,
-      workers: path ? workingSubagents(path) : 0,
-      createdAt: r.createdAt,
-    };
-    const row = await withWorktreePath(r, root);
-    if (!row) {
-      // Started in a root that can't have one.
-      out.push({ ...common, branch: null, ...(r.inRoot ? { inRoot: r.inRoot } : {}), ...(r.later ? { later: true as const } : {}), worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false });
-      continue;
-    }
-    const w = await readWorktree(row.worktree, root);
-    const merged = w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted;
-    // The session list's Builds read the same answer (build-merged.ts): a fresh one is shared.
-    noteBuildMerged(r.sessionId, merged);
-    // Git's facts reach the statechart (its tree and branch states) as the page reads them.
-    await probeBuild(projectId, buildSid(projectId, r.sessionId), r, w).catch(() => {});
-    out.push({
-      ...common,
-      branch: row.worktree.branch,
-      worktree: w.worktree,
-      base: row.worktree.base,
-      target: row.worktree.target,
-      state: r.removed ? "removed" : w.state,
-      // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
-      // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
-      merged,
-      ...(!w.branch ? { branchGone: true } : {}),
-      ...(r.merged ? { mergedAt: r.merged.at } : {}),
-      ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
-      ...(r.removed ? { removedAt: r.removed } : {}),
-      ahead: w.ahead,
-      dirty: w.dirty,
-      ...(w.error ? { error: w.error } : {}),
-    });
-  }
-  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    adopt: async (b) => (b.later && (await adoptWorktree(projectId, buildSid(projectId, b.sessionId), b.sessionId)) ? (readBuild(projectId, b.sessionId) ?? b) : b),
+    locate: (r) => withWorktreePath(r, root, top),
+    read: (row) => worktreeReader(row.worktree, root),
+    finish: async (r, row, w): Promise<CodingWorktree> => {
+      const common = await codingRow(r, titles);
+      if (!row || !w) {
+        // Started in a root that can't have one.
+        return { ...common, branch: null, worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false };
+      }
+      const merged = w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted;
+      // The session list's Builds read the same answer (build-merged.ts): a fresh one is shared.
+      noteBuildMerged(r.sessionId, merged);
+      // Git's facts reach the statechart (its tree and branch states) as the page reads them.
+      await probeBuild(projectId, buildSid(projectId, r.sessionId), r, w).catch(() => {});
+      return {
+        ...common,
+        branch: row.worktree.branch,
+        worktree: w.worktree,
+        base: row.worktree.base,
+        target: row.worktree.target,
+        state: r.removed ? "removed" : w.state,
+        // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
+        // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
+        merged,
+        ...(!w.branch ? { branchGone: true } : {}),
+        ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
+        ahead: w.ahead,
+        dirty: w.dirty,
+        ...(w.error ? { error: w.error } : {}),
+      };
+    },
+  });
+  return newestFirst(out);
+}
+
+/** GET …/overseer/worktrees: the coding sessions with git's facts, and whether the root can have worktrees. */
+export async function projectWorktrees(projectId: string): Promise<ProjectWorktrees> {
+  const project = projectOf(projectId);
+  engineOrThrow(projectId);
+  const repo = await gitRootOf(project.root);
+  const sessions = await codingWorktrees(projectId, project.root, repo);
+  return { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions };
 }
 
 /** The level in force now: paused, then a contributed ceiling, then the setting. */
@@ -376,18 +421,28 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
   }
   const memo = readMemo(p);
   const known = indexedSessionPaths();
+  // No git here (§app.project-overseer/coding-worktrees, Read in two steps): git's facts are GET …/overseer/worktrees.
+  const coding = await codingSessions(projectId);
+  const builds = new Map(readBuilds(projectId).map((b) => [b.sessionId, b]));
   const started: StartedSession[] = [
     ...contributedStarted(engine, projectId),
-    ...codingOf(projectId).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : (c.title ?? "(not on this host)"), kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
+    ...coding
+      .filter((c) => builds.get(c.sessionId)?.kind === "coding")
+      .map((c): StartedSession => {
+        const b = builds.get(c.sessionId)!;
+        return {
+          sessionId: c.sessionId,
+          path: c.path,
+          title: c.path ? c.title : b.title || c.title || "(not on this host)",
+          kind: "coding",
+          state: c.running || c.workers > 0 ? "working" : "idle",
+          createdAt: c.createdAt,
+          ...(c.branch ? { worktree: { branch: c.branch, state: c.removedAt ? "removed" : c.mergedAt ? "merged" : "open" } } : {}),
+        };
+      }),
   ];
-  for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title || s.title;
+  for (const s of started) if (s.kind === "coding" && s.path && !s.title) s.title = (await displayTitleOf(s.path).catch(() => undefined)) || s.title;
   started.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const repo = await gitRootOf(project.root);
-  const trees = await codingWorktrees(projectId, project.root);
-  for (const s of started) {
-    const t = trees.find((x) => x.sessionId === s.sessionId);
-    if (t?.branch) s.worktree = { branch: t.branch, state: t.state };
-  }
   return {
     projectId,
     projectName: project.name,
@@ -398,7 +453,7 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     settings,
     codingModeNow: codingModeNow(),
     gatheringAbilitiesNow: baseAbilities(settings.gatheringAbilities),
-    worktrees: { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions: trees },
+    coding,
     effective: effectiveOf(projectId, settings),
     paused: overseerPausedSince(projectId),
     busy: exists && path ? isSessionBusy(path) : false,
@@ -1012,21 +1067,21 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
   projectOf(projectId);
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
-    // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
-    await worktreeAct(projectId, sessionId, "build/merge");
-  return projectOverseerInfo(projectId);
+  // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
+  await worktreeAct(projectId, sessionId, "build/merge");
+  return projectWorktrees(projectId);
 }
 
 /** POST …/worktrees/remove: Remove Worktree; the branch goes too only when merged. The session stays. */
-export async function removeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+export async function removeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
   projectOf(projectId);
   const path = await worktreeAct(projectId, sessionId, "build/remove-worktree");
   // Its cwd is gone: a held runtime would run tools in nothing.
   if (path) await closeChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
-  return projectOverseerInfo(projectId);
+  return projectWorktrees(projectId);
 }
 
 // ---- the runtime loadout ------------------------------------------------------------------------------

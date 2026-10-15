@@ -8,7 +8,7 @@ import { gapsOf } from "./projects/contributions";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, removeCodingWorktree, startCoding } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, projectWorktrees, removeCodingWorktree, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSettings, writePoSettings } from "./project-overseer-store";
 import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 
@@ -231,6 +231,11 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   app.post(`${base}/coding`, handle(async (c) => {
     const p = pathsOf(c);
     return c.json(await startCoding(p.projectId, (await body(c)) as CodingStartInput), 201);
+  }));
+  // The coding sessions with git's facts: the page's second read (GET …/overseer runs no git).
+  app.get(`${base}/worktrees`, handle(async (c) => {
+    const p = pathsOf(c);
+    return c.json(await projectWorktrees(p.projectId), 200, NO_STORE);
   }));
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {

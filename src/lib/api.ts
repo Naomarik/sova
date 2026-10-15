@@ -109,7 +109,7 @@ import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
-import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
+import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
@@ -1338,7 +1338,8 @@ export const cancelHeldAct = (projectId: string, holdId: string, reason?: string
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 
-export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
+/** The last count at once (its `asOf` says when), recounted behind it; `fresh` (Refresh Project) waits for a new count. */
+export const getProjectCost = (projectId: string, fresh = false) => request<ProjectCost>(`${projectPath(projectId)}/costs${fresh ? "?fresh=1" : ""}`);
 /** Files people sent the project (§app.organizations/files-card). */
 export const getProjectFiles = (projectId: string) => request<ProjectFilesAnswer>(`${projectPath(projectId)}/files`, { cache: "no-store" });
 export const projectFileHref = (projectId: string, id: string): string => `${projectPath(projectId)}/files/${encodeURIComponent(id)}`;
@@ -1410,7 +1411,10 @@ export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 
 const overseerBase = (projectId: string) => `${projectPath(projectId)}/overseer`;
+/** The overseer's own state and its coding sessions as recorded: no git, so it answers at once. */
 export const getProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId));
+/** The coding sessions with git's facts (the page's second, slower read), merged in by session. */
+export const getProjectWorktrees = (projectId: string) => request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees`);
 export const openProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("POST"));
 export const patchProjectOverseer = (projectId: string, patch: ProjectOverseerPatch) =>
   request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("PATCH", patch));
@@ -1438,9 +1442,9 @@ export const startProjectCoding = (projectId: string, input: CodingStartInput = 
   request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
 export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 

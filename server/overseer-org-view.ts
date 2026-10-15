@@ -441,7 +441,8 @@ export async function projectView(projectId: string, items = false, now = Date.n
     }
   }
   // Coding sessions.
-  const coding = info.worktrees.sessions;
+  // The branch facts are the page's second read (git); the overseer's own state above ran none.
+  const coding = (await po.projectWorktrees(projectId)).sessions;
   lines.push(
     "",
     `Coding sessions (${coding.length}):`,

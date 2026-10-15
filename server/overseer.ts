@@ -751,11 +751,14 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
 /**
  * before_agent_start's hidden message in the global Overseer: the run note (§app.overseer/run-note:
  * the time now, the briefed blockers that cleared, open cards' sessions that merged or were
- * archived), then the open cards (§app.overseer/confirm). One message, so it stays the cards note
+ * archived, the sessions in play, and with memory on the pointer to zoom), then the open cards
+ * (§app.overseer/confirm). One message, so it stays the cards note
  * the attendance rule treats as state. A failure to read the sessions still sends the time and the cards.
  */
 export async function runNoteMessage(branch: readonly HEntry[], now = new Date(), prompt: { changed?: string; opening?: OpeningDetails } = {}): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
   const cardsText = cardsNote(cardsOnBranch(branch), false, sessionActivity());
+  // The switch its recall tools follow (§chat.memory/overseer): zoom is named only while it has it.
+  const memory = readOverseerSettings().memory?.on === true;
   let note: { content: string; details: unknown };
   try {
     const prompted = touchedHere();
@@ -770,11 +773,12 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
       prompted,
       ...(cardsText ? { cardsText } : {}),
       redact: (t) => serverRedactor().redact(t),
+      memory,
       ...prompt,
     });
   } catch (err) {
     console.warn("[overseer] run note without sessions:", err instanceof Error ? err.message : String(err));
-    note = runNote({ now, branch: [], act: { keys: new Set(), complete: false }, session: () => null, ...(cardsText ? { cardsText } : {}), ...prompt });
+    note = runNote({ now, branch: [], act: { keys: new Set(), complete: false }, session: () => null, ...(cardsText ? { cardsText } : {}), memory, ...prompt });
   }
   return { message: { customType: CARDS_NOTE_MESSAGE, content: note.content, display: false, details: note.details } };
 }

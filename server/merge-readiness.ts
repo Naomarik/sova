@@ -111,6 +111,11 @@ export const NO_COMMITS = "no commits yet";
 export const CLEANED_UP = "cleaned up";
 export const REMOVED_EMPTY = "no commits";
 
+/** A readable branch with no commit of its own past its base: the fact NO_COMMITS says, and the one
+    the Session tab hides a row's Review Changes on (§chat.changes/entry). Merged needs a commit of
+    its own, so a merged branch is never empty. */
+export const hasNoCommits = (t: Pick<TreeFacts, "readable" | "merged" | "ahead">): boolean => t.readable && !t.merged && !t.ahead;
+
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
  * "Ready to merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files".
@@ -147,7 +152,7 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   // caveat named on ready.
   const dirty = t.dirty ? (t.dirtyCount ?? DIRTY_MAX) : 0;
   if (dirty >= DIRTY_MAX) return { state: "in-progress", why: t.dirtyCount ? uncommittedWords(t.dirtyCount, t.dirtyFiles) : "uncommitted changes" };
-  if (!t.ahead) return { state: "in-progress", why: NO_COMMITS };
+  if (hasNoCommits(t)) return { state: "in-progress", why: NO_COMMITS };
   if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
   if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };
@@ -589,6 +594,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       reason: r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
+      ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
     });
   }
   const cards = facts.merges;

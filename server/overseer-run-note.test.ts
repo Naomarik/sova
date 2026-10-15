@@ -164,10 +164,12 @@ describe("memory first (§app.overseer/sessions-in-play, §app.overseer/verify-f
     for (const parts of [note(false, sent), note(undefined, sent), note(false, [])]) assert.ok(!parts.join("\n\n").includes("zoom"), parts.join("\n\n"));
   });
 
-  test("the before_agent_start message follows the Overseer's own memory switch", async () => {
+  test("the before_agent_start message follows the Overseer's memory switch in force (on when never set)", async () => {
     const { readOverseerSettings, writeOverseerSettings } = await import("./overseer-store");
     const was = readOverseerSettings();
     try {
+      writeOverseerSettings({ ...was, memory: undefined });
+      assert.ok((await runNoteMessage([], NOW)).message.content.includes(LINE), "no saved choice: memory is on");
       writeOverseerSettings({ ...was, memory: { on: true, type: "uniichat", size: 64 } });
       assert.ok((await runNoteMessage([], NOW)).message.content.includes(LINE));
       writeOverseerSettings({ ...was, memory: { on: false, type: "uniichat", size: 64 } });
@@ -177,13 +179,40 @@ describe("memory first (§app.overseer/sessions-in-play, §app.overseer/verify-f
     }
   });
 
-  test("the prompt's id rule counts zoom as a source and searches only for what memory never names", () => {
-    const prompt = readFileSync(join(import.meta.dirname, "overseer-prompt.md"), "utf8").replace(/\s+/g, " ");
-    assert.ok(prompt.includes("Take a session id verbatim from a tool's output in this turn, `zoom` included."), "zoom output is a source");
-    assert.ok(prompt.includes("A summary line's short id points to the message that has it whole: zoom down to it."));
-    assert.ok(prompt.includes("Search with `sova_list_sessions` only when memory never names the session."));
-    assert.ok(prompt.includes("A hidden `[ids]` note naming an id from your last reply as no session here means that link was wrong"));
-    assert.ok(!prompt.includes("when unsure, `sova_list_sessions`"));
+  describe("the prompt's id rule follows the switch", async () => {
+    const { buildOverseerTools, renderOverseerPrompt, overseerLiveParts, overseerValues } = await import("./overseer");
+    const { readOverseerSettings } = await import("./overseer-store");
+    const { changedText, toldOn } = await import("./overseer-opening");
+    const settings = (memory: { on: boolean } | undefined) => ({ ...readOverseerSettings(), memory: memory && { ...memory, type: "uniichat" as const, size: 64 } });
+    const flat = (t: string) => t.replace(/\s+/g, " ");
+
+    test("memory on (and never set): zoom output is a source, and a search only for what memory never names", () => {
+      for (const s of [settings({ on: true }), settings(undefined)]) {
+        const prompt = flat(renderOverseerPrompt(buildOverseerTools(), s));
+        assert.ok(prompt.includes("Take a session id verbatim from a tool's output in this turn, `zoom` included."), "zoom output is a source");
+        assert.ok(prompt.includes("A summary line's short id points to the message that has it whole: zoom down to it."));
+        assert.ok(prompt.includes("Search with `sova_list_sessions` only when memory never names the session."));
+        assert.ok(prompt.includes("A hidden `[ids]` note naming an id from your last reply as no session here means that link was wrong"));
+        assert.ok(!prompt.includes("when unsure, `sova_list_sessions`"));
+      }
+    });
+
+    test("memory off: the rule names no zoom, and searches when unsure", () => {
+      const prompt = renderOverseerPrompt(buildOverseerTools(), settings({ on: false }));
+      assert.ok(!/\bzoom\b/.test(prompt), "no zoom anywhere in the prompt");
+      assert.ok(flat(prompt).includes("(`sova_list_sessions`, `sova_attention`, `sova_session`). Never type, shorten or piece one together from memory; when unsure, `sova_list_sessions` with a query first."));
+      assert.ok(!prompt.includes("{{IDS}}"));
+    });
+
+    test("fixed at opening: a switch reaches the next run under [changed], never by rewriting the prompt", () => {
+      const opened = overseerValues(settings({ on: true }), NOW);
+      const before = renderOverseerPrompt(buildOverseerTools(), settings({ on: false }), undefined, NOW, undefined, opened);
+      assert.ok(before.includes("`zoom` included"), "the prompt keeps its opening form");
+      const changed = changedText(overseerLiveParts(overseerValues(settings({ on: false }), NOW)), toldOn([], overseerLiveParts(opened))).text ?? "";
+      assert.ok(changed.includes("## Ids are copied, never typed (now)"), changed);
+      assert.ok(flat(changed).includes("when unsure, `sova_list_sessions` with a query first"), changed);
+      assert.equal(changedText(overseerLiveParts(overseerValues(settings({ on: true }), NOW)), toldOn([], overseerLiveParts(opened))).text, undefined, "no change, nothing told");
+    });
   });
 });
 

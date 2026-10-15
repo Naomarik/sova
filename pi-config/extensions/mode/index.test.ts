@@ -481,7 +481,10 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Before finishing:\n- Read each § the census note's `Unread § your change landed in` line \(once, after your last edit\) marks read first; its `census --changed --related` command lists the rest\. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd\./, "the unread line replaces the census run by hand before finishing");
 	assert.ok(spec.includes(`\`${UNREAD_PREFIX.replace(/: $/, "")}\``), "the guide names the hook's line in its own words");
 	// Promotion is no longer conditional on a commit: promote, or say why not.
-	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
+	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\. Promote on your own branch before you call it ready to land; nothing at landing promotes for you\./);
+	// Promotion comes before the branch is called ready: nothing that lands it promotes (and the guide names no project's merge process).
+	const promoteFirst = spec.indexOf("Promote on your own branch before you call it ready to land");
+	assert.ok(promoteFirst > spec.indexOf("Before finishing:") && promoteFirst < spec.indexOf("The task's go-ahead authorizes"), "the promote-first rule sits in Before finishing");
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
 	assert.match(spec, /A `manifest\.json` conflict: follow the census note\./);
 	// The `--doc-only` cases are checked against the draft tool itself: see "the guide's doc-only cases are the draft tool's".
@@ -506,7 +509,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
 	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	assert.ok(spec.split(/\s+/).length <= 868, "short enough to ride every turn: growing it is a deliberate change");
+	assert.ok(spec.split(/\s+/).length <= 886, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {

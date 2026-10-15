@@ -379,7 +379,7 @@ test("note, ask and reply: never a busy owner, never twice in a row, never the s
   assert.equal((await run(["ask", "feat/clean", "topic=merge"])).code, 2, "a bare base name is not a topic queue_open made");
   const ask = await run(["ask", "feat/clean", `topic=${TOPIC}`]);
   assert.equal(ask.code, 0, ask.out);
-  assert.ok(ask.out.includes(`Is feat/clean ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${TOPIC}", text one line: READY feat/clean <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it).`));
+  assert.ok(ask.out.includes(`Is feat/clean ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${TOPIC}", text one line: READY feat/clean <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it). If the user later tells you to merge it, don't merge it yourself: push READY to this topic and the merge round lands it.`));
   assert.match(ask.out, /don't poll/);
   assert.ok(!ask.out.includes(head.slice(0, 7)), "the ask holds the head's sha");
   assert.equal(state().branches["feat/clean"].ask.topic, TOPIC);

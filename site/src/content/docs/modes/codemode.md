@@ -14,7 +14,8 @@ it, the agent can write one script that runs several tool calls at once and keep
 their output it needs, instead of making each call and reading each result in turn.
 
 The tool is the whole mode. There are no extra instructions: turning codemode on adds the tool, and
-turning it off removes it.
+turning it off removes it. The one exception: while an MCP tool that only scripts can reach is
+registered, turning codemode off leaves the tool in, since that MCP tool has no other way in.
 
 ## What a script can call
 
@@ -35,12 +36,12 @@ or Cancelled. It updates live while the script runs, then shows the output.
 
 A switch made between turns adds or removes the tool at once. A switch made during a turn applies
 when that turn ends. Like turning align or vis on or off, it changes the agent's tools, so the
-model provider's prompt cache starts again.
+model provider's prompt cache starts again, and a Claude Code chat's CLI restarts.
 
 ## Where codemode is available
 
 - **In Sova**, in every ordinary chat, whether its model runs on pi or Claude Code. The Overseer
-  doesn't load it.
+  doesn't load it, nor do organizations and baton sessions.
 - **In a terminal**, pi has its own `codemode` tool, and the mode switches it the same way.
 - **Workers never get it.** A worker's tools come from its brief.
 

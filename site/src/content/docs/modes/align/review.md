@@ -69,13 +69,17 @@ each with evidence and a check that tells right from wrong.
 ## What happens with the verdict
 
 - **Plan review.** The agent folds the findings into the same alignment: it fixes steps, adds
-  rejected options marked "(review)", and adds a question only for a real choice. Then it replies
-  once, without asking for extra approval.
+  rejected options marked "(review)", adds a question only for a real choice, and records one
+  finding naming the review and its model. Then it replies once, without asking for extra approval.
 - **Implementation review.** Each **blocker** has an id (`b1`, `b2`…), a title and a check. The
   agent runs each check to confirm it, sends the accepted fixes to whoever built the work, runs the
   checks again, and closes each blocker. A blocker that needs a different approach becomes a new
   question, and the alignment goes back to open.
-- The agent can't mark an alignment Done while a review is running or a blocker is open.
+- A blocker closes only three ways: its check passes, concrete counter-evidence, or a waiver in your
+  own explicit words.
+- The agent can't mark an alignment Implementing while the plan review runs, or Done while a
+  review is running or a blocker is open. A blocking implementation review asked for after Done
+  moves the alignment back to Implementing.
 - If neither the reviewer nor its fallback can run, or the review fails, it's recorded as
   **incomplete** and the work continues. Nobody is asked.
 
@@ -97,5 +101,6 @@ the chat's profile, the button is disabled and says why.
 
 ## In the terminal
 
-With the switch on, `/review plan` or `/review implementation`, optionally followed by an
+pi's terminal UI doesn't read the Settings switch: there, review is on when pi starts with
+`--adversarial-review`. Then `/review plan` or `/review implementation`, optionally followed by an
 alignment id such as `al_3`, sends the same message as the card's button.

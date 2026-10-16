@@ -84,7 +84,8 @@ are atomic tmp+rename.
   note and gets them at the next run that has one. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
-  `ls` and `wake_nudge`. It never has `bash`, `edit`, `write` or subagent tools: the only
+  `ls`, `write`, `edit` and `wake_nudge` (`write` and `edit` on the terms of
+  §app.overseer/file-writes). It never has `bash` or subagent tools: the only
   subagents it can start are ideas' explorers, through `sova_idea` (§app.overseer/explorer).
 - **Model.** Its model and thinking level come from `overseer.json`, never from the new-session
   defaults. A model or thinking change made in the Overseer's composer writes back to
@@ -190,8 +191,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   host only, resolved against the new session's folder (its project first, then yours, then built
   in, §chat.profiles/projects). Only a profile marked "The Overseer may start it" is taken, and a
   project profile only once you approved it (§chat.profiles/trust); any other refuses before
-  anything is created. A profile that links a playbook sends that playbook as the first message,
-  with `prompt` as its text (§chat.profiles/playbook). The session is created with that profile's snapshot
+  anything is created. A profile sends no playbook (§chat.profiles/playbook): `prompt` alone is the first message. The session is created with that profile's snapshot
   (and its mode, minor modes and model unless the call names its own: an explicit
   `minor_modes` replaces the profile's set), and the tool's result renders as a
   **Started from {label}** card with Open Session. A One at a time profile that is live refuses
@@ -361,6 +361,31 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   content-merged branch keeps its ref; and each removal goes into the cleanup's ledger. The result
   says per session what was archived, each worktree removed or kept and why, and each branch
   deleted or kept. Without `worktrees`, archiving never touches a worktree.
+
+## §app.overseer/file-writes — Writing and editing files, only in your turns
+
+The Overseer and every project overseer have pi's `write` and `edit`, behind the same guard as
+their read tools (§app.overseer/tools, "Files").
+
+- **Where.** Anywhere `read` may go, except Sova's and pi's own state (the agent dir, with Sova's
+  state root in it, and `~/.pi`), a folder an attached organization's project layer reserves (its
+  workspace), a secret file, and a file with more than one hard link. A project overseer writes
+  only inside its project root; its attachments folder stays read-only. Each path is checked as
+  written, at its realpath and at every link of a symlink chain, so a dangling link can't create a
+  file in a refused place. A refusal names why ("That folder is Sova's or pi's own state; the
+  Overseer can't write there.", "That file holds credentials; the Overseer can't write it.", "That
+  path is outside the project root {root}; the project overseer writes only inside it.").
+- **When.** Only in a turn the user (for a project overseer, the operator) started. In any other
+  turn (a brief, a wake-up, another automatic message) both tools refuse before touching anything:
+  the Overseer is told to raise a `sova_card` saying what it would write and why, the user's click
+  starting a turn in which it may; a project overseer is told "Writing a file is the operator's:
+  ask with sova_card." No approval or standing rule makes a write run in another turn.
+- **Logged.** Each call, written, refused or failed, is one line of the overseer's action log with
+  the tool, the path and the bytes written, never the content. The tools' arguments reach the model
+  as given; their results are redacted like the read tools'.
+- **The prompt** states these rules, tells the overseer to leave code changes to coding sessions and
+  keep its own edits to a project's `.sova/` configuration unless asked, and that a refused write
+  is final: never the same file another way, never a session asked to write it.
 
 ## §app.overseer/session-truth — What `sova_session` says is true now
 

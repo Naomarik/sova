@@ -35,7 +35,7 @@ The same rewind is in two more places:
 
 **Regenerate** under a reply runs that turn again. Sova rewinds to the message of yours that started the reply and sends it again, with its text and images, on the session's current model. Switch models first and regenerate to compare. The whole turn runs again, tools included, and your composer draft is left alone.
 
-If you steered the turn partway, the steer is the message that started the later reply, so regenerating that reply sends the steer again. The confirm names the message it will send. A reply to a scheduled wake-up has no message of yours to send again, so Regenerate is off there.
+If you steered the turn partway, the steer is the message that started the later reply, so regenerating that reply sends the steer again. The confirm names the message it will send. A reply to a scheduled wake-up, or to notes other sessions pushed to a topic, has no message of yours to send again, so Regenerate is off there.
 
 ## Fork from a reply
 
@@ -53,10 +53,10 @@ Until the agent takes it, your message shows as **Queued**, with a button to rem
 
 ## Switch models mid-session
 
-Press the model name at the left of the composer's foot, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The same menu holds the **Thinking** levels for the current model.
+Press the model name at the left of the composer's foot, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The star on a model row (or `Ctrl+F`) adds it to Favorites at the top of the list without choosing it. The same menu holds the **Thinking** levels for the current model.
 
 - **Between turns.** A switch waits until the running turn finishes: "Model changes wait until this turn finishes."
-- **It's this session's.** Once a session has your first message, a pick changes only that session. A pick in a brand-new session becomes the default for new sessions.
+- **It's this session's.** Once a session has your first message, a pick changes only that session. A model or thinking level you pick in a brand-new session becomes the default for new sessions.
 - **Only models you allow.** A model turned off in Settings → Models isn't listed.
 
 When the switch lands, Sova says "Model changed to {model}." If it fails, a banner says why and that you're still on the previous model.

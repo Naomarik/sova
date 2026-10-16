@@ -97,11 +97,13 @@ worktrees. Any other folder is refused, with a message naming the chat's worktre
 
 ## Workers after a restart
 
-A worker is a process of the session that started it, so a server restart stops it. Sova keeps a
-record of every worker, so after a restart the workers come back **as records**: listed in the
-pane with their transcripts and their spend, but not running.
+Each worker runs in a process of its own, so a server restart doesn't stop it: it keeps running,
+and its chat picks it back up. Sova also keeps a record of every worker, so a worker whose process
+did stop (it died, or an older server stopped it) comes back **as a record**: listed in the pane
+with its transcript and its spend, but not running.
 
 - A worker that had finished keeps its final status: Done, Failed or Stopped.
+- A worker that was idle reads **Restored**.
 - A worker that was running reads **Interrupted**, and its unfinished turn stays as it was. Its view
   in the pane says when it stopped: "Not running since a server restart; it was mid-task at…"
 - Nothing starts again by itself. The agent resumes a worker with its `agent_resume` tool, or you can
@@ -117,5 +119,6 @@ it read-only. See [strict](/docs/modes/#strict).
 ## Where Delegate isn't available
 
 - **The Overseer** is always in normal mode.
-- **A project's coding sessions** run in normal mode unless you allow Delegate for that project on
-  its project page.
+
+A project's coding sessions start in this computer's default mode, so in Delegate when that is your
+default, and either Overseer can start or switch one into Delegate for large, multi-part work.

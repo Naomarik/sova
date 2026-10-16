@@ -180,7 +180,7 @@ broken block's source (§app.baton/outsider-view).
   | `vis flow` sections | side-by-side panels (§chat.markdown/vis-flow-sections) | node id or label |
   | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts) | row label |
   | `vis timeline` | dated events in order | the row's date or label |
-  | `vis steps` | scenario chains with a status per row (§chat.markdown/vis-steps) | row label |
+  | `vis steps` | scenario chains with a status per row; up to 4 rows stand side by side, equal steps merged (§chat.markdown/vis-steps) | row label, or a step's text (every row with it) |
   | `vis wireframe` | low-fi screens: phone or desktop frames, wireflow arrows between screens (§chat.markdown/vis-wireframe) | a block's first text, a screen name or a block word |
   | `vis matrix` | a comparison grid (yes / no / partial / text cells, a text cell optionally toned: §chat.markdown/vis-matrix-tones) | row label or column label |
   | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
@@ -654,8 +654,8 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
   stands.
 - **A tone on a row of several series** (`"/checkout" 80 2400 warn`) marks that row in that tone,
   as `mark "/checkout" warn` does, after the fence's own marks (none of which it displaces).
-- **Marks naming part of an item.** In `vis steps`, a target that names no row but a step of
-  exactly one row (`mark "Verify email"`) marks that row. In `vis layers`, a target that names no
+- **Marks naming part of an item.** In `vis steps`, a target that names no row but a step
+  (`mark "Verify email"`) marks every row with that step, written out the same or through `^`. In `vis layers`, a target that names no
   layer but an item of exactly one layer (`mark Redis`, `mark TLS 1.3`) marks that layer, and a
   number names the one layer whose label starts with that number (`mark 4` over `4 Transport | TCP,
   UDP`). In `vis tree`, a target that names no item names the one item whose name is the target with
@@ -724,13 +724,19 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
 - **Tree, an extension after the quotes.** In `vis tree`, a `.` then letters, digits, `_ . -` glued
   right after a quoted name are part of it, on item and mark lines: `"Nav Bar".tsx` is `Nav Bar.tsx`.
 - **Changes of meaning.** These lines drew before, wrongly: a `vis steps` row ending `| <tone>`
-  (with no tone after its label) takes that tone, where it drew a step "done | ok"; a steps chain
+  (with no tone after its label) takes that tone, where it drew a step "done | ok"; in `vis steps`,
+  a tone word after a quoted step that is not the last, or after the last step of a row whose label
+  has a tone, tones that step, where it drew the step as written (`"token expired" error`, quotes and
+  all); a step that is only `^` or `_` is the step above or an empty position (§chat.markdown/vis-steps),
+  where it drew a chip `^` or `_`; and a row's text after a second `|` that is not a lone tone word is
+  its outcome, where it drew as part of the last step ("b | 3 tries"); a steps chain
   joined by a wide arrow (`→`, `=>`, …) is that many steps, where it drew one chip; a labelled start
   or end dot is drawn as above, where the label was never shown; a row with a `|` inside a
   quoted field, split there before; a timeline label ending in a tone word or a quoted string,
   drawn as written before; a wireframe block's `right`, ignored before; and a `spacer` among a
   wireframe row's blocks, a divider before. These drew before with a warning that part of them was dropped,
-  and now draw it: a decision's branch string (the node's second label), a mark naming a step, a
+  and now draw it: a decision's branch string (the node's second label), a mark naming a step (in
+  `vis steps`, one that several rows share included), a
   layer's item or number or a tree item without its slash, a mark on a line inside a range, a
   timeline mark without its row's `(…)`, a wireframe block written after another's texts, a
   wireframe chart's type word, a wireframe block's `grow`, `end`, `trailing`, `fill`, `expand`,
@@ -756,28 +762,66 @@ A matrix text cell may end in a tone word (`accent ok warn error info muted`): `
 
 ## §chat.markdown/vis-steps — `vis steps`: scenario chains
 
-A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/kinds/steps/`.
+A kind for scenarios or journeys as chains, each with a status, drawn so the paths compare step by
+step. HTML, `src/vis/kinds/steps/`.
 
-- **Syntax.** One row per line: `"Label" [tone] | step -> step -> …`. The label is a "quoted label"
-  or bare words (a label mixing the two, such as `'"all"'`, is kept as written, quotes and all); a
-  step is a "quoted label" or bare words (one of each is kept as written, as a label is), and steps
-  join with `->` (or a wide arrow, `→` `=>` …: §chat.markdown/vis-lenience-content). A row whose
-  label has no tone may end `| <tone>` instead, or a tone word after its last quoted step.
+- **Syntax.** One row per line: `"Label" [tone] | step -> step -> … [| outcome]`. The label is a
+  "quoted label" or bare words (a label mixing the two, such as `'"all"'`, is kept as written, quotes
+  and all); a step is a "quoted label" or bare words (one of each is kept as written, as a label is),
+  and steps join with `->` (or a wide arrow, `→` `=>` …: §chat.markdown/vis-lenience-content).
   `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label (or by a
-  step no other row has: §chat.markdown/vis-lenience-content).
-- **Row.** A status mark, then the label (semibold), then the steps as chips (sunken, 1px border)
-  each after the first led by an arrow; the chips wrap with the pane, an arrow staying with the
-  chip it leads to. Beside a 144px label column; at a figure width of 420px or less the label sits
-  above its chain. Rows are bordered bands 4px apart; a marked row takes the shared emphasis tint
-  and the note's number before its label.
+  step's text: §chat.markdown/vis-lenience-content). Four additions are optional:
+  - **Step tone.** A tone word after a quoted step tones that step: `"token expired" error`. On the
+    last step of a row with no tone of its own, the tone is also the row's.
+  - **`^`.** A step written `^` is the step at the same position in the row above, in the same lane:
+    its text and its tone, as if written out.
+  - **`_`.** A step written `_` is nothing at that position: the row's later steps keep their
+    positions. It counts toward the 10 steps.
+  - **Outcome.** A second `|` ends the row with its outcome, its result or cost in a few words: a
+    "quoted label" or bare words, then optionally a tone (`| "3 tries"`). A lone tone word there is
+    the row's tone when its label has none (`… -> done | ok`); after a label with a tone, a lone tone
+    word stays part of the last step, as before (`"Pro" warn | a -> b | ok` draws a step "b | ok").
+- **Layout.** One rule picks the layout from the figure's content width, the same in the drawing and
+  in its height estimate:
+  - **Side by side** when the fence has 2 to 4 rows, no lanes, and at least 180px of content width
+    per row. Each row is a bordered column with its status mark and label on top; step N of every
+    row sits on one line. Neighbouring columns whose steps at a position have the same text and tone
+    share one chip spanning them, and an arrow runs into each chip from each chip above it, so where
+    paths split shows. A `_` is a dashed line carrying the column on. The outcomes sit on one line at
+    the bottom, one per column, in their tone. A marked row's column takes the shared emphasis tint
+    and the note's number before its label.
+  - **Aligned grid** otherwise, when the content is wider than 402px: each row a bordered band, its
+    label in a 144px column, then its steps in equal columns (as many as the longest row has, each at
+    least 128px; when they don't fit, fewer per line, the row going on below in the same columns), so
+    step N of every row lines up. Each step after the first is led by an arrow; a `_` is an empty
+    cell. When any row has an outcome, a column at the right holds the outcomes. Lane heads sit
+    between the rows as before.
+  - **Numbered list** at 402px or less: each row's label above its steps, numbered down a rail. A
+    start a row shares with the row above in its lane folds into one line, "Steps 1–2 as in
+    <label>"; a run of `_` folds into one dashed line numbered with its positions ("2–5"); the
+    outcome is the last line.
+  A marked row takes the shared emphasis tint and the note's number in every layout.
+- **Ids in steps.** A word in a step that is an id, a hash or a path is set in mono on its own, so
+  the words around it stay in the body font, and it breaks at its dashes rather than mid-id.
 - **Status.** `ok`, `warn`, `error` and `info` rows show their tone's icon (check, alert, x, info) in
   the tone's colour, so status never rests on hue alone; `accent` a filled dot, `muted` a dotted ring
-  (and a muted label), no tone an empty ring.
+  (and a muted label), no tone an empty ring. A toned step shows its tone's colour and, for those
+  four tones, its icon with the tone named for screen readers; so does a toned outcome.
+- **Accessibility.** Side by side is a table: a column header per row, and a shared chip names the
+  rows it stands for. The grid and the numbered list are lists. An empty position reads "no step
+  here".
 - **Lane heads.** Caption size, semibold, 8px more space above all but the first.
 - **Errors.** A row without `|`, an empty label or step, a step with two quoted labels, an arrow
-  other than `->` (or a wide one), an empty or unlabelled lane, more than 10 steps in
-  a row, 16 rows or 6 lanes.
-- **Height.** Estimated from steps.css' fixed metrics before it draws.
+  other than `->` (or a wide one), an empty or unlabelled lane, more than 10 steps in a row, 16 rows
+  or 6 lanes. And for the additions, each saying what to write instead: a `^` with no row above it in
+  its lane (the first row, or the first under a lane head), a `^` across a lane head, a `^` whose row
+  above has no step at that position or a `_` there, a `^` as an outcome, a row ending in `_`, a row
+  with no step but `_`, an empty outcome, and an outcome holding `->`.
+- **Existing fences.** Every fence that drew before draws the same rows, labels and steps, except
+  the changes of meaning in §chat.markdown/vis-lenience-content; it takes the layout the rule above
+  picks, wherever it is shown.
+- **Height.** Estimated before it draws, for the layout the rule picks at that width, from
+  steps.css' fixed metrics.
 
 ## §chat.markdown/vis-wireframe — `vis wireframe`: low-fi screens and wireflows
 

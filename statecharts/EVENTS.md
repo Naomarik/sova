@@ -72,7 +72,8 @@ Effects: `read-holder {fetchMs}` → `effect/done {result: {local, remote}}` (ho
 unreachable remote, the clone's alone was read); `commit {message?}` → `{result: {headAt, pushFailed?, error?}}`;
 `push`; `pause-overseers` (attach only); `revoke-owner-links {why: detached}`.
 Acts: `attach/confirm` (op, in `held-elsewhere`), `org/detach` (op), `commit/now` (op).
-Host events: `store/written`, `commit/look` (its own 1-min timer). The attach route answers 409
+Host events: `store/written`, `commit/look` (its own timer, armed at `head-at` + `commit-every`, never
+sooner than 1 min: `look-at`; a commit answered in `clean`/`dirty` re-arms it). The attach route answers 409
 `code: "held"` with `held-sentence(heldBy)` while in `held-elsewhere`.
 
 ## person (`person/<org>/<pid>`, portable)

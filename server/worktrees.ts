@@ -18,7 +18,8 @@
 //
 // Bounds: every git is execFile (no shell) under a 5 s timeout, at most MAX_CONCURRENT at once.
 // Cost: validated discovery/HEAD/refs are shared between readers; comparisons and logs use
-// immutable OIDs. Dirty stays independent and is read at most every DIRTY_TTL_MS, or the lifetime
+// immutable OIDs. A comparison also rests on the merge setup (attributes, merge drivers and the
+// drivers' code), checked by stat stamps; a setup that can't be pinned down is read every time. Dirty stays independent and is read at most every DIRTY_TTL_MS, or the lifetime
 // merge readiness sets for a tree (`dirtyLifetime`); an index or HEAD change ends it at once.
 // Git failures become the tree's `error`, never a throw.
 
@@ -26,6 +27,7 @@ import { execFile } from "node:child_process";
 import { existsSync, statSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { builtinModules } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
@@ -128,6 +130,10 @@ interface Comparison {
 
 interface Layout { top: string; linked: boolean; commonDir: string; gitDir: string }
 
+/** A trial merge's inputs besides its OIDs: the configured merge drivers' commands, and the
+ * folders (repo-relative, "" the top) whose `.gitattributes` Git may read for it. */
+interface MergePin { commands: string[]; dirs: string[] }
+
 /** These are dependency checks, not ref resolution: only Git supplies answers. A full loose-ref
  * inventory also covers symbolic chains and previously absent higher-priority bases. Large or
  * unreadable inventories are deliberately unsupported, and are read by Git instead. */
@@ -197,23 +203,153 @@ function discoveryToken(dir: string): string | null {
   } catch { return null; }
 }
 
-function historyToken(layout: Layout): string | null {
-  // Custom namespaces/files and injected configuration may name dependencies outside this
-  // inventory. Unsupported inputs are delegated to Git, never assigned an indefinite token.
-  if (process.env.GIT_REPLACE_REF_BASE || process.env.GIT_SHALLOW_FILE || process.env.GIT_CONFIG_COUNT || process.env.GIT_CONFIG_PARAMETERS || process.env.GIT_ATTR_SOURCE || process.env.GIT_ATTR_SYSTEM || process.env.GIT_ATTR_GLOBAL) return null;
-  let worktreeConfigs: string[];
+function configsOf(layout: Layout): string[] | null {
   try {
     const path = join(layout.gitDir, "config.worktree");
     // Empty files have no effective settings. Their individual change stamps are checked by
     // the context reader, not mixed into the equivalent repository-level reuse token.
-    worktreeConfigs = existsSync(path) && readFileSync(path).length > 0 ? [path] : [];
+    return [join(layout.commonDir, "config"), ...(existsSync(path) && readFileSync(path).length > 0 ? [path] : []), ...globalConfigs()];
   } catch { return null; }
-  const configs = [join(layout.commonDir, "config"), ...worktreeConfigs, ...globalConfigs()];
+}
+
+/** What commit history means: replacements, grafts, shallow boundaries and the configuration.
+ * Reuse of HEAD, refs, logs and ancestry. Merge drivers and attributes don't change history, so
+ * they are the merge token's business (§app/idle-git-cache). */
+function historyToken(layout: Layout): string | null {
+  // Custom namespaces/files and injected configuration may name dependencies outside this
+  // inventory. Unsupported inputs are delegated to Git, never assigned an indefinite token.
+  if (process.env.GIT_REPLACE_REF_BASE || process.env.GIT_SHALLOW_FILE || process.env.GIT_CONFIG_COUNT || process.env.GIT_CONFIG_PARAMETERS) return null;
+  const configs = configsOf(layout);
+  if (!configs) return null;
   try {
-    for (const config of configs) if (existsSync(config) && /\[include(?:if)?\b|attributesfile\s*=|\[merge(?:\s+"|\.)|\[attr\]/i.test(readFileSync(config, "utf8"))) return null;
+    for (const config of configs) if (existsSync(config) && /\[include(?:if)?\b/i.test(readFileSync(config, "utf8"))) return null;
   } catch { return null; }
-  const token = dependencies([layout.commonDir, ...configs, join(layout.commonDir, "shallow"), join(layout.commonDir, "info/grafts"), join(layout.commonDir, "info/attributes"), join(layout.commonDir, "packed-refs"), join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "git/attributes"), "/etc/gitattributes"], [join(layout.commonDir, "refs/replace")]);
+  const token = dependencies([layout.commonDir, ...configs, join(layout.commonDir, "shallow"), join(layout.commonDir, "info/grafts"), join(layout.commonDir, "packed-refs")], [join(layout.commonDir, "refs/replace")]);
   return token && `${token}:${JSON.stringify(Object.entries(process.env).filter(([k]) => k.startsWith("GIT_")))}`;
+}
+
+const xdgAttributes = () => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "git/attributes");
+
+/** A file's change stamp, read without its content: inode, size, mtime and ctime (any write moves
+ * ctime). "absent" for nothing there, "dir" for a folder. */
+function statStamp(path: string): string {
+  try {
+    const st = statSync(path, { bigint: true });
+    return st.isDirectory() ? "dir" : `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}:${st.mode}`;
+  } catch { return "absent"; }
+}
+
+/** A merge driver's command as the shell would split it: words, single and double quotes. null
+ * for anything the shell would expand or treat specially (variables, globs, pipes, escapes...):
+ * then what runs can't be named, and nothing is reused. */
+export function shellWords(command: string): string[] | null {
+  const words: string[] = [];
+  let word: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]!;
+    if (c === " " || c === "\t") {
+      if (word !== null) words.push(word);
+      word = null;
+    } else if (c === "'" || c === '"') {
+      const end = command.indexOf(c, i + 1);
+      if (end < 0) return null;
+      const inner = command.slice(i + 1, end);
+      if (c === '"' && /[$`\\!]/.test(inner)) return null;
+      word = (word ?? "") + inner;
+      i = end;
+    } else if (/[\\$`;|&<>(){}*?[\]~#!\n\r=]/.test(c)) {
+      // `=` only matters in a first word (an environment assignment); refusing it everywhere is simpler.
+      if (c !== "=" || words.length === 0) return null;
+      word = (word ?? "") + c;
+    } else word = (word ?? "") + c;
+  }
+  if (word !== null) words.push(word);
+  return words;
+}
+
+/** A driver script's static relative imports, re-read only when its stamp moves; null when one
+ * can't be pinned to a file (a package, a dynamic import, require). */
+const importMemo = new Map<string, { stamp: string; deps: string[] | null }>();
+function importsOf(path: string, stamp: string): string[] | null {
+  const hit = importMemo.get(path);
+  if (hit?.stamp === stamp) return hit.deps;
+  let deps: string[] | null = [];
+  try {
+    const text = readFileSync(path, "utf8");
+    const specs: string[] = [];
+    for (const m of text.matchAll(/(?:^|[^\w$.])(?:import\s*(?:[\w$*{}\s,]+?\s*from\s*)?|export\s*(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*)(["'])([^"'\n]+)\1/g)) specs.push(m[2]!);
+    if (/(?:^|[^\w$.])import\s*\(|\brequire\s*\(|\bcreateRequire\b/.test(text)) deps = null;
+    for (const spec of specs) {
+      if (!deps) break;
+      if (spec.startsWith("node:") || builtinModules.includes(spec)) continue;
+      if (!/^\.{1,2}\//.test(spec)) { deps = null; break; }
+      deps.push(resolve(dirname(path), spec));
+    }
+  } catch { deps = null; }
+  importMemo.set(path, { stamp, deps });
+  if (importMemo.size > 4096) importMemo.delete(importMemo.keys().next().value!);
+  return deps;
+}
+
+/** Stamp a driver's file and, for a script, everything it imports. false: an import can't be pinned. */
+function stampFile(path: string, out: Map<string, string>): boolean {
+  if (out.has(path)) return true;
+  const stamp = statStamp(path);
+  out.set(path, stamp);
+  if (stamp === "absent" || stamp === "dir" || !/\.[cm]?js$/.test(path)) return true;
+  const deps = importsOf(path, stamp);
+  if (!deps) return false;
+  for (const dep of deps) if (!stampFile(dep, out)) return false;
+  return true;
+}
+
+/**
+ * What the merge drivers a trial merge may run are made of (§app/idle-git-cache): each driver's
+ * program as the shell finds it on PATH (Git's exec path first), and every file its words name,
+ * resolved from the worktree's top (where Git runs drivers, so a relative path is each worktree's
+ * own copy), scripts with their imports. null when a command can't be read that way: no reuse.
+ */
+export function driverStamp(commands: readonly string[], top: string, execPath: string | null): string | null {
+  if (commands.length === 0) return "";
+  const out = new Map<string, string>();
+  const searched: string[] = [];
+  for (const command of commands) {
+    const words = shellWords(command);
+    if (!words || words.length === 0) return null;
+    const [program, ...args] = words as [string, ...string[]];
+    if (program.includes("/")) { if (!stampFile(resolve(top, program), out)) return null; }
+    else {
+      for (const dir of [...(execPath ? [execPath] : []), ...(process.env.PATH ?? "").split(":")]) {
+        const candidate = resolve(top, dir || ".", program);
+        const stamp = statStamp(candidate);
+        searched.push(`${candidate}=${stamp}`);
+        if (stamp !== "absent" && stamp !== "dir" && (Number(/:(\d+)$/.exec(stamp)?.[1] ?? 0) & 0o111)) break;
+      }
+    }
+    for (const word of args) if (!word.startsWith("-") && !word.includes("%") && !stampFile(resolve(top, word), out)) return null;
+  }
+  return JSON.stringify([searched, [...out]]);
+}
+
+/** What a trial merge's answer rests on besides its two OIDs: history, attributes (configured and
+ * every working-tree `.gitattributes` on the changed paths' folders, which Git reads from the
+ * worktree it runs in) and the merge drivers' code. null: unsupported, no reuse. */
+function mergeToken(layout: Layout, pin: MergePin, execPath: string | null): { token: string; perTree: boolean } | null {
+  if (process.env.GIT_ATTR_SOURCE || process.env.GIT_ATTR_SYSTEM || process.env.GIT_ATTR_GLOBAL) return null;
+  const history = historyToken(layout);
+  const configs = configsOf(layout);
+  if (!history || !configs) return null;
+  try {
+    for (const config of configs) if (existsSync(config) && /attributesfile\s*=|\[attr\]/i.test(readFileSync(config, "utf8"))) return null;
+  } catch { return null; }
+  const attributes = dependencies([join(layout.commonDir, "info/attributes"), xdgAttributes(), "/etc/gitattributes"]);
+  const drivers = driverStamp(pin.commands, layout.top, execPath);
+  if (!attributes || drivers === null) return null;
+  const local = pin.dirs.map((d) => statStamp(join(layout.top, d, ".gitattributes")));
+  // A worktree's own files (its attributes, a driver it runs from its own copy) make the answer
+  // that worktree's; without them, worktrees of one repository share it.
+  const perTree = pin.commands.length > 0 || local.some((s) => s !== "absent");
+  return { token: `${history}:${attributes}:${drivers}:${local.join(",")}`, perTree };
 }
 
 function refsToken(layout: Layout, head: boolean): string | null {
@@ -251,10 +387,9 @@ function dirtyStamp(layout: Layout): string {
   return [stamp(join(layout.gitDir, "index")), head, ref ? stamp(join(layout.commonDir, ref)) : "", ref ? stamp(join(layout.commonDir, "packed-refs")) : ""].join("\0");
 }
 
-/** A worktree's index, HEAD and branch ref as stat stamps, read without Git: any commit, add,
- * checkout or branch switch there changes it (merge readiness's settled sessions,
- * §app/idle-git-cache). "gone" for a missing folder; null when its Git layout can't be named. */
-export function worktreeStamp(dir: string): string | null {
+/** A worktree folder's Git layout read from its `.git`, without Git. "gone" for a missing folder;
+ * null when it can't be named. */
+function plainLayout(dir: string): Layout | "gone" | null {
   try {
     const dotGit = join(dir, ".git");
     let st;
@@ -271,7 +406,20 @@ export function worktreeStamp(dir: string): string | null {
       gitDir = resolve(dir, m[1]!);
       commonDir = existsSync(join(gitDir, "commondir")) ? resolve(gitDir, readFileSync(join(gitDir, "commondir"), "utf8").trim()) : gitDir;
     }
-    return `${dir}\0${dirtyStamp({ top: dir, linked: gitDir !== commonDir, gitDir, commonDir })}`;
+    return { top: dir, linked: gitDir !== commonDir, gitDir, commonDir };
+  } catch {
+    return null;
+  }
+}
+
+/** A worktree's index, HEAD and branch ref as stat stamps, read without Git: any commit, add,
+ * checkout or branch switch there changes it (§app/idle-git-cache). "gone" for a missing folder;
+ * null when its Git layout can't be named. */
+export function worktreeStamp(dir: string): string | null {
+  const layout = plainLayout(dir);
+  if (layout === null || layout === "gone") return layout;
+  try {
+    return `${dir}\0${dirtyStamp(layout)}`;
   } catch {
     return null;
   }
@@ -309,6 +457,11 @@ export class WorktreeInsights {
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: SessionCandidates; seenAt: number }>();
   private readonly dirtyLifetimes = new Map<string, { ms: number; seenAt: number }>();
   private mergeTreeOk: Promise<boolean> | null = null;
+  /** Git's exec path, which Git puts first on a driver's PATH; read once. */
+  private execPath: string | null = null;
+  private execPathRead: Promise<void> | null = null;
+  /** Per worktree (its real git dir): the merge driver commands its last check found. */
+  private readonly driverCommands = new Map<string, { commands: string[]; seenAt: number }>();
   private running = 0;
   private readonly waiting: (() => void)[] = [];
 
@@ -544,13 +697,74 @@ export class WorktreeInsights {
     if (refs.code !== 0) errors.push(gitError("reading the base branch", refs));
     if (!head) errors.push("no commits on HEAD");
     else if (base) {
-      const value = await this.contextRead(layout, `compare:${layout.commonDir}:${head.oid}:${base.oid}:${base.name}`,  () => historyToken(layout), () => this.compare(cwd, layout, base, head.oid), (v) => !v.error);
+      const pin = await this.mergePin(layout, base.oid, head.oid);
+      const tokenOf = () => (pin ? mergeToken(layout, pin, this.execPath)?.token ?? null : null);
+      const scope = pin && mergeToken(layout, pin, this.execPath)?.perTree ? `tree:${layout.top}` : layout.commonDir;
+      const value = await this.contextRead(layout, `compare:${scope}:${head.oid}:${base.oid}:${base.name}`, tokenOf, () => this.compare(cwd, layout, base, head.oid), (v) => !v.error);
       const { error, ...fields } = value;
       Object.assign(out, fields);
       if (error) errors.push(error);
     }
     if (errors.length > 0) out.error = errors.join("; ");
     return out;
+  }
+
+  /** The merge drivers configured for this worktree and the folders whose attributes a trial merge
+   * of `base` and `head` may read (§app/idle-git-cache). Both are reused like any Git fact: the
+   * configuration while its files stay put, the folders for good per pair of OIDs. null: the
+   * comparison is read by Git every time, as before. */
+  private async mergePin(layout: Layout, base: string, head: string): Promise<MergePin | null> {
+    const key = (() => { try { return realpathSync(layout.gitDir); } catch { return layout.gitDir; } })();
+    if (historyToken(layout) === null) {
+      this.driverCommands.delete(key);
+      return null;
+    }
+    this.execPathRead ??= this.git(tmpdir(), ["--exec-path"]).then((r) => { this.execPath = r.code === 0 ? r.stdout.trim() || null : null; });
+    await this.execPathRead;
+    const config = await this.contextRead(layout, `drivers:${layout.commonDir}`, () => historyToken(layout),
+      () => this.git(layout.top, ["config", "-z", "--get-regexp", "^merge\\..*\\.driver$"]), (r) => r.code === 0 || (r.code === 1 && r.stdout === ""));
+    if (config.code !== 0 && config.code !== 1) return null;
+    const commands = config.code === 0 ? config.stdout.split("\0").filter(Boolean).map((e) => (e.includes("\n") ? e.slice(e.indexOf("\n") + 1) : "")) : [];
+    this.driverCommands.set(key, { commands, seenAt: this.now() });
+    const dirs = await this.contextRead(layout, `attrdirs:${layout.commonDir}:${base}:${head}`, () => historyToken(layout), async () => {
+      // Every path either side changed since the merge base, and every path the two tips differ
+      // on (a rename's both names): what a merge, its renames and numstat look attributes up for.
+      const names = await Promise.all([["--merge-base", base, head], [base, head]].map((range) => this.git(layout.top, ["diff-tree", "-r", "-z", "--name-only", "--no-renames", ...range])));
+      if (names.some((r) => r.code !== 0)) return null;
+      const out = new Set<string>([""]);
+      for (const r of names) for (const path of r.stdout.split("\0")) {
+        if (!path) continue;
+        const parts = path.split("/");
+        for (let i = 1; i < parts.length; i++) out.add(parts.slice(0, i).join("/"));
+      }
+      return [...out].sort();
+    }, (v) => v !== null);
+    return dirs ? { commands, dirs } : null;
+  }
+
+  /**
+   * Everything a readiness check of this worktree rests on that can move without a session moving,
+   * as stat stamps read without Git (§app/idle-git-cache, idle sessions): its index, HEAD and branch
+   * ref; the base branch's refs; the configuration and attribute files; and the code of the merge
+   * drivers its last check found. "gone" for a missing folder. null when it can't be named: the
+   * folder isn't a worktree, its refs are in a reftable, or no check has read its drivers yet.
+   * An uncommitted edit leaves it as it is (the dirty reading's business).
+   */
+  quietStamp(dir: string): string | null {
+    const tree = worktreeStamp(dir);
+    const layout = plainLayout(dir);
+    if (tree === null || tree === "gone" || !layout || layout === "gone") return tree === "gone" ? "gone" : null;
+    try {
+      const known = this.driverCommands.get(realpathSync(layout.gitDir));
+      if (!known || existsSync(join(layout.commonDir, "reftable"))) return null;
+      const refs = ["refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", "packed-refs"].map((p) => join(layout.commonDir, p));
+      const origin = /^ref: (refs\/[^\r\n]+)/.exec(existsSync(refs[2]!) ? readFileSync(refs[2]!, "utf8") : "")?.[1];
+      if (origin) refs.push(join(layout.commonDir, origin));
+      const setup = [join(layout.commonDir, "config"), join(layout.gitDir, "config.worktree"), ...globalConfigs(), join(layout.commonDir, "info/attributes"), join(layout.commonDir, "info/grafts"), join(layout.commonDir, "shallow"), join(layout.commonDir, "refs/replace"), xdgAttributes(), "/etc/gitattributes"];
+      const drivers = driverStamp(known.commands, layout.top, this.execPath);
+      if (drivers === null) return null;
+      return [tree, origin ?? "", ...refs.map(statStamp), ...setup.map(statStamp), drivers].join("\0");
+    } catch { return null; }
   }
 
   private dirtyOf(cwd: string, layout: Layout, ttl = DIRTY_TTL_MS): Promise<{ dirty: boolean | null; files?: { count: number; first: string[] }; error?: string }> {
@@ -577,6 +791,7 @@ export class WorktreeInsights {
     this.observations.delete(key);
     this.dirtyLifetimes.delete(resolve(dir));
     if (!layout) return;
+    try { this.driverCommands.delete(realpathSync(layout.gitDir)); } catch { this.driverCommands.delete(layout.gitDir); }
     for (const k of [...this.observations.keys()]) if (k === `dirty:${layout.gitDir}` || k.startsWith(`head:${layout.gitDir}:`)) this.observations.delete(k);
   }
 
@@ -637,7 +852,7 @@ export class WorktreeInsights {
   /** Drop what hasn't been asked for in an hour, then the oldest past MAX_CACHED. */
   private prune(): void {
     const cutoff = this.now() - UNSEEN_MS;
-    for (const m of [this.sessions, this.observations, this.dirtyLifetimes] as Map<string, { seenAt: number }>[]) {
+    for (const m of [this.sessions, this.observations, this.dirtyLifetimes, this.driverCommands] as Map<string, { seenAt: number }>[]) {
       for (const [k, v] of m) if (v.seenAt < cutoff) m.delete(k);
       while (m.size > MAX_CACHED) {
         const oldest = [...m].reduce<[string, { seenAt: number }] | undefined>((a, b) => !a || b[1].seenAt < a[1].seenAt ? b : a, undefined)?.[0];

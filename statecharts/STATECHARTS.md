@@ -158,7 +158,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-009 | Attach re-derives host state | host | attach hooks (titles, web marks, stat); `wroteAt`/`conflict` are baton data from birth (C18) |
 | F-010 | Working dirs come from this host | host | host rule |
 | F-011 | Links must be re-issued after a move | host | host link stores are never portable |
-| F-012 | Commits: the hourly committer | statechart | `residence.commits`: `dirty` arms `commit/look` every 1 min; `commit-every` since `head-at` → `committing` |
+| F-012 | Commits: the hourly committer | statechart | `residence.commits`: `clean`/`dirty` arm `commit/look` at `head-at` + `commit-every` (≥ 1 min away, `look-at`; a commit answered there re-arms it), so no look finds nothing due; due → `committing` (`residence_test`) |
 | F-013 | Commit Now | statechart | `residence` `commit/now` (any state) → `committing`; answer sentences from the effect result |
 | F-014 | Push and remote | statechart | `residence` `push-pending` retried at a due look from `clean`; remote route plain data |
 | F-015 | Graceful-shutdown commit | host | shutdown sequence; the commit result lands as `effect/done commit` |

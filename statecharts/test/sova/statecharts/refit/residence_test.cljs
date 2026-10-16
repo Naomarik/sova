@@ -85,3 +85,35 @@
         a (answer! e r t0 (+ t0 5))]
     (is (= [sid] (keys (:snapshots a))) "the answer saves the residence alone")
     (is (= (+ t0 hour) (core/next-due-at e)))))
+
+(deftest a-clean-org-with-an-old-head-looks-once-an-hour
+  ;; nothing to commit: HEAD stays old, so the hour counts from that attempt, not from HEAD
+  (let [old (- t0 (* 2 hour))
+        e   (created old)
+        t1  (+ t0 5 60000)
+        r   (core/fire-due! e t1)
+        _   (is (in? e :committing) "an old HEAD: the first look commits within a minute")
+        t2  (+ t1 10)
+        _   (core/send! e sid :effect/done {:key (commit-key r) :by "system" :result {:committed false :head-at old}} {:now t2})]
+    (is (in? e :clean))
+    (is (= (+ t2 hour) (core/next-due-at e)) "the next look an hour after the attempt")
+    (is (every? nothing-written? (minutes e (+ t2 60000) (+ t2 hour))) "no attempt, step or snapshot for 59 minutes")
+    (testing "a write still commits within a minute (dirty counts from HEAD)"
+      (let [t3 (+ t2 600000)]
+        (core/send! e sid :store/written {:by "system"} {:now t3})
+        (is (in? e :dirty))
+        (is (= (+ t3 60000) (core/next-due-at e)))
+        (core/fire-due! e (+ t3 60000))
+        (is (in? e :committing))))
+    (testing "Commit Now that commits nothing also counts as the attempt"
+      (let [e2 (created old)
+            t4 (+ t0 1000)
+            n  (core/send! e2 sid :commit/now {:by "operator"} {:now t4})]
+        (core/send! e2 sid :effect/done {:key (commit-key n) :by "system" :result {:committed false :head-at old}} {:now (+ t4 10)})
+        (is (in? e2 :clean))
+        (is (= (+ t4 10 hour) (core/next-due-at e2)))))
+    (testing "a commit that committed something counts from its HEAD"
+      (let [e3 (created old)
+            r3 (core/fire-due! e3 t1)]
+        (core/send! e3 sid :effect/done {:key (commit-key r3) :by "system" :result {:committed true :head-at t1}} {:now t2})
+        (is (= (+ t1 hour) (core/next-due-at e3)))))))

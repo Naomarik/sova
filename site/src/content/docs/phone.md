@@ -18,7 +18,7 @@ Phone notifications need one of those HTTPS addresses. See [Needs you](/docs/nee
 
 ## Let your phone in
 
-Every browser needs the install's access token once. Your phone doesn't have to see that token: an unlocked browser makes a **pairing code** that the phone trades for its own sign-in.
+A browser on the machine Sova runs on, opening Sova's own address, just gets in. Every other browser needs the install's access token once. Your phone doesn't have to see that token: an unlocked browser makes a **pairing code** that the phone trades for its own sign-in.
 
 1. In Sova on your computer, open the Overview and choose **Access**.
 2. Press **Make a Code**. The code expires in 5 minutes and works once.

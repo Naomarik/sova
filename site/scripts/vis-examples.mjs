@@ -24,7 +24,7 @@ const PREFIX = SCOPE + SCOPE;
 /**
  * The Views that lay out for their pane's width measure it in the browser (a ResizeObserver, in
  * onMount), which never runs on the server. Here they are handed the width render.tsx is drawing
- * at instead: flow's and sequence's shared hook, and chart's and matrix's starting width. Each
+ * at instead: flow's and sequence's shared hook, and chart's, matrix's and steps' starting width. Each
  * replacement must match exactly once, so a change to those lines stops the generator rather than
  * drawing at the wrong width.
  */
@@ -36,6 +36,7 @@ const atWidth = {
   ],
   "src/vis/kinds/chart/View.tsx": [/createSignal\(560\)/, `createSignal(${WIDTH_FROM_RENDER})`],
   "src/vis/kinds/matrix/View.tsx": [/createSignal\(560\)/, `createSignal(${WIDTH_FROM_RENDER})`],
+  "src/vis/kinds/steps/View.tsx": [/createSignal\(560\)/, `createSignal(${WIDTH_FROM_RENDER})`],
 };
 const measuredWidth = {
   name: "vis-examples-width",

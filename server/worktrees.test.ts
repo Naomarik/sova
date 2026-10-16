@@ -15,7 +15,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 const sessionsDir = join(agentDir, "sessions", "--tmp-worktrees-test--");
 mkdirSync(sessionsDir, { recursive: true });
 
-const { WorktreeInsights, execGit, pickBase, sumNumstat, worktreeStamp } = await import("./worktrees");
+const { WorktreeInsights, execGit, pickBase, sumNumstat, worktreeStamp, driverStamp, shellWords } = await import("./worktrees");
 type Runner = typeof execGit;
 
 const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
@@ -680,7 +680,7 @@ test("unsupported dependency configuration is conservatively read again", async 
   assert.equal(git(r, "config", "--get", "merge.fixture.driver"), "false", "Git accepts the deprecated subsection syntax");
   await ins.treeStatus(wt);
   await ins.treeStatus(wt);
-  assert.equal(heads, 4, "external merge drivers in either subsection syntax are unsupported dependencies");
+  assert.equal(heads, 3, "a merge driver, in either subsection syntax, ends reuse once (the configuration moved) and turns off nothing");
 });
 
 test("settled observations are capped and unseen values expire without stranding flights", async () => {
@@ -789,4 +789,123 @@ test("worktreeStamp: an untracked file leaves it; add, commit and a branch switc
   assert.equal(worktreeStamp(plain), null);
   git(r, "worktree", "remove", "--force", wt);
   assert.equal(worktreeStamp(wt), "gone");
+});
+
+/** A repository whose a.txt conflicts between master and `name`, merged through driver `drv`. */
+function driverRepo(name: string, command: (dir: string) => string): { r: string; wt: string; driver: string } {
+  const r = repo(name);
+  writeFileSync(join(r, ".gitattributes"), "a.txt merge=drv\n");
+  git(r, "add", ".gitattributes");
+  git(r, "commit", "-q", "-m", "attributes");
+  const driver = join(root, `${name}-driver.sh`);
+  writeFileSync(driver, "exit 1\n");
+  git(r, "config", "merge.drv.driver", command(driver));
+  const wt = join(root, `${name}-wt`);
+  git(r, "worktree", "add", "-q", "-b", name, wt);
+  writeFileSync(join(wt, "a.txt"), "feature\n");
+  git(wt, "commit", "-q", "-am", "feature");
+  writeFileSync(join(r, "a.txt"), "master\n");
+  git(r, "commit", "-q", "-am", "master");
+  return { r, wt, driver };
+}
+
+test("merge drivers (§app/idle-git-cache): an unchanged branch's repeated check runs no Git; the driver's code alone reads it again", async () => {
+  const { r, wt, driver } = driverRepo("drivers-reuse", (d) => `sh "${d}" %O %A %B`);
+  let now = 1_000_000;
+  const calls: string[][] = [];
+  const ins = new WorktreeInsights({ now: () => now, run: (args, opts) => { calls.push([...args]); return execGit(args, opts); } });
+  const first = await ins.treeStatus(wt);
+  assert.equal(first?.conflicts, 1, "the driver exits 1: a conflict");
+  calls.length = 0;
+  now += 1_000;
+  assert.deepEqual(await ins.treeStatus(wt), first);
+  assert.deepEqual(calls, [], "nothing moved: no Git at all (the dirty reading stands its 10 s)");
+  now += 20_000;
+  assert.deepEqual(await ins.treeStatus(wt), first);
+  assert.deepEqual(calls.map((a) => a[0]), ["status"], "past its lifetime, only the dirty reading");
+
+  writeFileSync(driver, "exit 0\n"); // keeps master's side: the branch adds nothing
+  calls.length = 0;
+  const changed = await ins.treeStatus(wt);
+  assert.equal(changed?.merged, "content", "a change to the driver's code alone changes the answer");
+  assert.equal(changed?.conflicts, undefined);
+  assert.ok(calls.some((a) => a[0] === "merge-tree"));
+  calls.length = 0;
+  await ins.treeStatus(wt);
+  assert.ok(!calls.some((a) => a[0] === "merge-tree"), "and is reused again");
+
+  git(r, "config", "merge.drv.driver", "false %A");
+  assert.equal((await ins.treeStatus(wt))?.conflicts, 1, "a changed driver command reads it again");
+  git(r, "config", "merge.drv.driver", `sh "${driver}" %O %A %B`);
+  assert.equal((await ins.treeStatus(wt))?.merged, "content");
+});
+
+test("merge drivers: a relative driver is each worktree's own copy, and a working-tree .gitattributes counts (Git reads both from the worktree)", async () => {
+  const { wt } = driverRepo("drivers-relative", () => "sh drv.sh %O %A %B");
+  const calls: string[][] = [];
+  const ins = new WorktreeInsights({ run: (args, opts) => { calls.push([...args]); return execGit(args, opts); } });
+  writeFileSync(join(wt, "drv.sh"), "exit 1\n");
+  assert.equal((await ins.treeStatus(wt))?.conflicts, 1);
+  writeFileSync(join(wt, "drv.sh"), "exit 0\n");
+  assert.equal((await ins.treeStatus(wt))?.merged, "content", "the worktree's own driver copy, edited by hand");
+  writeFileSync(join(wt, ".gitattributes"), "\n");
+  assert.equal((await ins.treeStatus(wt))?.conflicts, 1, "attributes edited in the working tree: Git's own line merge");
+  rmSync(join(wt, ".gitattributes"));
+  assert.equal((await ins.treeStatus(wt))?.conflicts, 1, "attributes deleted in the working tree: still Git's line merge");
+  mkdirSync(join(wt, "sub"));
+  writeFileSync(join(wt, "sub", ".gitattributes"), "* merge=drv\n");
+  calls.length = 0;
+  assert.equal((await ins.treeStatus(wt))?.conflicts, 1, "attributes in a folder no changed path is in");
+  assert.ok(!calls.some((a) => a[0] === "merge-tree"), "can't change the answer, and don't read it again");
+  writeFileSync(join(wt, ".gitattributes"), "a.txt merge=drv\n");
+  assert.equal((await ins.treeStatus(wt))?.merged, "content");
+});
+
+test("driverStamp: a script and the files it imports; unreadable commands and unpinnable imports are null", () => {
+  const dir = join(root, "driver-stamp");
+  mkdirSync(join(dir, "lib"), { recursive: true });
+  writeFileSync(join(dir, "drv.mjs"), 'import { a } from "./lib/a.mjs";\nimport fs from "node:fs";\nexport * from "./b.mjs";\n');
+  writeFileSync(join(dir, "lib", "a.mjs"), "export const a = 1;\n");
+  writeFileSync(join(dir, "b.mjs"), "export const b = 1;\n");
+  const cmd = ["node drv.mjs merge --base %O --ours %A"];
+  const first = driverStamp(cmd, dir, null);
+  assert.ok(first);
+  assert.equal(driverStamp(cmd, dir, null), first);
+  writeFileSync(join(dir, "lib", "a.mjs"), "export const a = 2;\n");
+  const imported = driverStamp(cmd, dir, null);
+  assert.notEqual(imported, first, "an imported file's change moves it");
+  writeFileSync(join(dir, "b.mjs"), "export const b = 2;\n");
+  assert.notEqual(driverStamp(cmd, dir, null), imported, "a re-exported file's too");
+  assert.notEqual(driverStamp([`node "${join(dir, "drv.mjs")}" x`], root, null), null, "an absolute quoted path");
+  assert.equal(driverStamp([], dir, null), "", "no drivers");
+  for (const bad of ["node $HOME/x.mjs", "node drv.mjs | tee x", "FOO=1 node drv.mjs", 'node "unterminated', "node *.mjs", "node `x`"]) assert.equal(driverStamp([bad], dir, null), null, bad);
+  writeFileSync(join(dir, "pkg.mjs"), 'import x from "some-package";\n');
+  assert.equal(driverStamp(["node pkg.mjs"], dir, null), null, "a package import can't be pinned");
+  writeFileSync(join(dir, "dyn.mjs"), "const m = await import(name);\n");
+  assert.equal(driverStamp(["node dyn.mjs"], dir, null), null, "nor a dynamic one");
+  assert.deepEqual(shellWords(`node "/a b/x.mjs" merge-claims --root . --path %P`), ["node", "/a b/x.mjs", "merge-claims", "--root", ".", "--path", "%P"]);
+});
+
+test("quietStamp: a commit, a base move, the configuration and a driver's code move it; an untracked file doesn't; null until a check found the drivers", async () => {
+  const { r, wt, driver } = driverRepo("quiet-stamp", (d) => `sh "${d}" %O %A %B`);
+  const ins = new WorktreeInsights();
+  assert.equal(ins.quietStamp(wt), null, "no check has read its drivers yet");
+  await ins.treeStatus(wt);
+  const first = ins.quietStamp(wt);
+  assert.ok(first);
+  writeFileSync(join(wt, "untracked.txt"), "x\n");
+  assert.equal(ins.quietStamp(wt), first, "uncommitted edits are the dirty reading's");
+  let last = first;
+  const moved = (why: string) => { const now = ins.quietStamp(wt); assert.ok(now && now !== last, why); last = now; };
+  writeFileSync(driver, "exit 0\n");
+  moved("the driver's code");
+  git(r, "commit", "-q", "--allow-empty", "-m", "master moves");
+  moved("the base branch");
+  git(r, "config", "core.abbrev", "9");
+  moved("the configuration");
+  git(wt, "add", "untracked.txt");
+  moved("the index");
+  git(wt, "commit", "-q", "-m", "c");
+  moved("a commit");
+  assert.equal(ins.quietStamp(join(root, "quiet-stamp-missing")), "gone");
 });

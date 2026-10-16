@@ -931,7 +931,7 @@ test("a healthy chat's watch tick runs no program: its process is read directly,
     clock += 2_000;
     await sup.tick();
   }
-  assert.deepEqual(ran, [], "a healthy chat's tick starts no program");
+  assert.deepEqual(ran.map((c) => c.join(" ")), [], "a healthy chat's tick starts no program");
   // The slow reconcile asks the manager once, then the fast look goes on.
   clock += 2_000;
   await sup.tick();
@@ -940,7 +940,7 @@ test("a healthy chat's watch tick runs no program: its process is read directly,
   ran.length = 0;
   clock += 2_000;
   await sup.tick();
-  assert.deepEqual(ran, []);
+  assert.deepEqual(ran.map((c) => c.join(" ")), []);
   assert.deepEqual(deaths, []);
 });
 

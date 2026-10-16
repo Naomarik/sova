@@ -21,7 +21,7 @@ moved back. The script installs the same `stable` default from any tag or branch
 
 To pin a version, set `SOVA_REF`:
 
-- `| SOVA_REF=v0.3.3 bash` installs that release, and a re-run with it stays there.
+- `| SOVA_REF=v0.4.0 bash` installs that release, and a re-run with it stays there.
 - `| SOVA_REF=master bash`, or any other branch, updates to that branch's latest commit on each run.
 - A commit works too, as seven or more hex digits.
 

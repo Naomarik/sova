@@ -25,7 +25,7 @@ Read each detail file when the release reaches it, every release, never from mem
 | A bad release: move `stable` back | `references/rollback.md` |
 
 ## The order
-1. Start (`references/prepare.md`): confirm the version with the user, ask them to pause the Merge round, make the release branch.
+1. Start (`references/prepare.md`): pick the version yourself (never ask the user), ask them to pause the Merge round, make the release branch.
 2. Per-release edits and the release commit (`references/prepare.md`).
    - Optional docs step (`references/docs.md`): list the Docs pages whose spec sources changed since `vPREV` and offer to update them; only on the user's yes, re-check them and give the fixes for review, one page per step. A stale page never holds the release.
 3. Pre-release checks on the release commit, then the live server restarted onto it (`references/checks.md`).
@@ -33,7 +33,6 @@ Read each detail file when the release reaches it, every release, never from mem
 5. Publish (`references/publish.md`): the atomic push, the `ls-remote` check, the GitHub release page, the site deploy, then the optional outside checks the user may choose to run.
 
 ## Ask the user first
-- The version number, at the start.
 - Pausing the Merge round for the release, and resuming it afterwards.
 - The restart of the live server onto the release commit while any session is busy.
 - **Publishing.** Every step in `references/publish.md` waits for the user's explicit word, given after the stop at step 4. That word covers the push, the release page and the site deploy of this release, nothing more.

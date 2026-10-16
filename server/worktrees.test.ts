@@ -909,3 +909,32 @@ test("quietStamp: a commit, a base move, the configuration and a driver's code m
   moved("a commit");
   assert.equal(ins.quietStamp(join(root, "quiet-stamp-missing")), "gone");
 });
+
+test("a branch with several merge bases (a criss-cross merge) is reused like any other", async () => {
+  const r = repo("criss-cross");
+  writeFileSync(join(r, ".gitattributes"), "*.md merge=text\n");
+  git(r, "add", ".");
+  git(r, "commit", "-q", "-m", "attributes");
+  const wt = join(root, "criss-cross-wt");
+  git(r, "worktree", "add", "-q", "-b", "feat-cross", wt);
+  writeFileSync(join(r, "m.txt"), "m\n");
+  git(r, "add", ".");
+  git(r, "commit", "-q", "-m", "m1");
+  writeFileSync(join(wt, "f.txt"), "f\n");
+  git(wt, "add", ".");
+  git(wt, "commit", "-q", "-m", "f1");
+  const [m1, f1] = [git(r, "rev-parse", "HEAD"), git(wt, "rev-parse", "HEAD")];
+  git(r, "merge", "-q", "--no-edit", f1);
+  git(wt, "merge", "-q", "--no-edit", m1);
+  writeFileSync(join(wt, "g.txt"), "g\n");
+  git(wt, "add", ".");
+  git(wt, "commit", "-q", "-m", "f2");
+  assert.equal(git(wt, "merge-base", "--all", "master", "HEAD").split("\n").length, 2, "the fixture has two merge bases");
+  const calls: string[][] = [];
+  const ins = new WorktreeInsights({ run: (args, opts) => { calls.push([...args]); return execGit(args, opts); } });
+  const first = await ins.treeStatus(wt);
+  assert.equal(first?.merged, "no");
+  calls.length = 0;
+  assert.deepEqual(await ins.treeStatus(wt), first);
+  assert.deepEqual(calls, [], "no Git on the second check");
+});

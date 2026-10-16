@@ -74,3 +74,14 @@
         (answer! e2 r (+ t0 1800000) (+ t0 1000))
         (is (= (+ t0 1800000 hour) (core/next-due-at e2)) "re-armed at HEAD + the hour")
         (is (every? nothing-written? (minutes e2 (+ t0 60000) (+ t0 1800000 hour))))))))
+
+(deftest re-arming-the-look-rewrites-no-other-snapshot
+  ;; the create's commit is answered after git committed the org's snapshot: re-arming the residence's
+  ;; look (a cancel and a send) must leave the org's snapshot as committed (a cancel touches only its queue)
+  (let [e (eng)
+        _ (core/start! e "org/o1" "org" {:id "o1" :name "Acme" :slug "acme" :created-at t0} t0)
+        r (core/start! e sid "residence" {:org-id "o1" :org-name "Acme" :host-id "h_me" :host-name "me" :mode "create" :commit-every-ms hour} t0)
+        _ (is (= #{"org/o1" sid} (set (keys (:snapshots r)))) "the create holds the org: both saved")
+        a (answer! e r t0 (+ t0 5))]
+    (is (= [sid] (keys (:snapshots a))) "the answer saves the residence alone")
+    (is (= (+ t0 hour) (core/next-due-at e)))))

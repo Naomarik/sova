@@ -32,7 +32,7 @@ import {
   selfLabel,
   sessionsHiddenBy,
   setMeshState,
-  staleBuildWords,
+  STALE_BUILD_NOTE,
   type HelloChange,
   type MeshCandidate,
   type MeshLoginEntry,
@@ -746,12 +746,11 @@ function LoginList(props: { tick: number; onConflicts(n: number): void }) {
 /**
  * The stale-tab banner: the host answering this tab is not the one that loaded it, or serves a
  * different Sova. A different protocol can't be worked around, so it has no Dismiss; another build
- * or a new host is information, and the tab keeps working. Every tab shows it, mesh on or off; only
- * the build change's words depend on the mesh (staleBuildWords).
+ * or a new host is information, and the tab keeps working. Every tab shows it, mesh on or off, in
+ * the same words.
  */
-export function StaleTabBanner(props: { change: HelloChange; mesh: boolean; onDismiss(): void }) {
+export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }) {
   const c = () => props.change;
-  const words = () => staleBuildWords(props.mesh);
   const reload = (
     <button type="button" class="button button-sm button-primary" onClick={() => location.reload()}>
       Reload Tab
@@ -772,7 +771,7 @@ export function StaleTabBanner(props: { change: HelloChange; mesh: boolean; onDi
       >
         <Banner
           tone="info"
-          title={c().host ? `You're now on ${c().host!.to}.` : words().title}
+          title={c().host ? `You're now on ${c().host!.to}.` : "A newer Sova is available."}
           body={
             <>
               <Show when={c().host}>
@@ -783,7 +782,7 @@ export function StaleTabBanner(props: { change: HelloChange; mesh: boolean; onDi
                   </>
                 )}
               </Show>
-              <Show when={c().build}>{words().body}</Show>
+              <Show when={c().build}>{STALE_BUILD_NOTE}</Show>
             </>
           }
           action={

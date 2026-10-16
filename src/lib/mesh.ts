@@ -426,17 +426,9 @@ export interface HelloBaseline {
   build?: string;
 }
 
-/** The stale-tab banner's words for another build. Different, not newer: after a failover the next
-    host may well run an older build than the one that served this tab. */
-export const STALE_BUILD_NOTE = "This host serves a different build of this page. Reload when you're ready.";
-
-/** The banner's title and body for a build change on the same host: the mesh's words with it on,
-    plain ones without it (no host to name, and the only cause is that this Sova was updated). */
-export function staleBuildWords(mesh: boolean): { title: string; body: string } {
-  return mesh
-    ? { title: "A newer Sova is available.", body: STALE_BUILD_NOTE }
-    : { title: "Sova was updated.", body: "Reload when you're ready." };
-}
+/** The stale-tab banner's body for another build, under the title "A newer Sova is available.",
+    mesh on or off. */
+export const STALE_BUILD_NOTE = "Reload when you're ready.";
 
 /** How the host answering now differs from the one this tab was loaded from. */
 export interface HelloChange {

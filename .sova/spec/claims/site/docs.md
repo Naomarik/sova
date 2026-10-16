@@ -175,4 +175,5 @@ Keeping Sova current, in Setup after Install: running the install command again 
 `stable` tag moves, pinning with `SOVA_REF`, then Settings → General's Updates · this machine: what
 runs and the kind of copy, the source (stable, master or a branch), checking and what a check finds,
 the dot on Settings, upgrading with the previous version kept until the new one answers and put back
-when it doesn't, Upgrade automatically, the reload note, and that only the operator can update.
+when it doesn't, Upgrade automatically, the banner a page open across an upgrade
+shows ("Sova was updated.", mesh or not), and that only the operator can update.

@@ -1361,17 +1361,20 @@
       "evidence": "verified",
       "requires": [
         "§app/updates",
+        "§mesh.front-door/stale-tab",
         "§app/chat-processes"
       ],
       "code": [
-        "src/lib/updates.ts",
         "src/App.tsx",
-        "src/app.css",
-        "src/lib/updates-draft.test.ts"
+        "src/lib/mesh.ts",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.test.ts",
+        "src/lib/updates.ts",
+        "src/app.css"
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T15:54Z"
+        "at": "2026-10-16T04:43Z"
       }
     },
     "§app.updates/running": {
@@ -4181,8 +4184,14 @@
         "src/App.tsx",
         "src/lib/mesh.ts",
         "server/mesh/hello.ts",
-        "src/lib/socket.ts"
-      ]
+        "src/lib/socket.ts",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-16T04:43Z"
+      }
     },
     "§mesh/front-door": {
       "kind": "surface",
@@ -18728,7 +18737,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/updates.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-16T04:43Z"
+      }
     },
     "§site.docs/vis": {
       "kind": "behavior",

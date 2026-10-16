@@ -166,8 +166,18 @@ readable like any gated route. The daily check and Upgrade automatically are the
 
 ## §app.updates/reload-note — "Sova was updated"
 
-A page that was open across an upgrade notices it when its sockets reconnect (or at its next
-read, every 10 minutes): the commit the server started on, as `GET /api/updates` reports it, differs
-from the one the page loaded with. It then shows a small note,
-"Sova was updated · Reload", whose **Reload** button reloads the page; the note stays until then.
-Chats move to the new code when they're idle, as after any restart (§app/chat-processes).
+Every Sova page learns that Sova changed under it in one way, with or without the mesh: the
+stale-tab banner across the top of the page (§mesh.front-door/stale-tab). The page asks
+`GET /api/mesh/hello` once at load and keeps the build it reports (a fingerprint of the page the
+server serves) as its baseline, then asks again on every socket reconnect and whenever the tab comes
+back into view. When the build differs from the baseline, as after an upgrade or a rebuild of the
+page, the banner shows. A server that restarts on other server code but serves the same page shows
+nothing, and a server that reports no build (a dev server behind Vite) never shows it.
+
+Without the mesh the banner says "Sova was updated." and "Reload when you're ready.", with
+**Reload Tab**, which reloads the page, and **Dismiss**, which hides it until the next change. With
+the mesh on it keeps the mesh's words for a build change ("A newer Sova is available." and "This
+host serves a different build of this page. Reload when you're ready."). A different wire protocol
+shows the banner's warning instead, with Reload Tab and no Dismiss. There is no other notice: no
+note in a corner of the page. Chats move to the new code when they're idle, as after any restart
+(§app/chat-processes).

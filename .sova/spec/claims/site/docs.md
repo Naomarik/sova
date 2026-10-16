@@ -176,4 +176,4 @@ Keeping Sova current, in Setup after Install: running the install command again 
 runs and the kind of copy, the source (stable, master or a branch), checking and what a check finds,
 the dot on Settings, upgrading with the previous version kept until the new one answers and put back
 when it doesn't, Upgrade automatically, the banner a page open across an upgrade
-shows ("Sova was updated.", mesh or not), and that only the operator can update.
+shows ("A newer Sova is available.", mesh or not), and that only the operator can update.

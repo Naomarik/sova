@@ -164,7 +164,7 @@ header are refused with 403 ("Updates are the operator's: open Settings → Gene
 reaches them, and a mesh peer needs the `full` grant even to read them (§mesh.peers/grants). `GET /api/updates` (what runs, what the last check found, the job's progress) is
 readable like any gated route. The daily check and Upgrade automatically are the server's own.
 
-## §app.updates/reload-note — "Sova was updated"
+## §app.updates/reload-note — "A newer Sova is available"
 
 Every Sova page learns that Sova changed under it in one way, with or without the mesh: the
 stale-tab banner across the top of the page (§mesh.front-door/stale-tab). The page asks
@@ -174,10 +174,9 @@ back into view. When the build differs from the baseline, as after an upgrade or
 page, the banner shows. A server that restarts on other server code but serves the same page shows
 nothing, and a server that reports no build (a dev server behind Vite) never shows it.
 
-Without the mesh the banner says "Sova was updated." and "Reload when you're ready.", with
-**Reload Tab**, which reloads the page, and **Dismiss**, which hides it until the next change. With
-the mesh on it keeps the mesh's words for a build change ("A newer Sova is available." and "This
-host serves a different build of this page. Reload when you're ready."). A different wire protocol
+The banner says "A newer Sova is available." and "Reload when you're ready.", the same words with
+the mesh on or off, with **Reload Tab**, which reloads the page, and **Dismiss**, which hides it
+until the next change. A different wire protocol
 shows the banner's warning instead, with Reload Tab and no Dismiss. There is no other notice: no
 note in a corner of the page. Chats move to the new code when they're idle, as after any restart
 (§app/chat-processes).

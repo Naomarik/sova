@@ -5,8 +5,8 @@ import { socketReconnects } from "./socket";
 
 /**
  * This machine's updates as the page knows them: one copy for the Settings section,
- * the dot on the Settings buttons and the "Sova was updated" note
- *. Read at load, every 10 minutes while the page is visible, after every
+ * the dot on the Settings buttons. (A page learns that Sova changed under it from the stale-tab
+ * banner, App.tsx's hello check, not from here.) Read at load, every 10 minutes while the page is visible, after every
  * reconnect, and every 1.5 s while a check or an upgrade runs.
  */
 
@@ -17,24 +17,10 @@ export const setUpdatesState = (s: UpdatesState) => setState(() => s);
 /** The last check found an update this copy can install: the dot on Settings. */
 export const updateAvailable = (): boolean => !!state()?.available;
 
-/** The commit the server ran when this page loaded. */
-let loadedHead: string | null | undefined;
-const [updated, setUpdated] = createSignal(false);
-/** The server now runs another commit than when this page loaded: "Sova was updated · Reload". */
-export const updatedSinceLoad = updated;
-
-/** Whether the server's running commit differs from the one this page loaded with. Pure. */
-export function headMoved(loaded: string | null | undefined, now: string | null | undefined): boolean {
-  return !!loaded && !!now && loaded !== now;
-}
-
 export async function refreshUpdates(): Promise<UpdatesState | null> {
   try {
     const s = await getUpdates();
     setUpdatesState(s);
-    const head = s.running.startedHead;
-    if (loadedHead === undefined) loadedHead = head;
-    else if (headMoved(loadedHead, head)) setUpdated(true);
     return s;
   } catch {
     return null;

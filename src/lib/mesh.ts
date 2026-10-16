@@ -430,6 +430,14 @@ export interface HelloBaseline {
     host may well run an older build than the one that served this tab. */
 export const STALE_BUILD_NOTE = "This host serves a different build of this page. Reload when you're ready.";
 
+/** The banner's title and body for a build change on the same host: the mesh's words with it on,
+    plain ones without it (no host to name, and the only cause is that this Sova was updated). */
+export function staleBuildWords(mesh: boolean): { title: string; body: string } {
+  return mesh
+    ? { title: "A newer Sova is available.", body: STALE_BUILD_NOTE }
+    : { title: "Sova was updated.", body: "Reload when you're ready." };
+}
+
 /** How the host answering now differs from the one this tab was loaded from. */
 export interface HelloChange {
   /** Another wire contract: this tab can't be trusted to talk to it. */
@@ -541,6 +549,26 @@ export function helloStep(
   if (pending?.id !== now.id) return { change: null, pending: { id: now.id, at: t } };
   if (t - pending.at < HOST_CONFIRM_MS) return { change: null, pending };
   return { change, pending: null };
+}
+
+/** A hello's build and protocol as one value: the banner rises for a build or protocol only when
+    this differs from what it last rose for, so a Dismiss holds until Sova changes again. */
+export const helloNews = (h: HelloBaseline): string => `${h.protocol}\n${h.build ?? ""}`;
+
+/**
+ * One hello as the tab weighs it. With the mesh on, helloStep. With it off there is no front door,
+ * so no other host can answer: the hello's host is taken as the baseline's own, and only a build or
+ * protocol change can come of it, never a host change (nor a pending one).
+ */
+export function weighHello(
+  mesh: boolean,
+  base: HelloBaseline,
+  now: HelloBaseline,
+  pending: PendingHost | null,
+  t: number,
+): { change: HelloChange | null; pending: PendingHost | null } {
+  if (mesh) return helloStep(base, now, pending, t);
+  return { change: helloChange(base, { ...now, id: base.id, label: base.label }), pending: null };
 }
 
 // ---- the front door's hosts: which are in, which the user left out ------------------------------

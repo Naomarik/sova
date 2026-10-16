@@ -727,9 +727,13 @@ export class WorktreeInsights {
     const commands = config.code === 0 ? config.stdout.split("\0").filter(Boolean).map((e) => (e.includes("\n") ? e.slice(e.indexOf("\n") + 1) : "")) : [];
     this.driverCommands.set(key, { commands, seenAt: this.now() });
     const dirs = await this.contextRead(layout, `attrdirs:${layout.commonDir}:${base}:${head}`, () => historyToken(layout), async () => {
-      // Every path either side changed since the merge base, and every path the two tips differ
-      // on (a rename's both names): what a merge, its renames and numstat look attributes up for.
-      const names = await Promise.all([["--merge-base", base, head], [base, head]].map((range) => this.git(layout.top, ["diff-tree", "-r", "-z", "--name-only", "--no-renames", ...range])));
+      // Every path the head changed since each merge base (with several, the paths the bases
+      // differ on are among them), and every path the two tips differ on (a rename's both names):
+      // what a merge, its renames and numstat look attributes up for.
+      const bases = await this.git(layout.top, ["merge-base", "--all", base, head]);
+      if (bases.code !== 0 && !(bases.code === 1 && bases.stdout.trim() === "")) return null;
+      const ranges = [...bases.stdout.split("\n").filter(Boolean).map((mb) => [mb, head]), [base, head]];
+      const names = await Promise.all(ranges.map((range) => this.git(layout.top, ["diff-tree", "-r", "-z", "--name-only", "--no-renames", ...range])));
       if (names.some((r) => r.code !== 0)) return null;
       const out = new Set<string>([""]);
       for (const r of names) for (const path of r.stdout.split("\0")) {

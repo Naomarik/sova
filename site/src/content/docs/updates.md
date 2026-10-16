@@ -110,8 +110,8 @@ version that was put back is never installed again automatically; the button sti
 
 ### After an upgrade
 
-A Sova page that was open across the upgrade shows a banner at its top, "Sova was updated. Reload
-when you're ready.", with **Reload Tab** and **Dismiss**. It shows when the page itself changed, and
+A Sova page that was open across the upgrade shows a banner at its top, "A newer Sova is available.
+Reload when you're ready.", with **Reload Tab** and **Dismiss**. It shows when the page itself changed, and
 whether or not you use a mesh.
 Each chat moves to the new code at its next quiet moment.
 

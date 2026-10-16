@@ -1384,7 +1384,7 @@ export function App() {
         <ResourceMonitor onClose={closeMonitor} titleOf={(path) => list()?.find((x) => x.path === path)?.title} />
       </Show>
       <Show when={staleChange()}>
-        {(change) => <StaleTabBanner change={change()} mesh={meshOn()} onDismiss={() => setStaleChange(null)} />}
+        {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}
       </Show>
       <GlobalRegions />
     </>

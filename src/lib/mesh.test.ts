@@ -46,7 +46,6 @@ import {
   firstBaseline,
   helloStep,
   helloNews,
-  staleBuildWords,
   weighHello,
   HOST_CONFIRM_MS,
   moveItem,
@@ -504,9 +503,8 @@ test("the front door's left-out hosts stay listed, and a switch puts one in or l
   assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["a"]), ["b", "a"]);
 });
 
-test("the stale-tab banner calls another build different, never newer: the next host may run an older one", () => {
-  assert.match(STALE_BUILD_NOTE, /a different build of this page/);
-  assert.doesNotMatch(STALE_BUILD_NOTE, /newer|older/);
+test("the stale-tab banner's body for another build is one sentence, mesh on or off", () => {
+  assert.equal(STALE_BUILD_NOTE, "Reload when you're ready.");
 });
 
 test("without the mesh a hello never moves the tab: only a build or protocol change comes of it", () => {
@@ -534,7 +532,3 @@ test("the same build news is raised once: a dismissed banner waits for the next 
   assert.notEqual(helloNews(a), helloNews({ ...a, protocol: "p2" }));
 });
 
-test("a build change's words: plain without the mesh, the host's with it", () => {
-  assert.deepEqual(staleBuildWords(false), { title: "Sova was updated.", body: "Reload when you're ready." });
-  assert.deepEqual(staleBuildWords(true), { title: "A newer Sova is available.", body: STALE_BUILD_NOTE });
-});

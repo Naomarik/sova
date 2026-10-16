@@ -84,6 +84,19 @@ test("a linked worktree with commits ahead is unmerged, with its counts", async 
   ]);
 });
 
+test("a change and its revert still count as commits ahead; a branch at its base counts none (§chat.changes/entry)", async () => {
+  const r = repo("revert");
+  const wt = feature(r, "feat-rv", ["x"]);
+  git(wt, "revert", "--no-edit", "HEAD");
+  const t = await treeOf(new WorktreeInsights(), session(wt));
+  assert.equal(t.ahead, 2);
+  assert.equal(t.merged === "ancestor", false);
+  const r2 = repo("empty-branch");
+  const empty = join(root, "empty-branch-wt");
+  git(r2, "worktree", "add", "-q", "-b", "feat-empty", empty);
+  assert.equal((await treeOf(new WorktreeInsights(), session(empty))).ahead, 0);
+});
+
 test("a fast-forward merged branch is an ancestor of the base", async () => {
   const r = repo("ff");
   const wt = feature(r, "feat-ff", ["x"]);

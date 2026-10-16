@@ -4249,6 +4249,9 @@ export interface WorktreeReadiness {
   dirtyFiles?: string[];
   /** Files a trial merge into the base conflicts on. Absent when none or unknown. */
   conflicts?: number;
+  /** Readable, unmerged, and no commit of its own past its base (what "no commits yet" says,
+      whatever the state): the row has no Review Changes (§chat.changes/entry). Absent otherwise. */
+  noCommits?: true;
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */

@@ -39,8 +39,9 @@ After a tool call that brings new changed files, the agent gets a short **`[spec
 that tool result. It says how many changed files the spec covers and how many no claim covers yet,
 and names the new ones. Read-only tools don't trigger it.
 
-If the change also alters a claim the task didn't start from, the agent asks you in its plan,
-in one question: "This also changes {claim}: {what}. OK?"
+If the change contradicts a claim that existed before the task, or changes what a user sees beyond
+it, the agent updates that claim in the task's draft without asking: your go-ahead for the task
+covers it. Its reply lists each one as "Also updates {claim}: {what}".
 
 ## With align on too
 
@@ -63,7 +64,7 @@ When the work is done, the agent checks each promise it changed against what it 
 what it checked, and promotes the drafts it verified. The session promotes its own drafts.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,
-and replies carry no required spec lines.
+and the "Also updates" line is the only spec line a reply carries; nothing checks it.
 
 The tools check structure: that a claim exists, maps to files and is labelled. No check proves a
 claim is true. That is still a reading of the code.
@@ -84,7 +85,10 @@ the same guide and a short note:
 - its brief is its go-ahead;
 - it works in the draft its brief names, or says which one it started;
 - it doesn't promote or commit unless its brief says so, because the parent promotes;
-- it puts anything it would flag into one question in its final report.
+- its final report lists each claim it updated that existed before the task.
+
+When a worker that wrote code finishes, its summary carries one line naming the claims its changes
+landed in, and the changed files no claim covers.
 
 A worker gets the modes its parent has when it starts, so turning spec on later doesn't reach a
 worker that's already running. A team's monitor gets no guide. A worker that runs on its worktree's
@@ -92,9 +96,10 @@ own agent folder always has spec on.
 
 ## Project coding sessions
 
-A project's coding sessions start in the mode set on its project page. **Automatic**, the default,
-turns spec on when the project has `.sova/spec/manifest.json` when the session starts. The project
-overseer can't turn spec off while the project's setting has it on.
+A project has no coding-mode setting of its own: its coding sessions start in this computer's
+default mode, the one **Save as default** in a chat's mode menu sets, and the project page names
+it. An Overseer can start or switch a coding session with spec on or off, and in a project with a
+spec it's told to keep spec on unless you say otherwise.
 
 ## A spec review
 

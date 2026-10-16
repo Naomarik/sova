@@ -26,8 +26,28 @@ Each alignment has an id (`al_1`, `al_2`…), a title and a one-line summary of 
 - **Questions** (`q1`, `q2`…): what it needs you to decide. A question has a topic, the ask,
   optional context, optional options lettered a, b, c…, each with its trade-off, and a
   **recommendation** with its reason.
+- **Technical notes** (`t1`, `t2`…): the files, code and technical detail that a plan written for
+  someone who doesn't read code leaves out of the other fields.
 
 Ids are never reused within an alignment, so "q3" keeps meaning the same question.
+
+## Settings → Alignment
+
+How the agent writes alignments is set in **Settings → Alignment**:
+
+- **Writing style.** **Default** keeps files, code and technical trade-offs in the plan.
+  **Simplified** uses short sentences in everyday words and fewer items. **Project manager**
+  describes only screens, wording and behaviour, with no code; it still asks a technical choice
+  you'd notice (speed, cost, data kept or lost) as a product question, and puts the technical
+  detail in the technical notes. A change reaches open chats at their next message.
+- **Visuals.** With **Draw when it helps** on, the agent can draw a wireframe or a flow on the
+  card when a picture explains faster than words, at most 3 per alignment. It applies to sessions
+  you start after saving.
+- **Review.** **Adversarial review** has a read-only reviewer check the plan and the diff of risky
+  work. See [Adversarial review](/docs/modes/align/review/).
+
+A subagent profile can set its own writing style and visuals (Settings → Subagents). pi's terminal
+UI reads the same writing style and Visuals.
 
 ## Status
 
@@ -62,8 +82,12 @@ each alignment is the full card. Earlier versions fold to one line that says wha
 "q3 decided · +q11", and open in place.
 
 The card shows the summary, then the **Approach**, then the questions. Open questions are expanded;
-decided and dropped ones fold to one line with their outcome. **Findings** and **Rejected** start
-folded at the bottom. Past Aligning, a chip shows the status.
+decided and dropped ones fold to one line with their outcome. **Technical notes** sit folded under
+the Approach; **Findings** and **Rejected** start folded at the bottom. Past Aligning, a chip shows
+the status. A visual is drawn under its question's context, or the alignment's under the summary,
+and an alignment written in a non-Default style says so in its header ("Simplified style").
+When the agent decides a request needs no alignment, it shows one line instead:
+"No alignment needed", with why.
 
 In a chat Sova runs with align on, the newest card of an open alignment can be answered directly:
 
@@ -123,8 +147,10 @@ editor while align is on.
 ## Where align isn't available
 
 - **The Overseer** is always in normal mode with no minor modes.
-- **A project's coding sessions** don't take align, because nobody answers a coding session's
-  questions. The one exception is a playbook run that you answer yourself.
+- **A project's coding sessions** start in this computer's default mode, so they have align when
+  your default does, and an Overseer can start or switch one with align. Neither Overseer ever
+  answers an alignment's questions: they're yours, and while a session waits on your answers an
+  Overseer can't turn its align off. A playbook run you answer yourself starts with align on.
 
 Workers never get align: aligning is a conversation with you. A planning worker can still write an
 alignment for the agent to import.

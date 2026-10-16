@@ -1180,7 +1180,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         project_modes: { type: "array", items: { type: "string" }, description: PROJECT_MODES_PARAM },
         title: str(`A title for the list: ${SESSION_TITLE_HINT}`),
         group: str("Group id to add it to."),
-        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode, minor modes and model apply unless you give your own. A profile that runs a playbook sends that playbook as the first message, with prompt as its text.'),
+        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode, minor modes and model apply unless you give your own.'),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();

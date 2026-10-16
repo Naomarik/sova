@@ -214,7 +214,13 @@ test("a folder the viewer won't open is refused, nothing shown; a tracked worktr
 		const byBranch = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "feat/x" });
 		assert.equal(byBranch.details.scope.cwd, wt);
 		assert.match(byBranch.content[0].text, /^Opened the changes viewer/);
+		// The branch has no commits past its base, but its folder has an uncommitted edit: the refusal points at scope dirty.
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "worktree", worktree: "feat/x" }),
+			/^Error: No changes in this comparison \(feat\/x vs .+\), so nothing was shown\. Its folder has 1 uncommitted file: scope dirty shows them\.$/,
+		);
 		mkdirSync(join(r.main, "sub"));
+		writeFileSync(join(r.main, "sub", "s.txt"), "s\n");
 		const inside = await f.call(f.ctx(r.main), { scope: "dirty", worktree: "sub" });
 		assert.equal(inside.details.scope.cwd, join(r.main, "sub"));
 	} finally {
@@ -299,8 +305,15 @@ test("refusals: bad input, no repository, a remote session; nothing is shown", a
 		} finally {
 			rmSync(empty, { recursive: true, force: true });
 		}
-		const clean = await f.call(f.ctx(r.main), { scope: "dirty" });
-		assert.match(clean.content[0].text, /There are no changes in this scope\./);
+		// No changed file: refused, no card, and the agent is told to say so.
+		await assert.rejects(
+			f.call(f.ctx(r.main), { scope: "dirty" }),
+			/^Error: No changes in this comparison \(uncommitted changes vs HEAD [0-9a-f]{7} in .+\), so nothing was shown\. Tell the user nothing changed there\.$/,
+		);
+		// Changes outside the paths given count as none.
+		writeFileSync(join(r.main, "a.txt"), "two\n");
+		await assert.rejects(f.call(f.ctx(r.main), { scope: "dirty", paths: ["docs"] }), /No changes in this comparison \(.+, limited to docs\), so nothing was shown\./);
+		assert.match((await f.call(f.ctx(r.main), { scope: "dirty" })).content[0].text, /^Opened the changes viewer/);
 		await f.fire("session_start", f.ctx(r.main));
 		assert.ok(f.emitted.includes("remote:discover"));
 		f.pi.events.emit("remote:session", { version: 1 });

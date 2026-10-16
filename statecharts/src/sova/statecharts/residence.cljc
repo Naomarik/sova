@@ -8,9 +8,12 @@
    it elsewhere, and the attach answers 409 `held` with today's sentence until the operator
    attaches anyway. Advisory, as today (q5): nothing is fenced.
 
-   Commits ‹clean · dirty · committing›: a write makes it dirty; every minute it looks, and commits
-   when an hour has passed since HEAD's commit (HEAD counts Commit Now, a restart and other hosts'
-   commits); a failed push is retried at the next due look. Commit Now commits at once.
+   Commits ‹clean · dirty · committing›: a write makes it dirty; it looks once an hour has passed since
+   HEAD's commit (HEAD counts Commit Now, a restart and other hosts' commits), never sooner than a
+   minute after it last looked, and commits; a failed push is retried at the next due look. Commit Now
+   commits at once. The look's timer is armed at that instant (kept in the snapshot), so a look that
+   finds nothing due, and so a step, a snapshot and a log row, happens only when HEAD's time moved
+   after it was armed.
 
    Start data: `{:org-id :org-name :host-id :host-name :mode \"create\"|\"attach\" :commit-every-ms?}`."
   (:require
@@ -55,13 +58,33 @@
   [_ d]
   (>= (- (b/now-ms d) (or (:head-at d) 0)) (commit-every d)))
 
+(defn look-at
+  "When the next look is due: an hour (the commit interval) after HEAD's commit, never sooner than a
+   minute from now (with nothing to commit HEAD stays old: a look a minute, as before)."
+  [d]
+  (max (+ (b/now-ms d) look-ms) (+ (or (:head-at d) 0) (commit-every d))))
+
+(defn look-in "The look timer's delay (ms)." [_ d] (- (look-at d) (b/now-ms d)))
+
+(defn new-head-at [d] (or (:head-at (read-result d)) (:head-at d) (b/now-ms d)))
+
 (defn commit-result-ops
   "A commit's result: HEAD's time, whether the push failed (kept in the snapshot), git's error."
   [d]
   (let [res (read-result d)]
-    [(ops/assign :head-at (or (:head-at res) (:head-at d) (b/now-ms d)))
+    [(ops/assign :head-at (new-head-at d))
      (ops/assign :push-pending (true? (:push-failed res)))
      (ops/assign :last-git-error (:error res))]))
+
+(defn rearm-look-ops
+  "A commit answered while clean or dirty (an attach's, a detach's) moves HEAD: the waiting look is
+   moved to the new due instant, so it never wakes to find nothing due."
+  [env d]
+  (let [at (look-at (assoc d :head-at (new-head-at d)))]
+    (cond
+      (b/in? env :clean) (dsl/timer-at-ops d :look-clean :commit/look at)
+      (b/in? env :dirty) (dsl/timer-at-ops d :look-dirty :commit/look at)
+      :else [])))
 
 (defn commit-effect [message-fn]
   (dsl/effect :commit (fn [d] {:message (message-fn d)})))
@@ -104,7 +127,9 @@
           ;; The engine unloads the org once this is entered and its effects ran.
           (final {:id :detached}))
 
-        ;; The hourly committer (F-012): every minute it looks; once an hour has passed since HEAD
+        ;; The hourly committer (F-012): it looks once an hour has passed since HEAD (the timer is armed
+        ;; at that instant, `look-at`; the not-due looks below only follow a HEAD that moved, or an older
+        ;; snapshot's minute timer); then
         ;; it commits whatever git reports changed (any writer: visits, costs, updates, ideas, notes,
         ;; a hand edit), and with nothing to commit it pushes what the remote lacks. A write while
         ;; it commits is in the next commit.
@@ -112,15 +137,15 @@
           ;; internal: an external one leaves the :regions parallel, re-entering :tenure (read-holder, claims)
           (dsl/act {:sova/feed :feed :event :commit/now :type :internal :target :committing})
           (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (#{"commit" "push"} (:kind (b/evt d))))}
-            (script {:expr (fn [_ d] (commit-result-ops d))}))
+            (script {:expr (fn [env d] (into (commit-result-ops d) (rearm-look-ops env d)))}))
           (state {:id :clean}
-            (on-entry {} (Send {:id :look-clean :event :commit/look :delay look-ms}))
+            (on-entry {} (Send {:id :look-clean :event :commit/look :delayexpr look-in}))
             (on-exit {} (cancel {:sendid :look-clean}))
             (transition {:sova/feed :quiet :event :store/written :target :dirty})
             (transition {:sova/feed :quiet :event :commit/look :cond due? :target :committing})
             (transition {:sova/feed :quiet :event :commit/look :target :clean}))
           (state {:id :dirty}
-            (on-entry {} (Send {:id :look-dirty :event :commit/look :delay look-ms}))
+            (on-entry {} (Send {:id :look-dirty :event :commit/look :delayexpr look-in}))
             (on-exit {} (cancel {:sendid :look-dirty}))
             (transition {:sova/feed :quiet :event :commit/look :cond due? :target :committing})
             (transition {:sova/feed :quiet :event :commit/look :target :dirty}))

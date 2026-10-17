@@ -859,11 +859,16 @@
         "src/components/SessionDetails.tsx",
         "src/App.tsx",
         "src/lib/optimistic-archive.ts",
-        "src/lib/optimistic-archive.test.ts"
+        "src/lib/optimistic-archive.test.ts",
+        "src/app.css",
+        "src/lib/drag-archive.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/lib/project-region.ts",
+        "src/lib/project-region.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T12:35Z"
+        "by": "user",
+        "at": "2026-10-17T17:55Z"
       }
     },
     "§app.session-list/search": {
@@ -3292,7 +3297,8 @@
         "src/lib/spine.ts",
         "src/lib/storage-keys.ts",
         "src/components/Sidebar.tsx",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/archive.ts"
       ],
       "requires": [
         "§app.session-list/recent",
@@ -3303,7 +3309,7 @@
       ],
       "agreed": {
         "by": "user",
-        "at": "2026-10-14T16:18Z"
+        "at": "2026-10-17T17:55Z"
       }
     },
     "§app.shell/spine-column": {
@@ -19563,7 +19569,10 @@
         "src/lib/drag-archive.ts",
         "src/components/Sidebar.tsx",
         "src/lib/summary-diff.ts",
-        "server/build-loadout.ts"
+        "server/build-loadout.ts",
+        "src/lib/drag-archive.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/components/SessionDetails.tsx"
       ],
       "requires": [
         "§app.projects/list",
@@ -19575,8 +19584,8 @@
         "§app.projects/seam"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T07:55Z"
+        "by": "user",
+        "at": "2026-10-17T17:55Z"
       }
     },
     "§app.server-runtime/pi-workers": {

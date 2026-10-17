@@ -63,7 +63,7 @@ function hubs(ix, ids) {
 }
 
 // The overview: one line per area, then the hubs.
-function overview(ix, namespace) {
+function overview(ix, namespace, json) {
   const { ctx } = ix;
   const areas = ix.areas.filter((a) => !namespace || namespaceOf(a) === namespace);
   const ids = areas.flatMap((a) => ix.members.get(a));
@@ -75,7 +75,7 @@ function overview(ix, namespace) {
   const list = areas.map((a) => {
     const d = ctx.decls.get(a), m = ix.members.get(a), x = crossing(ix, m);
     return { type: "area", id: a, namespace: namespaceOf(a), title: titleOf(d), ...whatOf(d), claims: m.length, labels: labelCounts(ctx, m),
-      requiresOut: x.out.length, requiresIn: x.in.length, ...notOwnedOf(ctx.claims.get(a)) };
+      requiresOut: x.out.length, requiresIn: x.in.length, ...(json ? {} : notOwnedOf(ctx.claims.get(a))) };
   });
   for (const h of hubs(ix, ids)) list.push({ type: "hub", ...h });
   const agreed = agreedCounts(ctx, ids), no = notOwnedCounts(ctx, areas);
@@ -165,7 +165,9 @@ export function mapMain(argv, core) {
     r = area(ix, areaId);
   } else {
     if (raw !== undefined && !ix.areas.some((a) => namespaceOf(a) === raw)) return done(boundedRefusal("map", budget, "unknown-namespace", { message: `no area in namespace ${raw}` }));
-    r = overview(ix, raw);
+    r = overview(ix, raw, o.json);
+    // The overview JSON leaves each area's owners out so the whole map keeps fitting one page; the count stays.
+    if (o.json && r.counts.notOwned) notes.push({ code: "not-owned-per-area", message: "what each area does not own: map '§ns/area'" });
   }
   const d = areaId && g.ctx.decls.get(areaId);
   const head = { tool: "sova-spec", command: "map", budget, ...(raw !== undefined ? { arg: raw } : {}), ...(raw !== undefined && !id ? { namespace: raw } : {}),

@@ -267,6 +267,9 @@ against the branch). The first shape, `{what, owner}` with a phrase in the manif
 before it was measured: it put prose in a relations-only manifest and said each thing twice; the map
 prints the owner's own heading instead. Printing titles in the overview was dropped too: 78 of 87
 areas fitted the 32 KB page, against 87 of 87 with ids only (titles stay in `map '§area'`).
+Ids in the overview's JSON lines still pushed `map --json` (32,374 B on master, near its 32,768 B
+cap) onto a second page, 71 of 97 lines on the first; the overview JSON now leaves the owners out
+and adds one note pointing at `map '§area'`: 32,497 B, one page.
 
 ## Lessons
 

@@ -28,9 +28,10 @@ test("map shows each area's doesn't-own line with its owners, 'nothing declared'
   const { j } = cli(root, ["map"]);
   assert.deepEqual(j.counts.notOwned, { written: 2, areas: 3 });
   const area = (id) => j.lines.find((l) => l.type === "area" && l.id === id);
-  assert.deepEqual(area("§a/chat").notOwned, ["§a/list", "§b.money/prices"], "the overview keeps § ids only");
-  assert.deepEqual(area("§a/list").notOwned, []);
-  assert.ok(!("notOwned" in area("§b/money")), "absent stays absent, never []");
+  assert.ok(j.lines.filter((l) => l.type === "area").every((l) => !("notOwned" in l)), "the overview JSON leaves owners out, so the map keeps fitting one page");
+  assert.deepEqual(j.notes.map((n) => n.code), ["not-owned-per-area"]);
+  assert.deepEqual(cli(root, ["map", "§a/list"]).j.area.notOwned, [], "[] stays [] in the area view");
+  assert.ok(!("notOwned" in cli(root, ["map", "§b/money"]).j.area), "absent stays absent, never []");
   const text = cli(root, ["map"], { json: false }).r.stdout;
   assert.match(text, /^doesn't own: written for 2 of 3 area\(s\)$/m);
   assert.match(text, /^    what: The chat view\.\n    doesn't own: §a\/list; §b\.money\/prices$/m);
@@ -47,6 +48,7 @@ test("map of one area and of one namespace count only what is in view", () => {
   assert.match(cli(root, ["map", "§a/chat"], { json: false }).r.stdout, /^  what: The chat view\.\n  doesn't own: List \(§a\/list\); Prices/m);
   const b = cli(root, ["map", "b"]);
   assert.ok(!("notOwned" in b.j.counts), "no area in view carries it: no count, never 0");
+  assert.deepEqual(b.j.notes, [], "no pointer when no area in view carries it");
   const text = cli(root, ["map", "b"], { json: false }).r.stdout;
   assert.match(text, /^doesn't own: no area here carries notOwned$/m);
   assert.doesNotMatch(text, /^ +doesn't own:/m, "no per-area line when no area in view carries the field");

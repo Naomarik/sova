@@ -200,8 +200,9 @@ absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when
 `agreed`: built is `code` plus `evidence` `reviewed` or `verified` (sova-spec-draft.mjs `BUILT_LABELS`), and
 `oldest`/`newest` are the not-built records' `agreed.at` dates, never ages. With no `agreed` record in
 view the key is absent and the text says so. `agreed` records who decided and when, not that anyone
-read the current words. Area lines carry `notOwned: [§id]` when the record has the field (the area
-view's `area` carries `notOwned: [{id, title}]`, each owner's heading title added), and `counts.notOwned` is `{written, areas}` when any area in view does;
+read the current words. The overview's JSON area lines leave the field out, so the map keeps fitting
+one page, and add the note `not-owned-per-area`; the area view's `area` carries `notOwned: [{id,
+title}]` when the record has the field, and `counts.notOwned` is `{written, areas}` when any area in view does;
 the text prints `doesn't own: written for k of n area(s)` and, per area, the owners (ids in the
 overview, `title (§id)` in the area view), `nothing declared` for `[]`, or `(not written)`. With no area in view carrying it the key is absent, the text
 says so, and no area gets the line.

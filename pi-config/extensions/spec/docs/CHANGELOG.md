@@ -516,6 +516,26 @@ would list master's changes instead.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
+### 2026-10-18
+
+- **Whole-tree `census` leaves out what Git ignores (audit #2, P7).**
+  - Commit: this entry's, branch `feat/spec-x-census`; not on master yet: the merge round folds it in.
+  - Changed:
+    - `census` without `--changed`, in a Git work tree, does not count a boundary file Git ignores
+      (`git ls-files --others --ignored --exclude-standard --directory`) unless a record's `code` maps
+      it; `census.ignored` counts what was left out, with a `census-ignored` note. A tracked file is
+      always counted (even one an ignore pattern matches, even inside an ignored directory), and so is
+      an untracked file Git does not ignore. Outside Git, when Git cannot answer, or under an
+      enclosing repository that ignores the whole project, nothing is left out (`ignored: 0`). No
+      project-specific list: the rule is Git's own;
+    - `core/README.md` and `.sova/spec/USAGE.md` say so; `tests/census-ignored.test.mjs` is the fixture.
+  - §: +§tools.spec/census-ignored (draft `census-ignored`, not yet promoted). Base: 9c3f949b.
+  - Numbers: Sova's tree at 9c3f949b (clean, with `site/node_modules`, `site/dist`, `site/.astro`
+    present): unclaimed 10,410 → 913, of them 9,497 ignored (9,352 `site/node_modules`, 140
+    `site/dist`, 5 `site/.astro`); the 913 are exactly the tracked unclaimed files before (0 untracked
+    unignored in that tree); claimed 2,193 and mapped-outside unchanged; ~215 ms either way. Fixture:
+    1/5 tests pass on 9c3f949b, 5/5 after.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration

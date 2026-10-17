@@ -910,7 +910,7 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
     // Ranked by the changed lines: every foreign touched § once, the first few marked read first.
     const byId = new Map(rel.touched.map((t) => [t.id, t]));
     const r = rankTouched(ctx, ch.commit, rel.foreign, (id) => byId.get(id).files);
-    for (const x of r.rank) Object.assign(byId.get(x.id), { rank: x.rank, score: x.score, reason: x.reason, stale: x.stale });
+    for (const x of r.rank) Object.assign(byId.get(x.id), { rank: x.rank, score: x.score, fanIn: x.fanIn, relevance: x.relevance, reason: x.reason, stale: x.stale });
     Object.assign(touched, r);
   }
   if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, deleted, orphanedEvidence, draftScan, ...touched } }; }

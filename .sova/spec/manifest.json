@@ -17366,7 +17366,9 @@
         "pi-config/extensions/spec/tests/frame.test.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/README.md"
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-not-owned.test.mjs",
+        "pi-config/extensions/spec/core/map.mjs"
       ]
     },
     "§tools.spec/graph-payload": {
@@ -17423,7 +17425,8 @@
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/tests/map.test.mjs",
         "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+        "pi-config/extensions/spec/tests/map-fields.test.mjs",
+        "pi-config/extensions/spec/tests/map-not-owned.test.mjs"
       ]
     },
     "§tools.spec/unread-landed": {

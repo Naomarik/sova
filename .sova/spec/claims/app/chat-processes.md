@@ -173,7 +173,11 @@ nothing but the server ever starts a chat again.
   and the chat starts on the last good code, or its open is refused (§app/chat-processes). In time
   means, for every chat, its socket answers within 10 s of the start and its `hello` says it is ready
   within 40 s after that: a start normally takes under a second, and the slowest measured under heavy
-  load took 34 s.
+  load took 34 s. A chat that finished starting after its first `hello` (which said it was still
+  starting) but before the server took control says it is ready at once, in a `hello` right after
+  the server's `control`, exactly once: the server never waits out the limit for a chat that is
+  ready, whether it is starting the chat or waiting for a reload's replacement
+  (§app.chat-processes/code-pickup).
 - **One process per chat.** Starting a chat whose previous process is still exiting waits up to
   10 s for that process and the session's writer lock to go.
 - **Claude programs.** Across all chat processes at most 4 idle Claude CLI children are kept

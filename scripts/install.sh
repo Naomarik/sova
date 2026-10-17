@@ -61,7 +61,9 @@
 # no app-launcher entry · --reinstall rebuild even when the install is already at the requested
 # commit.
 # Env: SOVA_REF (tag, branch or commit to install; a name that is none of them stops the install),
-# SOVA_NO_APP_ENTRY=1 (as --no-app-entry), SOVA_REPO (clone source, for testing).
+# SOVA_NO_APP_ENTRY=1 (as --no-app-entry), SOVA_REPO (clone source, for testing),
+# SOVA_KEEP_PREVIOUS=<path> (move the install this run replaces to <path> instead of deleting it:
+# Settings → General's upgrade keeps it until the new version answers, and puts it back otherwise).
 set -euo pipefail
 
 # The body is not indented, so the here-documents below keep their text as written.
@@ -82,6 +84,7 @@ extensions=true
 app_entry=true
 [ "${SOVA_NO_APP_ENTRY:-}" != 1 ] || app_entry=false
 reinstall=false
+keep_previous=${SOVA_KEEP_PREVIOUS:-}
 node_min_major=22
 node_min_minor=19
 marker="# sova-launcher v1"
@@ -145,6 +148,11 @@ fi
 
 case "$dir" in /*) ;; *) dir=$PWD/$dir ;; esac
 case "$bindir" in /*) ;; *) bindir=$PWD/$bindir ;; esac
+if [ -n "$keep_previous" ]; then
+	case "$keep_previous" in /*) ;; *) keep_previous=$PWD/$keep_previous ;; esac
+	{ [ -e "$keep_previous" ] || [ -L "$keep_previous" ]; } &&
+		die "SOVA_KEEP_PREVIOUS: $keep_previous already exists; nothing was changed"
+fi
 launcher=$bindir/sova
 
 # pi's agent directory, resolved as pi resolves it: $PI_CODING_AGENT_DIR (a leading ~ expanded),
@@ -378,7 +386,12 @@ if $rebuild; then
 	fi
 	mv "$staging/sova" "$dir"
 	if [ -n "$backup" ]; then
-		rm -rf "$backup"
+		if [ -n "$keep_previous" ]; then
+			mv "$backup" "$keep_previous"
+			say "kept the previous install at $keep_previous"
+		else
+			rm -rf "$backup"
+		fi
 		backup=
 	fi
 else
@@ -595,6 +608,8 @@ case "${1:-}" in
 esac
 export SOVA_BUN=${SOVA_BUN:-$dir/.bun/bin/bun}
 export PORT=$port
+# The server finds the install it runs from through its launcher (Settings → General's updates).
+export SOVA_LAUNCHER=$self
 exec "$dir/scripts/start-server.sh" "$@"
 LAUNCHER
 } | write_file "$launcher" 755

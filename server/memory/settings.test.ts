@@ -95,15 +95,40 @@ describe("the routes", () => {
     assert.equal((await app.request("/api/settings/memory", { method: "PUT", body: "nope" })).status, 400);
   });
 
-  test("the Overseer's switch: kept in overseer.json, told to its held chat, 400 on a bad body", async () => {
-    const off = await (await req("GET", "/api/overseer/memory")).json();
-    assert.equal(off.on, false);
-    const on = await (await req("PUT", "/api/overseer/memory", { on: true, type: "uniichat" })).json();
-    assert.deepEqual([on.on, on.type, on.size], [true, "uniichat", 128], "a new type takes its default size");
-    assert.deepEqual(overseerCalls, ["on", "switched"]);
+  test("the Overseer's switch: on by default (UniiChat, 128 KB, never the chats' saved default), kept in overseer.json, told to its held chat, 400 on a bad body", async () => {
     const { readOverseerSettings } = await import("../overseer-store");
+    // A Zoomable default saved for ordinary chats (an earlier test saves one) never reaches the Overseer.
+    settings.saveDefaultMemoryChoice({ type: "zoomable", size: 64 });
+    assert.equal(readOverseerSettings().memory, undefined, "no saved choice");
+    const dflt = await (await req("GET", "/api/overseer/memory")).json();
+    assert.deepEqual([dflt.on, dflt.type, dflt.size], [true, "uniichat", 128]);
+    assert.deepEqual(dflt.status, { state: "ready", messages: 0, background: 0 }, "on: its held chat's status");
+    // Switched off: the setting in force was on, so nothing turns on.
+    const off = await (await req("PUT", "/api/overseer/memory", { on: false })).json();
+    assert.deepEqual([off.on, off.type, off.size, off.status.state], [false, "uniichat", 128, "off"]);
+    assert.deepEqual(overseerCalls.splice(0), ["changed", "switched"]);
+    assert.deepEqual(readOverseerSettings().memory, { on: false, type: "uniichat", size: 128 }, "an explicit off is saved");
+    assert.equal((await (await req("GET", "/api/overseer/memory")).json()).on, false, "and stays off");
+    // A type change while off writes the choice and keeps it off.
+    const zoom = await (await req("PUT", "/api/overseer/memory", { type: "zoomable" })).json();
+    assert.deepEqual([zoom.on, zoom.type, zoom.size], [false, "zoomable", 32], "a new type takes its default size");
+    const on = await (await req("PUT", "/api/overseer/memory", { on: true, type: "uniichat" })).json();
+    assert.deepEqual([on.on, on.type, on.size], [true, "uniichat", 128]);
+    assert.deepEqual(overseerCalls.splice(0), ["changed", "switched", "on", "switched"], "off to on is the turned-on edge");
     assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat", size: 128 });
     for (const bad of [{ on: "yes" }, { size: 3 }, { type: "nope" }, []]) assert.equal((await req("PUT", "/api/overseer/memory", bad)).status, 400, JSON.stringify(bad));
+    assert.deepEqual(readOverseerSettings().memory, { on: true, type: "uniichat", size: 128 }, "a refused write changes nothing");
+  });
+
+  test("a settings save keeps the stored switch, whatever memory its body carries", async () => {
+    const { readOverseerSettings, writeOverseerSettings } = await import("../overseer-store");
+    const { saveOverseerSettings } = await import("../overseer");
+    writeOverseerSettings({ ...readOverseerSettings(), memory: { on: false, type: "zoomable", size: 32 } });
+    const body = { ...readOverseerSettings(), memory: { on: true, type: "uniichat", size: 128 }, proactivity: "off" };
+    const out = await saveOverseerSettings(body);
+    assert.ok(!("error" in out), JSON.stringify(out));
+    assert.equal(readOverseerSettings().proactivity, "off");
+    assert.deepEqual(readOverseerSettings().memory, { on: false, type: "zoomable", size: 32 });
   });
 
   test("the outline and open: 400 on a bad path or id/n, 404 when it isn't a session", async () => {

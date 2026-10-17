@@ -129,3 +129,39 @@ test("a hello after a row the list doesn't hold leaves the list alone and reads 
   assert.equal(v.items()![0], painted![0], "rows still the same keep their objects");
   v.dispose();
 });
+
+// §chat.timeline/jumping: a load asked before any hello (rows kept in the tab, the chat still
+// starting or failing to) never waits on the chat.
+function keptView() {
+  return solid.createRoot((dispose) => {
+    const [items, setItems] = solid.createSignal<TranscriptItem[] | null>(branch.slice(2).map((it) => ({ ...it })));
+    return { rows: createOlderRows({ path: "/s.jsonl", items, setItems, prefetch: false }), items, dispose };
+  });
+}
+
+test("a load before any hello reads the file's newest rows itself, then lands the target", async () => {
+  const asked: string[] = [];
+  g.fetch = async (url: string) => {
+    asked.push(String(url));
+    const q = new URL(String(url), "http://sova.test").searchParams;
+    const body: TranscriptRows = q.get("tail")
+      ? { items: branch.slice(2), older: 2, olderSummary: summarize(branch.slice(0, 2)) }
+      : { items: branch.slice(0, 2), older: 0, olderSummary: summarize([]) };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const v = keptView();
+  assert.equal(v.rows.older(), null, "kept rows, nothing said yet about what's above them");
+  assert.equal(await v.rows.api.load({ entry: "u1" }), "here");
+  assert.ok(asked.some((u) => u.includes("tail=1")), asked.join(" "));
+  assert.deepEqual(v.items()!.map((it) => it.id), ["u1", "a1:0", "u2", "a2:0"]);
+  v.dispose();
+});
+
+test("a load before any hello whose file read fails says stale (the jump then says it can't land), never hangs", async () => {
+  g.fetch = async () => {
+    throw new TypeError("offline");
+  };
+  const v = keptView();
+  assert.equal(await v.rows.api.load({ entry: "u1" }), "stale");
+  v.dispose();
+});

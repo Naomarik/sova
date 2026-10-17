@@ -13,7 +13,7 @@ import { asksUserOf } from "./signals-store";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
-import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights, worktreeStamp } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 
 /**
@@ -24,7 +24,8 @@ import { goneTreeState, type GoneState } from "./removed-worktrees";
  *
  * Git is read in the background (a listing never waits on it): `readinessOverlay` returns the last
  * answer for a row and queues a fresh read when the file or the row's state moved, or the answer is
- * older than READINESS_TTL_MS — except for an archived session nothing runs in and no TUI holds, whose
+ * older than READINESS_TTL_MS (IDLE_TTL_MS for an idle session whose trees' stamps read, re-read at
+ * once when one moves) — except for an archived session nothing runs in and no TUI holds, whose
  * answer ages only on an inspection (`treeReadinessOf`, `readinessChecksOf`). Only files that ever
  * wrote a `worktrees` entry are read past a marker search. Unchanged file scans are retained; changed files are rescanned conservatively so a
  * rewrite cannot inherit compact entries from an older file generation.
@@ -34,8 +35,10 @@ import { goneTreeState, type GoneState } from "./removed-worktrees";
 export const READINESS_TTL_MS = 20_000;
 /** An idle session's merged, clean tree: its dirty reading stands this long (§chat.worktrees/dirty-freshness). */
 export const IDLE_DIRTY_TTL_MS = 5 * 60_000;
-/** A settled session (nothing running, every tree merged and clean) is re-read this often (§app/idle-git-cache). */
-export const SETTLED_TTL_MS = 5 * 60_000;
+/** An idle session (nothing running) whose trees' stamps read is re-read this often (§app/idle-git-cache). */
+export const IDLE_TTL_MS = 5 * 60_000;
+/** The same lifetime under its older name: settled sessions are idle sessions. */
+export const SETTLED_TTL_MS = IDLE_TTL_MS;
 /** The reply tail the merge-ask fallback reads. */
 export const ASK_TAIL = 600;
 /** The reply tail kept for the follow-up check, after its closing spec lines are cut. */
@@ -70,8 +73,6 @@ export interface TreeFacts {
   conflicts?: number;
   /** A TEMP / WIP / fixup! / squash! / amend! subject on the branch, the newest. */
   tempCommit?: string;
-  /** Commits past the base that add, change or remove a saved session's card. */
-  savedSessions?: number;
   /** When the newest commit was made (committer time, ms). */
   headAt?: number;
 }
@@ -107,13 +108,20 @@ const STATE_WORDS: Record<ReadinessState, string> = {
   removed: "Removed",
 };
 
-/** A branch whose own history carries a saved session (Sova's merges stop on it). */
-export const SAVED_IN_HISTORY = "saved sessions in its history";
 /** Why a clean branch has no commit of its own: an empty leftover worktree once nothing runs. */
 export const NO_COMMITS = "no commits yet";
 /** A gone folder's whys (§chat.worktrees/readiness, removed). */
 export const CLEANED_UP = "cleaned up";
 export const REMOVED_EMPTY = "no commits";
+
+/** Why a branch whose commits git couldn't count (no base found, or the count failed): never "no
+    commits yet", which would claim zero, and never ready, which needs a commit ahead. */
+export const COMMITS_UNCOUNTED = "commits not counted";
+
+/** A readable branch git counted zero commits past its base: the fact NO_COMMITS says, and the one
+    the Session tab hides a row's Review Changes on (§chat.changes/entry). An uncounted branch
+    (`ahead` absent) is not one. Merged needs a commit of its own, so a merged branch is never empty. */
+export const hasNoCommits = (t: Pick<TreeFacts, "readable" | "merged" | "ahead">): boolean => t.readable && !t.merged && t.ahead === 0;
 
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
@@ -151,9 +159,9 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   // caveat named on ready.
   const dirty = t.dirty ? (t.dirtyCount ?? DIRTY_MAX) : 0;
   if (dirty >= DIRTY_MAX) return { state: "in-progress", why: t.dirtyCount ? uncommittedWords(t.dirtyCount, t.dirtyFiles) : "uncommitted changes" };
-  if (!t.ahead) return { state: "in-progress", why: NO_COMMITS };
+  if (hasNoCommits(t)) return { state: "in-progress", why: NO_COMMITS };
+  if (t.ahead === undefined) return { state: "in-progress", why: COMMITS_UNCOUNTED };
   if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
-  if (t.savedSessions) return { state: "in-progress", why: SAVED_IN_HISTORY };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
   if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };
   const checks = s.lastCheck ? "checks passed" : "no check run seen";
@@ -341,7 +349,10 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
     const body = replyBody(text);
     const kept = body.length > REPLY_KEEP ? body.slice(-REPLY_KEEP) : body;
     const deferred = body.length < text.trimEnd().length ? deferredOf(text.slice(body.length)) : undefined;
-    e.reply = { stop: h.stop === "stop", text: deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept };
+    // A fresh copy: a slice (and a template over one) can be a view that keeps the whole reply alive,
+    // and the scan keeps this for every reply of the session for as long as the server runs.
+    const tail = deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept;
+    e.reply = { stop: h.stop === "stop", text: JSON.parse(JSON.stringify(tail)) as string };
     if (e.at === undefined) e.at = timeOf(h.sentAt);
     const calls: string[] = [];
     for (const b of h.blocks) {
@@ -460,7 +471,8 @@ export interface ReadinessDeps {
   asksUser?: (sessionId: string) => { turnId: string; asks: boolean } | undefined;
   /** A gone folder's branch, read from `dirs` (§chat.worktrees/readiness). */
   gone: (t: TrackedWorktree, dirs: readonly string[]) => Promise<GoneState>;
-  /** A tree's index/HEAD/branch stamp, read without Git; null when it can't be read (worktreeStamp). */
+  /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
+      "gone" for a missing folder, null when it can't be read. */
   treeStamp?: (dir: string) => string | null;
 }
 
@@ -472,7 +484,7 @@ const defaultDeps = (): ReadinessDeps => ({
   now: Date.now,
   asksUser: (id) => asksUserOf(id),
   gone: (t, dirs) => goneTreeState(t, dirs),
-  treeStamp: worktreeStamp,
+  treeStamp: (dir) => worktreeInsights.quietStamp(dir),
 });
 
 let deps: ReadinessDeps = defaultDeps();
@@ -543,7 +555,6 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
     ...(st.base ? { base: st.base } : {}),
     ...(st.conflicts ? { conflicts: st.conflicts } : {}),
     ...(st.subjects ? { tempCommit: tempCommitOf(st.subjects) } : {}),
-    ...(st.savedSessions ? { savedSessions: st.savedSessions } : {}),
     ...(st.headAt ? { headAt: st.headAt } : {}),
   };
 }
@@ -592,6 +603,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       reason: r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
+      ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
     });
   }
   const cards = facts.merges;
@@ -645,8 +657,8 @@ interface Cached {
   row: SessionSummary;
   /** A tree's dirty reading may have stood IDLE_DIRTY_TTL_MS: an inspection re-reads it. */
   longDirty?: boolean;
-  /** Settled when computed (every tree merged and clean): its trees' stamps, which each listing
-      compares to re-read at once on a commit, checkout or branch switch. */
+  /** Idle when computed (nothing running): its trees' stamps, which each listing compares to re-read
+      at once on a commit, checkout, branch switch, base move or merge setup change. */
   stamps?: string;
 }
 
@@ -670,15 +682,19 @@ let draining: Promise<void> | null = null;
 /** How long a tree's dirty reading may stand in this refresh (§chat.worktrees/dirty-freshness):
     0 when the file or row moved or someone looked, 5 minutes for an idle session's merged, clean
     tree, else DIRTY_TTL_MS. */
-/** Nothing running and every tree merged and clean: re-read every SETTLED_TTL_MS (§app/idle-git-cache). */
-function settled(s: SessionSummary, value: SessionReadiness | undefined): boolean {
-  return !runningNow(s) && !!value?.trees.length && value.trees.every((t) => t.state === "merged");
-}
-
 /** The trees' stamps, or undefined when one can't be read: that session keeps the 20 s cadence. */
 function stampsOf(paths: readonly string[]): string | undefined {
   const parts = paths.map((p) => deps.treeStamp?.(p) ?? null);
   return parts.some((p) => p === null) ? undefined : parts.join("\n");
+}
+
+/** Nothing running: re-read every IDLE_TTL_MS while the trees' stamps hold (§app/idle-git-cache).
+    A gone folder has no stamp that moves with its branch, so a session with one keeps the 20 s
+    cadence unless every tree is merged (settled). */
+function idleStamps(s: SessionSummary, value: SessionReadiness | undefined, stamps: string | undefined): string | undefined {
+  if (!stamps || runningNow(s) || !value?.trees.length) return undefined;
+  if (value.trees.every((t) => t.state === "merged")) return stamps;
+  return stamps.split("\n").includes("gone") ? undefined : stamps;
 }
 
 function dirtyTtlFor(s: SessionSummary, treePath: string, fresh: boolean): number {
@@ -726,7 +742,7 @@ async function refresh(input: RefreshInput): Promise<void> {
   const before = facts ? stampsOf(facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id).map((t) => t.path)) : undefined;
   const value = facts ? await computeReadiness(s, facts, current, fresh) : undefined;
   if (!current()) return;
-  const stamps = settled(s, value) ? before : undefined;
+  const stamps = idleStamps(s, value, before);
   cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
@@ -768,12 +784,12 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
     else queued.set(s.path, input);
     return hit?.value;
   }
-  // A settled answer stands SETTLED_TTL_MS while its trees' index, HEAD and branch stay put.
-  const settledHit = !!hit?.stamps && !runningNow(s);
-  const treesMoved = settledHit && stampsOf(hit!.value?.trees.map((t) => t.path) ?? []) !== hit!.stamps;
+  // An idle answer stands IDLE_TTL_MS while its trees' stamps stay put.
+  const idleHit = !!hit?.stamps && !runningNow(s);
+  const treesMoved = idleHit && stampsOf(hit!.value?.trees.map((t) => t.path) ?? []) !== hit!.stamps;
   if (treesMoved) forced.add(s.path);
   const moved = !hit || hit.key !== input.key || hit.file !== input.file || treesMoved;
-  const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= (settledHit ? SETTLED_TTL_MS : READINESS_TTL_MS);
+  const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= (idleHit ? IDLE_TTL_MS : READINESS_TTL_MS);
   if (moved || aged) {
     queued.set(s.path, input);
     void drain();
@@ -826,7 +842,7 @@ export function treeReadinessOf(sessionPath: string, treePath: string): Worktree
 /** An explicit look: the cached answer stands for this call, and one fresh read of every tree,
     dirty state included, is queued (joining any queued or active one) for a parked session whose
     answer is older than READINESS_TTL_MS, a session whose trees' dirty readings may have stood
-    IDLE_DIRTY_TTL_MS (§chat.worktrees/dirty-freshness), or a settled one whose answer is
+    IDLE_DIRTY_TTL_MS (§chat.worktrees/dirty-freshness), or an idle one whose answer is
     DIRTY_TTL_MS old (§app/idle-git-cache). */
 function inspected(sessionPath: string): void {
   const hit = cache.get(sessionPath);

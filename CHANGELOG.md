@@ -4,6 +4,56 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.4.0 — 2026-10-16
+
+Memory for the Overseers, side-by-side steps drawings and a faster project page. 45 commits since
+v0.3.3. The highlights:
+
+- **Overseers remember.** The Overseer and project overseers run with memory on by default, and a
+  project overseer has its own switch. Memory's view shows session ids whole, and the model is told
+  to look a thing up in its memory before searching for it.
+- **Steps drawings put paths side by side.** A steps drawing shows its paths in columns, with steps
+  they share merged into one.
+- **The project page opens at once.** It shows its sessions and the last cost count straight away
+  and fills in branch details behind them. In the sidebar, each project folds on its own, New
+  Session opens on its project, and Add Project is gone.
+- **Messages sent while a chat starts arrive.** A message sent while its chat is waking, or left
+  unsent when a page closes, is delivered by the server instead of being dropped.
+- **Smaller fixes.** The Subagents row counts only live workers and names the ended ones in its
+  tooltip; the changes viewer refuses a folder it can't open instead of showing nothing.
+- **Docs.** Every Docs page was checked against the product documentation, and there are new
+  Memory and Updates pages.
+
+Going back to `v0.3.3` (`SOVA_REF=v0.3.3`) hasn't been tested on this release: overseers there run
+with memory off, and a project overseer's own memory switch stays stored but unused.
+
+## v0.3.3 — 2026-10-15
+
+Updates from inside Sova, project modes, reply timings and a faster chat open. 198 commits since
+v0.3.2. The highlights:
+
+- **Sova updates itself.** Settings → General has an Updates section: it says what runs, checks
+  Sova's repository daily (or now, with **Check Now**), and upgrades in a job of its own; a dot on
+  Settings says when an update is waiting. Upgrade automatically never reinstalls a version that was
+  put back.
+- **Project minor modes.** A project can ship its own minor modes; they show in the chat's mode
+  menu and turn on after you approve the mode's folder. Workers get their parent's project mode
+  tools.
+- **Reply timings.** A measured reply shows a timing card on its head, and the Agents page has a
+  Performance tab.
+- **Chats open at once.** A chat opens on its saved rows while it starts, and opening a sleeping
+  chat (or selecting its workspace tab) starts it. A quiet chat closes after its idle time even with
+  a tab open.
+- **The changes viewer** shows each step's commits, keeps empty steps greyed with their reason, and
+  orders commits by history.
+- **Sidebar and Settings.** The sidebar's search is always on, the Overseer button lists project
+  overseers with their unread replies, and multi-select and the Profiles section are gone. In
+  Settings, **Cancel** discards unsaved edits and closes; Discard Changes is gone.
+- **Resource monitor** says clearly how much memory Sova uses, and the server holds less of it.
+
+Going back to `v0.3.2` (`SOVA_REF=v0.3.2`) hasn't been tested on this release: project mode
+approvals, update settings and reply timings stay stored but unused.
+
 ## v0.3.2 — 2026-10-13
 
 A macOS fix on top of v0.3.1.

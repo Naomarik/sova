@@ -32,13 +32,14 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { registerSessionForkRoutes } from "./session-fork-routes";
-import { registerSessionBundleRoutes } from "./session-bundles-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
@@ -68,7 +69,7 @@ import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ProjectModeApprovalNeeded, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -135,6 +136,7 @@ import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, SERVER_HEADER, unlock, pair, revealToken } from "./auth";
+import { registerUpdatesRoutes } from "./updates/routes";
 
 const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
@@ -168,6 +170,17 @@ let built = false;
 export function buildApp(deps: AppDeps) {
   if (built) throw new Error("buildApp: the app is built once per process");
   built = true;
+  /** The chat a person's action on it needs: open, or opened now, as a send opens a chat closed while
+      quiet (§chat.transcript/instant-open), never "open the chat first". A missing file is a 404; a
+      session that can't open (a TUI holds it, its folder is gone) is refused with why. */
+  async function chatFor(path: string): Promise<{ chat: ChatHandle } | { status: 404 | 409; error: string }> {
+    if (!existsSync(path)) return { status: 404, error: "Session file not found" };
+    try {
+      return { chat: await acquireChatHandle(path) };
+    } catch (err) {
+      return { status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
   const app = new Hono();
 
   // The gate (server/auth.ts, §app.access/gate), first so it stands before everything, and the
@@ -227,6 +240,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/auth/status", (c) => c.json({ ok: true }));
   // The folder this server lists sessions from (its agent dir's), which the empty list names.
   app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
+  // Updates: what runs, the daily check, and the operator's upgrade.
+  registerUpdatesRoutes(app);
 
   app.get("/api/sessions", async (c) => c.json(await listSessions()));
   registerProfileRoutes(app);
@@ -376,9 +391,6 @@ export function buildApp(deps: AppDeps) {
   // Fork a conversation through a delivered reply (server/session-fork-routes.ts): POST /api/sessions/fork
   // makes a new web-owned session from the source's active branch, read-only on the source.
   registerSessionForkRoutes(app);
-  // Saved sessions (server/session-bundles-routes.ts, §chat/saved-sessions): save a chat to the project's
-  // sova/saved-sessions branch, list, preview and continue them, and the merge-guard recovery on main.
-  registerSessionBundleRoutes(app);
 
   // The sidebar's user-made groups: Sova's own grouping of
   // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by
@@ -880,7 +892,10 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(raw);
     if (!path) return c.json({ error: "Invalid session path" }, 400);
     const chat = chatHandle(path);
-    return chat ? c.json(await chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
+    if (chat) return c.json(await chat.subagentProfileInfo());
+    // A chat closed while quiet (or never opened): its pick read from its file; a read never opens it.
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(subagentProfilesInfo(restorePick((await deps.extensionEntriesOf(path)) as Parameters<typeof restorePick>[0])));
   });
   app.put("/api/settings/subagents", async (c) => {
     const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
@@ -904,8 +919,9 @@ export function buildApp(deps: AppDeps) {
   app.post("/api/subagents", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "Open the chat first" }, 404);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const { chat } = got;
     try { return c.json(await chat.switchSubagentProfile((await c.req.json()).profile)); }
     catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 409); }
   });
@@ -1032,7 +1048,16 @@ export function buildApp(deps: AppDeps) {
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
-  app.get("/api/mode", (c) => c.json(modeInfo(readMode(), defaultMemoryChoice())));
+  // With ?path=: that held chat's own mode, its project modes read now (§chat.mode-menu/project-modes).
+  app.get("/api/mode", async (c) => {
+    const rawPath = c.req.query("path");
+    if (rawPath === undefined) return c.json(modeInfo(readMode(), defaultMemoryChoice()));
+    const path = resolveSessionPath(rawPath);
+    if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    const chat = chatHandle(path);
+    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    return c.json(await chat.modeResult());
+  });
 
   // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
   // applyMode), or with { saveDefault: true } make that chat's own mode the default, switching nothing
@@ -1064,14 +1089,42 @@ export function buildApp(deps: AppDeps) {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
       if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const chat = chatHandle(path);
-      if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-      return modeRefusal(c, () => chat.saveModeDefault());
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      return modeRefusal(c, () => got.chat.saveModeDefault());
     }
-    if (path === null) return c.json(await switchMode(request.patch));
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return modeRefusal(c, () => chat.switchMode(request.patch));
+    if (path === null) {
+      // The default never stores project modes (§chat.mode-menu/project-modes): they belong to one chat's checkout.
+      if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
+      return c.json(await switchMode(request.patch));
+    }
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    // The Overseer's own call turns a project mode on as its approval (q7); a body never says so itself.
+    const patch = { ...request.patch, ...(request.patch.projectModes !== undefined && overseerSender(c.req.header(OVERSEER_SENDER_HEADER)) ? { approvedBy: "overseer" as const } : {}) };
+    try {
+      const result = await got.chat.switchMode(patch);
+      if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+      return c.json(result);
+    } catch (err) {
+      if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
+      throw err;
+    }
+  });
+
+  // Frames a page handed over as it went (a tab closed or reloaded before its chat socket opened,
+  // §chat.transcript/send-while-starting): a keepalive request, answered before they run. They take
+  // a chat socket's own path (server/ws.ts deliverFrames): in order, each client id once, a refusal
+  // put back as the session's draft.
+  app.post("/api/chat/frames", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const frames = postedFrames(await c.req.json().catch(() => null));
+    if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    sessionsChanged();
+    deliverFrames(path, frames);
+    return c.json({ accepted: frames.length }, 202);
   });
 
   // The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
@@ -1087,9 +1140,9 @@ export function buildApp(deps: AppDeps) {
     }
     const parsed = parseSandboxBody(body);
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return c.json(await chat.applySandbox(parsed.state));
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    return c.json(await got.chat.applySandbox(parsed.state));
   });
 
   // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
@@ -1099,8 +1152,9 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const id = c.req.query("id") ?? "";
     if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
-    const chat = chatHandle(path);
-    if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
+    const got = await chatFor(path);
+    if ("error" in got) return c.json({ error: got.error }, got.status);
+    const { chat } = got;
     const outcome = await chat.resumeWorker(id);
     if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
     return c.json({ worker: await chat.workerInfo(id) } satisfies WorkerResumeResult);
@@ -1279,7 +1333,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Git diffs for the changes viewer (server/git-diff.ts, shared/protocol.ts DiffScope). Read-only;
-  // the scope names a folder the session knows, the server picks every ref.
+  // the scope names a folder the session knows, the server picks every ref but a pinned card's two oids.
   const diffRoute = (fn: (c: Context) => Promise<unknown>) => async (c: Context) => {
     try {
       return c.json(await fn(c), 200, { "Cache-Control": "no-store" });
@@ -1288,11 +1342,16 @@ export function buildApp(deps: AppDeps) {
       throw err;
     }
   };
-  app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(scopeFromQuery((n) => c.req.query(n)))));
+  const diffScope = (c: Context) =>
+    scopeFromQuery(
+      (n) => c.req.query(n),
+      (n) => c.req.queries(n),
+    );
+  app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(diffScope(c))));
   app.get(
     "/api/diff/patch",
     diffRoute((c) =>
-      gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
+      gitDiffs.patch(diffScope(c), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1", origins: c.req.query("origins") === "1" }),
     ),
   );
 

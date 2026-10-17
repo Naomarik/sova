@@ -247,16 +247,24 @@ snapshots a `fork` copied and offers no spec writer.
 ## The parent's modes
 
 The mode extension announces what this session's workers get of its modes on the bus
-(`mode:worker`, `mode/events.ts`; asked for at load with `mode:worker-discover`): today the spec
-block plus a worker note while spec is on, nothing otherwise. Every worker started from then on —
+(`mode:worker`, `mode/events.ts`; asked for at load with `mode:worker-discover`): the spec block
+plus a worker note while spec is on, and the saved copy of each project mode that is on and marked
+`workers: yes` (`projectModes`; see the mode extension's README), nothing otherwise. Every worker started from then on —
 pi or Claude Code, plain, remote, sandboxed, team member or successor — gets that text
 appended last to its system prompt (after its agent type, its brief and any remote instructions);
 the text is never interpreted here. It is a snapshot: a later switch never reaches a running
 worker, and `agent_resume` takes the session's current announcement (the launch spec keeps the raw
 brief). Two exceptions get nothing: a team's monitor (it has no tools) and a `useWorktreeConfig`
 worker (its tree's mode extension gives it spec itself). The minor modes given are recorded with
-the worker (the manifest's `modes`, newest start winning; `[]` for none) and published in the
-workers snapshot (`modes`, absent for none), which Sova shows on the worker's view head.
+the worker (the manifest's `modes`, newest start winning; `[]` for none; project modes by id after
+the built-in ones) and published in the workers snapshot (`modes`, absent for none), which Sova
+shows on the worker's view head.
+
+A project mode's tools follow only to a local pi worker that has `bash` and isn't a
+`useWorktreeConfig` worker: the parent's copies are written to a file (`PROJECT_TOOLS_FILE_ENV`)
+and the worker loads `mode/project-tools-worker.ts` with `-e`, which registers them from that
+file and refuses a call once the mode's folder changed since approval. A read-only or remote
+worker gets the instructions without the tools.
 
 ## Remote sessions
 

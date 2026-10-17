@@ -13,7 +13,7 @@ import { canonicalPath } from "./paths";
 import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
-import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, noteSavedSessionsRefusal, takeSavedSessionsOverride, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
+import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { teardownCopyOf } from "./project-services/checkout-teardown";
 import { mainMoved } from "./project-services/on-merge";
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
@@ -174,16 +174,19 @@ export function readBuild(projectId: string, sessionId: string): BuildRow | null
 }
 
 /** Its worktree folder on this host: beside the repository's top, named after its branch (as cutWorktree made it); an
-    adopted one's is where its session's `worktree` tool made it, as that tool recorded it. */
-export async function withWorktreePath(row: BuildRow, root: string): Promise<(BuildRow & { worktree: WorktreeRecord }) | null> {
+    adopted one's is where its session's `worktree` tool made it, as that tool recorded it. `top`: the repository's top
+    level when the caller has read it already (one read for a whole list), else read here. */
+export async function withWorktreePath(row: BuildRow, root: string, top?: string): Promise<(BuildRow & { worktree: WorktreeRecord }) | null> {
   if (!row.worktree) return null;
   if (row.worktree.path) return row as BuildRow & { worktree: WorktreeRecord };
   if (row.adoptedAt) {
     const own = await ownTreeOf(row.sessionId, row.worktree.branch);
     if (own) return { ...row, worktree: { ...row.worktree, path: own.path } };
   }
-  const repo = await gitRootOf(root);
-  const top = "reason" in repo ? root : repo.top;
+  if (top === undefined) {
+    const repo = await gitRootOf(root);
+    top = "reason" in repo ? root : repo.top;
+  }
   return { ...row, worktree: { ...row.worktree, path: worktreePathOf(top, row.worktree.branch) } };
 }
 
@@ -440,13 +443,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
     const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
-    let m: { sha: string };
-    try {
-      m = await mergeBack(row.worktree, root, title, undefined, { allowSavedSessions: takeSavedSessionsOverride(sessionId) });
-    } catch (err) {
-      noteSavedSessionsRefusal(sessionId, err);
-      throw err;
-    }
+    const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
     void mainMoved(root, undefined, { merged: true }).catch((err) => console.warn(`[on-merge] ${root}: ${err instanceof Error ? err.message : String(err)}`));

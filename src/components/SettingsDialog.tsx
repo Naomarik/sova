@@ -41,7 +41,6 @@ import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimits
 import { LIMIT_MAX, LIMIT_MIN, parseLimitField } from "../lib/provider-limits";
 import {
   dirtyForms,
-  discardAllDrafts,
   failedForms,
   footerStatus,
   formNames,
@@ -67,6 +66,7 @@ import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
+import { UpdatesSettingsSection } from "./UpdatesSettings";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
@@ -128,7 +128,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
     props.onClose();
   };
 
-  // ---- The footer: one Save and one Discard for every form on every tab (settings-draft.ts) ----
+  // ---- The footer: one Save for every form; Cancel discards on every tab (settings-draft.ts) ----
   /** The forms the last Save Changes wrote, for the status line ("Saved Models; Delegate failed."). */
   const [lastSaved, setLastSaved] = createSignal<GatedForm[]>([]);
   const invalid = createMemo(() => invalidForms());
@@ -154,14 +154,6 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
     }
     keepFocus();
   };
-  const discardAll = () => {
-    const names = formNames(dirty());
-    discardAllDrafts();
-    setLastSaved([]);
-    announce(`Discarded your ${names} changes.`);
-    keepFocus();
-  };
-
   const tabButtons = new Map<TabId, HTMLButtonElement>();
   onMount(() => tabButtons.get(tab())?.focus());
 
@@ -349,9 +341,6 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             {status()}
           </p>
           <Show when={dirty().length > 0}>
-            <button type="button" class="button button-ghost settings-foot-edit" disabled={savingAny()} onClick={discardAll}>
-              Discard Changes
-            </button>
             <button
               type="button"
               class="button button-primary settings-foot-edit"
@@ -362,7 +351,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               {savingAny() ? "Saving…" : "Save Changes"}
             </button>
           </Show>
-          <button type="button" class="button button-ghost" ref={closeButton} onClick={requestClose}>
+          <button type="button" class="button button-ghost" ref={closeButton} onClick={() => (dirty().length > 0 ? discardAndClose() : requestClose())}>
             {dirty().length > 0 ? "Cancel" : "Close"}
           </button>
         </div>
@@ -421,10 +410,11 @@ function ExperimentalPanel() {
 }
 
 /**
- * General: preferences about how THIS browser draws the
- * product. Nothing here is written to the machine — no policy file, no server endpoint — which is
- * the line between this screen and Models, and the reason the sidebar's Recent region has no
- * control of its own: a count that could be set in two places would disagree in one of them.
+ * General: preferences about how THIS browser draws the product, then this machine's updates.
+ * The browser's part is written to no machine — no policy file, no server endpoint — which is the
+ * line between it and Models, and the reason the sidebar's Recent region has no control of its own:
+ * a count that could be set in two places would disagree in one of them. The Updates section at the
+ * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx).
  */
 function GeneralPanel() {
   /**
@@ -469,8 +459,8 @@ function GeneralPanel() {
   return (
     <>
       <p class="settings-intro">
-        How this browser draws Sova. These stay in this browser — nothing here changes your pi
-        config, and another machine keeps its own.
+        How this browser draws Sova. The settings above stay in this browser; another device keeps
+        its own. Updates, below, are this machine's.
       </p>
       <div class="field settings-field">
         <label class="field-label" for="recent-count">
@@ -537,6 +527,7 @@ function GeneralPanel() {
           active. A draft's first line still shows.
         </span>
       </div>
+      <UpdatesSettingsSection />
     </>
   );
 }

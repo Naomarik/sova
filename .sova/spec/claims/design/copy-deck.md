@@ -32,10 +32,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
 | Overseer entry button | toolbar line (§app.session-list/search): `eye` + "Overseer" + {unread} as an inline pill, then ▾; spine: wordless `eye`, {unread} at its top-right corner · "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
-| Project overseers ▾ (§app.overseer/entry-button) | `aria-label`/`title`: Project overseers (+ " · {n} with new replies" (1: "1 with a new reply"), " · {n} with failed last turns" (1: "1 with a failed last turn")) · list title: Project overseers · row: {project}, "In {organization}" under it in an organization · state: Working / Last turn failed / New reply · last row: All Projects |
-| Projects region head (§app.projects/list) | Projects · {n} where n = **projects** · searching: Projects · {matching projects} of {all projects} |
-| Folders region head (the top region) | Folders · {n} where n = **folders** · searching: Folders · {folders with a hit} of {all folders} |
-| Folders spine door | wordless `chat` over {n} · `aria-label` and `title`: Folders · {n} folders (1: "1 folder") |
+| Project overseers ▾ (§app.overseer/entry-button) | `aria-label`/`title`: Project overseers (+ " · {n} overseers with new replies" (1: "1 overseer with new replies"), " · {n} with failed last turns" (1: "1 with a failed last turn")) · list title: Project overseers · row: {project}, "In {organization}" under it in an organization · state: Working / Last turn failed / {n} as a number pill ("99+" past 99; no count or 0: New reply) · row `aria-label`/`title`: {project} · in {organization} · {n} new replies (1: "1 new reply"; no count: "New reply") · last row: All Projects |
+| Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
 | Organizations waiting chip (region head, warn, dot and word, while k ≥ 1) | {k} waiting · `title`: "{k} sessions waiting on you." (1: "1 session waiting on you.") |
@@ -75,7 +73,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Archive cleanup toolbar | eyebrow "Delete" · buttons `Older Than 7 Days` · `Older Than 30 Days` · `Empty Sessions` (`aria-label` "Delete Sessions Older Than 7 Days", …) · pending "Checking…" |
 | Archive cleanup dialog | **Delete {n} sessions?** {scope} This permanently deletes their transcript files — this can't be undone. · skipped "{n} skipped: {a} open in a TUI, {b} mid-turn, {c} just written. They stay as they are." · buttons `Delete {n} Sessions` ("Deleting…") · `Cancel` · none: **0 sessions to delete.** · `Close` |
 | Archive cleanup toasts | "Deleted {n} sessions." (+ " {skipped}.") · "Couldn't check what to delete. Nothing was deleted. {server message}" · "Couldn't delete sessions. Some may be gone; the list is refreshed. {server message}" |
-| Empty Folders note | No sessions outside your projects. The archive below has the rest. |
+| Empty top region note | 0 sessions open in a TUI, or started here and not archived. The archive below has the rest. |
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |
 | Empty (0 on disk) | **0 sessions in `{the server's sessions folder}`.** (`~/.pi/agent/sessions` on a default host; before the server says: **0 sessions yet.**) Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
@@ -88,13 +86,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | No session selected (the overview) | Title: **Overview** (no count and no body line; the Sessions card has the count) · eyebrow `Start`, then action cards, title and line: `New Session` "Start a chat with pi in any folder or on any host." · last, eyebrow `Organizations`, a card titled `Organizations` "Keep each client's people, projects, and hand-off sessions together.", totals `Organizations` · `People` · `Projects` · `Open hand-offs` · `Needs you`, rows `{n} people · {n} projects · {n} open hand-offs` · `Needs you · {n}` · `Active {relative time}`, `View all {N}`; with no org, `Create Your First Organization` · a phone's list-head button to it: icon-only, `aria-label` and `title` "Overview" (§app.shell/overview) |
 | No session selected, Explanations card | section head: `Explanations` · card title `Explanations`, chip `{n}` · line `Latest · {topic} · {relative time}`, or "No explanations yet. Run `/explain` in a session to write one." (the page's own copy is §app.insights/explanations-page) |
 | Transcript load error (a watched TUI session) | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` · a chat that can't open says §app.shell's open-failure words instead |
-| New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · the Saved sessions card (§design.copy-deck/saved-sessions) · then the footnote: Your first message becomes its title. |
+| New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · then the footnote: Your first message becomes its title. |
 | New empty session, setup card figures | a file row or a section total: `{size} · {n} lines · ≈{tokens} tokens` (the token figure only when the server sent one) · under Context: "Loaded into the prompt." then, with token figures, "Token counts are estimates: 4 characters per token." · under Skills, with token figures: the same sentence after its note · commits: `{short oid} {subject} {age}` per row, or "The last commits couldn't be read." |
 | New empty session, setup card | `aria-label` "Session setup" · aggregate line `System context` with its figures, `title` "Everything pi loads into the prompt, plus the skills it offers." · in place of Context and Skills, a remote session: "Skills and context files are read on {target}, so they aren't listed here."; an unreadable folder: the server's sentence, e.g. "This session's folder no longer exists: {cwd}." · a failed request: "Couldn't read what pi loads here. {message}" · "Couldn't read this session's repository. {message}" |
 | New empty session, setup card Context | heading `Context · {n}` · roles "replaces the system prompt" · "appended to the system prompt" · none: "No context files. pi loads AGENTS.md or CLAUDE.md when a folder has one." (its note is in the figures row above) |
 | New empty session, setup card Skills | heading `Skills · {n}` · note "Offered to this session. A skill loads when it is used.", then "Skills an extension adds aren't listed." when Sova's own loader built the list, then the token sentence · none: "No skills offered to this session." (+ the same caveat, on the same condition) |
-| New empty session, setup card Repository | heading `Repository` · head `{branch}` · `{branch} · no commits yet` · `Detached at {oid}` · `Detached` · upstream `Level with {upstream}` · `{a} ahead, {b} behind {upstream}` · `{upstream} is gone`, `title` "Counted against the upstream as this repository last fetched it. Sova doesn't fetch it." · changes `Clean` · `{n} conflicted · {n} staged · {n} unstaged · {n} untracked` (non-zero only) · `At least {tallies}` · `Not fully read` · `+{added} −{removed}` · notes "Line counts stopped at the size limit. Paths past it say "not counted"." · "Counting lines took too long in this repository. Rows say "not counted"." · "Git couldn't count lines here. Rows say "not counted"." · "Git status was cut short, so these counts are lower bounds." · no repository: "{folder} isn't inside a git repository." · unavailable: the server's sentence |
-| Archive button / toasts | icon only, `aria-label` and `title` "Archive Session" · "Unarchive Session" · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Folders." (back with a project of this computer: "Moved back to {project}.") · error "Couldn't archive this session. {server message}" |
+| New empty session, setup card Repository | heading `Repository` · head `{branch}` · `{branch} · no commits yet` · `Detached at {oid}` · `Detached` · upstream `Level with {upstream}` · `{a} ahead, {b} behind {upstream}` · `{upstream} is gone`, `title` "Counted against the upstream as this repository last fetched it. Sova never fetches." · changes `Clean` · `{n} conflicted · {n} staged · {n} unstaged · {n} untracked` (non-zero only) · `At least {tallies}` · `Not fully read` · `+{added} −{removed}` · notes "Line counts stopped at the size limit. Paths past it say "not counted"." · "Counting lines took too long in this repository. Rows say "not counted"." · "Git couldn't count lines here. Rows say "not counted"." · "Git status was cut short, so these counts are lower bounds." · no repository: "{folder} isn't inside a git repository." · unavailable: the server's sentence |
+| Archive button / toasts | icon only, `aria-label` and `title` "Archive Session" · "Unarchive Session" · disabled `title` "Open in a TUI. It stays on top while live." · toasts "Archived. Find it under Archive." · "Moved back to Live & web." · error "Couldn't archive this session. {server message}" |
 | Copy output button / toast | `Copy Output` · toast "Copied output." |
 | Unknown entry | Unrecognized entry `{raw.type}` · disclosure label "Raw entry" |
 | Long tool output | `Show All {n} Lines` |
@@ -213,7 +211,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Off asked of a host without it (an older server) | This host's Sova has no Off; its sandbox stays {status}. |
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
-| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · That session isn't open on this server; open the chat first |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · Session file not found · why the chat couldn't open (a TUI holds it, its folder is gone) |
 | TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
 | TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
@@ -311,14 +309,25 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
-| Group labels | Major mode · Minor modes · Subagents |
+| Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Subagents |
+| Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. |
+| Trigger with project modes | {mode} · {built-in minors} · {project modes}, e.g. delegate · spec · deploy-notes |
+| Approval panel | Back · title: Turn on {id}? · {id} comes from {project}'s files. Turning it on lets the model run this tool / these {n} tools in this chat's folder. · one card per tool: {name} (mono), {description}, {command argv as one line} (mono) · foot: Runs from {dir}. Approval covers its tools and every file in this folder. We ask again when any of them changes. · when a tool starts a bare program: {node} is this machine's own program, so the approval doesn't cover it. (two: {node and sh}; three or more, with the serial comma: {node, python3, and sh} are this machine's own programs, so the approval doesn't cover them.) · buttons: Approve and Turn On (primary; while saving: Turning On…) · Cancel |
+| Approval out of date (warn banner in the panel) | Its tools changed while this was open. These are the tools it has now. Check them again before you approve. |
+| Project tool refused (to the model) | {tool} wasn't run: the files of {id} changed since it was approved. Ask the user to approve {id} again in the mode menu. |
+| Project tool refused under the sandbox (to the model) | {tool} wasn't run: project mode tools don't run while the sandbox is on. Ask the user to turn the sandbox off to use {id}'s tools. |
+| Terminal: project mode needs approval | Minor mode {id} not turned on: {id} runs the project's own tools: approve it from a Sova chat's mode menu first |
+| Terminal: palette row | This project · {name} — {description} — {state} |
+| Terminal: `/mode status` line | project modes ({name}): {id} (on \| removed \| changed since turned on \| needs approval \| broken: {path}: {error}) |
+| Worker turning a project mode on | a worker gets its project modes from the session that started it |
 | Subagents row / Delegate detail | Subagents · {name} / Profile: {name} |
 | Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
-| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · codemode: Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool) |
+| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · codemode: Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool) · memory (§chat.mode-menu/memory-panel): the chosen type's row description, from `MEMORY_TYPE_INFO` (shared/memory.ts), not `MINOR_DESCRIPTIONS`: UniiChat: Endless chat: the model works from a summary of the whole chat and opens any part of it word for word · Zoomable compaction: Compaction the model can undo: when the chat compacts, older turns become summary lines it can open word for word; while memory is on, the detail line under it: UniiChat — by Victor Taelin · Zoomable compaction — Sova |
 | Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |
 | Spec gear | icon only; `aria-label`/`title`: Configure Spec (opens Settings → Subagents at its spec-writer section; switches nothing) |
+| Memory type chevron | icon only; `aria-label`/`title`: Memory type (opens the Memory type panel: Back · title: Memory type · Type: {type} · {by} / its description, UniiChat's Read the design ↗ · Summary size: 64–128 KB (UniiChat) or 32 KB (zoomable), the type's own size marked default · foot: This chat only. Kept while memory is off. · refused pick: **Couldn't change memory.** {reason}. Your memory choice is unchanged.) |
 | Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
-| Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors and subagent profile match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
+| Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors, subagent profile and (where the chat has one) memory type and size match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
 | Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
 | Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
 | Saved (announcement) | Default saved: {mode · strict · minors} · Subagents: {name}. New sessions start here. — unknown halves omitted |
@@ -326,8 +335,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
-| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off · Strict mode on\|off (shown as recorded) |
-| Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
+| Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off (a project mode by its id) |
 
 ## §design.copy-deck/context-window — Context window
 
@@ -485,7 +494,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Work-kind legends | Planning & specs · Investigation · Routine implementation · Complex implementation |
 | Row labels | Primary (only while a fallback is set) · Fallback · [Add Fallback] · [Remove Fallback] on the route's head line · Backend · Model · Effort, the selects' accessible names, not shown |
 | Section ledes (no fallback, said once) | Delegate: Without a fallback, the agent asks you which model to use when a route's primary can't run. · Teams: Without a fallback, a team isn't created when a role's primary can't run. · Spec writer: Without a fallback, the session writes the spec itself when the writer can't run. · Reviewer: Without a fallback, the review is recorded incomplete when the reviewer can't run. |
-| Teams | Coordinator: Add a coordinator to new teams · Monitor: Add a monitor to new teams (hint while the coordinator is off: The monitor reports to the coordinator, so it needs one.) · Instructions fold: Instructions — {role name} · extra instructions set / no extra instructions; Role name; {Role} instructions, hint "Added to the {role}'s standing instructions in every new team." · Handover: Retire timeout (minutes) · Members default: Choose a model for ordinary members, off hint "A member nobody gave a model runs on its team lead's model." |
+| Teams | Coordinator: Add a coordinator to new teams · Monitor: Add a monitor to new teams (hint while the coordinator is off: The monitor reports to the coordinator, so it needs one.) · Instructions fold: Instructions — {role name} · extra instructions set / no extra instructions; Role name; {Role} instructions, hint "Added to the {role}'s standing instructions in every new team." · Handover: Retire timeout (minutes) · Members default: Choose a model for ordinary members, off hint "A member nobody gave a model runs on its team lead's model." (the lead is the session that created the team, its members' parent: the "parent session's model" of §chat.subagent-profiles/members-default; the closed summary's "members on the lead's model" means the same) |
 | Spec writer | Use a spec writer while spec is on · off hint: The session writes the spec itself. |
 | Reviewer (only while adversarial review is on) | Review alignments with a reviewer · off hint: No review. |
 | Select placeholders | Choose a model (Checking… while asking) · Choose |
@@ -499,7 +508,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Saved with notes (banner-warn) | **Saved, with notes.** {warnings as sentences}: "Not verified, because {backend} couldn't list its models ({reason}): {slot}, {slot}…" once per backend, then one per other slot |
 | Close held (banner-warn, above the dialog foot) | **Your Subagents changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
 | Section heading button (small, ghost) | Reset to Defaults — Summaries only; it fills the draft and saves nothing |
-| Dialog footer (every tab) | {status line} · Discard Changes · Save Changes (Saving…) · Cancel — with nothing unsaved: {status line} · Close. The one Save and Discard for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
+| Dialog footer (every tab) | {status line} · Save Changes (Saving…) · Cancel (discards and closes) — with nothing unsaved: {status line} · Close. The one Save for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
 | Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents needs unique, single-line names of at most 48 characters (never "Off"). · Subagents: {name}: {threshold issue}. · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
@@ -538,7 +547,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Backfill buttons | `Tag Last 30 Days` · `Tag All Sessions` · running: `Stop Tagging` · held: Nothing can answer yet, so nothing can be tagged. |
 | Backfill progress | counting: Finding sessions to tag… · Tagged {done} of {total}{ · n failed}. · Tagged {total} sessions{ · n failed}. New sessions are tagged as they finish. · Stopped at {done} of {total}{ · n failed}. {reason} (cancelled: no reason). · Every session from the last 30 days is tagged. · Every session is tagged. |
 | Saved with notes (banner-warn, notes that name neither the fallback nor the features; replaced at the next save) | **Saved, with notes.** {server warnings as sentences} |
-| Buttons | none in the form — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Buttons | none in the form — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
@@ -571,7 +580,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the model policy** The list below may not match the server. Nothing was changed. [Retry] |
-| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the tab; the unsaved switches stay) | **Couldn't save the model policy.** {reason}. Your saved policy is unchanged. |
 
 ## §design.copy-deck/settings-mesh — Settings · Mesh (§mesh.ui/settings)
@@ -580,7 +589,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Load failed (banner-error) | **Couldn't read the mesh settings.** Nothing was changed. {message} |
 | Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. |
-| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
+| Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
 | Save failed (banner-error at the end of the tab; the unsaved changes stay) | **Couldn't save the mesh settings.** {reason}. Your saved settings are unchanged. |
 
 ## §design.copy-deck/settings-experimental — Settings · Experimental (§app.settings-dialog/save-bar)
@@ -590,7 +599,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Intro | Unfinished features. They can change or disappear, and they apply to sessions you start after switching them on — chats already open keep the setup they began with. |
 | Empty state (no switch to show) | No experimental features right now. |
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
-| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 
 ## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)
 
@@ -1203,64 +1212,3 @@ and `{k}` counts, `{main}` the repository's main branch.
 | Readiness reasons, folder gone (§chat.worktrees/readiness) | "Merged · cleaned up" · "Removed · not merged" · "Removed · no record of a merge" · "Removed · no commits" — the row's `title` words them as "{branch}: merged, cleaned up" / "{branch}: removed, not merged" |
 | sova_archive, per worktree (§app.overseer/tools) | "worktree {path}: removed; branch {branch} deleted (merged)" · "…; branch {branch} deleted (no commits of its own)" · "…; branch {branch} kept (merged by content)" · a folder already gone: "worktree {path}: already gone, dropped from git's list; …" · "worktree {path} ({branch}): kept, {reason}" with a reason from the row below, lower-cased first letter, no final period · "…: left, it belongs to session {id}" |
 | Reasons a tree stays (the server's) | "Not merged into {main}." · "Not on a branch." · "Locked." · "{n} uncommitted files: {first} and {n−1} more" (1: "1 uncommitted file: {first}") · "Session {name}'s folder is inside it." · "Session {name} tracks it and is open in a TUI." · "… and is running." · "… and has its sandbox on." · "A running process is inside it: {command} ({pid})." · "A live session under its .agent: {pid}." · "No longer in git's worktree list." · "Git refused: {git's first line}" · "Changed since the preview: {the new reason}" — `{name}` the session's title, else its short id |
-
-## §design.copy-deck/saved-sessions — Saved sessions (§chat/saved-sessions)
-
-`{title}` is a saved session's title, `{name}` who saved it (git's `user.name`), `{n}` a count or
-version, `{time}` a relative time, `{date}` a short date ("Oct 14"), `{size}` a size ("2.4 MB"),
-`{branch}` a branch (mono), `{remote}` a remote's name (mono), `{model}` a model's name.
-
-**Saving (Sharing tab and the dialog)**
-
-| Where | Copy |
-|---|---|
-| Sharing tab button | `Save Session` beside `Share Session` · disabled `title` "Only a session in a git repository can be saved." |
-| Slash command (§chat/slash-commands) | `/save` · description "Save this session so a colleague can continue it" |
-| Dialog title | "Save Session" · lede "Saved to this repository's `sova/saved-sessions` branch, which is never merged into main." |
-| Fields | `Title` · `Note for whoever opens it` (hint "Optional. Shown before they continue.") · `Branches it belongs to` (hint "Colleagues filter saved sessions by branch.", none: "Name at least one branch.") · `How much history`: `Whole conversation` · `Only what the agent sees now (since its last summary)` · `Trim long tool output` · `Include images` |
-| Cleaning card | heading `Cleaning` · "{n} secrets removed · {n} paths made portable · thinking left out" (zero parts left out) · "{n} possible secrets and {n} images to check" · all decided: "Everything is checked." · `Review` |
-| Review | heading "Check before saving" · lede "Sova removed every secret it knows. These might be secrets too, and it can't read text in images. Keep or remove each one." · a possible secret: the excerpt (mono, the match marked), under it "{where} · {why}" · an image: its thumbnail, "{where} · {size}" · per item `Keep` / `Remove` (a segmented pair) · `Remove All` · `Keep All` · `Done` |
-| Size | "Size after cleaning: {size}" · over 10 MB (warn): "That's large for a repository. A smaller choice above makes it lighter." · over 50 MB (error): "Over the 50 MB limit. Choose only what the agent sees now, or trim long tool output." |
-| Push | `Push so colleagues get it` · hint "Sends it to {remote}." · no remote: disabled, hint "This repository has no remote." |
-| Public warning (first push to a remote) | title "Push to {remote}?" · "If this repository is public, anyone can read this conversation, including what it read from files. Sova removed the secrets it knows; it can't judge the rest." · `Push` · `Not Now` |
-| Buttons | `Cancel` · `Save` (`Saving…`) · Save disabled `title`: "Decide every possible secret and image first." / "Name at least one branch." / "Over the 50 MB limit." |
-| Done (toast) | "Saved {title} (v{n})." · pushed: "Saved {title} (v{n}) and pushed it to {remote}." · push failed: "Saved {title} (v{n}) here. The push failed: {reason}" |
-| Failed | "Couldn't save this session. Nothing was written. {reason}" |
-| Conflict | title "{name} saved a newer version" · "{name} saved v{n} {time}. Save yours as a new copy, or replace theirs?" · `Save as New Copy` · `Replace Theirs` · `Cancel` |
-| Saved list | heading `Saved` · row "{title} · v{n} · {time}" then "Pushed" / "Not pushed", and for one this session started from "Continued from v{n}" · `Save Again` |
-
-**The new-session screen**
-
-| Where | Copy |
-|---|---|
-| Card (under the setup card) | `Saved sessions` · count line "{n} saved · {n} new · {n} updated · {n} can't be read" (parts at zero left out) · with a merged branch to prune, "· {n} branch merged" / "· {n} branches merged" · none: "No saved sessions yet" · list failed: "Couldn't read them" · on main: chip `In {main}` · accessible name "Saved sessions, {count line}" |
-| Window | title `Saved sessions` · lede "Continue one with its whole conversation, or start fresh in this session." · filter label `Branch`, options `All branches`, then each `{branch}` · `Close` |
-| Row | `{title}` · "{name} · {branches} · {time} · {size}" · badges `New` · `Updated` · `Preview` · `Continue` (`Continuing…`) · unreadable: "Can't be read: {reason}" |
-| Get | `Get Saved Sessions` · while it works `Getting…` · `title` "Fetches only the saved-sessions branch from {remote}. Nothing else changes." · done, nothing new: "No new saved sessions on {remote}." · offline: "Couldn't reach {remote}. Check the connection and try again." · sign-in: "{remote} refused the fetch. Check your git credentials." · none on the remote: "{remote} has no saved sessions yet." · other: "Couldn't get saved sessions. {reason}" |
-| None (a remote exists) | the window: "Nothing saved on this computer yet. Get Saved Sessions checks {remote}." and `Get Saved Sessions` |
-| Filtered to nothing | "No saved sessions on {branch}." |
-| List failed | "Couldn't read saved sessions. {reason}" |
-
-**Preview and Continue**
-
-| Where | Copy |
-|---|---|
-| Preview | title `{title}` · "Saved by {name} {date} · v{n} · {branches}" · "Model: {model}" · note heading `Note` · `Last messages`, rows `You` / `Agent` · `Teams and subagents` with "{role} · {how it ended}" and the task under it · none: no heading |
-| Won't fit | "Bigger than {model} can hold: it continues from its last summary." |
-| Trust | "Continue only sessions from people you trust. The agent takes what this conversation says as true." |
-| Model notice | the saved one: "Continues on {model}, the model it was saved with." · fallback: "{saved model} isn't available here, so it continues on {model}, your default. {reason}" |
-| Preview buttons | `Close` · `Continue` |
-| Continue failed | "Couldn't continue this saved session. Nothing changed. {reason}" · not blank: "This session already has messages. Start a new session to continue a saved one." |
-| Worktree offer | heading "Set up its branches?" · "It worked on these branches. Set up a worktree for each one you want; your folder stays on {branch}." · rows `{branch}` with "a local branch" / "from {remote}" / "already at {path}" / "not here" · `Set Up Worktrees` (`Setting Up…`) · `Skip` · done: "Set up {n} worktrees. The agent knows where they are." · failed row: "{branch}: {reason}" |
-| Continuation note (where the saved history ends, above the first new message) | heading "Continued from a saved session" · "{name} saved this {date} (v{n}). {note}" · "Teams and subagents it mentions ran on {name}'s computer and aren't here. You can't message or wait on them; start new ones if needed." then the summary rows · cut: "It was too big for {model}, so it starts from its last summary." · fallback: the model notice |
-
-**Saved sessions in main, and after a merge**
-
-| Where | Copy |
-|---|---|
-| Merge guard (the refusal, the server's sentence) | "This branch's history carries saved sessions: {branch} has {n} commits adding, changing or removing a saved conversation ({sha} {subject} ({paths}); …). Merging would put those conversations in the target's history, even ones a later commit deleted. Nothing was merged. This needs the saved sessions cleaned out of the branch's history (the work re-applied on a fresh branch), or the user's explicit go-ahead; if the user wants it merged anyway, the user is asked to confirm." (the `worktree` tool, to the agent; its override's confirm: title "Merge saved sessions into the target?", naming the branch and saying the conversations stay in the target's history) · Merge Branch and the project page's merge end instead "…Move the work to a branch without them, or press Merge Anyway." and show it with the override `Merge Anyway` |
-| On main (alert, at the top of the Saved sessions window) | title "Saved sessions are in {main}" · pushed: "{n} saved sessions were committed to {main}: {titles}. Anyone who can read {main} can read them." · not pushed yet: "{n} saved sessions were committed to {main}, not pushed yet: {titles}." · a row only in history: "{title}: in {main}'s unpushed history" (no Remove from Main for it) · `Remove from Main` · `Purge from History` (only while unpushed) · pushed: `Show Checklist` |
-| Remove from Main, done | "Removed them from {main} in one commit. They're still in its history: change any secret they held." |
-| Purge, confirm | "Rewrite {n} unpushed commits on {main} without these folders? The old head stays as {backup}." · `Purge` · `Cancel` · done: "Purged. The old head is kept as {backup}." |
-| Checklist (pushed) | "{main} was pushed with them, so Sova won't rewrite it." · "1. Change every secret they held." · "2. Tell colleagues." · "3. If the team agrees, rewrite {main} and force-push it by hand." · "4. Ask your code host to clear cached copies." |
-| After a branch merged (at the top of the Saved sessions window) | "{branch} is merged. Its {n} saved sessions are still kept." · `Delete Them` · `Keep` · confirm: title "Delete {n} saved sessions of {branch}?", body "{title} by {name}, … They leave the saved-sessions branch in a new commit, pushed to {remote}." (push off: "…in a new commit, on this computer only.") then "Git history keeps them.", buttons `Delete` (destructive) · `Cancel` · done: "Deleted {n} saved sessions of {branch}." |

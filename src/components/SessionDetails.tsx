@@ -2,15 +2,12 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, on,
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
+import { canReviewChanges, readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel, remotePlaceOf } from "../lib/remote-session";
-import { addProject, ApiError, listProjects, savedForSession } from "../lib/api";
-import type { SavedForSessionEntry, SavedForSessionResponse } from "../../shared/session-bundle";
-import { revWord, savedRowLine } from "../lib/saved-sessions";
-import { bumpSaved, SaveSessionDialog, savedTick } from "./SaveSessionDialog";
+import { addProject, ApiError, listProjects } from "../lib/api";
 import { projectAt } from "../lib/projects";
 import { projectHref } from "../lib/projects-route";
 import { addedLine } from "./AddProjectDialog";
@@ -308,22 +305,6 @@ export function SharingSection(props: {
   const [sheet, setSheet] = createSignal<SessionShare | null>(null);
   const abs = (iso: string) => absoluteTime(iso, props.now);
   const newShare = () => shareHref(props.session.id, { host: host() });
-  const [saving, setSaving] = createSignal(false);
-  // The Saved list (§chat.saved-sessions/saved-list): read on open and after every save, wherever it ran.
-  const [saved, setSaved] = createSignal<SavedForSessionResponse | null>(null);
-  const [savedError, setSavedError] = createSignal<string | null>(null);
-  createEffect(
-    on([() => props.session.path, savedTick], ([path]) => {
-      savedForSession(path).then(
-        (res) => {
-          if (props.session.path !== path) return;
-          setSaved(res);
-          setSavedError(null);
-        },
-        (err) => props.session.path === path && setSavedError((err as Error).message),
-      );
-    }),
-  );
 
   return (
     <section class="stack-2" aria-labelledby="sharing-label">
@@ -374,25 +355,12 @@ export function SharingSection(props: {
           </ul>
         </Match>
       </Switch>
-      <div class="cluster">
-        <Show when={!props.error}>
+      <Show when={!props.error}>
+        <div class="cluster">
           <a class="button" href={newShare()}>
             Share Session
           </a>
-        </Show>
-        <button
-          type="button"
-          class="button"
-          disabled={saved()?.repo === false}
-          title={saved()?.repo === false ? "Only a session in a git repository can be saved." : undefined}
-          onClick={() => setSaving(true)}
-        >
-          Save Session
-        </button>
-      </div>
-      <SavedList saved={saved()?.saved ?? null} error={savedError()} now={props.now} onSaveAgain={() => setSaving(true)} />
-      <Show when={saving()}>
-        <SaveSessionDialog path={props.session.path} onClose={() => setSaving(false)} onSaved={bumpSaved} />
+        </div>
       </Show>
       <Show when={sheet()}>
         {(open) => (
@@ -408,42 +376,6 @@ export function SharingSection(props: {
         )}
       </Show>
     </section>
-  );
-}
-
-/** The Sharing tab's Saved list: what this session saved, or the saved session it started from, with
-    Save Again (§chat.saved-sessions/saved-list). Nothing at all before the first save. */
-function SavedList(props: { saved: SavedForSessionEntry[] | null; error: string | null; now: number; onSaveAgain(): void }) {
-  return (
-    <Show when={props.saved?.length || props.error}>
-      <section class="stack-2 saved-list-section" aria-labelledby="saved-label">
-        <h3 class="text-eyebrow" id="saved-label">
-          Saved
-        </h3>
-        <Show when={props.error}>{(msg) => <p class="usage-note">Couldn't read saved sessions. {msg()}</p>}</Show>
-        <Show when={props.saved?.length}>
-          <ul class="list saved-list">
-            <For each={props.saved}>
-              {(e) => (
-                <li class="list-row saved-row">
-                  <div class="list-main">
-                    <p class="list-title" title={absoluteTime(e.savedAt, props.now)}>
-                      {savedRowLine(e.title, e.rev, relativeTime(e.savedAt, props.now))}
-                    </p>
-                    <p class="list-meta">{e.how === "continued" ? `Continued from ${revWord(e.rev)}` : e.pushed ? "Pushed" : "Not pushed"}</p>
-                  </div>
-                </li>
-              )}
-            </For>
-          </ul>
-          <div class="cluster">
-            <button type="button" class="button" onClick={() => props.onSaveAgain()}>
-              Save Again
-            </button>
-          </div>
-        </Show>
-      </section>
-    </Show>
   );
 }
 
@@ -726,7 +658,7 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
         </div>
         <Show when={readinessReason(w())}>{(line) => <p class="list-meta worktree-reason">{line()}</p>}</Show>
       </div>
-      <Show when={w().status === "active" && w().exists}>
+      <Show when={canReviewChanges(w())}>
         <button
           type="button"
           class="button button-sm worktree-row-action"

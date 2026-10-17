@@ -55,7 +55,11 @@ export const modelsJson = (port) => ({
       baseUrl: `http://127.0.0.1:${port}/v1`,
       api: "openai-completions",
       apiKey: "trial",
-      models: [{ id: "m1", contextWindow: 100000, maxTokens: 4000 }],
+      models: [
+        { id: "m1", contextWindow: 100000, maxTokens: 4000 },
+        // A second model: a switch to it is visible in the file (run.mjs tsend).
+        { id: "m2", contextWindow: 100000, maxTokens: 4000 },
+      ],
     },
   },
 });
@@ -88,8 +92,12 @@ export function buildAgentDir(scratch, { mockPort, auth } = {}) {
   rmSync(settingsFile, { force: true });
   writeFileSync(settingsFile, JSON.stringify({ ...settings, defaultProvider: "trial", defaultModel: "m1" }, null, 2));
   // The Overseer on the mock, its explorer a pi worker on the mock (the default is Claude Code).
+  // Its memory off (on by default; the value server/testing/overseer-memory.ts overseerMemoryOff
+  // writes): the memory view quotes earlier prompts back as user text, which the mock reads as tags
+  // (an earlier turn's [call …] replayed) and which fills the 300 characters it logs (a brief's tag
+  // cut off). The trial checks processes, not memory.
   mkdirSync(join(agent, "sova"), { recursive: true });
-  writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" } }, null, 2));
+  writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" }, memory: { on: false, type: "uniichat", size: 128 } }, null, 2));
   mkdirSync(join(agent, "extensions"), { recursive: true });
   copyFileSync(join(HERE, "trial-dialog.ts"), join(agent, "extensions", "trial-dialog.ts"));
   // Replaced, never written through: a link there would reach whatever it names.

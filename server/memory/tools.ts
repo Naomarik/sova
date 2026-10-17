@@ -20,7 +20,8 @@ export function zoomTool(engineOf: EngineOf): ToolSpec<{ id: number; n: number }
   return {
     name: MEMORY_ZOOM_TOOL,
     label: "Zoom",
-    description: "Open the line id+n of the memory view into the two lines of n/2 under it; n = 1 gives the message whole.",
+    description:
+      "Recall anything from earlier in this chat (a session, its full id, a branch, a number, what was said): every message is kept whole under its memory line. Opens line id+n into its two lines of n/2; n = 1 gives message id whole. Use it before searching.",
     parameters: {
       type: "object",
       properties: {

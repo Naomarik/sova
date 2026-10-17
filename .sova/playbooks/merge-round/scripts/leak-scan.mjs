@@ -70,12 +70,6 @@ const SECRETS = [
   ["assigned secret", /\b(?:api[_-]?key|secret|token|password)\b\s*[:=]\s*["'][^"'\s]{16,}["']/i],
 ];
 
-// A saved Sova session's marker (its card and README carry it; spelled in two parts so this file never
-// holds it whole). A conversation belongs on the sova/saved-sessions branch only: one committed on a code
-// branch, even one a later commit deleted, would be published with it, so a line that adds OR removes the
-// marker is a hit.
-const SAVED_SESSION_MARKER = ["sova-saved-session", "v1"].join("/");
-
 let log;
 try {
   log = execFileSync("git", ["log", "-p", "--no-color", "--no-ext-diff", "--format=@@commit %H%n%B%n@@end-message", range], {
@@ -94,8 +88,6 @@ let commits = 0;
 let inMessage = false;
 let messageLine = 0;
 let file = null;
-let oldFile = null;
-let inHeader = false;
 let newLine = 0;
 function check(text, where) {
   const lower = text.toLowerCase();
@@ -118,34 +110,23 @@ for (const line of log.split("\n")) {
   }
   if (line.startsWith("diff --git ")) {
     file = null;
-    oldFile = null;
-    inHeader = true;
     continue;
   }
-  if (inHeader && line.startsWith("--- ")) {
-    oldFile = line === "--- /dev/null" ? null : line.slice(6);
-    continue;
-  }
-  if (inHeader && line.startsWith("+++ ")) {
+  if (line.startsWith("+++ ")) {
     file = line === "+++ /dev/null" ? null : line.slice(6);
     if (file) check(file, `commit ${commit} · ${shown(file)} · its name`);
-    // A deleted file has no new name; its removed lines are still read for the saved-session marker.
-    else file = oldFile;
     continue;
   }
   const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
   if (hunk) {
     newLine = Number(hunk[1]);
-    inHeader = false;
     continue;
   }
   if (!file) continue;
   if (line.startsWith("+")) {
     check(line.slice(1), `commit ${commit} · ${shown(file)}:${newLine}`);
-    if (line.includes(SAVED_SESSION_MARKER)) hits.push(`commit ${commit} · ${shown(file)} · a saved Sova session (it belongs on sova/saved-sessions only)`);
     newLine++;
   } else if (line.startsWith(" ")) newLine++;
-  else if (line.startsWith("-") && line.includes(SAVED_SESSION_MARKER)) hits.push(`commit ${commit} · ${shown(file)} · a saved Sova session deleted here is still in the history`);
 }
 
 // A file's name is checked once per commit that adds or changes it; keep each hit once.

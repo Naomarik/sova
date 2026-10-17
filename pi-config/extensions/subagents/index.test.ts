@@ -7,7 +7,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { claudeOffer } from "../claude-code/catalog.ts";
 import { placeholderDir } from "../remote/argv.ts";
@@ -4571,4 +4571,33 @@ test("spec on with the parent's worker modes (mode:worker) too: the spec block c
 		assert.ok(!h.workers[1].systemPrompt.includes(brief));
 		assert.ok(h.workers[1].extensions.includes(SPEC_WORKER_EXTENSION), "the census hook still comes");
 	} finally { await h.close(); }
+});
+
+test("mode: a worker with bash gets the parent's project mode tools (the -e hook and the copies file); a read-only worker gets the block only", async () => {
+	const { PROJECT_TOOLS_FILE_ENV, readWorkerToolsFile } = await import("../mode/project-tools.ts");
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-project-tools-"));
+	const h = harness(eventBus(), { agentDir });
+	const copy = (id: string, tools: unknown[]) => ({ v: 1, id, dir: `/repo/.sova/minor-modes/${id}`, description: "d", workers: true, tools, text: `# Project minor mode: ${id}`, sha: "a".repeat(64), toolsHash: tools.length ? "b".repeat(64) : "" });
+	const tool = { name: "status", description: "s", params: { type: "object", properties: {} }, command: ["./bin/status"], timeoutS: 60 };
+	try {
+		h.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [], prompt: "# Project minor mode: release-check", projectModes: [copy("release-check", [tool]), copy("notes", [])] });
+		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		const w = h.workers.at(-1);
+		assert.ok(w.extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION));
+		assert.equal(PROJECT_TOOLS_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "project-tools-worker.ts")));
+		const file = w.env[PROJECT_TOOLS_FILE_ENV];
+		assert.ok(file.startsWith(path.join(agentDir, "sova", "project-tools")));
+		assert.deepEqual(readWorkerToolsFile(file).map((c: { id: string }) => c.id), ["release-check"], "only copies with tools");
+		await h.call("agent_spawn", { prompt: "read-only task", tools: ["read", "grep"] });
+		const ro = h.workers.at(-1);
+		assert.ok(!ro.extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION), "a read-only worker never gains a program to run");
+		assert.equal(ro.env?.[PROJECT_TOOLS_FILE_ENV], undefined);
+		assert.ok(ro.systemPrompt.includes("# Project minor mode: release-check"), "it still gets the block");
+		h.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [], prompt: "# Project minor mode: notes", projectModes: [copy("notes", [])] });
+		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
+		assert.ok(!h.workers.at(-1).extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION), "no tools, no hook");
+	} finally {
+		await h.close();
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
 });

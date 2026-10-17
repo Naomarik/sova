@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
-import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type FrameOf } from "../shared/chat-runtime-wire";
+import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
 import { sovaToken } from "./auth";
 import {
   acquireChatHandle,
@@ -20,6 +20,7 @@ import {
   ConfigError,
   RefusedError,
   type ChatHandle,
+  type CloseOpts,
   chatHandle,
   currentLinkOrigin,
   errorOfRefusal,
@@ -77,6 +78,25 @@ const READY_WAIT_MS = 10_000;
 const TAKE_BACK_MAX_MS = 120_000;
 /** How long a new chat process may boot before its start fails: the worst measured start under heavy load was 34 s. */
 const BOOT_WAIT_MS = 40_000;
+/** How long a chat process may take to answer its `open`. */
+const OPEN_WAIT_MS = 60_000;
+/** A start this slow or slower, launch to open, gets a line in the server's log (§app.chat-processes/boot-log). */
+const SLOW_START_MS = 5_000;
+
+const secs = (ms: number) => `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
+
+/** The last step a chat process reported on `link` for `phase` (§app.chat-processes/boot-log), heard
+    until `off`: `stuck in <step> for N s`, or `no step reported` (a chat on older code reports none). */
+function hearSteps(link: Link, phase: FrameOf<"boot">["phase"]): { stuck(): string; off(): void } {
+  let last: { f: FrameOf<"boot">; at: number } | null = null;
+  const off = link.on("boot", (f) => {
+    if (f.phase === phase) last = { f, at: Date.now() };
+  });
+  return {
+    stuck: () => (last ? `stuck in ${last.f.step} for ${secs(last.f.stepMs + Date.now() - last.at)}` : "no step reported"),
+    off,
+  };
+}
 
 /** How this server runs chat processes, once decided at start (logged in full). */
 let host: ChatHost | null = null;
@@ -106,6 +126,11 @@ export interface RouterDeps {
   gen?: Generation;
   /** A crashed chat's one resume, a few seconds on (the server: overseer's resumeCrashedChat); `done` once sent or refused. */
   resumeCrashed?: (path: string, since: number, before: (path: string) => Promise<void>, done?: () => void) => void;
+  /** Tests only: how long a booting process may take to say ready (40 s), to answer its open (60 s),
+      and from when a start is slow enough for the server's log (5 s). */
+  bootWaitMs?: number;
+  openWaitMs?: number;
+  slowStartMs?: number;
 }
 
 export class ChatHostRouter {
@@ -138,6 +163,9 @@ export class ChatHostRouter {
   private readonly bun: () => string | null;
   private readonly sweepChildren: (() => Promise<string[]>) | undefined;
   private readonly gen: Generation | undefined;
+  private readonly bootWaitMs: number;
+  private readonly openWaitMs: number;
+  private readonly slowStartMs: number;
   /** Unused code generations collected (after the take-back, hourly, after a run of reloads). */
   private gc: { collect: () => Promise<void>; stop: () => void } | null = null;
 
@@ -151,6 +179,9 @@ export class ChatHostRouter {
     this.bun = deps.bun ?? chatBun;
     this.sweepChildren = deps.sweepChildren;
     this.gen = deps.gen;
+    this.bootWaitMs = deps.bootWaitMs ?? BOOT_WAIT_MS;
+    this.openWaitMs = deps.openWaitMs ?? OPEN_WAIT_MS;
+    this.slowStartMs = deps.slowStartMs ?? SLOW_START_MS;
     this.resumeCrashed = deps.resumeCrashed ?? resumeCrashedChat;
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
@@ -202,9 +233,9 @@ export class ChatHostRouter {
         log(`${id}: did not start (${d.detail ?? d.cause})`);
         this.forget(d.sessionPath);
       },
-      onStopped: (id) => {
+      onStopped: (id, cause) => {
         const path = this.paths.get(id);
-        if (path) this.forget(path);
+        if (path) this.forget(path, cause);
       },
       drain: (id, reason) => this.handleOf(id)?.drain(reason) ?? Promise.resolve({ ok: false }),
       reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild() ?? Promise.resolve("none" as const),
@@ -266,9 +297,14 @@ export class ChatHostRouter {
     return path ? this.remotes.get(path) : undefined;
   }
 
-  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand). */
-  private forget(path: string): void {
+  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand),
+      except after an idle stop: they are told the chat closed, and keep what they show without
+      reconnecting until they need it (§chat.transcript/instant-open). */
+  private forget(path: string, cause?: ExitCause): void {
     const h = this.remotes.get(path);
+    // An archive's own exit can come before its close finishes: its panes are told `closed` either way.
+    if (cause === "idle" || h?.closingQuietly) h?.closePanesQuietly(cause === "idle" ? "idle" : "archived");
+    // Panes told `closed` are gone from the handle already: this ends its calls only.
     h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) {
       this.paths.delete(h.mirror.sessionId);
@@ -284,7 +320,8 @@ export class ChatHostRouter {
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;
-      sup.noteIdle(m.sessionId, m.quiet.quiet && m.quiet.clients === 0, m.quiet.since);
+      // Quiet is enough: an open tab doesn't keep a chat running (§app.chat-processes/idle-stop).
+      sup.noteIdle(m.sessionId, m.quiet.quiet, m.quiet.since);
       sup.noteClaude(m.sessionId, m.claude);
       const w = this.workerPaths.has(h.path) ? this.workers.record(m.sessionId) : undefined;
       setRemoteHosted(h.path, {
@@ -295,6 +332,7 @@ export class ChatHostRouter {
         toolsRunning: m.monitor.toolsRunning,
         lastToolEnd: m.monitor.lastToolEnd,
         pid: h.at.pid,
+        ...(m.model?.provider ? { provider: m.model.provider } : {}),
         ...(w ? { worker: { parentPath: w.parent.path, parentSessionId: w.parent.sessionId, workerId: w.parent.workerId } } : {}),
       });
       if (w) this.workers.onState(h);
@@ -307,7 +345,7 @@ export class ChatHostRouter {
       const id = h.mirror.sessionId;
       this.sup.expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.
-      if (cause !== "reload") this.forget(h.path);
+      if (cause !== "reload") this.forget(h.path, cause);
       if (this.workers.has(id)) this.workers.onExit(id, cause);
     },
     linkEnd: (h, end) => {
@@ -359,7 +397,7 @@ export class ChatHostRouter {
     const id = randomUUID();
     if (worker) {
       // A worker chat opens as its loadout says, with nothing an ordinary chat is served.
-      const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
+      const answer = this.awaitOpened(link, id, sessionId);
       link.send({ t: "open", id, path, force, link: null, served: [], worker });
       const f: FrameOf<"opened"> = await answer;
       if (f.ok) return f.mirror;
@@ -369,7 +407,7 @@ export class ChatHostRouter {
     // A special chat's loadout is the server's word on it at each open (its refusal: no open); a
     // start built it already, before its process was spawned.
     const special: SpecialSpec | undefined = built ?? (kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined);
-    const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
+    const answer = this.awaitOpened(link, id, sessionId);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
     const served = servedToolsFor(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind === "powers");
@@ -378,6 +416,21 @@ export class ChatHostRouter {
     if (f.ok) return f.mirror;
     if (f.refusal) throw errorOfRefusal(f.refusal);
     throw new Error(f.error?.message ?? "The chat did not open in its process.");
+  }
+
+  /** The answer to open `id`, waited for from before the open is sent. One that doesn't come is logged
+      with the step the chat's open was in (§app.chat-processes/boot-log); the error is unchanged. */
+  private async awaitOpened(link: Link, id: string, sessionId: string): Promise<FrameOf<"opened">> {
+    const steps = hearSteps(link, "opening");
+    const t0 = Date.now();
+    try {
+      return await awaitFrame(link, "opened", this.openWaitMs, (f) => f.id === id);
+    } catch (err) {
+      log(`${sessionId}: its open got no answer after ${secs(Date.now() - t0)} (${err instanceof Error ? err.message : String(err)}): ${steps.stuck()}`);
+      throw err;
+    } finally {
+      steps.off();
+    }
   }
 
   private adoptHandle(rec: ChatRecord, link: Link, mirror: ChatRuntimeMirror, held?: HeldRequests): RemoteChatHandle {
@@ -633,24 +686,41 @@ export class ChatHostRouter {
     exitsItself: (err: unknown) => boolean = () => false,
   ): Promise<RemoteChatHandle> {
     let rec: ChatRecord;
+    const t0 = Date.now();
     try {
       rec = await sup.start(at);
     } catch (err) {
       throw new NoProcess(err instanceof Error ? err.message : String(err));
     }
     let link: Link;
+    let answeredAt = 0;
+    // The start's steps, heard while its hello says booting (§app.chat-processes/boot-log).
+    let steps: ReturnType<typeof hearSteps> | null = null;
     try {
       const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
       link = c.link;
+      answeredAt = Date.now();
       sup.noteConnected(rec.chatId);
       if (c.hello.proto < minProto) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${minProto}`);
-      if (c.hello.state === "booting") await awaitFrame(link, "hello", BOOT_WAIT_MS, (h) => h.state !== "booting");
+      if (c.hello.state === "booting") {
+        steps = hearSteps(link, "starting");
+        await awaitFrame(link, "hello", this.bootWaitMs, (h) => h.state !== "booting");
+      }
     } catch (err) {
-      await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
-      throw new NoProcess(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      // Where the start was when the wait ended: in the server's log and the stopped chat's record.
+      const where = steps ? `; ${steps.stuck()} (answered after ${secs(answeredAt - t0)})` : "";
+      if (steps) log(`${rec.chatId}: not ready after ${secs(Date.now() - t0)}${where}`);
+      await sup.lost(rec.chatId, `no hello: ${msg}${where}`).catch(() => {});
+      throw new NoProcess(msg);
+    } finally {
+      steps?.off();
     }
+    const readyAt = Date.now();
     try {
       const h = this.adoptHandle(rec, link, await open(link, rec));
+      const total = Date.now() - t0;
+      if (total >= this.slowStartMs) log(`${rec.chatId}: started in ${secs(total)} (answered after ${secs(answeredAt - t0)}, ready after ${secs(readyAt - t0)}, opened after ${secs(total)})`);
       this.good(rec);
       await adopted?.(h);
       return h;
@@ -662,13 +732,18 @@ export class ChatHostRouter {
     }
   }
 
-  async close(path: string, message: string): Promise<boolean> {
+  async close(path: string, message: string, opts: CloseOpts = {}): Promise<boolean> {
     const h = this.remotes.get(path);
     if (!h || h.closed) return false;
     const sid = h.mirror.sessionId;
+    // An archive: the chat's own goodbye (`reloaded`, from its dispose) reaches no tab, so none
+    // reconnects, which would start the archived chat again. Its tabs keep everything before it (an
+    // ack for a send it took) and are told `closed` once the drain returned; its calls end after that.
+    if (opts.quiet) h.beginQuietClose();
     this.sup.expectExit(sid, "archived");
     const r = await h.drain("archived", { force: true, message });
     if (!r.ok) await this.sup.stop(sid, "archived").catch(() => {});
+    if (opts.quiet) h.closePanesQuietly(opts.quiet);
     this.forget(path);
     return true;
   }
@@ -830,7 +905,7 @@ export function startChatHost(): void {
       if (!router) throw new Error("The Sova server's chat host did not start.");
       return router.acquire(path, force);
     },
-    close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
+    close: (path, message, opts) => (router ? router.close(path, message, opts) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
   });
 }

@@ -184,11 +184,7 @@ merge while you are idle. So:
   session is doing or asking right now, read its tail with `sova_read_session`.
 - **Alignments through their tool.** For an alignment's questions, options, recommendation or
   decisions, call `sova_alignment`; never grep or read a session's file for them.
-- **Ids are copied, never typed.** Take a session id verbatim from a tool's output in this turn
-  (`sova_list_sessions`, `sova_attention`, `sova_session`). Never type, shorten or piece one
-  together from memory; when unsure, `sova_list_sessions` with a query first. A hidden `[ids]`
-  note naming an id from your last reply as no session here means that link was wrong: correct it
-  at the start of your next reply, with the id copied from a tool.
+{{IDS}}
 - **Checks are what a session says.** "Tests pass" or "merged" from a session is its claim: write
   "it says the tests pass" unless `sova_session` shows a check that passed after the newest
   commit ("last check passed …, after its newest commit"), or a Merged line.

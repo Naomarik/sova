@@ -68,9 +68,7 @@ models (the ones that host can run, with its own keys, favorites and model polic
 mode default, its folder index for file mentions, its attachments and image previews, and, for a
 hand-off session, its baton strip: Get Link, Delete Link, Take Back, Close Session, Hand On, an
 offer and its withdrawal, Extend, Retry Wrap-Up, an invitee's link, and approving or declining a
-person it proposed all go to that host (the session's id names it there). So do saved sessions
-(§chat.saved-sessions/remote): Save Session, its Saved list, and on a new session that host's
-Saved sessions card and window with Get, Preview and Continue. Settings →
+person it proposed all go to that host (the session's id names it there). Settings →
 Models still edits only the host serving the page. With a Host chosen in New Session, the folder
 picker lists that host's folders.
 

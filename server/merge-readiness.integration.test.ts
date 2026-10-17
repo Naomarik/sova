@@ -139,3 +139,54 @@ const commit = (cwd: string, file: string, msg: string) => {
 };
 
 // Right after a removal, the first look used to answer from the reading cached before it.
+// The spec manifest driver's shape: `node "<absolute path>" …`, a script that imports its core.
+test("a node merge driver run from an absolute path: an edit to a file it imports alone changes an idle session's readiness at the next listing", async () => {
+  const root = realpathSync(mkdtempSync(join(agentDir, "node-driver-")));
+  const main = join(root, "repo");
+  const core = join(root, "live", "core");
+  mkdirSync(main);
+  mkdirSync(core, { recursive: true });
+  writeFileSync(join(core, "driver.mjs"), 'import { code } from "./decide.mjs";\nprocess.exit(code);\n');
+  writeFileSync(join(core, "decide.mjs"), "export const code = 1;\n");
+  git(main, "init", "-q", "-b", "master");
+  writeFileSync(join(main, ".gitattributes"), "a.txt merge=drv\n");
+  git(main, "add", ".gitattributes");
+  commit(main, "a.txt", "one");
+  git(main, "config", "merge.drv.driver", `node "${join(core, "driver.mjs")}" --base %O --ours %A --theirs %B`);
+  const base = git(main, "rev-parse", "HEAD");
+  const wt = join(root, "wt");
+  git(main, "worktree", "add", "-q", "-b", "feat/node-driver", wt);
+  commit(wt, "a.txt", "feature");
+  commit(main, "a.txt", "master");
+
+  const sid = "01a103ed-a706-7126-a85b-000000000003";
+  const path = join(root, `${sid}.jsonl`);
+  const entries = [{ type: "session", version: 3, id: sid, timestamp: "2026-10-04T10:00:00.000Z", cwd: main }, { type: "custom", customType: "worktrees", id: "e1", parentId: null, timestamp: "2026-10-04T10:00:01.000Z", data: { version: 1, trees: [{ path: wt, branch: "feat/node-driver", base, baseBranch: "master", status: "active", session: sid, how: "created", at: 1 }] } }];
+  writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+  const row = summary(path, { id: sid, cwd: main });
+
+  const { WorktreeInsights, execGit } = await import("./worktrees");
+  let now = 1_000_000;
+  const calls: string[][] = [];
+  const ins = new WorktreeInsights({ now: () => now, run: (args, opts) => { calls.push([...args]); return execGit(args, opts); } });
+  r.resetReadiness();
+  r.configureReadiness({ now: () => now, insights: ins, treeStamp: (d) => ins.quietStamp(d), asksUser: () => undefined });
+  const state = () => r.readinessOverlay(row)?.trees[0];
+  const tick = async (ms: number) => { now += ms; r.readinessOverlay(row); await r.readinessIdle(); };
+  try {
+    await tick(0);
+    await tick(r.READINESS_TTL_MS);
+    assert.equal(state()?.reason, "Conflicts with master · 1 file");
+    calls.length = 0;
+    await tick(r.READINESS_TTL_MS);
+    assert.deepEqual(calls, [], "unchanged: no Git, so no driver run");
+    writeFileSync(join(core, "decide.mjs"), "export const code = 0;\n");
+    await tick(1);
+    assert.equal(state()?.state, "merged", "the imported file's change alone: the trial merge now lands nothing new");
+    assert.ok(calls.some((a) => a[0] === "merge-tree"));
+  } finally {
+    await r.readinessIdle();
+    r.resetReadiness();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

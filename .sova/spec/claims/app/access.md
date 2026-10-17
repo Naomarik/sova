@@ -158,6 +158,18 @@ alternative for someone who has that launcher.
 - **The phone.** A device reaching the app through `tailscale serve` gets in with a pairing code
   read off a browser that is already unlocked, or with the token its owner copies to it; its host
   name counts as reachable by the rule above.
+- **Its copy.** Heading "Unlock Sova"; "This browser hasn't been let into this Sova yet."; "A pairing
+  code is the way in: on any browser that's already in, open Access to make a code, then open this
+  address with `#c=<code>` after it, or paste the code here." The choice, legend **What are you
+  pasting?**, is two radios, starting on the token (the recovery path that always works): **Pairing
+  code** ("Made in Access on a browser that's already in. Works once, for 5 minutes.") and **Access
+  token** ("This install's long-lived credential, from its token file."). The field is labelled by
+  the choice and masked; its hint is, for a code, "Paste it whole, exactly as Access shows it.", and
+  for the token, the token file's path (`~/.pi/agent/sova/auth-token`, or `sova/auth-token` under the
+  server's `PI_CODING_AGENT_DIR`) with `sova token` and `sova open` as the launcher's alternative.
+  **Unlock** is disabled while the field is empty or a try is under way; a refusal shows its reason
+  under the field. The foot: "Unlocking covers this address only: `127.0.0.1`, `localhost` and a
+  tailnet name each need their own, while two ports of one host share one."
 
 ## §app.access/callers — Everything that is not a browser
 
@@ -233,6 +245,30 @@ own cookie. The code is a secret in its own right and is treated as one.
   page; that page shows the code, the exact URL to open on the other device, and a copy control.
   It is the only entry point — Settings has no access tab. Nothing here is written to a log, and
   the code and the token never appear in a session file or a tool result.
+- **Its copy.** The Overview's **Access** action ("Get a code to unlock Sova on another browser,
+  another address, or your other device.") opens `#/access`: **Back to Overview**, heading
+  **Access**, then "Let another browser or device into this Sova — a different browser or address
+  on this machine, or your phone — with a one-use code. You never see or share this install's access
+  token." The **Bring a device in** card explains the code ("The code expires in 5 minutes and works
+  once. …") and has **Make a Code** (while minting **Making Code…**, then **Make Another Code**),
+  with a status line: "No code made yet. Make one when your other device is ready.", "Making a code
+  for your other device…", "Your code is ready. Keep the code and link private." or "The code
+  couldn't be made. Try making a code again." A made code shows:
+  - the QR of the first link, when that link is reachable from another device (not loopback),
+    with "Scan with your phone's camera. Keep this QR and its link private." ("This link is too long
+    for an easy-to-scan QR. Copy the link to your other device instead." when it won't fit); with no
+    such link, "Sova has to be reached by its tailnet address for a phone to pair. Open Sova at that
+    address, then make another code.";
+  - the **Pairing code** field, read-only, and a countdown ("4:59 left"; then "This code has
+    expired. Make another code.");
+  - one read-only field per link, labelled **Phone · Tailscale** (the tailnet HTTPS address),
+    **This address** (the page's own origin) or **This machine only** (the page's origin when it is
+    `localhost`), each with **Copy Link** ("Link copied." / "The link wasn't copied. Select it and
+    copy it yourself."), disabled once the code expired.
+  The **If the code path isn't working** section warns that the token is a long-lived credential
+  and that a screenshot shares it, and offers **Reveal Install Token** (**Revealing Token…**), which
+  shows it in an **Install token** field; a failure says to try again or read the token file on the
+  machine Sova runs on.
 - **The token, in full, only where it is needed.** The same page may show the install's token
   behind a second, deliberate step — for the case where the exchange route itself is what is broken
   — and never by default.

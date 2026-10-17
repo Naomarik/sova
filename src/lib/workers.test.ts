@@ -28,7 +28,14 @@ import {
   workerTeam,
   workingChipTitle,
   workingSplit,
+  allEndedLabel,
+  endedKinds,
+  endedNote,
+  tallyWorkers,
+  workerEnded,
+  workersTrigger,
 } from "./workers";
+import type { WorkerStatus } from "../../shared/protocol";
 
 const live = (working: number) => ({ pid: 1, status: "idle", workers: { working, total: working + 1 } });
 
@@ -296,5 +303,110 @@ describe("worker context fill", () => {
     assert.equal(ringContext({ tokens: 1, window: null }), null);
     assert.equal(ringContext("compacted"), null);
     assert.equal(ringContext(null), null);
+  });
+});
+
+const statuses = (...s: [WorkerStatus, number][]) => s.flatMap(([status, n]) => Array.from({ length: n }, () => ({ status })));
+/** The reported case: 1 running, 6 waiting (idle team members), 16 stopped, 2 failed. */
+const reported = statuses(["running", 1], ["waiting", 6], ["killed", 16], ["error", 2]);
+
+test("workerEnded: done, failed and stopped have ended; every other status is live", () => {
+  const all: WorkerStatus[] = ["starting", "running", "waiting", "stopping", "done", "error", "killed", "restored"];
+  assert.deepEqual(all.filter((status) => workerEnded({ status })), ["done", "error", "killed"]);
+});
+
+test("tallyWorkers counts the live ones and names the ended by kind", () => {
+  assert.deepEqual(tallyWorkers(reported, 25), { live: 7, ended: 18, kinds: { stopped: 16, failed: 2, done: 0 } });
+  assert.deepEqual(tallyWorkers(reported), tallyWorkers(reported, 25), "no record total: the list's");
+  assert.deepEqual(tallyWorkers([], 0), { live: 0, ended: 0, kinds: { stopped: 0, failed: 0, done: 0 } });
+});
+
+test("tallyWorkers: a record that trims ended workers still counts them, with no split that doesn't add up", () => {
+  // A live record lists 40 at most, live ones first: 30 more ended ones it doesn't list.
+  const t = tallyWorkers(reported, 55);
+  assert.equal(t.live, 7);
+  assert.equal(t.ended, 48);
+  assert.equal(t.kinds, null);
+  assert.equal(endedNote(t), "48 ended");
+});
+
+test("endedNote: stopped, failed, then done, a kind at 0 left out; nothing when none ended", () => {
+  assert.equal(endedNote(tallyWorkers(reported, 25)), "18 ended: 16 stopped, 2 failed");
+  assert.equal(endedNote(tallyWorkers(statuses(["done", 1], ["error", 1], ["killed", 1]))), "3 ended: 1 stopped, 1 failed, 1 done");
+  assert.equal(endedNote(tallyWorkers(statuses(["done", 2], ["running", 1]))), "2 ended: 2 done");
+  assert.equal(endedNote(tallyWorkers(statuses(["running", 2], ["waiting", 1]))), undefined);
+  assert.equal(endedNote(null), undefined, "no list yet: no note");
+  assert.equal(endedKinds(tallyWorkers(reported, 25)), "16 stopped, 2 failed");
+});
+
+test("allEndedLabel pluralizes", () => {
+  assert.equal(allEndedLabel(18), "18 subagents, all ended");
+  assert.equal(allEndedLabel(1), "1 subagent, ended");
+});
+
+describe("workersTrigger", () => {
+  const tally = tallyWorkers(reported, 25);
+  const base = { running: false, canOpen: true };
+
+  test("working: the ring at working of live, the ended note in the name and tooltip", () => {
+    const row = workersTrigger({ ...base, working: 2, total: tally.live, tally });
+    assert.deepEqual(row, {
+      working: 2,
+      total: 7,
+      n: "2/7",
+      text: "2 of 7 subagents working",
+      say: "2 of 7 subagents working · 18 ended: 16 stopped, 2 failed",
+      label: "2 of 7 subagents working · 18 ended: 16 stopped, 2 failed — show subagents",
+    });
+  });
+
+  test("working with team members keeps the noun logic and shows workers", () => {
+    const row = workersTrigger({ ...base, working: 3, total: 7, tally, split: { members: 2, subagents: 1 } });
+    assert.equal(row?.text, "3 of 7 workers working");
+    assert.match(row!.label, /— show workers$/);
+  });
+
+  test("never draws more working than the total: a lagging figure reads as the working count", () => {
+    const row = workersTrigger({ ...base, working: 4, total: 2, tally: null });
+    assert.equal(row?.total, 4);
+    assert.equal(row?.n, "4/4");
+    assert.equal(row?.text, "4 of 4 subagents working");
+    assert.ok(row!.working <= row!.total);
+  });
+
+  test("idle: the live count, with the ended note", () => {
+    const row = workersTrigger({ ...base, working: 0, total: 7, tally });
+    assert.equal(row?.n, "7");
+    assert.equal(row?.text, "7 subagents");
+    assert.equal(row?.label, "7 subagents · 18 ended: 16 stopped, 2 failed — show subagents");
+  });
+
+  test("idle, before the list: the fallback figure, no note", () => {
+    const row = workersTrigger({ ...base, working: 0, total: 25, tally: null });
+    assert.equal(row?.text, "25 subagents");
+    assert.equal(row?.label, "25 subagents — show subagents");
+  });
+
+  test("idle, none live but some ended: the row stays, all ended", () => {
+    const ended = tallyWorkers(statuses(["killed", 16], ["error", 2]), 18);
+    const row = workersTrigger({ ...base, working: 0, total: 0, tally: ended });
+    assert.deepEqual(row, {
+      working: 0,
+      total: 18,
+      n: "18",
+      text: "18 subagents, all ended",
+      say: "18 subagents, all ended: 16 stopped, 2 failed",
+      label: "18 subagents, all ended: 16 stopped, 2 failed — show subagents",
+    });
+    const trimmed = tallyWorkers(statuses(["killed", 40]), 45);
+    assert.equal(workersTrigger({ ...base, working: 0, total: 0, tally: trimmed })?.label, "45 subagents, all ended — show subagents");
+  });
+
+  test("no row: nothing ever, a running parent with none working, or an idle row that can't open", () => {
+    assert.equal(workersTrigger({ ...base, working: 0, total: 0, tally: tallyWorkers([], 0) }), null);
+    assert.equal(workersTrigger({ ...base, working: 0, total: 0, tally: null }), null);
+    assert.equal(workersTrigger({ ...base, running: true, working: 0, total: 7, tally }), null);
+    assert.equal(workersTrigger({ running: false, canOpen: false, working: 0, total: 7, tally }), null);
+    assert.ok(workersTrigger({ running: true, canOpen: false, working: 1, total: 7, tally }), "working shows even with no pane");
   });
 });

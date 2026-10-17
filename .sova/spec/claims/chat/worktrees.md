@@ -32,22 +32,19 @@ by argument list with no shell, locally only (a remote session refuses it).
 
 - **create** `{name, base?, path?}`: `git worktree add -b feat/<name>` from the session repo's
   main checkout, at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path` is
-  given, based on `base` or the session cwd's `HEAD` (whose branch becomes its default merge
-  target). It is tracked as `created`.
+  given, based on `base` or the session cwd's `HEAD`. The branch it is based on (`base` when it names a
+  branch, else the branch the cwd has checked out; none for a commit or a detached HEAD) is kept as
+  its base branch, which is where git first looks for it merged (§chat.worktrees/merged-state); it
+  is not the `merge` default. It is tracked as `created`.
 - **attach** `{path}`: tracks an existing worktree top level (a subdirectory, or a detached HEAD,
   is refused) as `attached`; its base is its fork point from `master` (else `main`). A worktree
   another session created may be attached.
 - **detach** `{path}`: marks it `dropped`. Nothing is deleted on disk.
 - **merge** `{path, target?}`: merges the worktree's branch into `target` (default `master`, or
-  `main` in a repository without `master`) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
+  `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
-  a fast-forward is done. Before merging it checks the history being merged for saved sessions and
-  refuses when it finds one, merging nothing; its answer tells the agent that this needs the saved
-  sessions cleaned out of the branch's history or the user's explicit go-ahead. A call with
-  `allowSavedSessions: true` always asks the user to confirm first, whether or not the sandbox is
-  on, naming the branch and saying the conversations will stay in the target's history; with no
-  one to ask, or declined, nothing is merged (§chat.saved-sessions/merge-guard).
+  a fast-forward is done.
 - **list**: the set with each worktree's status.
 
 `detach` and `merge` take the worktree's path or its branch name. Every answer lists the
@@ -224,9 +221,7 @@ no model call (`server/merge-readiness.ts`):
   three or more uncommitted files, the branch has no commit of its own yet, it **conflicts with
   its base** (the trial merge git already runs for an unmerged branch reports conflicts), a
   commit subject on the branch starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the
-  session's newest check run (a `bash` call running a test, typecheck or build) failed, or the
-  branch's history since its base carries a saved session (§chat.saved-sessions/merge-guard;
-  reason "In progress · saved sessions in its history").
+  session's newest check run (a `bash` call running a test, typecheck or build) failed.
 - **removed** — the worktree's folder is gone, and what its work came to is said plainly, never
   "in progress" or "active". It is **merged** instead, with the reason "Merged · cleaned up", when
   git still finds its branch in the repository's main branch (master, else main), by ancestry or
@@ -369,6 +364,10 @@ and a reading stands for a while before it is read again:
 - **5 minutes** while the session is idle and the tree's last answer was **merged** (merged and
   clean). A hand edit in an idle merged tree can therefore take up to 5 minutes to read "Stale ·
   merged, with uncommitted changes".
+- An idle session's other trees are read again with the session, every 5 minutes
+  (§app/idle-git-cache, "Idle sessions"). A hand edit in an idle tree that isn't merged can
+  therefore also take up to 5 minutes to show, as "In progress · 3 uncommitted files" or as a
+  caveat on ready.
 - Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
   reading at once: the tree's index and HEAD are part of what it was read from.
 - A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
@@ -379,8 +378,8 @@ and a reading stands for a while before it is read again:
   archived flag, open questions or attention answer) reads every tree's changes again at once.
 - An explicit look at the session's worktrees (the Session tab's Worktrees section, or
   `sova_session`'s Merge facts) re-reads every tree's changes when one of its readings may have
-  stood the 5 minutes, or when the session is settled (§app/idle-git-cache) and its answer is 10
-  seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
+  stood the 5 minutes, or when the session is idle with its trees checked without Git
+  (§app/idle-git-cache) and its answer is 10 seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
   (§app/idle-git-cache, "Archived-idle exception").
 
 ## §chat.worktrees/merge-board — The merge board file

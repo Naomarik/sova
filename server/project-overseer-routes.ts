@@ -2,14 +2,15 @@ import type { Context, Hono } from "hono";
 import type { CodingStartInput, ItemCodeInput } from "../shared/project-overseer";
 import type { IdeaUpdate } from "./overseer-ideas";
 import { BusyError } from "./chat-handle";
-import { OrgError, SavedSessionsMergeRefusal } from "./org-error";
+import { OrgError } from "./org-error";
 import { archivedOverseerRefusal, engineOrThrow, operatorEnvelopeOf } from "./projects/spaces";
 import { gapsOf } from "./projects/contributions";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, startCoding } from "./project-overseer";
-import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, projectWorktrees, removeCodingWorktree, startCoding } from "./project-overseer";
+import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSettings, writePoSettings } from "./project-overseer-store";
+import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -49,7 +50,6 @@ const handle =
     try {
       return await fn(c);
     } catch (err) {
-      if (err instanceof SavedSessionsMergeRefusal) return c.json({ error: err.message, savedSessions: err.savedSessions }, 409);
       if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
       if (err instanceof BusyError) return c.json({ error: err.message }, 409);
       if (err instanceof IdeaConflictError) return c.json({ error: err.message, current: err.current }, 409);
@@ -76,6 +76,23 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   app.patch(base, handle(async (c) => {
     const p = pathsOf(c);
     return c.json(await patchProjectOverseer(p.projectId, await body(c)), 200, NO_STORE);
+  }));
+  // Its memory switch: the Overseer's route's shape, its own overseer.json.
+  app.get(`${base}/memory`, handle(async (c) => {
+    const p = pathsOf(c);
+    const chat = await projectOverseerChat(p.projectId);
+    return c.json(overseerMemoryInfo(readPoSettings(p).memory, await chat?.memoryStatus()), 200, NO_STORE);
+  }));
+  app.put(`${base}/memory`, handle(async (c) => {
+    const p = pathsOf(c);
+    let b: unknown;
+    try {
+      b = await c.req.json();
+    } catch {
+      return c.json({ error: "Expected JSON body { on?, type?, size? }" }, 400);
+    }
+    const out = await putOverseerMemorySwitch(readPoSettings(p).memory, b, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(p.projectId));
+    return "error" in out ? c.json({ error: out.error }, 400) : c.json(out, 200, NO_STORE);
   }));
   app.post(`${base}/clear`, handle(async (c) => {
     const p = pathsOf(c);
@@ -215,11 +232,15 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     const p = pathsOf(c);
     return c.json(await startCoding(p.projectId, (await body(c)) as CodingStartInput), 201);
   }));
+  // The coding sessions with git's facts: the page's second read (GET …/overseer runs no git).
+  app.get(`${base}/worktrees`, handle(async (c) => {
+    const p = pathsOf(c);
+    return c.json(await projectWorktrees(p.projectId), 200, NO_STORE);
+  }));
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {
     const p = pathsOf(c);
-    const b = await body(c);
-    return c.json(await mergeCodingWorktree(p.projectId, b.sessionId, { allowSavedSessions: b.allowSavedSessions === true }), 200, NO_STORE);
+    return c.json(await mergeCodingWorktree(p.projectId, (await body(c)).sessionId), 200, NO_STORE);
   }));
   app.post(`${base}/worktrees/remove`, handle(async (c) => {
     const p = pathsOf(c);

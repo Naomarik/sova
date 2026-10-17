@@ -1,6 +1,8 @@
 import { createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { ProjectSummary } from "../../shared/projects";
 import type { RunningProject } from "../../shared/services-view";
+import type { SessionSummary } from "../../shared/protocol";
+import { projectSummaryKey, recall, remember } from "../lib/page-cache";
 import { ApiError, getHostServices, getProject, listProjects, openProjectOverseer, runProjectVerb, runRootVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { placementOf, sortProjects } from "../lib/projects";
@@ -23,7 +25,7 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  * `#/projects/<pid>/overseer`. This route composes a project's page: the project layer's page, plus
  * the placing organization's part while one places it (`space.kind === "org"`).
  */
-export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void }) {
+export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void; /** The sidebar's session list. */ sessions?: () => readonly SessionSummary[] | undefined }) {
   const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
   return (
     <Switch>
@@ -32,7 +34,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
       </Match>
       {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
       <Match when={props.route.kind === "project" && props.route.projectId} keyed>
-        {(pid) => <ProjectRoute projectId={pid} tab={tab()} titleRef={props.titleRef} />}
+        {(pid) => <ProjectRoute projectId={pid} tab={tab()} titleRef={props.titleRef} sessions={props.sessions} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route.projectId} keyed>
         {(pid) => <OverseerDoor projectId={pid} titleRef={props.titleRef} />}
@@ -42,11 +44,21 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
 }
 
 /** One project's page, once its read lands: the org's part composed in only while one places it. */
-function ProjectRoute(props: { projectId: string; tab: ProjectTab; titleRef(el: HTMLHeadingElement): void }) {
-  const [project, { refetch, mutate }] = createResource(() => props.projectId, getProject);
+function ProjectRoute(props: { projectId: string; tab: ProjectTab; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined }) {
+  // What this tab last read of it (here, or the sidebar's project list) draws the page at once; the read updates it.
+  const [project, { refetch, mutate }] = createResource(
+    () => props.projectId,
+    async (id) => {
+      const p = await getProject(id);
+      remember(projectSummaryKey(id), p);
+      return p;
+    },
+  );
+  const cached = recall<ProjectSummary>(projectSummaryKey(props.projectId));
+  const latest = () => project.latest ?? cached;
   // Keyed on where it lives: a project placed (or no longer placed) since the page opened gets the other composition.
   const space = createMemo(() => {
-    const p = project.latest;
+    const p = latest();
     return p ? (placementOf(p)?.orgId ?? "") : null;
   });
   return (
@@ -62,14 +74,15 @@ function ProjectRoute(props: { projectId: string; tab: ProjectTab; titleRef(el: 
         </InsightsPage>
       }
     >
-      <Show when={space()} keyed fallback={<ProjectPage project={project.latest!} tab={props.tab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} />}>
+      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} />}>
         {(orgId) => (
           <ProjectPage
-            project={project.latest!}
+            project={latest()!}
             tab={props.tab}
             titleRef={props.titleRef}
             onProject={mutate}
             refetchProject={() => void refetch()}
+            sessions={props.sessions}
             org={(ctx) => createProjectOrgPart(orgId, ctx)}
           />
         )}

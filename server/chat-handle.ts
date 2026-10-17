@@ -33,7 +33,7 @@ import type {
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
-import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, HeldChatState } from "../shared/protocol";
 import {
   BusyError,
   type ChatClient,
@@ -165,6 +165,9 @@ export abstract class ChatHandle {
   applyMode(patch: ChatModePatch) {
     return this.call("applyMode", { patch });
   }
+  modeResult(): Promise<ChatModeResult> {
+    return this.call("modeResult", {});
+  }
   pinMode(): Promise<boolean> {
     return this.call("pinMode", {});
   }
@@ -188,8 +191,8 @@ export abstract class ChatHandle {
   appendState<T>(kind: StateKind<T>, data: T): Promise<string> {
     return this.call("appendState", { kind: kind.type, data });
   }
-  appendNote(noteType: string, text: string, display?: boolean): Promise<boolean> {
-    return this.call("appendNote", { noteType, text, ...(display === false ? { display } : {}) });
+  appendNote(noteType: string, text: string): Promise<boolean> {
+    return this.call("appendNote", { noteType, text });
   }
   writeProfile(data: ChatMethods["writeProfile"]["args"]["data"]): Promise<null> {
     return this.call("writeProfile", { data });
@@ -422,8 +425,8 @@ export interface ChatRouter {
   all(): ChatHandle[];
   /** The chat in a process of its own (taken back, or started); a chat that can't start is refused. */
   acquire(path: string, force: boolean): Promise<ChatHandle>;
-  /** Close it for good (archive): its panes are told to reconnect. False: none open there. */
-  close(path: string, message: string): Promise<boolean>;
+  /** Close it for good (archive): its panes are told to reconnect, or with `quiet` that it closed. False: none open there. */
+  close(path: string, message: string, opts?: CloseOpts): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */
   composersChanged?(): void;
 }
@@ -455,10 +458,18 @@ export const chatsReady = async (): Promise<void> => {
 /** The open chat of a session id, or undefined. */
 export const chatHandleById = (sessionId: string): ChatHandle | undefined => chatHandles().find((h) => h.mirror.sessionId === sessionId);
 
+/** How a closed chat's open tabs are told. `quiet`: they keep what they show and don't reconnect
+    (`closed`, as after an idle stop), so the close never starts the chat again (an archive);
+    otherwise they reconnect, opening it anew (a cleared Overseer, a model change, a move). */
+export interface CloseOpts {
+  quiet?: "archived";
+}
+
 /** Close a held chat for good (archive/close): every open tab is told to reconnect, and the session
-    reopens on demand. A running turn is aborted and its workers die with it. False: none held. */
-export async function closeChat(path: string, message: string): Promise<boolean> {
-  return router ? router.close(path, message) : false;
+    reopens on demand, or with `quiet` told it closed. A running turn is aborted and its workers die
+    with it. False: none held. */
+export async function closeChat(path: string, message: string, opts: CloseOpts = {}): Promise<boolean> {
+  return router ? router.close(path, message, opts) : false;
 }
 
 /** SessionSummary.busy: this server holds the chat and a run is in progress. */

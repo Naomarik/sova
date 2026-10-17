@@ -84,23 +84,26 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   Clone from GitHub). Under them, **Running branches** lists what runs on this host now, every
   project's, each with a Stop, a branch's name linking to its app's entry while the project
   declares one and the entry's service is ready (§app.project-services/services-ui).
-- The sidebar has a **Projects** region for standalone projects, directly above Folders, shaped as one organization's
+- The sidebar has a **Projects** region for standalone projects, shaped as one organization's
   project blocks in the Organizations region (§app.session-list/organizations): the project heading
-  with its overseer's eye, then its **Sessions**: the coding sessions it started and the sessions in its
-  folder (§app.projects/folder-sessions), running or waiting, then a collapsed Done (a build merged
-  per git, a folder session that is neither live nor an unarchived web session). An **archived**
+  with its overseer's eye, then its sessions straight under it, with no group heading: the coding
+  sessions it started and the sessions in its folder (§app.projects/folder-sessions), running or
+  waiting, then the finished ones (a build merged per git, a folder session that is neither live nor
+  an unarchived web session) folded into one quiet "{n} done" line at the end of the list, which
+  opens them in place (closed by default, memory only). The project heading starts with a small
+  arrow that folds and unfolds its sessions: open by default, the choice kept in memory for the
+  page's life (as each Done is), and forced open while a search is on or the open session is one of
+  its rows. An **archived**
   session of any kind is never in the block nor its counts: it is in the Archive only
   (§app.session-list/ordinary-surfaces); archiving a build says "Archived. Find it under Archive."
-  and unarchiving it "Moved back to {project}.". The region head counts **projects**
-  ("Projects · {n}"; while searching "Projects · {matching} of {all}"); each project heading counts
-  its open rows only (running or waiting, the overseer's eye never); Done counts its own. A peer's
-  folder session is never a row here (it stays in Folders), so it adds no block. Its head carries **+** (Add Project) and an arrow to
-  `#/projects`; each project heading's name opens its page, and its heading has the
+  and unarchiving it "Moved back to {project}.". The project heading and the region head count
+  the open rows only (running or waiting, the overseer's eye never); the done line counts its own. Its head carries an arrow to
+  `#/projects` and no Add Project (that is the Projects page's); each project heading's name opens its page, and its heading has the
   Organizations region's project level (§app.session-list/organizations "Three levels"). A
   search finds a project by its name or folder and keeps its heading with no row under it when
   none of its sessions match. A placed project is the Organizations region's, listed there under
   its org, with sessions or without, from the same project list. With no project it says "No projects
-  yet. Add a folder or a GitHub repository with +." It is listed once the session list loads, even
+  yet. Add one on the Projects page.", "Projects page" a link to `#/projects`. It is listed once the session list loads, even
   empty, except when a search finds nothing in it. Where Needs you names where an item of a standalone project
   waits, it says Projects.
 
@@ -140,18 +143,15 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
   makes it that checkout's (git is not run); else, for a folder that no longer exists, a path
   under `<root's parent>/.worktrees/<root's name>-` makes it that root's. An archived project
   never matches, and a remote session's placeholder folder never does.
-- **Listed with its project, not in Folders.** A folder session is listed with its project: in
-  the sidebar's Projects region for a standalone project (§app.projects/list), in the
-  Organizations region for a placed one (§app.session-list/organizations), among the project's
-  Sessions — running or waiting while it is live, or a web session not archived; otherwise in Done
-  until it is archived. While it is listed there it is not in Folders
-  (§app.session-list/regions-top-and-archive). It stays an ordinary session
-  (§app.session-list/ordinary-surfaces): the shortcuts — Needs you, Recent, Groups and
-  Automations —, the Archive and its cleanup, and the overview list it as before (the overview's
-  `{live} live` counts it), and it can be grouped. An archived one is listed in the Archive only,
-  never with its project. A session from another computer (a mesh peer's row, which carries that
-  peer's own `project`) or a remote target's is never listed under this computer's projects: it
-  stays in Folders.
+- **Shown in both places.** A folder session stays an ordinary session
+  (§app.session-list/ordinary-surfaces): Recent, Needs you, Live & web, Groups, the Archive and
+  its cleanup, and the overview list it as before, and it can be grouped. It is also listed with
+  its project: in the sidebar's Projects region for a standalone project
+  (§app.projects/list), in the Organizations region for a placed one
+  (§app.session-list/organizations), among the project's sessions (the Organizations region's
+  Sessions group; the Projects region's rows under the project heading) — running or waiting while it is
+  live, or a web session not archived; otherwise in Done (the Projects region's "{n} done" line) until it is archived. An archived one is
+  listed in the Archive only, never with its project.
 - **A placed project's folder sessions are not organizational.** They carry no
   `SessionSummary.org` (§app.organizations/org-sessions), so nothing an org session is refused
   (forking, a profile, a link, a group) is refused to them. The org layer adds

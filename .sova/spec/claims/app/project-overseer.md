@@ -602,7 +602,7 @@ user row.
   itself creates with its `worktree` tool (the session's tracked set, §chat.worktrees/tool: made by
   this session, not attached; active or already merged, never dropped) in the project's repository
   (the same git common directory as the project root). It is checked at the end of each of the
-  session's turns, and on each read of the project page, so a session run in a terminal is
+  session's turns, and on each branch read of the project page (**Read in two steps**), so a session run in a terminal is
   adopted too. The row records the tool's branch and path as named, its `base` as the tool's base,
   and its `target` as the tool's base branch, or, when the tool recorded none, the branch the
   project root has checked out then. From then on the row is a worktree row like any other: its
@@ -650,6 +650,23 @@ user row.
   Worktree…** (each disabled with its reason, and absent when the row doesn't offer it); the
   Remove confirmation opens under the row. "Sessions it started" keeps its gathering sessions and
   offers. Copy: §design.copy-deck/project-coding.
+- **Read in two steps.** The page reads the list first and each row's branch facts after, so the
+  rows never wait on git. `GET /api/projects/:pid/overseer` runs no git at all: it answers the
+  overseer's own state (exists, busy, unread, paused, settings, usage) and `coding`, each coding
+  session as the project records it (title, who started it, working or idle and its workers, age,
+  the branch and target it recorded, `inRoot`, `later`, the recorded merge and removal times), with
+  none of git's facts. `GET /api/projects/:pid/overseer/worktrees` answers `{available, reason?,
+  sessions}`: whether the root can have worktrees and every row with git's facts (worktree folder,
+  state, merged, ahead, uncommitted, branch gone, new commits since a merge). It adopts `later`
+  worktrees one at a time, reads the worktrees side by side (at most 5 git reads at once, the
+  repository's root read once per request), then hands each reading to the build's statechart and
+  the session list's merged answer one at a time. The page merges the two by session. Before the
+  first rows answer, it lists the project's coding sessions the browser already holds from the
+  session list, so the rows show with the page. A row shows its branch as recorded until its
+  branch facts arrive. Until then a row with a recorded branch, not removed, has its **⋯** menu
+  with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
+  acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and Remove Worktree
+  answer the branch read's shape, and the page reads the overseer's state again after either.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when
@@ -659,8 +676,8 @@ user row.
   no commits beyond `target`. After it the row says "Merged into <target>" with the time, and the
   merge is a reason for the overseer to look (§app.project-overseer/watch-loop), so it learns the
   branch reached `target` without being told.
-- **Merged is read from git.** Whether a row's branch is merged is decided from git on every read
-  of the page, by the worktrees extension's own probe (§chat.worktrees/tool): merged when the
+- **Merged is read from git.** Whether a row's branch is merged is decided from git on every branch
+  read of the page, by the worktrees extension's own probe (§chat.worktrees/tool): merged when the
   branch has commits beyond its base and none that `target` lacks. The recorded merge decides only
   when the branch no longer exists (deleted with its worktree, or by hand) or git can't be read. So
   a branch merged once that gains commits (the session was sent more work) is not merged: its row
@@ -916,7 +933,9 @@ user row.
 
 - **New Coding Session** (secondary, terminal icon) sits on the project page's "Coding sessions"
   heading, which is always shown, with "None yet. Yours and the overseer's are listed here." while
-  the list is empty. It needs no overseer: it works before Start Overseer.
+  the list is empty. It needs no overseer: it works before Start Overseer. It shows and works the
+  moment the project page opens, before any of the page's reads answer, and stays usable while the
+  coding sessions or the overseer can't be read.
 - `POST /api/projects/:pid/overseer/coding` `{title?, model?, thinking?}` answers 201
   `{path, sessionId, worktree?, note?, modeNotSet?}` (404 for an unknown project). It starts the
   same kind of session Start Coding Session does: in its own worktree and branch

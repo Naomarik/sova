@@ -203,8 +203,8 @@ sessions**: `session_send` too, and `queue_open`, which opens a topic other sess
 
 - **Which sessions it sees.** Without See all Sova sessions: sessions on this host in its project
   (§chat.profiles/projects): the main checkout, its worktrees and their subfolders, or, outside git,
-  its folder and below. With it: every session this host's list shows (Folders, the
-  projects' folder sessions and the Archive, TUI-live ones included). Never, either way: itself, the Overseer's conversations,
+  its folder and below. With it: every session this host's list shows (Live & web and
+  the Archive, TUI-live ones included). Never, either way: itself, the Overseer's conversations,
   project overseers' conversations, organization and baton sessions, and workers' own sessions. A
   session it can't see answers "No session with id {id} that this session can see."
 - `session_list {query?, limit?}`: one row per session: id · title · folder · state · profile ·
@@ -279,7 +279,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   so the empty state stays.
 - **List badge.** The session's row in the list carries the profile's icon, its label as the title.
   The list has no region of its own for profile sessions: each row stays where the session lives
-  (Folders, its groups, its project's block, the Archive) and, like any session, can be a Recent
+  (Live & web, its groups, its project's block, the Archive) and, like any session, can be a Recent
   row (§app.session-list/recent).
 - **Run Again** makes a new session in this session's folder with this profile picked and opens it
   on its empty screen, where the picker shows it

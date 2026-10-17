@@ -64,6 +64,8 @@ export class Link {
   compatible = true;
   /** The protocol the peer speaks (its hello's or control's): a proto-1 peer gets no stage-3 frames. */
   peerProto = CHAT_WIRE_PROTO;
+  /** The hello this side opened the link with (the chat process's end), or null. */
+  greeting: HelloFrame | null = null;
   private readonly log: (line: string) => void;
 
   constructor(
@@ -235,7 +237,8 @@ export async function serveLink(sockPath: string, opts: ServeLinkOptions): Promi
   const log = opts.log ?? ((l: string) => console.error(`[chat-link] ${l}`));
   const server: Server = createServer((socket) => {
     const link = new Link(socket, opts);
-    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() });
+    link.greeting = { t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() };
+    link.send(link.greeting);
     const timer = setTimeout(() => link.close({ reason: "closed" }), opts.controlWithinMs ?? 10_000);
     timer.unref?.();
     void link.closed.then(() => clearTimeout(timer));

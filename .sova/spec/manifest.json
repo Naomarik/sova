@@ -8,6 +8,34 @@
     ]
   },
   "claims": {
+    "§app.chat-processes/boot-log": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/main.ts",
+        "server/chat-runtime/boot-steps.ts",
+        "server/chat-runtime/boot-steps.test.ts",
+        "server/chat-host.ts",
+        "server/chat-host.test.ts",
+        "server/chat-manager.ts",
+        "server/harness/pi/open.ts",
+        "server/chat-runtime/host.ts",
+        "shared/chat-runtime-wire.ts",
+        "shared/chat-runtime-wire.test.ts",
+        "server/chat-runtime/warm-steps.test.ts",
+        "server/chat-runtime/main.integration.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.chat-processes/supervision",
+        "§app.chat-processes/wire"
+      ],
+      "agreed": {
+        "by": "omar (al_1 go-ahead)",
+        "at": "2026-10-17T14:16Z"
+      },
+      "evidence": "verified"
+    },
     "§app.chat-processes/code-generations": {
       "kind": "behavior",
       "authority": "accepted",

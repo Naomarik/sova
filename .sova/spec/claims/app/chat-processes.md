@@ -447,3 +447,37 @@ sent.
 
 A server restart is never a death, nor is a stop the server asked for (idle, a code reload, an
 archive, a kill): nothing is reported and nothing is resumed.
+
+
+## §app.chat-processes/boot-log — A chat's start leaves a trail
+
+A chat process names each step of its start as it enters it, in two phases: starting, from its
+launch until its `hello` says ready (loading the chat's code, setting up the model list, loading
+the extensions, starting them in a trial session, closing that session), and opening, from the
+server's `open` until its answer (reading the session file, its loadout, loading and starting the
+extensions again). The steps are Sova's own; no extension is named. Workers and hidden chats start
+and open the same way and leave the same trail. Only a chat process keeps it: the server's own
+warm-up at its start logs and sends none of it.
+
+- **A healthy start, one line per phase.** When a phase ends, the chat's log gets one line: the phase's time,
+  each step's time and the processor time used, as `[chat-runtime] ready in 1.42 s (chat code
+  0.61 s, model setup 0.09 s, …; cpu 1.1 s)` and `[chat-runtime] opened in 0.80 s (…)`. Nothing
+  else is added.
+- **A slow phase leaves its step behind.** Every 10 s while a phase lasts, the chat logs
+  `[chat-runtime] still starting: <step> for N s (M s since start, cpu C s)` (`still opening:` while
+  opening), so the last log lines kept when the chat is stopped (§app.chat-processes/supervision)
+  name the step even when its process is killed.
+- **Stopped while starting.** A chat process stopped (SIGTERM or SIGINT) in either phase logs the
+  step it was in, how long it had been there, the time since its start, its processor time and, on
+  Linux, the programs it had started and not yet seen end: each one's name, pid and how long it has
+  run, at most 120 characters each and never its arguments. Its exit line says how long after the
+  stop it exits.
+- **The server hears the step.** The chat also sends the server each step as it enters it and at
+  each 10 s beat, in a frame of its own (§app.chat-processes/wire). When the server stops waiting
+  (40 s for the `hello` that says ready, 60 s for the open's answer; both as before), its log says
+  `stuck in <step> for N s` and how long after the start the chat's socket first answered, and so
+  does the detail recorded for a chat stopped for never saying ready; a chat on older code that
+  reports no step reads `no step reported`. The error the person sees doesn't change.
+- **Slow starts in the server's log.** A chat whose start, from its launch to its open's answer,
+  took 5 s or more gets one line in the server's log with that time and the times to its first
+  answer, to ready and to open; a faster start adds nothing there.

@@ -2506,7 +2506,16 @@
     "§chat.transcript/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "agreed": {
+        "by": "omar (al_3 go-ahead)",
+        "at": "2026-10-17T22:12Z"
+      },
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts"
+      ]
     },
     "§chat.transcript/anatomy": {
       "kind": "behavior",
@@ -2566,11 +2575,14 @@
         "server/chat-host.ts",
         "server/archive-quiet-close.test.ts",
         "server/quiet-close-actions.test.ts",
-        "server/chat-host.test.ts"
+        "server/chat-host.test.ts",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts",
+        "server/ws-open-retry.test.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T08:19Z"
+        "by": "omar (al_3 go-ahead)",
+        "at": "2026-10-17T22:12Z"
       },
       "evidence": "verified"
     },
@@ -2683,11 +2695,12 @@
         "scripts/chat-runtime-trial/run.mjs",
         "scripts/chat-runtime-trial/lib.mjs",
         "server/app.ts",
-        "server/mesh/access.ts"
+        "server/mesh/access.ts",
+        "server/ws-open-retry.test.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T08:50Z"
+        "by": "omar (al_3 go-ahead)",
+        "at": "2026-10-17T22:12Z"
       }
     },
     "§chat.transcript/states": {
@@ -2699,11 +2712,13 @@
         "src/components/WatchView.tsx",
         "src/components/Thread.tsx",
         "src/App.tsx",
-        "src/lib/older-rows-view.ts"
+        "src/lib/older-rows-view.ts",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "omar (al_3 go-ahead)",
+        "at": "2026-10-17T22:12Z"
       }
     },
     "§chat.transcript/streaming": {
@@ -2854,7 +2869,9 @@
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
-        "src/lib/placeholder-fit.ts"
+        "src/lib/placeholder-fit.ts",
+        "src/components/Thread.tsx",
+        "src/lib/error-feed.ts"
       ],
       "about": [
         "§chat/composer"
@@ -14484,8 +14501,14 @@
         "server/transcript.ts",
         "server/sessions-index.ts",
         "server/turn-error.test.ts",
-        "shared/protocol.ts"
-      ]
+        "shared/protocol.ts",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts"
+      ],
+      "agreed": {
+        "by": "omar (al_3 go-ahead)",
+        "at": "2026-10-17T22:44Z"
+      }
     },
     "§chat.subagent-profiles/members-default": {
       "kind": "behavior",

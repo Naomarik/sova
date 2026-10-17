@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/instal
 ```
 
 This installs the newest stable release; running it again updates to the newest stable release
-then (or the latest of the `SOVA_REF` you set: `| SOVA_REF=v0.3.3 bash` stays on one release).
+then (or the latest of the `SOVA_REF` you set: `| SOVA_REF=v0.4.0 bash` stays on one release).
 
 Then click **Sova** in your app launcher (or run `sova open`): it starts the server if it isn't
 running and opens **http://127.0.0.1:4800** already unlocked, in a window of its own when Chrome,

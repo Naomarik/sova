@@ -29,9 +29,9 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
-import { updatedSinceLoad, watchUpdates } from "./lib/updates";
+import { watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
-import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
@@ -559,17 +559,21 @@ export function App() {
     clearInterval(tick);
   });
 
-  // ---- The stale-tab check: the front door can move this tab to another host -----------------
-  // Only with the mesh on (no front door exists without it). The tab remembers the hello of the
-  // host it was loaded from and asks again whenever the server may have changed under it: a
-  // socket reconnect, the tab coming back into view, the mesh poll.
+  // ---- The stale-tab check: this tab's Sova changed, or the front door moved it ---------------
+  // Every tab, mesh on or off: it is how a tab learns Sova was updated (§app.updates/reload-note).
+  // The tab remembers the hello of the host it was loaded from (once GET /api/mesh settled, so it
+  // knows which host that was) and asks again whenever the server may have changed under it: a
+  // socket reconnect, the tab coming back into view, and with the mesh on the mesh poll. Only with
+  // the mesh on can a host change come of it (no front door exists without it; lib/mesh weighHello).
   const [helloBase, setHelloBase] = createSignal<HelloBaseline | null>(null);
   const [staleChange, setStaleChange] = createSignal<HelloChange | null>(null);
   let pendingHost: PendingHost | null = null;
+  /** What the hello said when the banner last rose for a build or protocol (lib/mesh helloNews). */
+  let raisedNews: string | null = null;
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(confirmTimer));
   const checkHello = async () => {
-    if (!meshOn()) return;
+    if (!meshSettled()) return; // the effect below takes the baseline once it has
     let hello;
     try {
       hello = await fetchMeshHello();
@@ -584,7 +588,8 @@ export function App() {
       base = firstBaseline(servedBy, now);
       setHelloBase(base);
     }
-    const step = helloStep(base, now, pendingHost, Date.now());
+    const mesh = meshOn();
+    const step = weighHello(mesh, base, now, pendingHost, Date.now());
     const firstSeen = step.pending && step.pending !== pendingHost;
     pendingHost = step.pending;
     // Another host answered once: ask again a little later, and only a second answer from it counts.
@@ -594,9 +599,14 @@ export function App() {
     }
     const change = step.change;
     if (!change) return;
+    // The same build or protocol news as last time is not raised again: a dismissed banner stays
+    // dismissed until Sova changes once more.
+    const news = helloNews(now);
+    if (!change.host && news === raisedNews) return;
+    raisedNews = news;
     // The tab's own code hasn't changed: its protocol and build stay the baseline's. Only the host
-    // it talks to moves.
-    setHelloBase({ ...base, id: now.id, label: now.label });
+    // it talks to moves (and without the mesh it never does).
+    if (change.host) setHelloBase({ ...base, id: now.id, label: now.label });
     setStaleChange((prev) => ({
       protocol: change.protocol || !!prev?.protocol,
       build: change.build || !!prev?.build,
@@ -628,7 +638,7 @@ export function App() {
     });
   };
   createEffect(() => {
-    if (meshOn() && !helloBase()) void checkHello();
+    if (meshSettled() && !helloBase()) void checkHello();
   });
   // A vanished host leaves the open socket silent: only asking notices the move. Mesh off: never.
   createEffect(() => {
@@ -643,7 +653,7 @@ export function App() {
   setHostCheck(() => void checkHello());
   onCleanup(() => setHostCheck(null));
   createEffect(on(socketReconnects, () => void checkHello(), { defer: true }));
-  // This machine's updates: the Settings dot, and the note after an upgrade restarted the server.
+  // This machine's updates: the Settings dot and section (the stale-tab check above says it changed).
   watchUpdates();
   const onVisible = () => {
     if (!document.hidden) void checkHello();
@@ -1075,14 +1085,6 @@ export function App() {
       >
         {skipLabel()}
       </a>
-      <Show when={updatedSinceLoad()}>
-        <div class="update-note" role="status">
-          <span>Sova was updated</span>
-          <button type="button" class="button button-sm" onClick={() => location.reload()}>
-            Reload
-          </button>
-        </div>
-      </Show>
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}

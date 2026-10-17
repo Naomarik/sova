@@ -529,10 +529,16 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   sessions. A project's own spec (`.sova/spec` under the project root, drafts local) is the
   project repo's, not the workspace's.
 - **Commits.** Creating an org makes the first commit. After that a committer looks at every
-  attached org's repo each minute and commits whatever changed once at least an hour has passed
-  since the repo's last commit (counted from HEAD, so Commit Now, a restart or a commit made on
-  another host all count; `SOVA_WORKSPACE_COMMIT_MS` shortens the hour for tests only). Nothing
-  changed: no commit. The message names what changed by top-level entry ("Workspace changes:
+  attached org's repo once an hour: an hour after the repo's last commit (counted from HEAD, so
+  Commit Now, a restart or a commit made on another host all count; `SOVA_WORKSPACE_COMMIT_MS`
+  shortens the hour for tests only), or, when its last look (or Commit Now) found nothing to commit,
+  an hour after that; never more often than once a minute. It commits whatever changed, whoever wrote it
+  (Sova or a hand edit), so while the server runs a change is committed within about an hour of
+  being made. Nothing changed: no commit. The time of the next look is kept in the residence
+  statechart's snapshot, so it survives a restart (a look that came due while the server was down
+  runs when it starts). An idle org records one look an hour (that look and its commit attempt that
+  found nothing: the residence snapshot, a journal and their transition-log rows) and writes nothing
+  between looks. The message names what changed by top-level entry ("Workspace changes:
   statecharts/ (3 files), sessions/ (2 files)"), never contents. Every commit Sova makes in the repo is
   authored and committed as `Sova <sova@localhost>`, whatever git identity the host has, so no
   operator's name or email travels with a backup. **Commit Now** (`POST /api/orgs/:id/commit`)

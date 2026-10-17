@@ -1656,8 +1656,9 @@ whether anything is uncommitted, untracked files included.
 **Read-only and bounded.** Reading a tree never writes to it: no index refresh or lock, no
 fsmonitor, no textconv or external diff, and the trial merge behind `content` writes its objects to
 a scratch store that is deleted afterwards. Every git runs without a shell under a 5-second limit,
-at most four at a time. The comparison is kept until the tree's HEAD or its base moves, `dirty` for
-ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
+at most four at a time. The comparison is kept until the tree's HEAD or its base moves, or what its
+trial merge rests on changes (the configuration, attribute files and merge drivers' code,
+§app/idle-git-cache); `dirty` is kept for ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
 is no trial merge, and `merged` is only ever `ancestor` or `no`.
 
 ## §app.insights/explanations-page — Explanations page (`#/explanations`)

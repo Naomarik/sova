@@ -1216,22 +1216,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
   box-shadow: 0 0 0 2px var(--color-surface);
   pointer-events: none;
 }
-/* "Sova was updated · Reload": a note, not a toast — it stays until the page reloads. */
-.update-note {
-  position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  z-index: 61;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-2);
-  font-size: var(--fs-body);
-}
 .settings-updates {
   display: flex;
   flex-direction: column;

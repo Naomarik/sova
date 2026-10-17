@@ -106,7 +106,8 @@ afterEach(async () => {
 type Connect = typeof import("./chat-runtime/link").connectLink;
 /** `wrap`: the router's connect seen through it (a link that misbehaves). */
 /** `sup`: the supervisor's own knobs (its clock, idle time, exit wait). */
-function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect; sup?: { now?: () => number; idleMs?: number; exitWaitMs?: number }; later?: boolean } = {}) {
+/** `deps`: the router's test-only waits; `openTrail`: each in-process chat host's open trail. */
+function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir: string; live: boolean }; resumes?: ResumeCall[]; wrap?: (c: Connect) => Connect; sup?: { now?: () => number; idleMs?: number; exitWaitMs?: number }; later?: boolean; deps?: { bootWaitMs?: number; openWaitMs?: number; slowStartMs?: number }; openTrail?: ConstructorParameters<typeof ChatRuntimeHost>[0]["openTrail"] } = {}) {
   const driver = new FakeDriver();
   // Its own records and socket paths: a later router takes back only these units.
   const dir = mkdtempSync(join(agentDir, "sup-"));
@@ -127,7 +128,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
     if (!host || startOf.get(sock) !== spec) {
       startOf.set(sock, spec);
       control.delete(sock);
-      host = new ChatRuntimeHost({ path: spec.env.SOVA_CHAT_PATH!, sessionId: spec.env.SOVA_CHAT_ID!, unit: spec.unit, build: opts.build, startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000 });
+      host = new ChatRuntimeHost({ path: spec.env.SOVA_CHAT_PATH!, sessionId: spec.env.SOVA_CHAT_ID!, unit: spec.unit, build: opts.build, startedAt: 1, exit: (c) => exits.push(c), log: quiet, tickMs: 60_000, ...(o.openTrail ? { openTrail: o.openTrail } : {}) });
       hosts.set(sock, host);
       made.hosts.push(host);
     }
@@ -156,7 +157,7 @@ function setup(o: { bun?: string | null; build?: string; gen?: { id: string; dir
   // every test: the real one would act on the shared in-flight markers.
   const resumes = o.resumes ?? [];
   const resumeCrashed = (path: string, since: number, _before: unknown, done?: () => void) => void resumes.push({ path, since, ...(done ? { done } : {}) });
-  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor: { ...supervisor, ...o.sup }, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed });
+  const router = new ChatHostRouter(++epoch, o.build ?? "b1", { driver, connect: o.wrap ? o.wrap(connect) : connect, supervisor: { ...supervisor, ...o.sup }, bun: "bun" in o ? () => o.bun ?? null : anyBun, ...(o.gen ? { gen: o.gen } : {}), resumeCrashed, ...o.deps });
   made.routers.push(router);
   // The next server: a router over the same units (a restart), with a higher epoch.
   // `delayMs`: each of its connects takes that long first (a slow take-back).
@@ -707,4 +708,127 @@ test("a death the next server finds at its start: the dead process's last writes
   die(c, undefined);
   assert.notEqual(recentForeignWriteAgeSec(c.path), null);
   assert.equal(readLock(c.path), null);
+});
+
+// ---- the start-up trail (§app.chat-processes/boot-log) -------------------------------------------------
+
+/** What the router logs (`[chat-host] …`) while `fn` runs. */
+async function routerLog<T>(fn: () => Promise<T>): Promise<{ lines: string[]; result: PromiseSettledResult<T> }> {
+  const lines: string[] = [];
+  const was = console.log;
+  console.log = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+  try {
+    const result = await fn().then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    return { lines: lines.filter((l) => l.startsWith("[chat-host]")), result };
+  } finally {
+    console.log = was;
+  }
+}
+
+/** A chat process that answers on its socket and then never gets further: still booting (with the steps
+    `boot` sends, none for older code), or ready with an open that never answers (`opening` steps). */
+function stuckRuntime(driver: () => InstanceType<typeof FakeDriver>, o: { state: "booting" | "ready"; boot?: object[]; opening?: object[] }): Connect {
+  return (async (sock: string, opts: { build: string }) => {
+    const spec = [...driver().started].reverse().find((s) => s.env.SOVA_CHAT_SOCK === sock)!;
+    const [a, b] = pair();
+    const runtimeEnd = new Link(a as never, { log: quiet });
+    const link = new Link(b as never, { log: quiet });
+    made.links.push(runtimeEnd, link);
+    const hello = { t: "hello" as const, proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: 0, build: opts.build, pid: 4242, startedAt: 1, unit: spec.unit, sessionId: spec.env.SOVA_CHAT_ID!, path: spec.env.SOVA_CHAT_PATH!, state: o.state, seq: 0 };
+    setImmediate(() => {
+      for (const f of o.boot ?? []) runtimeEnd.send(f as never);
+    });
+    runtimeEnd.on("open", () => {
+      for (const f of o.opening ?? []) runtimeEnd.send(f as never);
+    });
+    return { link, hello };
+  }) as never;
+}
+
+const deathsOf = (t: { supervisor: { deathsFile(): string } }) =>
+  readFileSync(t.supervisor.deathsFile(), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l) as { detail?: string });
+
+test("a start that never says ready: the server's log and the stopped chat's record name the step it was stuck in; the error is unchanged", async () => {
+  let t: ReturnType<typeof setup>;
+  t = setup({
+    deps: { bootWaitMs: 150 },
+    wrap: () =>
+      stuckRuntime(() => t.driver, {
+        state: "booting",
+        boot: [
+          { t: "boot", phase: "starting", step: "chat code", stepMs: 0, totalMs: 40 },
+          { t: "boot", phase: "starting", step: "extensions start", stepMs: 1_500, totalMs: 2_000 },
+        ],
+      }),
+  });
+  const s = session();
+  const { lines, result } = await routerLog(() => t.router.acquire(s.path, false));
+  assert.equal(result.status, "rejected");
+  assert.equal((result as PromiseRejectedResult).reason.message, "This chat's process didn't start: it could not start its process (The chat process didn't answer (hello) in time.)");
+  const said = lines.find((l) => l.includes(`${s.id}: not ready after`));
+  assert.match(said ?? lines.join("\n"), /: not ready after \d+\.\d s; stuck in extensions start for 1\.\d s \(answered after \d+\.\d s\)$/);
+  const detail = deathsOf(t).at(-1)?.detail ?? "";
+  assert.match(detail, /^no hello: The chat process didn't answer \(hello\) in time\.; stuck in extensions start for 1\.\d s \(answered after \d+\.\d s\)$/);
+});
+
+test("a start on older code reports no step: the record says so", async () => {
+  let t: ReturnType<typeof setup>;
+  t = setup({ deps: { bootWaitMs: 100 }, wrap: () => stuckRuntime(() => t.driver, { state: "booting" }) });
+  const s = session();
+  const { lines, result } = await routerLog(() => t.router.acquire(s.path, false));
+  assert.equal(result.status, "rejected");
+  assert.match(lines.find((l) => l.includes(`${s.id}: not ready after`)) ?? "", /; no step reported \(answered after/);
+  assert.match(deathsOf(t).at(-1)?.detail ?? "", /; no step reported \(answered after \d+\.\d s\)$/);
+});
+
+test("an open that never answers: the server's log names the step the open was in; the error is unchanged", async () => {
+  let t: ReturnType<typeof setup>;
+  t = setup({ deps: { openWaitMs: 150 }, wrap: () => stuckRuntime(() => t.driver, { state: "ready", opening: [{ t: "boot", phase: "opening", step: "extensions start", stepMs: 0, totalMs: 300 }] }) });
+  const s = session();
+  const { lines, result } = await routerLog(() => t.router.acquire(s.path, false));
+  assert.equal(result.status, "rejected");
+  assert.equal((result as PromiseRejectedResult).reason.message, "This chat's process didn't start: it did not open in its process (The chat process didn't answer (opened) in time.)");
+  assert.match(
+    lines.find((l) => l.includes(`${s.id}: its open got no answer`)) ?? lines.join("\n"),
+    /: its open got no answer after \d+\.\d s \(The chat process didn't answer \(opened\) in time\.\): stuck in extensions start for 0\.\d s$/,
+  );
+});
+
+test("a chat's open names its steps in order, and its server hears them; a fast start adds no line to the server's log, a slow one adds one", async () => {
+  const steps: string[] = [];
+  const ends: boolean[] = [];
+  const heard: string[] = [];
+  const t = setup({
+    openTrail: (send) => ({
+      step: (name) => {
+        steps.push(name);
+        send({ t: "boot", phase: "opening", step: name, stepMs: 0, totalMs: 0 });
+      },
+      finish: (ok = true) => void ends.push(ok),
+    }),
+    wrap: (c) =>
+      (async (sock: string, opts: never) => {
+        const r = await (c as (s: string, o: never) => Promise<{ link: InstanceType<typeof Link> }>)(sock, opts);
+        r.link.on("boot", (f) => void heard.push(f.step));
+        return r;
+      }) as never,
+  });
+  const fast = await routerLog(() => t.router.acquire(session().path, false));
+  assert.equal(fast.result.status, "fulfilled");
+  assert.deepEqual(steps, ["open file", "loadout", "extensions load", "session", "extensions start", "finish"]);
+  assert.deepEqual(ends, [true]);
+  assert.deepEqual(heard, steps, "each step reached the server");
+  assert.deepEqual(fast.lines.filter((l) => / started in /.test(l)), []);
+
+  const slow = setup({ deps: { slowStartMs: 0 } });
+  const s = session();
+  const logged = await routerLog(() => slow.router.acquire(s.path, false));
+  assert.equal(logged.result.status, "fulfilled");
+  assert.match(logged.lines.find((l) => l.includes(`${s.id}: started in`)) ?? "", /: started in \d+\.\d s \(answered after \d+\.\d s, ready after \d+\.\d s, opened after \d+\.\d s\)$/);
 });

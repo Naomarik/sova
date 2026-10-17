@@ -36,13 +36,14 @@ and the site's fonts and colour tokens.
 
 ## §site.docs/index — Sova docs (`/docs/`)
 
-The front page: what a mode is, a card per major and minor mode (a project's own modes as one),
-and links to the feature and setup pages.
+The front page: what a mode is, a table with a row per major and minor mode (memory among them, a
+project's own modes as one row), and links to the feature and setup pages.
 
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions, strict, the terminal's commands, what workers get (spec, and each
+the default for new sessions (memory's type and size with it), strict, a short memory section that
+links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
@@ -52,13 +53,14 @@ teams, watching workers, and workers after a restart.
 
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
-What a subagent profile holds, how a chat picks one, editing them in Settings, switching a chat's
+What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
 profile after a usage limit, and Off. A profile never turns on a project mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
-The align minor mode: what an alignment holds, answering it, the card, chip and session mark,
-Needs you and notifications, and the terminal viewer.
+The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
+Visuals, review), the card, chip and session mark, Needs you and notifications, and the terminal
+viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)
 
@@ -68,8 +70,10 @@ route, when it runs, blockers, and what the card shows.
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
 
 The spec minor mode: working from the project's spec, the census note and its one unread line before
-finishing, the Agree step when align is on too, drafts and promotion, the spec writer, what workers
-get, and project coding sessions.
+finishing, updating a claim the task didn't create without asking and listing it in the reply's one
+spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
+writer, what workers get (and the claims a finished worker's changes landed in), and project coding
+sessions.
 
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 
@@ -86,7 +90,7 @@ rendered to static HTML when the examples are generated (`pnpm run vis-examples`
 a copy of the vis styles scoped to the examples, so the page matches the app, runs no script, and
 follows the site's light/dark toggle through the same tokens. Every example parses with no
 warnings, or the generator fails, and it writes the same bytes on every run. A kind that lays
-out for its pane's width (flow, state, sequence, chart, matrix) is drawn for the docs column and
+out for its pane's width (flow, state, sequence, chart, matrix, steps) is drawn for the docs column and
 for a 320px phone, and the page shows the one that fits its figure's width. Interactive parts
 show their first state and do nothing: a sequence's **Step Through** button is disabled. A `vis
 svg` example is drawn in place, as its frame would show it; a `vis html` example shows only its
@@ -122,7 +126,8 @@ and lands it.
 ## §site.docs/overseer — The Overseer (`/docs/overseer/`)
 
 The session that reads every other session and acts on them through Sova: what it is, what it may
-do and when it asks first, its notes, ideas and to-dos, and its settings. Its news of branches
+do (organizations and cross-host links included) and when it asks first, the files it writes only in
+turns you start, its memory switch, its notes, ideas and to-dos, and its settings. Its news of branches
 ready to merge links to the Merge round, which in Sova's own repository picks those up by itself,
 asking each branch's owner first. Turning a project's own mode on for you counts as your approval
 of its tools.
@@ -144,12 +149,31 @@ app, and following sessions that are open in a terminal.
 ## §site.docs/change-direction — Change direction (`/docs/change-direction/`)
 
 Rewinding to before a message, regenerating a reply, forking from a reply, steering or stopping a
-running turn, and switching models mid-session.
+running turn, and switching models mid-session (favorites and the saved default).
 
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
 opening it unlocked, the app-launcher entry that opens it in its own window, the access token,
-the login service, running the installer again, removing it (the service, the extension links,
+the login service, running the installer again and the self-update from Settings it points to
+(§site.docs/updates), removing it (the service, the extension links,
 the install, the launcher, the app entry and its browser profile, and optionally pnpm's store and
 cache), and the Claude Code models.
+
+## §site.docs/memory — Memory (`/docs/modes/memory/`)
+
+The memory minor mode: what it does and that the transcript never changes, turning it on from the
+mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
+zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
+updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
+Memory and its help, where memory can't be on (the terminal, workers, coding sessions, session
+profiles), and the overseers' own switches, on by default.
+
+## §site.docs/updates — Updates (`/docs/updates/`)
+
+Keeping Sova current, in Setup after Install: running the install command again and how the
+`stable` tag moves, pinning with `SOVA_REF`, then Settings → General's Updates · this machine: what
+runs and the kind of copy, the source (stable, master or a branch), checking and what a check finds,
+the dot on Settings, upgrading with the previous version kept until the new one answers and put back
+when it doesn't, Upgrade automatically, the banner a page open across an upgrade
+shows ("A newer Sova is available.", mesh or not), and that only the operator can update.

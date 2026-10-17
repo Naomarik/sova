@@ -84,7 +84,8 @@ are atomic tmp+rename.
   note and gets them at the next run that has one. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
-  `ls` and `wake_nudge`. It never has `bash`, `edit`, `write` or subagent tools: the only
+  `ls`, `write`, `edit` and `wake_nudge` (`write` and `edit` on the terms of
+  §app.overseer/file-writes). It never has `bash` or subagent tools: the only
   subagents it can start are ideas' explorers, through `sova_idea` (§app.overseer/explorer).
 - **Model.** Its model and thinking level come from `overseer.json`, never from the new-session
   defaults. A model or thinking change made in the Overseer's composer writes back to
@@ -190,8 +191,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   host only, resolved against the new session's folder (its project first, then yours, then built
   in, §chat.profiles/projects). Only a profile marked "The Overseer may start it" is taken, and a
   project profile only once you approved it (§chat.profiles/trust); any other refuses before
-  anything is created. A profile that links a playbook sends that playbook as the first message,
-  with `prompt` as its text (§chat.profiles/playbook). The session is created with that profile's snapshot
+  anything is created. A profile sends no playbook (§chat.profiles/playbook): `prompt` alone is the first message. The session is created with that profile's snapshot
   (and its mode, minor modes and model unless the call names its own: an explicit
   `minor_modes` replaces the profile's set), and the tool's result renders as a
   **Started from {label}** card with Open Session. A One at a time profile that is live refuses
@@ -362,6 +362,31 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   says per session what was archived, each worktree removed or kept and why, and each branch
   deleted or kept. Without `worktrees`, archiving never touches a worktree.
 
+## §app.overseer/file-writes — Writing and editing files, only in your turns
+
+The Overseer and every project overseer have pi's `write` and `edit`, behind the same guard as
+their read tools (§app.overseer/tools, "Files").
+
+- **Where.** Anywhere `read` may go, except Sova's and pi's own state (the agent dir, with Sova's
+  state root in it, and `~/.pi`), a folder an attached organization's project layer reserves (its
+  workspace), a secret file, and a file with more than one hard link. A project overseer writes
+  only inside its project root; its attachments folder stays read-only. Each path is checked as
+  written, at its realpath and at every link of a symlink chain, so a dangling link can't create a
+  file in a refused place. A refusal names why ("That folder is Sova's or pi's own state; the
+  Overseer can't write there.", "That file holds credentials; the Overseer can't write it.", "That
+  path is outside the project root {root}; the project overseer writes only inside it.").
+- **When.** Only in a turn the user (for a project overseer, the operator) started. In any other
+  turn (a brief, a wake-up, another automatic message) both tools refuse before touching anything:
+  the Overseer is told to raise a `sova_card` saying what it would write and why, the user's click
+  starting a turn in which it may; a project overseer is told "Writing a file is the operator's:
+  ask with sova_card." No approval or standing rule makes a write run in another turn.
+- **Logged.** Each call, written, refused or failed, is one line of the overseer's action log with
+  the tool, the path and the bytes written, never the content. The tools' arguments reach the model
+  as given; their results are redacted like the read tools'.
+- **The prompt** states these rules, tells the overseer to leave code changes to coding sessions and
+  keep its own edits to a project's `.sova/` configuration unless asked, and that a refused write
+  is final: never the same file another way, never a session asked to write it.
+
 ## §app.overseer/session-truth — What `sova_session` says is true now
 
 `sova_session` prints, after the session's row and its link, the facts the server holds about the
@@ -381,12 +406,19 @@ check a session in one call instead of trusting a brief, a card or a summary lin
   "Ready to merge · checks passed · 3 commits ahead"), the session's badge when it has one (merged,
   restart pending), and the last check run on the session's branch (a test, typecheck or build the
   session ran): passed or failed, how long ago, and whether it ran after the worktree's newest
-  commit or before it; with none, "no check run seen". It is the readiness answer as last read
-  (about 20 seconds old at most, except for an archived session that is idle and not open in a
-  TUI: its answer is as last read when it changed or was inspected). An inspection returns that
-  cached answer at once and, when it is at least twenty seconds old, queues one fresh background
-  read, shared with already queued or active work; a later call shows the completed refresh.
-  A session that tracks no worktree of its own has no Merge line.
+  commit or before it; with none, "no check run seen". It is the readiness answer as last read:
+  - about 20 seconds old at most while the session runs;
+  - for an idle session, read again at once when its worktrees' commits, branches, base or merge
+    setup move, and otherwise every five minutes (§app/idle-git-cache), so its uncommitted changes
+    can be that old;
+  - for an archived session that is idle and not open in a TUI, as last read when it changed or
+    was inspected.
+
+  An inspection returns that cached answer at once. It also queues one fresh background read,
+  shared with already queued or active work, when the answer is at least ten seconds old for an
+  idle session whose worktrees are checked without Git (§app/idle-git-cache), or at least twenty
+  seconds old for an archived idle session; a later call shows the completed refresh. A session
+  that tracks no worktree of its own has no Merge line.
 - **Summary:** the Purpose and Now lines are labelled as the summary's, with its age, "written
   before the last reply" when it is older than the last reply, and the summarizer's state when it
   is stale or failed and kept its last line: "Now (summary, 2h ago, written before the last reply):

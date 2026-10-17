@@ -31,7 +31,7 @@ const LIST_FILES = 40;
 
 export const SHOW_CHANGES_DESCRIPTION = `Open Sova's changes viewer for the user on git changes: a file tree, the change as numbered steps, one diff at a time. Read-only.
 
-When the diff has more than one hunk, every hunk must be in exactly one step, or the call is refused, opening nothing, with the hunks still to place. Read the diff first with plain \`git diff\` or \`git show\` (default context, never -U0): a hunk's numbers are in its @@ -a,b +c,d @@ header.
+When the diff has more than one hunk, every hunk must be in exactly one step, or the call is refused, opening nothing, with the hunks still to place. Read the diff first with plain \`git diff\` (for a branch, \`git diff master...<branch>\`, three dots) or \`git show\` (default context, never -U0): a hunk's numbers are in its @@ -a,b +c,d @@ header.
 
 Example: {"scope": "worktree", "title": "Rate limits on the export API", "steps": [{"title": "Token bucket", "why": "one limiter shared by every route", "hunks": [{"path": "server/limit.ts"}]}, {"title": "Apply it to /export", "hunks": [{"path": "server/routes.ts", "newStart": 120}, {"path": "server/routes.test.ts"}]}]}`;
 
@@ -39,7 +39,7 @@ export const SHOW_CHANGES_PROMPT_SNIPPET = "Show the user git changes in Sova's 
 
 export const SHOW_CHANGES_GUIDELINES = [
 	"When the user asks to see or review changes, call show_changes rather than pasting a diff, then reply in a sentence or two.",
-	"show_changes shows only git changes in this session's checkout or its tracked worktrees. If the change is anywhere else or not in git yet, write it into a tracked worktree first (the worktree tool can create one), or tell the user there is no diff to show.",
+	"show_changes shows only git changes in this session's checkout or its tracked worktrees. If the change is anywhere else or not in git yet, write it into a tracked worktree as uncommitted edits first (the worktree tool can create one), or tell the user there is no diff to show; never show a different change instead.",
 ];
 
 const Hunk = Type.Object(
@@ -122,13 +122,19 @@ function sessionRoots(ctx: ExtensionContext, agentDir: string): string[] {
 	return knownRoots(sessionFolderCandidates(cwd, entries), agentDir);
 }
 
+/**
+ * The refusal for a comparison with no changed file: the agent tells the user instead of opening an
+ * empty card, unless a branch comparison's folder has uncommitted files, which scope dirty shows.
+ */
+export function emptyRefusal(scope: string, paths?: readonly string[], uncommitted = 0): string {
+	const head = `No changes in this comparison (${scope}${paths ? `, limited to ${paths.join(", ")}` : ""}), so nothing was shown.`;
+	if (uncommitted > 0) return `${head} Its folder has ${uncommitted} uncommitted file${uncommitted === 1 ? "" : "s"}: scope dirty shows them.`;
+	return `${head} Tell the user nothing changed there.`;
+}
+
 /** The reply the model reads: what opened, the files, and how many hunks the steps placed. */
 export function replyText(details: ShowChangesDetails, files: readonly string[], hunks: number): string {
 	const lines = [`Opened the changes viewer for the user: ${scopeLine(details.scope)}${details.paths ? `, limited to ${details.paths.join(", ")}` : ""}.`];
-	if (files.length === 0) {
-		lines.push("There are no changes in this scope.");
-		return lines.join("\n");
-	}
 	lines.push(`${files.length} changed file${files.length === 1 ? "" : "s"}:`);
 	for (const f of files.slice(0, LIST_FILES)) lines.push(`  ${f}`);
 	if (files.length > LIST_FILES) lines.push(`  … and ${files.length - LIST_FILES} more`);
@@ -185,6 +191,15 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 				const scope = await resolveScope(git, req, dir, tree);
 				const all = await changedFiles(git, scope);
 				const files = all.filter((f) => inPaths(f, req.paths));
+				// An empty card helps no one: refuse, and have the agent say so instead.
+				if (files.length === 0) {
+					// A branch with nothing committed past its base may still hold uncommitted edits: point at them.
+					const uncommitted =
+						scope.kind === "worktree"
+							? (await changedFiles(git, { kind: "dirty", cwd: scope.worktreePath, root: scope.root, head: scope.head })).filter((f) => inPaths(f, req.paths)).length
+							: 0;
+					throw new ShowChangesError(emptyRefusal(scopeLine(scope), req.paths, uncommitted), true);
+				}
 				// The viewer lists at most maxFiles (after the same paths filter): past it, refuse rather than open a cut list.
 				if (files.length > REVIEW_LIMITS.maxFiles) {
 					throw new ShowChangesError(

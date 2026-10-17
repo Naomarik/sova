@@ -881,9 +881,32 @@ test("settled sessions (§app/idle-git-cache): idle with every tree merged and c
     await tick(1);
     assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "ready");
     const before = reads;
-    await tick(r.READINESS_TTL_MS);
-    assert.equal(reads, before + 1, "not merged: the 20 s cadence");
+    for (let i = 0; i < 10; i++) await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, before, "idle and not merged: no 20 s re-reads either");
+    await tick(r.IDLE_TTL_MS - 10 * r.READINESS_TTL_MS);
+    assert.equal(reads, before + 1, "re-read once 5 minutes passed");
+    stamp = "s3";
+    await tick(1);
+    assert.equal(reads, before + 2, "a moved tree re-reads at once");
   } finally { await r.readinessIdle(); r.resetReadiness(); }
+});
+
+test("idle sessions with a gone folder: settled ones keep 5 minutes, unmerged ones keep 20 seconds", async () => {
+  const path = sessionFile(chain([worktrees([tracked(), tracked({ path: "/wt/gone-one", branch: "feat/gone" })], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path);
+  for (const [gone, reread] of [["merged", false], ["unmerged", true]] as const) {
+    r.resetReadiness();
+    let now = 0, reads = 0;
+    r.configureReadiness({ now: () => now, asksUser: () => undefined, treeStamp: (d) => (d === "/wt/gone-one" ? "gone" : "s1"), gone: async () => gone, insights: {
+      treeStatus: async (d) => { if (d === "/wt/gone-one") return null; reads++; return { ...readyStatus(), merged: "ancestor" as const, ahead: 0 }; },
+    } });
+    try {
+      r.readinessOverlay(row); await r.readinessIdle();
+      now += r.READINESS_TTL_MS;
+      r.readinessOverlay(row); await r.readinessIdle();
+      assert.equal(reads, reread ? 2 : 1, gone);
+    } finally { await r.readinessIdle(); r.resetReadiness(); }
+  }
 });
 
 const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
@@ -942,5 +965,79 @@ test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Merge
     await r.readinessIdle();
     r.resetReadiness();
     c.resetCleanup();
+  }
+});
+
+// Real Git under the real insights: what an idle session's listing reads, and when it shows.
+test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute reads, a hand edit shows within them; a commit, a driver change and a base move show at the next listing", async () => {
+  const root = realpathSync(mkdtempSync(join(agentDir, "idle-")));
+  const main = join(root, "repo");
+  mkdirSync(main);
+  mkdirSync(join(root, "sessions"));
+  git(main, "init", "-q", "-b", "master");
+  writeFileSync(join(main, ".gitattributes"), "a.txt merge=drv\n");
+  git(main, "add", ".gitattributes");
+  commit(main, "a.txt", "one");
+  const driver = join(root, "driver.sh");
+  writeFileSync(driver, "exit 1\n");
+  git(main, "config", "merge.drv.driver", `sh "${driver}" %O %A %B`);
+  const base = git(main, "rev-parse", "HEAD");
+  const wt = join(root, "wt");
+  git(main, "worktree", "add", "-q", "-b", "feat/idle", wt);
+  commit(wt, "a.txt", "feature");
+  commit(main, "a.txt", "master");
+
+  const SID = "01a103ed-a706-7126-a85b-000000000002";
+  const path = join(root, "sessions", `${SID}.jsonl`);
+  const entries = [{ type: "session", version: 3, id: SID, timestamp: "2026-10-04T10:00:00.000Z", cwd: main }, { type: "custom", customType: "worktrees", id: "e1", parentId: null, timestamp: "2026-10-04T10:00:01.000Z", data: { version: 1, trees: [{ path: wt, branch: "feat/idle", base, baseBranch: "master", status: "active", session: SID, how: "created", at: 1 }] } }];
+  writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+  const row: SessionSummary = { id: SID, path, cwd: main, title: "t", createdAt: "", lastActiveAt: "2026-10-04T10:00:01.000Z", model: null, live: null, busy: false, origin: "web", archived: false };
+
+  const { WorktreeInsights, execGit } = await import("./worktrees");
+  let now = 1_000_000;
+  const calls: string[][] = [];
+  const ins = new WorktreeInsights({ now: () => now, run: (args, opts) => { calls.push([...args]); return execGit(args, opts); } });
+  r.resetReadiness();
+  r.configureReadiness({ now: () => now, insights: ins, treeStamp: (d) => ins.quietStamp(d), asksUser: () => undefined });
+  const reason = () => r.readinessOverlay(row)?.trees[0]?.reason;
+  const tick = async (ms: number) => { now += ms; r.readinessOverlay(row); await r.readinessIdle(); };
+  try {
+    await tick(0);
+    assert.equal(reason(), "Conflicts with master · 1 file");
+    await tick(r.READINESS_TTL_MS); // the first read found the drivers: from here the stamps hold
+    const settledAt = now;
+    calls.length = 0;
+    for (let i = 0; i < 10; i++) await tick(r.READINESS_TTL_MS);
+    assert.deepEqual(calls, [], "an idle, unchanged session runs no Git between its 5-minute reads");
+
+    for (const f of ["x1", "x2", "x3"]) writeFileSync(join(wt, `${f}.txt`), "hand edit\n");
+    let shownAt = 0;
+    while (!shownAt && now - settledAt < r.IDLE_TTL_MS + r.READINESS_TTL_MS) {
+      await tick(r.READINESS_TTL_MS);
+      if (reason()?.includes("uncommitted")) shownAt = now;
+    }
+    assert.ok(shownAt, "a hand edit shows");
+    assert.ok(shownAt - settledAt <= r.IDLE_TTL_MS + r.READINESS_TTL_MS, "within 5 minutes (and the listing that follows)");
+    assert.equal(reason(), "In progress · 3 uncommitted files: x1.txt and 2 more");
+
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "commit the edits");
+    await tick(1);
+    assert.equal(reason(), "Conflicts with master · 1 file", "a commit shows at the next listing");
+
+    writeFileSync(driver, "exit 0\n");
+    await tick(1);
+    assert.equal(reason(), "Ready to merge · no check run seen · 2 commits ahead", "a change to the merge driver's code alone shows at the next listing");
+
+    calls.length = 0;
+    commit(main, "b.txt", "master moves");
+    await tick(1);
+    assert.ok(calls.some((a) => a[0] === "rev-list"), "the base moving re-reads at the next listing");
+    calls.length = 0;
+    await tick(r.READINESS_TTL_MS);
+    assert.deepEqual(calls, [], "and then nothing again");
+  } finally {
+    await r.readinessIdle();
+    r.resetReadiness();
   }
 });

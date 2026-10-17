@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { envFileText, systemdRunArgv, type Exec } from "../project-services/drivers";
+import { envFileText, SystemdDriver, systemdRunArgv, type Exec } from "../project-services/drivers";
 import { FakeDriver } from "./fake-driver";
 import { CHAT_PROCESS_ENV, chatDriver, chatEnv, chatProcessAlive, chatSocketPath, ChatSupervisor, chooseChatHost, exitOfLog, sweepOldChildren, nextEpoch, scrubChatProcessEnv, supervisorConfig, type ChatDeath, type SupervisorDeps } from "./supervisor";
 import { GC_TIMER_OFF } from "./gc-timer";
@@ -866,3 +866,152 @@ test("adoption says it stops only a running unrecorded unit; what is left of an 
   assert.deepEqual(lines.filter((l) => l.includes("no chat records it")), ["sova-chat-test01-live: no chat records it; stopping it"]);
 });
 
+
+// ---- the watch's fast look: no program for a healthy chat --------------------------------------------
+
+/**
+ * The real systemd driver over a scripted user manager: every program it would run is logged in
+ * `ran` and answered from `units`. A unit's cgroup (`owns`) holds its main pid while `alive` says the
+ * process runs; `isChatProcess` reads the same flag, as /proc would.
+ */
+function scriptedSystemd() {
+  const ran: string[][] = [];
+  const units = new Map<string, { pid: number; up: boolean; journal: string[] }>();
+  let nextPid = 4000;
+  const alive = new Set<number>();
+  const exec: Exec = async (file, args) => {
+    ran.push([file, ...args]);
+    if (file === "systemd-run") {
+      const unit = args.find((a) => a.startsWith("--unit="))!.slice("--unit=".length);
+      const pid = nextPid++;
+      units.set(unit, { pid, up: true, journal: [] });
+      alive.add(pid);
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (file === "systemctl" && args[1] === "show") {
+      const u = units.get(args[2]!.replace(/\.service$/, ""));
+      if (!u) return { code: 0, stdout: "LoadState=not-found\nActiveState=inactive\n", stderr: "" };
+      return { code: 0, stdout: u.up ? `LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=${u.pid}\nExecMainStatus=0\nResult=success\n` : `LoadState=loaded\nActiveState=failed\nSubState=failed\nMainPID=0\nResult=failed\n`, stderr: "" };
+    }
+    if (file === "journalctl") {
+      const u = units.get(args[2]!.replace(/\.service$/, ""));
+      return { code: 0, stdout: (u?.journal ?? []).map((m) => JSON.stringify({ MESSAGE: m })).join("\n"), stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  class Driver extends SystemdDriver {
+    override owns(unit: string, pid: number) {
+      return units.get(unit)?.pid === pid && alive.has(pid);
+    }
+  }
+  const driver = new Driver(exec, {});
+  /** The unit's main process is killed: gone from /proc, its unit failed with the signal. */
+  const kill = (unit: string) => {
+    const u = units.get(unit)!;
+    alive.delete(u.pid);
+    u.up = false;
+    u.journal = ["Started x.", `${unit}.service: Main process exited, code=killed, status=9/KILL`, `${unit}.service: Failed with result 'signal'.`];
+  };
+  return { ran, units, alive, exec, driver, kill };
+}
+
+function makeScripted(extra: Partial<SupervisorDeps> = {}) {
+  const sys = scriptedSystemd();
+  const m = make(new FakeDriver(), { driver: sys.driver, platform: "linux", isChatProcess: (pid) => sys.alive.has(pid), ...extra });
+  return { ...m, ...sys };
+}
+
+test("a healthy chat's watch tick runs no program: its process is read directly, systemctl only at the slow reconcile", async () => {
+  const { sup, ran, deaths } = makeScripted();
+  await sup.start(chat);
+  await sup.tick(); // the first tick after a start may still ask: the start's own answer counts
+  ran.length = 0;
+  // 14 watch ticks, 2 s apart (28 s, inside the 30 s reconcile): nothing started, no death.
+  for (let i = 0; i < 14; i++) {
+    clock += 2_000;
+    await sup.tick();
+  }
+  assert.deepEqual(ran.map((c) => c.join(" ")), [], "a healthy chat's tick starts no program");
+  // The slow reconcile asks the manager once, then the fast look goes on.
+  clock += 2_000;
+  await sup.tick();
+  assert.deepEqual(ran.map((c) => c.slice(0, 2)), [["systemctl", "--user"]]);
+  assert.equal(ran[0]![2], "show");
+  ran.length = 0;
+  clock += 2_000;
+  await sup.tick();
+  assert.deepEqual(ran.map((c) => c.join(" ")), []);
+  assert.deepEqual(deaths, []);
+});
+
+test("a killed chat is reported at the very next tick, its death read from systemd as before", async () => {
+  const { sup, deaths, kill } = makeScripted();
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  await sup.tick();
+  clock += 2_000;
+  await sup.tick(); // a fast-look tick
+  kill(rec.unit);
+  clock += 2_000;
+  await sup.tick();
+  assert.equal(deaths.length, 1, "noticed at the first tick after it died");
+  assert.deepEqual([deaths[0]!.cause, deaths[0]!.exit, deaths[0]!.signal, deaths[0]!.pid], ["crashed", null, "KILL", rec.pid]);
+});
+
+test("the fast look trusts no reused pid, no pid outside the unit, no unknown pid, and nothing off Linux: each asks systemd at once", async () => {
+  const shows = (ran: string[][]) => ran.filter((c) => c[0] === "systemctl" && c[2] === "show").length;
+  // The pid runs another program now (no chat-runtime/main.ts): systemd is asked, and its death reported.
+  {
+    let reused = false;
+    const s = makeScripted({ isChatProcess: () => !reused });
+    const rec = await s.sup.start(chat);
+    s.sup.noteConnected("c1");
+    await s.sup.tick();
+    s.units.get(rec.unit)!.up = false;
+    s.units.get(rec.unit)!.journal = [`${rec.unit}.service: Main process exited, code=exited, status=1/FAILURE`];
+    reused = true;
+    s.ran.length = 0;
+    clock += 2_000;
+    await s.sup.tick();
+    assert.equal(shows(s.ran), 1);
+    assert.equal(s.deaths.length, 1);
+    assert.equal(s.deaths[0]!.exit, 1);
+  }
+  // The pid is a chat process but no longer in the chat's unit (its cgroup): systemd is asked.
+  {
+    const s = makeScripted();
+    const rec = await s.sup.start({ ...chat, chatId: "c2" });
+    await s.sup.tick();
+    s.units.get(rec.unit)!.pid = 99_999;
+    s.ran.length = 0;
+    clock += 2_000;
+    await s.sup.tick();
+    assert.equal(shows(s.ran), 1);
+  }
+  // Not Linux: every tick asks the driver, as before.
+  {
+    const s = makeScripted({ platform: "darwin" });
+    await s.sup.start({ ...chat, chatId: "c3" });
+    s.ran.length = 0;
+    for (let i = 0; i < 3; i++) {
+      clock += 2_000;
+      await s.sup.tick();
+    }
+    assert.equal(shows(s.ran), 3);
+  }
+  // A start whose main process has no pid yet: asked each tick until it has one.
+  {
+    const d = new FakeDriver();
+    let asked = 0;
+    const status = d.status.bind(d);
+    d.status = async (u) => (asked++, status(u));
+    d.owns = () => true;
+    const { sup } = make(d, { platform: "linux", isChatProcess: () => true, startWaitMs: 0 });
+    d.slowNextStart = true;
+    await sup.start({ ...chat, chatId: "c4" });
+    asked = 0;
+    await sup.tick();
+    await sup.tick();
+    assert.equal(asked, 2);
+  }
+});

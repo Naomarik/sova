@@ -660,11 +660,14 @@ export function ChatView(props: {
   const handedBack = new Set<string>();
   /** Sends the server hasn't acknowledged: back in the draft when the chat goes from under the pane. */
   const unacked = new UnackedSends();
-  /** Texts the pane got back (a refusal, a reconnect) go to the top of the draft. */
+  /** Texts the pane got back (a refusal, a reconnect) go to the top of the draft: the composer on
+      screen shows them now (it reads the stored draft only when it mounts), and the stored draft
+      holds them for one that mounts later. */
   const putBack = (texts: string[]) => {
     if (!texts.length) return;
     const current = drafts.get(props.path);
     setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
+    setRestored({ text: texts.join("\n\n") });
   };
   const UNSENT_WORDS = "That message couldn't be sent. It's back in the composer.";
   /** The sends made on connection `conn` it never acknowledged, back to the composer: it ended
@@ -1072,12 +1075,18 @@ export function ChatView(props: {
               // A command it names makes no user row: its text comes back from here.
               const taken = [unacked.take(msg.clientId, handedBack)].filter((t): t is string => t !== null);
               putBack(taken);
+              // Refused before the hello, the chat never had it: its row goes, as the text is back.
+              const unopened = errorHandsBack(untrack(wait)) !== null;
+              if (unopened && msg.clientId) {
+                const id = msg.clientId;
+                setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id === id)))));
+              }
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
               // Before this connection's hello it is the chat failing to open (its retry included,
               // server/ws.ts): quiet here, said by the start failure that follows (lib/error-feed).
-              const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: errorHandsBack(untrack(wait)) !== null, back: taken.length });
+              const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: unopened, back: taken.length });
               setFeed(step.feed);
               sayFeed(step.says);
               return;

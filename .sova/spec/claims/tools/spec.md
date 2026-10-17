@@ -573,9 +573,10 @@ current words. When no record in view carries `agreed`, the map says so and the 
 an absent count never reads as zero.
 
 Each area whose record carries `notOwned` (§tools.spec/record-fields) shows, under its what line, a
-"doesn't own" line: each owner, in record order, or "nothing declared" for `[]`. The overview names
-each owner by its § id alone, so every area keeps fitting one page; the one-area view adds each
-owner's heading title. Every view counts the areas in
+"doesn't own" line: each owner, in record order, or "nothing declared" for `[]`. The overview's text names
+each owner by its § id alone, and its JSON leaves the owners out, keeping the count and a note
+(`not-owned-per-area`) that points at `map '§ns/area'`, so the whole map keeps fitting one page in
+either form; the one-area view gives each owner's § id and heading title. Every view counts the areas in
 view that carry the field, as "doesn't own: written for <k> of <n> area(s)"; when at least one does,
 each area without it shows "doesn't own: (not written)", so a missing line never reads as owning
 everything. When no area in view carries it, that line says so instead, no area shows a "doesn't

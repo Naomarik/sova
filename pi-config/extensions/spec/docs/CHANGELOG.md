@@ -527,8 +527,9 @@ would list master's changes instead.
       foreign `touched` entries carry `fanIn` and `relevance` (score ÷ fanIn ÷ ln(passages + 1), so it
       means the same in any spec size); `readFirst` holds up to 10 at relevance ≥ 0.1 or with a stale
       literal (was: the first 5 with a score or a stale literal, stale first);
-    - the hook's line follows it: "read first …; +N lower-ranked: <command>", and "N unread, all
-      lower-ranked: <command>" when none qualifies (was "+N more:" / "N unread:");
+    - the hook's line follows it and no longer counts the rest: "read first …; lower-ranked:
+      <command>", and "none read first; lower-ranked: <command>" when none qualifies (was "+N more:
+      <command>" / "N unread: <command>"), so it asks for the § it names and no others;
     - `README.md`, `core/README.md`, `docs/MODE.md` and the site page say the same. The mode text is
       unchanged.
   - §: §tools.spec/census-rank and §tools.spec/unread-landed reworded (draft `unread-short`). Base: 9c3f949b.
@@ -660,5 +661,5 @@ The tools are Node standard library only. Nothing is installed.
 10. **The 2026-10-18 unread line** (branch `feat/spec-x-unread`, not on master yet). Copy
     `core/sova-spec.mjs` again. `census --changed --related` rank rows gain `fanIn` and `relevance`
     and are ordered by relevance; `readFirst` holds up to 10 (was 5) at relevance ≥ 0.1 or stale. A
-    hook of your own that parses the unread line reads "+N lower-ranked:" (was "+N more:") and
-    "N unread, all lower-ranked:" (was "N unread:").
+    hook of your own that parses the unread line reads "; lower-ranked: <command>" (was "; +N more:
+    <command>") and "none read first; lower-ranked: <command>" (was "N unread: <command>"): no count.

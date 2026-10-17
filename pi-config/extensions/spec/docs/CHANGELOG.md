@@ -535,8 +535,8 @@ would list master's changes instead.
   - §: §tools.spec/census-rank and §tools.spec/unread-landed reworded (draft `unread-short`). Base: 9c3f949b.
   - Numbers (L1 history replay of the audit's 99 worker sessions, 93 replayed; 62 Claude sessions labelled by
     Opus for which landed § mattered, labels fixed before any rule was compared): § the line asks for, median
-    5 → 4 (it no longer adds "+N more", median 74); mattered § among them 56/148 = 38% → 84/148 = 57%
-    (held-out 17/35 → 25/35); precision 23% → 24–27%. `EVOLUTION.md` (the unread line) has the iterations.
+    5 → 6.5, at most 10 (it no longer adds "+N more", median 74); mattered § among them 56/148 = 38% →
+    84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; lines with nothing read first 7 → 10 of 69. `EVOLUTION.md` (the unread line) has the iterations.
 
 ## Integration → master
 

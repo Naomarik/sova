@@ -133,8 +133,8 @@ held out, labels frozen by hash before any comparison; a second labelling of 14 
   is the one feature that moved the ranking (cap 10: 57 → 63/113 dev).
 - **Kept.** Relevance = score ÷ fan-in ÷ ln(passages + 1); up to 10 read first at relevance ≥ 0.036 or a stale
   literal; the rest left to the census command, uncounted (9ec90f28). L1, 62 labelled sessions: mattered caught
-  56/148 = 38% → 84/148 = 57% (held-out 17/35 → 25/35); read-first median 5 → 4; lines with an empty read-first
-  list 7 → 11 of 69 (3 mattered § on them, missed either way by the line).
+  56/148 = 38% → 84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; read-first median 5 → 6.5 (max
+  10); lines with an empty read-first list 7 → 10 of 69 (3 mattered § on them).
 - **Dropped: a cut at 0.1** (184082c0, reverted in 9ec90f28). Precision 24% → 28% on L1 with recall flat (82 vs
   84/146), but it emptied read-first in 7/12 L2 lines (master 3/13) and dropped a § the change contradicted
   (task T1: a 30 s → 40 s timeout, supervision at 0.043).

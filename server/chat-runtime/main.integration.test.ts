@@ -6,10 +6,11 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DEFAULT_RUNTIME_SETTINGS } from "../../shared/chat-runtime-wire";
+import { CHAT_WIRE_PROTO, type ChatWireFrame, DEFAULT_RUNTIME_SETTINGS, encodeFrame, FrameDecoder } from "../../shared/chat-runtime-wire";
 import { awaitFrame, connectLink } from "./link";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -123,4 +124,83 @@ test("a start that hangs: a beat names its step, the server hears it, and SIGTER
 test("the failed-start test hook exits before it listens", { timeout: 30_000 }, async () => {
   const p = chatProcess({ SOVA_CHAT_TEST_FAIL_BOOT: "b1" });
   assert.equal((await p.exited).code, 3);
+});
+
+// ---- control after the start finished (§app.chat-processes/supervision) ---------------------------
+// Dialed raw, not with connectLink (which answers the hello with `control` at once): the test picks
+// when control goes, so it can send it after the chat finished starting, the window where a chat
+// once said "booting" on its link and nothing more, and its server waited 40 s and stopped it.
+
+async function rawDial(sock: string) {
+  const until = Date.now() + 10_000;
+  for (;;) {
+    try {
+      const s = await new Promise<Socket>((resolve, reject) => {
+        const c = createConnection(sock);
+        c.once("connect", () => resolve(c));
+        c.once("error", reject);
+      });
+      const frames: { t: string; [k: string]: unknown }[] = [];
+      const dec = new FrameDecoder();
+      s.on("data", (d: Buffer) => {
+        for (const f of dec.push(d)) {
+          if (f.t === "ping") s.write(encodeFrame({ t: "pong", n: f.n as number }));
+          frames.push(f);
+        }
+      });
+      s.on("error", () => {});
+      kidSockets.push(s);
+      return { s, frames, send: (f: ChatWireFrame) => void s.write(encodeFrame(f)) };
+    } catch (err) {
+      if (Date.now() >= until) throw err;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
+}
+const kidSockets: Socket[] = [];
+after(() => kidSockets.forEach((s) => s.destroy()));
+
+const control = (epoch: number): ChatWireFrame => ({ t: "control", proto: CHAT_WIRE_PROTO, epoch, serverPid: process.pid, serverStartedAt: Date.now(), build: "b1", since: null, settings: DEFAULT_RUNTIME_SETTINGS });
+const hellos = (frames: { t: string; [k: string]: unknown }[]) => frames.filter((f) => f.t === "hello");
+const readyHellos = (frames: { t: string; [k: string]: unknown }[]) => hellos(frames).filter((f) => f.state !== "booting");
+async function until(cond: () => boolean, ms: number, what: string, out: () => string): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) assert.fail(`${what} within ${ms} ms\n${out()}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+test("control that comes after the chat finished starting gets one hello saying ready at once", { timeout: 60_000 }, async () => {
+  const p = chatProcess();
+  const c = await rawDial(p.sock);
+  await until(() => hellos(c.frames).length > 0, 5_000, "a first hello", p.out);
+  assert.equal(c.frames[0]!.t, "hello");
+  assert.equal(c.frames[0]!.state, "booting", "dialed before the start finished");
+  // The link waits 10 s for control: the start finishes well inside that.
+  await until(() => /\[chat-runtime\] ready in/.test(p.out()), 9_000, "the start's ready line", p.out);
+  assert.equal(readyHellos(c.frames).length, 0, "nothing said ready before control");
+  c.send(control(1));
+  await until(() => readyHellos(c.frames).length > 0, 5_000, "a hello saying ready after control", p.out);
+  await new Promise((r) => setTimeout(r, 1_000));
+  const ready = readyHellos(c.frames);
+  assert.equal(ready.length, 1, `one ready hello, heard: ${JSON.stringify(hellos(c.frames))}`);
+  assert.equal(ready[0]!.state, "ready");
+  assert.equal(ready[0]!.epoch, 1);
+  assert.equal(ready[0]!.sessionId, p.id);
+});
+
+test("control that comes while the chat starts gets one hello saying ready once it is", { timeout: 60_000 }, async () => {
+  // Held 1.5 s in its start, so the control surely comes before the start ends.
+  const p = chatProcess({ SOVA_CHAT_TEST_SLOW_BOOT_MS: "1500" });
+  const c = await rawDial(p.sock);
+  await until(() => hellos(c.frames).length > 0, 5_000, "a first hello", p.out);
+  assert.equal(c.frames[0]!.state, "booting", "dialed before the start finished");
+  c.send(control(1));
+  // Taken while starting: the chat says the step it is in at once (main.ts's early control).
+  await until(() => c.frames.some((f) => f.t === "boot"), 1_000, "the current step", p.out);
+  assert.doesNotMatch(p.out(), /ready in/, "control came while starting");
+  await until(() => readyHellos(c.frames).length > 0, 30_000, "a hello saying ready", p.out);
+  await new Promise((r) => setTimeout(r, 1_000));
+  assert.equal(readyHellos(c.frames).length, 1, `one ready hello, heard: ${JSON.stringify(hellos(c.frames))}`);
 });

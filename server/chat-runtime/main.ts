@@ -13,7 +13,9 @@
 // the step on a stop in the middle of one, and each step to its server in a `boot` frame. Only this
 // process records the trail: the server's own warm-up hears no step. Tests:
 // SOVA_CHAT_TEST_HANG_BOOT=<build> hangs the start in a "test hang" step, with a `sleep` child running,
-// when this build is that one; SOVA_CHAT_TEST_BEAT_MS beats faster than every 10 s.
+// when this build is that one; SOVA_CHAT_TEST_BEAT_MS beats faster than every 10 s;
+// SOVA_CHAT_TEST_SLOW_BOOT_MS=<ms> holds the start that long in a "test delay" step (a control that
+// surely comes while the chat starts).
 import { spawn, type ChildProcess } from "node:child_process";
 import { CHAT_WIRE_MIN_PROTO, CHAT_WIRE_PROTO, type ExitCause, type FrameOf } from "../../shared/chat-runtime-wire";
 import { BEAT_MS, BootTrail, childPrograms, stoppedText } from "./boot-steps";
@@ -88,10 +90,21 @@ function exitNow(cause: ExitCause, link: Link | null): void {
   void server.close().finally(() => setTimeout(() => process.exit(0), 50));
 }
 
+/** Hand a controller to the loaded chat. A link whose hello said booting hears the state now, in one
+    hello, here and nowhere else: whether its control came while the chat started (kept in `early`
+    until now) or only after the start was done. The host's own hellos (host.ts setState) can't say
+    it: the host starts ready, so its state never changes to ready (§app.chat-processes/supervision). */
+function takeControl(h: Host, link: Link, control: ControlFrame): void {
+  h.onControl(link, control);
+  if (link.greeting?.state === "booting" && link.isOpen) {
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: control.epoch, ...h.hello() });
+  }
+}
+
 const server = await serveLink(sock, {
   hello: () => host?.hello() ?? { build, pid: process.pid, startedAt, unit, sessionId, path, state, seq: 0 },
   onControl(link, control) {
-    if (host) return host.onControl(link, control);
+    if (host) return takeControl(host, link, control);
     early = { link, control };
     startTrail.report();
     // While booting, only a drain means anything: there is no chat to close yet.
@@ -128,6 +141,11 @@ if (env.SOVA_CHAT_TEST_HANG_BOOT && env.SOVA_CHAT_TEST_HANG_BOOT === build) {
   hangChild = spawn("sleep", ["120"], { stdio: "ignore" });
   await new Promise(() => {});
 }
+const slowBootMs = Number(env.SOVA_CHAT_TEST_SLOW_BOOT_MS);
+if (slowBootMs > 0) {
+  startTrail.step("test delay");
+  await new Promise((r) => setTimeout(r, slowBootMs));
+}
 startTrail.step("chat code");
 const { ChatRuntimeHost, RELOAD_MESSAGE, warmChatRuntime } = await import("./host");
 await warmChatRuntime(startTrail.step);
@@ -148,11 +166,7 @@ if (!exiting) {
   startTrail.finish();
   // Set by onControl meanwhile (a callback: the compiler can't see it).
   const pending = early as { link: Link; control: ControlFrame } | null;
-  if (pending?.link.isOpen) {
-    host.onControl(pending.link, pending.control);
-    // The state changed on this link: say it (kernel hello, as the host does on every change).
-    pending.link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: pending.control.epoch, ...host.hello() });
-  }
+  if (pending?.link.isOpen) takeControl(host, pending.link, pending.control);
   early = null;
   if (stopping) void host.close("operator", { dispose: true, message: RELOAD_MESSAGE });
 }

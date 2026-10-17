@@ -1,6 +1,6 @@
 // Orientation: every area on one page (`map`), one namespace (`map ns`), or one area (`map §ns/name`).
 // Node stdlib only; reads the parsed graph only and never writes.
-import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit } from "./toc.mjs";
+import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit, notOwnedOf as notOwnedTitledOf, notOwnedText } from "./toc.mjs";
 import { lookArgs, idArg, openSpec, refuse, indexOf, depsOf, namespaceOf, labelsOf, labelText, isInterface, paged, pageFields,
   agreedCounts, agreedText, agreementOf, agreementText } from "./graph.mjs";
 
@@ -10,8 +10,6 @@ const HUBS = 10;
 // What an area says it does not own (its notOwned field) → {notOwned} | {} when absent. The overview keeps the
 // owners' § ids, so every area still fits one page; the one-area view adds each owner's heading title.
 const notOwnedOf = (rec) => (Array.isArray(rec?.notOwned) ? { notOwned: [...rec.notOwned] } : {});
-const notOwnedTitled = (ctx, rec) => (Array.isArray(rec?.notOwned)
-  ? { notOwned: rec.notOwned.map((id) => ({ id, title: ctx.decls.has(id) ? titleOf(ctx.decls.get(id)) : null })) } : {});
 // How many areas in view carry notOwned: {written, areas} | null when none does, so an absent count never reads as zero.
 function notOwnedCounts(ctx, areas) {
   const written = areas.filter((a) => Array.isArray(ctx.claims.get(a).notOwned)).length;
@@ -20,7 +18,7 @@ function notOwnedCounts(ctx, areas) {
 const notOwnedSummary = (c) => (c ? `doesn't own: written for ${c.written} of ${c.areas} area(s)` : "doesn't own: no area here carries notOwned");
 // The area's own line, or null when no area in view carries the field.
 const notOwnedLine = (e, c) => (!c ? null : !e.notOwned ? "doesn't own: (not written)"
-  : `doesn't own: ${e.notOwned.length ? e.notOwned.map((x) => (typeof x === "string" ? x : `${x.title ?? "(no passage)"} (${x.id})`)).join("; ") : "nothing declared"}`);
+  : notOwnedText(e.notOwned));
 
 // Counts by declared label over ids: {authority: {accepted: n}, evidence: {…}, unlabelled: n}.
 function labelCounts(ctx, ids) {
@@ -171,7 +169,7 @@ export function mapMain(argv, core) {
   }
   const d = areaId && g.ctx.decls.get(areaId);
   const head = { tool: "sova-spec", command: "map", budget, ...(raw !== undefined ? { arg: raw } : {}), ...(raw !== undefined && !id ? { namespace: raw } : {}),
-    ...(areaId ? { area: { id: areaId, title: titleOf(d), ...whatOf(d), ...notOwnedTitled(g.ctx, g.ctx.claims.get(areaId)) } } : {}), counts: r.counts, notes };
+    ...(areaId ? { area: { id: areaId, title: titleOf(d), ...whatOf(d), ...notOwnedTitledOf(g.ctx, areaId) } } : {}), counts: r.counts, notes };
   const fp = fingerprintOf({ root: g.root, spec: o.spec, head, list: r.list });
   return paged({ command: "map", o, fp, list: r.list, render: renderMap,
     build: (lines, at, next) => ({ ...head, exit: at < r.list.length ? 1 : 0, ...pageFields(r.list, lines, at, next), notice: MAP_NOTICE }) });

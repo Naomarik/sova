@@ -543,6 +543,9 @@ would list master's changes instead.
     each overview JSON line it paged (71 of 97 lines on page 1, then a cursor); the overview JSON now
     leaves them out, keeping the count and a `not-owned-per-area` note pointing at `map '§ns/area'`:
     32,497 B, one page. The text map is 29,808 B, one page, 87/87 lines.
+    - `read` and `toc` of an area's H1 show the same line, with each owner's title, so it sits where
+      agents land (where → read → toc; measure-agent found `map` in 0/174 question-arm runs): one
+      line, median 166 B, max 252 B on Sova's spec; an H2 never shows its area's.
 
 ## Integration → master
 
@@ -668,9 +671,10 @@ The tools are Node standard library only. Nothing is installed.
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
 10. **The 2026-10-18 `notOwned` field** (branch `feat/spec-x-notowned`, not on master yet). Copy
-   `core/fields.mjs`, `core/map.mjs`, `core/sova-spec.mjs` and `core/sova-spec-draft.mjs` again
+   `core/fields.mjs`, `core/map.mjs`, `core/read.mjs`, `core/toc.mjs`, `core/sova-spec.mjs` and
+   `core/sova-spec-draft.mjs` again
    (step 1). Changed output: `map` prints one new line, `doesn't own: no area here carries notOwned`,
    until an area record carries `notOwned: [§id]`; then each area gets a `doesn't own` line and the
-   JSON `counts.notOwned`. Nothing else changes. To adopt it, add `notOwned` to each area's record in
+   JSON `counts.notOwned`, and `read`/`toc` of that area's H1 print the line (`notOwned` in JSON). Nothing else changes. To adopt it, add `notOwned` to each area's record in
    a draft and promote it on `--doc-only` evidence (`--commit` or `--snapshot` for an agreed record
    that maps code).

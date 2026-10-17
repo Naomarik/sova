@@ -715,7 +715,8 @@ H2s that are behaviors with no `requires` key, whose dependencies are unknown, n
 them among the unknowns, so an area whose H2s were never investigated never reads as needing nothing.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size, the number of
-code files its record lists (which `read` names), and its own "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
+code files its record lists (which `read` names), and its own "what"; for an area's H1 whose record
+carries `notOwned`, then its "doesn't own" line, as `read` shows it, on every direction. Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
 (`down` keeps declaration order, and notes about an H2 come before the notes about its H1): the § id and its heading title; **what**; for `out`, `in` and
 `mentions`, **why**; and **size** in UTF-8 bytes, which is what reading it alone costs, and for an H1
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
@@ -774,7 +775,10 @@ returns the lede and then every H2 of the file in declaration order, each as its
 text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines,
 any declared labels and any `agreed` record, shown as in the contents view, and the code files its
 record lists: the first 12 paths, each marked when it is missing or refused, then how many more there
-are, so a builder learns which files keep the promise without the whole closure's code list. A passage larger than the budget arrives as exact UTF-8 fragments,
+are, so a builder learns which files keep the promise without the whole closure's code list. An
+area's H1 whose record carries `notOwned` (§tools.spec/record-fields) also shows, on the passage's
+first fragment, a "doesn't own" line: each owner's heading title and § id, in record order, or
+"nothing declared" for `[]`; an H2 never shows its area's. A passage larger than the budget arrives as exact UTF-8 fragments,
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names
@@ -793,8 +797,8 @@ new kind, label value or top-level key, so a core that predates them reads the s
 ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
 whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see
 §tools.spec/frame). `notOwned: [§id]` on an area (an H1) names the claims, elsewhere, that own what a
-reader might expect the area to own, so the map says where an area's edge is (§tools.spec/spec-map)
-by each owner's own heading, and the manifest stays relations only; `[]` says it was looked at and
+reader might expect the area to own, so `map`, `read` and `toc` of the area say where its edge is
+(§tools.spec/spec-map, §tools.spec/single-read, §tools.spec/contents-view) by each owner's own heading, and the manifest stays relations only; `[]` says it was looked at and
 nothing needs saying. It is not a dependency: no view follows it as an edge.
 `about: [§id]` on a note names the surface or behavior the note serves, so the
 note is written once and its target's record is never edited to link it.

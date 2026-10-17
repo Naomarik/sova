@@ -519,8 +519,8 @@ would list master's changes instead.
 ### 2026-10-18
 
 - **The unread line asks for the § the change's lines name, not every § a broad file maps (audit #2 P1).**
-  - Commits: f8385574 and the follow-up "touched entries carry fanIn and relevance", branch
-    `feat/spec-x-unread`; not on master yet: the merge round folds it in.
+  - Commits: f8385574, cc421ef7, 184082c0, 1fcd0871, 9ec90f28 (lane tip), branch `feat/spec-x-unread`;
+    not on master yet: the merge round folds it in.
   - Changed:
     - `census --changed --related` divides each touched §'s score by its `fanIn` (of its changed files,
       the fewest foreign touched § any one lands in) and ranks by that `relevance`; rank rows and
@@ -533,7 +533,10 @@ would list master's changes instead.
     - `README.md`, `core/README.md`, `docs/MODE.md` and the site page say the same. The mode text is
       unchanged.
   - §: §tools.spec/census-rank and §tools.spec/unread-landed reworded (draft `unread-short`). Base: 9c3f949b.
-  - Numbers: see `EVOLUTION.md` (2026-10-18, the unread line) for the L1 replay and labels.
+  - Numbers (L1 history replay of the audit's 99 worker sessions, 93 replayed; 62 Claude sessions labelled by
+    Opus for which landed § mattered, labels fixed before any rule was compared): § the line asks for, median
+    5 → 4 (it no longer adds "+N more", median 74); mattered § among them 56/148 = 38% → 84/148 = 57%
+    (held-out 17/35 → 25/35); precision 23% → 24–27%. `EVOLUTION.md` (the unread line) has the iterations.
 
 ## Integration → master
 

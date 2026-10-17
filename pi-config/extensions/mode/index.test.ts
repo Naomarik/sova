@@ -504,9 +504,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
 	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
-	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
+	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`--source <ref>`, else `\$SPEC_AGREE_SOURCE`; without one, report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	assert.ok(spec.split(/\s+/).length <= 868, "short enough to ride every turn: growing it is a deliberate change");
+	assert.ok(spec.split(/\s+/).length <= 884, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {

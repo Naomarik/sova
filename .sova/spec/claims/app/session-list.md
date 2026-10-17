@@ -53,7 +53,7 @@
     <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
          you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups).
          There is no Profiles region: a session that runs with a profile keeps its row where it lives,
-         with its badge (§chat.profiles/after-first-message). All three omitted here for length. Then Automations and Projects (§app.projects/list), then Folders (below); then Organizations
+         with its badge (§chat.profiles/after-first-message). All three omitted here for length. Live & web comes next (below); then Organizations
          (§app.session-list/organizations), then the Archive (§app.session-list/regions-top-and-archive). -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
@@ -225,7 +225,7 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item spine-region" type="button"
               aria-label="Needs you · 2 sessions" title="Needs you · 2 sessions">…alert-circle…<span class="spine-count">2</span></button>
       <button class="button button-icon spine-item spine-region" type="button"
-              aria-label="Folders · 4 folders" title="Folders · 4 folders">…chat…<span class="spine-count">4</span></button>
+              aria-label="Live &amp; web · 12 sessions" title="Live &amp; web · 12 sessions">…chat…<span class="spine-count">12</span></button>
       <!-- exactly while the Organizations region is shown (§app.session-list/organizations); the warn
            dot and the name's waiting clause only while an org session waits on you -->
       <button class="button button-icon spine-item spine-region" type="button"
@@ -310,20 +310,19 @@ label a person reads says "sessions pane".
   `--color-ink-muted` ring, pulsing). The row can show a TUI pill and a worker count at once; a
   tile has room for one mark, so it shows the first that holds of **TUI, Busy, working** — the
   rail's own "TUI wins" order, then the aggregate last. The tile's name still says all of them.
-- **Region counts.** Needs you, Folders, Organizations and the Archive, each an icon over its count and named
-  "{Region} · {n} sessions" in its `title` and `aria-label` (Folders counts folders: "Folders · {n}
-  folders", 1: "1 folder") (Organizations adds " · {k} waiting on you"
+- **Region counts.** Needs you, Live & web, Organizations and the Archive, each an icon over its count and named
+  "{Region} · {n} sessions" in its `title` and `aria-label` (Organizations adds " · {k} waiting on you"
   and a warn dot at its corner while an org session waits, §app.session-list/organizations). **A button is shown exactly when its
   region is on screen in the expanded pane**, and `n` is the count that region shows now: with no
-  search, the plain totals ("12 folders", "321 sessions"); with a search on, each region's hit
-  count — "4 folders" while the Folders head reads "4 of 12", "5 sessions" while the
+  search, the plain totals ("60 sessions", "321 sessions"); with a search on, each region's hit
+  count — "22 sessions" while the Live & web head reads "22 of 60", "5 sessions" while the
   Archive's reads "5 of 321". Needs you's count is its rows, search or not. One rule decides both
   the region and its button (`showNeedsYou` / `showTop` / `showOrgs` / `showArchive` in `Sidebar.tsx`); a button derived from anything else, such as the Archive's
   total, is a door onto a region a no-hit search has removed. When neither region is on screen
   the whole `.spine-regions` box is omitted, not only its buttons — an empty box still draws its
   divider. Pressing a button expands the pane, scrolls that region into view, and moves focus to
-  its first row: Folders', the Archive's, Organizations' and Needs you's own
-  `<summary>`. Their open state is **left to the user** — it is their stored choice, and the button never
+  its first row: Live & web's first folder head or link, the Archive's, Organizations' and Needs you's own
+  `<summary>`. The Archive's, Organizations' and Needs you's open state is **left to the user** — it is their stored choice, and the button never
   forces one open. If the region is gone by the time the pane has expanded, focus goes to the
   head's collapse toggle.
 - **Live tallies.** The working count (§app.session-list/working-now) — the expanded foot's
@@ -369,7 +368,7 @@ label a person reads says "sessions pane".
   `rtl` + `<bdi>` pair in `.session-group-path` handles this. Labels stick to the top while their
   group scrolls.
 - **Folder open/closed state.** Every folder is a `<details>` and its label a `<summary>`, in
-  every region alike: Folders, inside a user group, and inside an Archive date section. The
+  every region alike: Live & web, inside a user group, and inside an Archive date section. The
   whole label toggles it and the chevron rotates 90° when open, as the Archive's sections do, and
   like them a folder is **collapsed by default**: whatever is active already shows in Recent, so a
   folder starts as one line and opening it is how its rows are reached.
@@ -380,7 +379,7 @@ label a person reads says "sessions pane".
   - The user's choice per folder lives in `sessionStorage["sova:folder-open-{idPrefix}-{cwd}"]`
     (`"1"`/`"0"`, `folderOpenKey` in `src/lib/folder-open.ts`, written through `writeKey`) for the
     browser session. The region
-    prefix is part of the key, so the same folder under Folders and inside a group are two
+    prefix is part of the key, so the same folder under Live & web and inside a group are two
     separate choices — they are two sections, and one holds rows the other doesn't.
   - It opens **without** changing the stored choice while a search query is non-empty (every hit
     has to be visible); when the search ends it goes back to the stored choice (`folderOpen`).
@@ -550,7 +549,7 @@ label a person reads says "sessions pane".
   list's 16px text inset: it is a gutter the eye skips, not a column of content, and the titles
   start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
   with nothing to say, so 278 titles start on one left edge instead of jittering with whatever
-  chip the row happens to carry. Every folder, in every list (Folders, the Archive, each
+  chip the row happens to carry. Every folder, in every list (Live & web, the Archive, each
   group), wraps its head and rows in one guide rule: a 2px `--color-border` rule flush with the
   pane edge, then 2px of padding, so the folder's content sits 4px in and reads as one block. The
   rule sits outside the rows' 34px rail, whose hover and open-row fills start after it; a sticky
@@ -700,7 +699,7 @@ session list, is the source: a hosted pending dialog, a worker error and every d
 reach only the digest.
 
 Needs you is a **shortcut, not a place a session lives**, exactly like Recent: every row is still in
-Recent (when it moved lately), Folders, its project's block or the Archive, and its group. An organization session is
+Recent (when it moved lately), Live & web or the Archive, and its group. An organization session is
 never a row here. Nothing is moved or hidden,
 and the region has **no actions of its own** beyond its twist: nothing puts a row away but the
 thing it waits on being done.
@@ -780,8 +779,8 @@ want back is the first thing on screen. With 48 sessions across 11 folders, the 
 five minutes ago is three collapsed sections down — and it is the single most likely thing you came
 for.
 
-Recent is a **shortcut, not a place a session lives.** Every row in it is still in Folders, its project's block
-(a session in a project's folder, §app.projects/folder-sessions) or the Archive underneath, or, for a coding session the operator started in a project, among that
+Recent is a **shortcut, not a place a session lives.** Every row in it is still in Live & web or
+the Archive underneath, or, for a coding session the operator started in a project, among that
 project's Sessions in the Projects region (§app.projects/list) (organization sessions are never eligible), exactly as a grouped session keeps its row in its region (§app.session-list/groups):
 nothing is moved, nothing is hidden, and closing the gap between two copies of one row is not
 something the user has to think about. It follows from that that Recent has **no actions of its
@@ -819,7 +818,7 @@ a standalone project (New Session in the project's folder, or the project's New 
 §app.projects/folder-sessions: `SessionSummary.project` `{kind: "coding", operator: true}`, no `org`)
 is the operator's own thread, so Recent lists it under the same rules (not archived, by activity) while it stays listed among its project's Sessions. A build the project's
 overseer started on its own (`kind: "coding"` without `operator`) never is, nor is any session a
-server that sends no `operator` marks, nor an organization's. Folders and the Archive are
+server that sends no `operator` marks, nor an organization's. Live & web and the Archive are
 unchanged: such a session lives in its project's block, and Recent only says it once more.
 - **Order: most recently active first**, by `SessionSummary.lastActiveAt`. **That field is the
 session file's mtime** and the list carries no other activity signal, so it moves for anything that
@@ -846,7 +845,7 @@ archive, so every tab and every Sova server sees the same groups and clearing br
 loses nothing. `GET /api/session-groups` lists them; the other routes are in `shared/protocol.ts`.
 
 **A group is additive.** It never moves a session out of its region or out of its own place in the
-list: a grouped session still shows under Folders, its project's block or the Archive, so the same row can
+list: a grouped session still shows under Live & web (or in the Archive), so the same row can
 appear in a group and below it at once. A session belongs to **at most one** group.
 
 **Organization sessions are never grouped**, like the Overseer's files (§app.session-list/ordinary-surfaces):
@@ -921,7 +920,7 @@ sessions shows as empty.
 </details>
 ```
 
-- **Placement.** Above Automations, Projects and Folders, below the search field. The region is always rendered — with no
+- **Placement.** Above Live & web, below the search field. The region is always rendered — with no
 groups it holds its head, with its `Open Groups` button, and the note "No groups yet. Drag a
 session to start one." — because dragging a row is the feature's front door (its overlay's
 `+ New group` makes the first group), the way the top region keeps its head when it is empty.
@@ -937,13 +936,13 @@ system directly above the `cwd` heads that really are one. Those keep their fold
 icon; it is what tells the two kinds of head apart at a glance.
 - **Count.** The region head counts **groups**. Within Groups only, a group's own session count
 and each nested folder's count appear only while that particular section is collapsed; expanded
-sections show their rows instead of repeating the numbers. Folders' and the Archive's folder counts
-remain visible whether expanded or collapsed. (Folders' head counts folders and the Archive's sessions, never groups.) While
+sections show their rows instead of repeating the numbers. Live & web and Archive folder counts
+remain visible whether expanded or collapsed. (Those regions count sessions, not groups.) While
 searching the Groups region head reads `· {matching groups} of {all groups}`.
 - **The region is a `<details>`**, and it is **collapsed on every page load**. The Groups region
 is the user's own curation sitting above the whole list, and it grows without bound as they file
 more away; starting it closed keeps the top of the sidebar the same height however many groups
-exist, and Projects and Folders — the sessions they came for — stay in view. The twist is the whole head
+exist, and Live & web — the sessions they came for — stays in view. The twist is the whole head
 row, keyboard-reachable like the Archive's.
 - **The choice is never persisted.** Not `sessionStorage`, not `localStorage`, not the server:
 opening the region lasts as long as the page does and no longer, so a reload always starts closed.
@@ -1246,7 +1245,7 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
   the row moves immediately while `POST /api/sessions/archive` is pending, then
   "Archived. Find it under Archive." with `Undo`. Failure restores its previous archive state;
   stale polls cannot undo the local change. Undo also moves immediately and rolls back on failure; its toast is
-  "Moved back to Folders." ("Moved back to {project}." when it goes back to a project of this computer, §app.session-list/regions-top-and-archive). An organization session goes to its project's Done list instead
+  "Moved back to Live & web.". An organization session goes to its project's Done list instead
   (§app.session-list/organizations), and an empty husk is deleted without an Undo
   (§app.session-list/regions-top-and-archive). On `+ New group`, the overlay closes and the New
   group dialog opens (below). On `Cancel`, on empty space, or on Escape, a `pointercancel` or the
@@ -1401,7 +1400,7 @@ refused for length.
   open sidebar picks them up through the session feed, which counts a changed title as a changed
   row (§app.decisions/push).
 
-**The button.** On the heads of Folders, each user group, Organizations and the Archive, a
+**The button.** On the heads of Live & web, each user group, Organizations and the Archive, a
 quiet 44px ghost icon button (`pencil`) at the head's right end, before a group's `⋯`, shown only
 while that section holds at least 1 **nameable** row: a row with no stored title (no `titleBy`,
 no `originalTitle`) that is not a draft-only row. Its `aria-label` and `title` are "Name {n}
@@ -1456,15 +1455,8 @@ answers 404, and its rows are skipped silently. Each host's sweep follows that h
 `SessionSummary.origin` and `archived` divide the sessions into two regions (`isTopSession` in
 `src/lib/regions.ts`):
 
-- **Top region, named Folders:** sessions where `live !== null || (origin === "web" && !archived)`,
-  meaning the ones running in a TUI right now, or started from Sova and not archived by the user,
-  except the ones a project of this computer lists: a session in a registered, not archived
-  project's folder on this host (`project.kind` `folder`, the membership rule of
-  §app.projects/folder-sessions), not archived, is listed only with its project, in the Projects
-  region for a standalone project and in the Organizations region for a placed one, never in
-  Folders. A session from another computer (a mesh peer's row, whatever `project` the peer gave
-  it) or a remote target's always stays in Folders when the rule above takes it. The shortcut
-  regions (Needs you, Recent, Groups, Automations) list such a session as before.
+- **Top region:** sessions where `live !== null || (origin === "web" && !archived)`, meaning
+  the ones running in a TUI right now, or started from Sova and not archived by the user.
 - **Archive:** every other session. A server that sends no `archived` counts as not archived.
 - **Neither:** the special sessions (§app.session-list/ordinary-surfaces). An Overseer file
   (`SessionSummary.overseer`, §app.overseer/identity-and-clear) is in no region, like a worker's own
@@ -1473,8 +1465,7 @@ answers 404, and its rows are skipped silently. Each host's sweep follows that h
   (§app.session-list/organizations), between the top region and the Archive.
 
 Both regions use exactly the same folder groups and rows described above. Each region groups by
-`cwd` independently, so one folder can appear in both. The Archive still lists a project's ended
-folder sessions that aren't archived, as it lists every session the top rule leaves out. The Groups region above them is a third
+`cwd` independently, so one folder can appear in both. The Groups region above them is a third
 region that cuts across these two: a session in a group keeps its row here as well, so a folder —
 and a session — can appear in all three at once.
 
@@ -1482,7 +1473,7 @@ and a session — can appear in all three at once.
 
 Each region sorts for the question it answers, and they are not the same question:
 
-- **Folders** orders by **`createdAt`, newest first** — when the session was STARTED. Folder
+- **Live & web** orders by **`createdAt`, newest first** — when the session was STARTED. Folder
 sections sit where their newest session puts them, and rows inside a folder are newest-created
 first. `createdAt` is written once, in the JSONL header, and nothing an agent does moves it: a
 folder does not jump to the top because a background subagent wrote a line in it, and a session
@@ -1500,24 +1491,20 @@ picks one per region and the folder markup is shared.
 
 ```html
 <nav class="sidebar-list pane" aria-label="Session list">
-  <!-- Folders, the top region, right after Projects. With 0 rows and no query, keep the head
-       ("Folders · 0") and replace the groups with <p class="sidebar-region-note">No sessions outside your projects. The archive below has the rest.</p>.
+  <!-- Top region. With 0 rows and no query, keep the head ("Live & web · 0") and replace the
+       groups with <p class="sidebar-region-note">0 sessions open in a TUI, or started here and not archived. The archive below has the rest.</p>.
        With 0 rows while searching, omit the region. -->
-  <details class="sidebar-region sidebar-folders" aria-labelledby="r-top" open={foldersOpen()} onToggle={…}>
-    <!-- The Projects head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
-    <summary class="sidebar-orgs-summary">
-      <h2 class="sidebar-region-head" id="r-top">
-        <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
-        Folders <span class="sidebar-region-count">· 3</span>
-      </h2>
-    </summary>
+  <section class="sidebar-region" aria-labelledby="r-top">
+    <h2 class="sidebar-region-head" id="r-top">
+      Live &amp; web <span class="sidebar-region-count">· 5</span>
+    </h2>
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
         <h3 class="list-group-label" id="g-1" title="/home/user/webapps/sova">…same as above…</h3>
       </summary>
       <ul class="list">…session rows…</ul>
     </details>
-  </details>
+  </section>
 
   <!-- Archive: omitted entirely when it has 0 rows -->
   <details class="sidebar-region sidebar-archive" open={archiveOpen()} onToggle={…}>
@@ -1542,23 +1529,13 @@ The label is mono, micro, and uppercase, in `--color-ink-2`, and the count is in
 from the `--color-surface` sidebar, not a color accent, so it stays inside the color budget.
 Folder labels keep sticking to the top of the pane as you scroll. Region heads don't stick.
 
-**Labels.** The top region is "Folders · {n}", where n counts its **folders** (each folder keeps
-its own session count), and the archive is "Archive · {n}", counting sessions. While a search is
-active, Folders shows "· {folders with a hit} of {all its folders}" and the Archive "· {hits} of
-{total}".
+**Labels.** The top region is "Live & web · {n}" and the archive is "Archive · {n}". While a
+search is active, each shows "· {hits} of {total}" for that region.
 
-**Empty top region.** With no query, the head stays ("Folders · 0") and the groups are
-replaced by `.sidebar-region-note`: "No sessions outside your projects. The archive below has the
-rest." The archive is also forced open (case 1 below).
-
-**Folders open/closed state.** Folders is a native `<details>`, **open by default**, like Projects:
-the whole summary row toggles it and the chevron rotates. A collapse is remembered for the tab in
-`sessionStorage["sova:top-open"]` through `writeKey`, `"0"` collapsed and anything else open. It is
-**forced open**, without changing the stored choice, while a search has matches in it and while it
-holds the selected session (from the URL), so its `aria-current` row is visible; when that ends it
-goes back to the stored choice. Collapsed, its head carries Busy's pulsing dot while an agent works
-in one of its sessions (the Projects head's mark). Each folder inside keeps its own open state and
-key (prefix `t`, §app.session-list/content-rules).
+**Empty top region.** With no query, the head stays ("Live & web · 0") and the groups are
+replaced by `.sidebar-region-note`: "0 sessions open in
+a TUI, or started here and not archived. The archive below has the rest." The archive is also
+forced open (case 1 below).
 
 **Archive open/closed state.**
 
@@ -1567,7 +1544,7 @@ key (prefix `t`, §app.session-list/content-rules).
 - Remember the user's choice in `sessionStorage["sova:archive-open"]` (`"1"`/`"0"`), read on
   load and written on `toggle`. It lasts for the browser session, not across restarts.
 - It opens automatically, **without** changing the stored choice, when:
-  1. Folders is empty (otherwise the sidebar would show nothing but a closed strip);
+  1. the top region is empty (otherwise the sidebar would show nothing but a closed strip);
   2. the selected session (from the URL) is in the archive, so its `aria-current` row is
      visible;
   3. a search query is non-empty (see Search).
@@ -1575,9 +1552,9 @@ key (prefix `t`, §app.session-list/content-rules).
   When the condition ends, it goes back to the stored choice. Case 2 is the exception: it doesn't
   close under the user while they're on that session.
 
-**Ordering.** Needs you, Recent, Groups, Automations, Projects, Folders, Organizations, Archive:
-the shortcut regions first, then Projects with Folders directly under it, then Organizations, and
-the Archive last. Inside each region, groups and rows are ordered by the rules above. A session moves between regions in place on refresh, for
+**Ordering.** The top region comes first and the Archive last, with Organizations between them;
+above them all sit the shortcut regions: Needs you, then Recent, then Groups. Inside each region, groups and
+rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.
 
@@ -1600,11 +1577,10 @@ the top region doesn't keep every one of them forever.
   Otherwise the toast is "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
   visible while it's open.
 - **Undo.** On an archived session the same button, not red and with the undo icon
-  (`undo.svg`), is Unarchive Session. Toast: "Moved back to Folders.", or "Moved back to
-  {project}." when it goes back to a project of this computer (a session in its folder, listed
-  there and not in Folders).
-- **Live.** A live session stays on top (in Folders, or its project's block when not archived)
-  whether archived or not, and still shows its TUI rail pill.
+  (`undo.svg`), is Unarchive Session. Toast: "Moved back to
+  Live & web."
+- **Live.** A live session stays on top whether archived or not, and still shows its TUI rail
+  pill.
   Archiving one is refused: the button is `aria-disabled`, and its `title` says "Open in a TUI.
   It stays on top while live." Unarchiving a live session works.
 - **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves on a
@@ -1614,10 +1590,8 @@ the top region doesn't keep every one of them forever.
 
 **Accessibility.**
 
-- Folders is a `<details>` labelled by its `h2`, which sits inside the `<summary>` (the Projects
-  and Groups heads' pattern): the outline and `aria-labelledby` read the heading, and `<details>`
-  announces expanded or collapsed on its own. Folder labels become `h3`, since they're nested one
-  level deeper. A folder is a `<details>` (see Folder open/closed state) and its
+- The top region is a `section` labelled by its `h2`. Folder labels become `h3`, since they're
+  now nested one level deeper. A folder is a `<details>` (see Folder open/closed state) and its
   `h3` sits inside the `<summary>`: the heading and its level stay, `aria-labelledby` on the
   `<details>` still names the section, and `<details>` announces expanded or collapsed on its own.
 - For the Archive, `<summary>` is what AT announces ("Archive · 43, collapsed"). Use a plain
@@ -1653,10 +1627,8 @@ for the same reason: something other than the operator runs them.
   a session's profile never leaves it out of these, and, of the sessions a project owns, they add back
   the one kind the operator started: a standalone project's coding session marked `operator`
   (§app.session-list/recent), which stays in its project's block too;
-- **Folders** and the **Archive** with its date sections, their counts and their spine doors
-  (§app.session-list/regions-top-and-archive), and the overview's `{live} live` count. Folders
-  also leaves out a session a project of this computer lists (a session in its folder, not
-  archived): it is listed with its project only. The overview's `{live} live` still counts it;
+- **Live & web** and the **Archive** with its date sections, their counts and their spine doors
+  (§app.session-list/regions-top-and-archive), and the overview's `{live} live` count;
 - the **Archive cleanup**: its counts, its sweeps and its one-session list (§app.session-list/archive-cleanup;
   the server's guard is §app.session-list/cleanup-org-guard);
 - the **Groups** region and every way into a group (§app.session-list/groups);
@@ -1673,9 +1645,7 @@ region lists (§app.projects/list), until the operator archives a standalone pro
 is ordinary again and lives in the Archive (and its cleanup) like any archived session, never in the
 project's block; a session only in a project's folder (`project.kind` `folder`,
 with `folderOrg` but never `org` when an organization places the project,
-§app.projects/folder-sessions) stays ordinary: the shortcut surfaces, the Archive and its cleanup
-list it as before, while its place in the pane is its project's block, not Folders (on this
-computer; a peer's row stays in Folders). It is deliberately **not** folded into
+§app.projects/folder-sessions) stays ordinary, and is listed with its project as well. It is deliberately **not** folded into
 `isMainThread`, which the Organizations region, the Overseer page and the Agents board still read.
 A server or mesh peer that sends no `org` leaves the session ordinary, exactly as it is listed today.
 
@@ -1685,7 +1655,7 @@ draws once — org sessions included, the Overseer's never — so the number alw
 ## §app.session-list/organizations — Organizations
 
 The organizations' sessions, in one region of their own: the **last region before the Archive**, so
-the pane reads Needs you → Recent → Groups → Automations → Projects → Folders → **Organizations** → Archive. It is the only
+the pane reads Needs you → Recent → Groups → Live & web → **Organizations** → Archive. It is the only
 place in the pane that lists an organization session (§app.session-list/ordinary-surfaces): hand-offs
 and gathering sessions, offers, and the coding sessions a project started; each project's current
 overseer is not a row but an **eye on its project's heading**, and its cleared conversations are in
@@ -1694,20 +1664,18 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
 **Conversations** and **Conflicts to settle** (each split Not started / In progress / Done) and
 **Sessions** (running or waiting, then Done), every Done collapsed. Its Sessions also list the sessions
 in a placed project's folder (§app.projects/folder-sessions), which are not organization sessions and
-stay on the shortcut surfaces and in the Archive, but not in Folders: on this computer the project
-is their place; an archived one is in the Archive only. Every active project of an org
+stay on the ordinary surfaces too; an archived one is in the Archive only. Every active project of an org
 is listed under it, with sessions or without, and its name opens its page, so a project is one
 click away from the pane.
 
-Standalone projects (§app.projects/standalone) have a **Projects** region of their own, above
-Folders and Organizations and shaped like it with no organization level: each project's heading with its
-overseer's eye, then its Sessions (§app.projects/list). A standalone project's overseer
+Standalone projects (§app.projects/standalone) have a **Projects** region of their own, right
+before Organizations and shaped like it with no organization level: each project's heading with its
+overseer's eye, then its sessions with no group heading, folded by the heading's own arrow (§app.projects/list). A standalone project's overseer
 conversations and coding sessions are listed there and on no ordinary surface, as an
 organization's are here, until a coding session is archived: it then moves to the Archive. The other
 sessions in its folder (`project.kind` `folder`, §app.projects/folder-sessions) are listed in its
-Sessions while not archived, and not in Folders; the shortcut surfaces and the Archive list them as
-before. Unlike this region, the Projects region never lists an archived session and its head counts
-projects (§app.projects/list).
+Sessions as well while not archived, and stay on the ordinary surfaces. Unlike this region, the
+Projects region never lists an archived session and counts open rows only (§app.projects/list).
 
 ```html
 <!-- Omitted entirely when it has no row, no eye and no listed project (with a query: 0 hits), like the Archive. -->
@@ -1794,7 +1762,7 @@ projects (§app.projects/list).
   the pane — except a cleared overseer conversation, which no region lists. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
   mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`. A session in a
   placed project's folder (no `org`; `SessionSummary.folderOrg` names the org and project,
-  §app.projects/folder-sessions) is a row in its project's Sessions, and not in Folders, never in the region's Needs
+  §app.projects/folder-sessions) is a row in its project's Sessions too, never in the region's Needs
   you (the global one lists it), and never once archived (the Archive lists it);
   `folderOrg.projectArchived` leaves it out with its project.
 - **Which projects.** Every project this host's project list (`GET /api/projects`, §app.projects/list)
@@ -1888,7 +1856,7 @@ projects (§app.projects/list).
   follows the conflict: "In conflict: {area} · Opened, no reply yet".
 - **Sessions** list the running and waiting ones (the row's own rail says which); a build **merged**
   (per git, `org.finished`) or archived is in the group's Done. A folder session is running or
-  waiting while it is live, or a web session not archived (the Folders rule); otherwise it is in
+  waiting while it is live, or a web session not archived (its Live & web rule); otherwise it is in
   Done, and once archived it is not in the region at all.
 - **Done** is a collapsed tail in each group (memory only, like the Archive's date sections), omitted
   when empty; it replaces the old per-project Finished list. Like a folder's rows
@@ -1899,7 +1867,7 @@ projects (§app.projects/list).
 - **Counts are sessions.** The region head counts every row it holds once, Done included (a Needs
   you row is not counted twice); while searching it reads "· {hits} of {total}". The eye is not a row
   and is not counted, and neither is a cleared overseer conversation. Each org's count stays visible
-  open or closed, like a folder's in Folders; each project counts all its rows, Done included, and
+  open or closed, like a folder's in Live & web; each project counts all its rows, Done included, and
   each group, state and Done counts its own. A project with no session counts 0, and adds none to
   its org's or the region's count; a region of such projects alone reads "· 0".
 - **Nothing waits unseen.** While any org session waits on you, the region head carries a warn chip —
@@ -1913,9 +1881,8 @@ projects (§app.projects/list).
   choice: while a search is on (with every org and Done that holds a hit); and while the selected
   session (from the URL) is inside — then its org and, if needed, its Done are forced open too, so
   its `aria-current` row, or its project's `aria-current` eye, is visible (the Archive's case 2: it
-  doesn't close under the operator while they're on that session). A folder session of this
-  computer's project forces it open too, here or in the Projects region, since Folders no longer
-  lists it; one Folders still lists (a peer's, or an archived one) forces nothing open.
+  doesn't close under the operator while they're on that session). A folder session forces nothing
+  open, here or in the Projects region: it is also in its ordinary place.
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.

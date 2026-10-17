@@ -1689,7 +1689,7 @@ export function Sidebar(props: {
   /** The head counts projects; while searching, "of" every project the region lists with no query. */
   const projTotal = createMemo(() => projectBlocks(hostPool().filter((s) => inLocalProjectsRegion(s, here(s))), projectList()?.projects ?? undefined).length);
   /** A project's fold in the Projects region: open by default, the user's choice kept in memory; forced open by a search
-      or the open session among its rows (a folder session forces nothing: it has its ordinary place too). */
+      or the open session among its rows (a folder session's too: Folders no longer lists it). */
   const projectFoldOpen = (id: string, rows: readonly SessionSummary[]) => orgSectionOpenRule({ chosen: openProjects()[id], searching: searching(), holdsSelected: holds(rows) });
   const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
   const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: holds(projectHits()) });
@@ -2747,6 +2747,7 @@ export function Sidebar(props: {
               </Show>
             </details>
           </Show>
+
           {/* Folders, the top region, right under Projects: open in a terminal or started here and not archived, but not
               what a project of this computer lists. Hidden when a search empties it; kept with a note when there's simply
               nothing in it. Open by default, a collapse remembered for the tab. */}

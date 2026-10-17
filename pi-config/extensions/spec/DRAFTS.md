@@ -10,7 +10,7 @@ Like the other tools here, it needs only the Node standard library.
 - Promotion requires recorded evidence for each selected `§` ID: of its implementation and
   verification, or doc-only evidence that records a decision, not a build. Doc-only evidence covers
   three cases: a note or section; an agreed record not built yet; and a change to a behavior or
-  surface record's `embeds` or `core` field alone, unless it is agreed and maps code ("Field-only
+  surface record's `embeds`, `core` or `notOwned` field alone, unless it is agreed and maps code ("Field-only
   changes"; `about` belongs on notes).
 
 ```sh
@@ -235,7 +235,7 @@ to do exactly this before building.
 
 ### Field-only changes
 
-A change that only adds, changes or removes a behavior or surface record's `embeds` or `core` field
+A change that only adds, changes or removes a behavior or surface record's `embeds`, `core` or `notOwned` field
 rewires what a reader is handed, not what the code does, so it may take `evidence --doc-only`.
 `about` belongs on notes (`check` warns when it sits elsewhere), and a note's `about` change takes
 `--doc-only` as any note change does; a misplaced `about` on a behavior or surface counts like the
@@ -246,7 +246,8 @@ record or a deletion is not field-only.
 
 - **What `--verification` says.** What was read to decide the field: for an embed, both passages and
   the code that renders the embedded surface inside the embedding one; for `about`, the note and its
-  target; for `core`, the passage and why every task needs it. The tool checks only that the text
+  target; for `core`, the passage and why every task needs it; for `notOwned`, the area, each owner
+  and the code that puts each thing there. The tool checks only that the text
   is not empty (every `--verification` must have text), never what it says.
 - **Bundled changes.** A field change together with any other change to the same record is refused
   for `--doc-only` as `doc-only-bundled`, naming what else changed (`prose`, `the code list`, `the

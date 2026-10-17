@@ -516,6 +516,32 @@ would list master's changes instead.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
+### 2026-10-18
+
+- **Each area says what it does not own (P4, Goal 3).**
+  - Commit: on branch `feat/spec-x-notowned`; not on master yet: the merge round folds it in.
+  - Changed:
+    - a new optional record field, `notOwned: [§id]` on an area (H1): the claims elsewhere that own
+      what a reader might expect the area to own; `[]` says it was looked at. The manifest stays
+      relations only: the map prints each owner's own heading. `check` errors on a value that is not
+      an array of § ids and warns on `not-owned-not-area`, `not-owned-inside` and a dangling owner;
+    - `map` shows a `doesn't own` line under each area's what line (owner ids in the overview, so all
+      areas keep fitting one text page; `title (§id)` in `map '§area'`), counts `doesn't own: written
+      for k of n area(s)`, and prints `(not written)` for an area without the field once any area in
+      view has it; with none, one line says so and nothing else changes;
+    - a `notOwned`-only change lands on `--doc-only` evidence like `embeds` and `core`
+      (`FIELD_KEYS`), with the same agreed-record and bundling refusals;
+    - Sova's spec: all 87 areas carry the field (253 owners), each owner a § the area requires or
+      names, whose own code lies outside the area's code list (248 of 253; 4 owners are design docs
+      with no code, 1 shares its single file).
+  - §: §tools.spec/record-fields, §tools.spec/spec-map, §tools.spec/field-promotion reworded; the
+    87 area records gain `notOwned`. Base: 9c3f949b.
+  - Numbers: areas whose map line says what they don't own 0/87 → 87/87 (L0, `map` text on master
+    9c3f949b vs this branch). The question arm ("what does it NOT own", all 87 areas, 2 reps,
+    graded against code) is in the lane's RESULT.
+  - Caveat: `map --json` was already 32,252 of its 32,768-byte page on master; with the field it
+    pages (71 of 97 lines, then a cursor). The text map still fits one page.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -639,3 +665,10 @@ The tools are Node standard library only. Nothing is installed.
    - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
+10. **The 2026-10-18 `notOwned` field** (branch `feat/spec-x-notowned`, not on master yet). Copy
+   `core/fields.mjs`, `core/map.mjs`, `core/sova-spec.mjs` and `core/sova-spec-draft.mjs` again
+   (step 1). Changed output: `map` prints one new line, `doesn't own: no area here carries notOwned`,
+   until an area record carries `notOwned: [§id]`; then each area gets a `doesn't own` line and the
+   JSON `counts.notOwned`. Nothing else changes. To adopt it, add `notOwned` to each area's record in
+   a draft and promote it on `--doc-only` evidence (`--commit` or `--snapshot` for an agreed record
+   that maps code).

@@ -516,6 +516,23 @@ would list master's changes instead.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
+### 2026-10-18
+
+- **The unread line asks for the § the change's lines name, not every § a broad file maps (audit #2 P1).**
+  - Commits: f8385574 and the follow-up "touched entries carry fanIn and relevance", branch
+    `feat/spec-x-unread`; not on master yet: the merge round folds it in.
+  - Changed:
+    - `census --changed --related` divides each touched §'s score by its `fanIn` (of its changed files,
+      the fewest foreign touched § any one lands in) and ranks by that `relevance`; rank rows and
+      foreign `touched` entries carry `fanIn` and `relevance`; `readFirst` holds up to 10 at relevance
+      ≥ 0.25 or with a stale literal (was: the first 5 with a score or a stale literal, stale first);
+    - the hook's line follows it: "read first …; +N lower-ranked: <command>", and "N unread, all
+      lower-ranked: <command>" when none qualifies (was "+N more:" / "N unread:");
+    - `README.md`, `core/README.md`, `docs/MODE.md` and the site page say the same. The mode text is
+      unchanged.
+  - §: §tools.spec/census-rank and §tools.spec/unread-landed reworded (draft `unread-short`). Base: 9c3f949b.
+  - Numbers: see `EVOLUTION.md` (2026-10-18, the unread line) for the L1 replay and labels.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -639,3 +656,8 @@ The tools are Node standard library only. Nothing is installed.
    - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
+10. **The 2026-10-18 unread line** (branch `feat/spec-x-unread`, not on master yet). Copy
+    `core/sova-spec.mjs` again. `census --changed --related` rank rows gain `fanIn` and `relevance`
+    and are ordered by relevance; `readFirst` holds up to 10 (was 5) at relevance ≥ 0.25 or stale. A
+    hook of your own that parses the unread line reads "+N lower-ranked:" (was "+N more:") and
+    "N unread, all lower-ranked:" (was "N unread:").

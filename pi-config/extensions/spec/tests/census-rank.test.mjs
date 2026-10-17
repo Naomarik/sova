@@ -97,4 +97,6 @@ test("fan-in: a § landing only through a broad changed file is divided by how m
   for (const id of c.named) assert.ok(!(row(id).relevance >= 0.25 || row(id).stale.length) || c.readFirst.length === 10, `${id} named only below the cut`);
   for (const n of OTHERS) assert.ok(!c.readFirst.includes(`§app/other-${n}`), `§app/other-${n} shares only the broad file and names nothing`);
   assert.ok(c.readFirst.includes("§app/voice"), "the stale narrow § is read first");
+  assert.equal(touched(c, "§app/head").relevance, row("§app/head").relevance, "the touched entry carries the same relevance");
+  assert.equal(touched(c, "§app/head").fanIn, VIEW.length);
 });

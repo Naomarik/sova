@@ -557,11 +557,11 @@ export function parseRanked(stdout: string): RankedView | undefined {
 }
 
 export const UNREAD_PREFIX = "Unread § your change landed in: ";
-const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.1;
+const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.036;
 
 /**
  * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
- * in rank order, at most 10 marked read first (relevance ≥ 0.1 or a stale literal), the rest left, uncounted, to the command that lists them. → {key, text?}:
+ * in rank order, at most 10 marked read first (relevance ≥ 0.036 or a stale literal), the rest left, uncounted, to the command that lists them. → {key, text?}:
  * key is the landed set (unreadSaid); no text when none landed or every one was read.
  */
 export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>, command = "census --changed --related"): { key: string; text?: string } {

@@ -1,5 +1,5 @@
 // Black-box checks for the ranked finishing census: `census --changed --related` orders the touched foreign § by
-// the change's own lines (added and removed), divides each score by its fan-in, marks at most 10 read-first (relevance ≥ 0.1 or a stale literal), names the rest, and flags a removed
+// the change's own lines (added and removed), divides each score by its fan-in, marks at most 10 read-first (relevance ≥ 0.036 or a stale literal), names the rest, and flags a removed
 // literal a § still states. Node stdlib and the git CLI only; every fixture is a temp Git repo.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -81,7 +81,7 @@ test("a removed literal the § still states: that § ranks first and is flagged;
   assert.ok(!quiet || (Array.isArray(quiet) && !quiet.length), `12 kept: nothing stale: ${JSON.stringify(quiet)}`);
 });
 
-test("fan-in: a § landing only through a broad changed file is divided by how many touched § share it; read-first is relevance ≥ 0.1 or stale, at most 10", () => {
+test("fan-in: a § landing only through a broad changed file is divided by how many touched § share it; read-first is relevance ≥ 0.036 or stale, at most 10", () => {
   const root = repo();
   write(root, "src/view.tsx", 'export const Head = () => <input aria-describedby="context-desc" defaultValue="title" />;\n');
   write(root, "src/voice.ts", "export const MAX = 16 * 1024 * 1024;\n");
@@ -94,8 +94,8 @@ test("fan-in: a § landing only through a broad changed file is divided by how m
   const rel = c.rank.map((r) => r.relevance);
   assert.deepEqual(rel, [...rel].sort((a, b) => b - a), "ranked by relevance, best first");
   assert.ok(c.readFirst.length <= 10);
-  for (const id of c.readFirst) assert.ok(row(id).relevance >= 0.1 || row(id).stale.length, `${id} read first only at relevance ≥ 0.1 or stale`);
-  for (const id of c.named) assert.ok(!(row(id).relevance >= 0.1 || row(id).stale.length) || c.readFirst.length === 10, `${id} named only below the cut`);
+  for (const id of c.readFirst) assert.ok(row(id).relevance >= 0.036 || row(id).stale.length, `${id} read first only at relevance ≥ 0.036 or stale`);
+  for (const id of c.named) assert.ok(!(row(id).relevance >= 0.036 || row(id).stale.length) || c.readFirst.length === 10, `${id} named only below the cut`);
   for (const n of OTHERS) assert.ok(!c.readFirst.includes(`§app/other-${n}`), `§app/other-${n} shares only the broad file and names nothing`);
   assert.ok(c.readFirst.includes("§app/voice"), "the stale narrow § is read first");
   assert.equal(touched(c, "§app/head").relevance, row("§app/head").relevance, "the touched entry carries the same relevance");

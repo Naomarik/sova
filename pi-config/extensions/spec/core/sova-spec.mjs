@@ -731,7 +731,7 @@ const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summa
 // ---------------------------------------------------------------- rank: touched § by the changed lines
 // Names, string literals and numbers a change's lines carry; a § scores the rarity-weighted ones its passage holds.
 // Nothing here knows a project: every token comes from the diff or the spec.
-const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.1, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
+const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.036, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
 const NAME_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*(?:\.[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*)*/g;
 const NUM_RE = /(?<![\w.])\d+(?:\.\d+)?(?![\w])/g;
 const STR_RE = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g;

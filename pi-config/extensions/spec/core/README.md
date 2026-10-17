@@ -367,7 +367,7 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   (of the §'s changed files, the fewest foreign touched § any one lands in: a broad file dilutes
   each § it lands in) and by ln(passages + 1), the heaviest weight a name can have, so 1 is one name
   only that passage holds through a file only it maps; then score; then fewer mapped code files; then id. `stale` lists a literal
-  the change removed that its passage still states. `readFirst` holds at most 10 at relevance 0.1
+  the change removed that its passage still states. `readFirst` holds at most 10 at relevance 0.036
   or more or with a stale literal, `named` every other one. Each foreign `touched` entry carries its
   `rank`, `score`, `fanIn`, `relevance`, `reason` and `stale` too.
 - **Foreign §s (every census --changed).** Reading `.sova/spec`, nothing is *created*. With

@@ -828,7 +828,8 @@ test("the unread line: once at the first call after the last edit, naming every 
 		assert.equal(unreadLines(edited).length, 0, "not on the edit itself");
 		const first = unreadLines(await s.bash(root, "git status --short"));
 		assert.equal(first.length, 1, `one line at the first call after the edit: ${first.join(" | ")}`);
-		assert.match(first[0]!, /read first §app\/head; \+5 lower-ranked: node "\$core\/sova-spec\.mjs" census --changed --related /, first[0]);
+		assert.match(first[0]!, /read first §app\/head; lower-ranked: node "\$core\/sova-spec\.mjs" census --changed --related /, first[0]);
+		assert.doesNotMatch(first[0]!, /\d+ (more|lower-ranked|unread)/, "no count: the line asks for what it names");
 	const listed = listedBy(first[0]!, root);
 	for (const id of view) assert.ok(listed.includes(id), `${id} listed by the line's command (none dropped): ${listed}`);
 		assert.ok(!first[0]!.includes("§app/voice"), "a § the change didn't touch is not named");
@@ -873,20 +874,20 @@ test("specReads: the § a shell command `read`s, a flag before the id or a loop 
 	assert.deepEqual(specReads(["node sova-spec.mjs read '§a/b'", "node sova-spec.mjs read '§c/d' --no-frame"]), ["§a/b", "§c/d"], "across commands");
 });
 
-test("unreadLine: at most 10 § read first, those at relevance ≥ 0.1 or with a stale literal, in rank order; the rest counted as lower-ranked with the command that lists them; read § and § the session's files didn't land in are left out", () => {
+test("unreadLine: at most 10 § read first, those at relevance ≥ 0.1 or with a stale literal, in rank order; the rest left, uncounted, to the command that lists them; read § and § the session's files didn't land in are left out", () => {
 	const row = (id: string, relevance: number, stale: string[] = [], files = ["src/v.tsx"]) => ({ id, score: relevance * 40, relevance, stale, files });
 	const top = "bcdefghijkl".split("").map((n, i) => row(`§a/${n}`, 0.3 - i * 0.01));
 	const v: RankedView = { rank: [row("§a/s", 0.5, ["12"]), ...top, row("§a/low", 0.09), row("§a/lowstale", 0.05, ["40"]), row("§a/zero", 0), row("§a/other", 0.5, [], ["src/other.ts"])] };
 	const { text, key } = unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/c"]));
 	assert.ok(text?.includes(UNREAD_PREFIX), text);
-	const [first, more] = text!.slice(text!.indexOf(UNREAD_PREFIX) + UNREAD_PREFIX.length).split("; +");
+	const [first, more] = text!.slice(text!.indexOf(UNREAD_PREFIX) + UNREAD_PREFIX.length).split("; ");
 	assert.ok(first!.startsWith("read first "), text);
 	assert.deepEqual(first!.slice("read first ".length).split(", ").map((s) => s.split(" ")[0]), ["§a/s", "§a/b", "§a/d", "§a/e", "§a/f", "§a/g", "§a/h", "§a/i", "§a/j", "§a/k"], "exactly 10, in rank order, the read one skipped");
 	assert.match(first!, /§a\/s \(still states 12\)/);
-	assert.equal(more, "4 lower-ranked: census --changed --related", "the rest counted (past the cap, below 0.1, a zero), with the command that lists them");
+	assert.equal(more, "lower-ranked: census --changed --related", "the rest (past the cap, below 0.1, a zero) left to the command that lists them, uncounted");
 	const readAll = (ids: string[]) => new Set(["§a/s", ...top.map((r) => r.id), ...ids]);
-	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/lowstale"]), "CMD").text!, /landed in: 2 unread, all lower-ranked: CMD$/, "none at 0.1 or stale: the count and the command");
-	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll([]), "CMD").text!, /read first §a\/lowstale \(still states 40\); \+2 lower-ranked: CMD$/, "a stale literal is read first whatever its relevance");
+	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/lowstale"]), "CMD").text!, /landed in: none read first; lower-ranked: CMD$/, "none at 0.1 or stale: only the command");
+	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll([]), "CMD").text!, /read first §a\/lowstale \(still states 40\); lower-ranked: CMD$/, "a stale literal is read first whatever its relevance");
 	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/low", "§a/zero"]), "CMD").text!, /§a\/lowstale \(still states 40\)$/, "nothing more: no command");
 	assert.ok(!text!.includes("§a/other"), "a § only another file maps is not the session's landing");
 	assert.equal(key, [...v.rank.map((r) => r.id).filter((id) => id !== "§a/other")].sort().join(","), "the key is the landed set, reads included");

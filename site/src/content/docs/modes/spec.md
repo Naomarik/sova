@@ -57,7 +57,8 @@ Once the agent stops editing, its next tool call carries one more line, the
 **unread** line. It names the claims the agent's own changed files land in that the agent hasn't read
 yet, ranked by the names, strings and numbers in the lines it changed, with a claim that only
 shares a broad file with many others ranked lower: at most ten are marked read first, and the
-rest are counted as lower-ranked, followed by the one command that lists them. A claim that still
+rest are left to the one command that lists them, uncounted, so the line asks only for the ones it
+names. A claim that still
 states a value the change removed (say, "12 MB" after a limit went to 16 MB) says so and is always
 marked read first. The agent reads the ones
 marked first. The line comes once, and again only when a later edit lands in other claims.

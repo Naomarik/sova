@@ -561,7 +561,7 @@ const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.1;
 
 /**
  * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
- * in rank order, at most 10 marked read first (relevance ≥ 0.1 or a stale literal), the rest counted as lower-ranked with the command that lists them. → {key, text?}:
+ * in rank order, at most 10 marked read first (relevance ≥ 0.1 or a stale literal), the rest left, uncounted, to the command that lists them. → {key, text?}:
  * key is the landed set (unreadSaid); no text when none landed or every one was read.
  */
 export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>, command = "census --changed --related"): { key: string; text?: string } {
@@ -570,9 +570,9 @@ export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: Readon
 	const unread = landed.filter((r) => !read.has(r.id));
 	if (!unread.length) return { key };
 	const first = unread.filter((r) => r.relevance >= READ_FIRST_RELEVANCE || r.stale.length).slice(0, READ_FIRST);
-	const more = unread.length - first.length;
+	const more = unread.length > first.length;
 	const shown = (r: RankedView["rank"][number]) => (r.stale.length ? `${r.id} (still states ${r.stale.join(", ")})` : r.id);
-	const rest = !first.length ? `${more} unread, all lower-ranked: ${command}` : more ? `; +${more} lower-ranked: ${command}` : "";
+	const rest = !first.length ? `none read first; lower-ranked: ${command}` : more ? `; lower-ranked: ${command}` : "";
 	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${first.length ? `read first ${first.map(shown).join(", ")}` : ""}${rest}` };
 }
 

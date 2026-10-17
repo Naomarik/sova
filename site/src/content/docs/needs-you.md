@@ -16,16 +16,19 @@ A session is listed when one of these holds:
 - One of its subagents ended in an error.
 - It's idle with open alignment questions, and its branch isn't merged yet.
 - A baton hand-off is waiting on you.
+- A playbook run proposes a branch to merge. Its row carries a **Merge Branch** button.
 
-Some things are worth a look but don't block anything, so they never get a row here: a reply that seems to ask you something, a team that has gone quiet, a stuck subagent, or a worktree that's ready to merge. Those show as a quiet mark on the session's own row instead. A [scheduled playbook](/docs/playbooks-and-schedules/) can act on branches ready to merge for you: the Merge round wakes when one turns ready, asks its owner, and lands it.
+A project's failed deploy or open deploy request, and a WhatsApp sender that stopped sending, belong to no session: they list under the session rows as rows of their own, each opening the page where you deal with it.
 
-A subagent you killed yourself isn't listed, and neither is one that ended only because the Sova server restarted. A subagent error stops counting once you've opened the session, or once the session has finished a turn since.
+Some things are worth a look but don't block anything, so they never get a row here: a reply that seems to ask you something, a team that has gone quiet, a worktree that's ready to merge, or a stuck subagent. The first two show as a quiet mark on the session's own row, a ready worktree lights the row's worktree count, and a stuck subagent is an item the Overseer reads under its parent session. A [scheduled playbook](/docs/playbooks-and-schedules/) can act on branches ready to merge for you: the Merge round wakes when one turns ready, asks its owner, and lands it.
+
+A subagent you killed yourself isn't listed. A server restart ends no subagent, since each runs in a process of its own, so a subagent error is always a real one. A subagent error stops counting once you've opened the session, or once the session has finished a turn since.
 
 ## How the list reads
 
 - **One row per session**, newest first, however many things it's waiting on.
 - **The second line says why**, in place of the session's summary: "3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error." Hover the row for every reason it has.
-- **A shortcut, not a place.** Every session listed here is still in Recent, its group, or the Archive. Nothing on the list puts a row away: it goes when the thing it waits on is done.
+- **A shortcut, not a place.** Every session listed here is still in its usual place: Live & web or the Archive, its group, and Recent when it moved lately. Nothing on the list puts a row away: it goes when the thing it waits on is done.
 - **Only while it has rows.** An empty list isn't shown at all, so the list appearing is the signal. You can collapse it; a search opens it again so every hit shows.
 - **Refreshed every 10 seconds** while the tab is visible, and at once when you come back to it.
 
@@ -39,7 +42,7 @@ The Overseer's **Proactivity** setting decides what happens with this news. Set 
 |---|---|
 | Off | No Needs you list. The Overseer chat still works. |
 | List Only (default) | The Needs you list. No messages from the Overseer, and no tokens spent. |
-| Brief Me | The list, plus an Overseer message when something new needs you, at most once every 10 minutes. |
+| Brief Me | The list, plus an Overseer message when something new needs you, at most once every 10 minutes, and one when Sova first finds a playbook schedule waiting for your approval. |
 
 Phone notifications work under every mode, Off included, and don't need the Overseer at all.
 
@@ -58,11 +61,11 @@ Sova can tell your phone, or any browser, that a session needs you while no Sova
 
 Open **Settings → Notifications**:
 
-1. Fill in **Contact address**, a `mailto:` address or an `https://` URL. The push services use it to reach whoever runs the server, and nothing is sent without one.
+1. Fill in **Contact address**, a `mailto:` address or an `https://` URL, and press **Save Changes**. The push services use it to reach whoever runs the server, and nothing is sent without one.
 2. Press **Enable on This Device** and allow notifications when your browser asks.
-3. Press **Send Test** to check. It reaches every device you added and says which ones failed.
+3. Press **Send Test** to check. It reaches every device you added, ignoring the switches and quiet hours below, and says which ones failed.
 
-The same tab lists your devices with when each was added and its last delivery or error, and **Remove** takes one off. You can also switch off whole kinds (Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you; Subagent error starts off) and set **Quiet hours**, 22:00 to 07:00 by default.
+The same tab lists your devices with when each was added and its last delivery or error, and **Remove** takes one off. You can also switch off whole kinds (Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down; Subagent error starts off) and turn on **Quiet hours**, 22:00 to 07:00 on the server's clock by default.
 
 ### What arrives
 
@@ -73,4 +76,4 @@ The same tab lists your devices with when each was added and its last delivery o
 - **Grouped.** Sends are at least 30 seconds apart; what arrives in between goes out together. One session reads "{Kind} · {session name}" with the reason underneath, and a newer notification for that session replaces the older one. Several read "3 sessions need you", one line each.
 - **Secrets hidden.** Titles and text pass through Sova's redactor before they're encrypted, since they show on a lock screen.
 
-Tapping a notification opens that session, or the Overseer when several need you. Where your browser supports app badges, the installed app's icon shows how many sessions need you.
+Organization sessions are sent too, though they're not on this list. Tapping a notification opens that session (WhatsApp down opens Settings → Outreach), or the Overseer when several need you. Where your browser supports app badges, the installed app's icon shows how many sessions need you.

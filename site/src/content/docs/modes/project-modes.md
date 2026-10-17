@@ -171,7 +171,8 @@ or codemode, and a change to the agent's tools costs the provider's prompt cache
 A mode with `workers: yes` reaches every worker the chat starts while the mode is on, the way
 [spec](/docs/modes/spec/) does: the worker gets the chat's copy of the instructions, after spec's,
 and the mode's tools if it can run commands. A worker that can't run commands, and a worker on a
-remote machine, gets the instructions without the tools. The tools refuse in a worker just as in
+remote machine, gets the instructions without the tools. A worker that runs on its worktree's own
+agent settings gets neither from the chat. The tools refuse in a worker just as in
 the chat: when the mode's files changed since you approved them, or while the worker's sandbox is
 on. A worker never reads the mode's folder, and never turns a project mode on itself. A worker gets
 at most 8 modes, built-in and project together. A later switch in the chat doesn't reach a running
@@ -195,7 +196,7 @@ A folder that isn't a usable mode stays in the menu, marked **Can't turn on**, w
 
 - the folder's name isn't a valid id, or is a built-in mode's name;
 - it has no `MODE.md`;
-- `MODE.md` doesn't parse: no frontmatter, an unknown key, a bad tool (a path argument that isn't
+- `MODE.md` doesn't parse: no frontmatter, an unknown key, a key given twice, a bad tool (a path argument that isn't
   `./`, a `./` file that isn't there), no instructions;
 - a mode with tools whose folder holds more than 1000 files or 50 MB.
 

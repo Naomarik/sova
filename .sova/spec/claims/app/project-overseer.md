@@ -59,8 +59,9 @@ which is also its live view: its tool calls render as tool cards as they happen.
   operator pastes into its composer is saved, §chat/images), so it sees what the operator attaches, an image as
   an image. A path there must be inside that folder both as written and at its realpath (a symlink
   in it that leads elsewhere is refused); another conversation's attachments and the rest of Sova's
-  state stay refused, and `grep`, `find` and `ls` never reach it. The prompt says so. No shell, no
-  edit or write tool. Its prompt is Sova's
+  state stay refused, and `grep`, `find` and `ls` never reach it. The prompt says so. No shell;
+  `write` and `edit` reach only inside the project root, in the operator's turns
+  (§app.overseer/file-writes). Its prompt is Sova's
   (`server/project-overseer-prompt.md`), rendered once, when the conversation opens, with the time it opened, the project, the level in
   force (a standalone project's with the standalone level meanings, and only its coding-session, prompt
   and look limits; gathering sessions and promotions appear only while placed), the caps, while placed

@@ -36,6 +36,8 @@ const REAP_WAIT_MS = 30_000;
 /** How often, and how far apart, a unit's log is read again when it does not yet say how the unit ended. */
 const JOURNAL_RETRIES = 4;
 const JOURNAL_RETRY_MS = 750;
+/** At most this long between two asks of the service manager about a chat whose process looks fine. */
+export const RECONCILE_MS = 30_000;
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 
 export const chatsRoot = () => join(stateRoot(), "chats");
@@ -353,6 +355,8 @@ export interface SupervisorDeps {
   pollMs?: number;
   /** The chat process's working directory (default the repository root, as for the server: never the chat's own cwd, whose mise config must not pick the runtime). */
   workdir?: string;
+  /** Where the watch reads a chat's process itself (`/proc`, Linux only): elsewhere every tick asks the driver. */
+  platform?: NodeJS.Platform;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
@@ -419,6 +423,8 @@ export class ChatSupervisor {
   /** Replacement processes' pids counted as own from their start until repoint or stopUnit, by unit. */
   private replacementClaims = new Map<string, Claim>();
   private ticking = false;
+  /** When the driver last said each chat's unit was up (check), by chat id: the watch's slow reconcile. */
+  private statusAt = new Map<string, number>();
   private skippedEnv = new Set<string>();
   private readonly regDir: () => string;
   private readonly deaths: () => string;
@@ -602,6 +608,7 @@ export class ChatSupervisor {
   private forget(chatId: string) {
     this.chats.get(chatId)?.releasePid();
     this.chats.delete(chatId);
+    this.statusAt.delete(chatId);
     rmSync(this.file(chatId), { force: true });
   }
 
@@ -666,6 +673,7 @@ export class ChatSupervisor {
     }
     this.chats.get(rec.chatId)?.releasePid();
     this.chats.delete(rec.chatId);
+    this.statusAt.delete(rec.chatId);
     this.log(`${rec.chatId}: died (${death.cause}${death.exit !== null ? `, exit ${death.exit}` : ""}${death.signal ? `, ${death.signal}` : ""})`);
     try {
       await this.deps.onDeath?.(death);
@@ -696,6 +704,7 @@ export class ChatSupervisor {
     if (!t) return "unknown";
     const st = await this.deps.driver.status(t.rec.unit);
     if (isUp(st) || st.pid !== null) {
+      if (this.chats.get(chatId) === t) this.statusAt.set(chatId, this.now());
       // A start whose main process came after spawn stopped waiting: recorded and own from now.
       if (t.rec.pid === null && st.pid !== null && this.chats.get(chatId) === t) {
         const rec = { ...t.rec, pid: st.pid };
@@ -894,6 +903,24 @@ export class ChatSupervisor {
     }
   }
 
+  /**
+   * The watch's fast look, with no program started: chat `chatId`'s recorded process still runs
+   * `chat-runtime/main.ts` inside its unit (its cgroup, or its detached session), and the driver said
+   * the unit was up less than RECONCILE_MS ago. Anything else (no pid yet, the process gone or someone
+   * else's, an old answer, not Linux) asks the driver now, as `check` does.
+   */
+  private looksUp(chatId: string, t: Tracked): boolean {
+    const pid = t.rec.pid;
+    if (!pid || (this.deps.platform ?? process.platform) !== "linux") return false;
+    const at = this.statusAt.get(chatId);
+    if (at === undefined || this.now() - at >= RECONCILE_MS) return false;
+    try {
+      return this.deps.driver.owns(t.rec.unit, pid) && (this.deps.isChatProcess ?? chatProcessAlive)(pid);
+    } catch {
+      return false;
+    }
+  }
+
   /** One pass of the watch: deaths are reported, and chats idle for the whole idle time are asked to close. */
   async tick(): Promise<void> {
     if (this.ticking) return;
@@ -904,7 +931,7 @@ export class ChatSupervisor {
           await this.lost(id, t.lostDetail);
           continue;
         }
-        if (t.draining || (await this.check(id)) !== "up") continue;
+        if (t.draining || (!this.looksUp(id, t) && (await this.check(id)) !== "up")) continue;
         if (t.reaping !== null && this.now() - t.reaping >= REAP_WAIT_MS) {
           t.reaping = null;
           this.capClaude();
@@ -986,5 +1013,6 @@ export class ChatSupervisor {
   detach(): void {
     this.unwatch();
     this.chats.clear();
+    this.statusAt.clear();
   }
 }

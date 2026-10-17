@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { UpdatesState } from "../../shared/protocol";
 import { gatedForms } from "./settings-draft";
-import { headMoved, resultLine, runningLine, upgradeLabel } from "./updates";
+import { resultLine, runningLine, upgradeLabel } from "./updates";
 import { fromUpdatesDraft, rebaseUpdates, sameUpdates, toUpdatesDraft, updatesProblem } from "./updates-draft";
 
-/** The Updates form and the section's words: what runs, what a check found, the reload note. */
+/** The Updates form and the section's words: what runs, what a check found. */
 
 test("the Updates form is a Save-gated form on General", () => {
   const form = gatedForms().find((f) => f.label === "Updates");
@@ -51,13 +51,6 @@ test("the button names the act, and the result line says what was found", () => 
   assert.equal(resultLine({ state: "available", target: t }, { kind: "stable" }), "Update available: v0.3.3");
   assert.equal(resultLine({ state: "available", target: { ...t, version: null, label: "feat/x", count: 12, subject: "Fix it" } }, { kind: "branch", branch: "feat/x" }), "12 new commits · latest: Fix it");
   assert.equal(resultLine({ state: "up-to-date" }, { kind: "master" }), "Up to date with master.");
-});
-
-test("the reload note: only when the running commit moved since the page loaded", () => {
-  assert.equal(headMoved("a", "a"), false);
-  assert.equal(headMoved("a", "b"), true);
-  assert.equal(headMoved(null, "b"), false, "a page that never knew a commit has nothing to compare");
-  assert.equal(headMoved("a", null), false, "a server that can't say isn't a new one");
 });
 
 test("settings saved elsewhere move the fields you left alone, never the ones you changed: nothing reads unsaved by itself", () => {

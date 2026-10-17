@@ -86,7 +86,16 @@ systemd user unit on Linux (`~/.config/systemd/user/sova.service`, or under
 - **One instance.** Before starting a service that is not running, the installer checks the
   port; when something already listens there (for example a `sova` started by hand), it installs
   the definition, does not start it, and says so.
-- Where neither launchd nor a systemd user manager is available, it says so and installs none.
+- **No service manager.** Where there is neither launchd nor `systemctl` (a Linux without systemd,
+  a container), it asks nothing and installs none, and its closing message says only how to run
+  `sova`, without the hint to re-run with `--service`; `--service` there stops the install before
+  anything is written: "--service: this machine has neither launchd nor systemctl; run the launcher
+  yourself (pass --no-service)."
+- **No user manager.** Where `systemctl` exists but no systemd user manager answers (`systemctl
+  --user show-environment` fails: no login session, say), a service it was told to install, or that
+  it installed before, is written but neither enabled nor started, and the closing message says so
+  with the command to start it: "service: wrote <unit path>, but there is no systemd user manager to
+  load it (no login session?); start it with: systemctl --user enable --now sova.service".
 
 ## §app.installer/app-entry — An app-launcher entry that opens Sova in its own window
 
@@ -105,7 +114,9 @@ as it is.
   runs `<bin dir>/sova app`, with an icon built from the same PNG by `sips` and `iconutil` (no icon
   when either is missing). It shows no Dock icon of its own: the window is the browser's. Its
   executable is a script, which macOS would start under Rosetta, and the browser with it; the
-  bundle declares Apple silicon (`arm64`) only, so both run natively. Intel Macs are not supported.
+  bundle puts Apple silicon (`arm64`) first (`LSArchitecturePriority`), so both run natively. Sova
+  supports Apple silicon Macs only: Intel Macs are not supported. Nothing refuses one, though: the
+  installer runs there and fetches Bun's x64 build (§app.installer/bun), untested.
 - **Ours, or refused.** The `.desktop` file and the bundle's `Info.plist` carry a marker. A file
   at either path that this script did not write, or any file at the icon's path while no
   `.desktop` of ours is there, is refused before anything is installed, named, and left alone, with a
@@ -197,7 +208,7 @@ The installer downloads the Bun release the cloned ref's `mise.toml` pins (`bun 
 Bun's GitHub releases into `<install dir>/.bun/bin/bun`, through the clone's `scripts/fetch-bun.sh`,
 and checks it against the sha256 the clone's `scripts/bun-release.txt` records for that build.
 The build is chosen like Bun's own installer chooses it: macOS arm64 (also from an x64 shell under
-Rosetta) or x64, Linux x64 or aarch64, the musl build on a musl libc, the Android build in Termux,
+Rosetta) or x64 (an Intel Mac, which installs but is not supported, §app.installer/app-entry), Linux x64 or aarch64, the musl build on a musl libc, the Android build in Termux,
 and the `-baseline` build on an x64 CPU without AVX2. A checksum that does not match, a ref that
 records no checksum for its pinned build, a machine with no such build, or a download that does
 not run there stops the install before anything is promoted, with "could not install Bun; nothing

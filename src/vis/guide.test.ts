@@ -186,6 +186,24 @@ test("the guide quotes a mark target with spaces, and its timeline example marks
   assert.deepEqual(spec.emphasis!.map((e) => spec.items[Number(e.key)]!.label), ["Vue 2"], "the mark lands on the Vue 2 row");
 });
 
+test("the steps guide teaches step tones, outcomes, ^ and _, with an example that means it", () => {
+  assert.match(GUIDE, /A tone after a quoted step marks that step: `"token expired" error`\./);
+  assert.match(GUIDE, /End a row with `\| "outcome"`, its result or cost in a few words \(`\| "3 tries"`\)/);
+  assert.match(GUIDE, /`\^` repeats the step at that position in the row above \(same lane\) and `_` leaves it empty/);
+  assert.match(GUIDE, /Up to 4 rows with no lanes stand side by side/);
+  assert.match(GUIDE, /`\|` separates the label, the chain and an optional outcome: never put one inside a label or step\./);
+  const body = /^```vis steps\n([\s\S]*?)^```$/m.exec(GUIDE)![1]!;
+  const r = parseVis("steps", body);
+  assert.ok(r.ok && r.warnings.length === 0, "the steps example draws cleanly");
+  const rows = (r.spec as { items: { type: string; steps?: string[]; stepTones?: unknown[]; outcome?: { text: string } }[] }).items.filter((i) => i.type === "row");
+  // `^` is the first row's first step; the outcomes and the step tone are read as such.
+  assert.deepEqual(rows.map((x) => [x.steps![0], x.outcome?.text]), [["You", "1 day"], ["You", "6 days"]]);
+  assert.deepEqual(rows[1]!.stepTones, [null, null, "warn", null]);
+  // The bullet's own example row is a valid row under a first one.
+  const ex = /`("Fix" ok \| [^`]+)`/.exec(GUIDE)![1]!;
+  assert.ok(parseVis("steps", `"Bug" error | a -> b -> c -> d\n${ex}`).ok, ex);
+});
+
 test("the guide teaches several targets per mark and matrix cell tones, with examples that mean it", () => {
   assert.match(GUIDE, /`mark a, b, c "the scope set"`/);
   const matrix = [...GUIDE.matchAll(/^```vis matrix\n([\s\S]*?)^```$/gm)].map(([, body]) => parseVis("matrix", body!));
@@ -241,6 +259,6 @@ for (const html of [false, true]) {
 // round's rule fixes then changed it). A deliberate edit to shared.md or a share kind's file changes
 // it: check the new text reads right for a gathering session, then put its hash here.
 test("the gathering guide is the text last reviewed", () => {
-  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "41e360002f44a2a1e9f8ca17d61e1f0eda4259a67bb2d9b6f4b15df932f774bc");
-  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "c4d31cc65f110c23a758ac2111b03bb68485d8c3af2ade92eecf4f87b5a90f3b");
+  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "150b02a33827be06cac38ab1727a2059825f7e346499b0e457fbcfaae0fae6fd");
+  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "7df8845c8af7ff0d544d86f15c61986bf0e2ba09ae7891dc93d15ab499a8bc9c");
 });

@@ -282,6 +282,41 @@ by 2026-10-10 01:44 (52afd0a8, master reflog). CHANGELOG.md has each lane's numb
   of a fresh one, and the tests wrote commits, branches and worktrees into the real repository. The
   spec and replay test globs are not affected; the full Sova suite is.
 
+## Audit #2: did the 10-09 → 10-12 changes work in real use? (2026-10-18)
+
+A read-only audit of real sessions after the lanes landed: 109 pi worker sessions that changed code
+after 10-12 (26 from one team, 21 on a non-Claude model), plus Claude Code workers, against a
+corrected 10-09 baseline (the 10-09 method had counted every pi worker as spec-off).
+
+- **What worked.** The where-first guide text (M2b) is the one clean real-use effect: 3+ word `where`
+  1/43 → 180/204 in pi workers (54/60 in Claude Code), map-first starts 25/111 → 2/142. Topic search
+  alone changed nothing until the guide told agents to use it. Lane A (census on the hook's own node):
+  incomplete-census notes 50 in 35 sessions → 0 in 176. Lane F's merge driver worked for the manifest
+  only (conflicts 30/146 → 2/78); claims-file conflicts did not fall (8/146 → 10/78). Lane G's
+  landed-in line reached most code-writing workers. Single-source tools hold.
+- **What didn't show.** The unread-line trim (B2) had no measurable effect on reading: Claude workers
+  read 17% of the § named (85/397 before their last reply), with a median of about 110 § behind
+  "+N more". Draft cleanup (E) emptied the main tree (48 → 0) but left 56 drafts across worktrees. The
+  agree step is used (0 → 195 stamps), but workers stamp `--by user` and no session shows the user
+  agreeing; agree before the first code edit in 15 of 34 workers; draft before code flat at 72%. The
+  benchmark's −17% bytes is real in the agent arm, but `map` was only 1–8% of real spec bytes.
+- **Goals.** G1 not met; G2 mostly met (`where <file>` right on 30/30, 95.7% of source covered, but no
+  moved-since-check warning can fire: no record carries a hash); G3 partly (question test 134/144, 0
+  wrong; 0 of 87 areas say what they don't own); G4 flat (93.3%); G5 not met on one pilot area (0/11,
+  6/11 without one missing export; every failure was something the spec doesn't say, none was it being
+  wrong); G6 flat once split by model. Constraints: C4 not met and slowly worse (§ ids in 783 source
+  files, 16.8% → 17.9%; 28 dangling); C5 slightly over (upkeep 9.6% of change calls, against ~7%).
+- **Proposals** (P1–P10): a reachable unread list; agreement stamped only where the user's go-ahead
+  is; a moved-since-check hash; a "doesn't own" line per area; a decision on § ids in source and on
+  how much "how" the spec holds; ignored files out of the census; claims-file conflicts; upkeep;
+  housekeeping. P7 is built on `feat/spec-x-census` (CHANGELOG 2026-10-18): Sova's whole-tree census
+  unclaimed 10,410 → 913 at 9c3f949b, the 9,497 dropped all Git-ignored and the tracked unclaimed set
+  unchanged.
+- **Method lessons.** Split every session metric by model and by team (one team was 24% of the
+  sample; a non-Claude model doubled bytes). Claude Code caps tool output at 30k characters and pi at
+  about 50 KB, so bytes don't compare across the 10-13 runtime switch. Counters must ignore quoted note
+  text (census notes were over-counted once).
+
 ## Open
 
 - **The agent arm and the rubric on master.** Deferred: not re-run after landing.
@@ -290,5 +325,5 @@ by 2026-10-10 01:44 (52afd0a8, master reflog). CHANGELOG.md has each lane's numb
   `§chat.composer/behavior`. Neither pre-landing agent arm read them. No agent arm has run on master:
   deferred, not re-run after landing.
 - **The frame's cost.** It is paid on every first read: 4,526 B on master's spec.
-- **The census-read guard.** "Every `census --changed` claim read" is not measured: the agent arm makes
-  no edits.
+- **The census-read guard.** Measured in real sessions by audit #2: not met (85/397 named § read,
+  Claude workers; parents 0). The agent arm still makes no edits.

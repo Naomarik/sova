@@ -532,7 +532,8 @@ export function specReads(commands: readonly string[]): string[] {
 
 /** The ranked parts of a `census --changed --related --json`: each foreign touched § in rank order, with the files it lands in. */
 export interface RankedView {
-	rank: { id: string; score: number; stale: string[]; files: string[] }[];
+	/** relevance: score over fan-in (§tools.spec/census-rank); a census without it reads as its score. */
+	rank: { id: string; score: number; relevance: number; stale: string[]; files: string[] }[];
 }
 export function parseRanked(stdout: string): RankedView | undefined {
 	let out: { exit?: unknown; census?: { rank?: unknown; touched?: unknown } | null };
@@ -546,18 +547,21 @@ export function parseRanked(stdout: string): RankedView | undefined {
 	const files = new Map<string, string[]>();
 	for (const t of c.touched as { id?: unknown; files?: unknown }[]) if (typeof t?.id === "string" && Array.isArray(t.files)) files.set(t.id, t.files as string[]);
 	return {
-		rank: (c.rank as { id?: unknown; score?: unknown; stale?: unknown }[])
+		rank: (c.rank as { id?: unknown; score?: unknown; relevance?: unknown; stale?: unknown }[])
 			.filter((r) => typeof r?.id === "string")
-			.map((r) => ({ id: r.id as string, score: typeof r.score === "number" ? r.score : 0, stale: Array.isArray(r.stale) ? (r.stale as string[]) : [], files: files.get(r.id as string) ?? [] })),
+			.map((r) => {
+				const score = typeof r.score === "number" ? r.score : 0;
+				return { id: r.id as string, score, relevance: typeof r.relevance === "number" ? r.relevance : score, stale: Array.isArray(r.stale) ? (r.stale as string[]) : [], files: files.get(r.id as string) ?? [] };
+			}),
 	};
 }
 
 export const UNREAD_PREFIX = "Unread § your change landed in: ";
-const READ_FIRST = 5;
+const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.25;
 
 /**
  * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
- * in rank order, at most 5 marked read first (a score or a stale literal), the rest counted with the command that lists them. → {key, text?}:
+ * in rank order, at most 10 marked read first (relevance ≥ 0.25 or a stale literal), the rest counted as lower-ranked with the command that lists them. → {key, text?}:
  * key is the landed set (unreadSaid); no text when none landed or every one was read.
  */
 export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>, command = "census --changed --related"): { key: string; text?: string } {
@@ -565,10 +569,10 @@ export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: Readon
 	const key = landed.map((r) => r.id).sort().join(",");
 	const unread = landed.filter((r) => !read.has(r.id));
 	if (!unread.length) return { key };
-	const first = unread.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST);
+	const first = unread.filter((r) => r.relevance >= READ_FIRST_RELEVANCE || r.stale.length).slice(0, READ_FIRST);
 	const more = unread.length - first.length;
 	const shown = (r: RankedView["rank"][number]) => (r.stale.length ? `${r.id} (still states ${r.stale.join(", ")})` : r.id);
-	const rest = !first.length ? `${more} unread: ${command}` : more ? `; +${more} more: ${command}` : "";
+	const rest = !first.length ? `${more} unread, all lower-ranked: ${command}` : more ? `; +${more} lower-ranked: ${command}` : "";
 	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${first.length ? `read first ${first.map(shown).join(", ")}` : ""}${rest}` };
 }
 

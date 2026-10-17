@@ -84,11 +84,14 @@ untracked file's lines all count as added) it takes code-shaped names (an inner
 capital, `_`, `-`, `.` or `$`, or all capitals), short string literals and
 numbers of two or more digits, and scores each § by the ones its passage holds,
 each weighted by how rare it is across the spec's passages. A string or number
-the change removed and didn't add back that a § still states is `stale`, and a
-§ with one ranks first. `census.rank` lists each foreign touched § once with
-`rank`, `score`, `reason` (the matched names) and `stale` (also set on its
-`touched` entry); `census.readFirst` is the first 5 that score or are stale,
-`census.named` the rest, so none is dropped. Human output prints `read first:`
+the change removed and didn't add back that a § still states is `stale`. Each
+score is divided by the §'s `fanIn` (of its changed files, the fewest foreign
+touched § any one lands in), so a § that lands only through a broad file ranks
+low; that quotient is its `relevance`, and `census.rank` lists each foreign
+touched § once, best relevance first, with `rank`, `score`, `fanIn`,
+`relevance`, `reason` (the matched names) and `stale` (also set on its
+`touched` entry); `census.readFirst` is the first 10 at relevance 0.25 or more
+or with a stale literal, `census.named` the rest, so none is dropped. Human output prints `read first:`
 and `named:` lines. The ranking is a literal match, never proof; nothing in it
 knows a project.
 
@@ -388,8 +391,9 @@ that shows a first changed file in the boundary, or a new one, runs
 `census --changed` and appends a short `[spec census]` digest to that tool
 result, saying so when the session has no draft yet. At the first call after
 the session's last edit it runs `census --changed --related` once and adds one
-line, `Unread § your change landed in: read first …; +N more: <census command>`: the foreign §
-the session's own files landed in, in rank order, minus those it ran
+line, `Unread § your change landed in: read first …; +N lower-ranked: <census command>`: the
+foreign § the session's own files landed in, in rank order (at most 10 read first: relevance 0.25
+or more, or a stale literal), minus those it ran
 `sova-spec.mjs read` on; it says nothing again until an edit changes that set.
 That line replaces the census the guide used to ask for by hand before
 finishing. Nothing runs at the end of a turn: a reply carries no spec lines, and

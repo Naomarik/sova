@@ -731,7 +731,7 @@ const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summa
 // ---------------------------------------------------------------- rank: touched § by the changed lines
 // Names, string literals and numbers a change's lines carry; a § scores the rarity-weighted ones its passage holds.
 // Nothing here knows a project: every token comes from the diff or the spec.
-const READ_FIRST = 5, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
+const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.25, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
 const NAME_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*(?:\.[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*)*/g;
 const NUM_RE = /(?<![\w.])\d+(?:\.\d+)?(?![\w])/g;
 const STR_RE = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g;
@@ -773,8 +773,8 @@ function changedLines(root, commit, paths) {
     if (line.startsWith("diff --git ")) { cur = heads.has(line) ? by.get(heads.get(line)) : loose; if (heads.has(line)) seen.add(heads.get(line)); continue; }
     if (!cur || line.startsWith("+++ ") || line.startsWith("--- ")) continue;
     if ((bytes += line.length) > DIFF_CAP) { add("note", "rank-diff-capped", `the diff passed ${DIFF_CAP} bytes; later lines were not ranked`); break; }
-    if (line[0] === "+") { takeLine(cur.added, line.slice(1)); cur.n = (cur.n ?? 0) + 1; }
-    else if (line[0] === "-") { takeLine(cur.removed, line.slice(1)); cur.n = (cur.n ?? 0) + 1; }
+    if (line[0] === "+") takeLine(cur.added, line.slice(1));
+    else if (line[0] === "-") takeLine(cur.removed, line.slice(1));
   }
   for (const p of paths) {
     const mine = by.get(p);
@@ -783,14 +783,17 @@ function changedLines(root, commit, paths) {
     // No hunk: an untracked file (all its lines are added), or one git named some other way.
     let text = null;
     try { text = readInput(root, p); } catch { /* deleted or unreadable: nothing added */ }
-    if (text !== null && text.length <= DIFF_CAP && !text.includes("\0")) for (const line of text.split("\n")) { takeLine(mine.added, line); mine.n = (mine.n ?? 0) + 1; }
+    if (text !== null && text.length <= DIFF_CAP && !text.includes("\0")) for (const line of text.split("\n")) takeLine(mine.added, line);
   }
   return by;
 }
-// Rank the foreign touched § (ids, with the changed paths each lands in) by those lines.
-// → {rank: [{id, rank, score, reason, stale}], readFirst, named}
+// Rank the foreign touched § (ids, with the changed paths each lands in) by those lines, each score divided by
+// its fan-in: of its changed paths, the fewest foreign touched § any one lands in (a broad file dilutes its §).
+// → {rank: [{id, rank, score, fanIn, relevance, reason, stale}], readFirst, named}
 function rankTouched(ctx, commit, ids, filesOf) {
   const lines = changedLines(ctx.root, commit, [...new Set(ids.flatMap((id) => filesOf(id)))].sort());
+  const fan = new Map();
+  for (const id of ids) for (const p of new Set(filesOf(id))) fan.set(p, (fan.get(p) ?? 0) + 1);
   const all = [...ctx.decls.keys()].filter((id) => ctx.claims.has(id)), text = (id) => ctx.decls.get(id)?.text ?? "";
   // Every candidate token, then how many passages hold each: a passage's names and numbers once, strings by search.
   const cand = lineTokens();
@@ -812,17 +815,14 @@ function rankTouched(ctx, commit, ids, filesOf) {
     // A literal the change removed and didn't add back, that the § still states.
     const gone = [...toks.removed.strings, ...toks.removed.numbers].filter((t) => !toks.added.strings.has(t) && !toks.added.numbers.has(t));
     const stale = [...new Set(gone)].filter((t) => has.has(t)).sort();
-    const dbg = process.env.SOVA_SPEC_RANK_DEBUG ? { perFile: Object.fromEntries(filesOf(id).map((p) => {
-      const v = lines.get(p), t = new Set(["added", "removed"].flatMap((k) => TOKEN_KINDS.flatMap((f) => [...(v?.[k][f] ?? [])])));
-      return [p, { n: v?.n ?? 0, m: [...t].filter((x) => has.has(x)).map((x) => [x, Math.round(weight(x) * 100) / 100]) }];
-    })) } : {};
-    return { id, score: Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, reason, stale, ...dbg };
+    const score = Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, fanIn = Math.min(...filesOf(id).map((p) => fan.get(p)));
+    return { id, score, fanIn, relevance: Math.round((score / fanIn) * 100) / 100, reason, stale };
   });
-  // Equal scores: the § that maps fewer code files is the more specific to each of them.
+  // Equal relevance: the higher score, then the § that maps fewer code files is the more specific to each of them.
   const breadth = (id) => new Set(ctx.claims.get(id).code ?? []).size;
-  rows.sort((a, b) => (b.stale.length > 0) - (a.stale.length > 0) || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
-  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, reason: r.reason, stale: r.stale, ...(r.perFile ? { perFile: r.perFile } : {}) }));
-  const readFirst = rank.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
+  rows.sort((a, b) => b.relevance - a.relevance || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
+  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, fanIn: r.fanIn, relevance: r.relevance, reason: r.reason, stale: r.stale }));
+  const readFirst = rank.filter((r) => r.relevance >= READ_FIRST_RELEVANCE || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
   return { rank, readFirst, named: rank.map((r) => r.id).filter((id) => !readFirst.includes(id)) };
 }
 

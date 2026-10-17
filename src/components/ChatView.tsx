@@ -80,7 +80,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { EMPTY_FEED, feedOnFailure, feedOnHello, feedOnNote, feedOnOpen, feedOnRefused, feedOnReset, feedOnTurnStart, feedRows, type ErrorFeed, type FeedSay } from "../lib/error-feed";
+import { backWords, EMPTY_FEED, feedOnFailure, feedOnHello, feedOnNote, feedOnOpen, feedOnRefused, feedOnReset, feedOnTurnStart, feedBanner, type ErrorFeed, type FeedSay } from "../lib/error-feed";
 import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
@@ -139,7 +139,7 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -686,6 +686,7 @@ export function ChatView(props: {
   const sayFeed = (says: FeedSay[]) => {
     for (const s of says) {
       if (s.say === "turnStopped") announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+      else if (s.say === "startFailed") announce(`${turnWord("didn't start.", "This chat didn't start.")}${backWords(s.back, " ")}`);
       else if (s.say === "unsent") announce(UNSENT_WORDS);
       else {
         toast(s.message);
@@ -1067,17 +1068,20 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
+            {
               // A command it names makes no user row: its text comes back from here.
-              putBack([unacked.take(msg.clientId, handedBack)].filter((t): t is string => t !== null));
+              const taken = [unacked.take(msg.clientId, handedBack)].filter((t): t is string => t !== null);
+              putBack(taken);
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
-              {
-                const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: errorHandsBack(untrack(wait)) !== null });
-                setFeed(step.feed);
-                sayFeed(step.says);
-              }
+              // Before this connection's hello it is the chat failing to open (its retry included,
+              // server/ws.ts): quiet here, said by the start failure that follows (lib/error-feed).
+              const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: errorHandsBack(untrack(wait)) !== null, back: taken.length });
+              setFeed(step.feed);
+              sayFeed(step.says);
               return;
+            }
             case "reloaded": {
               // Its code state was that process's: the next hello says the new one's (never a stale "Reloading").
               setCode(null);
@@ -1114,11 +1118,16 @@ export function ChatView(props: {
               setLive("running", false);
               return;
             default: {
-              // Before this connection's hello the chat didn't open (it failed to start): what the
-              // server never acknowledged goes back to the composer; the socket retries.
+              // Before this connection's hello the chat didn't open (it failed to start, the
+              // server's one retry included): what the server never acknowledged goes back to the
+              // composer, "This chat didn't start." says so (lib/error-feed), and the socket retries.
               const failed = errorHandsBack(untrack(wait));
               const back = failed !== null ? takeBackUnsent(failed) : 0;
-              const sayBack = () => back > 0 && announce(UNSENT_WORDS);
+              // Not a start failure after all: what came back (here or by a quiet refusal) is said as before.
+              const sayBack = () => {
+                if (back + (untrack(feed).heldBack ?? 0) > 0) announce(UNSENT_WORDS);
+                setFeed((f) => (f.heldBack ? { ...f, heldBack: 0 } : f));
+              };
               if (modelError() || thinkingError()) {
                 sayBack();
                 break; // shown as the switch's banner
@@ -2278,7 +2287,7 @@ export function ChatView(props: {
         {/* One failure, one row: a failure with its own errored turn row in the thread carries the
             limit switch there (with that row's provider); the error feed's mount is for failures
             that never made a thread row (a refusal before any turn, a host move). */}
-        <For each={feedRows(feed())}>{(r) => <><Show when={r.banner === "turn"}><TurnError message={r.entry.message} /></Show><Show when={!failureHasRow(live.entries, r.entry.message)}><SubagentLimitRow path={props.path} message={r.entry.message} provider={r.entry.provider} /></Show></>}</For>
+        <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
       <FlyoutSession.Provider value={() => props.path}>

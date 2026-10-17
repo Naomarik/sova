@@ -20,8 +20,7 @@ const ws = await import("./ws");
 const { setChatRouter, BusyError } = await import("./chat-handle");
 const { getDraft } = await import("./drafts");
 
-const retry = (ws as { openRetry?: { ms: number } }).openRetry;
-if (retry) retry.ms = 0;
+ws.openRetry.ms = 0;
 
 after(() => {
   setChatRouter(null);
@@ -95,4 +94,18 @@ test("a refusal that no retry can change (busy) is not retried", async () => {
   ws.deliverFrames(path, [PROMPT]);
   await until(() => getDraft(id) !== null);
   assert.equal(r.calls(), 1);
+});
+
+test("acquireWithRetry: one retry, never two; nothing retried when nobody needs the chat", async () => {
+  let calls = 0;
+  const warned: unknown[] = [];
+  await assert.rejects(
+    ws.acquireWithRetry(async () => { calls++; throw new Error(`fail ${calls}`); }, () => false, (e) => warned.push(e)),
+    /fail 2/,
+  );
+  assert.equal(calls, 2);
+  assert.equal(warned.length, 1);
+  calls = 0;
+  await assert.rejects(ws.acquireWithRetry(async () => { calls++; throw new Error("x"); }, () => true), /x/);
+  assert.equal(calls, 1, "gone with nothing held: not retried");
 });

@@ -144,7 +144,12 @@ whose steps carry the agent's old "builds on" still opens, and it is not shown.
 
 The agent opens the viewer with one tool, `show_changes` (pi-config's `show-changes`
 extension), when the user asks to see or review changes; it replies in a sentence or two instead of
-pasting a diff. The tool is read-only. It takes a scope: `dirty` (the index
+pasting a diff. Its instructions say it shows only git changes in the session's checkout or its
+tracked worktrees: a change anywhere else or not in git yet is first written into a tracked
+worktree as uncommitted edits (the worktree tool can create one), or the agent tells the user there
+is no diff to show, and it never shows a different change instead. They tell the agent to read the
+diff first with plain `git diff` (for a branch, three dots: `git diff master...<branch>`) or
+`git show`, at default context. The tool is read-only. It takes a scope: `dirty` (the index
 and working tree, untracked files included, against HEAD), `worktree` (a branch against its
 base, chosen by the same rule and limits as the viewer's worktree comparison,
 §chat.changes/endpoint: one rule both share, so a card never opens a viewer that refuses it) or
@@ -161,7 +166,16 @@ The tool refuses, changing and showing nothing, a malformed call with a sentence
 fix: a path that is absolute or climbs out with `..`, the same hunk named twice, a commit that
 does not resolve, a checkout on its own base branch for `worktree`, a branch with no base to
 compare against, a folder outside git, and any call in a session whose tools run on a remote
-target.
+target. It also refuses a folder the viewer would not open for the session, by the one rule the
+viewer's own check uses (§chat.changes/endpoint: not inside the session's folder, its workers'
+folders, a worktree it tracked or a merged worktree's folder), saying "<folder> is outside this
+session's folder and its worktrees, so the viewer can't open it. Put the changes in a worktree (the
+worktree tool) and show that", so a card never claims a viewer that refuses it.
+
+A comparison with no changed file (within the paths given) is refused too, with no card: "No
+changes in this comparison (<comparison>), so nothing was shown. Tell the user nothing changed
+there." For a `worktree` comparison whose folder has uncommitted files (within the paths given),
+the refusal instead names how many and says that scope `dirty` shows them.
 
 It then reads the hunks of the diff the viewer shows (the same comparison, files, rename detection
 and default context; an untracked file is one added hunk, a binary file, a file with no line
@@ -178,7 +192,7 @@ step naming every file by path; it lists every hunk still to place, grouped by f
 start and line count and its first changed line (past 150 hunks, the files with their hunk counts
 instead, since a ref by path places all of a file's hunks), and each ref naming no hunk with the
 file's hunk ranges or that the file is not in the diff; it stays under about 12 KB. A diff of one
-hunk or none needs no steps.
+hunk needs no steps.
 
 Its result's text names the comparison, lists the changed files (the first 40), and says how many
 hunks there are and, when steps were given, that every hunk is placed in a step. Its result's
@@ -218,8 +232,9 @@ the branch's commits show, when that commit is an ancestor of the tip and not th
 **uncommitted** comparison is the working tree, staged changes included, against HEAD,
 with untracked files shown as added and a file whose content did not change never listed. The
 folder named must be one the session already knows (its folder, its workers' folders, a
-worktree it tracked, a merged worktree's folder) or inside one; the diff covers that folder's whole
-repository. Anything else is refused with a reason, before git runs there. A commit or merge whose
+worktree it tracked, a merged worktree's folder) or inside one, by the one rule the `show_changes`
+tool applies too; the diff covers that folder's whole repository. Anything else is refused with a
+reason, before git runs there. A commit or merge whose
 folder is gone, as a merged worktree's often is, is read from the first folder the session knows whose
 repository still has it, the session's own folder first.
 

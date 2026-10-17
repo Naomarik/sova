@@ -9369,6 +9369,7 @@
       "evidence": "verified",
       "code": [
         "server/git-diff.ts",
+        "pi-config/extensions/show-changes/folders.ts",
         "pi-config/extensions/worktrees/git.ts",
         "server/index.ts",
         "server/app.ts",
@@ -9376,8 +9377,8 @@
         "server/git-diff.test.ts"
       ],
       "agreed": {
-        "by": "user (al_1 go-ahead)",
-        "at": "2026-10-14T10:01Z"
+        "by": "user",
+        "at": "2026-10-17T17:42Z"
       }
     },
     "§chat.changes/entry": {
@@ -9432,9 +9433,11 @@
         "pi-config/extensions/show-changes/details.ts",
         "pi-config/extensions/show-changes/input.ts",
         "pi-config/extensions/show-changes/git.ts",
+        "pi-config/extensions/show-changes/folders.ts",
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/show-changes/details.test.ts",
         "pi-config/extensions/show-changes/git.test.ts",
+        "pi-config/extensions/show-changes/folders.test.ts",
         "pi-config/extensions/show-changes/index.test.ts",
         "pi-config/extensions/show-changes/tests/run.mjs",
         "pi-config/extensions/show-changes/tests/runtime.mjs",
@@ -9446,8 +9449,8 @@
         "src/lib/show-changes-coverage.test.ts"
       ],
       "agreed": {
-        "by": "user (al_1 go-ahead)",
-        "at": "2026-10-14T10:01Z"
+        "by": "user",
+        "at": "2026-10-17T17:42Z"
       }
     },
     "§chat.changes/steps": {

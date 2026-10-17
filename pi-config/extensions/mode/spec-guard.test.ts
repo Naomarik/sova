@@ -873,19 +873,19 @@ test("specReads: the § a shell command `read`s, a flag before the id or a loop 
 	assert.deepEqual(specReads(["node sova-spec.mjs read '§a/b'", "node sova-spec.mjs read '§c/d' --no-frame"]), ["§a/b", "§c/d"], "across commands");
 });
 
-test("unreadLine: at most 10 § read first, those at relevance ≥ 0.25 or with a stale literal, in rank order; the rest counted as lower-ranked with the command that lists them; read § and § the session's files didn't land in are left out", () => {
-	const row = (id: string, relevance: number, stale: string[] = [], files = ["src/v.tsx"]) => ({ id, score: relevance * 4, relevance, stale, files });
-	const top = "bcdefghijkl".split("").map((n, i) => row(`§a/${n}`, 3 - i * 0.1));
-	const v: RankedView = { rank: [row("§a/s", 5, ["12"]), ...top, row("§a/low", 0.2), row("§a/lowstale", 0.1, ["40"]), row("§a/zero", 0), row("§a/other", 5, [], ["src/other.ts"])] };
+test("unreadLine: at most 10 § read first, those at relevance ≥ 0.1 or with a stale literal, in rank order; the rest counted as lower-ranked with the command that lists them; read § and § the session's files didn't land in are left out", () => {
+	const row = (id: string, relevance: number, stale: string[] = [], files = ["src/v.tsx"]) => ({ id, score: relevance * 40, relevance, stale, files });
+	const top = "bcdefghijkl".split("").map((n, i) => row(`§a/${n}`, 0.3 - i * 0.01));
+	const v: RankedView = { rank: [row("§a/s", 0.5, ["12"]), ...top, row("§a/low", 0.09), row("§a/lowstale", 0.05, ["40"]), row("§a/zero", 0), row("§a/other", 0.5, [], ["src/other.ts"])] };
 	const { text, key } = unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/c"]));
 	assert.ok(text?.includes(UNREAD_PREFIX), text);
 	const [first, more] = text!.slice(text!.indexOf(UNREAD_PREFIX) + UNREAD_PREFIX.length).split("; +");
 	assert.ok(first!.startsWith("read first "), text);
 	assert.deepEqual(first!.slice("read first ".length).split(", ").map((s) => s.split(" ")[0]), ["§a/s", "§a/b", "§a/d", "§a/e", "§a/f", "§a/g", "§a/h", "§a/i", "§a/j", "§a/k"], "exactly 10, in rank order, the read one skipped");
 	assert.match(first!, /§a\/s \(still states 12\)/);
-	assert.equal(more, "4 lower-ranked: census --changed --related", "the rest counted (past the cap, below 0.25, a zero), with the command that lists them");
+	assert.equal(more, "4 lower-ranked: census --changed --related", "the rest counted (past the cap, below 0.1, a zero), with the command that lists them");
 	const readAll = (ids: string[]) => new Set(["§a/s", ...top.map((r) => r.id), ...ids]);
-	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/lowstale"]), "CMD").text!, /landed in: 2 unread, all lower-ranked: CMD$/, "none at 0.25 or stale: the count and the command");
+	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/lowstale"]), "CMD").text!, /landed in: 2 unread, all lower-ranked: CMD$/, "none at 0.1 or stale: the count and the command");
 	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll([]), "CMD").text!, /read first §a\/lowstale \(still states 40\); \+2 lower-ranked: CMD$/, "a stale literal is read first whatever its relevance");
 	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/low", "§a/zero"]), "CMD").text!, /§a\/lowstale \(still states 40\)$/, "nothing more: no command");
 	assert.ok(!text!.includes("§a/other"), "a § only another file maps is not the session's landing");

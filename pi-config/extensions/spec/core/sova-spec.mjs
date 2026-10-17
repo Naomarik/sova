@@ -731,7 +731,7 @@ const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summa
 // ---------------------------------------------------------------- rank: touched § by the changed lines
 // Names, string literals and numbers a change's lines carry; a § scores the rarity-weighted ones its passage holds.
 // Nothing here knows a project: every token comes from the diff or the spec.
-const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.25, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
+const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.1, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
 const NAME_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*(?:\.[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*)*/g;
 const NUM_RE = /(?<![\w.])\d+(?:\.\d+)?(?![\w])/g;
 const STR_RE = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g;
@@ -788,7 +788,8 @@ function changedLines(root, commit, paths) {
   return by;
 }
 // Rank the foreign touched § (ids, with the changed paths each lands in) by those lines, each score divided by
-// its fan-in: of its changed paths, the fewest foreign touched § any one lands in (a broad file dilutes its §).
+// its fan-in (of its changed paths, the fewest foreign touched § any one lands in: a broad file dilutes its §)
+// and by the heaviest weight a name can have, so a relevance means the same in a spec of any size.
 // → {rank: [{id, rank, score, fanIn, relevance, reason, stale}], readFirst, named}
 function rankTouched(ctx, commit, ids, filesOf) {
   const lines = changedLines(ctx.root, commit, [...new Set(ids.flatMap((id) => filesOf(id)))].sort());
@@ -816,7 +817,7 @@ function rankTouched(ctx, commit, ids, filesOf) {
     const gone = [...toks.removed.strings, ...toks.removed.numbers].filter((t) => !toks.added.strings.has(t) && !toks.added.numbers.has(t));
     const stale = [...new Set(gone)].filter((t) => has.has(t)).sort();
     const score = Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, fanIn = Math.min(...filesOf(id).map((p) => fan.get(p)));
-    return { id, score, fanIn, relevance: Math.round((score / fanIn) * 100) / 100, reason, stale };
+    return { id, score, fanIn, relevance: Math.round((score / fanIn / Math.log(all.length + 1)) * 1000) / 1000, reason, stale };
   });
   // Equal relevance: the higher score, then the § that maps fewer code files is the more specific to each of them.
   const breadth = (id) => new Set(ctx.claims.get(id).code ?? []).size;

@@ -260,6 +260,14 @@ drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the base
 first, BEFORE taken on a pristine archive of the base, AFTER on the commit. Lanes A, B1, C, F and G
 landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md has each lane's numbers.
 
+**P4, what an area does not own (2026-10-18, branch `feat/spec-x-notowned`, not on master yet).** Audit
+#2 found 0/87 areas saying what they don't own (Goal 3's first measure). An area record now carries
+`notOwned: [§id]` and `map` prints it: 0/87 → 87/87 on Sova's spec (L0, `map` text, master 9c3f949b
+against the branch). The first shape, `{what, owner}` with a phrase in the manifest, was dropped
+before it was measured: it put prose in a relations-only manifest and said each thing twice; the map
+prints the owner's own heading instead. Printing titles in the overview was dropped too: 78 of 87
+areas fitted the 32 KB page, against 87 of 87 with ids only (titles stay in `map '§area'`).
+
 ## Lessons
 
 - **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together

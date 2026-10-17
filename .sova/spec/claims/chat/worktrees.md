@@ -364,6 +364,10 @@ and a reading stands for a while before it is read again:
 - **5 minutes** while the session is idle and the tree's last answer was **merged** (merged and
   clean). A hand edit in an idle merged tree can therefore take up to 5 minutes to read "Stale ·
   merged, with uncommitted changes".
+- An idle session's other trees are read again with the session, every 5 minutes
+  (§app/idle-git-cache, "Idle sessions"). A hand edit in an idle tree that isn't merged can
+  therefore also take up to 5 minutes to show, as "In progress · 3 uncommitted files" or as a
+  caveat on ready.
 - Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
   reading at once: the tree's index and HEAD are part of what it was read from.
 - A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
@@ -374,8 +378,8 @@ and a reading stands for a while before it is read again:
   archived flag, open questions or attention answer) reads every tree's changes again at once.
 - An explicit look at the session's worktrees (the Session tab's Worktrees section, or
   `sova_session`'s Merge facts) re-reads every tree's changes when one of its readings may have
-  stood the 5 minutes, or when the session is settled (§app/idle-git-cache) and its answer is 10
-  seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
+  stood the 5 minutes, or when the session is idle with its trees checked without Git
+  (§app/idle-git-cache) and its answer is 10 seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
   (§app/idle-git-cache, "Archived-idle exception").
 
 ## §chat.worktrees/merge-board — The merge board file

@@ -488,8 +488,8 @@ would list master's changes instead.
 ### 2026-10-12
 
 - **Spec mode finds roots with a word search first (M2b).**
-  - Commit: 6f33e2ac (the promotion), branch `feat/spec-where-first`; not on master yet: the merge
-    round folds it in.
+  - Commit: 6f33e2ac (the promotion), branch `feat/spec-where-first`; on master since 2026-10-12 11:52
+    (fast-forward to a0c9da53).
   - Changed:
     - `mode/spec-mode.md` step 1: find roots with `where` and 3–5 of the task's words, never one, or
       a path or name; if no hit fits, try other words once, then `map` (also for a whole-area task);
@@ -505,8 +505,8 @@ would list master's changes instead.
     titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped:
     −11 / 288 correct, 3 wrong (ad3a61e3, reverted in 9116abae).
 - **The installed extension is the only way to run the spec tools.**
-  - Commit: the one titled "spec: the installed extension is the only spec tools; remove Sova's stale
-    bundled copy", branch `feat/spec-single-source`; not on master yet: the merge round folds it in.
+  - Commit: fb07ef5f, branch `feat/spec-single-source`; on master since 2026-10-12 15:18 (fast-forward
+    to 41802297).
   - Changed:
     - bundled copies are no longer supported: agents run the tools only from the installed extension
       (`$core`), and a copy inside a project is that project's code, read and never run without asking;

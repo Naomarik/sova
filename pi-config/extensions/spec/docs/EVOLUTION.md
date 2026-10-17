@@ -257,8 +257,8 @@ failures from an untrusted mise shim, `where` hiding results with exit 0, 40 KB 
 a merge recovery the docs couldn't complete, claim files that conflicted on parallel promotions, and 48
 drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the baseline (pull, answered
 97.5 / 99.5 of 138). Each fix then ran as a lane with a builder and a measurer: checks written to fail
-first, BEFORE taken on a pristine archive of the base, AFTER on the commit. Lanes A, B1, C, F and G
-landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md has each lane's numbers.
+first, BEFORE taken on a pristine archive of the base, AFTER on the commit. All eight lanes landed
+by 2026-10-10 01:44 (52afd0a8, master reflog). CHANGELOG.md has each lane's numbers.
 
 ## Lessons
 

@@ -516,6 +516,28 @@ would list master's changes instead.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
+### 2026-10-18
+
+- **A declaration both sides changed merges block by block (audit #2, P8).**
+  - Commit: on branch `feat/spec-x-merge`; not on master yet: the merge round folds it in.
+  - Changed:
+    - `merge-claims` no longer conflicts on every declaration both sides changed: it merges that
+      declaration by blocks (a list item with its wrapped lines, a nested item, a table row, a line of
+      a fenced block, a paragraph, a blank line), and conflicts only when both sides changed the same
+      block, added blocks at the same place, or one added a block directly before one the other
+      changed;
+    - such a conflict leaves Git's markers around the whole blocks; before, a declaration changed on
+      both sides in lines Git merges cleanly left a conflicted file with no markers at all.
+  - §: §tools.spec/git-merge reworded (draft `claims-merge-blocks`, not promoted yet).
+  - Numbers (merge replay: the 30 merges since 6f98ff2f whose sides both changed a claim file, 56
+    files, each redone in a throwaway clone with each side's own `.gitattributes`; the 5 Claude Code
+    sessions with a claims conflict are all among them): conflicted claim files 20 / 56 (11 merges)
+    → 7 / 56 (4 merges), against 7 / 56 (5 merges) with Git's line merge alone; conflicts Git's line
+    merge doesn't have 13 → 0; files merged cleanly that carry exactly both sides' changes (blank
+    lines aside) 36 / 36 → 49 / 49 (Git alone 48 / 49: it drops two of theirs' lines in one). With the
+    driver set for every file, 20 / 56 → 6 / 56 (3 merges), each both sides rewriting one bullet or
+    paragraph. Tool tests 554 pass, 0 fail.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -639,3 +661,7 @@ The tools are Node standard library only. Nothing is installed.
    - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
+10. **The 2026-10-18 round.** Copy `core/sova-spec-draft.mjs` again (step 1); the merge driver
+    lines don't change. Two branches that changed different bullets, rows or paragraphs of one
+    declaration now merge cleanly. A claim file still in conflict has Git's markers around the
+    whole blocks both sides changed.

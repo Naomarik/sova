@@ -350,8 +350,12 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
 promotion does, with the merge base, ours and theirs as base, current and draft, so two branches
 that changed different declarations (or added H2s at one spot) merge into the bytes the two
 promotions give one after the other, in either order. It reads declarations from the file's own
-H1/H2 headings and loads no graph. When the same declaration or gap changed differently on both
-sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
+H1/H2 headings and loads no graph. A declaration both sides changed differently merges block by
+block (a list item with its wrapped lines, a nested item, a table row, a line of a fenced block, a
+paragraph, a blank line): different blocks merge, neighbours included, and both sides' changes
+stand. When both sides changed the same block, added blocks at the same place, or one added a block
+directly before one the other changed, it writes that declaration with Git's markers around the
+whole blocks and exits 1. When a gap changed differently on both sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
 declarations), or the result doesn't read back as the declarations it came from, it writes Git's
 own line merge (`git merge-file`), markers and all, so no side's prose is lost, and exits 1
 (`claims-conflict`), which Git reports as a conflict, settled by the one recovery in PROMOTE.md.
@@ -369,9 +373,10 @@ Without `--write` it only reports. It writes nothing but the `--ours` file.
 - **No semantic verification.** The tool checks commits, ancestry, bytes and graph structure.
   Whether the code implements the prose is the recorder's claim. So is what `--verification`
   says. A hand-edited evidence entry is still held to the same byte and revision checks.
-- **Conflicts are per declaration, not per line.** Two different edits to one declaration conflict,
-  even when they touch different sentences. The tool doesn't rebase or merge text inside a span, and
-  falls back to whole-file comparison for reordered or CRLF files.
+- **Promotion conflicts are per declaration, not per line.** Two different edits to one declaration
+  conflict in a promotion, even when they touch different sentences: promotion doesn't merge text
+  inside a span, and falls back to whole-file comparison for reordered or CRLF files. Only the Git
+  merge driver merges inside a declaration, by blocks.
 - **The `claimsRoot` can't move** in a draft, and the tool refuses one that differs between base,
   current and draft.
 - **Promotion rewrites `manifest.json` as JSON with 2-space indentation** whenever a record or

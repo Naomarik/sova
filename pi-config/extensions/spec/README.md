@@ -92,7 +92,7 @@ that quotient is its `relevance` (1: one name only it holds, through a file only
 it maps), and `census.rank` lists each foreign
 touched § once, best relevance first, with `rank`, `score`, `fanIn`,
 `relevance`, `reason` (the matched names) and `stale` (also set on its
-`touched` entry); `census.readFirst` is the first 10 at relevance 0.1 or more
+`touched` entry); `census.readFirst` is the first 10 at relevance 0.036 or more
 or with a stale literal, `census.named` the rest, so none is dropped. Human output prints `read first:`
 and `named:` lines. The ranking is a literal match, never proof; nothing in it
 knows a project.
@@ -394,7 +394,7 @@ that shows a first changed file in the boundary, or a new one, runs
 result, saying so when the session has no draft yet. At the first call after
 the session's last edit it runs `census --changed --related` once and adds one
 line, `Unread § your change landed in: read first …; lower-ranked: <census command>`: the
-foreign § the session's own files landed in, in rank order (at most 10 read first: relevance 0.1
+foreign § the session's own files landed in, in rank order (at most 10 read first: relevance 0.036
 or more, or a stale literal), minus those it ran
 `sova-spec.mjs read` on; it says nothing again until an edit changes that set.
 That line replaces the census the guide used to ask for by hand before

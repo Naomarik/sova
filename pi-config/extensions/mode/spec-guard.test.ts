@@ -810,9 +810,9 @@ function rankedProject(others = ["a", "b", "c", "d", "e"]): string {
 }
 const UNREAD = /Unread § your change landed in:/;
 const unreadLines = (text: string) => text.split("\n").filter((l) => UNREAD.test(l));
-/** Runs the command after the unread line's "more:"/"unread:" in a shell with $core set, from `root`: its output. */
+/** Runs the command after the unread line's "lower-ranked:" in a shell with $core set, from `root`: its output. */
 function listedBy(line: string, root: string): string {
-	const cmd = line.slice(line.search(/(more|unread): node /)).replace(/^(more|unread): /, "");
+	const cmd = line.slice(line.search(/lower-ranked: node /)).replace(/^lower-ranked: /, "");
 	const r = spawnSync("sh", ["-c", cmd], { cwd: root, env: { ...process.env, core: CORE }, encoding: "utf8" });
 	return r.stdout;
 }
@@ -828,7 +828,7 @@ test("the unread line: once at the first call after the last edit, naming every 
 		assert.equal(unreadLines(edited).length, 0, "not on the edit itself");
 		const first = unreadLines(await s.bash(root, "git status --short"));
 		assert.equal(first.length, 1, `one line at the first call after the edit: ${first.join(" | ")}`);
-		assert.match(first[0]!, /read first §app\/head; \+5 more: node "\$core\/sova-spec\.mjs" census --changed --related /, first[0]);
+		assert.match(first[0]!, /read first §app\/head; \+5 lower-ranked: node "\$core\/sova-spec\.mjs" census --changed --related /, first[0]);
 	const listed = listedBy(first[0]!, root);
 	for (const id of view) assert.ok(listed.includes(id), `${id} listed by the line's command (none dropped): ${listed}`);
 		assert.ok(!first[0]!.includes("§app/voice"), "a § the change didn't touch is not named");
@@ -845,7 +845,7 @@ test("the unread line: once at the first call after the last edit, naming every 
 	}
 });
 
-test("the unread line on a change touching 25 §: under 300 characters, and its command lists all 25", async () => {
+test("the unread line on a change touching 25 §: under 500 characters, and its command lists all 25", async () => {
 	const others = Array.from({ length: 24 }, (_, i) => `p${String.fromCharCode(97 + i)}`);
 	const root = rankedProject(others);
 	try {
@@ -856,7 +856,7 @@ test("the unread line on a change touching 25 §: under 300 characters, and its 
 		assert.ok(line, `the line is said: edit ${ed} / next ${out}`);
 		const ids = ["§app/head", ...others.map((n) => `§app/other-${n}`)];
 		console.log(`unread line, 25 §: ${line!.length} chars: ${line}`);
-		assert.ok(line!.length <= 300, `${line!.length} chars: ${line}`);
+		assert.ok(line!.length <= 500, `${line!.length} chars: ${line}`);
 		const listed = listedBy(line!, root);
 		for (const id of ids) assert.ok(new RegExp(`${id.replace(/[/$]/g, "\\$&")}\\b`).test(listed), `${id} listed: ${listed}`);
 	} finally {
@@ -873,20 +873,23 @@ test("specReads: the § a shell command `read`s, a flag before the id or a loop 
 	assert.deepEqual(specReads(["node sova-spec.mjs read '§a/b'", "node sova-spec.mjs read '§c/d' --no-frame"]), ["§a/b", "§c/d"], "across commands");
 });
 
-test("unreadLine: at most 5 scored § read first, the rest counted with the command that lists them; a stale one says what it still states; read § and § the session's files didn't land in are left out", () => {
-	const row = (id: string, score: number, stale: string[] = [], files = ["src/v.tsx"]) => ({ id, score, stale, files });
-	const v: RankedView = { rank: [row("§a/s", 9, ["12"]), ...["b", "c", "d", "e", "f", "g"].map((n, i) => row(`§a/${n}`, 6 - i)), row("§a/zero", 0), row("§a/other", 5, [], ["src/other.ts"])] };
+test("unreadLine: at most 10 § read first, those at relevance ≥ 0.25 or with a stale literal, in rank order; the rest counted as lower-ranked with the command that lists them; read § and § the session's files didn't land in are left out", () => {
+	const row = (id: string, relevance: number, stale: string[] = [], files = ["src/v.tsx"]) => ({ id, score: relevance * 4, relevance, stale, files });
+	const top = "bcdefghijkl".split("").map((n, i) => row(`§a/${n}`, 3 - i * 0.1));
+	const v: RankedView = { rank: [row("§a/s", 5, ["12"]), ...top, row("§a/low", 0.2), row("§a/lowstale", 0.1, ["40"]), row("§a/zero", 0), row("§a/other", 5, [], ["src/other.ts"])] };
 	const { text, key } = unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/c"]));
 	assert.ok(text?.includes(UNREAD_PREFIX), text);
 	const [first, more] = text!.slice(text!.indexOf(UNREAD_PREFIX) + UNREAD_PREFIX.length).split("; +");
 	assert.ok(first!.startsWith("read first "), text);
-	assert.deepEqual(first!.slice("read first ".length).split(", ").map((s) => s.split(" ")[0]), ["§a/s", "§a/b", "§a/d", "§a/e", "§a/f"], "exactly 5, in rank order, the read one skipped");
+	assert.deepEqual(first!.slice("read first ".length).split(", ").map((s) => s.split(" ")[0]), ["§a/s", "§a/b", "§a/d", "§a/e", "§a/f", "§a/g", "§a/h", "§a/i", "§a/j", "§a/k"], "exactly 10, in rank order, the read one skipped");
 	assert.match(first!, /§a\/s \(still states 12\)/);
-	assert.equal(more, "2 more: census --changed --related", "the rest counted, a zero score included, with the command that lists them");
-	assert.match(unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/s", "§a/b", "§a/c", "§a/d", "§a/e", "§a/f", "§a/g"]), "CMD").text!, /landed in: 1 unread: CMD$/, "none read first: the count and the command");
-	assert.match(unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/c", "§a/g", "§a/zero"]), "CMD").text!, /§a\/f$/, "nothing more: no command");
+	assert.equal(more, "4 lower-ranked: census --changed --related", "the rest counted (past the cap, below 0.25, a zero), with the command that lists them");
+	const readAll = (ids: string[]) => new Set(["§a/s", ...top.map((r) => r.id), ...ids]);
+	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/lowstale"]), "CMD").text!, /landed in: 2 unread, all lower-ranked: CMD$/, "none at 0.25 or stale: the count and the command");
+	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll([]), "CMD").text!, /read first §a\/lowstale \(still states 40\); \+2 lower-ranked: CMD$/, "a stale literal is read first whatever its relevance");
+	assert.match(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/low", "§a/zero"]), "CMD").text!, /§a\/lowstale \(still states 40\)$/, "nothing more: no command");
 	assert.ok(!text!.includes("§a/other"), "a § only another file maps is not the session's landing");
-	assert.equal(key, "§a/b,§a/c,§a/d,§a/e,§a/f,§a/g,§a/s,§a/zero", "the key is the landed set, reads included");
-	assert.equal(unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/s", "§a/b", "§a/c", "§a/d", "§a/e", "§a/f", "§a/g", "§a/zero"])).text, undefined, "all read: no line");
+	assert.equal(key, [...v.rank.map((r) => r.id).filter((id) => id !== "§a/other")].sort().join(","), "the key is the landed set, reads included");
+	assert.equal(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/low", "§a/lowstale", "§a/zero"])).text, undefined, "all read: no line");
 	assert.equal(unreadLine(v, new Set(["src/none.ts"]), new Set()).text, undefined, "nothing landed: no line");
 });

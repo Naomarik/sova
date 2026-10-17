@@ -361,12 +361,14 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   behavior without `requires` is a `touched-uninvestigated` note, never a warning, so the exit
   code is unchanged. Without `--related` the output is exactly as above. `--related` without
   `--changed` is a usage error. It also ranks the foreign touched § by the changed lines (git diff
-  -U0 from the base; an untracked file is all added): `rank: [{id, rank, score, reason, stale}]` in
-  rank order (a § with a `stale` literal, one the change removed that its passage still states,
-  first; then score, the sum of the rarity weights of the code-shaped names, string literals and
-  2+-digit numbers its passage holds; then fewer mapped code files; then id), `readFirst` (at most
-  5 with a score or a stale literal) and `named` (every other one). Each foreign `touched` entry
-  carries its `rank`, `score`, `reason` and `stale` too.
+  -U0 from the base; an untracked file is all added): `rank: [{id, rank, score, fanIn, relevance,
+  reason, stale}]` in rank order: `relevance` first, the `score` (the sum of the rarity weights of
+  the code-shaped names, string literals and 2+-digit numbers its passage holds) divided by `fanIn`
+  (of the §'s changed files, the fewest foreign touched § any one lands in: a broad file dilutes
+  each § it lands in); then score; then fewer mapped code files; then id. `stale` lists a literal
+  the change removed that its passage still states. `readFirst` holds at most 10 at relevance 0.25
+  or more or with a stale literal, `named` every other one. Each foreign `touched` entry carries its
+  `rank`, `score`, `fanIn`, `relevance`, `reason` and `stale` too.
 - **Foreign §s (every census --changed).** Reading `.sova/spec`, nothing is *created*. With
   `--spec DIR` (other than `.sova/spec`), an id is created when DIR's manifest has it and
   `.sova/spec/manifest.json` does not (a missing or unreadable current manifest counts as empty; its

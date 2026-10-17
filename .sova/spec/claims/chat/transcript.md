@@ -1102,8 +1102,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 3. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
    section eyebrow: one `.card.home-sessions`. It reads: `{n} session(s) across {m} folder(s)` as
    its title — main threads, archived included, and their distinct folders;
-   `{live} live · {working} working now` — live = the Live & web region's sessions (open in a
-   terminal, or a web session not archived; never an organization's, §app.session-list/ordinary-surfaces), working = a live record says `working`, or the
+   `{live} live · {working} working now` — live = every open session (open in a
+   terminal, or a web session not archived), whether Folders lists it or, for a session in a project's folder, its project's block; never an organization's, §app.session-list/ordinary-surfaces, working = a live record says `working`, or the
    server reports a web session busy; when the Needs-you region would list anything, a warn chip
    `Needs you · {n}`, a warn border and `Waiting on you: {title}, {title}[ and {k} more]` — the
    region's rows (§app.session-list/needs-you, from the attention digest the page already polls,

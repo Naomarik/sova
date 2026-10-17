@@ -108,7 +108,8 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
 
 In the Overseer only, the foot ends with the **Quick Actions** button instead of the mode switch,
 which the Overseer doesn't have (§app.overseer/hosting). It opens the quick-action flyout
-(§app.overseer/quick-actions). No other chat has it.
+(§app.overseer/quick-actions). No other chat has it. A project overseer's foot, which has no
+mode switch either, ends with its memory switch in that slot (§app.project-overseer/memory-switch).
 
 ```html
 <div class="composer-foot">
@@ -225,7 +226,9 @@ the socket dropped, or a model switch is pending), the reason goes in `.composer
 control is disabled. The reason is one line, per
 the skill's copy ladder. While the chat is connecting, starting or reconnecting, the reason there is
 for assistive technology only (visually hidden): what the eye reads is the note floating over the
-transcript's end (§chat.transcript/instant-open), so nothing is added to the composer.
+transcript's end (§chat.transcript/instant-open), so nothing is added to the composer. A chat
+closed for being quiet while its tab is open is none of these: its tab holds no socket, Send and
+the controls work and wake it, and they wait as "Chat connecting or starting" only from then on.
 
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|

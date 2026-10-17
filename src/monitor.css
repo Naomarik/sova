@@ -11,6 +11,19 @@
 }
 .monitor-tab { margin: calc(-1 * var(--space-3)) 0 0; }
 
+/* Sova memory's four parts, under the meters: number first, its label above, its count below. */
+.monitor-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: calc(-1 * var(--space-2)) 0 0;
+}
+.monitor-part { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.monitor-part dd { margin: 0; }
+.monitor-part-label { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.monitor-part-value { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); color: var(--color-ink); font-variant-numeric: tabular-nums; }
+.monitor-part-context { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+
 .monitor-section { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .monitor-section > p { margin: 0; }
 .monitor-section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-3); }

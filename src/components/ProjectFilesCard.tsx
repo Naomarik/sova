@@ -17,7 +17,7 @@ export const fileSizeLabel = (bytes: number): string => (bytes < 1024 * 1024 ? `
  * (asked first). Shown while the project is placed, or once it holds a file.
  */
 export function ProjectFilesCard(props: { projectId: string; placed: boolean; tick: () => number }) {
-  const poll = createPoll(() => getProjectFiles(props.projectId), FILES_POLL_MS);
+  const poll = createPoll(() => getProjectFiles(props.projectId), FILES_POLL_MS, { cacheKey: `project:${props.projectId}:files` });
   createEffect(on(props.tick, () => poll.refetch(), { defer: true }));
   const files = () => poll.data()?.files ?? [];
   const [confirm, setConfirm] = createSignal<string | null>(null);

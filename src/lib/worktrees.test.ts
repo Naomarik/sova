@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeNumbers, NO_WORKTREES, readinessChip, readinessReason, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
+import { canReviewChanges, mergeNumbers, NO_WORKTREES, readinessChip, readinessReason, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
 import { readinessCount } from "./readiness";
 
 const merge = { target: "master", sha: "abc1234def", how: "tool" as const, at: 1 };
@@ -62,4 +62,16 @@ test("readinessChip's tone follows mergeability: success exactly where the row's
     ["blocked", "warn", false],
     ["stale", "warn", false],
   ]);
+});
+
+test("Review Changes (§chat.changes/entry): none on a branch with no commits; commits that cancel out keep it", () => {
+  const row = { status: "active" as const, exists: true };
+  const empty = { ...row, readiness: { path: "/w", branch: "b", state: "in-progress" as const, why: "no commits yet", noCommits: true as const } };
+  const cancelled = { ...row, readiness: { path: "/w", branch: "b", state: "ready" as const, why: "no check run seen", reason: "Ready to merge · no check run seen · 2 commits ahead" } };
+  assert.equal(canReviewChanges(empty), false);
+  assert.equal(readinessReason(empty), "In progress · no commits yet", "the row says why it has no control");
+  assert.equal(canReviewChanges(cancelled), true);
+  assert.equal(canReviewChanges(row), true, "shown until readiness is read");
+  assert.equal(canReviewChanges({ ...row, exists: false }), false);
+  assert.equal(canReviewChanges({ ...row, status: "dropped" }), false);
 });

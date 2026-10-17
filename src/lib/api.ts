@@ -15,6 +15,7 @@ import type {
   AttentionDigest,
   ChatModeResult,
   ChatMemoryChoice,
+  ProjectModeApproval,
   MemoryOpen,
   MemoryOutline,
   MemorySaveResult,
@@ -87,25 +88,6 @@ import type {
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import { WIRE_PARAM } from "../../shared/protocol";
-import type {
-  ContinueRequest,
-  ContinueResponse,
-  PruneResponse,
-  PurgeFromMainResponse,
-  RemoveFromMainRequest,
-  RemoveFromMainResponse,
-  SavedFetchResponse,
-  SavedForSessionResponse,
-  SavedListResponse,
-  SavedOnMainResponse,
-  SavedPreviewResponse,
-  SavePrepareRequest,
-  SavePrepareResponse,
-  SaveRequest,
-  SaveResponse,
-  WorktreesRequest,
-  WorktreesResponse,
-} from "../../shared/session-bundle";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -127,11 +109,12 @@ import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
-import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
+import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
+import type { UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -462,6 +445,15 @@ export const getWebSettings = () => request<WebSettings>("/api/settings");
 export const putWebSettings = (settings: Partial<WebSettings>) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
 
+/** This machine's updates: what runs, the last check, the job. Always this host's own. */
+export const getUpdates = () => request<UpdatesState>("/api/updates", { cache: "no-store" });
+/** Check Now: answers once the check is done. */
+export const checkUpdates = () => request<UpdatesState>("/api/updates/check", { method: "POST" });
+/** Save the Updates form (a branch is looked up in Sova's repository first). */
+export const putUpdatesSettings = (settings: UpdatesSettings) => request<UpdatesState>("/api/updates/settings", { method: "PUT", body: JSON.stringify(settings) });
+/** Start the upgrade to `target`, the commit the last check offered. */
+export const applyUpdate = (target: string) => request<UpdatesState>("/api/updates/apply", { method: "POST", body: JSON.stringify({ target, confirm: true }) });
+
 /** The align mode's writing style and Visuals (GET /api/settings/align, mode-align.json). */
 export const getAlignSettings = () => request<AlignSettingsInfo>("/api/settings/align");
 
@@ -494,13 +486,21 @@ export const revokeSchedule = (id: string, host?: string | null) =>
 
 /** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = (host?: string | null) => request<ModeInfo>(hostUrl(host, "/api/mode"));
+/** One chat's mode with its project modes read from disk now (GET /api/mode?path=): what the menu
+    shows on open, so a mode edited, removed or broken since the chat's last mode message says so. */
+export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?path=${encodeURIComponent(path)}`);
 
 /**
  * POST /api/mode with a patch. With `path` (a session file) it switches that one chat: only it
  * follows, from its next message, the reply says how (ChatModeResult.applies), and mode.json is not
  * written. Without `path` this writes the default for new sessions instead and changes no open chat.
+ * `projectModes` (the whole ON set) and `approve` take a path only: a turn-on that needs approval
+ * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
-export const postMode = (patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice> }, path?: string) =>
+export const postMode = (
+  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[] },
+  path?: string,
+) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -528,6 +528,10 @@ export const putMemorySettings = (settings: MemorySettings) =>
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
 export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+/** A project overseer's own memory switch: the Overseer's shape. */
+export const getProjectOverseerMemory = (projectId: string) => request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`);
+export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+  request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
     from its next tool call. `on` rides along for a host whose server predates the three states
@@ -1334,7 +1338,8 @@ export const cancelHeldAct = (projectId: string, holdId: string, reason?: string
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 
-export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
+/** The last count at once (its `asOf` says when), recounted behind it; `fresh` (Refresh Project) waits for a new count. */
+export const getProjectCost = (projectId: string, fresh = false) => request<ProjectCost>(`${projectPath(projectId)}/costs${fresh ? "?fresh=1" : ""}`);
 /** Files people sent the project (§app.organizations/files-card). */
 export const getProjectFiles = (projectId: string) => request<ProjectFilesAnswer>(`${projectPath(projectId)}/files`, { cache: "no-store" });
 export const projectFileHref = (projectId: string, id: string): string => `${projectPath(projectId)}/files/${encodeURIComponent(id)}`;
@@ -1398,10 +1403,7 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
-/** `allowSavedSessions`: Merge Anyway, the answer to a refusal whose history carries saved sessions
-    (409 with `savedSessions`, §chat.saved-sessions/merge-guard). */
-export const mergeProjectRun = (projectId: string, hash: string, allowSavedSessions = false) =>
-  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash, ...(allowSavedSessions ? { allowSavedSessions: true } : {}) }));
+export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
@@ -1409,7 +1411,10 @@ export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 
 const overseerBase = (projectId: string) => `${projectPath(projectId)}/overseer`;
+/** The overseer's own state and its coding sessions as recorded: no git, so it answers at once. */
 export const getProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId));
+/** The coding sessions with git's facts (the page's second, slower read), merged in by session. */
+export const getProjectWorktrees = (projectId: string) => request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees`);
 export const openProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("POST"));
 export const patchProjectOverseer = (projectId: string, patch: ProjectOverseerPatch) =>
   request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("PATCH", patch));
@@ -1437,9 +1442,9 @@ export const startProjectCoding = (projectId: string, input: CodingStartInput = 
   request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
 export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
@@ -1490,48 +1495,3 @@ export const getProjectPreviews = (projectId: string) => request<PreviewList>(`$
 export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));
-
-// ---- saved sessions (§chat/saved-sessions) -------------------------------------------------------------
-
-/** A saved-sessions route answers a refusal as `{ ok: false, reason, message }`, as a 200 or an error
-    status: either way the caller gets the body, so a refusal is handled where the contract says. */
-async function refusable<T extends { ok: boolean }>(url: string, init?: RequestInit): Promise<T> {
-  try {
-    return await request<T>(url, init);
-  } catch (err) {
-    const body = err instanceof ApiError ? (err.body as { ok?: unknown } | undefined) : undefined;
-    if (body && body.ok === false) return body as T;
-    throw err;
-  }
-}
-
-export const prepareSave = (path: string) => request<SavePrepareResponse>("/api/saved-sessions/prepare", jsonInit("POST", { path } satisfies SavePrepareRequest));
-/** A raw `<img src>`, so it routes itself: `path` (the session being saved) sends it to the peer that
-    holds that session (§mesh.remote-sessions/host-scope). */
-export const savePreparedImageUrl = (prepareId: string, id: string, path: string) =>
-  routeUrl(`/api/saved-sessions/prepare/${encodeURIComponent(prepareId)}/image/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`);
-export const saveSession = (body: SaveRequest) => refusable<SaveResponse>("/api/saved-sessions/save", jsonInit("POST", body));
-export const savedForSession = (path: string) =>
-  request<SavedForSessionResponse>(`/api/saved-sessions/for-session?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-// The cwd routes also name the blank session's `path`: the server ignores it, and mesh routing reads it, so
-// a peer's session asks that peer (§mesh.remote-sessions/host-scope).
-const pathQ = (path: string) => `&path=${encodeURIComponent(path)}`;
-export const listSavedSessions = (cwd: string, path: string) =>
-  request<SavedListResponse>(`/api/saved-sessions?cwd=${encodeURIComponent(cwd)}${pathQ(path)}`, { cache: "no-store" });
-export const fetchSavedSessions = (cwd: string, path: string) => refusable<SavedFetchResponse>("/api/saved-sessions/fetch", jsonInit("POST", { cwd, path }));
-/** `path`: the blank session Continue would load into, so the model it names is that session's pick. */
-export const previewSavedSession = (cwd: string, bundleId: string, path?: string) =>
-  request<SavedPreviewResponse>(
-    `/api/saved-sessions/preview?cwd=${encodeURIComponent(cwd)}&bundleId=${encodeURIComponent(bundleId)}${path ? `&path=${encodeURIComponent(path)}` : ""}`,
-    { cache: "no-store" },
-  );
-export const continueSavedSession = (body: ContinueRequest) => refusable<ContinueResponse>("/api/saved-sessions/continue", jsonInit("POST", body));
-export const setUpSavedWorktrees = (body: WorktreesRequest) => request<WorktreesResponse>("/api/saved-sessions/worktrees", jsonInit("POST", body));
-export const savedOnMain = (cwd: string, path: string) =>
-  request<SavedOnMainResponse>(`/api/saved-sessions/on-main?cwd=${encodeURIComponent(cwd)}${pathQ(path)}`, { cache: "no-store" });
-export const removeSavedFromMain = (body: RemoveFromMainRequest, path: string) =>
-  refusable<RemoveFromMainResponse>("/api/saved-sessions/remove-from-main", jsonInit("POST", { ...body, path }));
-export const purgeSavedFromMain = (body: RemoveFromMainRequest, path: string) =>
-  refusable<PurgeFromMainResponse>("/api/saved-sessions/purge-from-main", jsonInit("POST", { ...body, path }));
-export const pruneSavedSessions = (cwd: string, branch: string, path: string) =>
-  refusable<PruneResponse>("/api/saved-sessions/prune", jsonInit("POST", { cwd, branch, path }));

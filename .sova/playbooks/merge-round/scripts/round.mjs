@@ -69,9 +69,10 @@ export function conflictedFiles(stdout) {
 }
 
 /** The question for an owner. It never holds the sha: the owner must name the head it checked.
+ *  READY also says the user blessed this merge: an owner whose user hasn't said to merge answers NOT READY.
  *  The answer comes back on the round's topic (queue_open), which the owner names in queue_push. */
 export const askText = (branch, topic) =>
-  `Is ${branch} ready to merge at its current head? Reply with queue_push, topic "${topic}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why>.`;
+  `Is ${branch} ready to merge at its current head? Answer READY only if the user has told you, in your chat, to merge this branch; checks passing is not their go-ahead. Reply with queue_push, topic "${topic}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why> (NOT READY: awaiting the user's go-ahead, if they haven't given it). If the user later tells you to merge it, don't merge it yourself: push READY to this topic and the merge round lands it.`;
 
 /** A topic name as the server's queue_open makes it (shared/topic-message.ts TOPIC_NAME_RE). */
 export const TOPIC_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}-[a-z0-9]{6}$/;
@@ -544,9 +545,6 @@ function gitEnv(extra = {}) {
   for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR"]) delete env[k];
   return { ...env, ...extra };
 }
-/** A saved Sova session's marker (its card and README carry it), spelled in two parts so no file holds it
-    whole; leak-scan.mjs blocks landing and pushing on it, status names it. */
-const SAVED_SESSION_MARKER = ["sova-saved-session", "v1"].join("/");
 const git = (cwd, args, { env, timeoutMs = 30_000 } = {}) => run("git", ["-c", "core.fsmonitor=false", ...args], { cwd, env: gitEnv(env), timeoutMs });
 const firstLine = (r) => (r.stderr || r.stdout).split("\n").map((s) => s.trim()).find(Boolean) ?? (r.timedOut ? "timed out" : `exit ${r.code}`);
 async function gitOut(cwd, args, what = args[0]) {
@@ -768,13 +766,11 @@ class Round {
 
   async branchFacts(branch, path, master) {
     const { main } = await this.repo();
-    const [counts, subjects, last, changed, saved] = await Promise.all([
+    const [counts, subjects, last, changed] = await Promise.all([
       gitOut(main, ["rev-list", "--left-right", "--count", `${master}...refs/heads/${branch}`], "rev-list"),
       gitOut(main, ["log", "--format=%s", `${master}..refs/heads/${branch}`], "log"),
       gitOut(main, ["log", "-1", "--format=%ct", `refs/heads/${branch}`], "log"),
       gitOut(main, ["diff", "--name-only", `${master}...refs/heads/${branch}`], "diff"),
-      // Commits that add, change or remove a saved Sova session (by its marker): a leak, like a private name.
-      gitOut(main, ["log", "--format=%h", "-S", SAVED_SESSION_MARKER, `${master}..refs/heads/${branch}`, "--"], "log"),
     ]);
     const [behind, ahead] = counts.split(/\s+/).map(Number);
     const dirty = await this.dirtyIn(path);
@@ -783,7 +779,6 @@ class Round {
       temp: tempCommitOf(subjects ? subjects.split("\n") : []),
       lastCommitAt: Number(last) * 1000,
       changed: changed ? changed.split("\n") : [],
-      savedSessions: saved ? saved.split("\n").filter(Boolean) : [],
     };
   }
 
@@ -857,7 +852,6 @@ class Round {
       else parts.push(board.pending ? `owner unknown: Sova hasn't read ${board.pending} session${board.pending === 1 ? "" : "s"} yet` : "no session tracks this worktree");
       parts.push(`+${f.ahead}/-${f.behind}`, f.dirty.length ? `${f.dirty.length} uncommitted (${f.dirty[0]}${f.dirty.length > 1 ? ` and ${f.dirty.length - 1} more` : ""})` : "clean");
       if (f.temp) parts.push(`temporary commit: "${f.temp.slice(0, 60)}"`);
-      if (f.savedSessions.length) parts.push(`saved sessions in its history (${f.savedSessions.length} commit${f.savedSessions.length === 1 ? "" : "s"}: ${f.savedSessions.slice(0, 3).join(", ")}): a leak, land nothing until its owner re-applies the work on a fresh branch or the user waives it`);
       parts.push(typeof conflicts === "number" ? (conflicts ? `conflicts with master in ${conflicts} file${conflicts === 1 ? "" : "s"}` : "merges cleanly") : conflicts);
       parts.push(`last commit ${ago(this.now - f.lastCommitAt)} ago`);
       if (rec.ask) parts.push(`asked ${ago(this.now - rec.ask.at)} ago${rec.answer ? `, answer ${rec.answer.kind}${rec.answer.head ? ` at ${rec.answer.head.slice(0, 7)}` : ""}` : ", no answer"}`);
@@ -868,7 +862,7 @@ class Round {
         branch: t.branch, path: t.path, head, group, line: `${t.branch}: ${parts.join(" · ")}`,
         state: row?.state ?? null, reason: row?.reason ?? null,
         owner: own?.owner ?? null, ownerStatus: own?.status ?? null, ownerFrom: own?.from ?? null,
-        ahead: f.ahead, behind: f.behind, dirty: f.dirty.length, temp: !!f.temp, savedSessions: f.savedSessions.length, conflicts, lastCommitAgoMs: this.now - f.lastCommitAt,
+        ahead: f.ahead, behind: f.behind, dirty: f.dirty.length, temp: !!f.temp, conflicts, lastCommitAgoMs: this.now - f.lastCommitAt,
         ask: rec.ask ? { agoMs: this.now - rec.ask.at, answer: rec.answer?.kind ?? null } : null, restartNeeded,
       });
     }

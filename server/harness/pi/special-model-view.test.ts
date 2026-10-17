@@ -81,6 +81,11 @@ test("the special loadouts show the model the same system prompt and tools as be
   const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
   const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
+  // The recording predates memory on by default: both overseers run it off here, so the
+  // view stays the loadouts' own; with memory on they add `zoom` and `date` (overseer-memory.integration.test.ts).
+  const { overseerMemoryOff, projectOverseerMemoryOff } = await import("../../testing/overseer-memory");
+  overseerMemoryOff();
+  projectOverseerMemoryOff(project.id);
   const ov = await overseer.ensureOverseer();
   const p = await po.ensureProjectOverseer(project.id);
   const ids = { [org.id]: "<ORG>", [project.id]: "<PROJECT>", [tony.id]: "<TONY>", [c.sessionId]: "<BATON>", [ov.id]: "<OVERSEER>", [p.id]: "<PO>" };

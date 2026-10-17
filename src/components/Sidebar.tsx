@@ -2,6 +2,7 @@ import { AutomationsShelf } from "./AutomationsShelf";
 import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
+import { projectSummaryKey, remember } from "../lib/page-cache";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
@@ -64,8 +65,7 @@ import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
-import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, STATE_WORDS } from "../lib/overseer-menu";
-import { AddProjectDialog } from "./AddProjectDialog";
+import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, rowEnd, rowLabel } from "../lib/overseer-menu";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
@@ -125,6 +125,10 @@ import {
 import { MeshHostMenu } from "./MeshHostMenu";
 import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
+import { updateAvailable } from "../lib/updates";
+
+/** The Settings buttons' name: it says when the last check found an update. */
+const settingsLabel = () => (updateAvailable() ? "Settings · update available" : "Settings");
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -145,6 +149,8 @@ const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
     closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
 const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
 const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
+/** Which standalone projects (by id) the user folded or unfolded in the Projects region: memory only, as above. */
+const [openProjects, setOpenProjects] = createSignal<Record<string, boolean>>({});
 
 /** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
     holds the user's choice for as long as the page lives, and a reload starts closed again. */
@@ -1581,7 +1587,15 @@ export function Sidebar(props: {
   // The registered projects, read again with the session list (a project added or archived moves
   // both), at most every 15 seconds: the list reloads on every live event. The Organizations
   // region lists each org's placed projects from it, sessions or not; Projects, the standalone ones.
-  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
+  const [projectList, { refetch: refetchProjects }] = createResource(() =>
+    listProjects()
+      .then((r) => {
+        // A project's page opens on what this tab knows of it (lib/page-cache), and New Session on its root.
+        for (const p of r.projects) remember(projectSummaryKey(p.id), p);
+        return r;
+      })
+      .catch(() => null),
+  );
   let projectsReadAt = Date.now();
   createEffect(
     on(
@@ -1674,7 +1688,9 @@ export function Sidebar(props: {
   });
   /** The head counts projects; while searching, "of" every project the region lists with no query. */
   const projTotal = createMemo(() => projectBlocks(hostPool().filter((s) => inLocalProjectsRegion(s, here(s))), projectList()?.projects ?? undefined).length);
-  const [addingProject, setAddingProject] = createSignal(false);
+  /** A project's fold in the Projects region: open by default, the user's choice kept in memory; forced open by a search
+      or the open session among its rows (a folder session forces nothing: it has its ordinary place too). */
+  const projectFoldOpen = (id: string, rows: readonly SessionSummary[]) => orgSectionOpenRule({ chosen: openProjects()[id], searching: searching(), holdsSelected: holds(rows) });
   const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
   const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: holds(projectHits()) });
   const onProjectsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
@@ -1864,10 +1880,17 @@ export function Sidebar(props: {
                     <menu.Item
                       label={r.name}
                       description={r.org ? `In ${r.org}` : undefined}
-                      aria={[r.name, r.org ? `in ${r.org}` : "", r.state ? STATE_WORDS[r.state] : ""].filter(Boolean).join(" · ")}
-                      title={r.org ? `${r.name} · ${r.org}` : r.name}
+                      aria={rowLabel(r)}
+                      title={rowLabel(r)}
                       checked={r.current}
-                      end={r.state ? STATE_WORDS[r.state] : undefined}
+                      end={rowEnd(r).words}
+                      endBadge={
+                        rowEnd(r).pill ? (
+                          <span class="overseer-entry-count text-num" aria-hidden="true">
+                            {rowEnd(r).pill}
+                          </span>
+                        ) : undefined
+                      }
                       href={projectSessionHref(r.projectId, r.path)}
                     />
                   )}
@@ -2104,11 +2127,14 @@ export function Sidebar(props: {
         <button
           type="button"
           class="button button-icon sidebar-settings"
-          title="Settings"
-          aria-label="Settings"
+          title={settingsLabel()}
+          aria-label={settingsLabel()}
           onClick={() => props.onOpenSettings()}
         >
           <Icon name="settings" small />
+          <Show when={updateAvailable()}>
+            <span class="update-dot" aria-hidden="true" />
+          </Show>
         </button>
         <Show when={reading()}>
           {(r) => <VelocityScrubCard reading={r()} x={pick()?.x ?? 0} y={pick()?.y ?? 0} touch={pick()?.touch ?? false} />}
@@ -2382,8 +2408,11 @@ export function Sidebar(props: {
           >
             <Icon name="worker" />
           </a>
-          <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
+          <button type="button" class="button button-icon spine-item" title={settingsLabel()} aria-label={settingsLabel()} onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />
+            <Show when={updateAvailable()}>
+              <span class="update-dot" aria-hidden="true" />
+            </Show>
           </button>
         </div>
       </div>
@@ -2644,20 +2673,6 @@ export function Sidebar(props: {
                       <span class="visually-hidden">, an agent is working here</span>
                     </span>
                   </Show>
-                  <button
-                    type="button"
-                    class="button button-icon button-ghost org-link"
-                    aria-label="Add Project"
-                    title="Add Project"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setAddingProject(true);
-                    }}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <Icon name="plus" small />
-                  </button>
                   <a
                     class="button button-icon button-ghost org-link"
                     href={PROJECTS_HREF}
@@ -2670,31 +2685,64 @@ export function Sidebar(props: {
                   </a>
                 </h2>
               </summary>
-              <Show when={projBlocks().length} fallback={<p class="sidebar-region-note">No projects yet. Add a folder or a GitHub repository with +.</p>}>
+              <Show
+                when={projBlocks().length}
+                fallback={
+                  <p class="sidebar-region-note">
+                    No projects yet. Add one on the <a href={PROJECTS_HREF}>Projects page</a>.
+                  </p>
+                }
+              >
                 <For each={projBlocks()}>
-                  {(p) => (
-                    <div class="org-project">
-                      <div class="org-project-head">
-                        <h4 class="list-group-label org-project-label" title={p.name}>
-                          <a class="org-project-name project-region-link" href={projectHref(p.id)}>
-                            <Icon name="folder" small class="org-project-icon" />
-                            <bdi>{p.name}</bdi>
-                          </a>
-                          <span class="text-num">{projectOpenCount(p)}</span>
-                        </h4>
-                        <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                  {(p) => {
+                    const doneKey = `projects\n${p.id}\nbuilds`;
+                    const open = () => projectFoldOpen(p.id, [...p.builds.active, ...p.builds.done]);
+                    const fold = () => `${open() ? "Hide" : "Show"} ${p.name}'s sessions`;
+                    const hasRows = () => p.builds.active.length + p.builds.done.length > 0;
+                    // Done can hold hundreds of a folder's finished sessions: its rows are built only once it opens.
+                    const doneBuilt = builtOnceOpen(() => groupDoneOpen(doneKey, p.builds.done));
+                    return (
+                      <div class="org-project">
+                        <div class="org-project-head">
+                          <h4 class="list-group-label org-project-label" title={p.name}>
+                            <Show when={hasRows()}>
+                              <button
+                                type="button"
+                                class="button button-icon button-ghost project-fold"
+                                aria-expanded={open()}
+                                aria-controls={`proj-rows-${p.id}`}
+                                aria-label={fold()}
+                                title={fold()}
+                                onClick={() => setOpenProjects((m) => ({ ...m, [p.id]: !open() }))}
+                              >
+                                <Icon name="chevron-right" small class="icon-twist" />
+                              </button>
+                            </Show>
+                            <a class="org-project-name project-region-link" href={projectHref(p.id)}>
+                              <Icon name="folder" small class="org-project-icon" />
+                              <bdi>{p.name}</bdi>
+                            </a>
+                            <span class="text-num">{projectOpenCount(p)}</span>
+                          </h4>
+                          <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                        </div>
+                        <Show when={hasRows() && open()}>
+                          <div class="project-rows" id={`proj-rows-${p.id}`}>
+                            <Show when={p.builds.active.length > 0}>{rowList(p.builds.active)}</Show>
+                            <Show when={p.builds.done.length > 0}>
+                              <details class="archive-date org-done project-done" open={groupDoneOpen(doneKey, p.builds.done)} onToggle={(e) => onGroupDoneToggle(doneKey, p.builds.done, e)}>
+                                <summary class="list-group-label archive-date-label project-done-label" title="Merged, or ended in a terminal.">
+                                  <Icon name="chevron-right" small class="icon-twist" />
+                                  <span class="archive-date-name">{p.builds.done.length} done</span>
+                                </summary>
+                                <Show when={doneBuilt()}>{rowList(p.builds.done)}</Show>
+                              </details>
+                            </Show>
+                          </div>
+                        </Show>
                       </div>
-                      <ProjectGroup
-                        key={`projects\n${p.id}\nbuilds`}
-                        label="Sessions"
-                        title="Coding sessions this project started and the other sessions in its folder; archived ones are in the Archive."
-                        doneTitle="Merged, or ended in a terminal."
-                        states={[{ label: "", rows: p.builds.active }]}
-                        done={p.builds.done}
-                        openCount
-                      />
-                    </div>
-                  )}
+                    );
+                  }}
                 </For>
               </Show>
             </details>
@@ -2723,16 +2771,6 @@ export function Sidebar(props: {
                 <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
               </Show>
             </details>
-          </Show>
-
-          <Show when={addingProject()}>
-            <AddProjectDialog
-              onCancel={() => setAddingProject(false)}
-              onAdded={() => {
-                projectsReadAt = Date.now();
-                void refetchProjects();
-              }}
-            />
           </Show>
 
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's

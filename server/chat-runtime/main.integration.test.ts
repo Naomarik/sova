@@ -71,6 +71,11 @@ test("boots, says ready, opens its chat, serves a browser, and drains on purpose
   assert.deepEqual(await p.exited, { code: 0, signal: null });
   // Said in its log too, for a supervisor that heard no frame (the format is its parser's).
   assert.match(p.out(), new RegExp(`\\[chat-runtime\\] exit idle \\(pid ${p.child.pid}\\)`));
+  // A healthy start's trail (§app.chat-processes/boot-log): one line for its start, one for its open.
+  const trail = p.out().split("\n").filter((l) => /\[chat-runtime\] (ready in|opened in|still )/.test(l));
+  assert.equal(trail.length, 2, p.out());
+  assert.match(trail[0]!, /^\[chat-runtime\] ready in \d+\.\d\d s \(headless [\d.]+ s, chat code [\d.]+ s, model setup [\d.]+ s, extensions load [\d.]+ s, warm session [\d.]+ s, extensions start [\d.]+ s, extensions stop [\d.]+ s, host [\d.]+ s(, other [\d.]+ s)?; cpu [\d.]+ s\)$/);
+  assert.match(trail[1]!, /^\[chat-runtime\] opened in \d+\.\d\d s \(open file [\d.]+ s, loadout [\d.]+ s, extensions load [\d.]+ s, session [\d.]+ s, extensions start [\d.]+ s, finish [\d.]+ s(, other [\d.]+ s)?; cpu [\d.]+ s\)$/);
 });
 
 test("SIGTERM closes it as the operator's stop", { timeout: 60_000 }, async () => {
@@ -94,6 +99,25 @@ test("SIGTERM closes it as the operator's stop", { timeout: 60_000 }, async () =
   assert.deepEqual(await p.exited, { code: 0, signal: null });
   assert.deepEqual(exits, [], "one exit frame, not two");
   assert.match(p.out(), new RegExp(`\\[chat-runtime\\] exit operator \\(pid ${p.child.pid}\\)`));
+});
+
+test("a start that hangs: a beat names its step, the server hears it, and SIGTERM leaves the step and its child programs", { timeout: 60_000 }, async () => {
+  const p = chatProcess({ SOVA_CHAT_TEST_HANG_BOOT: "b1", SOVA_CHAT_TEST_BEAT_MS: "200" });
+  const { link, hello } = await dial(p.sock, 1);
+  const steps: string[] = [];
+  link.on("boot", (f) => steps.push(`${f.phase}/${f.step}`));
+  assert.equal(hello.state, "booting");
+  for (let i = 0; i < 100 && !/still starting: test hang/.test(p.out()); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.match(p.out(), /\[chat-runtime\] still starting: test hang for \d+\.\d s \(\d+\.\d s since start, cpu \d+\.\d s\)/);
+  assert.ok(steps.includes("starting/test hang"), `heard: ${steps.join(", ")}`);
+  p.child.kill("SIGTERM");
+  assert.deepEqual(await p.exited, { code: 0, signal: null });
+  const out = p.out();
+  assert.match(out, /\[chat-runtime\] SIGTERM while starting: stuck in test hang for \d+\.\d s \(\d+\.\d s since start, cpu \d+\.\d s\)(; child programs: sleep pid \d+ up \d+ s)?/);
+  if (process.platform === "linux") assert.match(out, /; child programs: sleep pid \d+ up \d+ s/);
+  // The exit line the supervisor reads is still its parser's, and says how long the stop took.
+  assert.match(out, new RegExp(`\\[chat-runtime\\] exit operator \\(pid ${p.child.pid}\\) \\d+\\.\\d\\d s after SIGTERM`));
+  assert.doesNotMatch(out, /ready in/);
 });
 
 test("the failed-start test hook exits before it listens", { timeout: 30_000 }, async () => {

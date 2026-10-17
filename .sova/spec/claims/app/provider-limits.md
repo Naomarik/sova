@@ -104,8 +104,8 @@ and every process on the device reads and writes them the same way.
   `Requests at once for zai`. `claude-code` has it too. A provider the file names that has no
   models on this machine is listed as well, with `No models on this machine`, so its limit can
   still be seen and cleared.
-- Like the switches it is staged: the dialog's **Save Changes** writes it, **Discard Changes** puts
-  it back. Save reads the file again first and applies only the providers whose field you changed,
+- Like the switches it is staged: the dialog's **Save Changes** writes it, **Cancel** discards
+  it and closes the dialog. Save reads the file again first and applies only the providers whose field you changed,
   so a limit another device's sync wrote while the form was open is kept. A value outside 1–999
   or not a whole number keeps Save from writing and says why.
 - A failed save keeps every field as you left it and says so in an error banner:

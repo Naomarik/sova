@@ -5,7 +5,7 @@ The sidebar foot's Agents row ends in a gear. It opens the Settings modal: a lef
 one panel, wider than the product's question-asking modals because two panes have to fit beside
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
-is unsaved, §app.settings-dialog/save-bar).
+is unsaved, which discards it, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
 Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
@@ -40,10 +40,13 @@ can change the dialog's size by being long or short.
 
 - **Compress thinking & tool calls** — a default-on browser-local switch, applied immediately to every open transcript and stored in `localStorage["sova:compress-work"]`. Only `"false"` disables it; missing, unreadable, or corrupt values mean on. On selects the compact work timeline; off restores the original cards (§chat.work-chain-setting/preference).
 
-The first tab: how **this browser** draws Sova. Nothing here is written to the machine — no
-policy file, no server endpoint — which is the line between this screen and Models, where a
-switch is a rule every session obeys. The panel says so in one line, because "settings" in a tool
-with a shared config file is otherwise an open question.
+The first tab, in two parts. Above: how **this browser** draws Sova. Nothing there is written to
+the machine — no policy file, no server endpoint — which is the line between those settings and
+Models, where a switch is a rule every session obeys. Below, under the heading **Updates · this
+machine**: this machine's updates (§app/updates), the one part of General the server keeps. The
+panel's intro says so ("How this browser draws Sova. The settings above stay in this browser;
+another device keeps its own. Updates, below, are this machine's."), because "settings" in a tool with a shared config
+file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
 (§app.session-list/recent). A number field, **3 to 20, 5 by default**. This is the
@@ -75,6 +78,12 @@ places is a count that disagrees in one of them.
   It applies as you flip it, and persists in `localStorage["sova:show-summaries"]` for the same
   reason as the count: it is this browser's, not the machine's. Only the stored value `false` turns
   it off; a missing or unreadable value is on.
+
+- **Updates · this machine** — last, under its own heading: what runs, the last check and what it
+  found, Check Now, the upgrade button and its progress (§app/updates), then **Update from**,
+  **Check for updates automatically** and **Upgrade automatically**. Those three are the form
+  **Updates**, staged and written by the dialog's Save Changes (§app.settings-dialog/save-bar);
+  Check Now and the upgrade are actions that run at once.
 
 ## §app.settings-dialog/models — Models
 
@@ -123,7 +132,7 @@ can't see is a rule you can't undo.
 
 A switch doesn't write on its own. Every move is staged, and the dialog's **Save Changes** writes
 the whole policy — one save for every provider and model you moved, never one per switch — while
-its **Discard Changes** puts every switch back where the saved policy has it
+its **Cancel** discards every staged switch and closes the dialog
 (§app.settings-dialog/save-bar). The file is read per spawn and per turn, so a staged switch
 refuses nothing until it's saved, and this browser's model picker follows the saved policy the
 moment the save lands. Save reads the policy again first and applies only the entries you changed
@@ -188,7 +197,7 @@ Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows
   happens without one is said once, as the section's lede, never under each row: "Without a
   fallback, the agent asks you which model to use when a route's primary can't run." A fallback
   identical to its primary is refused.
-- **Saving** is explicit — the dialog's Save Changes and Discard Changes
+- **Saving** is explicit — the dialog's Save Changes and Cancel
   (§app.settings-dialog/save-bar) — because a subagent setup is one coherent choice, not a save
   per worker row. Save waits for every chosen row to have a model and an effort, valid team
   thresholds and names, and for no fallback to be its own primary; the footer names the profile
@@ -637,19 +646,20 @@ Folders box or the tab writes nothing.
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
-**Mesh**, **Alignment** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+**Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
-- **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
-  (primary; **Saving…** while it writes) and **Cancel**, while any gated form on any tab holds
+- **The footer.** Left to right: a status line, then **Save Changes**
+  (primary; **Saving…** while it writes) and **Cancel** (ghost), while any gated form on any tab holds
   unsaved changes; with none, only the status line and **Close**. Every tab shows the same footer,
   General, Themes and Typography included. Folded, the status line keeps Cancel beside it and
-  Discard Changes · Save Changes take the next line at the trailing edge, every button 44px tall.
+  Save Changes takes the next line at the trailing edge, every button 44px tall.
 - **Save Changes writes every dirty form on every tab** — the one showing, and every other, mounted
   or not. Each form writes its own file, at the same time as the others, and keeps its own rules:
   a form that rebases (Models, Overseer, Decisions, Summaries) reads its file afresh first; Mesh
   sends only what changed. A form never has two saves in flight, even across a close and reopen
-  of the dialog. **Discard Changes** puts every form on every tab back to what's saved.
+  of the dialog. **Cancel** puts every form on every tab back to what's saved and closes the dialog at once,
+  without asking.
 - **Save waits for every dirty form to be valid.** While any is incomplete or invalid, Save
   Changes is disabled and the status line, in error, names the first such form and what it needs
   ("Subagents: My setup's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
@@ -671,7 +681,7 @@ Discard button of its own: saving is the dialog's.
 - **Drafts outlive their tab.** Each form's draft, its save and what its last save said are module
   state, not the panel's, so switching tabs keeps them. A closed dialog forgets every draft;
   reopening starts from what's saved.
-- **Closing holds.** Cancel, Close, Esc and the scrim all ask first when any gated form has unsaved
+- **Closing holds.** Esc and the scrim ask first when any gated form has unsaved
   changes: the dialog goes to the first tab, in rail order, that holds them — unless the one
   showing does — and holds the close with a warn banner above the foot: **Your {forms} changes
   aren't saved.** "Save them, or discard them and close." [Keep Editing] [Discard and Close].
@@ -690,8 +700,9 @@ Discard button of its own: saving is the dialog's.
   "Alignment" whichever of the two failed.
 - **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
-- **Not gated.** General, Themes and Typography change only this browser and still apply as you
-  pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
+- **Not gated.** General (apart from its Updates form), Themes and Typography change only this
+  browser and still apply as you pick. Actions run at once and are never part of a draft: Retry,
+  Try Again, Check Again, Updates' Check Now and its upgrade button, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
   Tag All Sessions and Stop Tagging, and Phone Notifications' Enable on This Device, Turn Off on
   This Device, Remove and Send Test.

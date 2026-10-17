@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createWorktree, forkPoint, GitError, inspectWorktree, landedStats, mergedReviewBase, mergeStats, mergeWorktree, probeMerge, runGit } from "./git.ts";
-import { SAVED_SESSION_MARKER, SavedSessionsInHistoryError, savedSessionsToMerge } from "./saved-sessions.ts";
+import { createWorktree, forkPoint, GitError, inspectWorktree, landedStats, mergedReviewBase, mergeStats, mergeWorktree, probeMerge, REVIEW_LIMITS, reviewBase, runGit } from "./git.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } }).trim();
 
@@ -282,53 +281,123 @@ test("mergedReviewBase: the landing merge's first parent, a fast-forward's track
 	}
 });
 
-test("merge: a saved session anywhere in the branch's history stops it, deleted ones too; allowSavedSessions merges", async () => {
+const rev = (dir: string, ref = "HEAD") => sh(dir, "rev-parse", ref);
+const at = (dir: string, tracked?: { baseBranch?: string; base?: string }) => ({ head: rev(dir), branch: sh(dir, "symbolic-ref", "--quiet", "--short", "HEAD"), ...(tracked ? { tracked } : {}) });
+
+test("REVIEW_LIMITS: the limits both engines share, frozen", () => {
+	assert.deepEqual({ ...REVIEW_LIMITS }, { gitTimeoutMs: 5000, maxFiles: 3000, patchCap: 1048576, untrackedRead: 1048576, untrackedBudget: 16777216 });
+	assert.ok(Object.isFrozen(REVIEW_LIMITS));
+});
+
+test("reviewBase: the tracked base branch first, skipped when it is invalid, missing, the current branch or unrelated", async () => {
 	const r = repo();
 	try {
-		const f = await createWorktree(runGit, { repoCwd: r.main, name: "saved" });
-		// A card copied in by hand under any path, then deleted by a later commit: still in the history.
-		mkdirSync(join(f.path, "notes", "chat"), { recursive: true });
-		const card = JSON.stringify({ format: SAVED_SESSION_MARKER, bundleId: "b1", rev: 1 });
-		commit(f.path, "notes/chat/whatever.json", `${card}\n`, "add a chat by hand");
-		sh(f.path, "rm", "-q", "notes/chat/whatever.json");
-		sh(f.path, "commit", "-q", "-m", "remove it again");
-		commit(f.path, "b.txt", "code\n", "code");
-		const masterBefore = sh(r.main, "rev-parse", "master");
-		const found = await savedSessionsToMerge(runGit, r.main, sh(r.main, "rev-parse", "feat/saved"), masterBefore);
-		assert.deepEqual(found.map((c) => c.subject).sort(), ["add a chat by hand", "remove it again"]);
-		assert.deepEqual(found.map((c) => c.paths), [["notes/chat/whatever.json"], ["notes/chat/whatever.json"]]);
-		await assert.rejects(mergeWorktree(runGit, { tree: f, target: "master" }), (err: unknown) => {
-			assert.ok(err instanceof SavedSessionsInHistoryError);
-			assert.match(err.message, /history carries saved sessions/);
-			assert.match(err.message, /user's explicit go-ahead/);
-			assert.doesNotMatch(err.message, /allowSavedSessions/, "the agent is never told the flag");
-			assert.equal(err.commits.length, 2);
-			return true;
-		});
-		assert.equal(sh(r.main, "rev-parse", "master"), masterBefore, "nothing merged");
-		const m = await mergeWorktree(runGit, { tree: f, target: "master", allowSavedSessions: true });
-		assert.equal(m.sha, sh(r.main, "rev-parse", "master"));
-		assert.notEqual(m.sha, masterBefore);
+		const c0 = rev(r.main);
+		sh(r.main, "checkout", "-q", "-b", "dev");
+		commit(r.main, "d.txt", "d\n", "dev");
+		const dev = rev(r.main);
+		sh(r.main, "checkout", "-q", "-b", "feat/x");
+		commit(r.main, "x.txt", "x\n", "x");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "dev" })), { ok: true, base: dev, how: "merge-base", label: "dev", ref: "dev", tipRef: "refs/heads/dev", tip: dev });
+		// Without it (or an unusable one): master.
+		const master = { ok: true, base: c0, how: "merge-base", label: "master", ref: "master", tipRef: "refs/heads/master", tip: c0 };
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), master);
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "-dev" })), master);
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "de v" })), master);
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "gone" })), master);
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "feat/x" })), master);
+		sh(r.main, "checkout", "-q", "--orphan", "lone");
+		commit(r.main, "l.txt", "l\n", "lone");
+		sh(r.main, "checkout", "-q", "feat/x");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "lone" })), master);
 	} finally {
 		r.done();
 	}
 });
 
-test("merge: a branch with no saved session merges unasked, and history already on the target isn't rescanned", async () => {
+test("reviewBase: main when there is no master, then origin/HEAD's branch unless it is origin/<branch>", async () => {
 	const r = repo();
 	try {
-		// A card that reached master earlier (someone's old mistake) is not this branch's to answer for.
-		commit(r.main, "old.json", `${JSON.stringify({ format: SAVED_SESSION_MARKER })}\n`, "old mistake");
-		const f = await createWorktree(runGit, { repoCwd: r.main, name: "clean" });
-		commit(f.path, "b.txt", "code\n", "code");
-		const m = await mergeWorktree(runGit, { tree: f, target: "master" });
-		assert.equal(m.commits, 1);
+		const c0 = rev(r.main);
+		sh(r.main, "branch", "-m", "master", "main");
+		sh(r.main, "checkout", "-q", "-b", "feat/x");
+		commit(r.main, "x.txt", "x\n", "x");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: true, base: c0, how: "merge-base", label: "main", ref: "main", tipRef: "refs/heads/main", tip: c0 });
+		sh(r.main, "branch", "-m", "main", "trunk");
+		sh(r.main, "update-ref", "refs/remotes/origin/trunk", c0);
+		sh(r.main, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: true, base: c0, how: "merge-base", label: "origin/trunk", ref: "origin/trunk", tipRef: "refs/remotes/origin/trunk", tip: c0 });
+		// On trunk, origin/HEAD is its own remote branch: nothing to compare against.
+		sh(r.main, "checkout", "-q", "trunk");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: false, refusal: "on-base-branch" });
 	} finally {
 		r.done();
 	}
 });
 
-test("the marker is spelled in parts: no source file holds it whole", () => {
-	assert.equal(SAVED_SESSION_MARKER, ["sova-saved-session", "v1"].join("/"));
-	for (const file of ["saved-sessions.ts", "git.ts", "index.ts"]) assert.ok(!readFileSync(new URL(file, import.meta.url), "utf8").includes(SAVED_SESSION_MARKER), file);
+test("reviewBase: no base branch or no shared history falls back to the tracked created-from commit", async () => {
+	const r = repo();
+	try {
+		const c0 = rev(r.main);
+		sh(r.main, "branch", "-m", "master", "trunk");
+		sh(r.main, "checkout", "-q", "-b", "feat/x");
+		commit(r.main, "x.txt", "x\n", "x");
+		const created = { ok: true, base: c0, how: "created-from", label: `${c0.slice(0, 7)} (created from)` };
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: c0 })), created);
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: false, refusal: "no-base" });
+		// Not a full sha, HEAD itself, or not an ancestor: no fallback.
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: c0.slice(0, 7) })), { ok: false, refusal: "no-base" });
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: rev(r.main) })), { ok: false, refusal: "no-base" });
+		sh(r.main, "checkout", "-q", "--orphan", "master");
+		commit(r.main, "m.txt", "m\n", "unrelated master");
+		const unrelated = rev(r.main);
+		sh(r.main, "checkout", "-q", "feat/x");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: unrelated })), { ok: false, refusal: "no-history" });
+		// A master that shares no history: the created-from commit, else no-history.
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: c0 })), created);
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: false, refusal: "no-history" });
+	} finally {
+		r.done();
+	}
+});
+
+test("reviewBase: a merged branch is compared against what its merge brought in", async () => {
+	const r = repo();
+	try {
+		const c0 = rev(r.main);
+		const x = branchWith(r.main, "x", "x.txt", "x\n");
+		commit(r.main, "m.txt", "m\n", "direct");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "x");
+		const landing = rev(r.main);
+		sh(r.main, "checkout", "-q", "x");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: c0 })), { ok: true, base: c0, how: "merged", label: `master before ${landing.slice(0, 7)}`, ref: "master", tipRef: "refs/heads/master", tip: landing, landing });
+		// A fast-forward: the tracked base, named as created from.
+		sh(r.main, "checkout", "-q", "master");
+		const before = rev(r.main);
+		const z = branchWith(r.main, "z", "z.txt", "z\n");
+		sh(r.main, "merge", "-q", "--ff-only", "z");
+		sh(r.main, "checkout", "-q", "z");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { base: before })), { ok: true, base: before, how: "merged", label: `${before.slice(0, 7)} (created from)`, ref: "master", tipRef: "refs/heads/master", tip: z });
+		// Without a tracked base the comparison stays empty (HEAD against itself).
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: true, base: z, how: "merge-base", label: "master", ref: "master", tipRef: "refs/heads/master", tip: z });
+		assert.equal(x.length, 40);
+	} finally {
+		r.done();
+	}
+});
+
+test("reviewBase: refuses a detached HEAD and a checkout on its base branch", async () => {
+	const r = repo();
+	try {
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main)), { ok: false, refusal: "on-base-branch" });
+		assert.deepEqual(await reviewBase(runGit, r.main, { head: rev(r.main), branch: null }), { ok: false, refusal: "detached" });
+		sh(r.main, "checkout", "-q", "--detach");
+		assert.deepEqual(await reviewBase(runGit, r.main, { head: rev(r.main) }), { ok: false, refusal: "detached" });
+		// On the tracked base branch itself, with master gone.
+		sh(r.main, "checkout", "-q", "-b", "dev");
+		sh(r.main, "branch", "-D", "master");
+		assert.deepEqual(await reviewBase(runGit, r.main, at(r.main, { baseBranch: "dev" })), { ok: false, refusal: "on-base-branch" });
+	} finally {
+		r.done();
+	}
 });

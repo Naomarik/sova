@@ -45,6 +45,8 @@ import {
   helloChange,
   firstBaseline,
   helloStep,
+  helloNews,
+  weighHello,
   HOST_CONFIRM_MS,
   moveItem,
   frontDoorProblems,
@@ -122,20 +124,6 @@ test("a request naming a peer's session goes to that peer, by query or by body",
   assert.equal(routeUrl("/api/sessions"), "/api/sessions");
   // Paths on two hosts at once: neither can answer; the serving host refuses it as it would any.
   assert.equal(routeUrl("/api/sessions/cleanup", JSON.stringify({ paths: [A, B] })), "/api/sessions/cleanup");
-});
-
-test("a peer's blank session's saved-sessions requests go to that peer, cwd routes included (§mesh.remote-sessions/host-scope)", () => {
-  resetHosts();
-  noteHost(A, "laptop");
-  const cwd = q("/home/u/proj");
-  assert.equal(routeUrl(`/api/saved-sessions?cwd=${cwd}&path=${q(A)}`), `/peer/laptop/api/saved-sessions?cwd=${cwd}&path=${q(A)}`);
-  assert.equal(routeUrl(`/api/saved-sessions/on-main?cwd=${cwd}&path=${q(A)}`), `/peer/laptop/api/saved-sessions/on-main?cwd=${cwd}&path=${q(A)}`);
-  for (const r of ["fetch", "remove-from-main", "purge-from-main", "prune"])
-    assert.equal(routeUrl(`/api/saved-sessions/${r}`, JSON.stringify({ cwd: "/home/u/proj", path: A })), `/peer/laptop/api/saved-sessions/${r}`, r);
-  assert.equal(routeUrl(`/api/saved-sessions/prepare/p1/image/e%2F0?path=${q(A)}`), `/peer/laptop/api/saved-sessions/prepare/p1/image/e%2F0?path=${q(A)}`);
-  // This host's own session stays here.
-  assert.equal(routeUrl(`/api/saved-sessions?cwd=${cwd}&path=${q(B)}`), `/api/saved-sessions?cwd=${cwd}&path=${q(B)}`);
-  resetHosts();
 });
 
 test("a URL already aimed at a peer is never prefixed twice", () => {
@@ -515,7 +503,32 @@ test("the front door's left-out hosts stay listed, and a switch puts one in or l
   assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["a"]), ["b", "a"]);
 });
 
-test("the stale-tab banner calls another build different, never newer: the next host may run an older one", () => {
-  assert.match(STALE_BUILD_NOTE, /a different build of this page/);
-  assert.doesNotMatch(STALE_BUILD_NOTE, /newer|older/);
+test("the stale-tab banner's body for another build is one sentence, mesh on or off", () => {
+  assert.equal(STALE_BUILD_NOTE, "Reload when you're ready.");
 });
+
+test("without the mesh a hello never moves the tab: only a build or protocol change comes of it", () => {
+  const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
+  // Another id answering (a restarted server with a new mesh id, say): nothing at all, nothing pends.
+  assert.deepEqual(weighHello(false, a, { ...a, id: "b", label: "Host B" }, null, 0), { change: null, pending: null });
+  assert.deepEqual(weighHello(false, a, { ...a, id: "b" }, { id: "b", at: 0 }, 5_000), { change: null, pending: null });
+  // A rebuilt page, even from another id: the build change alone, at once.
+  assert.deepEqual(weighHello(false, a, { ...a, id: "b", build: "b2" }, null, 0), {
+    change: { protocol: false, build: true, host: null },
+    pending: null,
+  });
+  assert.deepEqual(weighHello(false, a, { ...a, protocol: "p2" }, null, 0).change, { protocol: true, build: false, host: null });
+  // Same build (a server-only change), or a server that reports none (Vite): nothing.
+  assert.equal(weighHello(false, a, { ...a }, null, 0).change, null);
+  assert.equal(weighHello(false, a, { ...a, build: undefined }, null, 0).change, null);
+  // With the mesh on it is helloStep, host confirmation and all.
+  assert.deepEqual(weighHello(true, a, { ...a, id: "b" }, null, 0), { change: null, pending: { id: "b", at: 0 } });
+});
+
+test("the same build news is raised once: a dismissed banner waits for the next change", () => {
+  const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
+  assert.equal(helloNews({ ...a, build: "b2" }), helloNews({ ...a, id: "b", build: "b2" }), "the host doesn't count");
+  assert.notEqual(helloNews({ ...a, build: "b2" }), helloNews({ ...a, build: "b3" }));
+  assert.notEqual(helloNews(a), helloNews({ ...a, protocol: "p2" }));
+});
+

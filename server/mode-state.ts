@@ -20,7 +20,8 @@ import {
   type ModeState,
 } from "../pi-config/extensions/mode/state.ts";
 import type { StateView } from "../shared/harness";
-import type { ChatMemoryChoice, MemoryModeInfo, ModeApplies, ModeInfo } from "../shared/protocol";
+import type { ChatMemoryChoice, MemoryModeInfo, ModeApplies, ModeInfo, ProjectModeApproval } from "../shared/protocol";
+import { parseApprovals, parseProjectModes } from "./project-mode-menu";
 import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../shared/memory";
 import { parseMemoryChoice } from "./memory/settings";
 import { stateViewOf } from "./harness/pi/state";
@@ -56,6 +57,13 @@ export interface ModePatch {
   strict?: ModeState["strict"];
   /** The memory choice (§chat.memory/choice): a chat's own record, or with no path the saved default. */
   memory?: Partial<ChatMemoryChoice>;
+  /** A chat's project minor modes, the whole on set (§chat.mode-menu/project-modes). Only with ?path=:
+      the default never stores them. Kept apart from minorModes, which stays the closed built-in set. */
+  projectModes?: string[];
+  /** Approvals the user gave with this switch: the toolsHash each saw. */
+  approve?: ProjectModeApproval[];
+  /** Set by the route, never read from a body: the Overseer's own call, which counts as approval (q7). */
+  approvedBy?: "overseer";
 }
 
 /** What POST /api/mode was asked to do: change a chat's mode (or the default file, without a path),
@@ -83,8 +91,19 @@ export function parseModePatch(body: unknown): ModePatch | { error: string } {
     if ("error" in memory) return memory;
     patch.memory = memory;
   }
-  if (patch.mode === undefined && patch.minorModes === undefined && patch.memory === undefined)
-    return { error: "Nothing to change: send mode, minorModes and/or memory" };
+  if (b.projectModes !== undefined) {
+    const ids = parseProjectModes(b.projectModes);
+    if ("error" in ids) return ids;
+    patch.projectModes = ids;
+  }
+  if (b.approve !== undefined) {
+    if (b.projectModes === undefined) return { error: "approve goes with projectModes" };
+    const approve = parseApprovals(b.approve);
+    if ("error" in approve) return approve;
+    patch.approve = approve;
+  }
+  if (patch.mode === undefined && patch.minorModes === undefined && patch.memory === undefined && patch.projectModes === undefined)
+    return { error: "Nothing to change: send mode, minorModes, projectModes and/or memory" };
   return patch;
 }
 
@@ -100,8 +119,8 @@ export function parseModeRequest(body: unknown): ModeRequest {
   const b = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
   if (b?.saveDefault !== undefined) {
     if (b.saveDefault !== true) return { error: "saveDefault must be true" };
-    if (b.mode !== undefined || b.minorModes !== undefined || b.memory !== undefined)
-      return { error: "saveDefault saves this chat's own mode: send no mode, minorModes or memory with it" };
+    if (b.mode !== undefined || b.minorModes !== undefined || b.memory !== undefined || b.projectModes !== undefined || b.approve !== undefined)
+      return { error: "saveDefault saves this chat's own mode: send no mode, minorModes, projectModes or memory with it" };
     return { kind: "saveDefault" };
   }
   const patch = parseModePatch(body);
@@ -114,14 +133,14 @@ export function parseModeRequest(body: unknown): ModeRequest {
  * pi-config/extensions/mode/index.ts), and nothing else, so shortcuts and any other field in the
  * file are kept by writeMode's re-read. The minors are copied, never shared with the chat's state.
  */
-export function defaultPatchOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): Required<Omit<ModePatch, "memory">> {
+export function defaultPatchOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): Required<Pick<ModePatch, "mode" | "strict" | "minorModes">> {
   return { mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
 }
 
 /** Fresh file + the patch's fields. Every field the patch doesn't carry (strict unless it does, shortcuts,
     future ones we know) is kept. */
 export function mergeMode(loaded: ModeState, patch: ModePatch): ModeState {
-  const { memory: _memory, ...modes } = patch;
+  const { memory: _memory, projectModes: _p, approve: _a, approvedBy: _b, ...modes } = patch;
   return normalizeState({ ...loaded, ...modes });
 }
 
@@ -196,8 +215,10 @@ export function appliesAfter(plan: ReturnType<typeof modeApplyPlan>, streaming: 
  * pinned modes.
  */
 export function pinEntryFor(branch: BranchEntries, state: Pick<ModeState, "mode" | "strict" | "minorModes">): { customType: string; data: { mode: ModeState["mode"]; active: ReturnType<typeof activeOf> } } | null {
-  const want = activeOf(state);
   const have = restoreActive(branch);
+  // The project modes the chat has on ride along unchanged: the pin is the newest entry restoreActive reads,
+  // so leaving them out would turn them off. A pin never adds one (mode.json has none).
+  const want = activeOf({ ...state, ...(have?.projectModes ? { projectModes: have.projectModes } : {}) });
   if (have && have.mode === want.mode && have.strict === want.strict && have.minorModes.join(",") === want.minorModes.join(",")) return null;
   return { customType: MODE_ENTRY_TYPE, data: { mode: want.mode, active: want } };
 }

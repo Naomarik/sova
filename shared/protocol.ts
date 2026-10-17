@@ -172,6 +172,12 @@ export interface SessionSummary {
       its origin; a session never stamped is never unread. Server-computed from the same seen
       store the Overseer digest uses. The tab showing the session hides its own dot. Safe by absence. */
   unread?: true;
+  /** A project overseer's CURRENT conversation only, and only while `unread` is set: how many of
+      its finished replies on the active branch are newer than `seenAt` (the project overseer page's
+      `ProjectOverseerInfo.unread`, §app.overseer/seen). It labels the row; `unread` alone decides
+      whether it has new replies, and 0 with `unread` set can happen (`unread` reads the last reply
+      in file order, this the active branch). Absent: unknown, or an older server. */
+  unreadReplies?: number;
   /** The file's last finished assistant reply stopped with pi's `stopReason: "error"`, the session
       is not mid-turn or on screen, and it has not been seen since that reply (a session never
       stamped shows it too). `message` = the reply's errorMessage, ≤300 chars. The sidebar's red
@@ -553,9 +559,6 @@ export interface ReportInfo {
       (server/reports.ts parseTeamMessage). `body` is then the message without its header and
       trailer lines; `agent` is absent, so the row is never a finished-worker marker. */
   team?: TeamMessageInfo;
-  /** customType CONTINUATION_NOTE_TYPE only (§chat/saved-sessions): the note a continued saved
-      session starts with, from the message's details. */
-  continued?: import("./session-bundle").ContinuationDetails;
 }
 
 /** A coordinated team's message to the operator, parsed from its header:
@@ -1780,8 +1783,74 @@ export interface HeldChatState {
 
 /** POST /api/mode?path=…: the chat's mode after the switch, plus how it took (ModeApplies).
     The same values reach every client of that chat as a "mode" server message. */
-export interface ChatModeResult extends ModeInfo {
+export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+}
+
+// ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
+// A project's own minor modes, from `<checkout>/.sova/minor-modes/<id>/MODE.md` of the checkout the
+// chat runs in (git toplevel of its cwd, else the cwd). Per chat, so never in GET /api/mode's
+// global `minors`; kept apart from `minorModes` (that list stays the closed built-in set).
+//
+// POST /api/mode?path=… { projectModes?: string[], approve?: ProjectModeApproval[] } -> ChatModeResult
+//                                  `projectModes` is the whole ON set, like minorModes. Turning on a mode
+//                                  with needsApproval and no `approve` entry carrying its current toolsHash
+//                                  → 409 ProjectModeApprovalNeeded (nothing switched; a stale hash too, with
+//                                  the fresh info). An id not offered here, or broken → 409 { error }. Turning off is
+//                                  always allowed (removed ones too). The Overseer's own calls count as the
+//                                  approval (q7). POST /api/mode with no ?path= and projectModes → 400:
+//                                  the default never stores project modes; saveDefault never saves them.
+
+/** One tool a project mode declares, as the approval shows it. `command` is the argv as declared,
+    relative to the mode's folder. */
+export interface ProjectMinorTool {
+  name: string;
+  description: string;
+  command: string[];
+}
+
+/** One project minor mode offered in a chat, on or off. */
+export interface ProjectMinorInfo {
+  /** The folder name (for a broken folder whose name isn't a valid id too: display only). */
+  id: string;
+  description: string;
+  /** Carried to the chat's workers (`workers: yes`). */
+  workers: boolean;
+  tools: ProjectMinorTool[];
+  /** The mode's folder (absolute). */
+  dir: string;
+  /** Why it can't be turned on (path + error). */
+  problem?: string;
+  /** On in this chat, but its folder is gone. */
+  removed?: true;
+  /** On in this chat, and its files differ from the version the chat turned on. */
+  changed?: true;
+  /** Has tools whose exact set (toolsHash) the user hasn't approved. */
+  needsApproval?: true;
+  /** What an approval approves: the declared tools and every file in the mode's folder except MODE.md. Absent: no tools. */
+  toolsHash?: string;
+}
+
+/** A chat's project modes: in its `mode` message and ChatModeResult. Absent from older servers. */
+export interface ChatProjectModes {
+  /** Project mode ids ON in this chat. */
+  projectModes?: string[];
+  /** The checkout the modes come from; absent when the chat has none (remote, no folder). */
+  project?: { root: string; name: string };
+  /** Every project mode offered here, on or off (removed ones that are still on included). */
+  projectMinors?: ProjectMinorInfo[];
+}
+
+/** An approval sent with a turn-on: exactly the toolsHash the user saw. */
+export interface ProjectModeApproval {
+  id: string;
+  hash: string;
+}
+
+/** 409 body of a turn-on that needs approval. */
+export interface ProjectModeApprovalNeeded {
+  error: string;
+  needsApproval: ProjectMinorInfo[];
 }
 
 // ---- Memory (§chat/memory) ------------------------------------------------------------------------
@@ -1808,12 +1877,18 @@ export interface ChatModeResult extends ModeInfo {
 // PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
 //                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
 //                                  with a warning. Every chat's summarizer reads it at its next summary)
-// GET  /api/overseer/memory      -> OverseerMemoryInfo
+// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat at 128 KB, whatever the
+//                                  chats' saved default is)
 // PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
 //                                  Overseer from its next turn. 400 bad body)
+// GET  /api/projects/:pid/overseer/memory -> OverseerMemoryInfo (that project overseer's own switch, on the
+//                                  same terms; 404 unknown project)
+// PUT  /api/projects/:pid/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept as `memory` in the
+//                                  project overseer's overseer.json; reaches it from its next turn. 400 bad body)
 // WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
 //                                  (the turn it goes off included), only from a runtime with the memory
-//                                  engine (an ordinary chat, or the Overseer). No message: memory is off.
+//                                  engine (an ordinary chat, the Overseer, a project overseer). No message:
+//                                  memory is off.
 //            The `mode` message carries `memory` (this chat's ChatMemoryChoice), so a type-only change
 //            sends a new `mode` message too.
 // Transcript: the model's recalls are tool rows (`zoom`, `date`) whose slim row summary
@@ -2234,6 +2309,11 @@ export interface HelloLive {
  */
 export type ChatCodeState = "current" | "older" | "reloading" | "failed";
 
+/** The close code of a chat socket after `closed` (§app.chat-processes/idle-stop): one the web app's
+    socket never retries (src/lib/socket.ts PERMANENT_CLOSE, as for 4422 "config"), so a tab on an
+    older bundle, which doesn't know `closed`, stays down too instead of reopening the chat. */
+export const CHAT_CLOSED_CLOSE_CODE = 4422;
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -2281,7 +2361,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice }
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
@@ -2382,6 +2462,12 @@ export type ChatServerMessage =
   | { type: "queue_removed"; id: string; itemId: string; text: string }
   /** The removal was refused and the item is untouched; to the requester only. */
   | { type: "queue_remove_refused"; id: string; itemId: string; reason: QueueRemoveRefusal; message: string }
+  /** The chat's process closed for being quiet (§app.chat-processes/idle-stop), or the chat was
+      archived, and the server closes this socket next. The tab keeps what it shows and doesn't
+      reconnect: the chat starts again only when the tab needs it (a send), or when something else
+      opened it (§chat.transcript/instant-open). A client that doesn't know it reconnects on the
+      close, as before. */
+  | { type: "closed"; reason: "idle" | "archived" }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
@@ -3185,7 +3271,8 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
-  /** The Overseer's memory (§chat.memory/overseer): its own switch, type and size. Absent = off. */
+  /** The Overseer's memory: its own switch, type and size. Absent = no choice made:
+      on, UniiChat at 128 KB. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. */
   memory?: { on: boolean; type: MemoryType; size: number };
 }
 
@@ -4162,6 +4249,9 @@ export interface WorktreeReadiness {
   dirtyFiles?: string[];
   /** Files a trial merge into the base conflicts on. Absent when none or unknown. */
   conflicts?: number;
+  /** Readable, unmerged, and no commit of its own past its base (what "no commits yet" says,
+      whatever the state): the row has no Review Changes (§chat.changes/entry). Absent otherwise. */
+  noCommits?: true;
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
@@ -4281,7 +4371,7 @@ export type LlmFeedMessage =
   | { type: "llm_local"; host: string; instance: string; local: LlmInflight }
   | { type: "error"; message: string };
 
-// --- Git diffs (server/git-diff.ts, §chat.diff) ---------------------------------------------------
+// --- Git diffs (server/git-diff.ts, §chat.changes/endpoint) ---------------------------------------
 //
 // Read-only. The client names WHAT to compare, never a ref: the server resolves every ref itself,
 // and every folder must be one the named session already knows (its header cwd, its tracked
@@ -4289,20 +4379,37 @@ export type LlmFeedMessage =
 // anything else is refused (400). `sessionPath` is SessionSummary.path.
 //
 // GET /api/diff/summary?<scope>                 -> 200 DiffSummary; 400 { error } (bad or unknown scope)
-// GET /api/diff/patch?<scope>&file=<path>[&old=<oldPath>][&context=1]
+// GET /api/diff/patch?<scope>&file=<path>[&old=<oldPath>][&context=1][&origins=1]
 //                                               -> 200 DiffFilePatch; 400 { error }; 404 { error } (not in the diff)
 //    `context=1` adds `oldText`, the file's old side whole (for expanding folded context).
+//    `origins=1` adds the commits each hunk came from (`hunkCommits`, `commits`, or `originsUnknown`).
 // <scope> as query parameters: kind=worktree&session=<sessionPath>&path=<worktreePath>
+//                                 [&base=<oid>&head=<oid>[&baseRef=<label>][&branch=<label>]]
 //                            | kind=commit&session=<sessionPath>&path=<repoPath>&sha=<hex sha>
+//                            | kind=merge&session=<sessionPath>&path=<repoPath>&sha=<full sha>
 //                            | kind=dirty&session=<sessionPath>&path=<cwd>
+//    each optionally followed by repeatable &paths=<repo-relative path or folder>.
 // (`diffScopeQuery` below builds it.) Both send Cache-Control: no-store. No route reads a file or a
 // blob by a name the client gives: contents leave only as a file's patch and its own old side.
 
-/** What a diff compares. */
-export type DiffScope =
-  /** A worktree's branch (committed HEAD) against its merge-base with its base branch (the tracked
-      worktree's `baseBranch`, else master, else main, else origin/HEAD's target). */
-  | { kind: "worktree"; sessionPath: string; worktreePath: string }
+/** A pinned worktree comparison: the two commits a show_changes card saved (its details'
+    `scope.base` / `scope.head`, full oids), both checked to be commits in that repository. The
+    labels are display text only (the card's `baseRef` and `branch`), never resolved. */
+export interface DiffPin {
+  base: string;
+  head: string;
+  baseRef?: string;
+  branch?: string;
+}
+
+/** What a diff compares. Every kind may carry `paths`: repository-relative files or folders (a
+    file matches one that is its path or a folder above it, by its new path); the diff is narrowed
+    to them before the file cap, so a narrowed view is complete when the narrowed set fits. */
+export type DiffScope = (
+  /** A worktree's branch (committed HEAD) against its review base, chosen by the rule the
+      show_changes tool uses (pi-config/extensions/worktrees/git.ts reviewBase). With `pin`, the
+      card's saved base..head instead, recomputing nothing. */
+  | { kind: "worktree"; sessionPath: string; worktreePath: string; pin?: DiffPin }
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
@@ -4312,17 +4419,39 @@ export type DiffScope =
       base when that is an ancestor of the tip and not the tip itself, else its first parent. */
   | { kind: "merge"; sessionPath: string; repoPath: string; sha: string }
   /** The repository containing `cwd`: index + working tree (untracked files as added) against HEAD. */
-  | { kind: "dirty"; sessionPath: string; cwd: string };
+  | { kind: "dirty"; sessionPath: string; cwd: string }
+) & { paths?: string[] };
 
 /** The scope's query string (no leading `?`). */
 export function diffScopeQuery(s: DiffScope): string {
   const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
-  if (s.kind === "worktree") q.set("path", s.worktreePath);
-  else if (s.kind === "commit" || s.kind === "merge") {
+  if (s.kind === "worktree") {
+    q.set("path", s.worktreePath);
+    if (s.pin) {
+      q.set("base", s.pin.base);
+      q.set("head", s.pin.head);
+      if (s.pin.baseRef) q.set("baseRef", s.pin.baseRef);
+      if (s.pin.branch) q.set("branch", s.pin.branch);
+    }
+  } else if (s.kind === "commit" || s.kind === "merge") {
     q.set("path", s.repoPath);
     q.set("sha", s.sha);
   } else q.set("path", s.cwd);
+  for (const p of s.paths ?? []) q.append("paths", p);
   return q.toString();
+}
+
+/** A commit a file's changes came from (`origins=1`). */
+export interface DiffCommit {
+  /** Full oid. */
+  sha: string;
+  subject: string;
+  /** Epoch ms. */
+  authorTime: number;
+  /** Its place in the whole comparison, oldest first (`rev-list --topo-order --reverse base..head`),
+      the same in every file's read, so commits of different files sort together; a commit scope's
+      one commit is 0. Absent when that order could not be read in time. */
+  order?: number;
 }
 
 /** M modified, A added (untracked, in the dirty scope), D deleted, R renamed (maybe also edited),
@@ -4387,6 +4516,17 @@ export interface DiffFilePatch {
   /** With `context=1` only: the old side's whole text, the blob `oldOid` names. Absent when the
       patch has no single old side, or that side is binary or past 8 MB. */
   oldText?: string;
+  /** With `origins=1`, worktree/merge/commit scopes only (never dirty): indices into `commits`, one
+      list per unit in patch order: one per hunk; a file with no hunks (binary, `tooLarge`,
+      rename-, mode-only or empty) has exactly one list, the whole file's. A list may be empty. */
+  hunkCommits?: number[][];
+  /** With `origins=1`: this file's commits, ancestors first (the order of
+      `rev-list --topo-order --reverse base..head`; by `authorTime`, then sha, if that can't be read). A commit
+      scope gives its one commit, every unit `[0]`. */
+  commits?: DiffCommit[];
+  /** With `origins=1`: the history read timed out or failed, so neither `hunkCommits` nor
+      `commits` is present. The patch itself is still whole. */
+  originsUnknown?: true;
   /** As in the summary: a changed HEAD between the two requests shows up here. */
   base: DiffSide;
   head: DiffSide;
@@ -4395,13 +4535,16 @@ export interface DiffFilePatch {
 // ── Resource monitor (§app/resource-monitor) ─────────────────────────────────────────────────
 // GET /api/monitor → MonitorSnapshot; GET /api/monitor/history?since=<ms>&res=5s|30s → MonitorHistory.
 // Read-only. CPU percentages are of ONE core (100 = one core busy; a 16-core host tops out at 1600),
-// averaged over the last tick (5s). Memory is RSS in bytes; swap is VmSwap in bytes.
+// averaged over the last tick (5s). `rssBytes` is RSS in bytes; `privBytes` (and every `*Bytes` part of
+// Sova's memory) is each process's own memory: private resident memory (RssAnon) on Linux, RSS on
+// macOS (`scope: "ps"`). Swap is VmSwap in bytes.
 
 /** How the measured set was chosen. `unit`: the server runs in a dedicated systemd service
     cgroup (/proc/self/cgroup ends in `.service`), so every process in it is measured, and the
     unit's own cgroup totals are reported. `tree`: the server's descendant tree only (dev,
-    hermetic). `none`: no /proc (not Linux): only the server's own Node numbers. */
-export type MonitorScope = "unit" | "tree" | "none";
+    hermetic). `ps`: no /proc (macOS): processes listed by one `ps` per tick, resident memory only,
+    no per-process swap. `none`: neither: only the server's own Node numbers. */
+export type MonitorScope = "unit" | "tree" | "ps" | "none";
 
 /** How a process was charged to its session/worker, strongest first. Exact: `worker-pid` the
     runtime's in-process worker pid; `session-id` a `claude --resume/--session-id` uuid (a
@@ -4416,10 +4559,23 @@ export type MonitorVia =
   | "worker-pid" | "session-id" | "team-env" | "env" | "descendant" | "sid"
   | "exited-tools" | "cwd";
 
-/** Coarse kind of a process from its argv, parsed once per process. */
+/** Coarse kind of a process from its argv, parsed once per process. `sova-runtime`: a chat's own
+    process (the pid its chat reports, else argv `server/chat-runtime/main.ts`); `sova-helper`: the
+    server's usage helper (`server/usage-helper/main.ts`). */
 export type MonitorProcKind =
-  | "server" | "claude-worker" | "claude-provider"
+  | "server" | "claude-worker" | "claude-provider" | "sova-runtime" | "sova-helper"
   | "node" | "java" | "python" | "browser" | "shell" | "build" | "other";
+
+/** Sova's own memory, split four ways that add up to `total`: every measured process is in exactly
+    one part. `backend`: the server and its usage helper; `runtime`: each chat's own process;
+    `wrapped`: each Claude Code CLI; `tools`: everything else measured. */
+export interface MonitorMemory {
+  total: number;
+  backend: { bytes: number; procs: number };
+  runtime: { bytes: number; count: number };
+  wrapped: { bytes: number; count: number };
+  tools: { bytes: number };
+}
 
 /** Linux pressure-stall `some avg10` (and `full avg10` where it exists), in percent. */
 export interface MonitorPressure {
@@ -4437,6 +4593,8 @@ export interface MonitorProc {
   /** Own CPU% over the last tick, including reaped children's time (cutime/cstime). */
   cpuPct: number;
   rssBytes: number;
+  /** The process's own memory (see the header). Absent from an older server. */
+  privBytes?: number;
   /** Absent until first read (VmSwap is read at most every 30s per process). */
   swapBytes?: number;
   /** Epoch ms the process started. */
@@ -4464,6 +4622,12 @@ export interface MonitorWorker {
   /** Whole subtree (the worker process and every descendant, plus reaped children's time). */
   cpuPct: number;
   rssBytes: number;
+  /** Own memory of the whole subtree, and its split: `runtime` its chat process, `wrapped` its
+      Claude Code CLI, `tools` the rest; the three add up to `privBytes`. Absent from an older server. */
+  privBytes?: number;
+  runtimeBytes?: number;
+  wrappedBytes?: number;
+  toolsBytes?: number;
   swapBytes: number;
   procCount: number;
   /** The heaviest descendants (not the worker process itself), by CPU then RSS, at most 5. */
@@ -4478,13 +4642,22 @@ export interface MonitorSession {
   cwd?: string;
   /** Hosted in this server (its tool children are the server's children). */
   hosted: boolean;
+  /** What its chat runs on, when its chat says: Claude Code (a wrapped CLI) or a pi model. */
+  backend?: "claude-code" | "pi";
   /** Totals over the session's own processes and all its workers. */
   cpuPct: number;
   rssBytes: number;
+  /** Own memory of all of it; `runtimeBytes`, `wrappedBytes` and `toolsBytes` split the session's
+      own processes (not its workers'), so those three plus each worker's `privBytes` add up to it.
+      Absent from an older server. */
+  privBytes?: number;
+  runtimeBytes?: number;
+  wrappedBytes?: number;
+  toolsBytes?: number;
   swapBytes: number;
   procCount: number;
-  /** Processes charged to the session itself, not to a worker (hosted bash tools, the Claude
-      Code provider process), heaviest first, at most 5; `own*` are their totals. */
+  /** Processes charged to the session itself, not to a worker: its chat's runtime and Claude Code
+      provider process (always listed), then its heaviest tools, at most 5 of those; `own*` are their totals. */
   own: MonitorProc[];
   ownCpuPct: number;
   ownRssBytes: number;
@@ -4496,6 +4669,8 @@ export interface MonitorSession {
 export interface MonitorBucket {
   cpuPct: number;
   rssBytes: number;
+  /** Own memory over the same processes. Absent from an older server. */
+  privBytes?: number;
   swapBytes: number;
   procCount: number;
   /** Heaviest first, at most 20. */
@@ -4548,7 +4723,13 @@ export interface MonitorSnapshot {
     /** Event-loop delay over the last tick, ms. */
     eventLoop: { p50: number; p99: number; max: number };
     uptimeSec: number;
+    /** Its own memory (absent where no process can be listed, or from an older server). */
+    privBytes?: number;
+    /** Its long-lived helpers (the usage helper), part of the backend, never Not attributed. */
+    helpers?: MonitorProc[];
   };
+  /** Sova's own memory and its split (absent where no process can be listed, or from an older server). */
+  memory?: MonitorMemory;
   /** Over every measured process (the unit's or the tree's), server included. */
   totals: { cpuPct: number; rssBytes: number; swapBytes: number; procCount: number };
   /** Heaviest first by CPU. Hosted sessions with no processes and no workers are omitted. */
@@ -4582,7 +4763,10 @@ export interface MonitorPointProc {
 }
 
 /** One history point. At `30s` resolution `cpuPct` is the window's mean and `cpuPctMax` its
-    highest tick; memory figures are the window's maximum. */
+    highest tick; memory figures are the window's maximum, and `mem` is taken from the tick where
+    `sovaBytes` peaked, so it always adds up to it. A point with `sovaBytes` counts its groups',
+    workers' and top processes' memory as own memory; one without (written before own memory was
+    counted) as RSS. */
 export interface MonitorPoint {
   at: number;
   cpuPct: number;
@@ -4591,6 +4775,9 @@ export interface MonitorPoint {
   swapBytes: number;
   /** `unit` scope only. */
   anonBytes?: number;
+  /** Sova's own memory (`MonitorSnapshot.memory.total`), and its parts [backend, runtime, wrapped, tools]. */
+  sovaBytes?: number;
+  mem?: [number, number, number, number];
   load1: number;
   /** Server event-loop max delay, ms. */
   loopMaxMs: number;
@@ -4905,4 +5092,115 @@ export interface VoiceTranscript {
   /** whisper's own time for this clip, ms. */
   ms: number;
   audioSec: number;
+}
+
+// ---- Updates (Settings → General) ---------------------------------------------------------------------
+
+/** Where updates come from: always a ref of Sova's own repository. */
+export type UpdateSource = { kind: "stable" } | { kind: "master" } | { kind: "branch"; branch: string };
+
+/** The Updates form of Settings → General, as `<stateRoot>/updates.json` keeps it. */
+export interface UpdatesSettings {
+  source: UpdateSource;
+  /** Check once a day (default on). */
+  autoCheck: boolean;
+  /** Upgrade when a check finds an update this copy can install (default off). */
+  autoUpgrade: boolean;
+}
+
+/** What kind of copy this server runs from. */
+export type InstallKind = "installer" | "developer" | "check-only";
+
+/** What this server runs. */
+export interface UpdatesRunning {
+  /** The checkout's commit now (null: no git checkout). */
+  head: string | null;
+  /** The commit this server started on (`GET /api/health`'s head). */
+  startedHead: string | null;
+  /** The release tag at the commit, when it is one ("v0.3.2"). */
+  version: string | null;
+  /** The newest release the commit contains, and how many commits past it. */
+  baseVersion: string | null;
+  pastBase: number | null;
+  /** The branch checked out (null: detached). */
+  branch: string | null;
+  kind: InstallKind;
+  /** May this copy upgrade itself from here. */
+  canUpgrade: boolean;
+  /** Why not, in a sentence, when it can't. */
+  whyNot: string | null;
+}
+
+/** What a check found newer, or not. */
+export interface UpdateTarget {
+  sha: string;
+  /** The ref's name as the button says it: "v0.3.3", "master", "feat/x". */
+  label: string;
+  /** The numbered release at the commit (Stable). */
+  version: string | null;
+  /** Commits from the running commit to it (null when unknown). */
+  count: number | null;
+  /** Its newest commit's subject. */
+  subject: string | null;
+  /** That release's section of CHANGELOG.md at the release (Stable). */
+  notes: string | null;
+  notesUrl: string | null;
+}
+
+export type UpdateCheckResult =
+  | { state: "up-to-date" }
+  | { state: "available"; target: UpdateTarget; rewritten?: boolean }
+  | { state: "ahead"; message: string }
+  | { state: "diverged"; target: UpdateTarget; message: string };
+
+export interface UpdateCheck {
+  at: string;
+  ok: boolean;
+  source: UpdateSource;
+  /** The running commit the check compared. */
+  head: string | null;
+  result?: UpdateCheckResult;
+  error?: string;
+}
+
+export type UpdateStep = "starting" | "downloading" | "installing" | "building" | "restarting" | "verifying" | "rolling-back" | "done";
+
+/** One upgrade job, as its runner records it under `<stateRoot>/updates/jobs/<id>/`. */
+export interface UpdateJob {
+  id: string;
+  kind: "installer" | "developer";
+  from: { sha: string | null; label: string };
+  to: { sha: string; label: string };
+  auto: boolean;
+  startedAt: string;
+  step: UpdateStep;
+  state: "running" | "succeeded" | "failed" | "rolled-back";
+  /** What happened, in a sentence (a failure says what failed and what it left). */
+  detail: string | null;
+  logPath: string;
+  endedAt: string | null;
+}
+
+/** `GET /api/updates`. */
+export interface UpdatesState {
+  settings: UpdatesSettings;
+  running: UpdatesRunning;
+  lastCheck: UpdateCheck | null;
+  checking: boolean;
+  /** SOVA_UPDATES_CHECK=off (or a test process): no check runs. */
+  checksOff: boolean;
+  nextCheckAt: string | null;
+  /** The running job, else the last one. */
+  job: UpdateJob | null;
+  /** The last check found an update this copy can install (the Settings dot). */
+  available: boolean;
+  /** Why the last automatic upgrade didn't start, until the next check. */
+  autoRefusal: string | null;
+}
+
+/** `POST /api/updates/apply`. */
+export interface UpdateApplyRequest {
+  /** The commit the button offered: refused when the last check found another. */
+  target: string;
+  confirm: true;
 }

@@ -37,3 +37,14 @@ test("takeFrom: only the sends of the connection named, oldest first, each once;
   assert.deepEqual(u.takeFrom(2, handedBack), []);
   assert.deepEqual(u.takeAll(handedBack), ["on the first connection"]);
 });
+
+test("of: the sends of one connection still unanswered, by id, oldest first, kept (a closing view hands them to a courier)", () => {
+  const u = new UnackedSends();
+  u.sent("a", "first", 1);
+  u.sent("b", "second", 2);
+  u.sent("c", "third", 2);
+  u.settled("c");
+  assert.deepEqual([...u.of(2)], [["b", "second"]]);
+  assert.deepEqual([...u.of(2)], [["b", "second"]], "kept");
+  assert.deepEqual([...u.of(3)], []);
+});

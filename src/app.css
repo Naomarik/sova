@@ -424,11 +424,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .needs-you-playbook { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .playbook-review-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-review-act .button { min-height: var(--tap-min); }
-.playbook-review-act { min-width: 0; max-width: 100%; }
-.playbook-review-why { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
-/* A banner's action keeps its own width (base.css), so one holding a refusal takes the banner's
-   full row instead, or the reason's one long line runs past the edge. */
-.banner-action:has(.playbook-review-why) { flex: 1 1 100%; min-width: 0; }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
 .org-section[open] > .group-label > .text-num { display: inline; }
@@ -515,18 +510,23 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-project-name > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .org-project-icon { flex: none; width: 16px; height: 16px; color: var(--color-ink-muted); }
 .org-project-name:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: var(--r-xs); }
-/* The Projects region (§app.projects/list): its head's Add Project and page link are quiet 44px
-   icons like an org head's; a project's name opens its page. */
+/* The Projects region (§app.projects/list): its head's page link is a quiet 44px
+   icon like an org head's; a project's name opens its page. */
 .sidebar-projects .sidebar-region-head > .org-link {
   flex: none;
   color: var(--color-ink-muted);
 }
-.sidebar-projects .sidebar-region-head > button.org-link { margin-left: auto; }
-.sidebar-projects .sidebar-region-head > a.org-link { margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
+.sidebar-projects .sidebar-region-head > a.org-link { margin-left: auto; margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
 .sidebar-projects .sidebar-region-head > .org-link:hover,
 .sidebar-projects .sidebar-region-head > .org-link:focus-visible { color: var(--color-ink); }
 .sidebar-projects .sidebar-region-head > .org-link .icon { width: 16px; height: 16px; }
 .project-region-link { color: inherit; text-decoration: none; }
+/* A project heading's fold (§app.projects/list): a quiet 44px twist before the name, turned while open. */
+.org-project-label > .project-fold { flex: none; margin-left: calc(var(--space-3) * -1); color: var(--color-ink-muted); }
+.org-project-label > .project-fold:hover,
+.org-project-label > .project-fold:focus-visible { color: var(--color-ink); }
+.project-fold .icon-twist { width: 16px; height: 16px; transition: transform var(--dur-fast) var(--ease-standard); }
+.project-fold[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
 .project-region-link:hover { text-decoration: underline; }
 .org-finished { border-top: var(--stroke-thin) solid var(--color-border); }
 
@@ -1082,6 +1082,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .memory-type-by { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
 .memory-type-link .popover-item-label { color: var(--color-accent); }
 .memory-size-default { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* A project overseer's memory switch is the foot's last control, alone in its accessory: the accessory
+   already reaches the right edge, so the trigger drops the edge margin it would otherwise be squeezed by. */
+.composer-foot .composer-accessory:not(:has(.quick-actions-trigger)) > .overseer-memory-trigger { margin-right: 0; }
 /* The run-status row's memory piece shrinks before the triggers do, ending in an ellipsis. */
 .run-status > .run-status-memory { flex: 0 1 auto; min-width: 4em; }
 .run-status > .run-status-memory.run-status-link { flex: 0 1 auto; }
@@ -1153,3 +1156,99 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .chat-wait-note-icon {
   --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
 }
+
+
+/* ── Project minor modes in the mode menu ───────────────────────────────────────────────────────── */
+/* A row that can't be pressed (a broken mode) is not waiting on a save: no progress cursor. */
+.mode-menu .popover-item[data-project-state="broken"][aria-disabled="true"] { cursor: default; }
+.mode-menu .popover-item[data-project-state="broken"] .popover-item-label { color: var(--color-ink-muted); }
+/* The state line (broken, removed, changed, asks first) wraps rather than ellipsizing: it carries the
+   problem's path and error, which a cut would lose. */
+.mode-menu-project-note { white-space: normal; overflow-wrap: anywhere; }
+/* The approval panel: what the mode would run, before it is turned on. */
+.mode-approval { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.mode-approval > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
+.mode-approval-lead { margin: 0; padding: var(--space-2) var(--space-3) 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.mode-approval-tools {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mode-approval-tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+.mode-approval-tool-name { font-size: var(--fs-mono); color: var(--color-ink); }
+.mode-approval-tool-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.mode-approval-tool-cmd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink);
+  background: var(--color-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.mode-approval .mode-menu-foot-line .text-mono { overflow-wrap: anywhere; }
+
+/* ---- UPDATES. The dot on the Settings buttons, the note after an upgrade, and Settings →
+   General's Updates section. ---------------------------------------------------------------- */
+
+/* A small accent dot at the gear's top right: an update this copy can install. Static. */
+.button:has(> .update-dot) { position: relative; }
+.update-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-surface);
+  pointer-events: none;
+}
+.settings-updates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.settings-updates-version { font-weight: var(--fw-medium); }
+.settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.settings-updates-status p { margin: 0; }
+.settings-updates-checked { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.settings-updates-offer { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.settings-updates-notes { width: 100%; }
+.settings-updates-notes summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-accent); }
+.settings-updates-notes pre {
+  margin: 0 0 var(--space-2);
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.settings-updates-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings-updates-confirm p { margin: 0; max-width: var(--measure); }
+.settings-updates-progress p { margin: 0 0 var(--space-2); }
+.settings-updates-steps { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: 0; list-style: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.settings-updates-steps li::before { content: "○ "; }
+.settings-updates-steps li.done { color: var(--color-ink-2); }
+.settings-updates-steps li.done::before { content: "✓ "; }
+.settings-updates-steps li.now { color: var(--color-ink); font-weight: var(--fw-medium); }
+.settings-updates-steps li.now::before { content: "● "; }
+.settings-updates-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.settings-updates-toggle { align-self: flex-start; width: fit-content; }

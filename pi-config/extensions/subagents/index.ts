@@ -92,10 +92,14 @@ import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } 
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
+
+/** The modes a worker's chip lists: its built-in minor modes, then the project modes it carries (by id). */
+const givenModesOf = (modes: ModeWorkerEvent): string[] => [...modes.minorModes, ...(modes.projectModes ?? []).map((p) => p.id)];
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
 import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
+import { PROJECT_TOOLS_FILE_ENV, writeWorkerToolsFile } from "../mode/project-tools.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
 const MAX_LIVE = 12;
@@ -273,6 +277,13 @@ export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
  */
 export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
 /**
+ * The project mode tools for pi workers (mode/project-tools-worker.ts, a sibling file): a worker handed
+ * project modes with tools (`workers: yes`) loads it with `-e`, and reads the parent's copies from the file
+ * PROJECT_TOOLS_FILE_ENV names. Only a worker that can run commands (bash) gets them: a project tool is a
+ * program, so a read-only worker never gains one. None for a remote worker (project modes are local only).
+ */
+export const PROJECT_TOOLS_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "project-tools-worker.ts"));
+/**
  * The per-provider request limits (provider-limits/, a sibling extension), loaded right after the
  * marker into every pi worker: a worker's model requests claim its provider's slots on this device
  * like any session's, as background work (the marker's role event says so).
@@ -296,7 +307,8 @@ const listedExtensions = (worker: Worker): string[] =>
 			source !== PROVIDER_LIMITS_EXTENSION &&
 			source !== LLM_INFLIGHT_EXTENSION &&
 			source !== MODEL_LEVELS_EXTENSION &&
-			source !== SPEC_WORKER_EXTENSION,
+			source !== SPEC_WORKER_EXTENSION &&
+			source !== PROJECT_TOOLS_WORKER_EXTENSION,
 	);
 /** The trusted spec tools (pi-config/extensions/spec/core/) a spec-on worker's brief and hooks name. */
 export const SPEC_CORE_DIR = realpathOr(path.join(SELF_DIR, "..", "spec", "core"));
@@ -1362,7 +1374,7 @@ export function registerSubagents(
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
 					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined,
-					givenModes: modePrompt ? [...modes!.minorModes] : [], landed: false };
+					givenModes: modePrompt ? givenModesOf(modes!) : [], landed: false, projectToolsFile: undefined };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1399,7 +1411,9 @@ export function registerSubagents(
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
-			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
+			// Its project modes' tools (PROJECT_TOOLS_WORKER_EXTENSION): the parent's copies, for a worker that has bash.
+			const projectToolsFile = modes?.projectModes?.length && !remote && !treeConfig && tools.includes("bash") ? writeWorkerToolsFile(agentDir(), modes.projectModes) : undefined;
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(projectToolsFile ? [PROJECT_TOOLS_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).
@@ -1427,9 +1441,10 @@ export function registerSubagents(
 				flags: piFlags,
 				treeConfig,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
-				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
+				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? givenModesOf(modes!) : [],
 				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
 				landed: specOn && !remote && writesCode(tools),
+				projectToolsFile,
 			};
 		});
 		const resuming = request.resume;
@@ -1444,7 +1459,7 @@ export function registerSubagents(
 		let abandoned = false;
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed, projectToolsFile }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1461,7 +1476,8 @@ export function registerSubagents(
 					if (landedFile) landedSources.set(id, { file: landedFile });
 					else landedSources.delete(id);
 					if (landedFile && !resuming) fs.rmSync(landedFile, { force: true });
-					const env = landedFile ? { ...specEnv, [LANDED_FILE_ENV]: landedFile } : specEnv;
+					const landedEnv = landedFile ? { ...specEnv, [LANDED_FILE_ENV]: landedFile } : specEnv;
+					const env = projectToolsFile ? { ...landedEnv, [PROJECT_TOOLS_FILE_ENV]: projectToolsFile } : landedEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					const runner = (backend?.create ?? createRunner)(
 						{

@@ -126,10 +126,11 @@ describe("a project's coding sessions", async () => {
     assert.ok(started);
     const p = store.projectOverseerPaths(project.id);
     const w = (await buildsOf(project.id, client)).find((r) => r.sessionId === started!.sessionId)!.worktree!;
-    let info = await po.projectOverseerInfo(project.id);
-    assert.equal(info.worktrees.available, true);
+    const info = await po.projectOverseerInfo(project.id);
+    let wt = await po.projectWorktrees(project.id);
+    assert.equal(wt.available, true);
     assert.deepEqual({ mode: info.codingModeNow.mode, minorModes: info.codingModeNow.minorModes }, { mode: "delegate", minorModes: ["align"] }, "what one started now gets: this computer's default");
-    const rowOf = () => info.worktrees.sessions.find((s) => s.sessionId === started!.sessionId);
+    const rowOf = () => wt.sessions.find((s) => s.sessionId === started!.sessionId);
     const r0 = rowOf();
     assert.deepEqual(r0 && { state: r0.state, merged: r0.merged, ahead: r0.ahead, startedBy: r0.startedBy, branch: r0.branch, target: r0.target }, { state: "open", merged: false, ahead: 0, startedBy: "operator", branch: w.branch, target: "master" });
     await po.ensureProjectOverseer(project.id);
@@ -153,7 +154,7 @@ describe("a project's coding sessions", async () => {
       git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "login");
       // The reasons noted from here on (the watch keeps them until its next look).
       const seen = store.readMemo(p).pending.length;
-      info = await po.mergeCodingWorktree(project.id, started.sessionId);
+      wt = await po.mergeCodingWorktree(project.id, started.sessionId);
       assert.equal(readFileSync(join(client, "login.txt"), "utf8"), "login\n");
       // Merged: the overseer is told, soon, so it never waits on a merge that already happened (NEW-MS-3).
       const merged = store.readMemo(p);
@@ -168,18 +169,18 @@ describe("a project's coding sessions", async () => {
     writeFileSync(join(w.path, "logout.txt"), "logout\n");
     git(w.path, "add", "logout.txt");
     git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "logout");
-    info = await po.projectOverseerInfo(project.id);
+    wt = await po.projectWorktrees(project.id);
     assert.deepEqual(
       [rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge, rowOf()?.mergedAt],
       ["open", false, 1, firstMerge],
       "a merged branch with a new commit is open again, and its last merge stays as history",
     );
     assert.equal(offersMerge(rowOf()!), true, "Merge Branch is offered again");
-    info = await po.mergeCodingWorktree(project.id, started.sessionId);
+    wt = await po.mergeCodingWorktree(project.id, started.sessionId);
     assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge], ["merged", true, undefined]);
     assert.equal(offersMerge(rowOf()!), false);
-    info = await po.removeCodingWorktree(project.id, started.sessionId);
+    wt = await po.removeCodingWorktree(project.id, started.sessionId);
     assert.equal(existsSync(w.path), false);
     assert.equal(git(client, "branch", "--list", w.branch), "", "a merged branch goes with it");
     assert.deepEqual([rowOf()?.state, !!rowOf()?.removedAt, rowOf()?.merged, rowOf()?.branchGone], ["removed", true, true, true], "removed with its branch: still merged, nothing left to merge");
@@ -192,8 +193,8 @@ describe("a project's coding sessions", async () => {
   test("a coding row from another host: its recorded title, no link, not 'missing'", async () => {
     const gone = join(tmp, "elsewhere");
     await seedBuild(org.id, project.id, { sessionId: "01a0e321-a85c-74d4-9349-c48f99e8336d", kind: "operator-coding", path: join(gone, "s.jsonl"), title: "Add pickup hours", worktree: { path: join(gone, "wt"), branch: "sova/add-pickup-hours-abc123", base: git(client, "rev-parse", "HEAD"), target: "master" } });
-    const info = await po.projectOverseerInfo(project.id);
-    const row = info.worktrees.sessions.find((s) => s.sessionId === "01a0e321-a85c-74d4-9349-c48f99e8336d");
+    const info = await po.projectWorktrees(project.id);
+    const row = info.sessions.find((s) => s.sessionId === "01a0e321-a85c-74d4-9349-c48f99e8336d");
     assert.deepEqual(row && { title: row.title, path: row.path, branch: row.branch }, { title: "Add pickup hours", path: null, branch: "sova/add-pickup-hours-abc123" });
   });
 
@@ -232,7 +233,7 @@ describe("a project's coding sessions", async () => {
     assert.equal(rows2.length, before2 + 1);
     assert.equal(rows2.at(-1)!.title, "Fix the footer");
     const info2 = await po.projectOverseerInfo(project.id);
-    assert.equal(info2.worktrees.sessions.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
+    assert.equal(info2.coding.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] }, "unnamed: this computer's default");
     // Any mode it names, minor modes included: no ceiling.
     const before3 = readBuilds(project.id).length;
@@ -276,9 +277,9 @@ describe("a project's coding sessions", async () => {
     assert.equal(row.inRoot, "it isn't a Git repository.");
     assert.equal(JSON.parse(readFileSync(row.path!, "utf8").split("\n")[0]!).cwd, plainRoot);
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["vis"] });
-    const info = await po.projectOverseerInfo(plain.id);
-    assert.deepEqual({ available: info.worktrees.available, reason: info.worktrees.reason }, { available: false, reason: row.inRoot });
-    const listed = info.worktrees.sessions.find((s) => s.sessionId === row.sessionId);
+    const info = await po.projectWorktrees(plain.id);
+    assert.deepEqual({ available: info.available, reason: info.reason }, { available: false, reason: row.inRoot });
+    const listed = info.sessions.find((s) => s.sessionId === row.sessionId);
     assert.deepEqual(listed && { state: listed.state, branch: listed.branch, inRoot: listed.inRoot }, { state: "root", branch: null, inRoot: "it isn't a Git repository." });
   });
 
@@ -336,7 +337,7 @@ describe("a project's coding sessions", async () => {
     assert.deepEqual(added.filter((t) => t.includes(made.sessionId) || t.includes(made.worktree!.branch)), [], "no reason to look");
     assert.equal(JSON.stringify(readTodos(p.todos)), todosBefore, "no to-do touched");
     const info = await po.projectOverseerInfo(project.id);
-    const listed = info.worktrees.sessions.find((s) => s.sessionId === made.sessionId);
+    const listed = info.coding.find((s) => s.sessionId === made.sessionId);
     assert.deepEqual(listed && { startedBy: listed.startedBy, title: listed.title, branch: listed.branch }, { startedBy: "operator", title: "", branch: made.worktree!.branch });
     // The overseer sees it, as the operator's.
     const list = po.toolsForTest(project.id).find((t) => t.name === "sova_list_sessions")!;
@@ -386,7 +387,7 @@ describe("a project's coding sessions", async () => {
       const made = await po.startCoding(project.id, {});
       assert.equal(made.modeNotSet, "Started, but its mode could not be set. Set it from the chat's mode menu before you send.");
       const info = await po.projectOverseerInfo(project.id);
-      assert.ok(info.worktrees.sessions.some((s) => s.sessionId === made.sessionId), "listed");
+      assert.ok(info.coding.some((s) => s.sessionId === made.sessionId), "listed");
       assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/, "no note, nothing sent");
     } finally {
       writeFileSync(settingsFile, had);

@@ -11,9 +11,9 @@ It has no shell. It acts through Sova, with limits you set, and writes files onl
 
 ## Open it
 
-The **Overseer** button, with the eye icon, sits at the right end of the session list's toolbar. When the list is collapsed, the eye alone is there. `Alt+O` opens it from anywhere. The badge on the button counts the Overseer's own messages you haven't read yet.
+The **Overseer** button, with the eye icon, sits at the right end of the session list's toolbar. When the list is collapsed, the eye alone is there. `Alt+O` opens it from anywhere. The badge on the button counts the Overseer's own messages you haven't read yet. Once a project has a project overseer running, a **▾** joins the button: it lists those overseers, marks the ones with a new reply or a failed last turn, and ends with **All Projects**.
 
-The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: What Needs Me, What Finished, What's Running, Tidy Up, and Where Was I. You can edit, add, remove, and reorder them in Settings → Overseer.
+The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: What Needs Me, What Finished, What's Running, Tidy Up, and Where Was I. You can edit, add, remove, and reorder them in Settings → Overseer. Just before it, a [memory](/docs/modes/memory/) switch turns the Overseer's memory on or off from its next turn; it starts on.
 
 ## What it reads
 
@@ -23,10 +23,12 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 
 ## What it can do
 
-- **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, and modes.
+- **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, modes, a profile the Overseer may start, and a sandbox setting.
 - **Send a message** to a session, as if you typed it there. If a turn is running, the message is queued behind it; it steers the running turn only when you've asked it to interrupt.
+- **Run your organizations**: their projects, rosters, gathering sessions and project overseers. It can also link sessions across Sova hosts.
 - **Archive and unarchive** sessions (never a permanent delete), rename them, and move them between groups.
 - **Change a session's** model, mode, or subagent profile.
+- **Turn a project's own modes on or off** in a session it starts or changes, from the modes that session's checkout ships ([Project modes](/docs/modes/project-modes/)), though not in a session it starts on another Sova host. When it turns on a mode that runs tools, that counts as your approval of them: nothing waits for you, and the approval is recorded as if you had given it.
 - **Answer a dialog** that's waiting in a session Sova runs. The session's transcript shows "Overseer chose: …". It never answers in a session that's open in a terminal.
 - **Keep notes for itself.** Standing notes are instructions it reads every turn; it can add to them, and you can edit them in Settings → Overseer.
 - **Keep your ideas and todos.** Say "it'd be nice if…" and it files an idea; say "remind me to…" and it adds a todo. It says what it filed in one line and starts nothing. The **Ideas** and **Todos** buttons in its head open each list.
@@ -36,7 +38,7 @@ It can't send to a session that's open in a terminal, archived, or a worker, and
 
 ## It asks with cards
 
-When it isn't sure, or the act is risky, the Overseer writes what it found and asks with a **card**. A card lists each session it would touch, each with a short note on what it is and why the action fits it. Options are lettered and items are numbered, so you can click, or answer in chat with something like "c_4 b".
+When it isn't sure, or the act is risky, the Overseer writes what it found and asks with a **card**. A card lists each session, idea, todo, person or project it would touch, each with a short note on what it is and why the action fits it. Options are lettered and items are numbered, so you can click, or answer in chat with something like "c_4 b".
 
 Lowering a session's sandbox always needs your click on a card. A typed "yes" isn't enough.
 
@@ -69,7 +71,7 @@ Every act is written to `~/.pi/agent/sova/overseer-actions.jsonl`, with secrets 
 
 ## Start over
 
-Type `/clear` in the Overseer's composer, or press **Clear** in its head, to start a new conversation. The last 20 stay under **History**, read-only. Its settings, standing notes, standing rules, and the action log carry over.
+Type `/clear` in the Overseer's composer, or press **Clear** in its head (under **⋯** on a narrow window), to start a new conversation. The last 20 stay under **History**, read-only. Its settings, standing notes, standing rules, and the action log carry over.
 
 ## Settings → Overseer
 

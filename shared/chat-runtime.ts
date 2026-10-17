@@ -21,6 +21,8 @@ import type {
   MemoryOpen,
   MemoryOutline,
   ModeInfo,
+  ProjectModeApproval,
+  ProjectModeApprovalNeeded,
   OverseerMemoryInfo,
   SandboxApplyResult,
   SandboxInfo,
@@ -90,6 +92,10 @@ export interface ChatModePatch {
   minorModes?: ModeState["minorModes"];
   strict?: ModeState["strict"];
   memory?: Partial<ChatMemoryChoice>;
+  /** The chat's project minor modes, whole on set (server/mode-state.ts ModePatch). */
+  projectModes?: string[];
+  approve?: ProjectModeApproval[];
+  approvedBy?: "overseer";
 }
 
 /**
@@ -291,9 +297,13 @@ export interface ChatMethods {
   /** Resolves to the effective level. */
   setThinking: { args: { level: string; save?: boolean }; result: string };
   findModel: { args: { ref: string }; result: { ok: true } | { ok: false; error: string } };
-  switchMode: { args: { patch: ChatModePatch }; result: ChatModeResult };
+  /** A project mode turn-on that needs approval switches nothing and answers the chat's mode as it is plus
+      `error` and `needsApproval` (ProjectModeApprovalNeeded). */
+  switchMode: { args: { patch: ChatModePatch }; result: ChatModeResult & Partial<ProjectModeApprovalNeeded> };
   /** Merge `patch` into the chat's mode and apply it (the /mode handler, no prompt). */
   applyMode: { args: { patch: ChatModePatch }; result: "skip" | "unsupported" | "command" };
+  /** The chat's mode with its project rows read now (GET /api/mode?path=). */
+  modeResult: { args: Record<string, never>; result: ChatModeResult };
   pinMode: { args: Record<string, never>; result: boolean };
   saveModeDefault: { args: Record<string, never>; result: ModeInfo };
   subagentProfileInfo: { args: Record<string, never>; result: SubagentProfilesInfo };
@@ -304,7 +314,7 @@ export interface ChatMethods {
   /** Append a state record of a registered kind, whatever the run is doing. */
   appendState: { args: { kind: string; data: unknown }; result: string };
   /** A note entry of `noteType` (its custom type), between turns only. */
-  appendNote: { args: { noteType: string; text: string; display?: boolean }; result: boolean };
+  appendNote: { args: { noteType: string; text: string }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
   flushDeferredAppends: { args: Record<string, never>; result: null };
@@ -340,7 +350,7 @@ export interface ChatMethods {
     result: { state: "unavailable" } | { state: "no-engine" } | { state: "ok"; open: MemoryOpen } | { state: "refused"; error: string };
   };
   memoryStatus: { args: Record<string, never>; result: OverseerMemoryInfo["status"] };
-  /** The Overseer's memory setting changed (overseer.json): turned on now, or changed otherwise. */
+  /** An overseer's memory setting changed (its overseer.json): turned on now, or changed otherwise. */
   memorySettingsChanged: { args: { turnedOn: boolean }; result: null };
   resumeWorker: { args: { id: string }; result: { ok: true } | { ok: false; status: 404 | 409; error: string } };
   workerInfo: { args: { id: string }; result: WorkerInfo | null };
@@ -427,6 +437,9 @@ export interface SpecialSpec {
   model: string | null;
   thinking: string | null;
   memory?: true;
+  /** The file whose `memory` is this loadout's own memory switch (a project overseer's overseer.json),
+      read at each of its turns; absent = the Overseer's own (the state root's). */
+  memorySettings?: string;
   attribution?: true;
   background?: true;
   replyText?: true;

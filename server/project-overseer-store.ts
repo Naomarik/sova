@@ -40,6 +40,7 @@ import { OrgError } from "./org-error";
 import { engineOf, projectDir, projectHost, projectSid, readProject, watchSid } from "./projects/spaces";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
 import { stateRoot } from "./state-root";
+import { parseOverseerMemory } from "./memory/settings";
 
 /**
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
@@ -153,6 +154,8 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     // since the list was saved (not in its confirmKindsKnown) is on, as every kind is by default.
     confirmKinds: Array.isArray(raw.confirmKinds) ? confirmKindsOf(raw.confirmKinds, raw.confirmKindsKnown) : [...d.confirmKinds],
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
+    // Its memory switch, kept only as saved (absent: no choice made, on by default).
+    ...(parseOverseerMemory(raw.memory) ? { memory: parseOverseerMemory(raw.memory)! } : {}),
   };
 }
 
@@ -367,8 +370,13 @@ export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d
 // ---- which files are project overseers ------------------------------------------------------------
 
 const markerMemo = new Map<string, { mtimeMs: number; data: ProjectOverseerMarkerData | null }>();
+/** Far above any install's session count: a listing asks for every file, and a memo smaller than that
+    would read them all again on each rebuild. Past it, the paths asked for longest ago go first. */
+export const MARKER_MEMO_MAX = 50_000;
+/** The one buffer every marker read uses (reads are synchronous, so never shared mid-read). */
+const markerBuf = Buffer.alloc(16 * 1024);
 
-/** The marker's data from a file's first 16KB (the marker is line 2), cached per mtime. */
+/** The marker's data from a file's first 16KB (the marker is line 2), cached per mtime: an unchanged file is never read again. */
 export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
   let mtimeMs = -1;
   try {
@@ -378,14 +386,18 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
     return null;
   }
   const hit = markerMemo.get(path);
-  if (hit && hit.mtimeMs === mtimeMs) return hit.data;
+  if (hit && hit.mtimeMs === mtimeMs) {
+    // Kept as the most recently asked for (a Map iterates in insertion order).
+    markerMemo.delete(path);
+    markerMemo.set(path, hit);
+    return hit.data;
+  }
   let data: ProjectOverseerMarkerData | null = null;
   let fd: number | undefined;
   try {
     fd = openSync(path, "r");
-    const buf = Buffer.alloc(16 * 1024);
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    for (const line of buf.subarray(0, n).toString("utf8").split("\n")) {
+    const n = readSync(fd, markerBuf, 0, markerBuf.length, 0);
+    for (const line of markerBuf.subarray(0, n).toString("utf8").split("\n")) {
       if (!line.includes(PROJECT_OVERSEER_ENTRY)) continue;
       // A torn line reads as nothing: keep looking. Any other key is ignored: the project id is the identity.
       const h = lineEntry(line);
@@ -400,8 +412,9 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
   } finally {
     if (fd !== undefined) try { closeSync(fd); } catch {}
   }
-  if (markerMemo.size > 500) markerMemo.clear();
+  markerMemo.delete(path);
   markerMemo.set(path, { mtimeMs, data });
+  while (markerMemo.size > MARKER_MEMO_MAX) markerMemo.delete(markerMemo.keys().next().value!);
   return data;
 }
 

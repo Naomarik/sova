@@ -1,4 +1,6 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
+import { deliverStranded, handOverWhenGoing } from "./lib/chat-outbox";
+import { chatCourier } from "./lib/chat-courier";
 import { loadAlignment } from "./lib/alignment-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -27,8 +29,9 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
+import { watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
-import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
@@ -41,6 +44,8 @@ import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { movedOrgHash, orgsRouteFromHash } from "./lib/orgs-route";
 import { projectsRouteFromHash } from "./lib/projects-route";
+import { projectSummaryKey, recall } from "./lib/page-cache";
+import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { ProjectsView } from "./components/ProjectsView";
@@ -159,6 +164,11 @@ function createMediaQuery(query: string) {
 export function App() {
   // Settings → Alignment's saved review switch gates parts of the UI (adversarial review): read once.
   loadAlignment();
+  // What an earlier page couldn't hand the server as it went (a reload or a closed tab while its chat
+  // started) goes now (§chat.transcript/send-while-starting).
+  deliverStranded(chatCourier);
+  // …and what this page holds as it goes is handed to the server then, not left for a next load.
+  handOverWhenGoing(chatCourier);
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);
@@ -379,6 +389,12 @@ export function App() {
     return r;
   };
   const [projectsRoute, setProjectsRoute] = createSignal(projectsRouteOf(location.hash));
+  /** On a project's page (this host's), its root as this tab last read it: New Session opens on that project. */
+  const pageProjectRoot = (): string | null => {
+    const r = projectsRoute();
+    if (!r || r.kind === "list" || r.host) return null;
+    return recall<ProjectSummary>(projectSummaryKey(r.projectId))?.root ?? null;
+  };
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -543,17 +559,21 @@ export function App() {
     clearInterval(tick);
   });
 
-  // ---- The stale-tab check: the front door can move this tab to another host -----------------
-  // Only with the mesh on (no front door exists without it). The tab remembers the hello of the
-  // host it was loaded from and asks again whenever the server may have changed under it: a
-  // socket reconnect, the tab coming back into view, the mesh poll.
+  // ---- The stale-tab check: this tab's Sova changed, or the front door moved it ---------------
+  // Every tab, mesh on or off: it is how a tab learns Sova was updated (§app.updates/reload-note).
+  // The tab remembers the hello of the host it was loaded from (once GET /api/mesh settled, so it
+  // knows which host that was) and asks again whenever the server may have changed under it: a
+  // socket reconnect, the tab coming back into view, and with the mesh on the mesh poll. Only with
+  // the mesh on can a host change come of it (no front door exists without it; lib/mesh weighHello).
   const [helloBase, setHelloBase] = createSignal<HelloBaseline | null>(null);
   const [staleChange, setStaleChange] = createSignal<HelloChange | null>(null);
   let pendingHost: PendingHost | null = null;
+  /** What the hello said when the banner last rose for a build or protocol (lib/mesh helloNews). */
+  let raisedNews: string | null = null;
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(confirmTimer));
   const checkHello = async () => {
-    if (!meshOn()) return;
+    if (!meshSettled()) return; // the effect below takes the baseline once it has
     let hello;
     try {
       hello = await fetchMeshHello();
@@ -568,7 +588,8 @@ export function App() {
       base = firstBaseline(servedBy, now);
       setHelloBase(base);
     }
-    const step = helloStep(base, now, pendingHost, Date.now());
+    const mesh = meshOn();
+    const step = weighHello(mesh, base, now, pendingHost, Date.now());
     const firstSeen = step.pending && step.pending !== pendingHost;
     pendingHost = step.pending;
     // Another host answered once: ask again a little later, and only a second answer from it counts.
@@ -578,9 +599,14 @@ export function App() {
     }
     const change = step.change;
     if (!change) return;
+    // The same build or protocol news as last time is not raised again: a dismissed banner stays
+    // dismissed until Sova changes once more.
+    const news = helloNews(now);
+    if (!change.host && news === raisedNews) return;
+    raisedNews = news;
     // The tab's own code hasn't changed: its protocol and build stay the baseline's. Only the host
-    // it talks to moves.
-    setHelloBase({ ...base, id: now.id, label: now.label });
+    // it talks to moves (and without the mesh it never does).
+    if (change.host) setHelloBase({ ...base, id: now.id, label: now.label });
     setStaleChange((prev) => ({
       protocol: change.protocol || !!prev?.protocol,
       build: change.build || !!prev?.build,
@@ -612,7 +638,7 @@ export function App() {
     });
   };
   createEffect(() => {
-    if (meshOn() && !helloBase()) void checkHello();
+    if (meshSettled() && !helloBase()) void checkHello();
   });
   // A vanished host leaves the open socket silent: only asking notices the move. Mesh off: never.
   createEffect(() => {
@@ -627,6 +653,8 @@ export function App() {
   setHostCheck(() => void checkHello());
   onCleanup(() => setHostCheck(null));
   createEffect(on(socketReconnects, () => void checkHello(), { defer: true }));
+  // This machine's updates: the Settings dot and section (the stale-tab check above says it changed).
+  watchUpdates();
   const onVisible = () => {
     if (!document.hidden) void checkHello();
   };
@@ -1226,7 +1254,7 @@ export function App() {
               </Match>
               {/* Projects, placed or not (#/projects[/<project>[/<tab>|/overseer]]). Not keyed: ProjectsView keys each page. */}
               <Match when={projectsRoute()}>
-                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} />}
+                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} />}
               </Match>
               {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/people/<person>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
@@ -1335,7 +1363,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders())) ?? ""}
+            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}

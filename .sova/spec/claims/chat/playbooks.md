@@ -230,8 +230,7 @@ these **per session for the page's lifetime**, in memory only, so a reload loses
 ## §chat.playbooks/what-gets-sent — What gets sent
 
 `playbookTurnText()` in `shared/playbooks.ts` (re-exported by `src/lib/playbooks.ts` and pinned
-by `src/lib/playbooks.test.ts`; a profile's linked playbook uses the same one,
-§chat.profiles/playbook) builds exactly:
+by `src/lib/playbooks.test.ts`) builds exactly:
 
 ```
 Playbook: <title> — <absolute dir>

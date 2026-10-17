@@ -142,6 +142,17 @@ export function setDraft(id: string, text: string, rawAttachments?: unknown): vo
   save(next);
 }
 
+/** Messages a chat couldn't take while no tab was left to hear it (§chat.transcript/send-while-starting):
+    their texts go back as the session's draft, ahead of any draft already saved (the order a tab
+    puts a refused send back in), its attachments kept. Blank texts are skipped. */
+export function putBackDraft(id: string, texts: readonly string[]): void {
+  const back = texts.filter((t) => t.trim());
+  if (!back.length) return;
+  const current = load()[id];
+  const text = [...back, ...(current?.text.trim() ? [current.text] : [])].join("\n\n");
+  setDraft(id, text, current?.attachments);
+}
+
 /** Drop the drafts of deleted sessions; same write rules as setDraft. */
 export function dropDrafts(ids: string[]): void {
   const next = load();

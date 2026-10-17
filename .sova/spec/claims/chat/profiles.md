@@ -20,9 +20,10 @@ once the first message is sent, and kept by the session itself. The UI says
   (`sessions.message`), **See all Sova sessions** (`sessions.all`). Messaging and See all each turn
   reading on; turning reading off turns both off.
 - **A profile** is `{id, label, icon, description, remove[], grant[], singleton, limits, mode?,
-  minorModes?, model?, thinking?, subagents?, firstMessage?, playbook?, overseerMayStart}`. `singleton` is
+  minorModes?, model?, thinking?, subagents?, firstMessage?, overseerMayStart}`. `singleton` is
   labelled **One at a time** in the UI (§chat.profiles/singleton). `limits` are
-  §chat.profiles/limits's five numbers. `playbook` links a playbook (§chat.profiles/playbook).
+  §chat.profiles/limits's five numbers. A `playbook` key, which older Sova wrote, still parses and
+  is ignored (§chat.profiles/playbook).
   `model` is the main thread's model ref (`provider/id`); `thinking` its effort, one of pi's levels
   (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); `subagents` the subagent profile the
   session uses (§chat.subagent-profiles/file), by its id, or `"off"`. Each is optional: absent, the
@@ -32,8 +33,8 @@ once the first message is sent, and kept by the session itself. The UI says
   mode.json's default. A file whose `thinking` is no level, whose `subagents` isn't `off` or a
   subagent profile id (lowercase letters, digits and dashes, at most 48), or whose `minorModes`
   isn't a list of those names, doesn't parse.
-- **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and links
-  no playbook and no first message (so it sets only model, effort, subagents, mode or minor modes) is
+- **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and has
+  no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
 - **Where profiles come from** is §chat.profiles/projects: **Default** in code (no profile, nothing
   changed: the picker's **My settings**), the **Built in** files Sova ships (none today), **Yours**,
@@ -122,8 +123,6 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   differs from there, with **Reset**. Every flip applies at once, like a
   pick. The board changes this session only and never makes a profile: profiles are files
   (§chat.profiles/projects).
-- **A profile that links a playbook** shows its playbook card under What changes
-  (§chat.profiles/playbook).
 - **A session the Overseer started from a profile** shows the same screen with it preselected and
   one muted line: "Started by the Overseer with {label}." It stays changeable until a message is sent.
 
@@ -204,8 +203,8 @@ sessions**: `session_send` too, and `queue_open`, which opens a topic other sess
 
 - **Which sessions it sees.** Without See all Sova sessions: sessions on this host in its project
   (§chat.profiles/projects): the main checkout, its worktrees and their subfolders, or, outside git,
-  its folder and below. With it: every session this host's list shows (Folders, the
-  projects' folder sessions and the Archive, TUI-live ones included). Never, either way: itself, the Overseer's conversations,
+  its folder and below. With it: every session this host's list shows (Live & web and
+  the Archive, TUI-live ones included). Never, either way: itself, the Overseer's conversations,
   project overseers' conversations, organization and baton sessions, and workers' own sessions. A
   session it can't see answers "No session with id {id} that this session can see."
 - `session_list {query?, limit?}`: one row per session: id · title · folder · state · profile ·
@@ -280,10 +279,10 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   so the empty state stays.
 - **List badge.** The session's row in the list carries the profile's icon, its label as the title.
   The list has no region of its own for profile sessions: each row stays where the session lives
-  (Folders, its groups, its project's block, the Archive) and, like any session, can be a Recent
+  (Live & web, its groups, its project's block, the Archive) and, like any session, can be a Recent
   row (§app.session-list/recent).
 - **Run Again** makes a new session in this session's folder with this profile picked and opens it
-  on its empty screen, where the picker, and a linked playbook's card, show it
+  on its empty screen, where the picker shows it
   (§chat.profiles/picker). Nothing is sent. It is `POST /api/sessions` with `cwd` and `profile`. On a
   One at a time profile that is live it answers with the picker's alert (§chat.profiles/singleton)
   as a toast with **Open the Running {Label}**.
@@ -368,25 +367,17 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   {project}'s files that can {powers}. Approve it in Settings → Profiles or on the picker first."
 - A session that already has the profile keeps its copy; approval gates new picks only.
 
-## §chat.profiles/playbook — A profile that runs a playbook
+## §chat.profiles/playbook — A profile no longer runs a playbook
 
-- **The link.** A profile may name a playbook, `playbook: "<id>"`. It is looked up among the
-  playbooks the session's folder lists (§chat.playbooks/where-playbooks-come-from): the profile's
-  own source first, then This project, Yours and Sova.
-- **The playbook card.** On the empty screen, a session whose picked profile links a playbook
-  shows a card under what the profile changes. It holds the playbook's title and description,
-  **View Playbook**, which opens its entry file (`PLAYBOOK.md` or `SKILL.md`) read-only with its path, and **Run Playbook**.
-  The message box holds the playbook's arguments: "Anything you type in the message box goes with
-  it." Run Playbook sends the playbook's turn (§chat.playbooks/what-gets-sent) with the message
-  box's text as your text, through the ordinary send path, and empties the message box. Nothing is
-  sent before it is pressed, and Send still sends a plain message.
-- **A missing playbook.** When no listed playbook has the id, the card says "This profile runs the
-  playbook "{id}", but this folder has no playbook with that id." and has no Run Playbook.
-- **The Overseer.** `sova_create_session` with a profile that links a playbook sends that
-  playbook's turn as the first message, with its `prompt`, if any, as your text. So it counts as a
-  prompt against the Overseer's caps even without `prompt`. A missing playbook refuses before
-  anything is created or capped.
-- The turn is built by one function, `playbookTurnText` in `shared/playbooks.ts`, for both.
+A profile used to name a playbook (`playbook: "<id>"`) that its session ran from a card on the empty
+screen. That link is retired: a profile carries no playbook, and a playbook runs when you pick it
+from the composer (§chat/playbooks) or on a schedule (§chat/schedules).
+
+- **Old files still parse.** Profiles sync between devices, so a file that still has a `playbook`
+  key, written by an older Sova, parses as if the key weren't there; it isn't listed as an unknown
+  field, and the session's copy of the profile carries no playbook.
+- **Nothing runs it.** The empty screen shows no playbook card for any profile, and the Overseer's
+  `sova_create_session` with a profile sends only its own `prompt`, if any, as the first message.
 
 ## §chat.profiles/live-commit — What the live server runs
 

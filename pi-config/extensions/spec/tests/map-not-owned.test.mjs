@@ -83,3 +83,21 @@ test("a spec with no notOwned anywhere: one summary line, no per-area line, no c
   assert.match(text, /^doesn't own: no area here carries notOwned$/m);
   assert.doesNotMatch(text, /^ +doesn't own:/m);
 });
+
+test("read and toc of an area H1 show its doesn't-own line with titles; an H2 and an area without the field show none", () => {
+  const root = probe();
+  const r = cli(root, ["read", "§a/chat", "--no-frame"]);
+  assert.deepEqual(r.j.items[0].notOwned, [{ id: "§a/list", title: "List" }, { id: "§b.money/prices", title: "Prices" }]);
+  const text = cli(root, ["read", "§a/chat", "--no-frame"], { json: false }).r.stdout;
+  assert.match(text, /^── §a\/chat — Chat .*\n   doesn't own: List \(§a\/list\); Prices \(§b\.money\/prices\)\n# §a\/chat/m);
+  assert.match(cli(root, ["read", "§a/list", "--no-frame"], { json: false }).r.stdout, /^   doesn't own: nothing declared$/m);
+  assert.ok(!("notOwned" in cli(root, ["read", "§a.chat/send", "--no-frame"]).j.items[0]), "an H2 never shows its area's");
+  assert.ok(!("notOwned" in cli(root, ["read", "§b/money", "--no-frame"]).j.items[0]));
+  assert.doesNotMatch(cli(root, ["read", "§b/money", "--no-frame"], { json: false }).r.stdout, /doesn't own/);
+  for (const dir of ["out", "in", "down", "up", "mentions"]) {
+    const t = cli(root, ["toc", "§a/chat", "--dir", dir]);
+    assert.deepEqual(t.j.seed.notOwned.map((x) => x.id), ["§a/list", "§b.money/prices"], dir);
+  }
+  assert.match(cli(root, ["toc", "§a/chat", "--dir", "down"], { json: false }).r.stdout, /^  what: The chat view\.\n  doesn't own: List \(§a\/list\); Prices/m);
+  assert.ok(!("notOwned" in cli(root, ["toc", "§a.chat/send", "--dir", "up"]).j.seed));
+});

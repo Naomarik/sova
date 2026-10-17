@@ -101,7 +101,8 @@ their own modules (`toc.mjs`, `read.mjs`), parse their own flags, and read the g
 loader. Flags may come before or after the command word. `sova-spec --help` lists them with the other commands;
 `toc --help` and `read --help` print their own bounded JSON help.
 
-**`toc §id --dir DIR`** lists the neighbours one hop away in one direction:
+**`toc §id --dir DIR`** (its `seed` carries `notOwned: [{id, title}]` and the text a `doesn't own:` line
+for an area H1 whose record has the field) lists the neighbours one hop away in one direction:
 
 | `--dir` | Lines | Groups |
 |---|---|---|
@@ -133,8 +134,10 @@ behavior with no `requires` key, or for `in` the behaviors that could also requi
 dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
 
 **`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
-labels?, agreed?, code?, codeMore?, title, file, lines, text, fragment}]`, where `code` is the record's
-first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest, where `text` is byte-for-byte the passage `scope`
+labels?, agreed?, code?, codeMore?, notOwned?, title, file, lines, text, fragment}]`, where `code` is the record's
+first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest,
+`notOwned` (an area H1 whose record has the field; never an H2) is `[{id, title}]`, printed as a
+`doesn't own:` line under the code line on the first fragment, where `text` is byte-for-byte the passage `scope`
 returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
 `footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
 and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.

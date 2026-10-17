@@ -539,8 +539,10 @@ would list master's changes instead.
   - Numbers: areas whose map line says what they don't own 0/87 → 87/87 (L0, `map` text on master
     9c3f949b vs this branch). The question arm ("what does it NOT own", all 87 areas, 2 reps,
     graded against code) is in the lane's RESULT.
-  - Caveat: `map --json` was already 32,252 of its 32,768-byte page on master; with the field it
-    pages (71 of 97 lines, then a cursor). The text map still fits one page.
+  - Page fit: `map --json` was already 32,374 of its 32,768-byte page on master. With owner ids in
+    each overview JSON line it paged (71 of 97 lines on page 1, then a cursor); the overview JSON now
+    leaves them out, keeping the count and a `not-owned-per-area` note pointing at `map '§ns/area'`:
+    32,497 B, one page. The text map is 29,808 B, one page, 87/87 lines.
 
 ## Integration → master
 

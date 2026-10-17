@@ -603,7 +603,14 @@ function census(ctx, changed) {
   if (bd === false) return { census: null, code };
   const { include, exclude, skipped, inBoundary } = bd;
   const files = [], symlinks = [];
+  const ign = gitIgnored(ctx.root);
+  let ignored = 0;
   const walk = (rel) => {
+    if (ign && !claimed.has(rel) && ign.has(rel)) {
+      // An ignored directory holds no tracked file (Git lists a directory only when all of it is ignored).
+      ignored += ign.get(rel) === "dir" ? countFiles(join(ctx.root, rel), rel, claimed, skipped, (c) => files.push(c)) : 1;
+      return;
+    }
     const abs = join(ctx.root, rel), fail = (e) => add("warn", "census-unreadable", `${rel}: ${e}; its files are not counted`, { file: rel });
     const st = tryRead(() => lstatSync(abs), fail);
     if (!st) return;
@@ -619,10 +626,12 @@ function census(ctx, changed) {
   }
   const uniq = [...new Set(files)].sort();
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} symlink(s) inside the boundary were not followed`);
+  if (ignored) add("note", "census-ignored", `${ignored} file(s) Git ignores inside the boundary were not counted`);
   return {
     census: {
       boundary: { include, exclude },
       files: uniq.length,
+      ignored,
       claimed: uniq.filter((f) => claimed.has(f)),
       unclaimed: uniq.filter((f) => !claimed.has(f)),
       outside: [...claimed.keys()].filter((p) => !inBoundary(p)).sort(),
@@ -630,6 +639,33 @@ function census(ctx, changed) {
     },
     code,
   };
+}
+
+// What Git ignores under the project root, as a Map of root-relative path → "file" | "dir" (a directory Git lists
+// whole), or null when no ignore rules apply: not a Git work tree, Git cannot answer, or an enclosing repository
+// ignores the whole project (that would empty the census, hiding every real gap). Tracked files are never listed.
+function gitIgnored(root) {
+  const top = git(root, ["rev-parse", "--show-toplevel"]);
+  if (top.status !== 0) return null;
+  let prefix;
+  try { prefix = toPosix(relative(realpathSync(top.out.trim()), realpathSync(root))); } catch { return null; }
+  if (prefix.startsWith("..")) return null;
+  if (prefix && git(root, ["-C", top.out.trim(), "check-ignore", "-q", "--", `${prefix}/`]).status === 0) return null;
+  const r = git(root, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", "--", "."]);
+  if (r.status !== 0) { add("warn", "census-ignore-unknown", `git ls-files: ${r.error ?? r.err.trim()}; ignored files are counted`); return null; }
+  const m = new Map();
+  for (const p of r.out.split("\0")) if (p) m.set(p.replace(/\/$/, ""), p.endsWith("/") ? "dir" : "file");
+  return m;
+}
+// Files under an ignored directory: count them, but keep any a claim maps (pushed to `keep`). Excluded paths and
+// symlinks are neither counted nor followed.
+function countFiles(abs, rel, claimed, skipped, keep) {
+  let n = 0;
+  const st = tryRead(() => lstatSync(abs), () => {});
+  if (!st || st.isSymbolicLink() || skipped(rel)) return 0;
+  if (st.isFile()) { if (claimed.has(rel)) keep(rel); else n = 1; return n; }
+  if (st.isDirectory()) for (const c of tryRead(() => readdirSync(abs), () => {}) ?? []) n += countFiles(join(abs, c), `${rel}/${c}`, claimed, skipped, keep);
+  return n;
 }
 
 // ---------------------------------------------------------------- git (read-only plumbing, no shell)

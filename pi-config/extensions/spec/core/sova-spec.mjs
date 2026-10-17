@@ -773,8 +773,8 @@ function changedLines(root, commit, paths) {
     if (line.startsWith("diff --git ")) { cur = heads.has(line) ? by.get(heads.get(line)) : loose; if (heads.has(line)) seen.add(heads.get(line)); continue; }
     if (!cur || line.startsWith("+++ ") || line.startsWith("--- ")) continue;
     if ((bytes += line.length) > DIFF_CAP) { add("note", "rank-diff-capped", `the diff passed ${DIFF_CAP} bytes; later lines were not ranked`); break; }
-    if (line[0] === "+") takeLine(cur.added, line.slice(1));
-    else if (line[0] === "-") takeLine(cur.removed, line.slice(1));
+    if (line[0] === "+") { takeLine(cur.added, line.slice(1)); cur.n = (cur.n ?? 0) + 1; }
+    else if (line[0] === "-") { takeLine(cur.removed, line.slice(1)); cur.n = (cur.n ?? 0) + 1; }
   }
   for (const p of paths) {
     const mine = by.get(p);
@@ -783,7 +783,7 @@ function changedLines(root, commit, paths) {
     // No hunk: an untracked file (all its lines are added), or one git named some other way.
     let text = null;
     try { text = readInput(root, p); } catch { /* deleted or unreadable: nothing added */ }
-    if (text !== null && text.length <= DIFF_CAP && !text.includes("\0")) for (const line of text.split("\n")) takeLine(mine.added, line);
+    if (text !== null && text.length <= DIFF_CAP && !text.includes("\0")) for (const line of text.split("\n")) { takeLine(mine.added, line); mine.n = (mine.n ?? 0) + 1; }
   }
   return by;
 }
@@ -812,12 +812,16 @@ function rankTouched(ctx, commit, ids, filesOf) {
     // A literal the change removed and didn't add back, that the § still states.
     const gone = [...toks.removed.strings, ...toks.removed.numbers].filter((t) => !toks.added.strings.has(t) && !toks.added.numbers.has(t));
     const stale = [...new Set(gone)].filter((t) => has.has(t)).sort();
-    return { id, score: Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, reason, stale };
+    const dbg = process.env.SOVA_SPEC_RANK_DEBUG ? { perFile: Object.fromEntries(filesOf(id).map((p) => {
+      const v = lines.get(p), t = new Set(["added", "removed"].flatMap((k) => TOKEN_KINDS.flatMap((f) => [...(v?.[k][f] ?? [])])));
+      return [p, { n: v?.n ?? 0, m: [...t].filter((x) => has.has(x)).map((x) => [x, Math.round(weight(x) * 100) / 100]) }];
+    })) } : {};
+    return { id, score: Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, reason, stale, ...dbg };
   });
   // Equal scores: the § that maps fewer code files is the more specific to each of them.
   const breadth = (id) => new Set(ctx.claims.get(id).code ?? []).size;
   rows.sort((a, b) => (b.stale.length > 0) - (a.stale.length > 0) || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
-  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, reason: r.reason, stale: r.stale }));
+  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, reason: r.reason, stale: r.stale, ...(r.perFile ? { perFile: r.perFile } : {}) }));
   const readFirst = rank.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
   return { rank, readFirst, named: rank.map((r) => r.id).filter((id) => !readFirst.includes(id)) };
 }

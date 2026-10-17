@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, "../core/sova-spec-draft.mjs");
-const fixtureEnv = (root) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home") });
+// The runtime's SPEC_AGREE_SOURCE is dropped too: a test says where its go-ahead came from, or that there is none.
+const fixtureEnv = (root, extra = {}) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && k !== "SPEC_AGREE_SOURCE")), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home"), ...extra });
 
 const roots = [];
 process.on("exit", () => { for (const r of roots) rmSync(r, { recursive: true, force: true }); });
@@ -38,8 +39,9 @@ function project() {
   git(root, "commit", "-qm", "base");
   return root;
 }
-function run(root, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root, env: fixtureEnv(root) });
+function run(root, ...args) { return runEnv(root, {}, ...args); }
+function runEnv(root, env, ...args) {
+  const r = spawnSync(process.execPath, [CLI, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root, env: fixtureEnv(root, env) });
   let j;
   try { j = JSON.parse(r.stdout); } catch { assert.fail(`non-JSON stdout (status ${r.status}): ${r.stdout}\n${r.stderr}`); }
   assert.equal(r.status, j.exit, "process status equals JSON exit");
@@ -52,7 +54,8 @@ function decided(root, name, rec = {}, sentence = SIXTY) {
   write(root, D(name, "claims/app/list.md"), promise(sentence));
   editManifest(root, D(name, "manifest.json"), (m) => { m.claims[ID] = { kind: "behavior", requires: [], ...rec }; });
 }
-const agree = (root, name) => run(root, "agree", name, "--id", ID, "--by", "user", "--verification", "agreed in alignment al_1", "--write");
+const SOURCE = "chat c1#m3";
+const agree = (root, name, ...more) => run(root, "agree", name, "--id", ID, "--by", "user", "--source", SOURCE, "--verification", "agreed in alignment al_1", ...more, "--write");
 const currentSpec = (root) => read(root, MANIFEST) + read(root, FILE);
 const evidenceOf = (root, name) => JSON.parse(read(root, `.sova/spec/drafts/${name}/draft.json`)).evidence ?? [];
 const codes = (j) => [...(j.findings ?? []).map((f) => f.code), ...(j.refusals ?? []).map((r) => r.code)];
@@ -65,6 +68,7 @@ test("agree lands a decided promise with no code in the current spec: agreed {by
   const rec = JSON.parse(read(root, MANIFEST)).claims[ID];
   assert.ok(rec, "the record is in the current spec");
   assert.equal(rec.agreed.by, "user");
+  assert.equal(rec.agreed.source, SOURCE, "the stamp says where the go-ahead was given");
   assert.match(rec.agreed.at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/, "now, to the UTC minute");
   assert.equal(rec.authority, "accepted");
   assert.equal(rec.code, undefined);
@@ -107,4 +111,59 @@ test("guard: agree run twice is idempotent", () => {
   assert.equal(b.exit, 0, JSON.stringify(b));
   assert.equal(currentSpec(root), once, "the current spec is byte-identical after the second run");
   assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.at, at);
+});
+
+test("agree says where the go-ahead was given: with no --source and no SPEC_AGREE_SOURCE it stamps nothing", () => {
+  const root = project();
+  decided(root, "talk");
+  const before = read(root, D("talk", "manifest.json")) + currentSpec(root);
+  const a = run(root, "agree", "talk", "--id", ID, "--by", "user", "--verification", "the brief says the user agreed", "--write");
+  assert.equal(a.exit, 1);
+  assert.deepEqual(codes(a), ["agree-unsourced"]);
+  assert.equal(read(root, D("talk", "manifest.json")) + currentSpec(root), before, "nothing written, draft or current");
+  // a blank variable is no source either
+  assert.deepEqual(codes(runEnv(root, { SPEC_AGREE_SOURCE: "  " }, "agree", "talk", "--id", ID, "--by", "user", "--verification", "v")), ["agree-unsourced"]);
+});
+
+test("the runtime's SPEC_AGREE_SOURCE is the source when --source is absent; --source wins; a bad --source is a usage error", () => {
+  const root = project();
+  decided(root, "talk");
+  const a = runEnv(root, { SPEC_AGREE_SOURCE: "pi-session:s1#e7" }, "agree", "talk", "--id", ID, "--by", "user", "--verification", "v", "--write");
+  assert.equal(a.exit, 0, JSON.stringify(a));
+  assert.equal(a.ids[0].agreed.source, "pi-session:s1#e7", "the output names the source");
+  assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, "pi-session:s1#e7", "the landed record carries it");
+  const root2 = project();
+  decided(root2, "talk");
+  const b = runEnv(root2, { SPEC_AGREE_SOURCE: "pi-session:s1#e7" }, "agree", "talk", "--id", ID, "--by", "user", "--source", "review r9", "--verification", "v");
+  assert.equal(b.ids[0].agreed.source, "review r9");
+  for (const bad of ["", "a\nb", "x".repeat(201)]) assert.equal(run(root2, "agree", "talk", "--id", ID, "--by", "user", "--source", bad, "--verification", "v").exit, 2, JSON.stringify(bad));
+});
+
+test("an agreed this draft gave is kept only for the same person and source; another source restamps it", () => {
+  const root = project();
+  decided(root, "build", { code: ["src/list.js"] });
+  const first = agree(root, "build", "--at", "2026-10-05T10:00Z").ids[0].agreed;
+  assert.equal(agree(root, "build").ids[0].stamped, false, "same by and source: kept");
+  const other = runEnv(root, {}, "agree", "build", "--id", ID, "--by", "user", "--source", "chat c1#m8", "--verification", "v", "--write").ids[0];
+  assert.equal(other.stamped, true);
+  assert.equal(other.agreed.source, "chat c1#m8");
+  assert.notEqual(other.agreed.source, first.source);
+});
+
+test("promote refuses a new agreed with no source (agreed-unsourced) and keeps current's unsourced agreed as it is", () => {
+  const root = project();
+  decided(root, "hand", { authority: "accepted", agreed: { by: "user", at: "2026-10-05" } });
+  assert.equal(run(root, "evidence", "hand", "--id", ID, "--by", "t", "--verification", "v", "--doc-only", "--write").exit, 0);
+  const p = run(root, "promote", "hand", "--id", ID);
+  assert.ok(codes(p).includes("agreed-unsourced"), JSON.stringify(p));
+  // an older stamp current already has needs no source: a reworded build keeps it
+  editManifest(root, MANIFEST, (m) => { m.claims[ID] = { kind: "behavior", authority: "accepted", requires: [], agreed: { by: "user", at: "2026-10-01" } }; });
+  write(root, FILE, promise(SIXTY));
+  git(root, "add", "-A"); git(root, "commit", "-qm", "legacy stamp");
+  assert.equal(run(root, "new", "reword", "--write").exit, 0);
+  write(root, D("reword", "claims/app/list.md"), promise("A session title shows at most 60 characters, followed by an ellipsis."));
+  assert.equal(run(root, "evidence", "reword", "--id", ID, "--by", "t", "--verification", "v", "--doc-only", "--write").exit, 0);
+  const q = run(root, "promote", "reword", "--id", ID);
+  assert.ok(!codes(q).includes("agreed-unsourced"), JSON.stringify(q));
+  assert.equal(q.exit, 0, JSON.stringify(q));
 });

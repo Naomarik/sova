@@ -516,6 +516,30 @@ would list master's changes instead.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
+### 2026-10-18
+
+- **An agreed stamp says where the go-ahead was given (P2).**
+  - Commit: branch `feat/spec-x-agree`; not on master yet.
+  - Changed:
+    - `agree` stamps `agreed: {by, at, source}`: `source` is `--source <ref>`, else the environment variable
+      `SPEC_AGREE_SOURCE`; with neither it refuses (`agree-unsourced`, exit 1) and stamps nothing. A kept
+      stamp needs the same `by` and `source`. The text output names the source;
+    - `agreed` may carry `source` (an opaque reference, 1-200 characters on one line); promotion refuses a
+      new or replaced `agreed` without one (`agreed-unsourced`). An `agreed` current already has, kept,
+      needs none;
+    - pi side: `mode/spec-agree.ts`. While spec is on, a session that is not a worker sets
+      `SPEC_AGREE_SOURCE=pi-session:<session id>#<latest user entry id>` before each tool call, and the
+      subagents spawn path passes it to spec-on workers, which relay it and never derive one from their own
+      messages;
+    - `mode/spec-mode.md`: the agree sentence names the source and says not to stamp without one; the
+      guide's word cap goes from 868 to 884. Also updated: `DRAFTS.md`, `PROMOTE.md`, `README.md`, `docs/MODE.md` and the lane-D bench.
+  - §: §tools.spec/agree-command, §tools.spec/agreed-promotion reworded; +§tools.spec/agree-source-relay.
+    Base: 9c3f949b.
+  - Numbers (L0, `.spec-exp/l0.mjs`, 7 fixed fixtures, no model): stamps written by `agree` or landed by
+    `promote` that carry a source: 0 / 4 on master 9c3f949b, 4 / 4 after. Unsourced stamps written: 4
+    → 0 (the unsourced `agree` and the hand stamp are now refused). A legacy unsourced `agreed` kept on a
+    reword still promotes. The L2 agent arm (agree before first code edit, traceable share) is pending.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -639,3 +663,13 @@ The tools are Node standard library only. Nothing is installed.
    - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
+10. **The 2026-10-18 round (agree source).** Copy `core/sova-spec-draft.mjs` again (step 1), then:
+    - **`agree` needs a source.** Pass `--source <ref>`, a reference to where the person agreed (a
+      message, a review comment, a meeting note), or have the agent's runtime set `SPEC_AGREE_SOURCE`. Without
+      either, `agree` exits 1 (`agree-unsourced`) and writes nothing. Scripts that call `agree` must add
+      one.
+    - **Promotion refuses a new unsourced `agreed`** (`agreed-unsourced`). Stamps already in your current
+      spec stay valid as they are; an unpromoted draft holding a hand-written or older `agree` stamp is
+      restamped with `agree --source …` before it promotes.
+    - **The mode text.** A project that points its agents at `mode/spec-mode.md` gets the changed agree
+      sentence with this upgrade.

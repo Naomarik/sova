@@ -117,6 +117,7 @@ import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNot
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
 import { bashCommands, CensusHook, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
+import { setAgreeSource } from "./spec-agree.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -1554,6 +1555,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 */
 	const hoistedNotes = new Map<string, string[]>();
 	pi.on("tool_call", async (event, ctx) => {
+		// Where an `agree` this call runs says the go-ahead was given (spec-agree.ts); a worker keeps what it was given.
+		if (!workerRole) setAgreeSource(ctx.sessionManager, specOn());
 		if (!specOn() || process.env.PI_SPEC_CENSUS_HOOK === "0") return;
 		await specWrites.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
 		await specCensus.before({ id: event.toolCallId, cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });

@@ -71,7 +71,7 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"], check: ["base", "all"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
-  agree: ["id", "by", "verification", "at", "write"],
+  agree: ["id", "by", "verification", "at", "source", "write"],
   promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
   drafts: ["days", "worktrees"], prune: ["approved", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
   "merge-claims": ["base", "ours", "theirs", "path", "write"] };
@@ -83,7 +83,7 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
     const k = a.slice(2);
     if (BOOL.has(k)) { o[k] = true; o.seen.add(k); continue; }
-    if (!["root", "purpose", "against", "by", "verification", "at", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
+    if (!["root", "purpose", "against", "by", "verification", "at", "source", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
     if (i + 1 >= argv.length) throw new Fail(2, "usage", `${a} needs a value`);
     if (MULTI.has(k)) o[k].push(argv[++i]); else o[k] = argv[++i];
     o.seen.add(k);
@@ -130,6 +130,7 @@ function parseArgs(argv) {
     if (!o.id.length) throw new Fail(2, "usage", "agree needs at least one --id");
     text("by", 128); text("verification", 8000);
     if (o.at !== undefined && agreedProblem({ kind: "behavior", agreed: { by: o.by, at: o.at } })) throw new Fail(2, "usage", "--at takes an ISO date, optionally with a time (2026-10-05 or 2026-10-05T14:30Z)");
+    if (o.source !== undefined && sourceProblem(o.source)) throw new Fail(2, "usage", `--source ${sourceProblem(o.source)}`);
   }
   if (cmd === "promote") {
     if (!o.id.length && !o.all && !o.meta.length && !o.file.length) throw new Fail(2, "usage", "promote needs --id, --meta, --file or --all");
@@ -142,7 +143,7 @@ function parseArgs(argv) {
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
-  "agree NAME --id §x --by WHO --verification T [--at ISO] | " +
+  "agree NAME --id §x --by WHO --verification T [--source REF] [--at ISO] | " +
   "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
   "drafts [--days N] [--worktrees] | prune --approved FILE | " +
   "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P]> --root DIR [--write] [--json]";
@@ -529,14 +530,20 @@ function mergeSpans(B, C, P) {
   return { text, ids: new Map(out.map((s) => [s.id, s.text])) };
 }
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
-// A record's `agreed: {by, at}`: who made the decision, and when. → null (absent or well-formed) | what is wrong
+// Where a go-ahead can be found (`agreed.source`): an opaque reference no tool resolves. → null | what is wrong
+const SOURCE_MAX = 200;
+function sourceProblem(v) {
+  if (typeof v !== "string" || !v.trim() || v.length > SOURCE_MAX || /[\0-\x1f\x7f]/.test(v)) return `must be 1-${SOURCE_MAX} characters on one line: where the go-ahead can be found`;
+  return null;
+}
+// A record's `agreed: {by, at, source?}`: who made the decision, when, and where. → null (absent or well-formed) | what is wrong
 function agreedProblem(rec) {
   if (rec?.agreed === undefined) return null;
   const x = rec.agreed, day = obj(x) && typeof x.at === "string" ? AGREED_AT.exec(x.at)?.[1] : undefined;
   if (!AGREED_KINDS.has(rec.kind)) return `agreed sits on a ${rec.kind}; only behavior and surface records are agreed before they are built`;
-  if (!obj(x) || Object.keys(x).some((k) => k !== "by" && k !== "at") || typeof x.by !== "string" || !x.by.trim() || !day ||
-      Number.isNaN(Date.parse(x.at)) || new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day)
-    return `agreed must be {"by": "<who agreed>", "at": "<ISO date, optionally with a time>"}`;
+  if (!obj(x) || Object.keys(x).some((k) => k !== "by" && k !== "at" && k !== "source") || typeof x.by !== "string" || !x.by.trim() || !day ||
+      Number.isNaN(Date.parse(x.at)) || new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day || (x.source !== undefined && sourceProblem(x.source)))
+    return `agreed must be {"by": "<who agreed>", "at": "<ISO date, optionally with a time>", "source": "<where the go-ahead can be found>"}`;
   return null;
 }
 // Why a changed ID cannot take --doc-only evidence → null when it can: notes and sections carry no implementation;
@@ -1008,8 +1015,14 @@ async function cmdEvidence(root, o) {
 // own plan, only when that plan is clean: no refusal, no drift warning, no note, no foreign § beyond a parent gaining it. Anything else leaves
 // the current spec as it was and points to the ordinary path. A record that maps code is only stamped.
 const AGREE_NEXT = "evidence --commit (or --snapshot), then promote --id … to preview, then promote … --plan SHA --write";
+const SOURCE_ENV = "SPEC_AGREE_SOURCE";
 async function cmdAgree(root, o) {
   const at = o.at ?? `${new Date().toISOString().slice(0, 16)}Z`;
+  // Where the go-ahead was given: --source, else what the agent's runtime put in SPEC_AGREE_SOURCE. Without one nothing is stamped.
+  const env = process.env[SOURCE_ENV];
+  const source = o.source ?? (env !== undefined && env.trim() ? env.trim() : undefined);
+  if (source === undefined) throw new Fail(1, "agree-unsourced", `agree needs where the go-ahead was given: --source <ref> (a message, comment or note the person's agreement is in), or ${SOURCE_ENV} set by the agent's runtime; nothing was stamped. Without one, report the records ready to agree to whoever holds the go-ahead`);
+  if (sourceProblem(source)) throw new Fail(1, "agree-unsourced", `${SOURCE_ENV} ${sourceProblem(source)}`);
   const build = async () => {
     const a = await analyze(root, o.name);
     const ids = uniqSorted(o.id).map((id) => {
@@ -1018,8 +1031,8 @@ async function cmdAgree(root, o) {
       const rec = recOf(a.prop, id) ?? { kind: declText(a.prop, a.pc.decls.get(id))?.startsWith("# ") ? "surface" : "behavior", authority: "accepted" };
       if (!obj(rec) || !AGREED_KINDS.has(rec.kind)) throw new Fail(1, "agree-refused", `${id} is a ${rec?.kind}; only ${[...AGREED_KINDS].join(" and ")} records are agreed`);
       // Agreed in this draft already, by the same person: kept, so running it again changes nothing.
-      const mine = obj(rec.agreed) && rec.agreed.by === o.by && o.at === undefined && canon(rec.agreed) !== canon(recOf(a.base, id)?.agreed);
-      const agreed = mine ? rec.agreed : { by: o.by, at }, was = recOf(a.cur, id)?.agreed;
+      const mine = obj(rec.agreed) && rec.agreed.by === o.by && rec.agreed.source === source && o.at === undefined && canon(rec.agreed) !== canon(recOf(a.base, id)?.agreed);
+      const agreed = mine ? rec.agreed : { by: o.by, at, source }, was = recOf(a.cur, id)?.agreed;
       if (was !== undefined && canon(was) !== canon(agreed)) {
         if (a.bc.decls.get(id)?.textSha256 === a.pc.decls.get(id)?.textSha256)
           throw new Fail(1, "agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and this draft leaves its prose unchanged; a new agreement comes with the prose it changes`);
@@ -1130,6 +1143,9 @@ async function plan(root, o) {
       else if (!a.changed.get(id).text) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and its prose is unchanged; agreed is replaced only when the promotion rewords the prose it was given for`);
       else if (!bad && obj(was) && typeof was.at === "string" && Date.parse(now.at) < Date.parse(was.at)) refuse("agreed-rewritten", `${id}: the new agreed at ${now.at} is earlier than current's ${was.at}`);
     }
+    // A new or replaced `agreed` says where its go-ahead was given; one current already has, kept as it is, needs nothing.
+    if (!bad && obj(now) && now.source === undefined && canon(now) !== canon(was))
+      refuse("agreed-unsourced", `${id}: the agreed this promotion gives (${JSON.stringify(now)}) has no source; stamp it with \`agree\`, whose --source (or ${SOURCE_ENV}) says where the go-ahead was given`);
     // Reworded under the `agreed` current has: a number or code token that changed may be a new decision nobody agreed to.
     if (was !== undefined && canon(now) === canon(was) && a.changed.get(id).text) {
       const n = agreedKeptOnChange(a, id, was, curDecls);
@@ -1746,7 +1762,7 @@ function human(out) {
     ...out.inputs.map((i) => `  ${i.path} ${i.state}${i.sha256 ? ` ${i.sha256.slice(0, 12)}` : ""}`));
   if (out.command === "agree" && out.ids) {
     L.push(`agree ${out.name}: ${out.written ? "stamped in the draft" : "preview; nothing written — pass --write"}`,
-      ...out.ids.map((i) => `  ${i.id} agreed by ${i.agreed.by} at ${i.agreed.at}${i.created ? " (record created)" : ""}${i.stamped ? "" : " (already so)"}; ${i.docOnly ? "doc-only" : "maps code: stamped only"}`));
+      ...out.ids.map((i) => `  ${i.id} agreed by ${i.agreed.by} at ${i.agreed.at}${i.agreed.source ? `, source ${i.agreed.source}` : ""}${i.created ? " (record created)" : ""}${i.stamped ? "" : " (already so)"}; ${i.docOnly ? "doc-only" : "maps code: stamped only"}`));
     for (const n of out.notPromoted ?? []) L.push(`  not promoted ${n.id}: ${n.why}; next: ${n.next}`);
     const p = out.promotion;
     if (p) L.push(p.written ? `promoted ${p.ids.join(", ")} (plan ${p.plan}): ${p.targets.map((t) => `${t.action} ${SPEC}/${t.path}`).join(", ")}` : p.alreadyCurrent ? `already current: ${p.ids.join(", ")}` : `not promoted: ${p.ids.join(", ")} (plan ${p.plan})`);

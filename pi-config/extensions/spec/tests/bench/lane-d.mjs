@@ -113,7 +113,7 @@ function pathAgree(proseOnly) {
   steps = 0;
   draft(root, "new", name, "--write");
   writePromise(root, name, { authority: undefined }, !proseOnly);
-  const a = draft(root, "agree", name, "--id", ID, "--by", "user", "--verification", "agreed in the alignment", "--write");
+  const a = draft(root, "agree", name, "--id", ID, "--by", "user", "--source", "bench#m1", "--verification", "agreed in the alignment", "--write");
   if (a.exit === 2 && /usage|unknown/i.test(JSON.stringify(a))) return { available: false, agreeExit: a.exit, agreeSays: (a.findings?.[0]?.message ?? a.raw ?? "").slice(0, 160) };
   const promoted = !!JSON.parse(read(root, ".sova/spec/manifest.json")).claims[ID];
   const w = promoted ? { exit: 0 } : promote(root, name, false);

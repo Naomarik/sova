@@ -6387,8 +6387,15 @@
         "server/org-holder.ts",
         "server/baton-progress.test.ts",
         "shared/baton.ts",
-        "server/org-effects.ts"
-      ]
+        "server/org-effects.ts",
+        "statecharts/src/sova/statecharts/residence.cljc",
+        "statecharts/test/sova/statecharts/refit/residence_test.cljs",
+        "statecharts/src/sova/statecharts/engine/queue.cljs"
+      ],
+      "agreed": {
+        "by": "user (al_1: let's just have it an hour)",
+        "at": "2026-10-17T08:45Z"
+      }
     },
     "§app.organizations/wrap-up": {
       "kind": "behavior",
@@ -6930,7 +6937,11 @@
         "server/index.ts",
         "server/app.ts",
         "shared/protocol.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-16T16:27Z"
+      }
     },
     "§chat.worktrees/entry": {
       "kind": "behavior",
@@ -13840,7 +13851,11 @@
         "§chat.worktrees/readiness",
         "§chat.alignment/session-mark",
         "§app.overseer/seen"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1: sure, let's get this merge ready)",
+        "at": "2026-10-17T08:42Z"
+      }
     },
     "§app.overseer/verify-first": {
       "kind": "behavior",
@@ -14680,7 +14695,11 @@
         "§app.insights/worktrees-endpoint",
         "§chat.worktrees/readiness",
         "§app.overseer/session-truth"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1: sure, let's get this merge ready)",
+        "at": "2026-10-17T08:42Z"
+      }
     },
     "§app.insights/pace-tick": {
       "kind": "behavior",
@@ -15739,7 +15758,11 @@
         "§chat.worktrees/readiness",
         "§app/idle-git-cache",
         "§chat.worktrees/cleanup"
-      ]
+      ],
+      "agreed": {
+        "by": "user (al_1 go-ahead)",
+        "at": "2026-10-16T16:27Z"
+      }
     },
     "§tools.spec/review-playbook": {
       "kind": "behavior",

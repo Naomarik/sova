@@ -24,7 +24,7 @@ to assert that those decisions have been implemented.
 | `core/sova-spec.mjs` | The read-only core: `map`, `where`, `toc`, `read`, `impact` (and `impact --near`), `packet`, `scope`, `graph`, `check`, `census`, `foreign` |
 | `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/toc.mjs`, `core/read.mjs` | Pull: `toc`, a one-hop contents view (what, why, size per line), and `read`, one exact passage without its chain |
-| `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes) and `about` |
+| `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes), `about` and `notOwned` (what an area does not own, by owner) |
 | `core/graph.mjs`, `core/map.mjs`, `core/where.mjs` | Look: `map` (every area on one page), `where` (the claims for a file or a name, plus claims ranked by a topic's words; `core/topic.mjs` ranks), `impact --near` (one reverse hop) and `graph --json` (the computed graph, paged) |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
@@ -182,12 +182,12 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    `migrated` stays only on text still as ported, as provenance. Then run **`evidence`**. A
    behavior or surface needs at least one implementation file, from the
    record's `code` or `--path` (unless it is agreed and not built yet, or the change is to its
-   `embeds` or `core` field alone and it is not an agreed record that maps code: both take
+   `embeds`, `core` or `notOwned` field alone and it is not an agreed record that maps code: both take
    `--doc-only`, below), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
    of `HEAD`, whose files match the working tree for the mapped code. Without Git, `--snapshot` keeps the
    exact bytes. `--doc-only` covers `note` and `section` records, an `agreed` behavior or
    surface with no code (DRAFTS.md, "Agreed, not built"), and a change to an existing behavior's or
-   surface's `embeds` or `core` field alone, unless the record is agreed and maps code: that is
+   surface's `embeds`, `core` or `notOwned` field alone, unless the record is agreed and maps code: that is
    refused (`doc-only-refused`) and needs `--commit` or `--snapshot` (DRAFTS.md, "Field-only
    changes"). `about` belongs on notes, which take `--doc-only` anyway.
    Evidence binds to the record and prose as they are now, so a later edit

@@ -532,8 +532,8 @@ would list master's changes instead.
     - a `notOwned`-only change lands on `--doc-only` evidence like `embeds` and `core`
       (`FIELD_KEYS`), with the same agreed-record and bundling refusals;
     - Sova's spec: all 87 areas carry the field (253 owners), each owner a § the area requires or
-      names, whose own code lies outside the area's code list (248 of 253; 4 owners are design docs
-      with no code, 1 shares its single file).
+      names, whose own code lies outside the area's code list (250 of 253; the other 3 are design
+      docs with no code).
   - §: §tools.spec/record-fields, §tools.spec/spec-map, §tools.spec/field-promotion reworded; the
     87 area records gain `notOwned`. Base: 9c3f949b.
   - Numbers: areas whose map line says what they don't own 0/87 → 87/87 (L0, `map` text on master

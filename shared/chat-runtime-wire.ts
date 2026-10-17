@@ -324,6 +324,11 @@ export type ToolBackWire =
  */
 export type ChatRunWire = { t: "run"; n: number; event: ChatRunEvent } | { t: "run.ack"; n: number };
 
+/** Runtime → server, additive: the step its start (until its hello says ready) or its open (until its
+    `opened`) is in, on entering each step and every 10 s (§app.chat-processes/boot-log). Sova's own
+    step names; a server that hears none (older code) knows no step. */
+export type ChatBootWire = { t: "boot"; phase: "starting" | "opening"; step: string; stepMs: number; totalMs: number };
+
 /** The runtime asks the server's rollout to reload it on current code. */
 export type ChatRequestWire = { t: "reload.request"; auto: boolean };
 
@@ -358,6 +363,7 @@ export type ChatWireFrame =
   | ChatAskWire
   | ChatPushWire
   | ChatRequestWire
+  | ChatBootWire
   | WorkerFeedWire
   | WorkerHostWire;
 

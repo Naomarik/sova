@@ -253,9 +253,9 @@ const DEFAULT_EXTENSION_FACTORIES = [
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
     session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
-    Best-effort; never throws. */
-export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string): Promise<void> {
-  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES);
+    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). */
+export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string, onStep?: (step: string) => void): Promise<void> {
+  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep);
 }
 
 let runtimeWarm: Promise<void> | null = null;
@@ -264,11 +264,15 @@ let runtimeWarm: Promise<void> | null = null;
  * counts every call it makes) with the Claude Code provider registered in it, whatever extensions
  * the chats it opens load. A loadout that loads no extension (a project overseer, a baton) never
  * registers the provider itself, so once this has started its open waits for it. Best-effort; never
- * throws.
+ * throws. `onStep` hears Sova's name for each step as it begins: a chat process's start-up trail
+ * (§app.chat-processes/boot-log, recorded by server/chat-runtime/main.ts). By default nothing hears
+ * them, and the server's own warm-up passes none: it logs and sends nothing of a trail.
  */
-export function warmChatRuntime(): Promise<void> {
-  runtimeWarm ??= getModelRuntime().then(
-    (runtime) => warmClaudeCodeProvider(runtime, agentRoot()),
+export function warmChatRuntime(onStep: (step: string) => void = () => {}): Promise<void> {
+  if (runtimeWarm) return runtimeWarm;
+  onStep("model setup");
+  runtimeWarm = getModelRuntime().then(
+    (runtime) => warmClaudeCodeProvider(runtime, agentRoot(), onStep),
     (err) => console.warn("[chat] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err)),
   );
   return runtimeWarm;
@@ -4121,7 +4125,7 @@ function hearRuns(
   });
 }
 
-async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
+async function openSession(path: string, onDisposed: () => void, onStep: (step: string) => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   // One writer per session file, across this server and its chat processes (§app.chat-processes/wire):
   // held from the open to the chat's dispose. Another live holder refuses as another writer does.
@@ -4133,20 +4137,25 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     throw err;
   }
   try {
-    return await openLocked(path, () => {
-      lock.release();
-      onDisposed();
-    });
+    return await openLocked(
+      path,
+      () => {
+        lock.release();
+        onDisposed();
+      },
+      onStep,
+    );
   } catch (err) {
     lock.release();
     throw err;
   }
 }
 
-async function openLocked(path: string, onDisposed: () => void): Promise<ChatSession> {
+async function openLocked(path: string, onDisposed: () => void, onStep: (step: string) => void): Promise<ChatSession> {
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
   // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
-  const file = await openPiSession(path, cwdOverride(path));
+  onStep("open file");
+  const file = await openPiSession(path, cwdOverride(path), onStep);
   // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
@@ -4306,12 +4315,14 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     });
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
+    onStep("extensions start");
     try {
       await chat.bind();
     } catch (err) {
       await chat.dispose();
       throw err;
     }
+    onStep("finish");
     visHost.chat = chat;
     chat.deferredAppends = file.deferred;
     if (worker) {
@@ -4403,9 +4414,10 @@ async function bringWorkerModel(chat: ChatSession, w: WorkerSpec): Promise<void>
 /**
  * Get (or open) the shared runtime for a session file. Throws BusyError when a TUI owns it,
  * or (unless `force`) when another process may be writing it. Concurrent callers share one
- * open attempt; failures are not cached.
+ * open attempt; failures are not cached. `onStep` hears a new open's steps as they begin (a chat
+ * process's open trail, §app.chat-processes/boot-log); an open already under way keeps its own.
  */
-export async function acquireChat(path: string, force = false): Promise<ChatSession> {
+export async function acquireChat(path: string, force = false, onStep: (step: string) => void = () => {}): Promise<ChatSession> {
   const existing = sessions.get(path);
   if (existing) {
     const chat = await existing.catch(() => null);
@@ -4432,7 +4444,7 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   const forget = () => {
     if (sessions.get(path) === p) sessions.delete(path);
   };
-  const p = openSession(path, forget);
+  const p = openSession(path, forget, onStep);
   sessions.set(path, p);
   p.catch((err) => {
     // Transient failures are forgotten so the next connect retries; permanent ones are recorded so

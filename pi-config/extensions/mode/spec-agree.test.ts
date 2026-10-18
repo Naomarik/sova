@@ -29,3 +29,11 @@ test("bash sees the reference while spec is on, and what the process was given w
 	setAgreeSource(s, false, env, "given");
 	assert.equal(env[AGREE_SOURCE_ENV], "given");
 });
+
+test("a session manager without a branch or an id gives no reference and never throws (a host's may lack them)", () => {
+	assert.equal(goAheadRef({}, undefined), undefined);
+	assert.equal(goAheadRef({ getBranch: () => [user("u1")] }, undefined), undefined, "no session id: no reference");
+	const env: NodeJS.ProcessEnv = { [AGREE_SOURCE_ENV]: "stale" };
+	setAgreeSource({}, true, env, undefined);
+	assert.equal(AGREE_SOURCE_ENV in env, false, "nothing to point at: nothing set");
+});

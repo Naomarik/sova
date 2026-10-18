@@ -13,10 +13,10 @@ export const AGREE_SOURCE_ENV = "SPEC_AGREE_SOURCE";
 /** What whoever started this process gave it: read at load, before this session sets its own. */
 const GIVEN: string | undefined = process.env[AGREE_SOURCE_ENV]?.trim() || undefined;
 
-/** The slice of pi's session manager this needs. */
+/** The slice of pi's session manager this needs; a host's may lack either method (then there is no reference). */
 export interface BranchSource {
-	getSessionId(): string;
-	getBranch(): readonly unknown[];
+	getSessionId?(): string;
+	getBranch?(): readonly unknown[];
 }
 
 /** The id of the latest user message on the branch, or undefined. */
@@ -34,8 +34,8 @@ export function latestUserEntry(branch: readonly unknown[]): string | undefined 
  */
 export function goAheadRef(session: BranchSource, given: string | undefined = GIVEN): string | undefined {
 	if (given !== undefined) return given;
-	const entry = latestUserEntry(session.getBranch());
-	const id = session.getSessionId();
+	const entry = latestUserEntry(session.getBranch?.() ?? []);
+	const id = session.getSessionId?.();
 	return entry && id ? `pi-session:${id}#${entry}` : undefined;
 }
 

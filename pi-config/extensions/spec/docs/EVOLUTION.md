@@ -340,12 +340,26 @@ prose that contradicts code, in every arm. Lesson: a view no agent opens measure
 put a fact on the path the mode text sends agents down, and count both text and JSON when checking
 who saw it.
 
-- **Block merge where neighbouring blocks conflict** (audit #2, P8). The first block-by-block
-  `merge-claims` gave Git's line merge the blocks as lines, so changes to two neighbouring
-  blocks conflicted, as Git does with neighbouring lines. On the merge replay it left 10 / 56
-  claim files conflicted (6 merges) against 7 / 56 for the kept version, which puts an unchanged
-  line between blocks. The 3 it added were neighbouring bullets of one declaration, each a
-  different promise. Dropped before commit.
+**P8, claim-file merges (2026-10-18, branch `feat/spec-x-merge`, not on master yet).** `merge-claims`
+merges a declaration both sides changed block by block (CHANGELOG 2026-10-18 has the numbers). Dropped
+before commit, a block merge where neighbouring blocks conflict: the first block-by-block `merge-claims`
+gave Git's line merge the blocks as lines, so changes to two neighbouring blocks conflicted, as Git does
+with neighbouring lines. On the merge replay it left 10 / 56 claim files conflicted (6 merges) against 7
+/ 56 for the kept version, which puts an unchanged line between blocks. The 3 it added were neighbouring
+bullets of one declaration, each a different promise. It was dropped.
+
+**P2, agree traceability (2026-10-18, branch `feat/spec-x-agree`, not on master yet).** Audit #2 found that 195 agreed stamps had been written by workers as `--by user`, and no session showed the
+user agreeing. Two changes, each measured on the L2 agent arm (claude-opus-5-5 medium, 7 tasks × 2 reps, the
+parent holding a pre-agreed typed turn):
+
+- `agreed.source`, required by `agree` and set by the runtime (5a0b41c9). Stamps traceable to a typed user
+  turn went 0/4 → 15/15. Agree before the first code edit stayed at 0/12: every agree came at wrap-up.
+- The mode text's claim step says to agree before the first edit (25a98ee7). Agree before the first code
+  edit went 0/12 → 4/12 (95% CI 10-65%), and 4 more runs agreed 2-3 calls after their first edit. Traced
+  stamps 17/17; upkeep flat (24.6% → 25.1%). That is below the 80% target: wording alone moves when the
+  agent agrees, not whether.
+
+Not measured: the worker relay, and team-injected turns.
 
 ## Open
 

@@ -473,7 +473,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
 	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
-	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\./, "the claim comes before the code");
+	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\. When the task's go-ahead already agrees to it, run `agree` on it then, before that edit, not at the end\./, "the claim, and its agreement, come before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
@@ -504,9 +504,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
 	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
-	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
+	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`--source <ref>`, else `\$SPEC_AGREE_SOURCE`; without one, report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	assert.ok(spec.split(/\s+/).length <= 868, "short enough to ride every turn: growing it is a deliberate change");
+	assert.ok(spec.split(/\s+/).length <= 906, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {

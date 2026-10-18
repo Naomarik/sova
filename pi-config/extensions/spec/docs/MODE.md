@@ -59,10 +59,15 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    - `PI_SPEC_CENSUS_HOOK=0` turns the census off.
 5. **Agree, with align on too.** The user's go-ahead on an alignment is the spec's Agree step. The
    `align` result that records status implementing tells the agent to write each decision that changes
-   behavior as a promise in a draft and run `sova-spec-draft.mjs agree` (it stamps `agreed: {by, at}`
+   behavior as a promise in a draft and run `sova-spec-draft.mjs agree` (it stamps `agreed: {by, at, source}`
    and, for records with no code, records doc-only evidence and promotes them when promote's plan is
    clean), before any code. The build updates the same records. `promote` notes `agreed-kept-on-change` when a later
    change edits an agreed record's numbers or backticked tokens and keeps the old `agreed`.
+5a. **Where the go-ahead is.** `spec-agree.ts`: before each tool call of a session that is not a worker,
+   the mode extension sets `SPEC_AGREE_SOURCE` to `pi-session:<session id>#<entry id>` of the latest user
+   message while spec is on (and clears it while off), so the bash tool's `agree` records it as
+   `agreed.source`. The subagents spawn path puts the same reference in each spec-on worker's environment;
+   a process started with it relays it unchanged and never derives one from its own messages.
 6. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
    code-writing worker gets these:
    - its mode prompt: the spec block plus `SPEC_WORKER_NOTE`, or, when that prompt doesn't carry the

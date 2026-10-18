@@ -592,6 +592,40 @@ would list master's changes instead.
       agents land (where → read → toc; measure-agent found `map` in 0/174 question-arm runs): one
       line, median 166 B, max 252 B on Sova's spec; an H2 never shows its area's.
 
+- **An agreed stamp says where the go-ahead was given (P2).**
+  - Commit: branch `feat/spec-x-agree`; not on master yet.
+  - Changed:
+    - `agree` stamps `agreed: {by, at, source}`: `source` is `--source <ref>`, else the environment variable
+      `SPEC_AGREE_SOURCE`; with neither it refuses (`agree-unsourced`, exit 1) and stamps nothing. A kept
+      stamp needs the same `by` and `source`. The text output names the source;
+    - `agreed` may carry `source` (an opaque reference, 1-200 characters on one line); promotion refuses a
+      new or replaced `agreed` without one (`agreed-unsourced`). An `agreed` current already has, kept,
+      needs none;
+    - pi side: `mode/spec-agree.ts`. While spec is on, a session that is not a worker sets
+      `SPEC_AGREE_SOURCE=pi-session:<session id>#<latest user entry id>` before each tool call, and the
+      subagents spawn path passes it to spec-on workers, which relay it and never derive one from their own
+      messages;
+    - `mode/spec-mode.md`: the agree sentence names the source and says not to stamp without one; the
+      guide's word cap goes from 868 to 884. Also updated: `DRAFTS.md`, `PROMOTE.md`, `README.md`, `docs/MODE.md` and the lane-D bench.
+  - §: §tools.spec/agree-command, §tools.spec/agreed-promotion reworded; +§tools.spec/agree-source-relay.
+    Base: 9c3f949b.
+  - Numbers (L0, `.spec-exp/l0.mjs`, 7 fixed fixtures, no model): stamps written by `agree` or landed by
+    `promote` that carry a source: 0 / 4 on master 9c3f949b, 4 / 4 after. Unsourced stamps written: 4
+    → 0 (the unsourced `agree` and the hand stamp are now refused). A legacy unsourced `agreed` kept on a
+    reword still promotes. The L2 agent arm (agree before first code edit, traceable share) is pending.
+- **Spec mode agrees at the claim step, before the first code edit (P2, iteration 2).**
+  - Commit: 25a98ee7, branch `feat/spec-x-agree`; not on master yet.
+  - Changed: `mode/spec-mode.md` step 4 adds "When the task's go-ahead already agrees to it, run `agree`
+    on it then, before that edit, not at the end."; the worker brief carries it (3 sentences of that rule);
+    the guide's word cap goes from 884 to 906.
+  - §: §tools.spec/mode-reading reworded. Base: 5a0b41c9.
+  - Numbers (L2, measure-agent, claude-opus-5-5 medium, 7 tasks × 2 reps, parent-only, outcome grading
+    pending): agree before first code edit 0/12 (5a0b41c9) → 4/12 (95% CI 10-65%; 4 more within 2-3 calls
+    after it); runs with any `agree --write` 7 → 11 of 14; stamps sourced and resolved to a typed turn
+    15/15 → 17/17; upkeep 24.6% → 25.1%. The L2 AFTER for the first entry (5a0b41c9 vs master): sourced
+    0/4 → 15/15, agree before code 0/13 → 0/12, upkeep 25.1% → 24.6%.
+  - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the new step 4 sentence.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -730,3 +764,12 @@ The tools are Node standard library only. Nothing is installed.
       H1 print the line (`notOwned` in JSON). Nothing else changes. To adopt it, add `notOwned` to
       each area's record in a draft and promote it on `--doc-only` evidence (`--commit` or
       `--snapshot` for an agreed record that maps code).
+    - **`agree` needs a source** (`feat/spec-x-agree`). Pass `--source <ref>`, a reference to where the person agreed (a
+      message, a review comment, a meeting note), or have the agent's runtime set `SPEC_AGREE_SOURCE`. Without
+      either, `agree` exits 1 (`agree-unsourced`) and writes nothing. Scripts that call `agree` must add
+      one.
+    - **Promotion refuses a new unsourced `agreed`** (`agreed-unsourced`). Stamps already in your current
+      spec stay valid as they are; an unpromoted draft holding a hand-written or older `agree` stamp is
+      restamped with `agree --source …` before it promotes.
+    - **The mode text.** A project that points its agents at `mode/spec-mode.md` gets the changed agree
+      sentence with this upgrade.

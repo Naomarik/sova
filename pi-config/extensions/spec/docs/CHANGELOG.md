@@ -658,6 +658,16 @@ would list master's changes instead.
     rewords the same § in another paragraph: whichever promotes second takes the other's text first.
   - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the sentence with this upgrade.
 
+- **A spawn no longer fails when the host's session manager has no branch (integration fix of `feat/spec-x-agree`).**
+  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Changed: `mode/spec-agree.ts`'s `goAheadRef` called `getBranch()` and `getSessionId()` unguarded, so
+    `agent_spawn` with spec on threw `session.getBranch is not a function` through a session manager
+    without them; two `subagents/tests/run.mjs` tests failed on the lane tip (466/468, master 468/468).
+    It now reads them as the rest of `subagents/index.ts` does (`getBranch?.()`), and gives no
+    reference when either is missing, so `agree` in that worker is refused (`agree-unsourced`), as
+    §tools.spec/agree-source-relay says of a worker given none. `spec-agree.test.ts` pins it.
+  - §: none (the draft `agree-source` already covers it).
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration

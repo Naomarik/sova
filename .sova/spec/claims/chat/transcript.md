@@ -638,17 +638,21 @@ runaway reply there is capped: it can't write a line too long to read back or to
 - **Appends.** `append` items fade in (the rows' `.message` uses no transform, so no animation is
   needed).
 - **Auto-follow.**
-  - *Following* means the transcript's scroll bottom is within 80px of the end, by the reader's
-    own scroll: the browser taking a view to the end doesn't make it following; only the reader's
-    own scroll, a wheel down at the end, or Jump to Latest does
-    (§chat.transcript/turn-end-keeps-reader). While following,
-    every append or streamed delta scrolls to the bottom (`scrollTop = scrollHeight`, no smooth
-    scroll).
-  - When the user scrolls up past 80px, following stops and a `.button.jump-latest` appears:
-    "Jump to Latest · N new". Clicking it scrolls to the end, resumes following, and removes the
-    button. Only the view moving up stops following: content landing below a following view (a
-    reply, a queued message drawn again after a switch back), or the browser moving the view down
-    to keep a row in place, never does, and the view goes back to the end. A new session's empty
+  - *Following* starts when the reader's own scroll brings the transcript's scroll bottom within
+    80px of the end: the browser taking a view to the end doesn't make it following; only the
+    reader's own scroll, a wheel down at the end, or Jump to Latest does
+    (§chat.transcript/turn-end-keeps-reader). While following, every append, streamed delta or
+    row below growing (an image decoding) scrolls to the bottom (`scrollTop = scrollHeight`, no
+    smooth scroll). A change that adds no height (a control becoming available when the chat
+    connects, hidden text, a Copy button's checkmark) never moves the view, following or not.
+  - Any scroll up by the reader's own hand (a wheel, a trackpad, a touch, a key, a scrollbar
+    drag) that takes the view off the very end stops following at once, however small, and a
+    `.button.jump-latest` appears: "Jump to Latest · N new". Clicking it scrolls to the end,
+    resumes following, and removes the button. Any other scroll stops following only when it
+    takes the view up past 80px from the end (the browser's find landing on a row above, say).
+    Content landing below a following view (a reply, a queued message drawn again after a switch
+    back), the browser moving the view to keep a row in place or clamping it as rows below get
+    shorter, and a bounce at the end on a phone never do, and the view goes back to the end. A new session's empty
     state (§chat.transcript/states) opens at its top, doesn't follow, and never shows it.
   - It also appears, not following, when you switch back to a session left at the end that gained
     rows while you were away: the view stops at the last row read, and "N new" counts the rows
@@ -966,6 +970,7 @@ unchanged.
   so is it from a server, peer or chat process on older code, which ignores the name. Either way the
   rows on screen stay where they are: every row whose entry renders the same keeps its element
   (§chat.transcript/rendering, "Refetches keep rows"), and nothing flickers, jumps or is redrawn.
+  A reader who scrolls while it connects stays where they scrolled when the `hello` lands.
   A reconnect names the last row held the same way. A `hello` whose `after` the view doesn't hold
   is not applied to the rows: the view reads the file's newest rows again instead.
 - **While it starts.** Typing works. Send and the model, mode, sandbox and login controls wait

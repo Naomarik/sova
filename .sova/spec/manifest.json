@@ -2803,11 +2803,12 @@
         "server/chat-host.ts",
         "server/archive-quiet-close.test.ts",
         "server/quiet-close-actions.test.ts",
-        "server/chat-host.test.ts"
+        "server/chat-host.test.ts",
+        "scripts/e2e/transcript-follow.mjs"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T08:19Z"
+        "by": "naomarik",
+        "at": "2026-10-18T20:32Z"
       },
       "evidence": "verified"
     },
@@ -2855,8 +2856,13 @@
         "server/watch.ts",
         "src/lib/older-rows-view.ts",
         "server/transcript-rows.ts",
-        "src/components/Thread.tsx"
-      ]
+        "src/components/Thread.tsx",
+        "scripts/e2e/transcript-follow.mjs"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-18T20:32Z"
+      }
     },
     "§chat.transcript/message-actions": {
       "kind": "behavior",

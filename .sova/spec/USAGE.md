@@ -69,7 +69,8 @@ The rest are whole-chain views:
 - **`impact §id`** lists what `requires` or `embeds` it, directly or indirectly.
 - **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest; this one
   includes `server`, `shared`, `site` (its docs pages and what they are built from; the rest of the
-  site is excluded), `src` and `vite.config.ts`. **`census --changed [--base REV]`** checks only the
+  site is excluded), `src` and `vite.config.ts`; files Git ignores there (`site/node_modules`, `site/dist`)
+  are not counted. **`census --changed [--base REV]`** checks only the
   files your task changed: the ones that differ from `REV` (default `HEAD`), plus untracked files.
   Each changed file inside the boundary is either claimed (listed with its §IDs) or reported as
   `changed-unclaimed` (exit 1). Changed files outside the boundary are listed, not failed.

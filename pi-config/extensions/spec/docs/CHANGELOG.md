@@ -488,8 +488,8 @@ would list master's changes instead.
 ### 2026-10-12
 
 - **Spec mode finds roots with a word search first (M2b).**
-  - Commit: 6f33e2ac (the promotion), branch `feat/spec-where-first`; not on master yet: the merge
-    round folds it in.
+  - Commit: 6f33e2ac (the promotion), branch `feat/spec-where-first`; on master since 2026-10-12 11:52
+    (fast-forward to a0c9da53).
   - Changed:
     - `mode/spec-mode.md` step 1: find roots with `where` and 3–5 of the task's words, never one, or
       a path or name; if no hit fits, try other words once, then `map` (also for a whole-area task);
@@ -505,8 +505,8 @@ would list master's changes instead.
     titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped:
     −11 / 288 correct, 3 wrong (ad3a61e3, reverted in 9116abae).
 - **The installed extension is the only way to run the spec tools.**
-  - Commit: the one titled "spec: the installed extension is the only spec tools; remove Sova's stale
-    bundled copy", branch `feat/spec-single-source`; not on master yet: the merge round folds it in.
+  - Commit: fb07ef5f, branch `feat/spec-single-source`; on master since 2026-10-12 15:18 (fast-forward
+    to 41802297).
   - Changed:
     - bundled copies are no longer supported: agents run the tools only from the installed extension
       (`$core`), and a copy inside a project is that project's code, read and never run without asking;
@@ -515,6 +515,26 @@ would list master's changes instead.
       `.sova/spec/USAGE.md` and the playbook's T-VENDOR and CAN-1 rows.
   - §: none.
   - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
+
+### 2026-10-18
+
+- **Whole-tree `census` leaves out what Git ignores (audit #2, P7).**
+  - Commit: this entry's, branch `feat/spec-x-census`; not on master yet: the merge round folds it in.
+  - Changed:
+    - `census` without `--changed`, in a Git work tree, does not count a boundary file Git ignores
+      (`git ls-files --others --ignored --exclude-standard --directory`) unless a record's `code` maps
+      it; `census.ignored` counts what was left out, with a `census-ignored` note. A tracked file is
+      always counted (even one an ignore pattern matches, even inside an ignored directory), and so is
+      an untracked file Git does not ignore. Outside Git, when Git cannot answer, or under an
+      enclosing repository that ignores the whole project, nothing is left out (`ignored: 0`). No
+      project-specific list: the rule is Git's own;
+    - `core/README.md` and `.sova/spec/USAGE.md` say so; `tests/census-ignored.test.mjs` is the fixture.
+  - §: +§tools.spec/census-ignored (draft `census-ignored`, not yet promoted). Base: 9c3f949b.
+  - Numbers: Sova's tree at 9c3f949b (clean, with `site/node_modules`, `site/dist`, `site/.astro`
+    present): unclaimed 10,410 → 913, of them 9,497 ignored (9,352 `site/node_modules`, 140
+    `site/dist`, 5 `site/.astro`); the 913 are exactly the tracked unclaimed files before (0 untracked
+    unignored in that tree); claimed 2,193 and mapped-outside unchanged; ~215 ms either way. Fixture:
+    1/5 tests pass on 9c3f949b, 5/5 after.
 
 ## Integration → master
 

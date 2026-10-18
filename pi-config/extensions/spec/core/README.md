@@ -339,8 +339,13 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
 - **census**: walks only the explicit `boundary: {include: [dir], exclude: [{path, reason}]}`.
   No directory is assumed. All of `.sova/spec` is never counted, and neither is the `--spec`
   directory. That covers current docs, drafts and reviews, whichever graph is read. Symlinks are listed and
-  never followed. It reports which boundary files are claimed or unclaimed, and which mapped paths
-  lie outside the boundary.
+  never followed. In a Git work tree a file Git ignores (`.gitignore`, `info/exclude`, global
+  excludes) is not counted unless a record's `code` maps it; `census.ignored` gives how many were
+  left out (note `census-ignored`). Tracked files are always counted, even when an ignore pattern
+  matches them, and so are untracked files Git does not ignore. Outside Git, when Git cannot answer,
+  or when an enclosing repository ignores the whole project, nothing is left out (`ignored: 0`).
+  It reports which boundary files are claimed or unclaimed, and which mapped paths lie outside the
+  boundary.
 - **census --changed**: checks only the files a task changed. Those are the files that differ between
   `--base` (default `HEAD`) and the working tree, plus untracked files that aren't ignored.
   Deleted files are kept: `deleted: [path]` lists them; a deleted file a record maps is a `claimed`

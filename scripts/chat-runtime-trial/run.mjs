@@ -263,18 +263,42 @@ let base = "";
 let shareBase = "";
 let c = null;
 let n = 0;
+/** The server could not listen on its port (taken between freePort and its bind): its log says so. */
+const listenFailed = (log) => {
+  try {
+    return /\[server\] listen failed: (.*)/.exec(readFileSync(log, "utf8"))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+};
 async function boot(o = {}) {
-  const port = o.agent ? await freePort() : (fixedPort ?? (await freePort()));
-  const url = `http://127.0.0.1:${port}`;
-  // A fixed build unless the check sets one: the worktree is edited while the trial runs, and a build
-  // taken from the dirty tree would move between restarts and reload chats mid-check.
-  // A share listener of its own on loopback, so a trial can post as a baton's participant.
-  const sharePort = await freePort();
-  const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
-  const env = serverEnv({ agent: o.agent ?? agent, port, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
-  const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`), root: o.root, liveLike });
-  s.up();
-  await healthy(url);
+  // freePort's ports are released before the server binds them, so another process (any outgoing
+  // connection's source port) may take one first: the server then exits, and it boots again on others.
+  for (let attempt = 1; ; attempt++) {
+    const port = o.agent ? await freePort() : (fixedPort ?? (await freePort()));
+    const url = `http://127.0.0.1:${port}`;
+    // A fixed build unless the check sets one: the worktree is edited while the trial runs, and a build
+    // taken from the dirty tree would move between restarts and reload chats mid-check.
+    // A share listener of its own on loopback, so a trial can post as a baton's participant.
+    const sharePort = await freePort();
+    const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
+    const env = serverEnv({ agent: o.agent ?? agent, port, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
+    const log = join(scratch, `server-${n + 1}.log`);
+    const s = server({ tag: `${tag}-${++n}`, env, mode, log, root: o.root, liveLike });
+    s.up();
+    try {
+      await healthy(url, undefined, () => listenFailed(log));
+    } catch (err) {
+      const why = listenFailed(log);
+      if (!why || attempt >= 3 || (fixedPort && !o.agent)) throw err;
+      R.note(`the server could not listen (${why}); booting it again on other ports`);
+      await s.down();
+      continue;
+    }
+    return booted(o, s, url, sharePort);
+  }
+}
+async function booted(o, s, url, sharePort) {
   if (liveLike && !o.agent) {
     // No switch: chats run in processes of their own, on systemd user units where the user manager
     // answers (the stand-in unit's), else detached (darwin).

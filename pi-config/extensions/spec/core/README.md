@@ -101,7 +101,8 @@ their own modules (`toc.mjs`, `read.mjs`), parse their own flags, and read the g
 loader. Flags may come before or after the command word. `sova-spec --help` lists them with the other commands;
 `toc --help` and `read --help` print their own bounded JSON help.
 
-**`toc §id --dir DIR`** lists the neighbours one hop away in one direction:
+**`toc §id --dir DIR`** (its `seed` carries `notOwned: [{id, title}]` and the text a `doesn't own:` line
+for an area H1 whose record has the field) lists the neighbours one hop away in one direction:
 
 | `--dir` | Lines | Groups |
 |---|---|---|
@@ -133,8 +134,10 @@ behavior with no `requires` key, or for `in` the behaviors that could also requi
 dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
 
 **`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
-labels?, agreed?, code?, codeMore?, title, file, lines, text, fragment}]`, where `code` is the record's
-first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest, where `text` is byte-for-byte the passage `scope`
+labels?, agreed?, code?, codeMore?, notOwned?, title, file, lines, text, fragment}]`, where `code` is the record's
+first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest,
+`notOwned` (an area H1 whose record has the field; never an H2) is `[{id, title}]`, printed as a
+`doesn't own:` line under the code line on the first fragment, where `text` is byte-for-byte the passage `scope`
 returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
 `footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
 and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.
@@ -148,17 +151,19 @@ root, spec, request and the whole computed stream, so a spec change that alters 
 manifest, `token-malformed`, `token-mismatch-or-stale`, `token-range`, `budget-refused`) are small
 JSON within the budget. Nothing is stored.
 
-## Optional record fields: `embeds`, `core`, `about`
+## Optional record fields: `embeds`, `core`, `about`, `notOwned`
 
-Three optional manifest record fields, handled in their own module (`fields.mjs`). None is a kind,
+Four optional manifest record fields, handled in their own module (`fields.mjs`). None is a kind,
 a label value or a top-level key, so an older core reads the manifest and ignores them. A spec whose
-records carry none of them gets exactly the output it got before.
+records carry none of them gets exactly the output it got before, except `map`'s one line saying no
+area carries `notOwned`.
 
 | Field | On | Means | Read by |
 |---|---|---|---|
 | `embeds: [§id]` | any record | surfaces drawn inside this one, needed whole | `scope`/`packet` follow it (reason `embeds`); `impact` walks it back; `toc --dir out` group `embeds`, `--dir in` group `embedded-by`; `read` delivers each target whole after the passage, items marked `embeddedIn` |
 | `core: true` | any record, usually an H2 | part of the always-on frame | the frame stream: `packet §id --part frame`, `read --frame`, and `frame.items` on the first page of `read §id` (outside its budget; `--no-frame` drops it) |
 | `about: [§id]` | notes only | the surface or behavior the note serves | `toc --dir out` group `about` (also for an H2 of the target H1, marked `via`); `read` footer `about`; `packet` prose, after the closure, reason `about` (one per delivered target), for every claim the packet delivers |
+| `notOwned: [§id]` | areas (H1) only | the claims elsewhere that own what a reader might expect this area to own; `[]` = looked, nothing to say | `map`: a `doesn't own` line per area (owner ids in the overview, with heading titles in the area view); never followed as an edge |
 
 **The frame** is every `core: true` record's passage in file and line order (an H1 gives its lede).
 It is never part of another stream or of the requested claim's page budget. When the spec flags at
@@ -170,7 +175,9 @@ and `check` and `packet` report a `frame-over-cap` warning.
 `check` errors (exit 2) when `embeds` or `about` is not an array of § ids, or `core` is not a
 boolean. It warns on `about` on a record that is not a note (`about-not-note`), a target with no
 record (`dangling-edge`), an `embeds` target that is not a surface (`embeds-not-surface`), and an
-`about` target that is a note or section (`about-wrong-kind`).
+`about` target that is a note or section (`about-wrong-kind`); `notOwned` (also an array of § ids)
+on a record that is not an H1 (`not-owned-not-area`) or naming a claim inside the area itself
+(`not-owned-inside`); a dangling owner is `dangling-edge`.
 
 ## Look: `map`, `where`, `impact --near`, `graph`
 
@@ -196,7 +203,12 @@ absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when
 `agreed`: built is `code` plus `evidence` `reviewed` or `verified` (sova-spec-draft.mjs `BUILT_LABELS`), and
 `oldest`/`newest` are the not-built records' `agreed.at` dates, never ages. With no `agreed` record in
 view the key is absent and the text says so. `agreed` records who decided and when, not that anyone
-read the current words.
+read the current words. The overview's JSON area lines leave the field out, so the map keeps fitting
+one page, and add the note `not-owned-per-area`; the area view's `area` carries `notOwned: [{id,
+title}]` when the record has the field, and `counts.notOwned` is `{written, areas}` when any area in view does;
+the text prints `doesn't own: written for k of n area(s)` and, per area, the owners (ids in the
+overview, `title (§id)` in the area view), `nothing declared` for `[]`, or `(not written)`. With no area in view carrying it the key is absent, the text
+says so, and no area gets the line.
 
 **`where <path|token|topic words…> [--token] [--all]`** (default 12,000). Several unquoted words are one token, as if quoted; only a single argument can be a file. A path is a file some record's `code`
 lists or that exists under the root; it is read with the core's own refusal rules. `mode: "path"`:

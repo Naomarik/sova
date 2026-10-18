@@ -260,13 +260,6 @@ drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the base
 first, BEFORE taken on a pristine archive of the base, AFTER on the commit. All eight lanes landed
 by 2026-10-10 01:44 (52afd0a8, master reflog). CHANGELOG.md has each lane's numbers.
 
-- **Block merge where neighbouring blocks conflict** (audit #2, P8). The first block-by-block
-  `merge-claims` gave Git's line merge the blocks as lines, so changes to two neighbouring
-  blocks conflicted, as Git does with neighbouring lines. On the merge replay it left 10 / 56
-  claim files conflicted (6 merges) against 7 / 56 for the kept version, which puts an unchanged
-  line between blocks. The 3 it added were neighbouring bullets of one declaration, each a
-  different promise. Dropped before commit.
-
 ## Lessons
 
 - **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together
@@ -323,6 +316,36 @@ corrected 10-09 baseline (the 10-09 method had counted every pi worker as spec-o
   sample; a non-Claude model doubled bytes). Claude Code caps tool output at 30k characters and pi at
   about 50 KB, so bytes don't compare across the 10-13 runtime switch. Counters must ignore quoted note
   text (census notes were over-counted once).
+
+
+### The audit #2 lanes (2026-10-18, branch `feat/spec-x-integration`, not on master yet)
+
+**P4, what an area does not own (2026-10-18, branch `feat/spec-x-notowned`, not on master yet).** Audit
+#2 found 0/87 areas saying what they don't own (Goal 3's first measure). An area record now carries
+`notOwned: [§id]` and `map` prints it: 0/87 → 87/87 on Sova's spec (L0, `map` text, master 9c3f949b
+against the branch). The first shape, `{what, owner}` with a phrase in the manifest, was dropped
+before it was measured: it put prose in a relations-only manifest and said each thing twice; the map
+prints the owner's own heading instead. Printing titles in the overview was dropped too: 78 of 87
+areas fitted the 32 KB page, against 87 of 87 with ids only (titles stay in `map '§area'`).
+Ids in the overview's JSON lines still pushed `map --json` (32,374 B on master, near its 32,768 B
+cap) onto a second page, 71 of 97 lines on the first; the overview JSON now leaves the owners out
+and adds one note pointing at `map '§area'`: 32,497 B, one page.
+The question arm then showed no subject ran `map` (0/174; master 3/174): agents go where → read → toc.
+Putting the line on `read`/`toc` of the area H1 took exposure from 2/174 to 174/174 runs, and every
+answer then named the listed owners: exposure is the result. Correctness against code did not move
+beyond grader noise: correct answers 135 → 139 of 174 and areas with both reps correct 58 → 64 of 87,
+where a reordered regrade of 10 areas agreed with the first grading on 45 of 60 verdicts (75%) and
+moved each arm's correct count on them by 3-5 of 20. Most wrong not-own statements come from spec
+prose that contradicts code, in every arm. Lesson: a view no agent opens measures as nothing, so
+put a fact on the path the mode text sends agents down, and count both text and JSON when checking
+who saw it.
+
+- **Block merge where neighbouring blocks conflict** (audit #2, P8). The first block-by-block
+  `merge-claims` gave Git's line merge the blocks as lines, so changes to two neighbouring
+  blocks conflicted, as Git does with neighbouring lines. On the merge replay it left 10 / 56
+  claim files conflicted (6 merges) against 7 / 56 for the kept version, which puts an unchanged
+  line between blocks. The 3 it added were neighbouring bullets of one declaration, each a
+  different promise. Dropped before commit.
 
 ## Open
 

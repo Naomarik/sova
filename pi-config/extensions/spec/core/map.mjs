@@ -1,11 +1,24 @@
 // Orientation: every area on one page (`map`), one namespace (`map ns`), or one area (`map §ns/name`).
 // Node stdlib only; reads the parsed graph only and never writes.
-import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit } from "./toc.mjs";
+import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit, notOwnedOf as notOwnedTitledOf, notOwnedText } from "./toc.mjs";
 import { lookArgs, idArg, openSpec, refuse, indexOf, depsOf, namespaceOf, labelsOf, labelText, isInterface, paged, pageFields,
   agreedCounts, agreedText, agreementOf, agreementText } from "./graph.mjs";
 
 const MAP_NOTICE = "Computed from declared records and claim text; counts are declarations, never proof. agreed records who made the decision and when, never that anyone read the current words.";
 const HUBS = 10;
+
+// What an area says it does not own (its notOwned field) → {notOwned} | {} when absent. The overview keeps the
+// owners' § ids, so every area still fits one page; the one-area view adds each owner's heading title.
+const notOwnedOf = (rec) => (Array.isArray(rec?.notOwned) ? { notOwned: [...rec.notOwned] } : {});
+// How many areas in view carry notOwned: {written, areas} | null when none does, so an absent count never reads as zero.
+function notOwnedCounts(ctx, areas) {
+  const written = areas.filter((a) => Array.isArray(ctx.claims.get(a).notOwned)).length;
+  return written ? { written, areas: areas.length } : null;
+}
+const notOwnedSummary = (c) => (c ? `doesn't own: written for ${c.written} of ${c.areas} area(s)` : "doesn't own: no area here carries notOwned");
+// The area's own line, or null when no area in view carries the field.
+const notOwnedLine = (e, c) => (!c ? null : !e.notOwned ? "doesn't own: (not written)"
+  : notOwnedText(e.notOwned));
 
 // Counts by declared label over ids: {authority: {accepted: n}, evidence: {…}, unlabelled: n}.
 function labelCounts(ctx, ids) {
@@ -48,7 +61,7 @@ function hubs(ix, ids) {
 }
 
 // The overview: one line per area, then the hubs.
-function overview(ix, namespace) {
+function overview(ix, namespace, json) {
   const { ctx } = ix;
   const areas = ix.areas.filter((a) => !namespace || namespaceOf(a) === namespace);
   const ids = areas.flatMap((a) => ix.members.get(a));
@@ -60,11 +73,12 @@ function overview(ix, namespace) {
   const list = areas.map((a) => {
     const d = ctx.decls.get(a), m = ix.members.get(a), x = crossing(ix, m);
     return { type: "area", id: a, namespace: namespaceOf(a), title: titleOf(d), ...whatOf(d), claims: m.length, labels: labelCounts(ctx, m),
-      requiresOut: x.out.length, requiresIn: x.in.length };
+      requiresOut: x.out.length, requiresIn: x.in.length, ...(json ? {} : notOwnedOf(ctx.claims.get(a))) };
   });
   for (const h of hubs(ix, ids)) list.push({ type: "hub", ...h });
-  const agreed = agreedCounts(ctx, ids);
-  return { list, counts: { namespaces, areas: areas.length, claims: ids.length, labels: labelCounts(ctx, ids), ...(agreed ? { agreedNotBuilt: agreed } : {}), gaps: gaps(ix, ids) } };
+  const agreed = agreedCounts(ctx, ids), no = notOwnedCounts(ctx, areas);
+  return { list, counts: { namespaces, areas: areas.length, claims: ids.length, labels: labelCounts(ctx, ids), ...(agreed ? { agreedNotBuilt: agreed } : {}),
+    ...(no ? { notOwned: no } : {}), gaps: gaps(ix, ids) } };
 }
 
 // One area: its claims, the edges crossing its boundary, the tokens it defines.
@@ -89,7 +103,8 @@ function area(ix, id) {
     list.push({ type: "token", token, definedBy: by, usedElsewhere: elsewhere });
   }
   const counts = { claims: m.length, labels: labelCounts(ctx, m), code: new Set(m.flatMap((c) => ctx.claims.get(c).code ?? [])).size,
-    requiresOut: x.out.length, requiresIn: x.in.length, tokens: defs.size, ...(agreedCounts(ctx, m) ? { agreedNotBuilt: agreedCounts(ctx, m) } : {}), gaps: gaps(ix, m) };
+    requiresOut: x.out.length, requiresIn: x.in.length, tokens: defs.size, ...(agreedCounts(ctx, m) ? { agreedNotBuilt: agreedCounts(ctx, m) } : {}),
+    ...(notOwnedCounts(ctx, [id]) ? { notOwned: notOwnedCounts(ctx, [id]) } : {}), gaps: gaps(ix, m) };
   return { list, counts };
 }
 
@@ -99,14 +114,19 @@ export function renderMap(out) {
   if (out.area) {
     const a = out.area;
     L.push(`${a.id} — ${a.title}  ${c.claims} claim(s) · ${countsText(c.labels)} · ${c.code} code file(s) · requires/embeds out ${c.requiresOut} · in ${c.requiresIn}`, `  what: ${a.what}`);
+    const n = notOwnedLine(a, c.notOwned);
+    if (n) L.push(`  ${n}`);
   } else L.push(`map${out.namespace ? ` ${out.namespace}` : ""}: ${c.claims} claim(s) in ${c.areas} area(s), ${Object.keys(c.namespaces).length} namespace(s) · ${countsText(c.labels)}`);
   L.push(agreedText(c.agreedNotBuilt));
+  L.push(notOwnedSummary(c.notOwned));
   for (const n of out.notes) L.push(`note ${n.code}: ${n.message}`);
   let head = null, ns = null;
   for (const e of out.lines) {
     if (e.type === "area") {
       if (e.namespace !== ns) { ns = e.namespace; L.push(`${ns} (${c.namespaces[ns].areas} area(s), ${c.namespaces[ns].claims} claim(s))`); }
       L.push(`  ${e.id} — ${e.title}  ${e.claims} claim(s) · ${countsText(e.labels)} · requires/embeds out ${e.requiresOut} · in ${e.requiresIn}`, `    what: ${e.what}`);
+      const n = notOwnedLine(e, c.notOwned);
+      if (n) L.push(`    ${n}`);
       continue;
     }
     if (e.type !== head) { head = e.type; L.push(`${HEADS[head]}${out.area && head !== "claim" ? ` (${c[{ out: "requiresOut", in: "requiresIn", token: "tokens" }[head]]})` : ""}`); }
@@ -143,11 +163,13 @@ export function mapMain(argv, core) {
     r = area(ix, areaId);
   } else {
     if (raw !== undefined && !ix.areas.some((a) => namespaceOf(a) === raw)) return done(boundedRefusal("map", budget, "unknown-namespace", { message: `no area in namespace ${raw}` }));
-    r = overview(ix, raw);
+    r = overview(ix, raw, o.json);
+    // The overview JSON leaves each area's owners out so the whole map keeps fitting one page; the count stays.
+    if (o.json && r.counts.notOwned) notes.push({ code: "not-owned-per-area", message: "what each area does not own: map '§ns/area'" });
   }
   const d = areaId && g.ctx.decls.get(areaId);
   const head = { tool: "sova-spec", command: "map", budget, ...(raw !== undefined ? { arg: raw } : {}), ...(raw !== undefined && !id ? { namespace: raw } : {}),
-    ...(areaId ? { area: { id: areaId, title: titleOf(d), ...whatOf(d) } } : {}), counts: r.counts, notes };
+    ...(areaId ? { area: { id: areaId, title: titleOf(d), ...whatOf(d), ...notOwnedTitledOf(g.ctx, areaId) } } : {}), counts: r.counts, notes };
   const fp = fingerprintOf({ root: g.root, spec: o.spec, head, list: r.list });
   return paged({ command: "map", o, fp, list: r.list, render: renderMap,
     build: (lines, at, next) => ({ ...head, exit: at < r.list.length ? 1 : 0, ...pageFields(r.list, lines, at, next), notice: MAP_NOTICE }) });

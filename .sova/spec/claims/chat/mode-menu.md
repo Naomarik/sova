@@ -216,7 +216,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
 TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
-The chat then:
+A switch of a project's coding session whose minor modes leave `spec` out is refused before
+anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
+§app.project-overseer/coding-mode). The chat then:
 
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
   so it leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode

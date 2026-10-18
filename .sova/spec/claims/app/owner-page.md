@@ -1,4 +1,4 @@
-# §app/owner-page — The owner page: one read-only page where an organization's owner follows its work
+# §app/owner-page — The owner page: one page where an organization's owner follows its work and talks to its Project Assistant
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 An organization (§app/organizations) may have one **owner**: a person on its roster, picked by the
@@ -6,8 +6,10 @@ operator, who is usually the client's boss (the director of an academy, the head
 The owner gets one personal link on the share listener (§app.baton/share-listener) to one page,
 phone first, where they read how every project is going: a status per project, the updates the
 project overseer posts at each real milestone, who was asked and what was decided, how much work
-was built (as counts), and the client conversations themselves. The page only reads: nothing on it
-changes anything.
+was built (as counts), and the client conversations themselves. On it they also talk to their
+Project Assistant (§app/project-assistant), see their requests and where they stand, and open the
+versions they can try. Reading changes nothing; only the Project Assistant's chat and the ask for
+a new link write.
 
 The word **owner** here always means the organization's owner. It is not a baton session's owner
 (who started the session, §app/baton) and it is not a project's main stakeholder
@@ -43,7 +45,7 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **Still an ordinary person.** Their own `/h/` links to conversations they are asked in keep
   working as before (§app.baton/links); the owner page adds reading, it replaces nothing.
 
-## §app.owner-page/link — One personal link, 90 days, one at a time
+## §app.owner-page/link — One personal link, off after a week unused, one at a time
 
 - **Shape.** `/i/<token>` on the share listener's public address, built exactly like a hand-off
   link (§app.baton/links): 32 random bytes, base64url; the store keeps its SHA-256, compared
@@ -54,7 +56,17 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   workspace repo: `{hash, orgId, personId, scope: "owner", gen, createdAt, expiresAt, revokedAt?,
   revokedWhy?}` per link, and the host's handle key (§app.owner-page/conversations). A clone and attach on another host has no owner link: the operator sends
   a new one there.
-- **90 days.** A link expires 90 days after it was made, absolutely; nothing renews it.
+- **Off after 7 days unused.** A link turns itself off once 7 days pass with no use; there is no
+  other expiry. Its `expiresAt` is that deadline: 7 days after it was made, moved to 7 days after
+  each use (`lastUsedAt`), written at most once an hour. A use is a request the link answers for a person: a read
+  of `/api/i/*`, a message to the Project Assistant, an Open of a version. A link previewer's fetch,
+  a refused request and the operator's Preview are no use. A link that turned off never comes back.
+- **Ask for a new link.** A link that turned off unused (and only such a link: not one replaced,
+  turned off, or whose person is no longer the owner) offers `Ask for a new link`:
+  `POST /i/<token>/ask-link` records `askedAt` on the link (asking again within a day answers the
+  same and records nothing), and the operator's Needs you shows it (`owner-link-request`), with a
+  phone notification, until a new owner link is made for the org. Every other dead or unknown link answers that route as it
+  answers a read.
 - **One live link per org.** `GET /api/orgs/:id/owner/link` (main listener only) makes a new link
   for the current owner and turns off every older one of that org at once (Get New Owner Link).
   With `?keep=1` (Get Owner Link) it answers the owner's live link instead when its token is kept,
@@ -69,8 +81,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **Checked on every request.** A request resolves only a link that is not turned off, not expired,
   whose org is attached, and whose person is active and still that org's owner; anything else
   answers as a dead link, even if nothing turned it off yet.
-- **Dead links** answer 410 with no org name, no person's name and nothing else: expired links say
-  so ("This link has expired."); every other dead link (replaced, turned off, owner changed,
+- **Dead links** answer 410 with no org name, no person's name and nothing else: a link that turned
+  off unused says so (`why: "idle"`, "This link turned off after a week without use.") and offers
+  the ask; every other dead link (replaced, turned off, owner changed,
   person left, org detached) gets one generic answer ("This link is no longer active."), so a
   forwarded link never says why. An unknown token answers 404 ("This link doesn't open anything.").
 - **Visits** are logged in the org's `visits.jsonl` as for hand-off links (§app.baton/visits), with
@@ -82,10 +95,16 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 ## §app.owner-page/content — What the page shows
 
 - **Three views**, each in the URL fragment so the browser's Back works:
-  - **Home** (`/i/<token>`): the org's name, a greeting to the owner by first name, the
-    read-only line, when it was last updated; **Waiting on you**, only when something waits on
-    them; **Your projects**, one card per shown project (name, status, the newest update, and a
-    line of counts), the whole card a link.
+  - **Home** (`/i/<token>`): the org's name, a greeting to the owner by first name, when it was
+    last updated; the `Project Assistant` button (§app/project-assistant); **Waiting on you**,
+    only when something waits on them; **Your requests**, only when they made one: each its
+    title, its kind and where it stands (§app.project-assistant/requests), newest first;
+    **Versions you can try**, only when a shown project lists one
+    (§app.project-assistant/versions): each its name, its project, and `Open` or `Not running
+    right now`; **Your projects**, one card per shown project (name, status, the newest update,
+    and a line of counts), the whole card a link.
+  - **The Project Assistant** (`#a`): the conversation with it, newest at the bottom, with a
+    composer (§app.project-assistant/chat).
   - **A project** (`#p/<handle>`): its name and status, then in this order: **Updates**,
     **Waiting on you** (this project's, only when there is something), **Who we've talked to**,
     **What's been decided**, **What's been built**, **Conversations**. Updates, decisions and
@@ -150,8 +169,7 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 
 ## §app.owner-page/updates — The project overseer's updates, posted at real milestones
 
-- **Posted by the project overseer, on its own.** A tool, `sova_owner_update({text})`, at level
-  L1 (§app.project-overseer/autonomy-levels), appends a post to `projects/<pid>/updates.jsonl` in
+- **Posted by the project overseer, on its own.** A tool, `sova_owner_update({text})`, of the power `ownerUpdates` (§app.project-overseer/autonomy-levels), appends a post to `projects/<pid>/updates.jsonl` in
   the workspace repo: `{kind: "post", id: "u_…", at, by: {kind: "overseer", run: "auto" |
   "operator"}, text}`. Nothing waits for approval; a post made in a run the operator did not start
   waits in a hold first, which the operator or the overseer may cancel
@@ -203,22 +221,26 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   - any session, person, project, decision or conflict id; any token, token hash, link state or
     other person's link;
   - visits (anyone's), message limits, models, thinking levels, token counts and costs;
+  - the Project Assistant's tool names, calls and results, request ids, preview addresses, ports
+    and branch names (§app.project-assistant/never);
   - conflict routing reasons, stakeholder history, Needs-you items, proposed people;
   - hidden conversations and switched-off projects, their counts included.
 - A test plants a distinct marker in every one of those fields, checks each marker is present in
   the operator's own views (so its absence means something), then reads every owner-page answer
   and the shell and finds none of them.
 
-## §app.owner-page/page — Phone first, read only
+## §app.owner-page/page — Phone first; reading changes nothing
 
 - One column at every width, at most 720px wide and centred; at 390px nothing scrolls sideways,
   every button and row is at least 44px tall, and lines wrap rather than being cut. It is part of
   the share build (`dist-share/`), using its styles; dark only. A reply's markdown reads as
   §app.session-share/reading describes.
-- **Read only.** The share listener has only GET routes for it: `GET /i/<token>` (the same page
-  shell as `/h/`), `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>` and
-  `GET /api/i/<token>/c/<k_handle>`. Any other `/i/` or `/api/i/` path, any other method, and a
-  WebSocket on it answer 404. Nothing the owner does reaches a model.
+- **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
+  `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
+  `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant` (a message to it),
+  the socket `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>` (a version) and
+  `POST /i/<token>/ask-link` (§app.owner-page/link). Any other `/i/` or `/api/i/` path or method
+  answers 404. Only a message to the Project Assistant reaches a model.
 - **Fresh.** The page reads again every 60 seconds while it is visible (paused while hidden, at
   once when shown again) and says when it last did.
 - **Limits.** The listener's per-address limit applies, and per token at most 120 requests a
@@ -232,13 +254,20 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   can see, in one sentence; a select (None, then the org's active people by name); the latest
   change ("Set by you {time}.", "Set by you, via the Overseer {time}." or, after a clearing, the
   person who left); the link's state (when
-  it was made, when it expires, how many times it was opened, the expiry warned once under 14 days
-  are left); `Copy Owner Link` while the live owner link is kept (it copies `ownerPage.link.url`),
+  it was made, when it was last used, when it turns off unused, how many times it was opened; a
+  link that turned off unused says so, warned, and, once the owner asked, that they asked for a new
+  one); `Copy Owner Link` while the live owner link is kept (it copies `ownerPage.link.url`),
   else `Get Owner Link` (`?keep=1`: the kept live link, or a new one when there is none to show;
   over a live link that isn't kept it asks first, with Get New Owner Link's confirm);
   `Get New Owner Link` while a live one exists (with a confirm: the current one stops);
   `Preview Owner Page`; and `Delete Owner Link` set apart as destructive (its confirm:
   §design.copy-deck/owner-page). A new link shows with Copy Link, as on the baton strip.
+- **The Owner card's Project Assistant part** (§app/project-assistant): the owner's open requests
+  with `Mark Done` and `Decline`; `Open Assistant Chat` once the conversation exists; its models
+  per kind of work (reply, coding, gathering), each with its price and, for coding and gathering,
+  whether a project overrides it (§app.project-assistant/models); and, per project, its Project
+  Assistant column of power switches (§app.project-overseer/autonomy-levels; its copy
+  §design.copy-deck/project-powers), the same control as the project page's.
 - **Preview.** `Preview Owner Page` opens a modal that shows exactly what the owner sees, from the
   same function with no token (`GET /api/orgs/:id/owner/preview[?project=<q_handle>|?c=<k_handle>]`, main listener only); it
   records no visit and changes nothing. A test pins that the preview's data equals the token
@@ -263,9 +292,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   files, branches and tools; the counts and the updates say what was built.
 - **Showing or summarising the overseer's conversation**: it is candid, technical, and its tool
   results carry roster data and the About text.
-- **Writing from the page** (replying, asking): v1 reads only; the owner answers their own
-  questions through the links they are sent. A later per-person inbox on the same `/i/` link may
-  add it.
+- **Answering a conversation from the page**: the owner still answers their own questions through
+  the links they are sent; the page writes only to the Project Assistant.
 - **An owner per project, or a login**: one person per org with one personal link is what the
   user asked for.
-- **Showing costs**: never on this page.
+- **Showing costs**: never on this page; the assistant's models and their costs are on the
+  operator's Owner card only.

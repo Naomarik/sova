@@ -739,6 +739,132 @@
         "pi-config/extensions/remote/connection.test.ts"
       ]
     },
+    "§app.project-assistant/chat": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/owner-page",
+        "§app.owner-page/link",
+        "§app.baton/share-listener",
+        "§app.chat-processes/special-kinds",
+        "§chat.memory/overseer"
+      ],
+      "code": [
+        "server/project-assistant.ts",
+        "server/project-assistant-loadout.ts",
+        "server/project-assistant-prompt.md",
+        "server/project-assistant-share.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "server/share/router.ts",
+        "shared/chat-runtime.ts",
+        "server/chat-manager.ts",
+        "server/stream-guard.ts",
+        "server/harness/state-kinds.ts",
+        "server/orgs.ts",
+        "src/share/assistant-view.tsx",
+        "src/share/OwnerApp.tsx",
+        "src/share/owner-view.tsx",
+        "src/lib/owner-words.ts",
+        "server/project-assistant.integration.test.ts",
+        "server/project-assistant-prompt.test.ts",
+        "server/project-assistant-attended.test.ts"
+      ]
+    },
+    "§app.project-assistant/models": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-costs/price-table"
+      ],
+      "code": [
+        "server/project-assistant-store.ts",
+        "server/project-assistant-prices.ts",
+        "server/project-assistant-routes.ts",
+        "server/org-routes.ts",
+        "src/components/OwnerCardAssistant.tsx",
+        "src/components/OwnerCardAssistant.css",
+        "src/lib/api.ts"
+      ]
+    },
+    "§app.project-assistant/never": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.owner-page/never",
+        "§app.baton/outsider-view"
+      ],
+      "code": [
+        "server/project-assistant.ts",
+        "server/owner-page-privacy.test.ts",
+        "server/project-assistant.integration.test.ts"
+      ]
+    },
+    "§app.project-assistant/requests": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.overseer/attention-digest",
+        "§app/notifications"
+      ],
+      "code": [
+        "server/project-assistant-store.ts",
+        "server/owner-attention.ts",
+        "server/overseer.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "shared/project-assistant.ts",
+        "shared/protocol.ts",
+        "server/project-assistant-routes.ts",
+        "src/components/OwnerCardAssistant.tsx",
+        "src/lib/needs-you.ts",
+        "src/components/PushSettings.tsx",
+        "src/share/owner-view.tsx",
+        "server/project-assistant.integration.test.ts"
+      ]
+    },
+    "§app.project-assistant/tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-services/deploy-callers",
+        "§app.owner-page/conversations"
+      ],
+      "code": [
+        "server/project-assistant-tools.ts",
+        "server/project-assistant-loadout.ts",
+        "server/project-assistant.integration.test.ts",
+        "server/project-assistant-attended.test.ts"
+      ]
+    },
+    "§app.project-assistant/versions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/share",
+        "§app.project-services/instances",
+        "§mesh.public/preview",
+        "§app.owner-page/link"
+      ],
+      "code": [
+        "server/owner-versions.ts",
+        "server/preview-kept.ts",
+        "server/preview-links.ts",
+        "server/person-links.ts",
+        "server/owner-page.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "shared/owner.ts",
+        "src/share/owner-view.tsx",
+        "server/owner-versions.test.ts"
+      ]
+    },
     "§app.session-list/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1034,6 +1160,94 @@
         "server/chat-manager.ts"
       ]
     },
+    "§app.spec-lookup/code-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/outsider-view"
+      ],
+      "code": [
+        "server/code-read.ts",
+        "server/code-read.test.ts",
+        "server/spec-lookup.ts",
+        "server/spec-lookup.integration.test.ts"
+      ]
+    },
+    "§app.spec-lookup/outsider-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/tool",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/spec-lookup-projection.ts",
+        "server/spec-lookup-projection.test.ts",
+        "server/spec-lookup.test.ts",
+        "server/spec-lookup.integration.test.ts",
+        "server/code-read.ts"
+      ]
+    },
+    "§app.spec-lookup/overview": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/tool"
+      ],
+      "code": [
+        "server/spec-lookup.ts",
+        "server/spec-lookup.test.ts",
+        "server/spec-lookup-part.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-part.test.ts"
+      ]
+    },
+    "§app.spec-lookup/tool": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/spec-lookup",
+        "§tools/spec"
+      ],
+      "code": [
+        "server/spec-lookup.ts",
+        "server/spec-lookup.test.ts",
+        "server/spec-lookup.integration.test.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-tools.test.ts"
+      ]
+    },
+    "§app.spec-lookup/who-gets-what": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/tool",
+        "§app.spec-lookup/code-read",
+        "§app.spec-lookup/overview",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/overseer-org-part.ts",
+        "server/project-overseer-prompt.md",
+        "server/overseer-prompt.md",
+        "server/spec-lookup-part.ts",
+        "server/overseer-tools.ts",
+        "server/baton-abilities.test.ts",
+        "server/baton-runtime.test.ts",
+        "server/overseer-org-part.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/project-overseer.test.ts"
+      ]
+    },
     "§app.subagents-pane/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1274,6 +1488,18 @@
         "at": "2026-10-15T19:32Z"
       }
     },
+    "§app/project-assistant": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-assistant.ts",
+        "server/project-assistant-loadout.ts",
+        "shared/project-assistant.ts",
+        "src/share/assistant-view.tsx",
+        "server/project-assistant.integration.test.ts"
+      ]
+    },
     "§app/session-list": {
       "kind": "surface",
       "authority": "accepted",
@@ -1299,6 +1525,17 @@
       "evidence": "reviewed",
       "code": [
         "src/App.tsx"
+      ]
+    },
+    "§app/spec-lookup": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/spec-lookup.ts",
+        "server/spec-lookup-projection.ts",
+        "server/code-read.ts",
+        "server/spec-lookup-part.ts"
       ]
     },
     "§app/subagents-pane": {
@@ -2051,8 +2288,8 @@
         "server/mode-state.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T16:29Z"
+        "by": "Omar (operator)",
+        "at": "2026-10-17"
       }
     },
     "§chat.mode-menu/memory-panel": {
@@ -2953,6 +3190,22 @@
       "evidence": "verified",
       "about": [
         "§app/new-session-dialog"
+      ]
+    },
+    "§design.copy-deck/project-powers": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts",
+        "src/lib/powers-view.test.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/projects.css"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.organizations/project-page"
       ]
     },
     "§design.copy-deck/settings-modes-delegate": {
@@ -4542,8 +4795,8 @@
         "§app.overseer/seen"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T02:42Z"
+        "by": "Omar (operator)",
+        "at": "2026-10-17"
       }
     },
     "§app.overseer/caps": {
@@ -6511,7 +6764,11 @@
         "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
         "statecharts/test/sova/statecharts/refit/registry_test.cljs",
         "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "shared/powers.ts",
+        "server/project-overseer-settings.test.ts",
+        "statecharts/src/sova/statecharts/rules/powers.cljc",
+        "statecharts/test/sova/statecharts/refit/powers_test.cljs"
       ],
       "requires": [
         "§app.project-overseer/tools"
@@ -6701,6 +6958,27 @@
         "§app.project-overseer/autonomy-levels"
       ]
     },
+    "§app.requirements/conversation-drafts": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/drafts-with-provenance",
+        "§app/baton",
+        "§app.baton/hand-off"
+      ],
+      "code": [
+        "server/conversation-draft.ts",
+        "server/conversation-draft-store.ts",
+        "server/conversation-draft-tools.ts",
+        "server/spec-draft-writer.ts",
+        "shared/conversation-drafts.ts",
+        "shared/baton.ts",
+        "server/conversation-draft.test.ts",
+        "server/conversation-draft.integration.test.ts",
+        "server/conversation-draft-tools.test.ts"
+      ]
+    },
     "§app.requirements/decisions": {
       "kind": "behavior",
       "authority": "accepted",
@@ -6729,6 +7007,40 @@
       ],
       "requires": [
         "§app.baton/hand-off"
+      ]
+    },
+    "§app.requirements/draft-approval": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/conversation-drafts",
+        "§app.requirements/promotion",
+        "§app.requirements/promotion-commit"
+      ],
+      "code": [
+        "server/conversation-draft-routes.ts",
+        "server/conversation-draft.ts",
+        "server/reconcile.ts",
+        "shared/conversation-drafts.ts",
+        "server/conversation-draft-tools.test.ts"
+      ]
+    },
+    "§app.requirements/draft-specs": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/conversation-drafts",
+        "§mesh.peers/grants"
+      ],
+      "code": [
+        "server/conversation-draft-routes.ts",
+        "shared/conversation-drafts.ts",
+        "server/app.ts",
+        "server/conversation-draft-tools.test.ts",
+        "server/mesh/access.ts",
+        "server/mesh/access.test.ts"
       ]
     },
     "§app.requirements/drafts-with-provenance": {
@@ -6762,6 +7074,20 @@
       "requires": [
         "§app.organizations/projects",
         "§app.requirements/promotion"
+      ]
+    },
+    "§app.requirements/lock-in": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/conversation-drafts"
+      ],
+      "code": [
+        "server/conversation-draft-store.ts",
+        "server/conversation-draft-tools.ts",
+        "server/baton.ts",
+        "server/conversation-draft-tools.test.ts"
       ]
     },
     "§app.requirements/promotion": {
@@ -6929,7 +7255,9 @@
         "server/decisions-routes.test.ts",
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
-        "src/components/ProjectPage.tsx"
+        "src/components/ProjectPage.tsx",
+        "server/conversation-draft-routes.ts",
+        "shared/conversation-drafts.ts"
       ]
     },
     "§app.insights/usage-resend": {
@@ -7464,7 +7792,8 @@
         "server/overseer-tools.ts",
         "server/overseer-runtime.test.ts",
         "server/overseer-prompt.md",
-        "server/overseer-org-view.ts"
+        "server/overseer-org-view.ts",
+        "server/app.ts"
       ]
     },
     "§app.project-overseer/coding-worktrees": {
@@ -8040,7 +8369,8 @@
         "src/lib/api.ts",
         "server/person-page.ts",
         "server/org-routes.ts",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/OwnerCardAssistant.tsx"
       ]
     },
     "§app.owner-page/conversations": {
@@ -8086,7 +8416,9 @@
         "src/share/owner-view.tsx",
         "server/owner-page.test.ts",
         "server/owner-page.integration.test.ts",
-        "server/share/share-state.ts"
+        "server/share/share-state.ts",
+        "server/owner-link-idle.test.ts",
+        "server/share/edge.ts"
       ]
     },
     "§app.owner-page/never": {
@@ -8402,7 +8734,9 @@
         "src/lib/project-overseer-view.ts",
         "src/lib/project-overseer-view.test.ts",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts"
       ],
       "requires": [
         "§app.project-overseer/identity",
@@ -8419,7 +8753,9 @@
       "code": [
         "src/components/ProjectOverseerHead.tsx",
         "src/lib/project-overseer-view.ts",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts"
       ]
     },
     "§chat.transcript/compressed-transfer": {
@@ -11264,7 +11600,8 @@
         "statecharts/test/sova/statecharts/refit/item_test.cljc",
         "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
         "statecharts/test/sova/statecharts/refit/holds_test.cljs",
-        "server/org-engine.ts"
+        "server/org-engine.ts",
+        "statecharts/src/sova/statecharts/rules/powers.cljc"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -13294,11 +13631,13 @@
         "src/lib/poll.ts",
         "src/components/ui.tsx",
         "src/components/ProjectsView.tsx",
-        "server/project-overseer-fast.integration.test.ts"
+        "server/project-overseer-fast.integration.test.ts",
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T19:32Z"
+        "by": "Omar (operator)",
+        "at": "2026-10-17"
       }
     },
     "§chat.playbooks/bundles": {
@@ -16187,7 +16526,10 @@
         "server/project-services/tools.ts",
         "server/project-services/deploy-callers.test.ts",
         "server/project-services/deploy-callers.integration.test.ts",
-        "scripts/sova-project.mjs"
+        "scripts/sova-project.mjs",
+        "server/project-overseer.ts",
+        "server/project-services/engine.ts",
+        "statecharts/src/sova/statecharts/proj.cljc"
       ]
     },
     "§app.project-services/deploy-check": {

@@ -695,6 +695,19 @@ would list master's changes instead.
     with no variable) pass on both. Not re-measured on the L2 relay arm.
   - Upgrade: see UPGRADING step 10, "`agree` takes a reference".
 
+- **Tidy-ups after the integration (replay scenario h, stale `agreed` text, the map's placeholder).**
+  - Commits: e553d239 and the next commit, on branch `feat/spec-x-integration`; not on master yet.
+  - Changed:
+    - replay scenario h's hand stamp carries a reference `source` when the tool's `agree` usage says
+      `[--source REF]`, so `h.target.agreed-promoted` covers an agreed, unbuilt record landing again
+      (`run.mjs --only h`, master 9c3f949b vs this tree: 1 → 0 before, 1 → 1 after);
+    - `agreed: {by, at}` now reads `{by, at, source}` in PROMOTE.md, the draft tool's comment and
+      `tests/agreed.test.mjs`; UPGRADING step 3's field table gains `notOwned` and the source;
+    - `map`'s help, its `not-owned-per-area` note and core/README write the area argument as
+      `'<area §id>'`, a placeholder that can't be read as a spec id (was `§ns/name`, `§ns/area`).
+  - §: none promoted. Draft `agree-source` adds `notOwned` to §tools/spec's field list; draft `map-trim`
+    quotes the note's new text in §tools.spec/spec-map.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -763,7 +776,8 @@ The tools are Node standard library only. Nothing is installed.
    | `embeds: [§id]` | any record | surfaces drawn inside it, read whole |
    | `core: true` | any record | part of the always-on frame |
    | `about: [§id]` | notes | the claim a note serves |
-   | `agreed: {by, at}` | behaviors and surfaces | who decided and when |
+   | `notOwned: [§id]` | areas (H1s) | the claims elsewhere that own what a reader might look for in it |
+   | `agreed: {by, at, source}` | behaviors and surfaces | who decided, when, and where the go-ahead was given (`source`, a reference; required on a new stamp since the 2026-10-18 round) |
 
    None is a new kind, label value or top-level key, so an older core loads the same manifest and
    ignores them. A spec with none of them gets the same output it got before. Older draft tools don't

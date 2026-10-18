@@ -64,7 +64,7 @@ test("map pages under a small budget with a stateless cursor, losing no line; fl
   const bad = cli(root, ["map", "--cursor", "AAAA"]).j;
   assert.equal(bad.code, "token-malformed");
   const help = cli(root, ["map", "--help"]).j;
-  assert.match(help.help, /^map \[namespace \| §ns\/name\]/);
+  assert.match(help.help, /^map \[namespace \| '<area §id>'\]/);
   assert.equal(cli(root, ["map"], { budget: 5 }).j.code, "usage");
 });
 

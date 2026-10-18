@@ -47,7 +47,7 @@ const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
 const HEX = /^[0-9a-f]{64}$/;
 // Kinds that carry no implementation: their prose may be promoted on --doc-only evidence.
 const DOC_ONLY_KINDS = new Set(["note", "section"]);
-// Kinds whose record may say who decided it, and when, before it is built (`agreed: {by, at}`); with no `code`
+// Kinds whose record may say who decided it, when and where, before it is built (`agreed: {by, at, source?}`); with no `code`
 // such a record may land on --doc-only evidence too. Built = `code` plus one of BUILT_LABELS as its `evidence`.
 const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["reviewed", "verified"]);
 // Record fields that only route reading (§ edges, the frame flag, what an area does not own): a change to them alone may land on --doc-only.

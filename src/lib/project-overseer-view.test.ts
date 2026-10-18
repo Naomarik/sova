@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
 import { IDEA_ID_RE } from "../../shared/protocol";
-import { actionLine, allowanceLine, gapArea, headState, holdHint, holdWords, historyTitle, itemSendInput, lastRunLine, lastRunTail, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
+import { PAUSED_LINE, actionLine, allowanceLine, gapArea, headState, holdHint, holdWords, historyTitle, itemSendInput, lastRunLine, lastRunTail, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
 import { DEFAULT_PO_CAPS } from "../../shared/project-overseer";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
@@ -176,7 +176,7 @@ test("status line 1: the last run in the project page's words, then how many rea
   assert.equal(waitingToLook(3), "Waiting to look at 3 things.");
 });
 
-test("status strip: at most 3 lines, each only with something to say; a pause leads with its reason and a Resume", () => {
+test("status strip: at most 3 lines, each only with something to say; a pause leads with a short Paused line and a Resume, never its reason", () => {
   const usage = (o: { pending?: string[]; used?: number; held?: boolean } = {}) => ({
     pending: o.pending ?? [],
     allowance: { today: { ...Object.fromEntries(["gather", "promote", "create", "prompt"].map((k) => [k, { used: 0, max: 6 }])), gather: { used: o.used ?? 0, max: 6 } } },
@@ -194,10 +194,11 @@ test("status strip: at most 3 lines, each only with something to say; a pause le
   const braked = (kind: "paused" | "empty-roster", reason: string) => ({ ...base, settings: { ...base.settings, powers: { brake: { kind, reason } } } });
   const paused = statusLines({ ...braked("paused", "Paused: attached here."), usage: usage({ pending: ["A."], used: 2, held: true }) } as never, "");
   assert.equal(paused.lines.length, 3, "still at most 3 lines");
-  assert.equal(paused.lines[0], "Paused: attached here.");
+  assert.equal(paused.lines[0], PAUSED_LINE, "the short line, never the reason (the menu's banner says it)");
+  assert.ok(!paused.lines.some((l) => l.includes("attached here")), "the reason is not repeated in the strip");
   assert.equal(paused.resume, true);
   const roster = statusLines({ ...braked("empty-roster", "The roster has no active people yet."), usage: usage() } as never, "");
-  assert.equal(roster.lines[0], "The roster has no active people yet.");
+  assert.equal(roster.lines[0], PAUSED_LINE);
   assert.equal(roster.resume, true, "Resume lifts either brake");
 });
 

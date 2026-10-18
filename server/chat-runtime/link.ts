@@ -298,7 +298,8 @@ export interface ConnectLinkOptions extends LinkOptions {
   /** Keep dialing a socket that isn't there yet (or refuses) for this long, every `retryEveryMs`. */
   retryForMs?: number;
   retryEveryMs?: number;
-  /** How long the chat may take to say hello once connected. */
+  /** How long the chat may take to say hello once connected; never less than what is left of
+      `retryForMs` (a chat still loading its code answers late: the start's budget is the socket's). */
   helloWithinMs?: number;
 }
 
@@ -329,11 +330,12 @@ export async function connectLink(sockPath: string, opts: ConnectLinkOptions): P
       continue;
     }
     const link = new Link(socket, opts);
+    const helloMs = Math.max(opts.helloWithinMs ?? 5_000, until - Date.now());
     const hello = await new Promise<HelloFrame>((resolve, reject) => {
       const timer = setTimeout(() => {
         link.close();
         reject(new Error(`The chat process at ${sockPath} didn't say hello in time.`));
-      }, opts.helloWithinMs ?? 5_000);
+      }, helloMs);
       const off = link.on("hello", (h) => {
         off();
         clearTimeout(timer);

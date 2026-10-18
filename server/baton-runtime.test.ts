@@ -46,7 +46,7 @@ describe("a baton session's runtime", async () => {
     const chat = await acquireChat(c.path);
     assert.equal(chat.special, "baton");
     assert.equal(chat.overseer, false);
-    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
+    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["code_read", "goal_done", "hand_to", "propose_roster_edit", "record_decision", "requirement_drop", "requirements_confirm", "requirements_summary", "spec_lookup"], "spec look-up, code reading and the draft tools with no switch (§app.spec-lookup/who-gets-what)");
     assert.deepEqual([...BATON_TOOLS].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), [...LOADOUT_TOOLS].sort(), "no built-in, no extension tool");
     assert.ok(!piSession(chat).getActiveToolNames().includes("write_profile_updates"), "the wrap-up tool is never active in the conversation");

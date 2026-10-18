@@ -3339,7 +3339,11 @@ export type AttentionKind =
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
-  | "team-stalled";   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  | "team-stalled"   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  // ---- project assistant (al_1) ----
+  | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
+  | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
+  | "owner-link-request"; // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
 
 export interface AttentionItem {
   /** Session id. */
@@ -3699,8 +3703,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down" | "owner-outage";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down", "owner-outage"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {

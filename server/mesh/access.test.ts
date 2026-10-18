@@ -210,6 +210,11 @@ describe("the route classifier", () => {
     assert.equal(need("GET", "/api/settings"), "sessions");
     assert.equal(need("PUT", "/api/settings"), "admin");
     assert.equal(need("POST", "/api/orgs/o/projects"), "admin");
+    // Conversations' draft specs are the operator's private review: never below full.
+    assert.equal(need("GET", "/api/draft-specs"), "full");
+    assert.equal(need("POST", "/api/projects/p/draft-specs/s/approve"), "full");
+    assert.equal(need("POST", "/api/projects/p/draft-specs/s/build"), "full");
+    assert.equal(need("GET", "/api/projects/p"), "sessions");
     assert.equal(need("PUT", "/api/claude/pool/keeper"), "admin");
     assert.equal(need("GET", "/api/auth/token"), "full");
     assert.deepEqual(classifyRequest("GET", "/api/brand-new-route"), { need: "full", rule: "default" });

@@ -150,3 +150,13 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 
 .owner-problem { margin: auto; padding: var(--space-7) var(--space-4); }
 .owner-skeleton { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* The Project Assistant (§app.project-assistant/chat): its door on Home, the conversation, its composer. */
+.owner-assistant-door { display: flex; flex-direction: column; gap: var(--space-2); align-items: stretch; }
+.owner-assistant-button { min-height: 44px; justify-content: center; }
+.owner-assistant { gap: var(--space-3); }
+.owner-assistant .share-msg { max-width: 100%; }
+.owner-assistant-composer { margin-top: auto; }
+/* Requests and versions: rows that are not links. */
+.owner-row-static { align-items: center; }
+.owner-version-open { flex: none; min-height: 44px; min-width: 64px; justify-content: center; }

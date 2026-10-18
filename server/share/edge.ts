@@ -9,6 +9,7 @@ import { addWatcher, viewForToken } from "./hub";
 import { socketClosed, socketOpened } from "../visits";
 import { createShareApp, logVisit, PAGE_CSP } from "./routes";
 import { sessionShareUpgrade } from "./session-routes";
+import { assistantShareUpgrade } from "../project-assistant-share";
 import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { clientAddress, trustedClient } from "./security";
@@ -58,11 +59,16 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/img/(?:0|[1-9][0-9]{0,3})$`) },
   // A person's files (§app.baton/files): the upload only; nothing reads a file back here.
   { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/file$`) },
-  // The Owner page (§app.owner-page/link): read-only, GET only, no socket.
+  // The Owner page (§app.owner-page/link): its reads, and a link that turned off unused asking for a new one.
   { method: "GET", re: new RegExp(`^/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
+  { method: "POST", re: new RegExp(`^/i/${TOKEN}/ask-link$`) },
+  // The Project Assistant (§app.project-assistant/chat): its view, a message to it; its socket is /ws/i.
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
+  { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
+  { method: "GET", re: new RegExp(`^/i/${TOKEN}/v/v_[a-z2-9]{8}$`) },
   // Session shares (§app/session-share): read-only, GET only; their socket is /ws/s.
   { method: "GET", re: new RegExp(`^/s/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/s/${TOKEN}$`) },
@@ -70,8 +76,8 @@ const ROUTES: { method: string; re: RegExp }[] = [
 ];
 
 /** The share sockets, by path: `/ws/h` a hand-off's, `/ws/s` a session share's. */
-export type ShareSocketKind = "h" | "s";
-const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/s": "s" };
+export type ShareSocketKind = "h" | "s" | "i";
+const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/s": "s", "/ws/i": "i" };
 
 /** The raw request target split into path and query, or null unless it is origin-form: "/"
     then anything but a second "/" (absolute-form "http://…", authority-form "host:443", "*" and
@@ -165,6 +171,7 @@ function routeKind(pathname: string): string {
   if (pathname.startsWith("/api/")) return pathname.startsWith("/api/i/") ? "owner api" : pathname.startsWith("/api/s/") ? "session api" : "api";
   if (pathname === "/ws/h") return "socket";
   if (pathname === "/ws/s") return "session socket";
+  if (pathname === "/ws/i") return "owner socket";
   return pathname.startsWith("/i/") ? "owner page" : pathname.startsWith("/s/") ? "session page" : "page";
 }
 
@@ -237,8 +244,10 @@ export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgra
     handle(req, res);
   };
   const sessionUpgrade = sessionShareUpgrade();
+  const assistantUpgrade = assistantShareUpgrade(SHARE_WS_MAX_PAYLOAD);
   const upgrade: ShareUpgrade = (req, socket, head, ctx) => {
     if (ctx.kind === "s") return sessionUpgrade(req, socket, head, ctx);
+    if (ctx.kind === "i") return assistantUpgrade(req, socket, head, ctx);
     const { url, token } = ctx;
     const access = linkAccess(token);
     if (!access.ok) {

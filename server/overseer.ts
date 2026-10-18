@@ -27,6 +27,7 @@ import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-holds";
 import { conflictAttention } from "./decisions";
 import { senderAttention } from "./outreach/health";
+import { ownerAttention } from "./owner-attention";
 import { notSentAttention } from "./outreach/log";
 import { readinessChecksOf, restartItems } from "./merge-readiness";
 import {
@@ -356,7 +357,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
     const deploys = await deployAttentionItems().catch(() => []);
     // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

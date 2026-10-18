@@ -138,16 +138,20 @@ export function parseDeployRequest(body: unknown): DeployRequest {
 
 // ---- who may call which deploy verb (§app.project-services/deploy-callers) ---------------------------
 
-export const RUN_IS_OPERATORS = "Only the operator ships: run and rollback are theirs, from the project's Deploy panel or sova-project deploy.run --plan <id> --confirm.";
+export const RUN_IS_OPERATORS = "Only the operator ships by hand: run and rollback are theirs, from the project's Deploy panel or sova-project deploy.run --plan <id> --confirm; an overseer or the Project Assistant ships only through the project's own deploy act (power deploy).";
 export const ASK_INSTEAD = "A deploy is the operator's: raise it with deploy.request {target, commit?, why}, and the operator opens its plan.";
 
-/** Refuse `verb` for `caller` (on `root`), or return. */
+/** Refuse `verb` for `caller` (on `root`), or return. A project overseer and the Project Assistant plan and run only
+    from inside the project's released `deploy/run` act (`deployAct`: its power was On in their column, its waiting
+    period passed), never by hand; overrides, rollback and clearing a request stay the operator's
+    (§app.project-services/deploy-callers). */
 export function authorizeDeploy(verb: DeployVerb, caller: Caller, root: string, req: DeployRequest): void {
   const inScope = (r: string | null) => {
     if (r !== root) throw new DeployFailure("forbidden", `this caller acts only on its own project${r ? ` (${r})` : ""}`);
   };
   if (caller.kind === "conform" || caller.kind === "system") throw new DeployFailure("forbidden", `${caller.kind === "conform" ? "conformance" : "Sova on its own"} never deploys`);
-  if (caller.kind === "session" || caller.kind === "project-overseer") inScope(caller.root);
+  if (caller.kind === "session" || caller.kind === "project-overseer" || caller.kind === "assistant") inScope(caller.root);
+  const viaAct = (caller.kind === "project-overseer" || caller.kind === "assistant") && caller.deployAct === true;
   if (verb === "deploy.status" || verb === "deploy.logs" || verb === "deploy.check") return;
   if (verb === "deploy.request") {
     if (caller.kind === "operator") {
@@ -159,10 +163,11 @@ export function authorizeDeploy(verb: DeployVerb, caller: Caller, root: string, 
     return;
   }
   if (verb === "deploy.plan") {
-    if (caller.kind === "operator" || caller.kind === "overseer") return;
-    throw new DeployFailure("forbidden", caller.kind === "project-overseer" ? ASK_INSTEAD : "a coding session never plans a deploy");
+    if (caller.kind === "operator" || caller.kind === "overseer" || viaAct) return;
+    throw new DeployFailure("forbidden", caller.kind === "project-overseer" || caller.kind === "assistant" ? ASK_INSTEAD : "a coding session never plans a deploy");
   }
-  // run, rollback
+  // run (the deploy act's: its hold was the confirmation), rollback
+  if (verb === "deploy.run" && viaAct) return;
   if (caller.kind !== "operator") throw new DeployFailure("forbidden", caller.kind === "session" ? RUN_IS_OPERATORS : `${RUN_IS_OPERATORS} ${ASK_INSTEAD}`);
   if (!req.confirm) throw new DeployFailure("needs-confirm", verb === "deploy.run" ? "Shipping reaches every user: confirm it (sova-project deploy.run --plan <id> --confirm, or Deploy in the project's Deploy panel)." : "A rollback ships an earlier state to every user: confirm it (sova-project deploy.rollback --target <name> --confirm).");
 }
@@ -836,7 +841,7 @@ export class Deployer {
     }
     const req: DeployRequestView & { project: string } = { project: root, id: `rq_${randomBytes(6).toString("hex")}`, target: t.name, commit, why: run.req.why, by: byOf(run.caller), at: new Date(this.now()).toISOString() };
     writeRequests([...readRequests().filter((r) => !(r.project === root && r.target === t.name)), req]);
-    addDeployNote(root, `${run.caller.kind === "project-overseer" ? "The project overseer" : "The Overseer"} asks you to deploy ${commit ? commit.slice(0, 7) : `the tip of ${t.branch ?? "main"}`} to ${t.name}: ${run.req.why}`);
+    addDeployNote(root, `${run.caller.kind === "project-overseer" ? "The project overseer" : run.caller.kind === "assistant" ? "The Project Assistant" : "The Overseer"} asks you to deploy ${commit ? commit.slice(0, 7) : `the tip of ${t.branch ?? "main"}`} to ${t.name}: ${run.req.why}`);
     const { project: _p, ...view } = req;
     run.report = { deployHash: m.deployHash, request: view };
     run.changed = true;

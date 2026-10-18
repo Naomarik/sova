@@ -179,7 +179,6 @@ export interface HeldWait {
   goesAt: number;
   wait?: "hold" | "hours" | "outage";
   person?: string;
-  reviewSince?: number;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -206,14 +205,11 @@ function inWords(t: number, now: number): string {
 
 /**
  * A held act's sentence, whatever it waits on: the hold (r2's sentence), a person's working hours
- * (r7), WhatsApp coming back (a held WhatsApp message released while WhatsApp is down, at most 24 h), or, past its hold, the overseer's approval (r8: an act on the project's confirm list waits
- * for the overseer to approve or cancel it; the stall clock runs from the hold's end).
+ * (r7) or WhatsApp coming back (a held WhatsApp message released while WhatsApp is down, at most 24 h).
+ * Only the operator's Cancel stops it: nothing waits for an approval (al_3).
  */
 export function heldWaitLine(h: HeldWait, now: number): string {
   const what = stripStop(h.what);
-  if (h.reviewSince !== undefined) {
-    return `${what} is waiting for the overseer's review, for ${duration(Math.max(0, now - h.reviewSince))}. It goes ahead only when the overseer approves it; you can cancel it.`;
-  }
   if (h.wait === "hours") {
     const rel = inWords(h.goesAt, now);
     if (!rel) return `${what} is starting now.`;

@@ -274,9 +274,12 @@ const READ_PREFIXES = [
   "provider-limits",
   "usage",
 ];
-// Never below `full`: the operator's credentials, the share pages' own routes, and this machine's
-// updates (whose writes refuse the peer listener outright).
-const FULL_PREFIXES = ["auth", "h", "i", "s", "updates"];
+// Never below `full`: the operator's credentials, the share pages' own routes, this machine's
+// updates (whose writes refuse the peer listener outright), and conversations' draft specs (the
+// operator's private review, §app.requirements/draft-specs).
+const FULL_PREFIXES = ["auth", "h", "i", "s", "updates", "draft-specs"];
+/** A project's conversation drafts (approve, build): `full`, ahead of the `projects` read rule. */
+const PROJECT_DRAFT_SPECS_RE = /^\/api\/projects\/[^/]+\/draft-specs(?:\/|$)/;
 
 const prefixRe = (list: string[]) => new RegExp(`^/api/(${list.map((p) => p.replace(/[-]/g, "\\-")).join("|")})(?:/|$)`);
 const SESSION_RE = prefixRe(SESSION_PREFIXES);
@@ -293,6 +296,7 @@ export function classifyRequest(method: string, pathname: string): Classified {
     return { need: "full", rule: "default" };
   }
   const read = method === "GET" || method === "HEAD";
+  if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };
   let m = SESSION_RE.exec(path);
   if (m) return { need: "sessions", rule: `sessions:${m[1]}` };
   m = READ_RE.exec(path);

@@ -190,7 +190,7 @@ function passBack(headers: IncomingHttpHeaders): Record<string, string | string[
     address), the token's hash and the socket's kind, so a hop is closed when that node no longer
     holds the hash for that kind at that target, even if the row stays or another host claims it
     later. */
-const hopKey = (nodeId: string, h: string, port: number, address: string, kind: "h" | "s"): string => `${nodeId} ${h} ${port} ${address} ${kind}`;
+const hopKey = (nodeId: string, h: string, port: number, address: string, kind: "h" | "s" | "i"): string => `${nodeId} ${h} ${port} ${address} ${kind}`;
 
 /** Every router not yet disposed, so a shutdown or rebind can close them all. */
 const routers = new Set<GatewayRouter>();

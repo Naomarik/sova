@@ -1,12 +1,12 @@
 (ns sova.statecharts.rules.levels
-  "L0–L3, attended vs unattended, effectiveAutonomy's forced L0, the at-once caps and the two
-   allowances, as pure checks over the act's envelope (design §4.1–4.4). The sentences are today's
-   (server/project-overseer-tools.ts TOOL_NEEDS, autonomyRefusal, overRefusal; project-overseer-store.ts
-   effectiveAutonomy, levelAtLeast), byte for byte.
+  "The at-once caps and the two allowances, the global Overseer's confirm-card check and the host's
+   argument refusals, as pure checks over the act's envelope (design §4.1–4.4). What a caller may do
+   without the operator is rules/powers.cljc's (the levels L0–L3 are gone, al_3; `level-at-least?`
+   stays only to read snapshots saved before switches).
 
    The envelope (stamped by the host inside the org's serialized step): `:by` operator | overseer |
-   system | model | person | wrapup | statechart, `:via` overseer, `:attended`, `:autonomy` (the setting),
-   `:paused`, `:ceiling` (`{:autonomy :reason}` or nil), `:archived`, `:allowance {kind {:used :max}}` (the ledger this turn
+   system | model | person | wrapup | statechart | assistant, `:via` overseer, `:attended`, `:powers`,
+   `:paused`, `:ceiling` (`{:reason}` or nil), `:archived`, `:allowance {kind {:used :max}}` (the ledger this turn
    draws on), `:ledger` message | day, `:looks {:used :max}`, `:at-once {:gatherings-open
    :gatherings-cap :coding-running :coding-cap}`, `:card`, `:hold-ms`, `:invalid`."
   (:require
@@ -21,59 +21,8 @@
   [have need]
   (>= (get rank (some-> have name) -1) (get rank (some-> need name) 99)))
 
-(def paused-reason "Paused at L0: this organization was attached on this host. Set its level to resume.")
-
-(defn effective-autonomy
-  "effectiveAutonomy: paused wins, then a ceiling (`{:autonomy :reason}`, contributed by whoever places
-   the project, e.g. an organization with no active people: L0) when it ranks below the setting, else
-   the setting (default L1). A project nobody caps runs at its setting."
-  [{:keys [autonomy paused ceiling]}]
-  (let [setting (name (or autonomy "L1"))]
-    (cond
-      paused {:autonomy "L0" :reason paused-reason}
-      (and (map? ceiling) (some? (:autonomy ceiling)) (not (level-at-least? (:autonomy ceiling) setting)))
-      (cond-> {:autonomy (name (:autonomy ceiling))} (:reason ceiling) (assoc :reason (:reason ceiling)))
-      :else {:autonomy setting})))
-
-(def tool-needs
-  "TOOL_NEEDS, verbatim (a test pins it against the registry's acts). `sova_roster` approve/decline
-   is L2, per op."
-  {"sova_project" "read" "sova_decisions" "read" "sova_list_sessions" "read" "sova_read_session" "read"
-   "sova_roster" "read" "sova_pipeline" "read" "sova_previews" "read"
-   "sova_todos" "operator" "sova_todo" "operator"
-   "sova_note" "L0" "sova_card" "L0" "sova_idea" "L0"
-   "sova_start_gathering" "L1" "sova_offer" "L1" "sova_close_gathering" "L1" "sova_reconcile" "L1" "sova_owner_update" "L1" "sova_preview" "L1"
-   "sova_promote" "L2"
-   "sova_create_session" "L3" "sova_send" "L3" "sova_project_verbs" "L3"})
-
 (defn operator? [envelope] (= "operator" (some-> (:by envelope) name)))
-(defn statechart? [envelope] (= "statechart" (some-> (:by envelope) name)))
 (defn attended? [envelope] (true? (:attended envelope)))
-
-(defn autonomy-refusal
-  "autonomyRefusal(tool, need, attended, effective): the sentence, or nil."
-  [tool need attended {:keys [autonomy reason]}]
-  (cond
-    (or attended (= need "read")) nil
-    (= need "operator")
-    (if (= tool "sova_todos")
-      "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own."
-      (str tool " changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change."))
-    (level-at-least? autonomy need) nil
-    :else
-    (str "This run was not started by the operator, and your autonomy here is " autonomy
-      (when reason (str " (" reason ")")) "; "
-      tool " needs " need ". Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; "
-      "the operator's click starts a turn in which you may act.")))
-
-(defn level-check
-  "The engine's `:level-check` option: nil for the operator's own click and for acts of nobody's
-   level (a person, a gathering model, the wrap-up, the system); the overseer's and the statechart's
-   own acts against the level in force. A statechart act is never attended."
-  [tool need envelope]
-  (let [by (some-> (:by envelope) name)]
-    (when (and need (contains? #{"overseer" "statechart"} by))
-      (autonomy-refusal tool need (and (= by "overseer") (attended? envelope)) (effective-autonomy envelope)))))
 
 ;; ---- caps --------------------------------------------------------------------------------------
 

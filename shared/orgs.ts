@@ -212,8 +212,10 @@ export interface OwnerPageInfo {
   /** The owner now, or null. */
   person: NamedRef | null;
   /** Their newest owner link on this host: live, expired, or off (turned off, replaced); null: none yet.
-      `url`: the link itself, while it is live and its token is kept (Copy Owner Link). */
-  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string; url?: string } | null;
+      `url`: the link itself, while it is live and its token is kept (Copy Owner Link). `expiresAt`
+      is when it turns off unused (7 days after its last use); `expired` means it did. `askedAt`:
+      the owner, holding it after it turned off, asked for a new one. */
+  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string; url?: string; askedAt?: string } | null;
   /** Visits to the Owner page by a person (not scanners or previews), all time. */
   opened: number;
   lastOpenedAt?: string;

@@ -646,6 +646,18 @@ would list master's changes instead.
     5 → 6.5, at most 10 (it no longer adds "+N more", median 74); mattered § among them 56/148 = 38% →
     84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; lines with nothing read first 7 → 10 of 69. `EVOLUTION.md` (the unread line) has the iterations.
 
+- **Spec mode names `notOwned`-only among the doc-only cases (integration fix of `feat/spec-x-notowned`).**
+  - Commit: on branch `feat/spec-x-integration`; not on master yet. Base: the merge of the five lane tips.
+  - Changed: the notowned lane added `notOwned` to the draft tool's doc-only field keys but not to the
+    guide, so `mode/index.test.ts` ("the guide's doc-only cases are the draft tool's") failed on the lane
+    tip. `mode/spec-mode.md` now says `` `embeds`/`about`/`core`/`notOwned`-only changes `` (one token,
+    word count unchanged at 899 of the 906 cap); the test's rule pattern accepts a mixed-case field name;
+    `tests/fixtures/flag-off-master.json` is regenerated (the only difference is that token);
+    `pi-config/README.md`'s spec row says the same.
+  - §: §tools.spec/mode-reading reworded (draft `notowned-mode`, not promoted yet). Draft `agree-source`
+    rewords the same § in another paragraph: whichever promotes second takes the other's text first.
+  - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the sentence with this upgrade.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -783,7 +795,8 @@ The tools are Node standard library only. Nothing is installed.
       area gets a `doesn't own` line and the JSON `counts.notOwned`, and `read`/`toc` of that area's
       H1 print the line (`notOwned` in JSON). Nothing else changes. To adopt it, add `notOwned` to
       each area's record in a draft and promote it on `--doc-only` evidence (`--commit` or
-      `--snapshot` for an agreed record that maps code).
+      `--snapshot` for an agreed record that maps code). The mode text names `notOwned`-only among the
+      doc-only cases.
     - **`agree` needs a source** (`feat/spec-x-agree`). Pass `--source <ref>`, a reference to where the person agreed (a
       message, a review comment, a meeting note), or have the agent's runtime set `SPEC_AGREE_SOURCE`. Without
       either, `agree` exits 1 (`agree-unsourced`) and writes nothing. Scripts that call `agree` must add

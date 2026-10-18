@@ -546,13 +546,13 @@ test("spec: the guide's doc-only cases are the draft tool's: each one it names i
 		// The refusal for a built behavior states the tool's whole doc-only rule: its kinds, agreed kinds and field keys.
 		const refused = docOnly("§g.doc/built");
 		assert.equal(refused.status, 1, "a built behavior's prose change is not doc-only");
-		const rule = JSON.stringify(refused.out).match(/--doc-only covers only ([a-z/]+) kinds, agreed ([a-z/]+) records with no code, and ([a-z/]+)-only changes, not /);
+		const rule = JSON.stringify(refused.out).match(/--doc-only covers only ([a-z/]+) kinds, agreed ([a-z/]+) records with no code, and ([A-Za-z/]+)-only changes, not /);
 		assert.ok(rule, "the tool's doc-only rule has the three parts the guide names: if it gains a part, revisit the guide");
 		const [, kinds, agreedKinds, fields] = rule;
 		assert.deepEqual(agreedKinds!.split("/").sort(), ["behavior", "surface"], "agreed records: behaviors and surfaces");
 		// Each case the guide names is one the tool accepts, driven on its own record.
 		const cases: Record<string, string> = { notes: "§g.doc/note", sections: "§g.doc/sec", "agreed records without code": "§g.doc/agreed" };
-		cases[`${fields!.split("/").sort((a, b) => ["embeds", "about", "core"].indexOf(a) - ["embeds", "about", "core"].indexOf(b)).map((f) => `\`${f}\``).join("/")}-only changes`] = "§g.doc/field";
+		cases[`${fields!.split("/").sort((a, b) => ["embeds", "about", "core", "notOwned"].indexOf(a) - ["embeds", "about", "core", "notOwned"].indexOf(b)).map((f) => `\`${f}\``).join("/")}-only changes`] = "§g.doc/field";
 		for (const kind of kinds!.split("/")) assert.ok(`${kind}s` in cases, `the tool's doc-only kind ${kind} has a case here`);
 		assert.deepEqual([...named].sort(), Object.keys(cases).sort(), "the guide names exactly the tool's doc-only cases");
 		for (const [label, id] of Object.entries(cases)) assert.equal(docOnly(id).status, 0, `the tool takes --doc-only for ${label} (${id})`);

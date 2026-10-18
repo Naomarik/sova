@@ -539,6 +539,18 @@ would list master's changes instead.
     `promote` that carry a source: 0 / 4 on master 9c3f949b, 4 / 4 after. Unsourced stamps written: 4
     → 0 (the unsourced `agree` and the hand stamp are now refused). A legacy unsourced `agreed` kept on a
     reword still promotes. The L2 agent arm (agree before first code edit, traceable share) is pending.
+- **Spec mode agrees at the claim step, before the first code edit (P2, iteration 2).**
+  - Commit: 25a98ee7, branch `feat/spec-x-agree`; not on master yet.
+  - Changed: `mode/spec-mode.md` step 4 adds "When the task's go-ahead already agrees to it, run `agree`
+    on it then, before that edit, not at the end."; the worker brief carries it (3 sentences of that rule);
+    the guide's word cap goes from 884 to 906.
+  - §: §tools.spec/mode-reading reworded. Base: 5a0b41c9.
+  - Numbers (L2, measure-agent, claude-opus-5-5 medium, 7 tasks × 2 reps, parent-only, outcome grading
+    pending): agree before first code edit 0/12 (5a0b41c9) → 4/12 (95% CI 10-65%; 4 more within 2-3 calls
+    after it); runs with any `agree --write` 7 → 11 of 14; stamps sourced and resolved to a typed turn
+    15/15 → 17/17; upkeep 24.6% → 25.1%. The L2 AFTER for the first entry (5a0b41c9 vs master): sourced
+    0/4 → 15/15, agree before code 0/13 → 0/12, upkeep 25.1% → 24.6%.
+  - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the new step 4 sentence.
 
 ## Integration → master
 

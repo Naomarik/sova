@@ -260,6 +260,19 @@ drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the base
 first, BEFORE taken on a pristine archive of the base, AFTER on the commit. Lanes A, B1, C, F and G
 landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md has each lane's numbers.
 
+## Agree traceability, lane P2 (2026-10-18, branch `feat/spec-x-agree`, not on master yet)
+
+Audit #2 found that 195 agreed stamps had been written by workers as `--by user`, and no session showed the
+user agreeing. Two changes, each measured on the L2 agent arm (claude-opus-5-5 medium, 7 tasks × 2 reps, the
+parent holding a pre-agreed typed turn):
+- `agreed.source`, required by `agree` and set by the runtime (5a0b41c9). Stamps traceable to a typed user
+  turn went 0/4 → 15/15. Agree before the first code edit stayed at 0/12: every agree came at wrap-up.
+- The mode text's claim step says to agree before the first edit (25a98ee7). Agree before the first code
+  edit went 0/12 → 4/12 (95% CI 10-65%), and 4 more runs agreed 2-3 calls after their first edit. Traced
+  stamps 17/17; upkeep flat (24.6% → 25.1%). That is below the 80% target: wording alone moves when the
+  agent agrees, not whether.
+Not measured: the worker relay, and team-injected turns.
+
 ## Lessons
 
 - **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together

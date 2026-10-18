@@ -670,13 +670,17 @@ export async function leftovers(ctx) {
 // ── (h) Agreed, not built ────────────────────────────────────────────────────
 
 /**
- * A requirements chat's outcome: a draft adds a behavior with `agreed: {by, at}` and no code, records --doc-only
+ * A requirements chat's outcome: a draft adds a behavior with `agreed: {by, at, source?}` and no code, records --doc-only
  * evidence and promotes. A second draft tries the same for a behavior that maps code. Whatever lands must not read
  * as built: no code, and no reviewed/verified evidence label.
  */
 export async function agreement(ctx) {
   const repo = standard(ctx, "h-agreed");
-  const agreed = { by: "replay", at: "2023-11-14" };
+  // A tool whose `agree` takes a source (its usage says `[--source REF]`) refuses a new agreed without one, so the
+  // stamp carries a reference, as `agree` would write it; an older tool, whose agreed has no source key, gets none.
+  const usage = ctx.tools.draft(repo.root, ctx.ws.home, ["agree"]).json?.findings ?? [];
+  const sourced = usage.some((f) => /\[--source REF\]/.test(f.message ?? ""));
+  const agreed = { by: "replay", at: "2023-11-14", ...(sourced ? { source: "replay:h-agreed#go-ahead" } : {}) };
   const attempt = (draft, id, text, extra) => {
     ctx.tools.draft(repo.root, ctx.ws.home, ["new", draft, "--write"]);
     addH2(repo, draft, id, text, "## §a.top/two", { kind: "behavior", authority: "accepted", requires: [], agreed, ...extra });

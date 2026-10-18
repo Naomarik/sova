@@ -2,7 +2,8 @@ import { createMemo, createSignal, onMount, Show, For } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { OfferLink } from "../../shared/baton";
 import type { OrgDetail } from "../../shared/orgs";
-import { ApiError, ownerLink, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
+import { ApiError, ownerLink, previewAssistant, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
+import { OwnerCardAssistant } from "./OwnerCardAssistant";
 import { useMinuteNow } from "../lib/minute-clock";
 import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_ASK, OWNER_LINK_DELETED } from "../lib/link-delete";
 import { deleteOwnerLine, ownerChangeLine, ownerLinkActions, ownerLinkLine, rotateLine } from "../lib/owner-card";
@@ -92,7 +93,7 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
         Owner
       </h2>
       <p class="orgs-line project-muted" id="orgs-owner-hint">
-        The owner follows every project on one page: the overseer's updates, who was asked, what was decided, and each conversation. They can read it, not change it.
+        The owner follows every project on one page: the overseer's updates, who was asked, what was decided, each conversation, the versions they can try, and their own Project Assistant.
       </p>
       <Show when={!owner() && props.org.ownerCleared}>
         {(c) => <Banner tone="warn" title={`${c().name} left the organization, so it has no owner now. Their owner link stopped working.`} />}
@@ -194,6 +195,7 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
         )}
       </Show>
       <Show when={err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+      <Show when={owner()}>{(o) => <OwnerCardAssistant orgId={props.org.id} ownerName={o().name} />}</Show>
       <Show when={previewing() && owner()}>
         {(o) => <OwnerPreview orgId={props.org.id} orgName={props.org.name} ownerName={o().name} onClose={() => setPreviewing(false)} />}
       </Show>
@@ -251,6 +253,7 @@ export function OwnerPreview(props: { orgId: string; orgName: string; ownerName:
               body.scrollTop = 0;
             }}
             preview
+            assistant={{ load: () => previewAssistant(props.orgId) }}
           />
         </div>
         <div class="modal-foot">

@@ -1,3 +1,4 @@
+import { EMPTY_ROSTER_BRAKE_REASON } from "../shared/powers";
 import { nextWindow } from "./statecharts";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -263,6 +264,7 @@ async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await import("./overseer-org-part"); // the org's part of its projects: tools, prompt, gaps, the placement's effects
   await import("./org-sessions"); // the org's fields in the session list and the workspace files Clean Up keeps
   await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
+  await import("./project-assistant-loadout"); // the owner's Project Assistant (§app/project-assistant)
   await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
   await import("./project-overseer-store"); // the settings every act is stamped with
   recoverDecisions ??= (await import("./decisions")).recoverDecisionMarkers;
@@ -315,7 +317,8 @@ async function bootstrapHistory(host: OrgHostApi, orgId: string): Promise<void> 
 // ---- what the org contributes to its projects (server/projects/contributions.ts) ------------------------------
 
 /** An empty roster caps a placed project at L0: nobody to ask, so its overseer only proposes. */
-export const EMPTY_ROSTER_REASON = "The roster has no active people yet, so the overseer only proposes (L0).";
+/** The empty-roster brake's reason (every power acts as Off until the roster has someone, or Resume). */
+export const EMPTY_ROSTER_REASON = EMPTY_ROSTER_BRAKE_REASON;
 
 const isOrgEngine = (engine: string): boolean => readIndex().orgs.some((o) => o.id === engine);
 

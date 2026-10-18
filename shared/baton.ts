@@ -108,6 +108,11 @@ export interface BatonDecisionData {
   /** For defer: when or on what condition to look again, and that date (ms) when it is one. */
   review?: string;
   reviewAt?: number;
+  /** A change to existing behaviour: the § id of the record it changes (record_decision's `changes`, a spec
+      look-up reference resolved on the server), and that record's prose hash when it was agreed
+      (§app.requirements/conversation-drafts). Absent: a new requirement. */
+  changes?: string;
+  changesHash?: string;
 }
 export interface BatonDoneData {
   v: 1;

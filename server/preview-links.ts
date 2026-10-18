@@ -348,6 +348,20 @@ export function extendPreview(id: string, days: unknown, now = Date.now()): Prev
   return r;
 }
 
+/** Set an active preview's expiry to exactly `at` (an owner-bound version follows its owner link's deadline,
+    §app.project-assistant/versions): never past PREVIEW_DAYS_MAX from now, never in the past. */
+export function setPreviewExpiry(id: string, at: number, now = Date.now()): PreviewRecord | null {
+  const store = read();
+  const r = store.links.find((l) => l.id === id);
+  if (!r || previewState(r, now) !== "active") return null;
+  const when = Math.max(now + 1000, Math.min(at, now + PREVIEW_DAYS_MAX * DAY_MS));
+  if (Date.parse(r.expiresAt) === when) return r;
+  r.expiresAt = iso(when);
+  write(store);
+  shareLinksChanged({ kind: "p", cause: "renew" });
+  return r;
+}
+
 /** A shared copy's link shared again (§app.project-services/share): its expiry moves to the later of its own and `days` from now. */
 export function renewPreview(id: string, days: number, now = Date.now()): PreviewRecord | null {
   const store = read();

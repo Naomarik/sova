@@ -1,7 +1,8 @@
 (ns sova.statecharts.engine.hold-policy
   "THE one switch for q10/r4/r6 holds. An act is held when its registry meta says `:hold true`, the
    hold length is above 0, and it is either statechart-started (`by` statechart: always) or, while
-   `overseer-unattended-held?` is on, the project overseer's own unattended call. The operator's
+   `overseer-unattended-held?` is on, the project overseer's own unattended call or the Project
+   Assistant's (`by` assistant). No hold waits for an approval (al_3 q2). The operator's
    clicks and attended turns are never held. The held-act list is every act with `:hold true` in
    the registries (`held-acts`).")
 
@@ -14,11 +15,6 @@
   "r7 (provisional, pending q13): the operator's own clicks wait for a person's working hours too.
    Off: they send at once, with an off-hours fact the UI shows."
   false)
-
-(def unreviewed-holds-wait?
-  "r8/q12: a confirm-required hold (its act's kind is in the project's confirm list) waits past its
-   end until the overseer approves or cancels it. Off: it goes ahead at its end like any hold."
-  true)
 
 (def at-once-field
   "The at-once count a held act of a `:counts` kind reserves a slot in (F2)."
@@ -57,7 +53,8 @@
   (let [by (by-of envelope)]
     (and (not (true? (:attended envelope)))
          (or (= "statechart" by)
-             (and overseer-unattended-held? (= "overseer" by))))))
+             ;; the Project Assistant's acts (an owner's message set them off) wait like the overseer's own
+             (and overseer-unattended-held? (contains? #{"overseer" "assistant"} by))))))
 
 (defn held?
   "Does act `act` (its registry meta) wait in a hold under `envelope`?"
@@ -80,14 +77,4 @@
     (cond
       (true? (:attended envelope)) false
       (= "operator" by) operator-acts-wait-for-hours?
-      :else (contains? #{"statechart" "overseer"} by))))
-
-(defn confirm-required?
-  "q12: is an act of confirm kind `kind` in the envelope's confirm list (`:confirm-kinds`)?"
-  [kind envelope]
-  (boolean (and kind (some #(= (name kind) (name %)) (:confirm-kinds envelope)))))
-
-(defn waits-unreviewed?
-  "Does a hold wait past its end until approved (the switch; confirm-required holds only)?"
-  [hold]
-  (boolean (and unreviewed-holds-wait? (:confirm hold))))
+      :else (contains? #{"statechart" "overseer" "assistant"} by))))

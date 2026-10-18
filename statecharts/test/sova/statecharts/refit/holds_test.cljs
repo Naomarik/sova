@@ -6,14 +6,13 @@
     [cljs.test :refer [deftest is testing]]
     [clojure.string]
     [sova.statecharts.registry :as registry]
-    [sova.statecharts.rules.levels :as lv]
     [sova.statecharts.engine.core :as core]))
 
 (def t0 1000000)
 (def sid "item/o1/pr1/g_1")
 
 (defn- item-engine []
-  (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})]
+  (let [eng (core/new-engine registry/statecharts (assoc registry/options :absorb-unknown true))]
     (core/start! eng sid "item" {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x"} t0)
     (core/send! eng sid :link/moved {:from "watch/pr1" :statechart "watch" :states [:watch]
                                      :exported {:settings {:autonomy "L3"}}} {:now t0})
@@ -54,20 +53,13 @@
     (unattended {:used 0 :max 6} {:gatherings-open 4})
     "5 of its gathering sessions are open, and the limit is 5 at once."))
 
-(deftest F12-a-gathering-waits-past-its-hold-only-when-its-kind-is-on-the-confirm-list
-  (let [env (unattended {:used 0 :max 6} {})
-        run (fn [kinds]
-              (let [eng (item-engine)]
-                (core/send! eng sid :gather/start (merge (gather "p1" 1) env {:confirm-kinds kinds}) {:now t0})
-                {:held (first (core/holds eng)) :end (core/fire-due! eng (+ t0 600000)) :eng eng}))]
-    (let [{:keys [held end eng]} (run ["gather"])]
-      (is (true? (:confirm held)) "gather/start is of kind gather")
-      (is (= :hold/waiting (:event (first (:steps end)))) "at its end it waits for the overseer")
-      (is (not-any? #(= :gather/start (:event %)) (:steps end)))
-      (is (= [true] (map :waiting (core/holds eng)))))
-    (let [{:keys [held end eng]} (run (remove #{"gather"} ["message" "gather" "offer" "close" "promote" "build" "prompt" "owner-update" "roster-approve" "roster-decline"]))]
-      (is (not (:confirm held)))
-      (is (not-any? #(= :hold/waiting (:event %)) (:steps end)) "off the list: no review wait")
+(deftest al3-a-gathering-goes-ahead-at-its-holds-end-with-no-review
+  ;; q2: no held act waits for the overseer's approval; an old envelope's confirm list is ignored
+  (let [eng (item-engine)]
+    (core/send! eng sid :gather/start (merge (gather "p1" 1) (unattended {:used 0 :max 6} {}) {:confirm-kinds ["gather"]}) {:now t0})
+    (is (not (:confirm (first (core/holds eng)))))
+    (let [end (core/fire-due! eng (+ t0 600000))]
+      (is (not-any? #(= :hold/waiting (:event %)) (:steps end)))
       (is (some #(= :gather/start (:event %)) (:steps end)) "it goes ahead at its end")
       (is (empty? (core/holds eng))))))
 
@@ -94,36 +86,6 @@
             r   (core/send! eng sid :gather/start (merge (gather "p1" 1) {:by "operator" :target ana}) {:now night})]
         (is (empty? (core/holds eng)))
         (is (= window (:off-hours (act-step r))))))))
-
-(deftest r8-an-unreviewed-confirm-required-hold-asks-the-overseer-to-look
-  (let [eng  (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
-        wsid "watch/pr1"
-        env  (assoc (unattended {:used 0 :max 6} {}) :confirm-kinds ["gather"])]
-    ;; a project with an overseer (its watch keeps reasons only then)
-    (core/start! eng "project/pr1" "project" {:id "pr1" :name "Site" :root "/r"} t0)
-    (core/send! eng "project/pr1" :overseer/start {:by "operator" :conversation-id "c1"} {:now t0})
-    (core/send! eng wsid :settings/changed {:settings {:soon-look-sec 60}} {:now t0})
-    (core/start! eng sid "item" {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x"} t0)
-    (core/send! eng sid :gather/start (merge (gather "p1" 1) env) {:now t0})
-    (let [id (:id (first (core/holds eng)))]
-      (is (empty? (filter #(= "hold/review" (:kind %)) (:reasons (core/data eng wsid)))) "not while its hold runs")
-      (core/fire-due! eng (+ t0 600000))
-      ;; its watch was already due (the clock moved 10 minutes), so the look runs with the reason
-      (let [r (first (filter #(= "hold/review" (:kind %)) (:run-reasons (core/data eng wsid))))]
-        (is (contains? (set (core/configuration eng wsid)) :running) "at its end it waits, and the overseer looks")
-        (is (some? r) "the look's reasons carry the review")
-        (is (:soon r) "a reason to look soon")
-        (is (re-find #"waits for your review" (str (:text r))))
-        (is (clojure.string/includes? (str (:text r)) (str "(hold " sid ":" id ")")) "F19: the full id, <session-id>:<hold-id>")
-        (is (= (str sid ":" id) (get-in r [:params :hold]))))
-      (is (= [true] (map :waiting (core/holds eng))) "still waiting while the overseer looks")
-      (testing "approve early: a reason, then it goes ahead through the full path"
-        (is (= "A correction needs a reason: say why."
-               (:sentence (:refused (first (filter #(= :hold/approve (:event %)) (:steps (core/send! eng sid :hold/approve {:by "overseer" :attended true :autonomy "L0" :id id} {:now (+ t0 600001)})))))))))
-        (let [r (core/send! eng sid :hold/approve {:by "overseer" :attended true :autonomy "L0" :id id :reason "looks right"} {:now (+ t0 600002)})]
-          (is (some #(= :hold/released (:event %)) (:steps r)))
-          (is (empty? (core/holds eng)))
-          (is (contains? (:batons (core/data eng sid)) "baton/o1/b1"))))))
 
 (deftest r7-an-offer-waits-for-its-invitees-hours
   ;; server-5: an offer's invitees come as `target-people` records (`targets` holds their ids)

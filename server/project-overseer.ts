@@ -1,3 +1,5 @@
+import { powersView, type PowersView } from "../shared/powers";
+import type { ThinkingLevel } from "../shared/profiles";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
@@ -65,6 +67,7 @@ import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview as turnOffPreviewLink } from "./project-previews";
 import { shareFromAct } from "./project-services/share";
+import type { Caller } from "./project-services/engine";
 import { readRegistry } from "./project-services/store";
 import { previewAddress } from "./share/preview-address";
 import { heldActs, projectOfHold } from "./project-holds";
@@ -111,10 +114,10 @@ import {
 } from "./projects/spaces";
 import {
   dayKey,
-  effectiveAutonomy,
   fitThinking,
   isPoId,
   patchPoSettings,
+  powersInForce,
   projectOf,
   projectOverseerOfPath,
   projectOverseerPaths,
@@ -399,9 +402,28 @@ export async function projectWorktrees(projectId: string): Promise<ProjectWorktr
   return { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions };
 }
 
-/** The level in force now: paused, then a contributed ceiling, then the setting. */
-export function effectiveOf(projectId: string, settings: Pick<ProjectOverseerSettings, "autonomy"> = readPoSettings(projectOverseerPaths(projectId))): { autonomy: ProjectOverseerSettings["autonomy"]; reason?: string } {
-  return effectiveAutonomy(settings, ceilingOf(engineOrThrow(projectId), projectId), overseerPausedSince(projectId));
+/** The powers in force now (both columns after the brake, the brake), and the never-looser level of the overseer's
+    column in force with the brake's reason (older readers). */
+export function powersOf(projectId: string, settings: Pick<ProjectOverseerSettings, "powers"> = readPoSettings(projectOverseerPaths(projectId))): ReturnType<typeof powersInForce> {
+  return powersInForce(settings.powers, ceilingOf(engineOrThrow(projectId), projectId), overseerPausedSince(projectId));
+}
+
+/** The level in force now (older readers, one release): the never-looser level of the overseer's column after the brake. */
+export function effectiveOf(projectId: string, settings: Pick<ProjectOverseerSettings, "powers"> = readPoSettings(projectOverseerPaths(projectId))): { autonomy: ProjectOverseerSettings["autonomy"]; reason?: string } {
+  const f = powersOf(projectId, settings);
+  return { autonomy: f.autonomy, ...(f.reason ? { reason: f.reason } : {}) };
+}
+
+/** GET's powers view: both columns, after the brake, the note, the models per kind of work. */
+export function powersViewOf(projectId: string, settings: ProjectOverseerSettings): PowersView {
+  const f = powersOf(projectId, settings);
+  const pick = (model: string | null, thinking: string | null) => (model ? { model, ...(thinking ? { thinking: thinking as ThinkingLevel } : {}) } : null);
+  const am = settings.powers.assistantModels ?? {};
+  return powersView(settings.powers, f.brake, isPlaced(projectId), {
+    overseer: { reply: pick(settings.model, settings.thinking), coding: pick(settings.codingModel, settings.codingThinking), gathering: pick(settings.gatheringModel, settings.gatheringThinking) },
+    assistant: am,
+    assistantSource: { reply: "org", coding: am.coding ? "project" : "org", gathering: am.gathering ? "project" : "org" },
+  });
 }
 
 export async function projectOverseerInfo(projectId: string): Promise<ProjectOverseerInfo> {
@@ -450,7 +472,7 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     path: exists ? path : null,
     id: exists ? st!.current : null,
     history,
-    settings,
+    settings: { ...settings, powers: powersViewOf(projectId, settings) },
     codingModeNow: codingModeNow(),
     gatheringAbilitiesNow: baseAbilities(settings.gatheringAbilities),
     coding,
@@ -487,8 +509,16 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
   // The watch runs on the settings as saved: a raised limit releases what it held (the statechart's).
   await syncWatchSettings(projectId);
-  // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
-  if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(projectId, s.autonomy);
+  // Resume (or, one release, an old client's level) lifts the brake: it ends the pause an attach put on it; on an
+  // empty roster it holds until the roster has someone again. A powers patch alone never does.
+  const b = body as { autonomy?: unknown; resume?: unknown };
+  if (b.resume === true || b.autonomy !== undefined) {
+    await resumeOverseer(projectId, s.autonomy);
+    if (ceilingOf(engineOrThrow(projectId), projectId) && !s.powers.emptyRosterResumedAt) {
+      writePoSettings(p, { ...s, powers: { ...s.powers, emptyRosterResumedAt: new Date().toISOString() } });
+      await syncWatchSettings(projectId);
+    }
+  }
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? chatHandle(path) : undefined;
@@ -625,7 +655,7 @@ function toolHost(rt: Rt): PoToolHost {
     paths,
     project: () => projectOf(projectId),
     settings,
-    effective: () => effectiveOf(projectId, settings()),
+    effective: () => powersOf(projectId, settings()),
     attended: () => rt.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
@@ -801,7 +831,21 @@ function toolHost(rt: Rt): PoToolHost {
         if (typeof id !== "string") throw new Error("The link was made, but it can't be read back.");
         return { done: { id } };
       }
-      await actOrThrow(engine(), projectSessionSid, verb === "down" ? "services/down" : "services/run", { verb, ...(instance ? { instance } : {}) }, envelope(), { settle: true });
+      // down: always; reset and teardown: copiesReset (services/reset); the rest: copiesRun (services/run)
+      const event = verb === "down" ? "services/down" : verb === "reset" || verb === "teardown" ? "services/reset" : "services/run";
+      await actOrThrow(engine(), projectSessionSid, event, { verb, ...(instance ? { instance } : {}) }, envelope(), { settle: true });
+    },
+    async deployAct(q) {
+      const out = await actOrThrow(engine(), projectSessionSid, "deploy/run", q, envelope(), { settle: true });
+      const to = q.target ? ` to ${q.target}` : "";
+      if (out.held) {
+        const h = heldAt(projectSessionSid, out.held);
+        return `Held: a deploy${to} through the project's own recipe waits until ${new Date(h.until).toISOString()} so the operator can cancel it; it goes ahead then unless cancelled (held act ${h.id}). The recipe decides by itself whether it ships.`;
+      }
+      const fx = out.effects?.find((e) => e.kind === "deploy-run");
+      if (fx?.error) throw new OrgError(fx.error, 409);
+      const r = (fx?.result ?? {}) as { deployId?: string; target?: string; state?: string };
+      return `Deploy ${r.deployId ?? ""} to ${r.target ?? q.target ?? "its target"} is ${r.state ?? "running"}: the project's own recipe runs it and decides whether it ships. deploy.status follows it.`;
     },
     async software() {
       const { readRuntime, softwareLines } = await import("./projects/runtime");
@@ -1413,6 +1457,130 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
   };
 }
 
+/**
+ * A coding session the operator starts from a conversation's spec draft (§4.4 build route): no item, an operator
+ * caller (kind `operator-coding`, never counted on the overseer's caps), its first prompt the draft and its diff.
+ */
+export async function startDraftBuild(
+  projectId: string,
+  input: { title: string; prompt: string; model?: string; thinking?: string; extra?: { conversationDraft: string } },
+): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }> {
+  const prompt = input.prompt.trim();
+  const title = input.title.trim().slice(0, 80);
+  if (!prompt || !title) throw new OrgError("A build from a draft needs a title and a prompt.");
+  const made = await startCodingSession(projectId, {
+    prompt,
+    title,
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.thinking ? { thinking: input.thinking } : {}),
+    kind: "operator-coding",
+    ...(input.extra ? { extra: input.extra } : {}),
+  });
+  return {
+    path: made.path,
+    sessionId: made.sessionId,
+    ...(made.worktree ? { worktree: made.worktree } : {}),
+    ...(made.note ? { note: made.note } : {}),
+    ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+  };
+}
+
+// ---- the Project Assistant's acts (al_1, al_3: its column of powers) -------------------------------------------
+
+export type AssistantActInput =
+  | { act: "build/start"; basis: { kind: "owner-request"; id: string }; prompt: string; title?: string; model?: { model: string; thinking?: string | null } | null }
+  | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string };
+export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string } | { taken: false; code: string; sentence: string };
+
+/**
+ * An act the client's Project Assistant sets off from an owner's message: the project statechart's `build/start`
+ * (a fix on its own branch, from an owner request, power codingStart) or `deploy/run` (power deploy), stamped
+ * `by: "assistant"` and checked against the assistant column; held for the waiting period unless `attended` (the
+ * operator's own turn in the assistant's chat, never restricted). A refusal comes back as `{taken: false}` with its
+ * code (`power-off`, `brake`, a limit's), never thrown; the caller files it as a request for the operator.
+ */
+export async function assistantAct(projectId: string, a: AssistantActInput, o: { attended: boolean; sessionId?: string }): Promise<AssistantActResult> {
+  const envelope = projectEnvelope(projectId, { by: "assistant", attended: o.attended });
+  const refused = (err: unknown): AssistantActResult => {
+    if (err instanceof OrgError) return { taken: false, code: err.code ?? "refused", sentence: err.message };
+    throw err;
+  };
+  try {
+    if (a.act === "build/start") {
+      const prompt = a.prompt.trim();
+      if (!prompt) return { taken: false, code: "invalid", sentence: "Say what the fix is for." };
+      const made = await startCodingSession(projectId, {
+        prompt,
+        title: (a.title?.trim() || `Fix: ${prompt.split("\n")[0]!}`).slice(0, 80),
+        ...(a.model?.model ? { model: a.model.model } : {}),
+        ...(a.model?.thinking ? { thinking: a.model.thinking } : {}),
+        kind: "coding",
+        envelope,
+        extra: { basis: { kind: "owner-request", id: a.basis.id } },
+      });
+      if (made.held) return { taken: true, held: true, holdRef: made.held.id, until: new Date(made.held.until).toISOString(), sessionId: made.sessionId };
+      return { taken: true, held: false, sessionId: made.sessionId };
+    }
+    const out = await actOrThrow(engineOrThrow(projectId), projectSid(projectId), "deploy/run", { ...(a.target ? { target: a.target } : {}), ...(a.commit ? { commit: a.commit } : {}), ...(a.why ? { why: a.why } : {}) }, envelope, { settle: true });
+    if (out.held) {
+      const h = heldAt(projectSid(projectId), out.held);
+      return { taken: true, held: true, holdRef: h.id, until: new Date(h.until).toISOString() };
+    }
+    return { taken: true, held: false };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+type FixStarted = { projectId: string; orgId: string; basisId: string; sessionId: string };
+const fixStartedHooks: ((e: FixStarted) => void)[] = [];
+const fixesNoted = new Set<string>();
+/** Told once per build when a coding session the Project Assistant started for an owner request is set up (at once,
+    or when its hold ended): the request is then "started" with its sessionId. */
+export function onOwnerFixStarted(fn: (e: FixStarted) => void): void {
+  fixStartedHooks.push(fn);
+}
+onOrgChange((engine, change) => {
+  if (!fixStartedHooks.length) return;
+  for (const sid of change.sessions) {
+    if (!sid.startsWith("build/") || fixesNoted.has(sid)) continue;
+    const d = hostOf(engine).data(sid) as { basis?: { kind?: unknown; id?: unknown }; path?: unknown; projectId?: unknown; sessionId?: unknown } | null;
+    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string" || typeof d.path !== "string" || !d.path) continue;
+    fixesNoted.add(sid);
+    const e = { projectId: String(d.projectId ?? ""), orgId: engine, basisId: d.basis.id, sessionId: String(d.sessionId ?? sid.split("/").at(-1)) };
+    for (const fn of fixStartedHooks)
+      try {
+        fn(e);
+      } catch (err) {
+        console.warn(`[project-overseer] owner fix started: ${err instanceof Error ? err.message : String(err)}`);
+      }
+  }
+});
+
+/**
+ * The project statechart's `deploy/run`, taken (or released from its hold): the project's own recipe plans and runs
+ * as its caller (an overseer's or the Project Assistant's deploy act, `deployAct`; the operator's own click), and
+ * decides by itself whether it ships. A plan that needs an override is refused: overrides are the operator's alone.
+ */
+async function runDeployAct(projectId: string, e: Record<string, unknown>): Promise<{ deployId: string; target: string; state: string }> {
+  const root = projectOf(projectId).root;
+  const by = String(e.by ?? "");
+  const caller: Caller =
+    by === "operator" ? { kind: "operator", confirm: true }
+    : by === "assistant" ? { kind: "assistant", id: "project-assistant", root, deployAct: true }
+    : { kind: "project-overseer", id: readPoState(projectOverseerPaths(projectId))?.current ?? "", root, act: async () => {}, deployAct: true };
+  const { projectEngine } = await import("./project-services/routes");
+  const eng = projectEngine();
+  const planned = await eng.run("deploy.plan", { project: root, ...(typeof e.target === "string" ? { target: e.target } : {}), ...(typeof e.commit === "string" ? { commit: e.commit } : {}) }, caller);
+  if (planned.error) throw new Error(`Not deployed: ${planned.error.code}: ${planned.error.message}`);
+  const plan = planned.deploy?.plan;
+  if (!plan) throw new Error("Not deployed: the recipe gave no plan.");
+  const ran = await eng.run("deploy.run", { project: root, plan: plan.planId, confirm: true }, caller);
+  if (ran.error) throw new Error(`Not deployed: ${ran.error.code}: ${ran.error.message}`);
+  const rec = ran.deploy?.record;
+  return { deployId: rec?.id ?? "", target: rec?.target ?? plan.target, state: rec?.state ?? "running" };
+}
+
 // ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
 
 /**
@@ -1476,7 +1644,7 @@ async function watchFact(projectId: string, event: string, payload: Record<strin
 }
 
 /** The settings the watch runs on (overseer.json as read): its level, the Watch switch, the pace, the hold, the caps. */
-const watchSettings = (s: ProjectOverseerSettings) => ({ autonomy: s.autonomy, watch: s.watch, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin, caps: s.caps });
+const watchSettings = (s: ProjectOverseerSettings) => ({ autonomy: s.autonomy, powers: { overseer: s.powers.overseer, assistant: s.powers.assistant }, emptyRosterResumed: !!s.powers.emptyRosterResumedAt, watch: s.watch, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin, caps: s.caps });
 
 /** overseer.json as read now, to the project's watch (a PATCH, an open). */
 export async function syncWatchSettings(projectId: string): Promise<void> {
@@ -1618,6 +1786,8 @@ onOrgHostOpened((host, engine) => {
   });
   // The project statechart's services/share, taken (or released from its hold): the services engine shares the copy
   // again as the project overseer, every check again, and keeps the link host-local; the result names the link only.
+  // The project statechart's deploy/run, taken or released: the project's own recipe plans and runs (power deploy).
+  host.effects.register("deploy-run", async (e) => runDeployAct(String(host.data(String(e.sessionId))?.projectId ?? host.data(String(e.sessionId))?.id ?? ""), e as Record<string, unknown>));
   host.effects.register("services-share", async (e) =>
     shareFromAct({
       projectId: String(host.data(String(e.sessionId))?.projectId ?? ""),
@@ -1658,11 +1828,22 @@ export async function syncWatchFacts(engine: string): Promise<void> {
     if (!projectId) continue;
     const ceiling = ceilingOf(engine, projectId);
     const lookHint = lookHintOf(engine, projectId);
+    // The roster has someone again: a Resume pressed on the empty-roster brake is spent (the brake comes back if it empties).
+    if (!ceiling) await clearRosterResume(projectId).catch(() => {});
     if (sameCeiling(s.data.ceiling, ceiling) && (s.data.lookHint ?? null) === lookHint) continue;
     await watchFact(projectId, "facts/changed", { ceiling, lookHint });
   }
 }
 onWatchFactsChanged(syncWatchFacts);
+
+async function clearRosterResume(projectId: string): Promise<void> {
+  const p = projectOverseerPaths(projectId);
+  const s = readPoSettings(p);
+  if (!s.powers.emptyRosterResumedAt) return;
+  const { emptyRosterResumedAt: _spent, ...powers } = s.powers;
+  writePoSettings(p, { ...s, powers });
+  await syncWatchSettings(projectId);
+}
 
 /**
  * A hosted session finished a turn: when it is one of the project's builds, its statechart hears the turn

@@ -26,6 +26,20 @@ const { hostOf } = await import("./org-engine");
 const { listPreviews, mintPreview } = await import("./preview-links");
 const { OVERSEER_SENDER_HEADER } = await import("./overseer-sender");
 
+/** al_3 q2: nothing approves a held act; its hold ends (the org clock moved past it) and it goes ahead through every guard. */
+async function releaseHold(orgId: string, ref: string): Promise<number> {
+  const { setOrgClockForTest } = await import("./org-engine");
+  const h = hostOf(orgId).holds().find((x) => `${x.sessionId}:${x.id}` === ref || x.id === ref)!;
+  setOrgClockForTest(() => h.until + 1);
+  try {
+    await hostOf(orgId).fireDue();
+  } finally {
+    setOrgClockForTest(null);
+  }
+  return h.until + 1;
+}
+
+
 const sender = inProcessSender({ env: process.env, absent: [ABSENT] });
 setSenderClientOptionsForTest({ connect: sender.connect, retryMs: 0 });
 function stopSender(): void {
@@ -248,7 +262,7 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     assert.equal(other.status, 409);
   });
 
-  test("the project overseer: sova_send_to_person waits in the hold, then goes once approved", async () => {
+  test("the project overseer: sova_send_to_person waits in the hold, then goes when it ends", async () => {
     await po.ensureProjectOverseer(project.id);
     await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
     const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_send_to_person")!;
@@ -260,7 +274,7 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     assert.equal(count(), 0, "nothing sent while held");
     const hold = hostOf(org.id).holds().find((h) => h.event === "outreach/send")!;
     assert.ok(hold, "held on the project statechart");
-    await hostOf(org.id).act(`placement/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
+    await releaseHold(org.id, hold.id);
     const end = Date.now() + 8000;
     while (count() === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
     const sent = logOf().filter((l) => l.by === "project-overseer");
@@ -336,7 +350,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.ok(!codes.includes("link"), `no bare link code: ${codes.join(", ")}`);
   });
 
-  test("held, then refused when it goes: sova_hold's approval, the feed, sova_pipeline and Needs you all say not sent", async () => {
+  test("held, then refused when it goes: the feed, sova_pipeline and Needs you all say not sent", async () => {
     const { notSentAttention } = await import("./outreach/log");
     const { revokePreview } = await import("./preview-links");
     const record = preview(5176);
@@ -344,10 +358,9 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.match(JSON.stringify(held.content), /Held: the WhatsApp message to Ann/);
     const id = holdOf();
     revokePreview(record.id); // checked again when it goes: now turned off
-    await assert.rejects(run("sova_hold", { op: "approve", id, reason: "test: go now" }), (err: Error) => {
-      assert.equal(err.message, `Approved ${id}, but the WhatsApp message to Ann was not sent: That preview is turned off.`);
-      return true;
-    });
+    await releaseHold(org.id, id);
+    const endR = Date.now() + 8000;
+    while (lastBy("project-overseer")?.code !== "preview-off" && Date.now() < endR) await new Promise((r) => setTimeout(r, 50));
     const line = lastBy("project-overseer");
     assert.deepEqual([line.event, line.code, line.link], ["refused", "preview-off", "preview"]);
     const feed = hostOf(org.id).feed(project.id, { newestFirst: true });
@@ -373,8 +386,9 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     const { id: overseerId } = await po.ensureProjectOverseer(project.id);
     const record = preview(5177);
     await run("sova_send_to_person", { person: "Ann", preview: record.id });
-    const out = await run("sova_hold", { op: "approve", id: holdOf(), reason: "test: go now" });
-    assert.match(JSON.stringify(out.content), /Approved .*: it goes ahead now\./);
+    await releaseHold(org.id, holdOf());
+    const endS = Date.now() + 8000;
+    while (lastBy("project-overseer")?.event !== "sent" && Date.now() < endS) await new Promise((r) => setTimeout(r, 50));
     const line = lastBy("project-overseer");
     assert.equal(line.event, "sent", JSON.stringify(line));
     const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
@@ -523,12 +537,11 @@ describe("§app.outreach/sender-controls, /sender-health: the operator's own con
     await run("sova_send_to_person", { person: "Ann", note: "Your prototype is ready." });
     sender.close(440);
     await senderSettled("replaced");
-    const approved = JSON.stringify((await run("sova_hold", { op: "approve", id: ref(), reason: "test: go now" })).content);
-    assert.match(approved, /but WhatsApp is down: the message waits for WhatsApp to come back, at most until /);
+    const releasedAt = await releaseHold(org.id, ref());
     assert.equal(mine().length, before, "nothing sent, nothing refused");
     const [w] = outage();
     assert.ok(w, "it waits in the project's hold");
-    assert.ok(Math.abs(w.until - (Date.now() + 24 * 3_600_000)) < 60_000, "a day from its first wait");
+    assert.ok(Math.abs(w.until - (releasedAt + 24 * 3_600_000)) < 60_000, "a day from its first wait");
     const listed = heldActs(project.id).find((h) => h.wait === "outage");
     assert.equal(listed?.what, "A WhatsApp message to Ann");
     assert.match(heldAttention().find((i) => i.held?.wait === "outage")?.detail ?? "", /^A WhatsApp message to Ann waits for WhatsApp to come back: it goes when WhatsApp is back/);
@@ -544,7 +557,7 @@ describe("§app.outreach/sender-controls, /sender-health: the operator's own con
     await run("sova_send_to_person", { person: "Ann", note: "Second note." });
     sender.close(440);
     await senderSettled("replaced");
-    await run("sova_hold", { op: "approve", id: ref(), reason: "test: go now" });
+    await releaseHold(org.id, ref());
     const bound = outage()[0]!.until;
     setOrgClockForTest(() => bound + 1);
     try {

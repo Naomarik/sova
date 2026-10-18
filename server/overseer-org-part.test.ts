@@ -101,11 +101,19 @@ describe("the org part reaches a placed project's overseer only", () => {
     const names = po.toolsForTest(alone.id).map((t) => t.name);
     for (const n of ["sova_roster", "sova_decisions", "sova_start_gathering", "sova_offer", "sova_send_status", "sova_promote"]) assert.ok(!names.includes(n), n);
     assert.ok(tool("sova_roster"), "a placed project's overseer has them");
+    // §app.spec-lookup/who-gets-what: every project's overseer looks its spec up (full view) and reads its drafts.
+    for (const n of ["spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build"]) assert.ok(names.includes(n), n);
+    const lookup = po.toolsForTest(alone.id).find((t) => t.name === "spec_lookup")!;
+    assert.ok(!("project" in ((lookup.parameters as { properties: Record<string, unknown> }).properties)), "its own project only");
+    const read = po.toolsForTest(alone.id).find((t) => t.name === "sova_project")!;
+    const text = ((await read.execute("t", {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+    assert.match(text, /## Spec\nnone yet/, "a standalone project's Spec line");
+    assert.match(text, /## Overview\nProject: Alone\. This project has no written description yet\./);
   });
 });
 
 describe("its levels (§app.project-overseer/autonomy-levels)", () => {
-  test("sova_roster: read at any level, never contact details; approving needs L2 outside the operator's turns", async () => {
+  test("sova_roster: read at any level, never contact details; approving needs its power (roster) outside the operator's turns", async () => {
     await settings(portal.id, { autonomy: "L0" });
     const out = await run("sova_roster", { op: "read" }, { attended: false });
     assert.match(textOf(out), /- Tony \(id \S+\) — IT; decides: invoicing\n  language: tr · skills: archery\n  voice: "Greet with Merhaba; keep it short\."/, "the operator's agent sees how to address them");
@@ -115,7 +123,7 @@ describe("its levels (§app.project-overseer/autonomy-levels)", () => {
     assert.match(prompt, /voice: "Greet with Merhaba; keep it short\."/, "the prompt's roster too");
     assert.doesNotMatch(prompt, /example\.invalid|1555000010/);
     assert.match(textOf(await run("sova_project", {}, { attended: false })), /language: tr · skills: archery/);
-    await assert.rejects(() => run("sova_roster", { op: "approve", person: "Bea" }, { attended: false }), /sova_roster needs L2/);
+    await assert.rejects(() => run("sova_roster", { op: "approve", person: "Bea" }, { attended: false }), /Approve or decline proposed people is off for the overseer on its own\./);
     await settings(portal.id, { autonomy: "L2", holdMin: 0 });
     const ok = await run("sova_roster", { op: "approve", person: "Bea" }, { attended: false });
     assert.equal(textOf(ok), "Bea is now active.");
@@ -269,6 +277,20 @@ describe("decisions and promotion", async () => {
   });
 });
 
+describe("the owner's open requests (§app.project-assistant/requests)", () => {
+  test("sova_project lists them once, as data for the operator; none, no section", async () => {
+    const paStore = await import("./project-assistant-store");
+    const ownerDir = await placed("owner-reqs");
+    assert.doesNotMatch(textOf(await run("sova_project", {}, { project: ownerDir.id })), /Open requests from the organization's owner/);
+    const req = paStore.fileRequest(org.id, { projectId: ownerDir.id, kind: "bug", title: "The booking form is slow", text: "It takes a minute." });
+    const out = textOf(await run("sova_project", {}, { project: ownerDir.id }));
+    assert.equal(out.split("Open requests from the organization's owner").length - 1, 1, out);
+    assert.match(out, /- bug, with the team, \d{4}-\d{2}-\d{2}: The booking form is slow/);
+    paStore.setRequestStatus(org.id, req.id, "done");
+    assert.doesNotMatch(textOf(await run("sova_project", {}, { project: ownerDir.id })), /The booking form is slow/, "a done request is no longer open");
+  });
+});
+
 describe("what is built reaches the overseer (§app.requirements/decisions)", async () => {
   const shop = await placed("shop");
   const a = await decided(shop.id, tony, "invoicing", "Invoices are due after thirty days.");
@@ -291,7 +313,7 @@ describe("what is built reaches the overseer (§app.requirements/decisions)", as
     const out = textOf(await run("sova_decisions", {}, { project: shop.id }));
     assert.match(out, new RegExp(`${a} · invoicing · promoted · built \\(as the build recorded it\\)`));
     assert.match(out, new RegExp(`${b} · invoicing · promoted · not built yet · edited in the spec since it was promoted`));
-    assert.match(textOf(await run("sova_project", {}, { project: shop.id })), /exists · 2 promoted · 1 built, 1 not built yet · 0 drafted, not promoted/);
+    assert.match(textOf(await run("sova_project", {}, { project: shop.id })), /## Spec\n\d+ entries · 2 promoted requirements · 1 built, 1 not built yet · 0 drafted, not promoted/);
   });
 });
 

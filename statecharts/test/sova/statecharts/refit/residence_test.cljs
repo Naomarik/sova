@@ -5,14 +5,14 @@
   (:require
     [cljs.test :refer [deftest is testing]]
     [sova.statecharts.registry :as registry]
-    [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.engine.core :as core]))
 
 (def t0 1000000000)
 (def hour 3600000)
 (def sid "residence/o1")
 
-(defn- eng [] (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true}))
+(defn- eng [] (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true}))
 (defn- in? [e s] (contains? (set (core/configuration e sid)) s))
 (defn- commit-key [r] (:key (first (filter #(= "commit" (:kind %)) (:outbox r)))))
 (defn- answer! [e r head-at now]

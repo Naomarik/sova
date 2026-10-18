@@ -497,12 +497,12 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const unknownProfile = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", subagent_profile: "nope" });
     assert.match(unknownProfile.text, /Unknown subagent profile: nope\. sova_list_subagent_profiles lists them\./);
     assert.equal(limits.count("create"), 1, "no session counted for a refusal");
-    const named = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Draw the flow", title: "Flow", mode: "delegate", minor_modes: ["vis", "align"] });
+    const named = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Draw the flow", title: "Flow", mode: "delegate", minor_modes: ["vis", "align", "spec"] });
     assert.ok(named.ok, named.text);
-    assert.match(named.text, /, mode delegate · align · visuals/);
+    assert.match(named.text, /, mode delegate · align · spec · visuals/);
     const path = readBuilds(project.id).find((r) => r.sessionId === (named.details as { session: string }).session)!.path!;
     const pin = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.type === "custom" && e.customType === "mode").at(-1);
-    assert.deepEqual(pin?.data.active.minorModes, ["align", "vis"]);
+    assert.deepEqual(pin?.data.active.minorModes, ["align", "spec", "vis"]);
     assert.equal(pin?.data.active.mode, "delegate");
     await piSession(await acquireChat(path)).waitForIdle();
   });

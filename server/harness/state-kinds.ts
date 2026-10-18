@@ -49,6 +49,7 @@ import {
 import { LINK_MEMBER_ENTRY, type LinkMemberData } from "../../shared/mesh-links";
 import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";
+import { PROJECT_ASSISTANT_ENTRY, type ProjectAssistantMarkerData } from "../../shared/project-assistant";
 import {
   OVERSEER_DIALOG_ANSWER_ENTRY,
   OVERSEER_ENTRY,
@@ -159,6 +160,12 @@ export const PROJECT_OVERSEER = kind<ProjectOverseerMarkerData>(PROJECT_OVERSEER
   return data && typeof data.projectId === "string" ? { v: 1, projectId: data.projectId } : null;
 });
 
+/** A Project Assistant's marker (§app.project-assistant/chat): its org and owner, read from the first one in the file. */
+export const PROJECT_ASSISTANT = kind<ProjectAssistantMarkerData>(PROJECT_ASSISTANT_ENTRY, "marker", (d) => {
+  const data = d as { orgId?: unknown; personId?: unknown } | null | undefined;
+  return data && typeof data.orgId === "string" && typeof data.personId === "string" ? { v: 1, orgId: data.orgId, personId: data.personId } : null;
+});
+
 // Baton kinds: each read as the transcript's baton row reads it (shared/baton.ts holds the shapes). The
 // statechart's effect kinds also carry `key`, deduped over the file before a write.
 
@@ -258,7 +265,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
-    GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER, ALIGN_LAUNCH,
+    GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
   ].map((k) => [k.type, k as StateKind<unknown>]),

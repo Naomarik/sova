@@ -34,11 +34,14 @@ const PREVIEW: PreviewView = {
 
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
-const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState, waitingWords } = await import("./project-overseer-tools");
+const { projectOverseerTools, TOOL_POWER, OP_POWER, COUNTS, operatorOnlyRefusal, underRoot, buildState, waitingWords, powersLine } = await import("./project-overseer-tools");
 const { statechartInfo, statechartVersions } = await import("./statecharts");
-const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, PAUSED_REASON } = await import("./project-overseer-store");
+const { defaultPoSettings, powersInForce, projectOverseerPaths } = await import("./project-overseer-store");
+const { carryOver, POWERS, POWER_INFO, PAUSED_BRAKE_REASON, readStoredPowers } = await import("../shared/powers");
 const { OrgError } = await import("./org-error");
 const { TOOL_NEEDS: MASTER_NEEDS } = await import("./statecharts-replay");
+/** Master's level of each tool, as the powers carry it over (a level allowed a tool unattended ⇔ its power is On at that level). */
+const LEVEL_OF_POWER = (p: string): string | null => (p === "always" ? "L0" : (POWER_INFO as Record<string, { oldLevel: string | null }>)[p]?.oldLevel ?? null);
 const { codingModeChoice, codingModeSwitch } = await import("./project-coding-mode");
 
 /** This computer's subagent profiles, as the fake host has them ("house" the default). */
@@ -58,7 +61,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
   const modes: (CodingModeSwitch | null)[] = [];
   const dir = join(root, `ws${n++}`);
   const paths = projectOverseerPaths("prj_bbbbbbbb", dir);
-  const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1", ...opts.settings };
+  const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1", powers: readStoredPowers({ autonomy: opts.autonomy ?? "L1" }), ...opts.settings };
   const sessions: SessionSummary[] = [
     { id: "in-root", path: "/s/in-root.jsonl", cwd: "/proj/app", title: "Inside" } as SessionSummary,
     { id: "outside", path: "/s/outside.jsonl", cwd: "/elsewhere", title: "Outside" } as SessionSummary,
@@ -77,7 +80,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     paths,
     project: () => ({ id: "prj_bbbbbbbb", name: "Portal", root: "/proj", archived: false, createdAt: "" }) as never,
     settings: () => settings,
-    effective: () => effectiveAutonomy(settings, null),
+    effective: () => powersInForce(settings.powers, null),
     attended: () => state.attended,
     overseerId: () => "po-1",
     engine: () => "prj_bbbbbbbb",
@@ -160,26 +163,59 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
   return { host, tools, run, calls, modes, paths, state, limited, settings };
 }
 
-describe("the levels, as the statecharts declare them", () => {
-  test("every tool the runtime registers has a level, and every level names a tool (its own, or one the org part contributes)", () => {
+describe("the powers, as the statecharts declare them (al_3)", () => {
+  test("every tool the runtime registers has a power, and every power entry names a tool (its own, or one the org part contributes)", () => {
     const own = fake().tools.map((t) => t.name);
-    for (const name of own) assert.ok(name in TOOL_NEEDS, name);
-    for (const name of Object.keys(TOOL_NEEDS)) assert.ok(own.includes(name) || ORG_PART_TOOLS.includes(name), name);
+    for (const name of own) assert.ok(name in TOOL_POWER, name);
+    for (const name of Object.keys(TOOL_POWER)) assert.ok(own.includes(name) || ORG_PART_TOOLS.includes(name) || ["spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build"].includes(name), name);
   });
 
-  test("each of master's tools keeps its level: the statecharts' acts declare the same needs", () => {
-    // The org part's tools are its own to check (overseer-org-part.ts).
-    for (const [name, need] of Object.entries(MASTER_NEEDS)) if (!ORG_PART_TOOLS.includes(name)) assert.equal(TOOL_NEEDS[name], need, name);
-    assert.deepEqual([TOOL_NEEDS.sova_pipeline, TOOL_NEEDS.sova_hold, TOOL_NEEDS.sova_correct, TOOL_NEEDS.sova_set_state], ["read", "L0", "L2", "operator"]);
+  test("one power per tool and per op: every entry is a power, always or operator; a per-op tool lists each op", () => {
+    const kinds = new Set<string>([...POWERS, "always", "operator"]);
+    for (const [tool, p] of Object.entries(TOOL_POWER)) {
+      if (p === "per-op") assert.ok(OP_POWER[tool], `${tool} is per-op: its ops are listed`);
+      else assert.ok(kinds.has(p), `${tool}: ${p}`);
+    }
+    for (const [tool, ops] of Object.entries(OP_POWER)) for (const [op, p] of Object.entries(ops)) assert.ok(kinds.has(p), `${tool} ${op}: ${p}`);
+    assert.deepEqual(OP_POWER.sova_roster, { read: "always", approve: "roster", decline: "roster" });
+    assert.deepEqual([TOOL_POWER.sova_pipeline, TOOL_POWER.sova_hold, TOOL_POWER.sova_correct, TOOL_POWER.sova_set_state, TOOL_POWER.sova_project_verbs], ["always", "always", "per-op", "operator", "per-op"]);
+    assert.deepEqual([TOOL_POWER.spec_lookup, TOOL_POWER.sova_draft_specs, TOOL_POWER.sova_draft_approve, TOOL_POWER.sova_draft_build], ["always", "always", "operator", "operator"]);
   });
 
-  test("sova_project_verbs' level is its acts': services/down at L0, services/run at L3, neither held nor counted; services/share at L1, held, counted against nothing; onboard at L3, held and counted as a coding session's start", () => {
-    const acts = statechartInfo("project")!.acts as Record<string, { needs?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
+  test("every act a tool makes names exactly one power in the statecharts, and it is the tool's (or its op's)", () => {
+    for (const { name } of statechartVersions())
+      for (const [id, a] of Object.entries(statechartInfo(name)?.acts ?? {}) as [string, { tool?: string; power?: string | null; needs?: unknown }][]) {
+        assert.equal(a.needs, undefined, `${name} ${id} declares a level`);
+        if (!a.tool) continue;
+        assert.ok(typeof a.power === "string" && a.power.length > 0, `${name} ${id}: ${a.power}`);
+        const t = TOOL_POWER[a.tool];
+        if (t !== "per-op") assert.ok(a.power === t || a.power === "always", `${name} ${id}: ${a.power} vs ${a.tool}'s ${t}`);
+        else assert.ok(Object.values(OP_POWER[a.tool] ?? {}).includes(a.power as never), `${name} ${id}: ${a.power} is one of ${a.tool}'s ops`);
+      }
+  });
+
+  test("carried over, each of master's tools does unattended exactly what its level allowed: no project gains or loses a power", () => {
+    // The org part's tools are its own to check (overseer-org-part.ts); per-op tools by op below.
+    for (const [name, need] of Object.entries(MASTER_NEEDS)) {
+      if (ORG_PART_TOOLS.includes(name)) continue;
+      const p = TOOL_POWER[name];
+      if (p === undefined || p === "per-op") continue;
+      if (need === "read") assert.equal(p, "always", name);
+      else if (need === "operator") assert.equal(p, "operator", name);
+      else assert.equal(LEVEL_OF_POWER(p), need, name);
+    }
+    for (const [verb, level] of [["down", "L0"], ["up", "L3"], ["reset", "L3"], ["teardown", "L3"], ["share", "L1"], ["onboard", "L3"]] as const)
+      assert.equal(LEVEL_OF_POWER(OP_POWER.sova_project_verbs![verb]!), level, verb);
+    assert.equal(OP_POWER.sova_project_verbs!["deploy.run"], "deploy", "no level ever deployed: its own power, Off by carry-over");
+    for (const l of ["L0", "L1", "L2", "L3"] as const) assert.equal(carryOver(l).deploy, false);
+  });
+
+  test("sova_project_verbs' acts: services/down always, services/run copiesRun, services/reset copiesReset, neither held nor counted; services/share held; onboard held and counted as a start; deploy/run held", () => {
+    const acts = statechartInfo("project")!.acts as Record<string, { power?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
     assert.deepEqual(
-      Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.needs, !!a.hold, a.counts ?? null]).sort(),
-      [["services/down", "L0", false, null], ["services/run", "L3", false, null], ["services/share", "L1", true, null], ["verbs/onboard", "L3", true, "create"]],
+      Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.power, !!a.hold, a.counts ?? null]).sort(),
+      [["deploy/run", "deploy", true, null], ["services/down", "always", false, null], ["services/reset", "copiesReset", false, null], ["services/run", "copiesRun", false, null], ["services/share", "share", true, null], ["verbs/onboard", "onboard", true, "create"]],
     );
-    assert.equal(TOOL_NEEDS.sova_project_verbs, "L3", "its highest act");
     assert.equal(COUNTS.sova_project_verbs, "create", "only onboard draws on an allowance: a refusal for it is held until create comes back");
   });
 
@@ -205,14 +241,18 @@ describe("the levels, as the statecharts declare them", () => {
     assert.equal(operatorOnlyRefusal("sova_todos", true), null);
     assert.equal(operatorOnlyRefusal("sova_todos", false), "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own.");
     assert.equal(operatorOnlyRefusal("sova_todo", false), "sova_todo changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change.");
-    for (const name of Object.keys(TOOL_NEEDS)) if (name !== "sova_todos" && name !== "sova_todo") assert.equal(operatorOnlyRefusal(name, false), null, name);
+    for (const name of Object.keys(TOOL_POWER)) if (name !== "sova_todos" && name !== "sova_todo") assert.equal(operatorOnlyRefusal(name, false), null, name);
   });
 
-  test("the level in force: the setting, under a contributed ceiling with its reason; L0 while paused", () => {
-    assert.deepEqual(effectiveAutonomy({ autonomy: "L3" }, null), { autonomy: "L3" }, "a standalone project: no ceiling");
-    assert.deepEqual(effectiveAutonomy({ autonomy: "L3" }, { autonomy: "L0", reason: "R" }), { autonomy: "L0", reason: "R" });
-    assert.deepEqual(effectiveAutonomy({ autonomy: "L2" }, { autonomy: "L3", reason: "R" }), { autonomy: "L2" }, "a ceiling never raises it");
-    assert.deepEqual(effectiveAutonomy({ autonomy: "L2" }, null, "2026-09-30T10:00:00.000Z"), { autonomy: "L0", reason: PAUSED_REASON });
+  test("the powers in force: the switches; every one Off under a brake, with its reason; sova_project says which", () => {
+    const st = readStoredPowers({ autonomy: "L3" });
+    assert.equal(powersInForce(st, null).brake, null, "a standalone project: no ceiling");
+    assert.deepEqual(powersInForce(st, { reason: "R" }).brake, { kind: "empty-roster", reason: "R" });
+    assert.equal(powersInForce(st, { reason: "R" }).overseer.codingStart, false);
+    assert.equal(powersInForce({ ...st, emptyRosterResumedAt: "2026-10-17T00:00:00.000Z" }, { reason: "R" }).brake, null, "Resume lifted it");
+    assert.deepEqual(powersInForce(st, null, "2026-09-30T10:00:00.000Z").brake, { kind: "paused", reason: PAUSED_BRAKE_REASON });
+    assert.equal(powersLine(powersInForce(st, { reason: "R" }), true), "Nothing on your own right now: R");
+    assert.match(powersLine(powersInForce(readStoredPowers({ autonomy: "L1" }), null), false), /^On your own you may: Fix the pipeline's bookkeeping; Share a version to try\./, "standalone: no people acts");
   });
 });
 
@@ -338,13 +378,13 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, subagent profile House\.$/);
   });
 
-  test("every mode, minor mode and profile is accepted on a start and on a running session; no ceiling", async () => {
+  test("every mode, minor mode and profile is accepted on a start and on a running session; spec stays on", async () => {
     const asks: Record<string, unknown>[] = [
       { mode: "delegate" },
-      { minor_modes: [] },
-      { minor_modes: ["align"] },
+      { minor_modes: ["spec"] },
+      { minor_modes: ["align", "spec"] },
       { mode: "delegate", minor_modes: ["align", "spec", "vis", "codemode"] },
-      { minor_modes: ["vis", "codemode"] },
+      { minor_modes: ["spec", "vis", "codemode"] },
       { subagent_profile: "big" },
       { subagent_profile: "off" },
     ];
@@ -355,9 +395,16 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
       assert.deepEqual(f.calls, ["create:/proj", "send:in-root"], JSON.stringify(ask));
     }
     const f = fake({ attended: true });
-    const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["vis"], subagent_profile: "big" });
-    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["vis"], subagentProfile: "big" }]);
-    assert.match((r.content[0] as { text: string }).text, /mode delegate · visuals, subagent profile Big team\.$/);
+    const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["spec", "vis"], subagent_profile: "big" });
+    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec", "vis"], subagentProfile: "big" }]);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\.$/);
+    // Spec is always on (§app.project-overseer/coding-mode): a set without it is refused before anything.
+    for (const minor_modes of [[], ["align"], ["vis", "codemode"]]) {
+      const g = fake({ attended: true });
+      await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", minor_modes }), /Spec is always on for coding sessions; it can't be turned off\. Name spec among minor_modes\./);
+      await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "p", minor_modes }), /Spec is always on for coding sessions/);
+      assert.deepEqual([g.calls, g.modes, g.limited], [[], [], []], JSON.stringify(minor_modes));
+    }
   });
 
   test("only unknown names are refused: nothing is created or sent, and no cap is taken", async () => {
@@ -392,7 +439,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
   test("a verb playbook's run waiting on alignment answers refuses sova_send before anything is taken", async () => {
     const f = fake({ attended: true, waiting: { "in-root": 3 } });
     await assert.rejects(
-      () => f.run("sova_send", { session: "in-root", text: "use port 4000", minor_modes: [] }),
+      () => f.run("sova_send", { session: "in-root", text: "use port 4000", minor_modes: ["spec"] }),
       /^Error: Project verbs: Portal is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent./,
     );
     assert.deepEqual(f.calls, []);
@@ -402,20 +449,20 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
 
   test("a session waiting on alignment answers (any kind): a switch dropping align is refused before anything; keeping it is allowed", async () => {
     const f = fake({ attended: true, asking: ["in-root"] });
-    for (const minor_modes of [["vis"], []])
+    for (const minor_modes of [["spec", "vis"], ["spec"]])
       await assert.rejects(
         () => f.run("sova_send", { session: "in-root", text: "go", minor_modes }),
         /^Error: It waits on the operator's alignment answers; align stays on until they answer\. Nothing was sent\.$/,
         JSON.stringify(minor_modes),
       );
     assert.deepEqual([f.calls, f.modes, f.limited], [[], [], []], "nothing applied or sent, no cap");
-    await f.run("sova_send", { session: "in-root", text: "go", minor_modes: ["align", "vis"] });
+    await f.run("sova_send", { session: "in-root", text: "go", minor_modes: ["align", "spec", "vis"] });
     await f.run("sova_send", { session: "in-root", text: "go", mode: "delegate" });
     await f.run("sova_send", { session: "in-root", text: "go" });
-    assert.deepEqual(f.modes, [{ minorModes: ["align", "vis"] }, { mode: "delegate" }, null], "align kept, or minors untouched: allowed");
+    assert.deepEqual(f.modes, [{ minorModes: ["align", "spec", "vis"] }, { mode: "delegate" }, null], "align kept, or minors untouched: allowed");
     // Not waiting: align may go.
     const g = fake({ attended: true });
-    await g.run("sova_send", { session: "in-root", text: "go", minor_modes: ["vis"] });
+    await g.run("sova_send", { session: "in-root", text: "go", minor_modes: ["spec", "vis"] });
     assert.deepEqual(g.calls, ["send:in-root"]);
   });
 
@@ -429,7 +476,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const f = fake({ attended: false, autonomy: "L0" });
     const r = await f.run("sova_list_subagent_profiles");
     assert.equal((r.content[0] as { text: string }).text, "off: Off · no workers\nhouse: House · 4 routes · default\nbig: Big team · 6 routes");
-    assert.equal(TOOL_NEEDS.sova_list_subagent_profiles, "read");
+    assert.equal(TOOL_POWER.sova_list_subagent_profiles, "always");
   });
 
   test("sova_send reaches a coding session it started in a worktree outside the root, never one whose worktree was removed", async () => {
@@ -557,12 +604,13 @@ describe("the statechart tools (q2, q9, q10)", () => {
     const f = fake({ autonomy: "L0" });
     await assert.rejects(() => f.run("sova_hold", { op: "cancel", id: "h1", reason: " " }), /Say why/);
     await f.run("sova_hold", { op: "cancel", id: "h1", reason: "covered by the newer one" });
-    await f.run("sova_hold", { op: "approve", id: "h2", reason: "Tony asked for it today" });
+    // al_3 q2: nothing approves a held act
+    await assert.rejects(() => f.run("sova_hold", { op: "approve", id: "h2", reason: "Tony asked for it today" }), /op is cancel: nothing approves a held act/);
     await assert.rejects(() => f.run("sova_correct", { session: "item/o/p/g_1", correction: "hold/cancel", reason: "r" }), /starts with correct\//);
     await f.run("sova_correct", { session: "item/o/p/g_1", correction: "correct/reopen", reason: "the build missed a case" });
-    assert.deepEqual(f.calls, ["cancel:h1:covered by the newer one", "approve:h2:Tony asked for it today", "correct/reopen:item/o/p/g_1:the build missed a case"]);
+    assert.deepEqual(f.calls, ["cancel:h1:covered by the newer one", "correct/reopen:item/o/p/g_1:the build missed a case"]);
     const log = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(log.map((l) => [l.tool, l.outcome]), [["sova_hold", "refused"], ["sova_hold", "ok"], ["sova_hold", "ok"], ["sova_correct", "refused"], ["sova_correct", "ok"]]);
+    assert.deepEqual(log.map((l) => [l.tool, l.outcome]), [["sova_hold", "refused"], ["sova_hold", "ok"], ["sova_hold", "refused"], ["sova_correct", "refused"], ["sova_correct", "ok"]]);
   });
 
   test("sova_set_state needs states and a reason; whether the turn is the operator's is the engine's to refuse", async () => {

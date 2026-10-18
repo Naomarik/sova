@@ -115,13 +115,14 @@
 (defn in? [h sid state] (contains? (config h sid) state))
 
 (defn- level-refusal
-  "The engine's first checks: the level (from the act's `:needs`), then the act's `:pre` checks."
+  "The engine's first checks: the power (from the act's `:power`), then the act's `:pre` checks."
   [h sid event data]
   (let [statechart (get @(:statecharts h) sid)
-        {:keys [needs tool pre]} (get-in registry/statecharts [statechart :acts event])
+        {:keys [power tool pre]} (get-in registry/statecharts [statechart :acts event])
         wm (get @(:sessions h) sid)
         dm (assoc (::wmdm/data-model wm) :_event {:name event :data data})]
-    (or (when needs ((:level-check registry/options) (or tool (str (namespace event) "/" (name event))) needs data))
+    (or (when power (let [r ((:level-check registry/options) (or tool (str (namespace event) "/" (name event))) power data)]
+                      (if (map? r) (:sentence r) r)))
         (:sentence (dsl/first-refusal (vec pre) dm :pre)))))
 
 (defn- deliver! [{:keys [env sessions delivered refused] :as h} {:keys [target event time]}]

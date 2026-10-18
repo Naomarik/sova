@@ -33,6 +33,9 @@ export interface KeptPreview {
   sessionId?: string;
   branch?: string;
   purpose?: string;
+  /** An owner-bound version (§app.project-assistant/versions): the owner link's hash (person-links.json).
+      It expires with that link's idle deadline and is turned off with it. */
+  owner?: string;
 }
 
 interface KeptFile {
@@ -84,12 +87,14 @@ function entryOf(v: unknown): KeptPreview | null {
   if (!optStr(v.url, 512) || !optStr(v.branch, 256) || !optStr(v.purpose, 400)) return null;
   if (v.sessionId !== undefined && (typeof v.sessionId !== "string" || !REF.test(v.sessionId))) return null;
   if (typeof v.url === "string" && !isLink(v.url)) return null;
+  if (v.owner !== undefined && (typeof v.owner !== "string" || !/^[0-9a-f]{64}$/.test(v.owner))) return null;
   return {
     target,
     ...(typeof v.url === "string" ? { url: v.url } : {}),
     ...(typeof v.sessionId === "string" ? { sessionId: v.sessionId } : {}),
     ...(typeof v.branch === "string" ? { branch: v.branch } : {}),
     ...(typeof v.purpose === "string" ? { purpose: v.purpose } : {}),
+    ...(typeof v.owner === "string" ? { owner: v.owner } : {}),
   };
 }
 

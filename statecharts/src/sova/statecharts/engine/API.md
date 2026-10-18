@@ -14,9 +14,9 @@ member) is `{"<name>" entry}`, and `api.cljs` ships exactly that map.
  :migrate   {1 (fn [s] s') 2 ...} ; vN -> vN+1, chained at load (see §6)
  :storage   :portable             ; or :host-local
  :exported  [:holder :decisions]  ; data keys watchers receive in link/moved
- :acts      {:gather/start {:needs "L1" :tool "sova_start_gathering"
+ :acts      {:gather/start {:power "gather" :tool "sova_start_gathering"
                             :people-facing true :code-facing false :counts "gather"
-                            :pre [check ...]}  ; run BEFORE "is it enabled here" (level is automatic from :needs/:tool)
+                            :pre [check ...]}  ; run BEFORE "is it enabled here" (the power check is automatic from :power/:tool)
              ...}
  :not-here  (fn [event config data] sentence)  ; refusal when no transition for the act exists in this configuration
  :final-refusal "…"                            ; refusal once the session is final / not running
@@ -24,8 +24,9 @@ member) is `{"<name>" entry}`, and `api.cljs` ships exactly that map.
  :cold?     (fn [config data] bool)}         ; may unload after 24 h with nothing pending (host)
 ```
 
-`sova.statecharts.registry/options` (statecharts member): `{:level-check (fn [tool need envelope] sentence-or-nil)}`
-— the engine calls it for every act with `:needs` before any other check (operator clicks: return nil).
+`sova.statecharts.registry/options` (statecharts member): `{:level-check (fn [tool need envelope] refusal-or-nil)}`
+(the shipped one is `rules/powers.cljc power-check`) — the engine calls it for every act with a `:power`
+(or, in a test statechart, `:needs`) before any other check (operator clicks: return nil).
 
 ## 2. Authoring helpers — `sova.statecharts.engine.dsl`
 
@@ -38,7 +39,7 @@ event data (envelope + payload).
   A transition whose cond is `pre-checks(act) ∧ level ∧ checks ∧ cond`, with `:sova/checks` metadata.
   explain order: **level → act :pre → state (not-here) → transition :checks → :cond** (then
   `:sova/refusal` attr of the transition, else "That can't be done now.").
-- `(dsl/correction {:event :item/reopen :needs "L1" :target … :checks [...]} & content)` — q9.
+- `(dsl/correction {:event :item/reopen :target … :checks [...]} & content)` (its `:power` in `:acts`) — q9.
   Same as `act`, tagged `:sova/correction true`; a blank `:reason` refuses with
   `dsl/reason-required` = "A correction needs a reason: say why." unless `by` is operator.
   Declare it in `:acts` like any act (needs/tool).
@@ -81,7 +82,7 @@ event data (envelope + payload).
   end `:hold/released` or, when `:while-in` is no longer active, `:hold/lapsed`.
 - `(dsl/cancel-hold (fn [data] id))` — executable content removing a hold (its timer is cancelled);
   the statechart then receives nothing more for it. Use inside a `correction` on `:hold/cancel {:id :reason}`;
-  `(dsl/hold-cancel-correction {:needs "L0"})` is that transition, ready to place on the top state.
+  `(dsl/hold-cancel-correction)` is that transition (declare `:hold/cancel {:power "always" :correction true}`), ready to place on the top state.
 - `(dsl/spawn {:statechart "baton" :id (fn [data] sid) :data (fn [data] {...}) :link :item :watch? true})`
   — executable content: after this step (same call, same atomic batch) the engine starts session
   `sid` of `statechart` with `data`, `:sova/links {:item <this sid>}` and `:sova/watchers [<this sid>]`
@@ -176,11 +177,11 @@ keeps (left as it was when the result has no such key), `queue` pending
 `[{:event {:name :data} :delivery-time :ordinal}]`. `(core/migrate-text registry text)` returns the
 current-version EDN; tests load a fixture of every shipped version.
 
-## 7. r7 hours waits, q12 confirm-required holds, r8a feed (engine 0393fc98, host 230005d7)
+## 7. r7 hours waits, no approval wait, r8a feed (engine 0393fc98, host 230005d7)
 
 **Switches** (all in `engine/hold_policy.cljc`, beside `overseer-unattended-held?`):
-`operator-acts-wait-for-hours?` (false: r7/q13), `unreviewed-holds-wait?` (true: q12). Each has a
-test that fails when flipped (engine/refit_test.cljs).
+`operator-acts-wait-for-hours?` (false: r7/q13). Each has a test that fails when flipped
+(engine/refit_test.cljs).
 
 **Hours waits (r7).** Act meta `:hours (fn [data] next-window-ms | nil)` (data has `:_event`; the statechart
 computes it with its pure next-window fn over the person's tz/hours; nil or ≤ now = in hours). When the
@@ -191,17 +192,13 @@ attended turns go at once; the operator's click goes at once unless the switch i
 carries `:off-hours <window>` (TS `offHours`; log rows too). A policy hold and an hours wait chain: the
 policy hold's release is then checked for hours.
 
-**Confirm-required holds (q12).** The envelope carries `:confirm-kinds ["gather" "promote" …]` (TS
-`confirmKinds`, stamped from overseer.json). An act's confirm kind is its meta `:confirm-kind`, a
-string or `(fn [data] kind)` over the act (e.g. "offer" with ≥2 targets, else "gather"); else its event
-name. A policy-held act whose kind is listed gets `:confirm true`. At its end, with
-`unreviewed-holds-wait?` on, it is NOT released: it stays in `holds()` with `:waiting true` (stall clock
-from `:until`) and the session receives `:hold/waiting {:id :event :kind :what}`, until
-`:hold/approve {:id :reason}` or `:hold/cancel {:id :reason}`. Non-listed holds release at their end as
-before.
+**No approval wait (al_3 q2; was q12's confirm-required holds).** No hold waits past its end for an
+approval: an envelope's old `:confirm-kinds` and an act's `:confirm-kind` are ignored, and a hold saved
+with `:waiting true` by an older engine (its timer spent) is released at the next `resume!`, through the full
+re-check like any hold at its end.
 
 **Approve early.** `(dsl/hold-approve-correction)` on the statechart's top state (declare `:hold/approve` in
-`:acts` with `:needs` and `:correction true`): releases the hold now (timer cancelled), re-delivering
+`:acts` with its `:power` (or a test statechart's `:needs`) and `:correction true`; the shipped statecharts declare none): releases the hold now (timer cancelled), re-delivering
 the act with a fresh stamp through the full path; then `:hold/released` or `:hold/dropped`. Works on
 any hold (effect-only holds: the effect goes out). Reason required unless `by` operator.
 
@@ -253,7 +250,7 @@ envelope doesn't use (baton/extend reads `{more}`).
 queues for them still goes). The host fires what is due; when that throws, one due session at a time, and a
 session still throwing is a `{kind: "timer"}` problem, set aside until one of its steps commits.
 **Hold notices (c708a572).** A held act's session hears `hold/held {id event kind what until project-id
-confirm by wait?}` in the same call (ignored unless the statechart listens); `hold/waiting` carries `project-id`.
+by wait?}` in the same call (ignored unless the statechart listens).
 **Log.** `prompt` is a digest (DEFAULT_REDACT).
 **nextWindow(person, nowMs)** (0f2cee96): the statecharts' `rules.hours/next-window`, exported; null = open now
 or no hours.

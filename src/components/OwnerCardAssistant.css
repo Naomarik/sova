@@ -1,0 +1,11 @@
+/* The Owner card's Project Assistant part (§app.owner-page/controls). Token values only. */
+.orgs-assistant { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-4); border-top: var(--stroke-thin) solid var(--color-border); }
+.orgs-h4 { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.orgs-assistant-requests,
+.orgs-assistant-models,
+.orgs-assistant-powers { display: flex; flex-direction: column; gap: var(--space-2); }
+.orgs-assistant-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.orgs-assistant-request { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); padding: var(--space-3) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.orgs-assistant-request:first-child { border-top: 0; padding-top: 0; }
+.orgs-assistant-request-main { flex: 1 1 24ch; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.orgs-assistant-request-title { font-weight: var(--fw-medium); color: var(--color-ink); }

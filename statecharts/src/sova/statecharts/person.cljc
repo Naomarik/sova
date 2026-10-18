@@ -170,7 +170,6 @@
   (chart/statechart {:initial :person}
     (state {:id :person :initial :born}
       (dsl/hold-cancel-correction)
-      (b/hold-review)
       ;; r13: the company's hours (the org's), their default; kept current, and so are the effective ones
       (on-entry {} (dsl/watch (fn [d] (b/org-sid (:org-id d)))))
       (transition {:sova/feed :quiet :event :link/moved :cond (b/moved-from? "org")}
@@ -219,19 +218,18 @@
 (def acts
   "Acts and their metadata. `sova_roster` approve/decline is L2 for the overseer (never checked for
    the operator); the overseer's unattended approve reaches a person, so it is held (r4)."
-  {:person/edit    {:needs nil}
-   :person/approve {:needs "L2" :tool "sova_roster" :people-facing true :hold true :confirm-kind "roster-approve"
+  {:person/edit    {:power nil}
+   :person/approve {:power "roster" :tool "sova_roster" :people-facing true :hold true
                     :what (fn [d] (str "Approving " (name-of d)))}
-   :person/decline {:needs "L2" :tool "sova_roster" :people-facing true :hold true :confirm-kind "roster-decline"
+   :person/decline {:power "roster" :tool "sova_roster" :people-facing true :hold true
                     :what (fn [d] (str "Declining " (name-of d)))}
-   :person/leave   {:needs nil :people-facing true
+   :person/leave   {:power nil :people-facing true
                     :card (fn [d] {:people [(:id d)]})}
-   :person/revert  {:needs nil :people-facing true
+   :person/revert  {:power nil :people-facing true
                     ;; a revert that sets left needs the global Overseer's card (F-033, F-185)
                     :card (fn [d] (let [{:keys [field from]} (:row (b/evt d))]
                                     (when (and (= "status" (some-> field name)) (= "left" from)) {:people [(:id d)]})))}
-   :hold/cancel    {:needs "L0" :correction true}
-   :hold/approve   {:needs "L0" :correction true}})
+   :hold/cancel    {:power "always" :correction true}})
 
 (defn not-here
   "An act with no transition in this configuration."

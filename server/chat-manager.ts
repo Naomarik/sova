@@ -2172,7 +2172,7 @@ class ChatSession {
   /** An overseer's own memory switch in force, or undefined for every other chat (its memory is its mode's). */
   private overseerMemory(): OverseerMemorySetting | undefined {
     if (this.overseer) return overseerMemoryNow(undefined);
-    if (this.special === "project-overseer" && this.specialSpec?.memory && this.specialSpec.memorySettings) return overseerMemoryNow(this.specialSpec.memorySettings);
+    if ((this.special === "project-overseer" || this.special === "project-assistant") && this.specialSpec?.memory && this.specialSpec.memorySettings) return overseerMemoryNow(this.specialSpec.memorySettings);
     return undefined;
   }
 

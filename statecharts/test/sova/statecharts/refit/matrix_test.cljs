@@ -9,11 +9,12 @@
     [cljs.test :refer [deftest is testing]]
     [clojure.string :as str]
     [sova.statecharts.registry :as registry]
-    [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.engine.matrix :as matrix]))
 
-;; ---- envelopes (design §10: operator, attended, L0–L3, paused, a ceiling (an empty roster), archived, capped at
-;; once, capped day, capped message, via-overseer with and without a card) ---------------------------
+;; ---- envelopes (design §10, al_3: operator, attended, the overseer on its own with every power Off, the carry-overs of
+;; L1–L3 and every power On, an envelope from before switches, paused, a ceiling (an empty roster), archived, capped
+;; at once, capped day, capped message, via-overseer with and without a card, the Project Assistant On and Off) -----
 
 (def plenty {:gather {:used 0 :max 6} :promote {:used 0 :max 60} :create {:used 0 :max 4} :prompt {:used 0 :max 12}})
 (def spent {:gather {:used 6 :max 6} :promote {:used 60 :max 60} :create {:used 4 :max 4} :prompt {:used 12 :max 12}})
@@ -21,24 +22,29 @@
 (def full {:gatherings-open 5 :gatherings-cap 5 :coding-running 2 :coding-cap 2})
 (def base {:paused false :archived false :allowance plenty :at-once room :ledger "day" :hold-ms 0})
 
+(def all-on (into {} (for [p pw/powers] [(pw/power-key p) true])))
+
 (def envelopes
   {"operator"      {:by "operator"}
-   "attended"      (merge base {:by "overseer" :attended true :autonomy "L0" :ledger "message"})
-   "L0"            (merge base {:by "overseer" :autonomy "L0"})
-   "L1"            (merge base {:by "overseer" :autonomy "L1"})
-   "L2"            (merge base {:by "overseer" :autonomy "L2"})
-   "L3"            (merge base {:by "overseer" :autonomy "L3"})
-   "L3-held"       (merge base {:by "overseer" :autonomy "L3" :hold-ms 600000})
-   "paused"        (merge base {:by "overseer" :autonomy "L3" :paused true})
-   "ceiling-L0"    (merge base {:by "overseer" :autonomy "L3" :ceiling {:autonomy "L0" :reason "The roster has no active people yet, so the overseer only proposes (L0)."}})
-   "ceiling-L2"    (merge base {:by "overseer" :autonomy "L3" :ceiling {:autonomy "L2" :reason "Capped."}})
-   "archived"      (merge base {:by "overseer" :autonomy "L3" :archived true :project-name "Site"})
-   "capped-once"   (merge base {:by "overseer" :autonomy "L3" :at-once full})
-   "capped-day"    (merge base {:by "overseer" :autonomy "L3" :allowance spent})
-   "capped-msg"    (merge base {:by "overseer" :attended true :autonomy "L3" :allowance spent :ledger "message"})
+   "attended"      (merge base {:by "overseer" :attended true :powers pw/all-off :ledger "message"})
+   "all-off"       (merge base {:by "overseer" :powers pw/all-off})
+   "L1"            (merge base {:by "overseer" :powers (pw/carry-over "L1")})
+   "L2"            (merge base {:by "overseer" :powers (pw/carry-over "L2")})
+   "L3"            (merge base {:by "overseer" :powers (pw/carry-over "L3")})
+   "all-on"        (merge base {:by "overseer" :powers all-on})
+   "pre-switches"  (merge base {:by "overseer" :autonomy "L2"})
+   "all-on-held"   (merge base {:by "overseer" :powers all-on :hold-ms 600000})
+   "paused"        (merge base {:by "overseer" :powers all-on :paused true})
+   "ceiling"       (merge base {:by "overseer" :powers all-on :ceiling {:autonomy "L0" :reason "The roster has no active people yet."}})
+   "archived"      (merge base {:by "overseer" :powers all-on :archived true :project-name "Site"})
+   "capped-once"   (merge base {:by "overseer" :powers all-on :at-once full})
+   "capped-day"    (merge base {:by "overseer" :powers all-on :allowance spent})
+   "capped-msg"    (merge base {:by "overseer" :attended true :powers all-on :allowance spent :ledger "message"})
+   "assistant-on"  (merge base {:by "assistant" :powers all-on :basis {:kind "owner-request" :id "or_1"}})
+   "assistant-off" (merge base {:by "assistant" :powers pw/all-off})
    "go-no-card"    {:by "operator" :via "overseer"}
    "go-card"       {:by "operator" :via "overseer" :card {:people ["p1" "p2"] :sessions ["s1"] :projects ["pr1"]}}
-   "statechart"         (merge base {:by "statechart" :autonomy "L3"})
+   "statechart"    (merge base {:by "statechart" :powers all-on})
    "model"         {:by "model"}
    "person"        {:by "person"}
    "wrapup"        {:by "wrapup"}})
@@ -47,7 +53,9 @@
 
 (def catalogue
   (mapv re-pattern
-    ["^This run was not started by the operator, and your autonomy here is L\\d( \\(.*\\))?; sova_\\w+ needs L\\d\\. Do not retry it\\..*"
+    ["^.* is off for (the overseer on its own|the Project Assistant)\\. Do not retry it\\..*"
+     "^Nothing happens (on its own|without the operator) right now: .*"
+     "^A fix starts only from an owner's request: file it first, then start the fix for it\\.$"
      "^The to-do list is the operator's own.*" "^sova_todo changes the operator's own to-do list.*"
      "^Today's allowance is used: \\d+ of \\d+ .* on its own\\. It looks again at midnight\\..*"
      "^This message's allowance is used: \\d+ of \\d+ .* per message you send\\..*"
@@ -130,7 +138,7 @@
    "runtime"    #{"watch/pr1" "build/pr1/o1"}})
 
 (defn run [statechart sid spec]
-  (matrix/run (merge {:statecharts registry/statecharts :statechart statechart :sid sid :level-check lv/level-check
+  (matrix/run (merge {:statecharts registry/statecharts :statechart statechart :sid sid :level-check pw/power-check
                       :envelopes envelopes :sentences in-catalogue? :max-configs 4000
                       :world (get worlds statechart #{})}
                 spec)))

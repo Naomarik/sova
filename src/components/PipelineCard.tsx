@@ -38,7 +38,6 @@ const heldWaitOf = (h: HeldAct) => ({
   goesAt: Date.parse(h.goesAt),
   wait: h.wait,
   person: h.person,
-  reviewSince: h.reviewSince ? Date.parse(h.reviewSince) : undefined,
 });
 const keyed = (p: PipelineInfo): Info => ({ rows: p.rows.map((r) => ({ ...r, id: r.itemId })), held: p.held });
 
@@ -98,7 +97,7 @@ export function PipelineCard(props: {
             <For each={held()}>
               {(h) => (
                 <li class="pipeline-held-row">
-                  <p class="pipeline-held-line" title={h.reviewSince ? undefined : `Goes ahead at ${stampTime(h.goesAt)}.`}>
+                  <p class="pipeline-held-line" title={`Goes ahead at ${stampTime(h.goesAt)}.`}>
                     {heldWaitLine(heldWaitOf(h), now())}
                   </p>
                   <CancelHeldButton projectId={props.projectId} holdId={h.id} what={h.what} onDone={() => poll.refetch()} />

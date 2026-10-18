@@ -8726,7 +8726,7 @@
     "§app.project-overseer/page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ProjectOverseerHead.tsx",
         "src/components/SessionView.tsx",
@@ -8744,7 +8744,11 @@
         "§app.project-overseer/limits",
         "§app.project-overseer/watch-loop",
         "§app.overseer/identity-and-clear"
-      ]
+      ],
+      "agreed": {
+        "by": "operator (al_4 go-ahead)",
+        "at": "2026-10-18T22:21Z"
+      }
     },
     "§design.copy-deck/project-overseer-head": {
       "kind": "note",

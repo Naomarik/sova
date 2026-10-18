@@ -193,7 +193,8 @@ user row.
      or "It hasn't looked on its own yet."), then "Waiting to look at {n} things." (1: "1 thing") while
      the watch loop has reasons waiting, the reasons in its `title`. **No time for the next look**: the
      loop's timing can't be promised from here. While a brake holds every switch Off, this line is
-     the brake's reason instead, with **Resume** (`PATCH {resume: true}`), for either brake.
+     "Paused until you resume." instead, with **Resume** (`PATCH {resume: true}`), for either brake;
+     the brake's reason is in the Without-you menu's Paused banner, not repeated here.
   2. **Today's allowance used** (`allowanceLine`, §design.copy-deck/project-limits).
   3. **What waits** (`waitingLines`): the held items' sentences, joined.
   Below 480px only line 1 shows, with a **Details** toggle (`aria-expanded`) for the rest when there is any.

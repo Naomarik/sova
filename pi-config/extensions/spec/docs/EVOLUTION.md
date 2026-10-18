@@ -339,6 +339,10 @@ moved each arm's correct count on them by 3-5 of 20. Most wrong not-own statemen
 prose that contradicts code, in every arm. Lesson: a view no agent opens measures as nothing, so
 put a fact on the path the mode text sends agents down, and count both text and JSON when checking
 who saw it.
+On 2026-10-19 (branch `feat/spec-x-integration`, not on master yet) the overview's JSON was 271 B under the page
+(32,497 of 32,768 B). Trimming derivable and default fields, not the `notOwned` count or note, took it to 25,449 B
+(22.3% headroom): no `namespace` on area lines (the id names it), `whatSource` only when not prose, and flat label
+counts with no zero `unlabelled`. The text form is unchanged at 29,808 B.
 
 **P8, claim-file merges (2026-10-18, branch `feat/spec-x-merge`, not on master yet).** `merge-claims`
 merges a declaration both sides changed block by block (CHANGELOG 2026-10-18 has the numbers). Dropped

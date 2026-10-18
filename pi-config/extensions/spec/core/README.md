@@ -190,11 +190,12 @@ prints its own bounded JSON with `--help`. Exit 0 is done, 1 more lines or a nam
 refusal as small JSON. Nothing is stored.
 
 **`map [namespace | '<area §id>']`** (default budget 32,768). Without an argument: `lines` of
-`type: "area"` (`id`, `namespace`, `title`, `what`, `claims`, `labels` as counts by `authority`,
-`evidence` and `unlabelled`, `requiresOut`, `requiresIn`: `requires` and `embeds` edges across the area's boundary), then
+`type: "area"` (`id`, `title`, `what`, `whatSource` only when not `prose`, `claims`, `labels`, `requiresOut`,
+`requiresIn`: `requires` and `embeds` edges across the area's boundary; no `namespace`, which the id names), then
 `type: "hub"` (`path`, `records`: the ten code files the most records list). `counts` holds
 `namespaces`, `areas`, `claims`, `labels`, `agreedNotBuilt` and `gaps` (`uninvestigated`, `noCode`, `noProse`,
-`noInterfaceToken`). A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
+`noInterfaceToken`). Every `labels` count in `map` is one flat object of label value to count, authority values
+first, then evidence values (the two sets share no name), with `unlabelled` only when non-zero. A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
 `type: "claim"` lines (H1 first, then declaration order; `requires` is `null` when the key is
 absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when the record carries
 `agreed`), `out` and `in` crossing edges (`from`, `to`, `kind` `requires|embeds`), and `token` lines

@@ -1,4 +1,4 @@
-// Agreed, not built: `agreed: {by, at}` records and their --doc-only promotion. Black-box tests for core/sova-spec-draft.mjs.
+// Agreed, not built: `agreed: {by, at, source}` records and their --doc-only promotion. Black-box tests for core/sova-spec-draft.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

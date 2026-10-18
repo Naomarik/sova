@@ -11,7 +11,7 @@ node sova-spec.mjs read   §ns/name      [--whole] [--no-frame] | read --frame [
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs impact §ns/name --near [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
-node sova-spec.mjs map    [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs map    [namespace | '<area §id>'] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs where  <path|token|topic words…> [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs graph                [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
@@ -189,7 +189,7 @@ budget (1,024–32,768) with a stateless `--cursor` bound to the request and eve
 prints its own bounded JSON with `--help`. Exit 0 is done, 1 more lines or a named unknown, 2 a
 refusal as small JSON. Nothing is stored.
 
-**`map [namespace | §ns/name]`** (default budget 32,768). Without an argument: `lines` of
+**`map [namespace | '<area §id>']`** (default budget 32,768). Without an argument: `lines` of
 `type: "area"` (`id`, `namespace`, `title`, `what`, `claims`, `labels` as counts by `authority`,
 `evidence` and `unlabelled`, `requiresOut`, `requiresIn`: `requires` and `embeds` edges across the area's boundary), then
 `type: "hub"` (`path`, `records`: the ten code files the most records list). `counts` holds

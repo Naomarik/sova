@@ -1,4 +1,4 @@
-// Orientation: every area on one page (`map`), one namespace (`map ns`), or one area (`map §ns/name`).
+// Orientation: every area on one page (`map`), one namespace (`map <namespace>`), or one area (`map '<area §id>'`).
 // Node stdlib only; reads the parsed graph only and never writes.
 import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit, notOwnedOf as notOwnedTitledOf, notOwnedText } from "./toc.mjs";
 import { lookArgs, idArg, openSpec, refuse, indexOf, depsOf, namespaceOf, labelsOf, labelText, isInterface, paged, pageFields,
@@ -147,7 +147,7 @@ export function mapMain(argv, core) {
   const done = (out) => emit(out, o.json, renderMap);
   const budget = o.budget ?? 1024;
   if (o.help) return done({ tool: "sova-spec", command: "map", exit: 0, status: "done", budget,
-    help: "map [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]; default budget 32768, supported 1024..32768" });
+    help: "map [namespace | '<area §id>'] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]; default budget 32768, supported 1024..32768" });
   if (o.usage || o.pos.length > 1) return done(boundedRefusal("map", budget, "usage", { message: o.usage ?? "map takes at most one namespace or §id" }));
   const raw = o.pos[0], id = raw?.startsWith("§") ? idArg(raw) : null;
   if (raw !== undefined && !id && !/^[a-z][a-z-]*$/.test(raw)) return done(boundedRefusal("map", budget, "usage", { message: `not a namespace or § identifier: ${raw}` }));
@@ -165,7 +165,7 @@ export function mapMain(argv, core) {
     if (raw !== undefined && !ix.areas.some((a) => namespaceOf(a) === raw)) return done(boundedRefusal("map", budget, "unknown-namespace", { message: `no area in namespace ${raw}` }));
     r = overview(ix, raw, o.json);
     // The overview JSON leaves each area's owners out so the whole map keeps fitting one page; the count stays.
-    if (o.json && r.counts.notOwned) notes.push({ code: "not-owned-per-area", message: "what each area does not own: map '§ns/area'" });
+    if (o.json && r.counts.notOwned) notes.push({ code: "not-owned-per-area", message: "what each area does not own: map '<area §id>'" });
   }
   const d = areaId && g.ctx.decls.get(areaId);
   const head = { tool: "sova-spec", command: "map", budget, ...(raw !== undefined ? { arg: raw } : {}), ...(raw !== undefined && !id ? { namespace: raw } : {}),

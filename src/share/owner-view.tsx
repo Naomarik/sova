@@ -199,6 +199,7 @@ export function OwnerPage(props: {
       >
         <Show when={(problem() === "failed" || problem() === "offline") && current()}>
           <div class="banner banner-warn owner-banner" role="alert">
+            <span class="icon banner-icon share-icon-alert" aria-hidden="true" />
             <div class="banner-main">
               <p class="banner-body">
                 {problem() === "offline" ? OFFLINE_PAGE.body : "We couldn't load this page. Your link still works. Try again in a minute."}

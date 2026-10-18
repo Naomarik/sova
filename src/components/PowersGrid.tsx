@@ -214,7 +214,7 @@ function AssistantProjectPowers(props: { projectId: string; name: string }) {
   const view = () => (info.error ? undefined : info()?.settings.powers);
   return (
     <section class="powers-assistant-project" aria-label={`${props.name}: Project Assistant from a client`}>
-      <h3 class="powers-assistant-name">{props.name}</h3>
+      <h5 class="powers-assistant-name">{props.name}</h5>
       <Show
         when={view()}
         fallback={

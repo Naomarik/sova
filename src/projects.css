@@ -148,7 +148,8 @@
 /* The owner page card's assistant switches: one block per project. */
 .powers-assistant { display: flex; flex-direction: column; gap: var(--space-4); }
 .powers-assistant-project { display: flex; flex-direction: column; gap: var(--space-1); }
-.powers-assistant-name { margin: 0; font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
+/* Under the card's "What it may set off on its own" (h4): a step below it in rank, never above it in size. */
+.powers-assistant-name { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 /* The chat head's menu: the same grid in a popover, at most the phone's width. */
 .po-powers-panel { padding: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
 /* Wider than a menu of rows: its rows carry two switches. Under 768px it is the menus' sheet, full width. */

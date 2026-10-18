@@ -1671,6 +1671,15 @@ export function ThreadScroller(props: {
       if (!first && follow) return;
       reflowed = !first;
     }
+    // Any scroll up by the reader's own hand that takes the view off the very end stops following,
+    // however small. More than 2px off it: a browser clamp or its
+    // scroll anchoring inside INPUT_MS, and a bounce at the end on a phone (scrollTop falling back
+    // to its maximum), leave the view at the end. A disclosure the reader toggled is re-read below.
+    if (follow && reader && up && lastGap > 2 && !held?.jump && !toggled) {
+      follow = false;
+      setAway(props.count);
+      return;
+    }
     const near = lastGap < FOLLOW_PX;
     // A jump never brings following back, even one landing at the end right after a press in the
     // transcript (a card reference), which would otherwise read as the reader's scroll.
@@ -1872,26 +1881,38 @@ export function ThreadScroller(props: {
     ),
   );
 
-  /** Content was added or changed: back to the bottom while following. */
-  const settle = () => {
+  /** Content was added or changed: back to the bottom while following. A change in the rows
+      (`grownOnly`, the MutationObserver) moves a view off the end only when it added height below
+      it, so the gap to the end grew since it was last read: a change that adds nothing (a
+      control's state when the chat connects, hidden text, a checkmark) never moves the view. */
+  const settle = (grownOnly = false) => {
     // Before following: a scroll event between the rows landing and this frame may have read the
     // view they grew as the reader's own.
     if (holdAtRead()) return;
     if (!follow) return;
     if (toggled) return onScroll();
+    if (grownOnly) {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gap > 2 && gap - lastGap < 1) return;
+    }
     toBottom();
   };
   // A mutation's settle waits for the frame (still before its paint), so the write to `scrollTop`
   // no longer forces a layout of the whole thread inside the task that changed it, once per change.
+  // Any caller in that frame asking for a settle whatever grew (`onScroll`) wins over a mutation's.
   let settleFrame = 0;
-  const settleSoon = () => {
+  let settleAlways = false;
+  const settleSoon = (always = true) => {
+    if (always) settleAlways = true;
     if (settleFrame) return;
     settleFrame = requestAnimationFrame(() => {
       settleFrame = 0;
-      settle();
+      const whatever = settleAlways;
+      settleAlways = false;
+      settle(!whatever);
     });
   };
-  const observer = new MutationObserver(settleSoon);
+  const observer = new MutationObserver(() => settleSoon(false));
   onCleanup(() => {
     observer.disconnect();
     cancelAnimationFrame(settleFrame);

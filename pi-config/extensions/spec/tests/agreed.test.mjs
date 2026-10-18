@@ -18,7 +18,7 @@ const read = (root, rel) => readFileSync(join(root, rel), "utf8");
 const manifest = (claims) => JSON.stringify({ formatVersion: 1, claims }, null, 2) + "\n";
 const FILE = ".sova/spec/claims/a/top.md", D = (name, rel) => `.sova/spec/drafts/${name}/spec/${rel}`;
 const TOP = "# §a/top\n\nThe top surface.\n\n## §a.top/one\n\nOne does X.\n";
-const AGREED = { by: "the operator", at: "2026-10-05", source: "chat c1#m4" };
+const AGREED = { by: "the operator", at: "2026-10-05", source: "chat:c1#m4" };
 
 function project() {
   const root = mkdtempSync(join(tmpdir(), "sova-agreed-"));
@@ -161,7 +161,7 @@ test("agreed belongs to its wording: re-stamped on unchanged prose, removed, or 
     assert.match(r[0].message, why, name);
   }
   // the person agreed again to new words (same day counts as not earlier): the stamp moves with the wording
-  const again = { by: "someone else", at: "2026-10-05T16:00Z", source: "chat c1#m9" };
+  const again = { by: "someone else", at: "2026-10-05T16:00Z", source: "chat:c1#m9" };
   assert.equal(run(root, "new", "reagreed", "--write").exit, 0);
   editManifest(root, D("reagreed", "manifest.json"), (m) => { m.claims["§a.top/new"].agreed = again; });
   reword("reagreed");

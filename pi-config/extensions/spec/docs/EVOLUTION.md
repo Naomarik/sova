@@ -361,6 +361,13 @@ parent holding a pre-agreed typed turn):
 
 Not measured: the worker relay, and team-injected turns.
 
+Phase 2 measured the relay: workers held the right reference in `SPEC_AGREE_SOURCE` yet typed a description in
+`--source`, and 4 of 42 stamps (2 of 3 relay runs) traced to no typed user turn. The lane had dropped refusing a
+`--source` that differs from the variable, so a parent could cite an earlier turn; that freedom was what the
+workers used. Fixed on 2026-10-19 (branch `feat/spec-x-integration`, not on master yet): a set variable is the
+source, a different `--source` is refused, and a source must be a `scheme:locator` reference, never a
+description. L0: 4 new cases fail at 196989b0 and pass after. The L2 relay arm has not been re-run.
+
 **P1, the unread line (2026-10-18, branch `feat/spec-x-unread`, not on master yet).** Audit #2 found the unread line unreadable: 5 § marked read first, then "+N more" with a median near 100, and
 Claude workers read 17% of the marked ones. A lane measured candidate rules on an L1 replay of the audit's 99
 worker sessions (93 replayed, census re-run on reconstructed trees; bash-written edits can't be replayed, so

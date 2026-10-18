@@ -96,6 +96,16 @@ describe("Versions you can try", () => {
     assert.equal(home.requests![0]!.status, "started");
   });
 
+  test("a project named after its org keeps its name on the row; a model's words in a label still pass the outsider filter", async () => {
+    const { outsiderRedactor } = await import("./share/hub");
+    const r = outsiderRedactor(org.id);
+    const vs = await versions.projectVersions(org.id, { ...proj, name: "Mamluk Arabia website" });
+    const rows = versions.versionRows(vs, r);
+    assert.deepEqual([...new Set(rows.map((v) => v.project))], ["Mamluk Arabia website"], "the operator's project name is no model text");
+    const said = versions.versionRows([{ ...vs[1]!, label: "Fix: Mamluk Arabia's bow page" }], r)[0]!.label;
+    assert.notEqual(said, "Fix: Mamluk Arabia's bow page", "a request title in a label is a model's words: filtered");
+  });
+
   test("the main checkout on another branch is no current version: nothing is served from that branch", async () => {
     git("symbolic-ref", "HEAD", "refs/heads/x");
     try {

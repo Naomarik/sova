@@ -340,7 +340,7 @@ function requestRows(ctx: Ctx): OwnerRequestRow[] {
 /** Versions you can try of the shown projects (§app.project-assistant/versions); never an address. */
 async function versionsOf(ctx: Ctx): Promise<OwnerVersionRow[]> {
   const out: OwnerVersionRow[] = [];
-  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), (t) => ctx.r.redact(ctx.r.said(t))));
+  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r));
   return out;
 }
 

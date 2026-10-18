@@ -124,9 +124,12 @@ export async function projectVersions(orgId: string, project: { id: string; name
   return out;
 }
 
-/** The rows the owner page shows. */
-export const versionRows = (vs: OwnerVersion[], redact: (t: string) => string): OwnerVersionRow[] =>
-  vs.map((v) => ({ handle: v.handle, project: redact(v.projectName), label: redact(v.label), state: v.running ? "running" : "not-running" }));
+/** The rows the owner page shows (§app.owner-page/never): the project's name, the operator's text, through
+    the secret redactor only, as on every other row of the page; the label, which may carry a request title a
+    model wrote, through the outsider filter too. Never the project's name through `said`: its phrases hold the
+    org's name, so a project named after its org read `[redacted]`. */
+export const versionRows = (vs: OwnerVersion[], r: { redact: (t: string) => string; said: (t: string) => string }): OwnerVersionRow[] =>
+  vs.map((v) => ({ handle: v.handle, project: r.redact(v.projectName), label: r.redact(r.said(v.label)), state: v.running ? "running" : "not-running" }));
 
 /** The owner-bound preview of a version for this owner link, kept or made now; its URL, or null when it can't be opened. */
 export async function openVersion(v: OwnerVersion, link: { hash: string; expiresAt: string }, now = Date.now()): Promise<string | null> {

@@ -171,8 +171,9 @@ git config merge.sova-spec-claims.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-Without them, Git falls back to its line merge. Both sides changing the same record or the same
-declaration still conflict; `merge-claims` then leaves Git's conflict markers, with both sides' prose.
+Without them, Git falls back to its line merge. Both sides changing the same record, or the same
+block of one declaration (a list item, a table row, a paragraph), still conflict; `merge-claims`
+then leaves Git's conflict markers, with both sides' prose.
 
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 

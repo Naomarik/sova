@@ -260,6 +260,13 @@ drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the base
 first, BEFORE taken on a pristine archive of the base, AFTER on the commit. All eight lanes landed
 by 2026-10-10 01:44 (52afd0a8, master reflog). CHANGELOG.md has each lane's numbers.
 
+- **Block merge where neighbouring blocks conflict** (audit #2, P8). The first block-by-block
+  `merge-claims` gave Git's line merge the blocks as lines, so changes to two neighbouring
+  blocks conflicted, as Git does with neighbouring lines. On the merge replay it left 10 / 56
+  claim files conflicted (6 merges) against 7 / 56 for the kept version, which puts an unchanged
+  line between blocks. The 3 it added were neighbouring bullets of one declaration, each a
+  different promise. Dropped before commit.
+
 ## Lessons
 
 - **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together
@@ -318,6 +325,13 @@ corrected 10-09 baseline (the 10-09 method had counted every pi worker as spec-o
   text (census notes were over-counted once).
 
 ## Open
+
+- **Claim-file merges without the driver** (audit #2, P8). Two seams the merge replay found, not
+  fixed: Git reads `.gitattributes` from the work tree's side of a merge, so a branch cut before
+  lane F's claims line (3 of the 30 replayed merges) gets Git's line merge for its claim files; and
+  the drivers run `node` through `PATH`, so an untrusted mise shim fails both drivers and every spec
+  file both sides changed conflicts, unmerged and without markers. A per-clone
+  `.git/info/attributes` line and a resolved `node` path in the driver lines would close them.
 
 - **The agent arm and the rubric on master.** Deferred: not re-run after landing.
 - **Three needs packet answers that toc never shows one hop out.** C01:0 is the frame around the tab,

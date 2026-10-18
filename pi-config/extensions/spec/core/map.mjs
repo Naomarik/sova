@@ -20,19 +20,21 @@ const notOwnedSummary = (c) => (c ? `doesn't own: written for ${c.written} of ${
 const notOwnedLine = (e, c) => (!c ? null : !e.notOwned ? "doesn't own: (not written)"
   : notOwnedText(e.notOwned));
 
-// Counts by declared label over ids: {authority: {accepted: n}, evidence: {…}, unlabelled: n}.
+// Counts by declared label over ids, flat: {accepted: n, …, verified: n, unlabelled?: n}. Authority values come
+// first, then evidence values, each sorted; no authority value is also an evidence value, so nothing is lost.
+// `unlabelled` (neither label) only when non-zero: the overview's JSON must fit one page.
 function labelCounts(ctx, ids) {
-  const c = { authority: {}, evidence: {}, unlabelled: 0 };
+  const c = { authority: {}, evidence: {} };
+  let unlabelled = 0;
   for (const id of ids) {
     const r = ctx.claims.get(id);
     for (const k of ["authority", "evidence"]) if (r[k] !== undefined) c[k][r[k]] = (c[k][r[k]] ?? 0) + 1;
-    if (r.authority === undefined && r.evidence === undefined) c.unlabelled++;
+    if (r.authority === undefined && r.evidence === undefined) unlabelled++;
   }
-  for (const k of ["authority", "evidence"]) c[k] = Object.fromEntries(Object.entries(c[k]).sort(([a], [b]) => (a < b ? -1 : 1)));
-  return c;
+  const sorted = (o) => Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1));
+  return Object.fromEntries([...sorted(c.authority), ...sorted(c.evidence), ...(unlabelled ? [["unlabelled", unlabelled]] : [])]);
 }
-const countsText = (c) => [...Object.entries(c.authority), ...Object.entries(c.evidence), ...(c.unlabelled ? [["unlabelled", c.unlabelled]] : [])]
-  .map(([k, n]) => `${k} ${n}`).join(" · ") || "no labels";
+const countsText = (c) => Object.entries(c).map(([k, n]) => `${k} ${n}`).join(" · ") || "no labels";
 
 // requires and embeds edges from ids to claims outside them, and from outside into them. → {out: [{from, to, kind}], in: [...]}
 function crossing(ix, ids) {
@@ -72,7 +74,9 @@ function overview(ix, namespace, json) {
   }
   const list = areas.map((a) => {
     const d = ctx.decls.get(a), m = ix.members.get(a), x = crossing(ix, m);
-    return { type: "area", id: a, namespace: namespaceOf(a), title: titleOf(d), ...whatOf(d), claims: m.length, labels: labelCounts(ctx, m),
+    // No namespace (the id names it) and whatSource only when not prose: the overview's JSON must fit one page.
+    const { what, whatSource } = whatOf(d);
+    return { type: "area", id: a, title: titleOf(d), what, ...(whatSource !== "prose" ? { whatSource } : {}), claims: m.length, labels: labelCounts(ctx, m),
       requiresOut: x.out.length, requiresIn: x.in.length, ...(json ? {} : notOwnedOf(ctx.claims.get(a))) };
   });
   for (const h of hubs(ix, ids)) list.push({ type: "hub", ...h });
@@ -123,7 +127,7 @@ export function renderMap(out) {
   let head = null, ns = null;
   for (const e of out.lines) {
     if (e.type === "area") {
-      if (e.namespace !== ns) { ns = e.namespace; L.push(`${ns} (${c.namespaces[ns].areas} area(s), ${c.namespaces[ns].claims} claim(s))`); }
+      if (namespaceOf(e.id) !== ns) { ns = namespaceOf(e.id); L.push(`${ns} (${c.namespaces[ns].areas} area(s), ${c.namespaces[ns].claims} claim(s))`); }
       L.push(`  ${e.id} — ${e.title}  ${e.claims} claim(s) · ${countsText(e.labels)} · requires/embeds out ${e.requiresOut} · in ${e.requiresIn}`, `    what: ${e.what}`);
       const n = notOwnedLine(e, c.notOwned);
       if (n) L.push(`    ${n}`);

@@ -708,6 +708,23 @@ would list master's changes instead.
   - §: none promoted. Draft `agree-source` adds `notOwned` to §tools/spec's field list; draft `map-trim`
     quotes the note's new text in §tools.spec/spec-map.
 
+- **`map --json` has room under its one-page cap again.**
+  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Changed: the overview's JSON was 32,497 B of the 32,768 B page on Sova's spec (271 B to spare), so the
+    next area or a longer lede would have pushed it to a second page. Its area lines now leave out what is
+    derivable or default, and every `labels` count in `map` is flat:
+    - `labels` is `{<label value>: n, …}`, authority values then evidence values (they share no name), with
+      `unlabelled` only when non-zero (was `{authority: {…}, evidence: {…}, unlabelled: n}`), in the area
+      lines, `counts.labels` and the one-area view's counts;
+    - an area line has no `namespace` (its id names it; `counts.namespaces` keeps the totals), and
+      `whatSource` only when it is not `prose`.
+    The text output is byte-identical (29,808 B before and after); the `not-owned-per-area` count and note stay.
+  - §: none promoted. Draft `map-trim` rewords §tools.spec/spec-map.
+  - Numbers: `map --json --root .` on this branch's spec (87 areas, 1,031 claims): 32,497 B → 25,449 B
+    (−7,048 B, −21.7%; headroom 0.8% → 22.3% of 32,768 B). Per field, dropping `namespace` saved about
+    1.6 KB, `whatSource: "prose"` 1.7 KB, flat labels with no zero `unlabelled` the rest.
+  - Upgrade: see UPGRADING step 10, "`map --json` area lines".
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -862,6 +879,10 @@ The tools are Node standard library only. Nothing is installed.
       description is refused (`agree-source-not-reference`), at promotion too for a hand-written stamp. While
       `SPEC_AGREE_SOURCE` is set, omit `--source`: a different one is refused (`agree-source-mismatch`).
       Scripts passing a free-text `--source` change it to a reference.
+    - **`map --json` area lines** (`feat/spec-x-integration`, 2026-10-19). `labels` counts are flat
+      (`{accepted: 6, reviewed: 4, verified: 2}`; `unlabelled` only when non-zero), area lines drop
+      `namespace` (take it from the id) and carry `whatSource` only when it isn't `prose`. A script reading
+      `labels.authority`/`labels.evidence` or `namespace` from `map` changes; the text is unchanged.
     - **The unread line** (`feat/spec-x-unread`). `census --changed --related` rank rows gain `fanIn`
       and `relevance` and are ordered by relevance; `readFirst` holds up to 10 (was 5) at relevance ≥
       0.036 or stale. A hook of your own that parses the unread line reads "; lower-ranked: <command>"

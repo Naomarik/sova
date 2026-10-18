@@ -33,7 +33,7 @@ import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix, relative } from "node:path";
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInspection, declarationSpans } from "./sova-spec.mjs";
@@ -477,16 +477,25 @@ function cutFile(buf, decls, path) {
 // own units; the bytes before the lede are one more. Declarations new on either side hang off the nearest kept
 // declaration before them; when both sides add after the same one, each side's run stays whole and the run whose
 // first id sorts first goes first. → {text, ids: Map id→span text} | {conflicts: [what]} | null (whole-file conflict)
-function mergeSpans(B, C, P) {
-  const conflicts = [];
+// `within(b, c, p)`, when given, merges one declaration both sides changed → {text, conflict?} | null (unmergeable);
+// a declaration it merged with conflict markers is listed in `marked` and the text is still built.
+function mergeSpans(B, C, P, within = null) {
+  const conflicts = [], marked = [];
   const m3 = (b, c, p, what) => { if (p === b || c === p) return c; if (c === b) return p; conflicts.push(what); return c; };
+  const m3d = (b, c, p, id) => {
+    if (p === b || c === p || c === b || !within) return m3(b, c, p, id);
+    const r = within(b, c, p);
+    if (!r) return m3(b, c, p, id);
+    if (r.conflict) marked.push(id);
+    return r.text;
+  };
   const byId = (x) => new Map(x.spans.map((s, k) => [s.id, { ...s, next: x.spans[k + 1]?.id ?? null }]));
   const b = byId(B), c = byId(C), p = byId(P);
   const pre = m3(B.pre, C.pre, P.pre, "the bytes before the lede");
   const kept = new Map(); // base id → merged {text, gap}
   for (const { id } of B.spans) {
     const x = b.get(id), y = c.get(id), z = p.get(id);
-    if (y && z) kept.set(id, { text: m3(x.text, y.text, z.text, id), gap: m3(x.gap, y.gap, z.gap, `the blank lines after ${id}`) });
+    if (y && z) kept.set(id, { text: m3d(x.text, y.text, z.text, id), gap: m3(x.gap, y.gap, z.gap, `the blank lines after ${id}`) });
     else if (y && y.text !== x.text) conflicts.push(`${id} (changed in current, deleted in the draft)`);
     else if (z && z.text !== x.text) conflicts.push(`${id} (deleted in current, changed in the draft)`);
   }
@@ -526,7 +535,37 @@ function mergeSpans(B, C, P) {
     if (k + 1 < out.length && !followed(s, out[k + 1].id) && !piece.endsWith("\n\n")) piece += piece.endsWith("\n") ? "\n" : "\n\n";
     text += piece;
   });
-  return { text, ids: new Map(out.map((s) => [s.id, s.text])) };
+  return { text, ids: new Map(out.map((s) => [s.id, s.text])), marked };
+}
+// One declaration's lines grouped into blocks, the units a Git merge driver merges a declaration by when both sides
+// changed it: a list item with its wrapped lines (a nested item starts its own), a table row, a heading, a fenced
+// block's lines one by one, a paragraph, a blank line. → [block text without its last newline] | null (can't)
+const BLOCK_SEP = "\uE000", BLOCK_GAP = "\uE001";
+function blocksOf(text) {
+  if (text.includes(BLOCK_SEP) || text.includes(BLOCK_GAP) || !text.endsWith("\n")) return null;
+  const out = []; let fence = false, open = false;
+  for (const l of text.slice(0, -1).split("\n")) {
+    const isFence = /^\s*(```|~~~)/.test(l);
+    const starts = fence || isFence || !l.trim() || /^\s*([-*+]|\d+[.)])\s/.test(l) || /^\s*\|/.test(l) || /^#{1,6}\s/.test(l);
+    if (isFence) fence = !fence;
+    if (open && !starts) out[out.length - 1] += "\n" + l;
+    else out.push(l);
+    open = !isFence && !fence && !!l.trim() && !/^#{1,6}\s/.test(l) && !/^\s*\|/.test(l);
+  }
+  return out;
+}
+// Git's line merge run over blocks instead of lines: changes to blocks that are neither the same nor neighbours merge;
+// anything else conflicts, with Git's markers around whole blocks. → {text, conflict} | null
+function mergeBlocks(root, b, c, p) {
+  const sides = [c, b, p].map(blocksOf);
+  if (!sides.every(Boolean)) return null;
+  const tmp = mkdtempSync(join(tmpdir(), "sova-spec-merge-blocks-"));
+  try {
+    const f = ["ours", "base", "theirs"].map((n, k) => { const x = join(tmp, n); writeFileSync(x, sides[k].map((s) => s.split("\n").join(BLOCK_SEP)).join(`\n${BLOCK_GAP}\n`) + "\n"); return x; });
+    const r = git(root, ["merge-file", "-p", "-L", "ours", "-L", "base", "-L", "theirs", ...f]);
+    if (r.status === null || r.status < 0 || r.status > 127) return null;
+    return { text: r.out.split("\n").filter((l) => l !== BLOCK_GAP).join("\n").split(BLOCK_SEP).join("\n"), conflict: r.status !== 0 };
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
 // A record's `agreed: {by, at}`: who made the decision, and when. → null (absent or well-formed) | what is wrong
@@ -1678,11 +1717,13 @@ function cutText(text) {
   if (new Set(spans.map((d) => d.id)).size !== spans.length) return null;
   return cutFile(Buffer.from(text, "utf8"), new Map(spans.map((d) => [d.id, { file: "", lines: d.lines }])), "");
 }
-function mergeClaimTexts(bText, oText, tText) {
+function mergeClaimTexts(root, bText, oText, tText) {
   const cuts = [bText, oText, tText].map(cutText);
-  const m = cuts.every(Boolean) ? mergeSpans(...cuts) : null;
+  const m = cuts.every(Boolean) ? mergeSpans(...cuts, (b, c, p) => mergeBlocks(root, b, c, p)) : null;
   if (!m) return { why: "the file can't be merged per declaration (no declarations, a carriage return, or kept declarations reordered)" };
   if (m.conflicts) return { conflicts: m.conflicts };
+  // A declaration both sides changed in the same or neighbouring blocks: the file keeps Git's markers around them.
+  if (m.marked.length) return { conflicts: m.marked.map((id) => `${id} (the same or neighbouring blocks)`), marked: m.text };
   // Like promotion's read-back: the merged file must cut into exactly the declarations it was built from.
   const back = cutText(m.text);
   const same = back && back.spans.length === m.ids.size && back.spans.every((s) => m.ids.get(s.id) === s.text);
@@ -1699,7 +1740,12 @@ async function cmdMergeClaims(root, o) {
   const texts = [await read(o.base, "base"), await read(o.ours, "ours"), await read(o.theirs, "theirs")];
   const target = resolve(o.ours), path = o.path[0] ?? null;
   const save = (data) => writeAtomic(dirname(target), posix.basename(target.split("\\").join("/")), data);
-  const m = mergeClaimTexts(...texts);
+  const m = mergeClaimTexts(root, ...texts);
+  if (m.marked !== undefined) {
+    if (o.write) await save(m.marked);
+    throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: changed differently on both sides: ${m.conflicts.join(", ")}; ${o.write ? "Git's conflict markers are in the file, around both sides' blocks" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master")}`,
+      { mode: "driver", path, merge: "blocks", conflicts: m.conflicts, written: !!o.write });
+  }
   if (m.text !== undefined) {
     if (o.write) await save(m.text);
     return { exit: 0, mode: "driver", path, merge: "declarations", conflicts: [], written: !!o.write };

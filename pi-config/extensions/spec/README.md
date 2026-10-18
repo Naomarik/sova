@@ -212,8 +212,9 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    changed differently. It is the only sanctioned way to settle that conflict;
    [PROMOTE.md](PROMOTE.md) has the rule.
 7. **`merge-claims`** is a Git merge driver for `claims/*.md`: the promotion's
-   per-declaration merge, with Git's own line merge and markers for what it
-   can't merge, so the same declaration changed on both sides still conflicts.
+   per-declaration merge; a declaration both sides changed merges block by block
+   (list item, table row, paragraph), and only the same block changed on both
+   sides still conflicts, with Git's markers around those blocks.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.

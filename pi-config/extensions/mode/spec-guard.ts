@@ -532,7 +532,7 @@ export function specReads(commands: readonly string[]): string[] {
 
 /** The ranked parts of a `census --changed --related --json`: each foreign touched § in rank order, with the files it lands in. */
 export interface RankedView {
-	/** relevance: score over fan-in (§tools.spec/census-rank); a census without it reads as its score. */
+	/** relevance: score over fan-in (the spec tools' census rank); a census without it reads as its score. */
 	rank: { id: string; score: number; relevance: number; stale: string[]; files: string[] }[];
 }
 export function parseRanked(stdout: string): RankedView | undefined {

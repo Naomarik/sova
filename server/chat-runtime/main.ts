@@ -72,6 +72,9 @@ let host: Host | null = null;
 let state: "booting" | "ready" = "booting";
 /** A controller that came before the chat's code was loaded: handed to the host once it is. */
 let early: { link: Link; control: ControlFrame } | null = null;
+/** Links whose opening hello said booting: each hears "ready" once, even when its control comes after the
+    chat got ready (a loaded server's late control would otherwise wait for a hello that never comes). */
+const toldBooting = new WeakSet<Link>();
 let exiting = false;
 
 function exitNow(cause: ExitCause, link: Link | null): void {
@@ -89,9 +92,18 @@ function exitNow(cause: ExitCause, link: Link | null): void {
 }
 
 const server = await serveLink(sock, {
-  hello: () => host?.hello() ?? { build, pid: process.pid, startedAt, unit, sessionId, path, state, seq: 0 },
+  hello: (link) => {
+    if (host) return host.hello();
+    toldBooting.add(link);
+    return { build, pid: process.pid, startedAt, unit, sessionId, path, state, seq: 0 };
+  },
   onControl(link, control) {
-    if (host) return host.onControl(link, control);
+    if (host) {
+      host.onControl(link, control);
+      // Told booting, and ready before its control came: say it now, as the hand-over below does.
+      if (toldBooting.has(link) && link.isOpen) link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: control.epoch, ...host.hello() });
+      return;
+    }
     early = { link, control };
     startTrail.report();
     // While booting, only a drain means anything: there is no chat to close yet.

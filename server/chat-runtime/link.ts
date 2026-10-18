@@ -206,8 +206,8 @@ export class Link {
 // ---- the chat process's end ------------------------------------------------------------------------
 
 export interface ServeLinkOptions extends LinkOptions {
-  /** The hello to open each connection with, as the chat stands now. */
-  hello(): Omit<HelloFrame, "t" | "proto" | "minProto" | "epoch">;
+  /** The hello to open each connection with (`link`), as the chat stands now. */
+  hello(link: Link): Omit<HelloFrame, "t" | "proto" | "minProto" | "epoch">;
   /** A server took control on `link` (its `control` frame). The link before it, if any, was closed. */
   onControl(link: Link, control: ControlFrame): void;
   /** How long a connection may take to send `control` before it is closed. */
@@ -235,7 +235,7 @@ export async function serveLink(sockPath: string, opts: ServeLinkOptions): Promi
   const log = opts.log ?? ((l: string) => console.error(`[chat-link] ${l}`));
   const server: Server = createServer((socket) => {
     const link = new Link(socket, opts);
-    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() });
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello(link) });
     const timer = setTimeout(() => link.close({ reason: "closed" }), opts.controlWithinMs ?? 10_000);
     timer.unref?.();
     void link.closed.then(() => clearTimeout(timer));

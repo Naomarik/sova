@@ -626,6 +626,26 @@ would list master's changes instead.
     0/4 → 15/15, agree before code 0/13 → 0/12, upkeep 25.1% → 24.6%.
   - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the new step 4 sentence.
 
+- **The unread line asks for the § the change's lines name, not every § a broad file maps (audit #2 P1).**
+  - Commits: f8385574, cc421ef7, 184082c0, 1fcd0871, 9ec90f28 (lane tip), branch `feat/spec-x-unread`;
+    not on master yet: the merge round folds it in.
+  - Changed:
+    - `census --changed --related` divides each touched §'s score by its `fanIn` (of its changed files,
+      the fewest foreign touched § any one lands in) and ranks by that `relevance`; rank rows and
+      foreign `touched` entries carry `fanIn` and `relevance` (score ÷ fanIn ÷ ln(passages + 1), so it
+      means the same in any spec size); `readFirst` holds up to 10 at relevance ≥ 0.036 or with a stale
+      literal (was: the first 5 with a score or a stale literal, stale first);
+    - the hook's line follows it and no longer counts the rest: "read first …; lower-ranked:
+      <command>", and "none read first; lower-ranked: <command>" when none qualifies (was "+N more:
+      <command>" / "N unread: <command>"), so it asks for the § it names and no others;
+    - `README.md`, `core/README.md`, `docs/MODE.md` and the site page say the same. The mode text is
+      unchanged.
+  - §: §tools.spec/census-rank and §tools.spec/unread-landed reworded (draft `unread-short`). Base: 9c3f949b.
+  - Numbers (L1 history replay of the audit's 99 worker sessions, 93 replayed; 62 Claude sessions labelled by
+    Opus for which landed § mattered, labels fixed before any rule was compared): § the line asks for, median
+    5 → 6.5, at most 10 (it no longer adds "+N more", median 74); mattered § among them 56/148 = 38% →
+    84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; lines with nothing read first 7 → 10 of 69. `EVOLUTION.md` (the unread line) has the iterations.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -773,3 +793,8 @@ The tools are Node standard library only. Nothing is installed.
       restamped with `agree --source …` before it promotes.
     - **The mode text.** A project that points its agents at `mode/spec-mode.md` gets the changed agree
       sentence with this upgrade.
+    - **The unread line** (`feat/spec-x-unread`). `census --changed --related` rank rows gain `fanIn`
+      and `relevance` and are ordered by relevance; `readFirst` holds up to 10 (was 5) at relevance ≥
+      0.036 or stale. A hook of your own that parses the unread line reads "; lower-ranked: <command>"
+      (was "; +N more: <command>") and "none read first; lower-ranked: <command>" (was "N unread:
+      <command>"): no count.

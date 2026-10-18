@@ -767,7 +767,7 @@ const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summa
 // ---------------------------------------------------------------- rank: touched § by the changed lines
 // Names, string literals and numbers a change's lines carry; a § scores the rarity-weighted ones its passage holds.
 // Nothing here knows a project: every token comes from the diff or the spec.
-const READ_FIRST = 5, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
+const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.036, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
 const NAME_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*(?:\.[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*)*/g;
 const NUM_RE = /(?<![\w.])\d+(?:\.\d+)?(?![\w])/g;
 const STR_RE = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g;
@@ -823,10 +823,14 @@ function changedLines(root, commit, paths) {
   }
   return by;
 }
-// Rank the foreign touched § (ids, with the changed paths each lands in) by those lines.
-// → {rank: [{id, rank, score, reason, stale}], readFirst, named}
+// Rank the foreign touched § (ids, with the changed paths each lands in) by those lines, each score divided by
+// its fan-in (of its changed paths, the fewest foreign touched § any one lands in: a broad file dilutes its §)
+// and by the heaviest weight a name can have, so a relevance means the same in a spec of any size.
+// → {rank: [{id, rank, score, fanIn, relevance, reason, stale}], readFirst, named}
 function rankTouched(ctx, commit, ids, filesOf) {
   const lines = changedLines(ctx.root, commit, [...new Set(ids.flatMap((id) => filesOf(id)))].sort());
+  const fan = new Map();
+  for (const id of ids) for (const p of new Set(filesOf(id))) fan.set(p, (fan.get(p) ?? 0) + 1);
   const all = [...ctx.decls.keys()].filter((id) => ctx.claims.has(id)), text = (id) => ctx.decls.get(id)?.text ?? "";
   // Every candidate token, then how many passages hold each: a passage's names and numbers once, strings by search.
   const cand = lineTokens();
@@ -848,13 +852,14 @@ function rankTouched(ctx, commit, ids, filesOf) {
     // A literal the change removed and didn't add back, that the § still states.
     const gone = [...toks.removed.strings, ...toks.removed.numbers].filter((t) => !toks.added.strings.has(t) && !toks.added.numbers.has(t));
     const stale = [...new Set(gone)].filter((t) => has.has(t)).sort();
-    return { id, score: Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, reason, stale };
+    const score = Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, fanIn = Math.min(...filesOf(id).map((p) => fan.get(p)));
+    return { id, score, fanIn, relevance: Math.round((score / fanIn / Math.log(all.length + 1)) * 1000) / 1000, reason, stale };
   });
-  // Equal scores: the § that maps fewer code files is the more specific to each of them.
+  // Equal relevance: the higher score, then the § that maps fewer code files is the more specific to each of them.
   const breadth = (id) => new Set(ctx.claims.get(id).code ?? []).size;
-  rows.sort((a, b) => (b.stale.length > 0) - (a.stale.length > 0) || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
-  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, reason: r.reason, stale: r.stale }));
-  const readFirst = rank.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
+  rows.sort((a, b) => b.relevance - a.relevance || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
+  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, fanIn: r.fanIn, relevance: r.relevance, reason: r.reason, stale: r.stale }));
+  const readFirst = rank.filter((r) => r.relevance >= READ_FIRST_RELEVANCE || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
   return { rank, readFirst, named: rank.map((r) => r.id).filter((id) => !readFirst.includes(id)) };
 }
 
@@ -942,7 +947,7 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
     // Ranked by the changed lines: every foreign touched § once, the first few marked read first.
     const byId = new Map(rel.touched.map((t) => [t.id, t]));
     const r = rankTouched(ctx, ch.commit, rel.foreign, (id) => byId.get(id).files);
-    for (const x of r.rank) Object.assign(byId.get(x.id), { rank: x.rank, score: x.score, reason: x.reason, stale: x.stale });
+    for (const x of r.rank) Object.assign(byId.get(x.id), { rank: x.rank, score: x.score, fanIn: x.fanIn, relevance: x.relevance, reason: x.reason, stale: x.stale });
     Object.assign(touched, r);
   }
   if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, deleted, orphanedEvidence, draftScan, ...touched } }; }

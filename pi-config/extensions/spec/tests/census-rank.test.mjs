@@ -1,5 +1,5 @@
 // Black-box checks for the ranked finishing census: `census --changed --related` orders the touched foreign § by
-// the change's own lines (added and removed), marks at most 5 read-first, names the rest, and flags a removed
+// the change's own lines (added and removed), divides each score by its fan-in, marks at most 10 read-first (relevance ≥ 0.036 or a stale literal), names the rest, and flags a removed
 // literal a § still states. Node stdlib and the git CLI only; every fixture is a temp Git repo.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -57,14 +57,14 @@ function repo() {
   return root;
 }
 
-test("ranked by the change's lines: an added attribute and a removed class put their § first; at most 5 read-first; every touched § still named", () => {
+test("ranked by the change's lines: an added attribute and a removed class put their § first; at most 10 read-first; every touched § still named", () => {
   const root = repo();
   write(root, "src/view.tsx", 'export const Head = () => <input aria-describedby="context-desc" defaultValue="title" />;\n');
   const c = census(root);
   const order = ranked(c);
   assert.deepEqual([...order].sort(), [...VIEW].sort(), "every touched foreign § named once, none dropped, no other");
   assert.deepEqual([...order].sort(), [...c.foreign].sort(), "the same set the census lists as foreign");
-  assert.ok(c.readFirst.length <= 5, `read-first ≤ 5: ${c.readFirst}`);
+  assert.ok(c.readFirst.length <= 10, `read-first ≤ 10: ${c.readFirst}`);
   assert.deepEqual(new Set(order.slice(0, 2)), new Set(["§app/head", "§app/title-class"]), `added aria-describedby and removed head-title rank 1–2: ${order}`);
   assert.ok(c.readFirst.includes("§app/head") && c.readFirst.includes("§app/title-class"));
 });
@@ -79,4 +79,25 @@ test("a removed literal the § still states: that § ranks first and is flagged;
   write(root, "src/voice.ts", "export const MAX = 12 * 1024 * 1024; // a clip\n");
   const quiet = touched(census(root), "§app/voice")?.stale;
   assert.ok(!quiet || (Array.isArray(quiet) && !quiet.length), `12 kept: nothing stale: ${JSON.stringify(quiet)}`);
+});
+
+test("fan-in: a § landing only through a broad changed file is divided by how many touched § share it; read-first is relevance ≥ 0.036 or stale, at most 10", () => {
+  const root = repo();
+  write(root, "src/view.tsx", 'export const Head = () => <input aria-describedby="context-desc" defaultValue="title" />;\n');
+  write(root, "src/voice.ts", "export const MAX = 16 * 1024 * 1024;\n");
+  const c = census(root);
+  const row = (id) => c.rank.find((r) => r.id === id);
+  assert.equal(row("§app/head").fanIn, VIEW.length, "view.tsx is shared by every view §");
+  assert.equal(row("§app/voice").fanIn, 1, "voice.ts lands in §app/voice alone");
+  const heaviest = Math.log(VIEW.length + 1 + 1); // every passage with a record: the 8 view § and §app/voice
+  for (const r of c.rank) assert.equal(r.relevance, Math.round((r.score / r.fanIn / heaviest) * 1000) / 1000, `relevance = score / fanIn / ln(passages + 1): ${JSON.stringify(r)}`);
+  const rel = c.rank.map((r) => r.relevance);
+  assert.deepEqual(rel, [...rel].sort((a, b) => b - a), "ranked by relevance, best first");
+  assert.ok(c.readFirst.length <= 10);
+  for (const id of c.readFirst) assert.ok(row(id).relevance >= 0.036 || row(id).stale.length, `${id} read first only at relevance ≥ 0.036 or stale`);
+  for (const id of c.named) assert.ok(!(row(id).relevance >= 0.036 || row(id).stale.length) || c.readFirst.length === 10, `${id} named only below the cut`);
+  for (const n of OTHERS) assert.ok(!c.readFirst.includes(`§app/other-${n}`), `§app/other-${n} shares only the broad file and names nothing`);
+  assert.ok(c.readFirst.includes("§app/voice"), "the stale narrow § is read first");
+  assert.equal(touched(c, "§app/head").relevance, row("§app/head").relevance, "the touched entry carries the same relevance");
+  assert.equal(touched(c, "§app/head").fanIn, VIEW.length);
 });

@@ -435,7 +435,9 @@
   color: var(--color-ink-2);
 }
 .po-status-line { margin: 0; }
-.po-status-line > .button { min-height: 0; vertical-align: baseline; }
+.po-status-line > .button { min-height: 0; vertical-align: baseline; position: relative; }
+/* Inline in a caption line, the button draws small, but its target is still 44px tall (Resume, Details). */
+.po-status-line > .button::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: var(--tap-min); transform: translateY(-50%); }
 .po-status-more { color: var(--color-ink-muted); }
 /* Wide, every line shows and Details has nothing to do; below 480px only line 1 until it is pressed. */
 .po-status-toggle { display: none; }

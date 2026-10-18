@@ -116,6 +116,7 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
             </div>
             <div class="orgs-assistant-models">
               <h4 class="orgs-h4">Models</h4>
+              <div class="orgs-fields orgs-assistant-model-fields">
               <For each={["reply", "coding", "gathering"] as WorkKind[]}>
                 {(kind) => (
                   <label class="field">
@@ -141,6 +142,7 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
                   </label>
                 )}
               </For>
+              </div>
               <For each={i().projects.filter((p) => p.coding.source === "project" || p.gathering.source === "project")}>
                 {(p) => (
                   <p class="field-hint">

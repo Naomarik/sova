@@ -96,6 +96,7 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
       </header>
       <Show when={view()?.ready === false}>
         <div class="banner banner-warn owner-banner" role="status">
+          <span class="icon banner-icon share-icon-alert" aria-hidden="true" />
           <div class="banner-main">
             <p class="banner-body">The Project Assistant isn't ready yet. {props.op} has to finish setting it up.</p>
           </div>

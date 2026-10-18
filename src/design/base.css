@@ -68,7 +68,10 @@ a {
   text-decoration-thickness: 1px;
   transition: color var(--dur-fast) var(--ease-standard);
 }
-a:hover { color: var(--color-accent-hover); }
+/* Not on a link that wears `.button`: this rule (0,1,1) outranks every variant's colour (0,1,0), so
+   an <a class="button button-primary"> turned its text accent-hover on an accent-hover fill (blank
+   on hover) and a plain <a class="button"> turned indigo. `:where` keeps the old specificity. */
+a:where(:not(.button)):hover { color: var(--color-accent-hover); }
 
 button, input, textarea, select {
   font: inherit;

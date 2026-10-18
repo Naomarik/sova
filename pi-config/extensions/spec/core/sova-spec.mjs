@@ -551,7 +551,7 @@ function check(ctx) {
     }
     provenance(ctx, id);
   }
-  checkFields(ctx, add);
+  checkFields(ctx, add, parentOf);
   const code = codeUnion(ctx, [...ctx.claims.keys()]);
   const kinds = {}, labels = { authority: {}, evidence: {}, unlabeled: 0 };
   for (const r of ctx.claims.values()) {

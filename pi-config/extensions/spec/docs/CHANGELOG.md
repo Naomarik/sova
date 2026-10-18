@@ -556,6 +556,42 @@ would list master's changes instead.
     driver set for every file, 20 / 56 → 6 / 56 (3 merges), each both sides rewriting one bullet or
     paragraph. Tool tests 554 pass, 0 fail.
 
+- **Each area says what it does not own (P4, Goal 3).**
+  - Commit: on branch `feat/spec-x-notowned`; not on master yet: the merge round folds it in.
+  - Changed:
+    - a new optional record field, `notOwned: [§id]` on an area (H1): the claims elsewhere that own
+      what a reader might expect the area to own; `[]` says it was looked at. The manifest stays
+      relations only: the map prints each owner's own heading. `check` errors on a value that is not
+      an array of § ids and warns on `not-owned-not-area`, `not-owned-inside` and a dangling owner;
+    - `map` shows a `doesn't own` line under each area's what line (owner ids in the overview, so all
+      areas keep fitting one text page; `title (§id)` in `map '§area'`), counts `doesn't own: written
+      for k of n area(s)`, and prints `(not written)` for an area without the field once any area in
+      view has it; with none, one line says so and nothing else changes;
+    - a `notOwned`-only change lands on `--doc-only` evidence like `embeds` and `core`
+      (`FIELD_KEYS`), with the same agreed-record and bundling refusals;
+    - Sova's spec: all 87 areas carry the field (253 owners), each owner a § the area requires or
+      names, whose own code lies outside the area's code list (250 of 253; the other 3 are design
+      docs with no code).
+  - §: §tools.spec/record-fields, §tools.spec/spec-map, §tools.spec/field-promotion reworded; the
+    87 area records gain `notOwned`. Base: 9c3f949b.
+  - Numbers: the result is exposure. Areas whose map line says what they don't own 0/87 → 87/87
+    (L0, `map` text on master 9c3f949b vs this branch). Question arm (all 87 areas × 2 reps,
+    claude-opus-5-5 medium, blind grader on a source-only 9c3f949b), BEFORE / map-only b84d34b9 /
+    read-toc c7d9aabe: runs that saw the owners 0 / 2 / 174 of 174; answers citing a listed owner
+    149 / 151 / 174. Correctness did not move beyond grader noise: correct (≥1 not-own statement, 0
+    wrong) 135 / 132 / 139 of 174 and areas with both reps correct 58 / 59 / 64 of 87, where a
+    reordered regrade agreed with the first grading on 45 of 60 verdicts (75%) and shifted the
+    correct count by 3-5 of 20 per arm, more than the +4 of 174. 3 of
+    c7d9aabe's 41 wrong statements come from a listed owner; 15 areas carry the same wrong statement
+    in every arm, from spec prose that contradicts code.
+  - Page fit: `map --json` was already 32,374 of its 32,768-byte page on master. With owner ids in
+    each overview JSON line it paged (71 of 97 lines on page 1, then a cursor); the overview JSON now
+    leaves them out, keeping the count and a `not-owned-per-area` note pointing at `map '§ns/area'`:
+    32,497 B, one page. The text map is 29,808 B, one page, 87/87 lines.
+    - `read` and `toc` of an area's H1 show the same line, with each owner's title, so it sits where
+      agents land (where → read → toc; measure-agent found `map` in 0/174 question-arm runs): one
+      line, median 166 B, max 252 B on Sova's spec; an H2 never shows its area's.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -679,7 +715,18 @@ The tools are Node standard library only. Nothing is installed.
    - **The mode text.** Step 1 of `mode/spec-mode.md` now finds roots with a multi-word `where`
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
-10. **The 2026-10-18 round.** Copy `core/sova-spec-draft.mjs` again (step 1); the merge driver
-    lines don't change. Two branches that changed different bullets, rows or paragraphs of one
-    declaration now merge cleanly. A claim file still in conflict has Git's markers around the
-    whole blocks both sides changed.
+10. **The 2026-10-18 round** (branches `feat/spec-x-census`, `feat/spec-x-merge`,
+    `feat/spec-x-notowned`, `feat/spec-x-agree` and `feat/spec-x-unread`, not on master yet). Copy
+    every `core/*.mjs` again (step 1), then:
+    - **Census** (`feat/spec-x-census`). Whole-tree `census` in a Git work tree leaves out what Git
+      ignores and reports it as `census.ignored` with a `census-ignored` note; tracked files always
+      count. Nothing to configure.
+    - **Claims merge** (`feat/spec-x-merge`). The merge driver lines don't change. Two branches that
+      changed different bullets, rows or paragraphs of one declaration now merge cleanly. A claim
+      file still in conflict has Git's markers around the whole blocks both sides changed.
+    - **`notOwned`** (`feat/spec-x-notowned`). Changed output: `map` prints one new line, `doesn't
+      own: no area here carries notOwned`, until an area record carries `notOwned: [§id]`; then each
+      area gets a `doesn't own` line and the JSON `counts.notOwned`, and `read`/`toc` of that area's
+      H1 print the line (`notOwned` in JSON). Nothing else changes. To adopt it, add `notOwned` to
+      each area's record in a draft and promote it on `--doc-only` evidence (`--commit` or
+      `--snapshot` for an agreed record that maps code).

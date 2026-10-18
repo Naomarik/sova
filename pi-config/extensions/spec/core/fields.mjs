@@ -1,9 +1,10 @@
-// Optional record fields: embeds (surfaces drawn inside a claim), core (the always-on frame) and about
-// (a note → what it serves). Node stdlib only; reads the parsed graph, never writes. A spec whose records
-// carry none of these fields gets no output from here, so every existing output stays unchanged.
+// Optional record fields: embeds (surfaces drawn inside a claim), core (the always-on frame), about
+// (a note → what it serves) and notOwned (an area → the § that own what a reader might expect it to;
+// the map prints each owner's heading, so the manifest stays relations only). Node stdlib only; reads the
+// parsed graph, never writes. A spec whose records carry none of these fields gets no output from here.
 
 export const FRAME_CAP = 12000;
-const ID_LIST = ["embeds", "about"];
+const ID_LIST = ["embeds", "about", "notOwned"];
 
 // Shape errors, checked with the record (a malformed field is a record error, like a malformed requires).
 // bad(code, message, id) records the error; idRe is the core's § grammar.
@@ -17,8 +18,15 @@ export function fieldShape(rec, id, bad, idRe) {
 }
 
 // Targets that exist and are the right kind; the frame under its cap. add(severity, code, message, where).
-export function checkFields(ctx, add) {
+export function checkFields(ctx, add, parentOf) {
+  const areaOf = (t) => (ctx.decls.get(t)?.level === 2 && parentOf ? parentOf(t, ctx.dirKinds ?? []) ?? t : t);
   for (const [id, r] of ctx.claims) {
+    if (r.notOwned !== undefined && ctx.decls.has(id) && ctx.decls.get(id).level !== 1)
+      add("warn", "not-owned-not-area", `${id} is not an area (H1); notOwned belongs on areas`, { id });
+    for (const owner of r.notOwned ?? []) {
+      if (!ctx.claims.has(owner)) add("warn", "dangling-edge", `${id} says ${owner} owns what it does not, but ${owner} has no record`, { id });
+      else if (areaOf(owner) === id) add("warn", "not-owned-inside", `${id} says ${owner} owns what it does not, but ${owner} is inside ${id}`, { id });
+    }
     // A misplaced about is a misuse to report, not a malformed graph: it never blocks a read.
     if (r.about !== undefined && r.kind !== "note") add("warn", "about-not-note", `${id} is a ${r.kind}; about belongs on notes`, { id });
     for (const t of r.embeds ?? []) {

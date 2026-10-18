@@ -50,8 +50,8 @@ const DOC_ONLY_KINDS = new Set(["note", "section"]);
 // Kinds whose record may say who decided it, and when, before it is built (`agreed: {by, at}`); with no `code`
 // such a record may land on --doc-only evidence too. Built = `code` plus one of BUILT_LABELS as its `evidence`.
 const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["reviewed", "verified"]);
-// Record fields that only route reading (§ edges and the frame flag): a change to them alone may land on --doc-only.
-const FIELD_KEYS = ["about", "core", "embeds"];
+// Record fields that only route reading (§ edges, the frame flag, what an area does not own): a change to them alone may land on --doc-only.
+const FIELD_KEYS = ["about", "core", "embeds", "notOwned"];
 const AGREED_AT = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 const STARTER = JSON.stringify({ formatVersion: 1, claims: {} }, null, 2) + "\n";
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);

@@ -1,32 +1,43 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, Show } from "solid-js";
 import type { PowerMap } from "../../shared/powers";
 import type { ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
-import { COLUMN_LABEL, COLUMN_SHORT, STATE_WORD, actCount, alwaysLine, brakeDone, assistantGroups, cellState, columnsFor, expandName, nextOn, powerGroups, powersNote, powersPatch, switchDone, switchName, type CellState, type PowerColumn, type PowerGroupRow, type PowerRow } from "../lib/powers-view";
+import { ALWAYS_DISCLOSURE, ALWAYS_LINE, COLUMN_LABEL, COLUMN_SHORT, NONE_TIP, STATE_WORD, actCount, alwaysItems, brakeBody, brakeDone, assistantGroups, cellState, columnsFor, expandName, nextOn, noneName, powerGroups, powersNote, powersPatch, switchDone, switchLabel, switchName, type CellState, type PowerColumn, type PowerGroupRow, type PowerRow } from "../lib/powers-view";
 import { ApiError, getProjectOverseer, patchProjectOverseer } from "../lib/api";
 import { announce, toast } from "../lib/ui-state";
 import { unchangedError } from "../lib/unchanged-error";
 import { Banner, Icon, Placeholder } from "./ui";
 import "../projects.css";
 
-/** One On/Off switch with its word before it, so its state never reads from the knob alone. Mixed: the knob sits in the middle. "—": the column can't set it. */
-function PowerSwitch(props: { name: string; state: CellState; busy: boolean; onSet(on: boolean): void }) {
+/**
+ * One switch, Sova's standard one (base.css `.toggle-switch`), with its word before it so its state
+ * never reads from the knob alone. Mixed: the input is indeterminate (the standard switch's mixed
+ * state). Held: a brake holds it Off; it is drawn greyed and still changes what is set. "—": the
+ * column can't set it, with its reason in a tooltip that hover, focus and a tap open.
+ */
+function PowerSwitch(props: { name: string; state: CellState; busy: boolean; held: boolean; onSet(on: boolean): void }) {
+  const tipId = createUniqueId();
   return (
     <Show
       when={props.state !== "none"}
       fallback={
-        <span class="powers-none" title={`${props.name}: the Project Assistant can't set this off`}>
+        // A tap focuses it (`:focus-within` opens the bubble); a browser that won't focus a span on a
+        // tap gets the focus from the click.
+        <span class="tip tip-end powers-none" tabindex="0" aria-describedby={tipId} onClick={(e) => e.currentTarget.focus()}>
           <span aria-hidden="true">{STATE_WORD.none}</span>
-          <span class="visually-hidden">{props.name}: not the Project Assistant's</span>
+          <span class="visually-hidden">{noneName(props.name)}</span>
+          <span class="tip-bubble" role="tooltip" id={tipId}>
+            {NONE_TIP}
+          </span>
         </span>
       }
     >
-      <label class="toggle toggle-switch powers-switch" data-state={props.state} title={props.name}>
+      <label class="toggle toggle-switch powers-switch" classList={{ "toggle-held": props.held }} data-state={props.state} title={props.name}>
         <span class="powers-word" aria-hidden="true">
           {STATE_WORD[props.state]}
         </span>
         <input
           type="checkbox"
-          aria-label={props.name}
+          aria-label={switchLabel(props.name, props.state, props.held)}
           checked={props.state === "on"}
           ref={(el) => createEffect(() => (el.indeterminate = props.state === "mixed"))}
           disabled={props.busy}
@@ -39,6 +50,27 @@ function PowerSwitch(props: { name: string; state: CellState; busy: boolean; onS
         />
         <span class="toggle-box" />
       </label>
+    </Show>
+  );
+}
+
+/** The always-allowed short line and its disclosure, closed on every open, holding the full list. */
+function PowersAlways(props: { items: readonly string[] }) {
+  const items = () => alwaysItems(props.items);
+  return (
+    <Show when={items().length > 0}>
+      <div class="powers-always">
+        <p class="field-hint">{ALWAYS_LINE}</p>
+        <details class="disclosure">
+          <summary class="disclosure-summary">
+            <Icon name="chevron-right" small class="icon-twist" />
+            <span class="disclosure-label">{ALWAYS_DISCLOSURE}</span>
+          </summary>
+          <ul class="powers-always-list">
+            <For each={items()}>{(item) => <li>{item}</li>}</For>
+          </ul>
+        </details>
+      </div>
     </Show>
   );
 }
@@ -65,13 +97,13 @@ export function PowersPanel(props: {
       <Show when={!props.compact}>
         <p class="powers-lead">Anything you tell it yourself always runs. These switches cover only what happens without you.</p>
       </Show>
-      <p class="powers-always field-hint">{alwaysLine(p().always)}</p>
+      <PowersAlways items={p().always} />
       <Show when={p().brake}>
         {(b) => (
           <Banner
             tone="warn"
             title="Paused"
-            body={b().reason}
+            body={brakeBody(b())}
             action={
               <button type="button" class="button button-sm" aria-disabled={props.busy ? "true" : undefined} onClick={() => !props.busy && props.save({ resume: true }, brakeDone)}>
                 Resume
@@ -99,6 +131,7 @@ export function PowersPanel(props: {
         cols={cols()}
         maps={{ overseer: p().overseer, assistant: p().assistant }}
         busy={props.busy}
+        held={!!p().brake}
         idPrefix={props.idPrefix}
         onSet={(acts, col, on, label, group) => props.save(powersPatch(acts, col, on), switchDone(label, col, on, group))}
       />
@@ -117,6 +150,8 @@ export function PowersGrid(props: {
   cols: readonly PowerColumn[];
   maps: Readonly<Record<PowerColumn, Partial<PowerMap>>>;
   busy: boolean;
+  /** A brake holds every switch Off: each is drawn greyed and still changes what is set. */
+  held: boolean;
   /** Where its groups' list ids start (two grids on one page stay apart). */
   idPrefix: string;
   onSet(acts: readonly PowerRow[], col: PowerColumn, on: boolean, label: string, group: boolean): void;
@@ -155,7 +190,7 @@ export function PowersGrid(props: {
                   <span class="powers-count">{actCount(g.acts.length)}</span>
                 </button>
                 <For each={props.cols}>
-                  {(col) => <PowerSwitch name={switchName(g.label, col)} state={cellState(g.acts, props.maps[col], col)} busy={props.busy} onSet={(on) => props.onSet(g.acts, col, on, g.label, true)} />}
+                  {(col) => <PowerSwitch name={switchName(g.label, col)} state={cellState(g.acts, props.maps[col], col)} busy={props.busy} held={props.held} onSet={(on) => props.onSet(g.acts, col, on, g.label, true)} />}
                 </For>
               </div>
               <Show when={isOpen()}>
@@ -165,7 +200,7 @@ export function PowersGrid(props: {
                       <div class="powers-row powers-act">
                         <span class="powers-label">{a.label}</span>
                         <For each={props.cols}>
-                          {(col) => <PowerSwitch name={switchName(a.label, col)} state={cellState([a], props.maps[col], col)} busy={props.busy} onSet={(on) => props.onSet([a], col, on, a.label, false)} />}
+                          {(col) => <PowerSwitch name={switchName(a.label, col)} state={cellState([a], props.maps[col], col)} busy={props.busy} held={props.held} onSet={(on) => props.onSet([a], col, on, a.label, false)} />}
                         </For>
                       </div>
                     )}
@@ -214,7 +249,7 @@ function AssistantProjectPowers(props: { projectId: string; name: string }) {
   const view = () => (info.error ? undefined : info()?.settings.powers);
   return (
     <section class="powers-assistant-project" aria-label={`${props.name}: Project Assistant from a client`}>
-      <h3 class="powers-assistant-name">{props.name}</h3>
+      <h5 class="powers-assistant-name">{props.name}</h5>
       <Show
         when={view()}
         fallback={
@@ -236,6 +271,7 @@ function AssistantProjectPowers(props: { projectId: string; name: string }) {
               cols={["assistant"]}
               maps={{ overseer: v().overseer, assistant: v().assistant }}
               busy={busy()}
+              held={!!v().brake}
               idPrefix={`assistant-powers-${props.projectId}`}
               onSet={(acts, _col, on, label, group) => void save(acts, on, label, group)}
             />

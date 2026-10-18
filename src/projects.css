@@ -110,8 +110,11 @@
 /* What may happen without you: a row per group (and, open, per act), a switch per column. The
    grid asks its own box: below 480px the column headers shorten and the acts' names wrap. */
 .powers { display: flex; flex-direction: column; gap: var(--space-3); }
-.powers-lead, .powers-always { margin: 0; }
-.powers-always { color: var(--color-ink-2); }
+.powers-lead { margin: 0; }
+/* Always allowed: one line, then the disclosure (the standard .disclosure) holding the full list. */
+.powers-always { display: flex; flex-direction: column; gap: 0; }
+.powers-always > .field-hint { margin: 0; }
+.powers-always-list { margin: var(--space-1) 0 0; padding: 0 0 var(--space-1) var(--space-5); color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); display: flex; flex-direction: column; gap: 2px; }
 .powers-grid { container: powers / inline-size; display: flex; flex-direction: column; border-top: 1px solid var(--color-border); }
 .powers-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--powers-cols, 2), 128px); align-items: center; gap: var(--space-2); min-height: var(--tap-min); }
 .powers-group { border-bottom: 1px solid var(--color-border); }
@@ -130,13 +133,15 @@
 .powers-act { padding-left: calc(16px + var(--space-2)); }
 .powers-act .powers-label { color: var(--color-ink-2); padding: var(--space-1) 0; }
 .powers-switch { justify-content: flex-end; gap: var(--space-2); }
-.powers-none { justify-self: end; padding-right: 12px; color: var(--color-ink-muted); }
-.powers-word { font-size: var(--fs-caption); color: var(--color-ink-muted); min-width: 3.2em; text-align: end; }
-.powers-switch[data-state="on"] .powers-word { color: var(--color-ink); }
-.powers-switch[data-state="mixed"] .powers-word { color: var(--color-ink); font-weight: var(--fw-medium); }
-/* Mixed: its own track (the tint, an accent outline) and the knob in the middle, so it reads as neither On nor Off. */
-.powers-switch[data-state="mixed"] .toggle-box { background: var(--color-accent-tint); border-color: var(--color-accent); }
-.powers-switch[data-state="mixed"] .toggle-box::after { top: 2px; left: 2px; transform: translateX(10px); background: var(--color-accent); }
+/* "—": a tooltip trigger (base.css .tip), 44px square, under the switches' knobs. A dotted underline
+   under a dash reads as a second dash, so this trigger goes without it (cursor and bubble remain). */
+.powers-none { justify-self: end; display: inline-flex; align-items: center; justify-content: center; min-width: var(--tap-min); min-height: var(--tap-min); color: var(--color-ink-muted); text-decoration: none; border-radius: var(--r-xs); }
+.powers-none:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+/* The switch is base.css's .toggle-switch as drawn everywhere (On, Off, Mixed, held); only its word is ours. */
+.powers-word { font-size: var(--fs-caption); color: var(--color-ink-2); min-width: 3.2em; text-align: end; }
+.powers-switch[data-state="on"] .powers-word,
+.powers-switch[data-state="mixed"] .powers-word { color: var(--color-ink); }
+.powers-switch.toggle-held .powers-word { color: var(--color-ink-muted); }
 @container powers (max-width: 479px) {
   .powers-row { grid-template-columns: minmax(0, 1fr) repeat(var(--powers-cols, 2), 92px); gap: var(--space-1); }
   .powers-col-long { display: none; }
@@ -148,14 +153,15 @@
 /* The owner page card's assistant switches: one block per project. */
 .powers-assistant { display: flex; flex-direction: column; gap: var(--space-4); }
 .powers-assistant-project { display: flex; flex-direction: column; gap: var(--space-1); }
-.powers-assistant-name { margin: 0; font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
+/* Under the card's "What it may set off on its own" (h4): a step below it in rank, never above it in size. */
+.powers-assistant-name { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 /* The chat head's menu: the same grid in a popover, at most the phone's width. */
 .po-powers-panel { padding: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
 /* Wider than a menu of rows: its rows carry two switches. Under 768px it is the menus' sheet, full width. */
 @media (min-width: 768px) {
   .model-menu.action-menu.po-powers-menu { width: min(34rem, calc(100vw - var(--space-6))); max-width: none; }
 }
-.po-powers-panel .powers-always, .po-powers-panel .powers-lead { font-size: var(--fs-caption); }
+.po-powers-panel .powers-always .field-hint, .po-powers-panel .powers-lead { font-size: var(--fs-caption); }
 /* The sessions it starts: each kind's model, thinking and its third select, three to a row where they fit. */
 .project-models { display: flex; flex-direction: column; gap: var(--space-4); }
 .project-models .project-coding-model { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }

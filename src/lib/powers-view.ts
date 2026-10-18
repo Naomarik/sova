@@ -93,13 +93,24 @@ export function powersButtonName(groups: readonly PowerGroupRow[], m: Readonly<R
   return `What may happen without you: ${cols.map(part).join(", ")}.${brake ? ` Paused: ${stop(brake.reason)}.` : ""} Change.`;
 }
 
-/** The always-allowed line above the switches, one sentence with a serial comma. */
-export function alwaysLine(items: readonly string[]): string {
-  const list = items.map(stop).filter(Boolean);
-  if (!list.length) return "";
-  const joined = list.length === 1 ? list[0]! : list.length === 2 ? `${list[0]!} and ${list[1]!}` : `${list.slice(0, -1).join(", ")}, and ${list.at(-1)!}`;
-  return `Always allowed: ${joined.charAt(0).toLowerCase()}${joined.slice(1)}.`;
-}
+/** The always-allowed short line above the switches; its disclosure holds the full list. */
+export const ALWAYS_LINE = "Some acts are always allowed, whatever the switches say.";
+export const ALWAYS_DISCLOSURE = "What it can always do";
+
+/** The disclosure's list: the server's phrases, one per row, each starting with a capital and no stop. */
+export const alwaysItems = (items: readonly string[]): string[] =>
+  items
+    .map(stop)
+    .filter(Boolean)
+    .map((t) => t.charAt(0).toUpperCase() + t.slice(1));
+
+/** A cell the column can't set ("—"): its tooltip, and its hidden name. */
+export const NONE_TIP = "Not available to the client";
+export const noneName = (name: string): string => `${name}: not available to the client`;
+
+/** A switch's accessible name: its name, ", mixed" while its acts differ, and the brake while one holds it Off. */
+export const switchLabel = (name: string, st: CellState, held: boolean): string =>
+  `${name}${st === "mixed" ? ", mixed" : ""}${held ? ", paused: acts as Off" : ""}`;
 
 /** The head's one state chip: Working while its turn runs, else Paused (its reason in the title) while a brake holds every switch Off. */
 export function stateChip(busy: boolean, brake: Brake | null): { tone: "accent" | "warn"; text: string; title?: string } | null {
@@ -122,5 +133,8 @@ export function powersNote(note: PowersNote | null | undefined): { title: string
   };
 }
 
-/** The brake banner's body and its Resume's done line. */
+/** The Paused banner's body: the server's reason, then what the brake does to the switches. */
+export const brakeBody = (b: Brake): string => `${b.reason.trim().replace(/([^.])$/, "$1.")} Until you resume, every switch acts as Off. What you set is kept.`;
+
+/** Resume's done line. */
 export const brakeDone = "Resumed. The switches are in force again.";

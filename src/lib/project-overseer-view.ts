@@ -206,9 +206,13 @@ export function lastRunLine(run: ProjectOverseerInfo["lastRun"], when: string): 
 /** How many reasons wait for its next look; never when (the loop's timing can't be promised here). */
 export const waitingToLook = (n: number): string => (n <= 0 ? "" : `Waiting to look at ${n} ${n === 1 ? "thing" : "things"}.`);
 
+/** Status line 1 while a brake holds every switch Off: short, with Resume beside it; the reason is in the Without-you menu's Paused banner and the chip's title. */
+export const PAUSED_LINE = "Paused until you resume.";
+
 /**
  * The strip under the head: at most 3 lines, each only with something to say. While a brake holds
- * every switch Off, its reason leads, with Resume (for either brake: Resume lifts both).
+ * every switch Off, "Paused until you resume." leads, with Resume (for either brake: Resume lifts
+ * both); the reason itself is the menu's, never repeated here.
  */
 export function statusLines(
   i: BrakeInfo & Pick<ProjectOverseerInfo, "lastRun"> & { settings: { caps: ProjectOverseerCaps }; usage: Pick<ProjectOverseerInfo["usage"], "pending" | "held"> & { allowance: { today: AllowanceUse } } },
@@ -219,7 +223,7 @@ export function statusLines(
   const rest = [run, allowanceLine("Today on its own", i.usage.allowance.today), waits].filter((l): l is string => !!l);
   const brake = i.settings.powers.brake;
   return {
-    lines: (brake ? [brake.reason, ...rest] : rest).slice(0, 3),
+    lines: (brake ? [PAUSED_LINE, ...rest] : rest).slice(0, 3),
     resume: !!brake,
     pendingTitle: pendingLine(i.usage.pending),
   };

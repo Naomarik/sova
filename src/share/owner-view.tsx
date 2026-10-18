@@ -199,6 +199,7 @@ export function OwnerPage(props: {
       >
         <Show when={(problem() === "failed" || problem() === "offline") && current()}>
           <div class="banner banner-warn owner-banner" role="alert">
+            <span class="icon banner-icon share-icon-alert" aria-hidden="true" />
             <div class="banner-main">
               <p class="banner-body">
                 {problem() === "offline" ? OFFLINE_PAGE.body : "We couldn't load this page. Your link still works. Try again in a minute."}
@@ -386,9 +387,9 @@ function VersionsSection(props: { versions: OwnerVersionRow[]; href?: (handle: s
                 <span class="owner-meta">{v.state === "running" ? v.project : `${v.project} · Not running right now`}</span>
               </span>
               <Show when={v.state === "running"}>
-                <Show when={props.href} fallback={<span class="button button-sm owner-version-open" aria-disabled="true">Open</span>}>
+                <Show when={props.href} fallback={<span class="button owner-version-open" aria-disabled="true">Open</span>}>
                   {(href) => (
-                    <a class="button button-sm owner-version-open" href={href()(v.handle)} target="_blank" rel="noopener noreferrer">
+                    <a class="button owner-version-open" href={href()(v.handle)} target="_blank" rel="noopener noreferrer">
                       Open
                     </a>
                   )}

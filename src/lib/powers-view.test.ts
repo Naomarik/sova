@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ALWAYS_PHRASES, POWER_INFO, POWERS, powersView, readStoredPowers, type PowerMap } from "../../shared/powers";
-import { alwaysLine, assistantGroups, cellState, columnsFor, expandName, nextOn, onCount, powerGroups, powersButtonName, powersNote, powersPatch, stateChip, switchDone, switchName } from "./powers-view";
+import { ALWAYS_LINE, NONE_TIP, alwaysItems, assistantGroups, brakeBody, cellState, columnsFor, expandName, nextOn, onCount, powerGroups, powersButtonName, powersNote, noneName, powersPatch, stateChip, switchDone, switchLabel, switchName } from "./powers-view";
 
 const off = (): PowerMap => Object.fromEntries(POWERS.map((p) => [p, false])) as PowerMap;
 const models = { overseer: {}, assistant: {}, assistantSource: { reply: "org" as const, coding: "org" as const, gathering: "org" as const } };
@@ -58,11 +58,21 @@ test("the head button counts each shown column over what it can set, and says a 
   assert.match(powersButtonName(groups, m, ["overseer"], { kind: "empty-roster", reason: "The roster has no active people yet." }), /on\. Paused: The roster has no active people yet\. Change\.$/);
 });
 
-test("always line: one sentence with a serial comma; the overseer's list says no level", () => {
-  assert.equal(alwaysLine(["Answer questions", "keep notes.", "stop a copy"]), "Always allowed: answer questions, keep notes, and stop a copy.");
-  assert.equal(alwaysLine(["a", "b"]), "Always allowed: a and b.");
-  assert.equal(alwaysLine([]), "");
-  assert.doesNotMatch(alwaysLine(ALWAYS_PHRASES), /L[0-3]|approv/i);
+test("always allowed: one short line, then the full list one item per row; none of it says a level", () => {
+  assert.deepEqual(alwaysItems(["answer questions", "keep notes.", " ", "stop a copy"]), ["Answer questions", "Keep notes", "Stop a copy"]);
+  assert.deepEqual(alwaysItems([]), []);
+  assert.equal(alwaysItems(ALWAYS_PHRASES).length, ALWAYS_PHRASES.length, "every phrase gets its own row");
+  for (const t of [ALWAYS_LINE, ...alwaysItems(ALWAYS_PHRASES)]) assert.doesNotMatch(t, /L[0-3]|approv/i);
+});
+
+test("switch names: Mixed and a brake are said, not only drawn; the dash says why; the Paused body keeps the reason and says the switches act as Off", () => {
+  assert.equal(switchLabel("People, on its own", "on", false), "People, on its own");
+  assert.equal(switchLabel("People, on its own", "mixed", false), "People, on its own, mixed");
+  assert.equal(switchLabel("Deploy, from a client", "off", true), "Deploy, from a client, paused: acts as Off");
+  assert.equal(NONE_TIP, "Not available to the client");
+  assert.equal(noneName("Merge, from a client"), "Merge, from a client: not available to the client");
+  assert.equal(brakeBody({ kind: "empty-roster", reason: "The roster has no active people yet." }), "The roster has no active people yet. Until you resume, every switch acts as Off. What you set is kept.");
+  assert.match(brakeBody({ kind: "paused", reason: "Attached here" }), /^Attached here\. Until you resume/, "a reason without a stop gets one");
 });
 
 test("the head chip: Working wins, Paused carries the brake's reason, nothing otherwise; never a level", () => {

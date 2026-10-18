@@ -344,9 +344,9 @@ who saw it.
 merges a declaration both sides changed block by block (CHANGELOG 2026-10-18 has the numbers). Dropped
 before commit, a block merge where neighbouring blocks conflict: the first block-by-block `merge-claims`
 gave Git's line merge the blocks as lines, so changes to two neighbouring blocks conflicted, as Git does
-with neighbouring lines. On the merge replay it left 10 / 56 claim files conflicted (6 merges) against 7
-/ 56 for the kept version, which puts an unchanged line between blocks. The 3 it added were neighbouring
-bullets of one declaration, each a different promise. It was dropped.
+with neighbouring lines. On the merge replay it left 10 / 56 claim files conflicted (6 merges) against
+7 / 56 for the kept version, which puts an unchanged line between blocks. The 3 it added were neighbouring
+bullets of one declaration, each a different promise.
 
 **P2, agree traceability (2026-10-18, branch `feat/spec-x-agree`, not on master yet).** Audit #2 found that 195 agreed stamps had been written by workers as `--by user`, and no session showed the
 user agreeing. Two changes, each measured on the L2 agent arm (claude-opus-5-5 medium, 7 tasks × 2 reps, the
@@ -360,6 +360,31 @@ parent holding a pre-agreed typed turn):
   agent agrees, not whether.
 
 Not measured: the worker relay, and team-injected turns.
+
+**P1, the unread line (2026-10-18, branch `feat/spec-x-unread`, not on master yet).** Audit #2 found the unread line unreadable: 5 § marked read first, then "+N more" with a median near 100, and
+Claude workers read 17% of the marked ones. A lane measured candidate rules on an L1 replay of the audit's 99
+worker sessions (93 replayed, census re-run on reconstructed trees; bash-written edits can't be replayed, so
+the replayed lists run shorter than the recorded ones) against Opus labels of which landed § mattered (the change
+contradicts the passage, or edits the code that carries one of its statements): 62 Claude sessions, 40 dev and 22
+held out, labels frozen by hash before any comparison; a second labelling of 14 sessions agreed at Jaccard 0.93.
+
+- **What separates them.** A mattered § lands through a file a median of 3 landed § share; the rest through files
+  55 share. The literal score alone caught 39/113 dev mattered § in its 5 read-first; dividing it by that fan-in
+  is the one feature that moved the ranking (cap 10: 57 → 63/113 dev).
+- **Kept.** Relevance = score ÷ fan-in ÷ ln(passages + 1); up to 10 read first at relevance ≥ 0.036 or a stale
+  literal; the rest left to the census command, uncounted (9ec90f28). L1, 62 labelled sessions: mattered caught
+  56/148 = 38% → 84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; read-first median 5 → 6.5 (max
+  10); lines with an empty read-first list 7 → 10 of 69 (3 mattered § on them).
+- **Dropped: a cut at 0.1** (184082c0, reverted in 9ec90f28). Precision 24% → 28% on L1 with recall flat (82 vs
+  84/146), but it emptied read-first in 7/12 L2 lines (master 3/13) and dropped a § the change contradicted
+  (task T1: a 30 s → 40 s timeout, supervision at 0.043).
+- **Dropped: lexical variants** (no change committed): dropping plain-word and 2-digit tokens, relative cuts to
+  the session's top score, top-3 token weights, per-file sums. None beat score ÷ fan-in by more than 2/113 dev.
+- **Dropped: a floor of one** (always mark the top-ranked § when none qualifies): +1/148, empty lines halved,
+  but no evidence the extra § mattered.
+- **Not met.** ≥90% of mattered § within 10 is out of reach for literal matching: the cap-10 ceiling is 106/113
+  dev, and the best rule reaches 57%. A § the change contradicts through a number written `30_000` is never
+  `stale`: the number pattern skips digits joined by `_`.
 
 ## Open
 

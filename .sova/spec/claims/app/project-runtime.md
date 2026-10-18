@@ -93,7 +93,7 @@ Project verbs playbook: this host offers neither Claude Code Opus 5.5 nor openai
 Pick a model to run it with." It counts like a coding session against the
 project's limits, and the operator merges its branch; nothing else does.
 
-It needs L3 when the overseer starts it on its own, and it is refused when the project is
+It needs the power `onboard` when the overseer starts it on its own, and it is refused when the project is
 archived, when the project's folder is not on this host ("{name}'s folder is on {target}: the
 playbook runs only on a local folder." or "{name}'s folder {root} is missing on this host."), when
 the playbook is missing ("No playbook \"project-verbs\" is listed for {name}."), while a run

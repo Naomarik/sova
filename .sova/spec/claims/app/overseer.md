@@ -1030,6 +1030,13 @@ itself.
   down for {label}: {why}", opening Settings → Outreach, while that sender is down, logged out,
   replaced, blocked or unpaired, or unreachable for 5 minutes; never while it is down with its next
   automatic try still ahead.
+- **Needs you, the owner's asks** (§app/project-assistant): `owner-request`, one per open request an
+  organization's owner filed through its Project Assistant (id `owner-request:<request id>`), "{owner}
+  reports {what} on {project}: {title}", until the operator marks it done or declined (or a fix it
+  started has started); `owner-outage` the same for a report that the app is down, also a phone
+  notification; `owner-link-request`, one per org whose owner asked for a new owner link (id
+  `owner-link-request:<org id>`), until a new link is made. Each is act tier, of no session, and
+  opens the org's People tab.
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person
@@ -1588,7 +1595,11 @@ the files: the workspace repos are closed to its file tools (§app.overseer/tool
 - **Reads:** `sova_projects` (every registered project: id, name, root, archived, its org or
   "standalone"), `sova_orgs` (every org, or one), `sova_org_project` (one project and its overseer),
   `sova_org_person` (one roster person), §app.overseer/org-reads. What they carry is one
-  projection, §app.overseer/org-projection.
+  projection, §app.overseer/org-projection. And `spec_lookup {project, op, …}`: the spec of the
+  project it names, full view (§app.spec-lookup/tool); its prompt tells it to look a project's
+  spec up before it starts a gathering or a coding session there. `sova_draft_specs` (a read) answers
+  "what are the draft specs?" (§app.requirements/draft-specs); `sova_draft_approve` and
+  `sova_draft_build` are acts.
 - **Acts:** `sova_org`, `sova_org_project`, `sova_roster`, `sova_owner` and
   `sova_project_decisions` (§app.overseer/org-writes); `sova_gather` (§app.overseer/org-people-facing);
   `sova_project_overseer` (§app.overseer/org-project-overseers). Each is an act like any other
@@ -1627,14 +1638,14 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   settle, stakeholders to pick), last activity, the workspace (last commit's age, uncommitted
   changes, the last git error) and its cost at API prices (§app.project-costs/org-rollup).
 - **`sova_orgs {org}`**: that org in full: its projects (name, id, root, archived, main
-  stakeholder by name, whether it has an overseer, whether that is working and the level in force,
+  stakeholder by name, whether it has an overseer, whether that is working and its powers in force (or the brake),
   open gathering sessions, cost); its roster, one line per person (name, id, status, role, decision
   areas); the owner by name; its baton sessions (public title, project, state, who holds it, what
   waits: a reply or a link to send, messages used of the limit); the last 10 profile changes
   (person, field, old → new, who, when); and the workspace line above. `about: true` adds the About
   text and its last 10 history lines (§app.organizations/about); nothing else ever carries it.
 - **`sova_org_project {org?, project}`**: the project row; its overseer: its conversation (a
-  session link), working or not, unread, the chosen level and the level in force with the reason,
+  session link), working or not, unread, its powers as set and in force, with the brake's reason,
   watching and the pace, models, what a coding session started now gets (this computer's default
   mode and subagent profile, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
@@ -1870,7 +1881,7 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   **Overseer** tag (§app.project-overseer/page); to the overseer's model it is the operator's
   message, in plain text.
 - **Attended, as if the user typed it.** The overseer's run that message opens is the operator's
-  (§app.project-overseer/autonomy-levels): its level doesn't bind, and it uses — and resets, as an
+  (§app.project-overseer/autonomy-levels): its switches don't bind, and it uses — and resets, as an
   operator message does — the per-message allowance, "each message you send"
   (§app.project-overseer/limits). What bounds repeats is the Overseer's own prompt cap: each
   message counts as one prompt to another session, and as a `sova_send` does against running at once

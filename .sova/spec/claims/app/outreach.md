@@ -239,8 +239,7 @@ peer's sender may reconnect it too, when that peer grants it full control.
   {person?, note?}`), any send by the operator's app (`POST /api/outreach/send {orgId, projectId,
   personId, link?, note?}`), the global Overseer's `sova_gather` `send_link`, and a project
   overseer's `sova_send_to_person` (§app.outreach/decisions). The statechart checks that the person is
-  active, the link (the host's check, below), the note, the level (L1) and, for the global
-  Overseer, its confirm card (the person and the link's session).
+  active, the link (the host's check, below), the note, the power (`whatsapp`, in the caller's column) and, for the global Overseer, its confirm card (the person and the link's session).
 - **Held and in hours.** An operator's send, and one in a turn the operator started, goes at once,
   whatever the hours. A project overseer's send in a run the operator did not start waits in the
   project's hold (§app.project-overseer/holds) as "A WhatsApp message to {name}", which the operator
@@ -256,17 +255,14 @@ peer's sender may reconnect it too, when that peer grants it full control.
   when the link no longer passes its check (a held send is checked again). Otherwise the link's
   resolver makes the URL (§app.outreach/links), the message is composed and handed to that sender,
   and no other, with the idempotency key `<projectId>#<personId>#<effect key>`.
-- **Waiting for WhatsApp.** A project overseer's held send released (its hold ending, or approved
-  with `sova_hold`) while its organization's sender is down, as Sova last read it, is held again:
+- **Waiting for WhatsApp.** A project overseer's held send released (its hold ending: nothing approves one early) while its organization's sender is down, as Sova last read it, is held again:
   an outage wait (`wait: "outage"`), still cancellable, still in the person's working hours, under
   a new hold id. It goes when that sender comes back (any reading of it that isn't down releases
   the waits of every organization sending through it; another sender coming back releases nothing;
   an organization's engine that opens while its sender is up releases its own; and an organization
   whose pick changes to a sender that is up releases its own), and at most 24 h after its first
   wait: that time travels with the act, so the sender coming and going never extends it. At the
-  bound it goes ahead, is refused `sender-down`, and is not sent (below). The approval says
-  "Approved {id}, but WhatsApp is down: the message waits for WhatsApp to come back, at most until
-  {time}, and is not sent if WhatsApp is still down then. sova_pipeline lists it."; Needs you says
+  bound it goes ahead, is refused `sender-down`, and is not sent (below). Needs you says
   "{what} waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp
   is still down in {n} min.", the Pipeline "… is not sent if WhatsApp is still down at {time} your
   time ({in …}). You can cancel it.", and the overseer's look and `sova_pipeline` "waits for
@@ -286,9 +282,7 @@ peer's sender may reconnect it too, when that peer grants it full control.
   stays and it is logged as `unknown`, code `unknown-after-restart` (`<stateRoot>/outreach-pending.json`
   remembers each step in flight).
 - **Not sent is never ok.** A project overseer's send that is refused or fails when its step runs
-  (at once, or when its hold ends or is approved) never reads as sent anywhere. Its tool says "Not
-  sent to {name}: {why}"; an approval with `sova_hold` that released it answers as a refusal,
-  "Approved {id}, but the WhatsApp message to {name} was not sent: {why}"; the project's feed
+  (at once, or when its hold ends) never reads as sent anywhere. Its tool says "Not sent to {name}: {why}"; the project's feed
   (§app.project-overseer/reviews) gets an entry `outreach/not-sent`, refused "Not sent to {name}:
   {why}", which `sova_pipeline` and the overseer's next look list; and Needs you shows it
   (`outreach-not-sent`, §app.overseer/attention-digest), "The WhatsApp message to {name} was not
@@ -418,7 +412,7 @@ peer's sender may reconnect it too, when that peer grants it full control.
   `{preview, person, note?}` (their own link to a preview), only in the turn a confirm card's click
   opened that lists the person and the session (§app.overseer/org-people-facing); at once. Its result
   says only "Sent {name} their link on WhatsApp." (or "the preview link") or why not.
-- A project overseer at L1 or above: `sova_send_to_person {person, session?, preview?, note?}`, a
+- A project overseer with `whatsapp` On (or in the operator's turn): `sova_send_to_person {person, session?, preview?, note?}`, a
   gathering link of its project, a preview of its project, a note, or a link with a note; through the
   hold when it acts on its own (§app.outreach/send). Its result says "Sent {name} a WhatsApp
   message.", or "Held: the WhatsApp message to {name} waits until {time} so the operator can cancel

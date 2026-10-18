@@ -70,8 +70,7 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   organization imports it (§app.projects/import).
 - Its sessions are listed and opened like an org's project's: its overseer conversations are
   accepted session paths, its coding sessions are ordinary sessions in their worktrees.
-- Its overseer runs at the level the operator set (default L1): no roster caps it
-  (§app.project-overseer/autonomy-levels).
+- Its overseer runs on the switches the operator set (a new project: the carry-over of L1): no roster brakes it, and it has no Project Assistant column and no acts of people (§app.project-overseer/autonomy-levels).
 
 ## §app.projects/list — The Projects page and the sidebar's Projects region
 
@@ -233,7 +232,7 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
   start." and is never undone.
 - Once placed, everything continues where it was: its builds, Activity, overseer conversation,
   settings, notes, costs and previews. The overseer gains the org's tools, prompt
-  and look hint at its next turn, and the org's ceiling applies (an empty roster caps it at L0).
+  and look hint at its next turn, and the org's brake applies (an empty roster: every power acts as Off until someone is active or Resume).
 - **Never rolled back after the mark.** A start that finds an entry marked `importing` (a crash or
   kill mid-import) finishes it: the copy again (idempotent), the org's open loads the files and
   places the project, then the re-derivation, commit and clean-up run. Until then the project opens

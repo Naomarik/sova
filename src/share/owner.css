@@ -153,7 +153,6 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 
 /* The Project Assistant (§app.project-assistant/chat): its door on Home, the conversation, its composer. */
 .owner-assistant-door { display: flex; flex-direction: column; gap: var(--space-2); align-items: stretch; }
-.owner-assistant-button { min-height: 44px; justify-content: center; }
 /* Unfolded, the door is a button, not a 720px bar of accent: the 5% of indigo is the action, not a band. */
 @media (min-width: 768px) {
   .owner-assistant-door { align-items: flex-start; }
@@ -167,4 +166,5 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 .owner-assistant-composer { margin-top: auto; }
 /* Requests and versions: rows that are not links. */
 .owner-row-static { align-items: center; }
-.owner-version-open { flex: none; min-height: 44px; min-width: 64px; justify-content: center; }
+/* Open: the standard (medium, 44px) button, kept at its own width beside the row's text. */
+.owner-version-open { flex: none; }

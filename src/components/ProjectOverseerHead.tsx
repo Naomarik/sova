@@ -347,21 +347,27 @@ export function ProjectOverseerHead(props: {
       >
         {(st) => (
           <section class="po-status" classList={{ "po-status-open": moreOpen() }} aria-label="Overseer status">
-            <p class="po-status-line" title={st().pendingTitle || undefined}>
-              {st().lines[0]}
-              <Show when={st().resume}>
-                {" "}
-                <button type="button" class="button button-sm" aria-disabled={c.acting() ? "true" : undefined} onClick={() => !c.acting() && resume()}>
-                  Resume
-                </button>
+            {/* Line 1 is a row: its sentence, then Resume (while braked) and Details (below 480px),
+                standard small buttons that never wrap under the sentence on their own. */}
+            <div class="po-status-first">
+              <p class="po-status-line" title={st().pendingTitle || undefined}>
+                {st().lines[0]}
+              </p>
+              <Show when={st().resume || st().lines.length > 1}>
+                <div class="po-status-actions">
+                  <Show when={st().resume}>
+                    <button type="button" class="button button-sm" aria-disabled={c.acting() ? "true" : undefined} onClick={() => !c.acting() && resume()}>
+                      Resume
+                    </button>
+                  </Show>
+                  <Show when={st().lines.length > 1}>
+                    <button type="button" class="button button-sm button-ghost po-status-toggle" aria-expanded={moreOpen()} onClick={() => setMoreOpen((v) => !v)}>
+                      Details
+                    </button>
+                  </Show>
+                </div>
               </Show>
-              <Show when={st().lines.length > 1}>
-                {" "}
-                <button type="button" class="button button-sm button-ghost po-status-toggle" aria-expanded={moreOpen()} onClick={() => setMoreOpen((v) => !v)}>
-                  Details
-                </button>
-              </Show>
-            </p>
+            </div>
             <For each={st().lines.slice(1)}>{(line) => <p class="po-status-line po-status-more">{line}</p>}</For>
           </section>
         )}

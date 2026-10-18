@@ -54,7 +54,7 @@ function decided(root, name, rec = {}, sentence = SIXTY) {
   write(root, D(name, "claims/app/list.md"), promise(sentence));
   editManifest(root, D(name, "manifest.json"), (m) => { m.claims[ID] = { kind: "behavior", requires: [], ...rec }; });
 }
-const SOURCE = "chat c1#m3";
+const SOURCE = "chat:c1#m3";
 const agree = (root, name, ...more) => run(root, "agree", name, "--id", ID, "--by", "user", "--source", SOURCE, "--verification", "agreed in alignment al_1", ...more, "--write");
 const currentSpec = (root) => read(root, MANIFEST) + read(root, FILE);
 const evidenceOf = (root, name) => JSON.parse(read(root, `.sova/spec/drafts/${name}/draft.json`)).evidence ?? [];
@@ -125,7 +125,7 @@ test("agree says where the go-ahead was given: with no --source and no SPEC_AGRE
   assert.deepEqual(codes(runEnv(root, { SPEC_AGREE_SOURCE: "  " }, "agree", "talk", "--id", ID, "--by", "user", "--verification", "v")), ["agree-unsourced"]);
 });
 
-test("the runtime's SPEC_AGREE_SOURCE is the source when --source is absent; --source wins; a bad --source is a usage error", () => {
+test("the runtime's SPEC_AGREE_SOURCE is the source when --source is absent; a malformed --source is a usage error", () => {
   const root = project();
   decided(root, "talk");
   const a = runEnv(root, { SPEC_AGREE_SOURCE: "pi-session:s1#e7" }, "agree", "talk", "--id", ID, "--by", "user", "--verification", "v", "--write");
@@ -134,8 +134,8 @@ test("the runtime's SPEC_AGREE_SOURCE is the source when --source is absent; --s
   assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, "pi-session:s1#e7", "the landed record carries it");
   const root2 = project();
   decided(root2, "talk");
-  const b = runEnv(root2, { SPEC_AGREE_SOURCE: "pi-session:s1#e7" }, "agree", "talk", "--id", ID, "--by", "user", "--source", "review r9", "--verification", "v");
-  assert.equal(b.ids[0].agreed.source, "review r9");
+  const b = runEnv(root2, {}, "agree", "talk", "--id", ID, "--by", "user", "--source", "review:r9", "--verification", "v");
+  assert.equal(b.ids[0].agreed.source, "review:r9", "with no variable, --source is the source");
   for (const bad of ["", "a\nb", "x".repeat(201)]) assert.equal(run(root2, "agree", "talk", "--id", ID, "--by", "user", "--source", bad, "--verification", "v").exit, 2, JSON.stringify(bad));
 });
 
@@ -144,9 +144,9 @@ test("an agreed this draft gave is kept only for the same person and source; ano
   decided(root, "build", { code: ["src/list.js"] });
   const first = agree(root, "build", "--at", "2026-10-05T10:00Z").ids[0].agreed;
   assert.equal(agree(root, "build").ids[0].stamped, false, "same by and source: kept");
-  const other = runEnv(root, {}, "agree", "build", "--id", ID, "--by", "user", "--source", "chat c1#m8", "--verification", "v", "--write").ids[0];
+  const other = runEnv(root, {}, "agree", "build", "--id", ID, "--by", "user", "--source", "chat:c1#m8", "--verification", "v", "--write").ids[0];
   assert.equal(other.stamped, true);
-  assert.equal(other.agreed.source, "chat c1#m8");
+  assert.equal(other.agreed.source, "chat:c1#m8");
   assert.notEqual(other.agreed.source, first.source);
 });
 
@@ -166,4 +166,72 @@ test("promote refuses a new agreed with no source (agreed-unsourced) and keeps c
   const q = run(root, "promote", "reword", "--id", ID);
   assert.ok(!codes(q).includes("agreed-unsourced"), JSON.stringify(q));
   assert.equal(q.exit, 0, JSON.stringify(q));
+});
+
+// The relay defect of 2026-10-19: a worker held the right reference in SPEC_AGREE_SOURCE and typed a description
+// in --source instead. A set SPEC_AGREE_SOURCE is the source; --source may only repeat it; a description is never one.
+const ENV_REF = "pi-session:s1#e7";
+const agreeEnv = (root, env, ...more) => runEnv(root, env, "agree", "talk", "--id", ID, "--by", "user", "--verification", "v", ...more, "--write");
+const unchanged = (root) => read(root, D("talk", "manifest.json")) + currentSpec(root);
+
+test("SPEC_AGREE_SOURCE set: no --source, or the same reference, stamps with the env reference", () => {
+  for (const more of [[], ["--source", ENV_REF]]) {
+    const root = project();
+    decided(root, "talk");
+    const a = agreeEnv(root, { SPEC_AGREE_SOURCE: ENV_REF }, ...more);
+    assert.equal(a.exit, 0, JSON.stringify(a));
+    assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, ENV_REF, `stamped with the env reference (${more.join(" ") || "no --source"})`);
+  }
+});
+
+test("SPEC_AGREE_SOURCE set: a different --source is refused, says to omit it, and writes nothing", () => {
+  for (const other of ["the user approved the plan in the lead's chat (al_2)", "pi-session:s1#e3"]) {
+    const root = project();
+    decided(root, "talk");
+    const before = unchanged(root);
+    const a = agreeEnv(root, { SPEC_AGREE_SOURCE: ENV_REF }, "--source", other);
+    assert.equal(a.exit, 1, JSON.stringify(a));
+    assert.deepEqual(codes(a), ["agree-source-mismatch"]);
+    assert.match(JSON.stringify(a), /omit --source/, "the refusal says what to do");
+    assert.ok(JSON.stringify(a).includes(ENV_REF), "and names the reference that will be used");
+    assert.equal(unchanged(root), before, "nothing written, draft or current");
+  }
+});
+
+test("no SPEC_AGREE_SOURCE: a description in --source is refused; a reference is accepted", () => {
+  for (const description of ["user said yes in chat", "go-ahead given in alignment al_2", "al_2", "lead's chat, turn after the plan", "pi-session:s1", "pi-session:#e7"]) {
+    const root = project();
+    decided(root, "talk");
+    const before = unchanged(root);
+    const a = agreeEnv(root, {}, "--source", description);
+    assert.equal(a.exit, 1, `${description}: ${JSON.stringify(a)}`);
+    assert.deepEqual(codes(a), ["agree-source-not-reference"], description);
+    assert.match(JSON.stringify(a), /reference/);
+    assert.equal(unchanged(root), before, `nothing written for ${JSON.stringify(description)}`);
+  }
+  for (const ref of ["pi-session:01a1-5137#e9f2", "https://github.com/o/r/pull/7#issuecomment-12", "chat:c1#m3"]) {
+    const root = project();
+    decided(root, "talk");
+    const a = agreeEnv(root, {}, "--source", ref);
+    assert.equal(a.exit, 0, `${ref}: ${JSON.stringify(a)}`);
+    assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, ref);
+  }
+});
+
+test("a description in SPEC_AGREE_SOURCE is no source either", () => {
+  const root = project();
+  decided(root, "talk");
+  const before = unchanged(root);
+  const a = agreeEnv(root, { SPEC_AGREE_SOURCE: "the user agreed earlier" });
+  assert.equal(a.exit, 1, JSON.stringify(a));
+  assert.deepEqual(codes(a), ["agree-source-not-reference"]);
+  assert.equal(unchanged(root), before);
+});
+
+test("promote refuses a hand-written agreed whose source is a description, as agree does", () => {
+  const root = project();
+  decided(root, "hand", { authority: "accepted", agreed: { by: "user", at: "2026-10-05", source: "the user said yes" } });
+  assert.equal(run(root, "evidence", "hand", "--id", ID, "--by", "t", "--verification", "v", "--doc-only", "--write").exit, 0);
+  const p = run(root, "promote", "hand", "--id", ID);
+  assert.ok(codes(p).includes("agreed-unsourced"), JSON.stringify(p));
 });

@@ -208,7 +208,8 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    whose `agreed` stays as current has it gets an `agreed-kept-on-change` note,
    never a refusal.
    **`agree`** stamps `agreed: {by, at, source}` on draft records the person agreed to
-   (`source`: `--source`, else `SPEC_AGREE_SOURCE`; with neither it stamps nothing),
+   (`source`: `SPEC_AGREE_SOURCE`, else `--source`, a reference never a description;
+   a `--source` other than a set variable is refused; with neither it stamps nothing),
    and, for those that map no code, records `--doc-only` evidence and promotes
    them when promote's plan is clean ([PROMOTE.md](PROMOTE.md)).
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every

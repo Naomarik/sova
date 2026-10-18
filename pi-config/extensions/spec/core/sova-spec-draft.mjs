@@ -569,11 +569,18 @@ function mergeBlocks(root, b, c, p) {
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
-// Where a go-ahead can be found (`agreed.source`): an opaque reference no tool resolves. → null | what is wrong
+// Where a go-ahead can be found (`agreed.source`): a reference no tool resolves. → null | what is wrong
 const SOURCE_MAX = 200;
 function sourceProblem(v) {
   if (typeof v !== "string" || !v.trim() || v.length > SOURCE_MAX || /[\0-\x1f\x7f]/.test(v)) return `must be 1-${SOURCE_MAX} characters on one line: where the go-ahead can be found`;
   return null;
+}
+// A source is a reference, never a description: scheme:locator with no spaces, as the pi relay writes
+// (`pi-session:<session id>#<entry id>`, both ids required), a URL, or a project's own `chat:c1#m3`. → null | what is wrong
+const REF_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\S+$/, PI_REF_RE = /^pi-session:[^\s#]+#[^\s#]+$/;
+function refProblem(v) {
+  if (typeof v === "string" && REF_RE.test(v) && (!v.startsWith("pi-session:") || PI_REF_RE.test(v))) return null;
+  return `${JSON.stringify(v)} is not a reference: a source is scheme:locator with no spaces (pi-session:<session id>#<entry id>, a URL, chat:c1#m3), never a description of where the go-ahead was given`;
 }
 // A record's `agreed: {by, at, source?}`: who made the decision, when, and where. → null (absent or well-formed) | what is wrong
 function agreedProblem(rec) {
@@ -1057,11 +1064,15 @@ const AGREE_NEXT = "evidence --commit (or --snapshot), then promote --id … to 
 const SOURCE_ENV = "SPEC_AGREE_SOURCE";
 async function cmdAgree(root, o) {
   const at = o.at ?? `${new Date().toISOString().slice(0, 16)}Z`;
-  // Where the go-ahead was given: --source, else what the agent's runtime put in SPEC_AGREE_SOURCE. Without one nothing is stamped.
-  const env = process.env[SOURCE_ENV];
-  const source = o.source ?? (env !== undefined && env.trim() ? env.trim() : undefined);
-  if (source === undefined) throw new Fail(1, "agree-unsourced", `agree needs where the go-ahead was given: --source <ref> (a message, comment or note the person's agreement is in), or ${SOURCE_ENV} set by the agent's runtime; nothing was stamped. Without one, report the records ready to agree to whoever holds the go-ahead`);
+  // Where the go-ahead was given: what the agent's runtime put in SPEC_AGREE_SOURCE, else --source; --source may only
+  // repeat a set variable. A source is a reference, never a description. Without one nothing is stamped.
+  const env = process.env[SOURCE_ENV]?.trim() || undefined;
+  if (env !== undefined && o.source !== undefined && o.source !== env)
+    throw new Fail(1, "agree-source-mismatch", `${SOURCE_ENV} is set to ${JSON.stringify(env)}, the go-ahead your runtime recorded, and --source ${JSON.stringify(o.source)} differs; omit --source: agree uses ${SOURCE_ENV}. Nothing was stamped`);
+  const source = env ?? o.source;
+  if (source === undefined) throw new Fail(1, "agree-unsourced", `agree needs where the go-ahead was given: ${SOURCE_ENV}, set by the agent's runtime, or --source <ref>, a reference to the message, comment or note the person's agreement is in; nothing was stamped. Without one, report the records ready to agree to whoever holds the go-ahead`);
   if (sourceProblem(source)) throw new Fail(1, "agree-unsourced", `${SOURCE_ENV} ${sourceProblem(source)}`);
+  if (refProblem(source)) throw new Fail(1, "agree-source-not-reference", `${env !== undefined ? SOURCE_ENV : "--source"} ${refProblem(source)}; nothing was stamped. ${env !== undefined ? "Report the records ready to agree to whoever holds the go-ahead" : `Pass the go-ahead's reference, or omit --source when ${SOURCE_ENV} is set`}`);
   const build = async () => {
     const a = await analyze(root, o.name);
     const ids = uniqSorted(o.id).map((id) => {
@@ -1183,8 +1194,8 @@ async function plan(root, o) {
       else if (!bad && obj(was) && typeof was.at === "string" && Date.parse(now.at) < Date.parse(was.at)) refuse("agreed-rewritten", `${id}: the new agreed at ${now.at} is earlier than current's ${was.at}`);
     }
     // A new or replaced `agreed` says where its go-ahead was given; one current already has, kept as it is, needs nothing.
-    if (!bad && obj(now) && now.source === undefined && canon(now) !== canon(was))
-      refuse("agreed-unsourced", `${id}: the agreed this promotion gives (${JSON.stringify(now)}) has no source; stamp it with \`agree\`, whose --source (or ${SOURCE_ENV}) says where the go-ahead was given`);
+    if (!bad && obj(now) && (now.source === undefined || refProblem(now.source)) && canon(now) !== canon(was))
+      refuse("agreed-unsourced", `${id}: the agreed this promotion gives (${JSON.stringify(now)}) has ${now.source === undefined ? "no source" : "a description, not a reference, as its source"}; stamp it with \`agree\`, whose ${SOURCE_ENV} (or --source <ref>) says where the go-ahead was given`);
     // Reworded under the `agreed` current has: a number or code token that changed may be a new decision nobody agreed to.
     if (was !== undefined && canon(now) === canon(was) && a.changed.get(id).text) {
       const n = agreedKeptOnChange(a, id, was, curDecls);

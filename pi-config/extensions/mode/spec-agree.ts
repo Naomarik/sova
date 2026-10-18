@@ -1,6 +1,6 @@
 /**
- * Where an `agree` stamp's go-ahead was given (`agreed.source`), as pi knows it. The spec tools read it from
- * SPEC_AGREE_SOURCE when `agree` gets no `--source`, and refuse to stamp without one.
+ * Where an `agree` stamp's go-ahead was given (`agreed.source`), as pi knows it. The spec tools take it from
+ * SPEC_AGREE_SOURCE, refuse a `--source` that differs from it, and refuse to stamp without one.
  *
  * A session that is not a worker points at its own latest user message: `pi-session:<session id>#<entry id>`.
  * The mode extension sets it for the session's bash before each tool call while spec is on; the subagents spawn

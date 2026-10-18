@@ -668,6 +668,33 @@ would list master's changes instead.
     §tools.spec/agree-source-relay says of a worker given none. `spec-agree.test.ts` pins it.
   - §: none (the draft `agree-source` already covers it).
 
+### 2026-10-19
+
+- **`agree` takes the runtime's reference, and only a reference (fix of the relay defect found in phase 2 of `feat/spec-x-agree`).**
+  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Changed: in phase 2, relay workers held the right go-ahead reference in `SPEC_AGREE_SOURCE` but ran
+    `agree --source "<a description>"`, and `agree` took it: 4 of 42 stamps did not trace to a typed user
+    turn (2 of 3 relay runs). The mode text offered `--source <ref>` first, and the tool accepted any
+    string. Now:
+    - while `SPEC_AGREE_SOURCE` is set it is the source; a `--source` that differs is refused
+      (`agree-source-mismatch`, exit 1, naming the reference and saying to omit `--source`);
+    - a source from either place is a reference, never a description: `scheme:locator` with no spaces
+      (`pi-session:<session id>#<entry id>` needs both ids; a URL; `chat:c1#m3`), else
+      `agree-source-not-reference`, exit 1; both refusals write nothing;
+    - promotion refuses a new or replaced hand-written `agreed` whose `source` is a description
+      (`agreed-unsourced`), as it already did one with none;
+    - `mode/spec-mode.md`: `` (`$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a
+      description; else report it ready, never stamp) `` (906 words, the cap); `mode/index.test.ts`'s pin
+      and the review-smoke fixture follow; the worker brief quotes no agree source text and is unchanged.
+    - DRAFTS.md (two refusal rows), PROMOTE.md, README.md and docs/MODE.md say the same.
+  - §: none promoted. Draft `agree-source` rewords §tools.spec/agree-command, §tools.spec/agreed-promotion
+    and §tools.spec/agree-source-relay (all already in that draft).
+  - Numbers: L0, `tests/agree-command.test.mjs`: 4 new cases fail at 196989b0 (a different `--source`
+    with the variable set; descriptions in `--source`; a description in the variable; a hand stamp with a
+    description at promotion) and pass after; the accepted cases (variable alone or repeated; a reference
+    with no variable) pass on both. Not re-measured on the L2 relay arm.
+  - Upgrade: see UPGRADING step 10, "`agree` takes a reference".
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -816,6 +843,11 @@ The tools are Node standard library only. Nothing is installed.
       restamped with `agree --source …` before it promotes.
     - **The mode text.** A project that points its agents at `mode/spec-mode.md` gets the changed agree
       sentence with this upgrade.
+    - **`agree` takes a reference** (`feat/spec-x-integration`, 2026-10-19). A source is
+      `scheme:locator` with no spaces (a URL, `chat:c1#m3`, `pi-session:<session id>#<entry id>`); a
+      description is refused (`agree-source-not-reference`), at promotion too for a hand-written stamp. While
+      `SPEC_AGREE_SOURCE` is set, omit `--source`: a different one is refused (`agree-source-mismatch`).
+      Scripts passing a free-text `--source` change it to a reference.
     - **The unread line** (`feat/spec-x-unread`). `census --changed --related` rank rows gain `fanIn`
       and `relevance` and are ordered by relevance; `readFirst` holds up to 10 (was 5) at relevance ≥
       0.036 or stale. A hook of your own that parses the unread line reads "; lower-ranked: <command>"

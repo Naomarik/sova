@@ -145,7 +145,9 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
 | `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). `agree` refuses the same `agreed-rewritten` cases before it stamps, and refuses (`agree-refused`) an ID the draft has no prose for, or one that is a note or section. |
-| `agree-unsourced` / `agreed-unsourced` | `agree` got no `--source` and `SPEC_AGREE_SOURCE` is unset or blank, so it stamped nothing (exit 1); or a promotion gives a record a new or replaced `agreed` with no `source` (a hand-written stamp). Get the reference to the person's go-ahead from whoever holds it; a worker without one reports the records ready to agree. An `agreed` current already has, kept as it is, needs no source. |
+| `agree-unsourced` / `agreed-unsourced` | `agree` got no `--source` and `SPEC_AGREE_SOURCE` is unset or blank, so it stamped nothing (exit 1); or a promotion gives a record a new or replaced `agreed` with no `source` (a hand-written stamp). Get the reference to the person's go-ahead from whoever holds it; a worker without one reports the records ready to agree. An `agreed` current already has, kept as it is, needs no source. A hand-written `source` that is a description, not a reference, is refused the same way. |
+| `agree-source-mismatch` | `SPEC_AGREE_SOURCE` is set and `--source` names something else (exit 1, nothing stamped). Omit `--source`: `agree` uses the variable, the go-ahead the runtime recorded. |
+| `agree-source-not-reference` | The source (`--source`, or the variable) is a description, not a reference: a scheme, a colon and a locator with no spaces, such as `pi-session:<session id>#<entry id>` (both ids), a URL or `chat:c1#m3` (exit 1, nothing stamped). Pass the reference, or omit `--source` when the variable is set. |
 | `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
@@ -204,9 +206,11 @@ records the decision, not that it was built.
 
 `agree NAME --id '§x'… --by WHO --verification TEXT [--source REF] [--write]` does all of that in one call, once
 the draft has the promise's prose. On each named behavior or surface it sets `agreed: {by, at, source}` (`at`
-is now, in UTC to the minute, unless `--at` gives an ISO date or time; `source` is `--source`, else the
-environment variable `SPEC_AGREE_SOURCE`, which the agent's runtime sets to the message holding the
-person's go-ahead; with neither it refuses, `agree-unsourced`, and stamps nothing) and `authority: "accepted"`;
+is now, in UTC to the minute, unless `--at` gives an ISO date or time; `source` is the environment variable
+`SPEC_AGREE_SOURCE`, which the agent's runtime sets to the message holding the person's go-ahead, else
+`--source`; with neither it refuses, `agree-unsourced`, and stamps nothing; while the variable is set, a
+different `--source` is refused, `agree-source-mismatch`; a source is a reference, never a description,
+else `agree-source-not-reference`) and `authority: "accepted"`;
 a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
 one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
 with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it

@@ -102,7 +102,7 @@ test("guards: unchanged prose with agreed kept, a fresh go-ahead restamp, and a 
     // the build of the agreed promise: code and label added, prose and agreed as they were
     unchanged: { build: true },
     // the task's go-ahead is a new agreement: reworded prose, agreed replaced by a later stamp
-    restamped: { sentence: SIXTY.replace("60", "64"), rec: { agreed: { by: "user", at: "2026-10-10T09:00Z", source: "chat c2#m1" } } },
+    restamped: { sentence: SIXTY.replace("60", "64"), rec: { agreed: { by: "user", at: "2026-10-10T09:00Z", source: "chat:c2#m1" } } },
     // reflowed, same words
     whitespace: { sentence: SIXTY.replace("at most ", "at most\n") },
   };

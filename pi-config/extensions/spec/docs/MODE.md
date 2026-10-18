@@ -66,7 +66,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 5a. **Where the go-ahead is.** `spec-agree.ts`: before each tool call of a session that is not a worker,
    the mode extension sets `SPEC_AGREE_SOURCE` to `pi-session:<session id>#<entry id>` of the latest user
    message while spec is on (and clears it while off), so the bash tool's `agree` records it as
-   `agreed.source`. The subagents spawn path puts the same reference in each spec-on worker's environment;
+   `agreed.source` (the tool refuses a `--source` that differs from a set variable, and a description). The subagents spawn path puts the same reference in each spec-on worker's environment;
    a process started with it relays it unchanged and never derives one from its own messages.
 6. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
    code-writing worker gets these:

@@ -537,8 +537,12 @@ would list master's changes instead.
   - §: §tools.spec/record-fields, §tools.spec/spec-map, §tools.spec/field-promotion reworded; the
     87 area records gain `notOwned`. Base: 9c3f949b.
   - Numbers: areas whose map line says what they don't own 0/87 → 87/87 (L0, `map` text on master
-    9c3f949b vs this branch). The question arm ("what does it NOT own", all 87 areas, 2 reps,
-    graded against code) is in the lane's RESULT.
+    9c3f949b vs this branch). Question arm (all 87 areas × 2 reps, claude-opus-5-5 medium, blind grader
+    on a source-only 9c3f949b), BEFORE / map-only b84d34b9 / read-toc c7d9aabe: runs that saw the owners
+    0 / 2 / 174 of 174; answers citing a listed owner 149 / 151 / 174; correct (≥1 not-own statement, 0
+    wrong) 135 / 132 / 139 of 174; areas with both reps correct 58 / 59 / 64 of 87 (noise level). 3 of
+    c7d9aabe's 41 wrong statements come from a listed owner; 15 areas carry the same wrong statement
+    in every arm, from spec prose that contradicts code.
   - Page fit: `map --json` was already 32,374 of its 32,768-byte page on master. With owner ids in
     each overview JSON line it paged (71 of 97 lines on page 1, then a cursor); the overview JSON now
     leaves them out, keeping the count and a `not-owned-per-area` note pointing at `map '§ns/area'`:

@@ -270,6 +270,13 @@ areas fitted the 32 KB page, against 87 of 87 with ids only (titles stay in `map
 Ids in the overview's JSON lines still pushed `map --json` (32,374 B on master, near its 32,768 B
 cap) onto a second page, 71 of 97 lines on the first; the overview JSON now leaves the owners out
 and adds one note pointing at `map '§area'`: 32,497 B, one page.
+The question arm then showed no subject ran `map` (0/174; master 3/174): agents go where → read → toc.
+Putting the line on `read`/`toc` of the area H1 took exposure from 2/174 to 174/174 runs, and every
+answer then named the listed owners. Correctness against code barely moved (correct answers 135 →
+139 of 174, areas with both reps correct 58 → 64 of 87), because most wrong not-own statements come from
+spec prose that contradicts code, in every arm. Lesson: a view no agent opens measures as nothing, so
+put a fact on the path the mode text sends agents down, and count both text and JSON when checking
+who saw it.
 
 ## Lessons
 

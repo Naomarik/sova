@@ -519,7 +519,7 @@ would list master's changes instead.
 ### 2026-10-18
 
 - **Whole-tree `census` leaves out what Git ignores (audit #2, P7).**
-  - Commit: this entry's, branch `feat/spec-x-census`; not on master yet: the merge round folds it in.
+  - Commit: this entry's, branch `feat/spec-x-census`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - `census` without `--changed`, in a Git work tree, does not count a boundary file Git ignores
       (`git ls-files --others --ignored --exclude-standard --directory`) unless a record's `code` maps
@@ -537,7 +537,7 @@ would list master's changes instead.
     1/5 tests pass on 9c3f949b, 5/5 after.
 
 - **A declaration both sides changed merges block by block (audit #2, P8).**
-  - Commit: on branch `feat/spec-x-merge`; not on master yet: the merge round folds it in.
+  - Commit: on branch `feat/spec-x-merge`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - `merge-claims` no longer conflicts on every declaration both sides changed: it merges that
       declaration by blocks (a list item with its wrapped lines, a nested item, a table row, a line of
@@ -557,7 +557,7 @@ would list master's changes instead.
     paragraph. Tool tests 554 pass, 0 fail.
 
 - **Each area says what it does not own (P4, Goal 3).**
-  - Commit: on branch `feat/spec-x-notowned`; not on master yet: the merge round folds it in.
+  - Commit: on branch `feat/spec-x-notowned`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - a new optional record field, `notOwned: [§id]` on an area (H1): the claims elsewhere that own
       what a reader might expect the area to own; `[]` says it was looked at. The manifest stays
@@ -593,7 +593,7 @@ would list master's changes instead.
       line, median 166 B, max 252 B on Sova's spec; an H2 never shows its area's.
 
 - **An agreed stamp says where the go-ahead was given (P2).**
-  - Commit: branch `feat/spec-x-agree`; not on master yet.
+  - Commit: branch `feat/spec-x-agree`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - `agree` stamps `agreed: {by, at, source}`: `source` is `--source <ref>`, else the environment variable
       `SPEC_AGREE_SOURCE`; with neither it refuses (`agree-unsourced`, exit 1) and stamps nothing. A kept
@@ -614,7 +614,7 @@ would list master's changes instead.
     → 0 (the unsourced `agree` and the hand stamp are now refused). A legacy unsourced `agreed` kept on a
     reword still promotes. The L2 agent arm (agree before first code edit, traceable share) is pending.
 - **Spec mode agrees at the claim step, before the first code edit (P2, iteration 2).**
-  - Commit: 25a98ee7, branch `feat/spec-x-agree`; not on master yet.
+  - Commit: 25a98ee7, branch `feat/spec-x-agree`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed: `mode/spec-mode.md` step 4 adds "When the task's go-ahead already agrees to it, run `agree`
     on it then, before that edit, not at the end."; the worker brief carries it (3 sentences of that rule);
     the guide's word cap goes from 884 to 906.
@@ -628,7 +628,7 @@ would list master's changes instead.
 
 - **The unread line asks for the § the change's lines name, not every § a broad file maps (audit #2 P1).**
   - Commits: f8385574, cc421ef7, 184082c0, 1fcd0871, 9ec90f28 (lane tip), branch `feat/spec-x-unread`;
-    not on master yet: the merge round folds it in.
+    landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - `census --changed --related` divides each touched §'s score by its `fanIn` (of its changed files,
       the fewest foreign touched § any one lands in) and ranks by that `relevance`; rank rows and
@@ -647,7 +647,7 @@ would list master's changes instead.
     84/148 = 57% (held-out 17/35 → 25/35); precision flat at 23%; lines with nothing read first 7 → 10 of 69. `EVOLUTION.md` (the unread line) has the iterations.
 
 - **Spec mode names `notOwned`-only among the doc-only cases (integration fix of `feat/spec-x-notowned`).**
-  - Commit: on branch `feat/spec-x-integration`; not on master yet. Base: the merge of the five lane tips.
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0). Base: the merge of the five lane tips.
   - Changed: the notowned lane added `notOwned` to the draft tool's doc-only field keys but not to the
     guide, so `mode/index.test.ts` ("the guide's doc-only cases are the draft tool's") failed on the lane
     tip. `mode/spec-mode.md` now says `` `embeds`/`about`/`core`/`notOwned`-only changes `` (one token,
@@ -659,7 +659,7 @@ would list master's changes instead.
   - Upgrade: a project that points its agents at `mode/spec-mode.md` gets the sentence with this upgrade.
 
 - **A spawn no longer fails when the host's session manager has no branch (integration fix of `feat/spec-x-agree`).**
-  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed: `mode/spec-agree.ts`'s `goAheadRef` called `getBranch()` and `getSessionId()` unguarded, so
     `agent_spawn` with spec on threw `session.getBranch is not a function` through a session manager
     without them; two `subagents/tests/run.mjs` tests failed on the lane tip (466/468, master 468/468).
@@ -671,7 +671,7 @@ would list master's changes instead.
 ### 2026-10-19
 
 - **`agree` takes the runtime's reference, and only a reference (fix of the relay defect found in phase 2 of `feat/spec-x-agree`).**
-  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed: in phase 2, relay workers held the right go-ahead reference in `SPEC_AGREE_SOURCE` but ran
     `agree --source "<a description>"`, and `agree` took it: 4 of 42 stamps did not trace to a typed user
     turn (2 of 3 relay runs). The mode text offered `--source <ref>` first, and the tool accepted any
@@ -696,7 +696,7 @@ would list master's changes instead.
   - Upgrade: see UPGRADING step 10, "`agree` takes a reference".
 
 - **Tidy-ups after the integration (replay scenario h, stale `agreed` text, the map's placeholder).**
-  - Commits: e553d239 and the next commit, on branch `feat/spec-x-integration`; not on master yet.
+  - Commits: e553d239 and the next commit, on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - replay scenario h's hand stamp carries a reference `source` when the tool's `agree` usage says
       `[--source REF]`, so `h.target.agreed-promoted` covers an agreed, unbuilt record landing again
@@ -709,7 +709,7 @@ would list master's changes instead.
     quotes the note's new text in §tools.spec/spec-map.
 
 - **`map --json` has room under its one-page cap again.**
-  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed: the overview's JSON was 32,497 B of the 32,768 B page on Sova's spec (271 B to spare), so the
     next area or a longer lede would have pushed it to a second page. Its area lines now leave out what is
     derivable or default, and every `labels` count in `map` is flat:
@@ -726,7 +726,7 @@ would list master's changes instead.
   - Upgrade: see UPGRADING step 10, "`map --json` area lines".
 
 - **A pi-session go-ahead must be a real user message, and only the spawn path makes a worker (review blockers B1, B2 of the agree fix).**
-  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Commit: on branch `feat/spec-x-integration`; landed on master at a82af2c8 (fast-forward, base f14dbab0).
   - Changed:
     - B1: `mode/spec-agree.ts` took whatever `SPEC_AGREE_SOURCE` held at module load as a reference it was
       given. The session writes that variable itself before each tool call, and pi re-runs extension modules
@@ -874,8 +874,8 @@ The tools are Node standard library only. Nothing is installed.
      first, tries other words once, then `map`. A project that points its agents at
      `mode/spec-mode.md` gets it with this upgrade.
 10. **The 2026-10-18 round** (branches `feat/spec-x-census`, `feat/spec-x-merge`,
-    `feat/spec-x-notowned`, `feat/spec-x-agree` and `feat/spec-x-unread`, not on master yet). Copy
-    every `core/*.mjs` again (step 1), then:
+    `feat/spec-x-notowned`, `feat/spec-x-agree` and `feat/spec-x-unread`, landed on master at a82af2c8, fast-forward, base
+    f14dbab0). Copy every `core/*.mjs` again (step 1), then:
     - **Census** (`feat/spec-x-census`). Whole-tree `census` in a Git work tree leaves out what Git
       ignores and reports it as `census.ignored` with a `census-ignored` note; tracked files always
       count. Nothing to configure.

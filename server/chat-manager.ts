@@ -1358,10 +1358,34 @@ class ChatSession {
    */
   private heldForCompaction(
     err: unknown,
-    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"]; session?: WebQueueItem["session"] },
+    item: {
+      kind: WebQueueItem["kind"];
+      text: string;
+      images?: QueueImage[];
+      origin: QueueItem["origin"];
+      id?: string;
+      overseer?: WebQueueItem["overseer"];
+      baton?: WebQueueItem["baton"];
+      session?: WebQueueItem["session"];
+      confirm?: WebQueueItem["confirm"];
+      byPerson?: WebQueueItem["byPerson"];
+    },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
-    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}), ...(item.session ? { session: item.session } : {}) });
+    // A confirm card's click keeps its mark, and a person's message stays theirs, through the hold
+    // (§app.overseer/org-people-facing).
+    this.queue.enqueue({
+      kind: item.kind,
+      text: item.text,
+      images: item.images,
+      origin: item.origin,
+      ...(item.id ? { id: item.id } : {}),
+      ...(item.overseer ? { overseer: item.overseer } : {}),
+      ...(item.baton ? { baton: item.baton } : {}),
+      ...(item.session ? { session: item.session } : {}),
+      ...(item.confirm ? { confirm: item.confirm } : {}),
+      ...(item.byPerson ? { byPerson: true as const } : {}),
+    });
     return true;
   }
 

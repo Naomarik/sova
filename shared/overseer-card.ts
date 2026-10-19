@@ -637,7 +637,7 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
   if (creates) {
     const clicks = [answerOptions(card!).length ? `"${card!.id} b: …"` : "", hasChoices(card!) ? `"${card!.id}: 1a …, 2b …" (each letter its own row's)` : ""].filter(Boolean).join(" or ");
     lines.push(
-      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), call sova_card answer with their words, or accept for "your recommendation", in the run you act on it.`,
+      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), do the act it approves first, then call sova_card answer with their words, or accept for "your recommendation", in the same run once the act succeeded; a refused act leaves the card open.`,
     );
   }
   return { details, text: lines.join("\n") };
@@ -1033,7 +1033,7 @@ export function cardsNote(cards: readonly OverseerCard[], afterCompaction = fals
   if (open.length === 0) return undefined;
   const head = afterCompaction
     ? "[cards] The context was just compacted. The open cards in this conversation, exactly as recorded (the summary above may describe them loosely); ids are stable."
-    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), record it with sova_card (answer with their words, accept for \"your recommendation\") in the run you act on it, one call per card. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
+    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), do the act it approves first, then record it with sova_card (answer with their words, accept for \"your recommendation\") in the same run once the act succeeded, one call per card; a refused act leaves the card open for another click. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
   const lines = open.flatMap((c) => {
     const stale = activeAt ? staleSessions(c, activeAt) : [];
     return [...cardLines(c, ""), ...stale.map((s) => `  may be stale: ${s.id} active since ${s.at}`)];

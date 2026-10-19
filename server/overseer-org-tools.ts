@@ -4,7 +4,7 @@ import type { OrgDetail, Person } from "../shared/orgs";
 import type { SessionSummary, SovaConfirmItem } from "../shared/protocol";
 import { expandHome, guardedFolderProblem, overseerFolder } from "./overseer-folders";
 import { listProjects } from "./projects/spaces";
-import { ADD_LEAD, confirmRefusal } from "./overseer-sender";
+import { ADD_LEAD, addNoClickRefusal, confirmRefusal } from "./overseer-sender";
 import { attentionChanged } from "./attention-memo";
 import { cardHeader } from "./overseer-tools";
 import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
@@ -137,7 +137,6 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     // A folder row: the same checkout root, into the same org (or none), and the same name when the row names one.
     const hasFolder = (f: { root: string; orgId: string | null; name?: string }) =>
       !!items?.some((i) => i.kind === "folder" && i.id === f.root && (i.orgId ?? null) === f.orgId && (i.name === undefined || i.name === f.name));
-    const folderText = (f: { root: string; orgId: string | null }) => `the folder ${f.root}${f.orgId ? ` (into the organization ${f.orgId})` : " (standalone)"}`;
     const missing: string[] = [];
     for (const p of t.projects ?? []) if (!has("project", null, p.id)) missing.push(`the project ${p.name} (${p.id})`);
     for (const p of t.people ?? []) if (!has("person", p.orgId, p.id)) missing.push(`${p.name} (${p.id})`);
@@ -154,6 +153,10 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       ];
       throw refuse(confirmRefusal(all.join(", "), lead));
     }
+  }
+  /** A folder as a card's row would list it: its root and the org it goes into (or standalone). */
+  function folderText(f: { root: string; orgId: string | null }): string {
+    return `the folder ${f.root}${f.orgId ? ` (into the organization ${f.orgId})` : " (standalone)"}`;
   }
   /** The operator's act made through the Overseer, in the turn its confirm card started (the statecharts check the card). */
   const goBy = (): OperatorBy => {
@@ -256,8 +259,19 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       origin = "session";
     }
     const asked = typeof raw === "string" ? expandHome(raw) : String(raw);
-    // No card at all: the card's sentence, before any other refusal.
-    if (!d.confirmed()) requireConfirm({ folders: [{ root: asked, orgId: null }] }, ADD_LEAD);
+    // No click opened this turn: the card's sentence, before any other refusal, naming the org asked
+    // for (resolved when it can be, else as written; never a refusal of its own here).
+    if (!d.confirmed()) {
+      let orgId: string | null = null;
+      if (given(p.org)) {
+        try {
+          orgId = orgOf(p.org).id;
+        } catch {
+          orgId = String(p.org).trim();
+        }
+      }
+      throw refuse(addNoClickRefusal(folderText({ root: asked, orgId })));
+    }
     const org = given(p.org) ? orgOf(p.org) : null;
     const f = await overseerFolder(raw);
     if ("problem" in f) throw refuse(f.problem);

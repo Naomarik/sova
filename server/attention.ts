@@ -42,6 +42,9 @@ export interface AttentionRow {
   /** The session is a verb playbook's run that is proposed (server/projects/playbook-review.ts): it waits on the
       operator's Merge Branch (§app.project-runtime/review). */
   playbook?: PlaybookReviewFact;
+  /** One of the session's tour recordings waits for a sign-in (server/tours/sign-in-notice.ts, §app.tours/sites):
+      where, what it asks for, and since when (ms epoch). */
+  tourSignIn?: { origin: string; code: boolean; since: number };
 }
 
 export const DIGEST_MAX = 30;
@@ -145,6 +148,9 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
       playbook: { projectId: pb.projectId, label: pb.label, ...(pb.hash ? { hash: pb.hash } : {}), branch: pb.branch, target: pb.target, proposes: pb.proposes },
     });
   }
+  // A tour recording waiting for a sign-in (§app.tours/sites): a blocker until it stops waiting.
+  const tour = row.tourSignIn;
+  if (tour && !s.archived) add("act", "tour-sign-in", tour.since || lastActive, tour.code ? `Enter the sign-in code for ${tour.origin} on the tour card.` : `Sign in to ${tour.origin} on the tour card.`);
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
   // with the kinds already derived from the fixed thresholds. They are guesses, so never blockers
   // (§app.overseer/attention-digest): a reply that seems to ask the user something is a decide

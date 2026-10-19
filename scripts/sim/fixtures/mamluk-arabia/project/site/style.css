@@ -1,0 +1,4 @@
+body { font-family: system-ui, sans-serif; margin: 0; color: #2b2116; background: #f7f1e6; }
+header, main, footer { padding: 1rem 1.5rem; }
+nav a { margin-right: 1rem; }
+.hero { background: #6b3e1f; color: #fff; padding: 2rem; border-radius: 8px; }

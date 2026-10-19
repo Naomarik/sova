@@ -2,14 +2,11 @@
 // Overview's attention line, the Requirements tab's counts line, the Settings tab's summaries
 // and the Limits table. Pure: no Solid, no DOM.
 
-import { AUTONOMY_MEANING, type Autonomy, type ProjectOverseerCaps } from "../../shared/project-overseer";
+import type { ProjectOverseerCaps } from "../../shared/project-overseer";
 import { gapWords, holdWords, soonWords } from "./project-overseer-view";
 import type { ProjectTab } from "./projects-route";
 
 const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
-
-/** "L3 Build": the level and the first word of its meaning. */
-export const levelWords = (a: Autonomy): string => `${a} ${AUTONOMY_MEANING[a].split(":")[0]}`;
 
 /** The section a chip brings into view: an element id on its tab. */
 export type ChipSection = "project-coding" | "project-previews" | "project-cost" | "project-conflicts" | "project-decisions" | "project-ideas" | "project-todos";
@@ -69,14 +66,6 @@ export function emptySectionsLine(empty: { conflicts: boolean; decisions: boolea
   if (!names.length) return null;
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} or ${names.at(-1)!}`;
   return `No ${list} yet.`;
-}
-
-/** The approval list as one line (§app.project-overseer/reviews). */
-export function confirmSummary(on: readonly string[], all: readonly string[], label: (kind: string) => string): string {
-  const chosen = all.filter((k) => on.includes(k));
-  if (!chosen.length) return "None waits for its approval.";
-  if (chosen.length === all.length) return `All ${all.length} wait for its approval.`;
-  return `${chosen.length} of ${all.length} wait for its approval: ${chosen.map(label).join(", ")}.`;
 }
 
 // ---- Limits as one table (§app.project-overseer/limits) ------------------------------------------------

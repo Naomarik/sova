@@ -24,7 +24,7 @@ import { wireOf } from "./wire-rows";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
 import { HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
 import { unsentRefusal } from "../shared/chat-runtime";
-import { HeldSends, type Unsent } from "../shared/held-sends";
+import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
 
 /** How long a chat socket that closed stays in its chat to hear what became of the messages it
@@ -69,7 +69,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   const held = new HeldSends();
   let gone = false;
   const heard = (back: Unsent[]) => {
-    if (gone && back.length) putBackDraft(id, back.map((u) => u.text));
+    if (gone && back.length) putBackDraft(id, draftTexts(back));
     if (gone && held.size === 0) leave();
   };
   const client: ChatClient = {
@@ -141,7 +141,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer,
     // or, with no tab left to hear it, to the session's saved draft.
     const refusals = heldRefusals(early.splice(0));
-    if (gone) putBackDraft(id, held.takeAll().map((u) => u.text));
+    if (gone) putBackDraft(id, draftTexts(held.takeAll()));
     else for (const refusal of refusals) client.send(refusal);
     client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
     ws.close(busy ? 4409 : config ? 4422 : 4500, busy ? "busy" : config ? "config" : "open failed");

@@ -1,3 +1,6 @@
+import type { OwnerRequestRow, OwnerVersionRow } from "../shared/project-assistant";
+import { orgRequests, readAssistantStore } from "./project-assistant-store";
+import { projectVersions, versionRows, type OwnerVersion } from "./owner-versions";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { OPERATOR, POOL, type BatonSession } from "../shared/baton";
@@ -320,7 +323,35 @@ export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerH
     updatedAt: new Date(now).toISOString(),
     waiting: all.flatMap((a) => a.waiting).sort((a, b) => b.askedAt.localeCompare(a.askedAt)),
     projects: all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name)),
+    requests: requestRows(ctx),
+    versions: await versionsOf(ctx),
+    assistant: { ready: assistantReady(orgId) },
   };
+}
+
+/** The owner's requests of the shown projects (§app.project-assistant/requests): handles, names, the words the model wrote passed through `said`. */
+function requestRows(ctx: Ctx): OwnerRequestRow[] {
+  const names = new Map(ctx.projects.map((p) => [p.id, p.name]));
+  return orgRequests(ctx.orgId)
+    .filter((r) => names.has(r.projectId))
+    .map((r) => ({ handle: handleOf("r", r.id), project: ctx.r.redact(names.get(r.projectId)!), kind: r.kind, title: ctx.r.redact(ctx.r.said(r.title)), status: r.status, at: r.updatedAt }));
+}
+
+/** Versions you can try of the shown projects (§app.project-assistant/versions); never an address. */
+async function versionsOf(ctx: Ctx): Promise<OwnerVersionRow[]> {
+  const out: OwnerVersionRow[] = [];
+  for (const p of ctx.projects) out.push(...versionRows(await projectVersions(ctx.orgId, p).catch(() => []), ctx.r));
+  return out;
+}
+
+/** A version of a shown project by its handle, for the Open route; null when none. */
+export async function ownerVersionOf(orgId: string, handle: string): Promise<OwnerVersion | null> {
+  const ctx = contextOf(orgId, Date.now());
+  for (const p of ctx.projects) {
+    const hit = (await projectVersions(orgId, p).catch(() => [])).find((v) => v.handle === handle);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 export async function ownerProject(orgId: string, handle: string, now = Date.now()): Promise<OwnerProject> {
@@ -376,3 +407,6 @@ export function ownerView(orgId: string, what: { project?: string; conversation?
   if (what.project !== undefined) return ownerProject(orgId, what.project, now);
   return ownerHome(orgId, now);
 }
+
+/** The assistant takes messages: the org has a reply model (§app.project-assistant/models). */
+export const assistantReady = (orgId: string): boolean => !!readAssistantStore(orgId).models.reply;

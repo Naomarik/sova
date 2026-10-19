@@ -60,7 +60,7 @@ function pane() {
   let w = WAIT_START;
   let n = 0;
   const handBack = (conn: number | null) => {
-    if (conn !== null) draft.push(...unacked.takeFrom(conn, handedBack));
+    if (conn !== null) draft.push(...unacked.takeFrom(conn, handedBack).map((u) => u.text));
   };
   return {
     draft,

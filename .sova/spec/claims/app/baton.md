@@ -7,12 +7,16 @@ answer, the model hands the baton to someone else on the roster (or back to the 
 question and a briefing, and Sova mints that person a link. People outside the operator's tailnet
 reach it only through the **share listener** and see only the conversation.
 
+An approved checked tour can be attached as conversation context (§app.tours/handoffs). Its readers are everyone allowed to read that part of the conversation, without new access to the recorded application.
+
 Vocabulary: **owner** (who started it: the operator, or a project's overseer), **holder** (who has
 the baton now: a roster person, or the operator; nobody while an offer waits in its pool),
 **hand-off** (one move of the baton, numbered from 1), **offer** (a hand-off to several people at
 once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/goal-and-loadout — Start, goal and runtime
+
+Scoped `show_tour` presents only checked, operator-reviewed editions already bound to this session/project. The model receives public tour explanations and opaque handles, never scripts, private sources or account data. No `record_tour` or arbitrary browser access is added; new coverage waits for an authorized operator/builder (§app.tours/handoffs).
 
 - The operator starts one from an org's project on the org page: the first holder (an active
   person, or the operator), a **public title** (all an outsider sees of the goal), the **goal**
@@ -63,9 +67,13 @@ once), **lease** (an offer's lock on its first taker).
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
   extension is Sova's inline baton extension. The SDK tool list is exactly `hand_to`, `goal_done`,
-  `record_decision`, `propose_roster_edit`, `read_link`, `inspect_files`, `confirm_file` and
-  `write_profile_updates`: no built-in tool, no file access beyond the session's own received files
-  (§app.baton/files), no shell, no subagents. `read_link` is active only while the session can
+  `record_decision`, `propose_roster_edit`, `read_link`, `inspect_files`, `confirm_file`,
+  `spec_lookup`, `code_read` (§app.spec-lookup/who-gets-what), `requirement_drop`,
+  `requirements_summary`, `requirements_confirm` (§app.requirements/lock-in),
+  `write_profile_updates` and scoped `show_tour`: no built-in tool, no file access beyond the session's own received files
+  (§app.baton/files) and reading the project's code without changing it (§app.spec-lookup/code-read),
+  no shell, no subagents. `spec_lookup`, `code_read` and the three requirement tools are active in
+  every run but the wrap-up turn, whatever the session's abilities. `read_link` is active only while the session can
   read links (§app.baton/read-link); `inspect_files` and `confirm_file` only while it takes files
   (§app.baton/files). `write_profile_updates` is inactive (the model does not see it)
   except during the wrap-up turn (§app.organizations/wrap-up), when it is the only active tool, and
@@ -75,7 +83,13 @@ once), **lease** (an offer's lock on its first taker).
   role, decision areas), the roster's active people it may hand to, a private "who decides what"
   list of every active person, the holder included, with their job title and decision areas (the
   owner areas a decision picks from, §app.requirements/owner-area; "none" when no area covers it), the operator's name and the
-  rules, whether people can send photos here (§app.baton/images: what it may ask for and say
+  rules, the project's overview under "# The project" (§app.spec-lookup/overview) with how to look
+  the project up (§app.spec-lookup/who-gets-what), a "# Requirements" section (agree requirements
+  in plain words, repeat everything agreed back at the end in the person's voice and language, again
+  after any correction or addition, and confirm only on their clear yes to the summary as it
+  stands; never show ids, the draft or how anything is recorded, never promise it will be built:
+  §app.requirements/lock-in), with any requirement to check with the person again since the
+  project changed under it, whether people can send photos here (§app.baton/images: what it may ask for and say
   about one, or that photos can't be sent), while it takes files how to check one with the person
   (§app.baton/files), and — when anyone has left the organization — the names (and former roles) of the people
   who left, with the rule to say they have left and ask who covers their area now (never to hand
@@ -85,7 +99,8 @@ once), **lease** (an offer's lock on its first taker).
   their name, and, when suggesting who could answer, the decision areas the list gives them;
   never anyone's role or job title (the holder's own included), contact or anything else, never
   the "who decides what" list or which areas the holder decides, and
-  never an organization, company or project beyond the title. The summary, hand-off questions and
+  never an organization, company or project beyond the title and what the project's description
+  says. The summary, hand-off questions and
   recorded decisions fall under the same rules, since everyone in the conversation sees them.
   **How it speaks to the person**: to them, as "you", never about them in the third person; the
   operator by name, never as "the operator" ("I'll pass this to Omar", never "to the operator");
@@ -96,7 +111,7 @@ once), **lease** (an offer's lock on its first taker).
   The model's own earlier replies have the holder's secret profile phrases redacted
   (§app.organizations/privacy). While the session can draw, the prompt ends with the gathering
   drawing guide, and while it can read links it says how (§app.baton/abilities); otherwise it says
-  it cannot browse.
+  it cannot change files, run commands or browse.
 - It has no mode (no mode extension loads); its composer has no mode switch. What it can do is its
   abilities (§app.baton/abilities), shown and changed on its strip.
 - **Budget**: a message limit — messages in, outsiders' and operator's together (the wrap-up's
@@ -181,7 +196,9 @@ once), **lease** (an offer's lock on its first taker).
   after it, then `Read links` (§app.baton/abilities). Interactive drawings counts only with Draw: while
   Draw is off its box is disabled and its label muted with it. Each box is a 44 px target, and the
   boxes wrap as their own group beside "It can:", so a wrapped box lines up under Draw.
-- **Below**: after Why and goal and the hidden-from-owner line, the rows keep one order: the error
+- **Below**: after Why and goal, the **Tours ({n})** fold (only while a reviewed tour is attached;
+  folded each time the session opens; each tour with Detach and its confirm, §app.tours/handoffs)
+  and the hidden-from-owner line, the rows keep one order: the error
   banner, the links banner, the message limit, the public-links warning, the Send on WhatsApp
   fallback, the offer's invitees' links, their Send on WhatsApp row and the invitees not reached
   yet, the Hand On form, proposed people,
@@ -252,16 +269,26 @@ once), **lease** (an offer's lock on its first taker).
   three people from the list with the decision area that makes each a candidate, ask them to
   choose, and wait.
 - `goal_done({summary})`: the goal is met. An invisible `sova-baton-done` entry `{v:1, summary}`;
-  the session is **done**, no one holds the baton, and the turn ends.
-- `record_decision({area, ownerArea, statement, quote, disposition?, options?, reason?, review?})`:
+  the session is **done**, no one holds the baton, and the turn ends. While the conversation's
+  agreed requirements are unconfirmed (§app.requirements/lock-in), `goal_done` is refused: "Repeat
+  back what's agreed and get a clear yes first: call requirements_summary, say it back in their
+  words, and call requirements_confirm once they say yes. Drop what they let go with
+  requirement_drop."; the operator can still close it.
+- `record_decision({area, ownerArea, statement, quote, disposition?, options?, reason?, review?, changes?})`:
   an invisible `sova-baton-decision` entry `{v:1, area, ownerArea, statement, quote, by, name}`
   (`by` = the holder, `name` = what the conversation called them then; entries written before have
   none), carrying the optional fields when given: `disposition` (`choose`, the default,
   `reject`, `defer` or `do-not-do`), `options` (`{label, outcome, reason?}`, ids `o1`…`oN`), `reason` and
   `review` (§app.org-history/negatives). `area` is the topic in a few
   words; `ownerArea` is one of the roster's decision areas or "none", checked against the roster
-  (a value that is neither is refused, naming the choices: §app.requirements/owner-area). The turn
-  goes on — unless the same reply also
+  (a value that is neither is refused, naming the choices: §app.requirements/owner-area).
+  `record_decision` also takes an optional `changes`: a spec look-up reference
+  (§app.spec-lookup/tool) naming the part of the project's description the decision changes. It is
+  resolved on the server to its § id, kept on the entry with that record's prose hash (`changes`,
+  `changesHash`); a reference this conversation wasn't given is refused. Every recorded decision
+  also becomes a requirement of the conversation's own draft
+  (§app.requirements/conversation-drafts), and the answer names it ("Recorded. Requirement r3.").
+  The turn goes on — unless the same reply also
   calls `hand_to` or `goal_done`, when it ends the turn with them (pi ends a run only when every
   tool of the batch agrees). The entry is written first, then the decision's statechart is started with
   the entry's id and the session's links (its gap, its conflict); an entry whose statechart a crash kept
@@ -405,9 +432,11 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/outsider-view — What the share page shows
 
+Tour pictures and public explanation follow the same active-branch, offer cut and wrap-up visibility as the filtered conversation. Every token-scoped asset read rechecks current link access; a guessed handle cannot reveal a later attachment. An operator-detached tour disappears immediately for every reader, including an offer-cut reader; current active-branch detachment revokes its old handles with missing 404 before tour file access, without revealing an entry beyond that reader's cut. Ask About This Step appears only while the link can write, preserves and prefills its controlled draft, and never sends. An optional Request More Coverage control uses the same turn-authorized controlled-draft access, identifies the current tour, edition, step and view, and explains that an authorized builder must record it; it never sends or grants access. Requests for more coverage never widen access (§app.tours/requests).
+
 - Only: the public title; user messages with their sender's name and their photos
   (§app.baton/images) and files, each a name and a size (§app.baton/files); the model's reply text, with
-  its drawings (below);
+  its drawings (below); reviewed checked tour attachments (§app.tours/handoffs), each as an explicitly allowlisted neutral item with opaque handles, not generic tool results or markdown images; when the model shows an attachment visible above in that view, the same item appears again at that point, copied from the attachment, never from the tool result's own data;
   hand-off cards (from and to names, the question, and the briefing only when the viewer is its
   addressee); the done card; the decision cards ("Noted", the area and the statement); and who
   holds the baton now ("Waiting on <name>", "Your turn, <name>.", or done/closed); on a holder's
@@ -553,6 +582,8 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/share-listener — The public entry point
 
+The allowed public paths also include token-scoped reads for visible bound tour manifests and their exact listed pictures under `/api/h/<token>/tours/<opaque-handle>/…`, plus standalone read-only `/t/<token>` and narrowly scoped `/api/t/<token>/…` (§app.tours/sharing), and read-only owner-page tour reads under `/api/i/<token>/c/<conversation>/tours/<handle>` with current owner access and the already-exposed conversation cut (§app.tours/handoffs). These receive the same private response headers and raw-path rejection; operator `/api/tours` remains unreachable. Tour picture reads have a separate bounded rate bucket and byte cap, and final authorization is rechecked after asynchronous reads. Missing share builds refuse the tour shell like other public pages.
+
 - A second HTTP server, bound from the Public links setting (§mesh.public/setting): on
   `127.0.0.1:<sharePort>` while this host is the public gateway, rebound without a restart when
   the setting changes. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with neither the
@@ -562,8 +593,9 @@ once), **lease** (an offer's lock on its first taker).
   state), `POST /api/h/<token>/message {text, images?, files?}`, `POST /api/h/<token>/image` and
   `GET /api/h/<token>/img/<n>` (§app.baton/images), `POST /api/h/<token>/file` (§app.baton/files) and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
-  page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`
-  (§app.owner-page/page); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
+  page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`,
+  `GET` and `POST /api/i/<token>/assistant`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
+  and the WebSocket `/ws/i?token=` (§app.owner-page/page, §app/project-assistant); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
   `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
   answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
@@ -839,6 +871,8 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/abilities — What a gathering session can do
 
+Reviewed tour attachments are baseline conversation presentation (§app.tours/handoffs), not an extra ability and not gated by Draw, Interactive drawings or Read links. Scoped `show_tour` presents bound checked editions only; it grants no recording or browsing power.
+
 - **Three abilities.** **Draw**: the prompt carries a guide to the drawings the share page draws
   (§app.baton/outsider-view). **Interactive drawings** (`drawHtml`): with Draw, the guide also
   teaches `vis html`, which the share and owner pages then run in a sandboxed frame; it takes
@@ -849,7 +883,8 @@ once), **lease** (an offer's lock on its first taker).
   form has no box for it), the strip's **Receive files** checkbox toggles
   it, and a session's statechart keeps it with the rest of its set.
   Nothing else is ever loaded for them: no mode, no pi-config extension, no web search
-  (§app.baton/goal-and-loadout).
+  (§app.baton/goal-and-loadout). Looking up the project's spec and reading its code are not
+  abilities: every gathering and settle session has them, with no switch (§app.spec-lookup/who-gets-what).
 - **The project's setting.** `overseer.json` `gatheringAbilities` is `{draw, readLinks,
   drawHtml}` (booleans; a missing `drawHtml` reads as false), or `null`: **Automatic**, which is
   draw on, read links off, interactive drawings off. Set on the project page under the gathering

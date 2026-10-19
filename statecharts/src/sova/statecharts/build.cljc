@@ -134,7 +134,6 @@
       (transition {:sova/feed :feed :event :session/retire :cond (fn [env _] (and (or (b/in? env :merged) (b/in? env :tree-removed)) (not (b/in? env :working)))) :target :retired})
       (on-entry {} (script {:expr (fn [_ d] [(ops/assign :turn "idle") (ops/assign :workers 0) (ops/assign :tree "open")])}))
       (dsl/hold-cancel-correction)
-      (b/hold-review)
       (b/flush-transition)
       (transition {:sova/feed :quiet :event :git/probe} (script {:expr (fn [_ d] (probe-ops d))}))
       (transition {:sova/feed :quiet :event :workers/changed}
@@ -257,13 +256,12 @@
                                        :key (str "build/merge-refused:" (:session-id d) ":" (:detail (e d)))}))))))))))
 
 (def acts
-  {:build/prompt          {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true :confirm-kind "prompt"
+  {:build/prompt          {:power "codingPrompt" :tool "sova_send" :code-facing true :counts "prompt" :hold true
                            :what (fn [d] (str "A prompt to \"" (:title d) "\""))}
-   :build/merge           {:needs nil}
-   :build/remove-worktree {:needs nil}
-   :correct/merged        {:needs "L2" :tool "sova_correct" :correction true}
-   :hold/cancel           {:needs "L0" :correction true}
-   :hold/approve          {:needs "L0" :correction true}})
+   :build/merge           {:power nil}
+   :build/remove-worktree {:power nil}
+   :correct/merged        {:power "markMerged" :tool "sova_correct" :correction true}
+   :hold/cancel           {:power "always" :correction true}})
 
 (defn not-here [event config data]
   (case event

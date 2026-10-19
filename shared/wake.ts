@@ -16,6 +16,10 @@
 import { parseBlockTags, type Load } from "./playbook-delivery";
 
 const TAG_RE = /^\[wake_nudge (n\d+)\]/;
+/** A tour recording waiting for a sign-in tells its chat (§app.tours/sites, server/tours/sign-in-notice.ts):
+    `[tour_sign_in t1] A tour recording is waiting for a sign-in.`, then `Reason: …` and an instruction. */
+export const TOUR_SIGN_IN_TAG = "[tour_sign_in";
+const TOUR_TAG_RE = /^\[tour_sign_in (t\d+)\] /;
 const SCHEDULE_TAG_RE = /^\[schedule (s\d+)\] Scheduled run fired /;
 const LATE_RE = /^Late by (.+?) \(Sova was not running\)\.$/;
 const OVERDUE_RE = /^Overdue by (.+?) \(pi was not running\)\.$/;
@@ -27,6 +31,8 @@ export interface WakeInfo {
   reason?: string; // absent when the extension wrote "Reason: (none)"
   /** A playbook schedule's fire (`[schedule sN]`), not a wake_nudge. */
   schedule?: true;
+  /** A tour recording's sign-in notice (`[tour_sign_in tN]`), not a wake_nudge. */
+  tour?: true;
   /** The playbook its block carried, and how (§chat.schedules/delivery). */
   playbook?: { id: string; load: Load };
 }
@@ -50,6 +56,13 @@ export function parseWakeNudge(text: string | null | undefined): WakeInfo | null
     if (tag) info.playbook = { id: tag.id, load: tag.load };
     return info;
   }
+  const t = TOUR_TAG_RE.exec(first);
+  if (t) {
+    const info: WakeInfo = { id: t[1]!, tour: true };
+    const reason = REASON_RE.exec((lines[1] ?? "").trim());
+    if (reason) info.reason = reason[1];
+    return info;
+  }
   const m = TAG_RE.exec(first);
   if (!m) return null;
   const info: WakeInfo = { id: m[1]! };
@@ -63,4 +76,4 @@ export function parseWakeNudge(text: string | null | undefined): WakeInfo | null
 }
 
 /** "Wake nudge n1" / "Scheduled run s1": the card's name and the Timeline's fallback label when there's no reason. */
-export const wakeTitle = (nudge: WakeInfo): string => (nudge.schedule ? `Scheduled run ${nudge.id}` : `Wake nudge ${nudge.id}`);
+export const wakeTitle = (nudge: WakeInfo): string => (nudge.tour ? "Tour sign-in" : nudge.schedule ? `Scheduled run ${nudge.id}` : `Wake nudge ${nudge.id}`);

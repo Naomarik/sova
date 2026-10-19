@@ -4,6 +4,7 @@
 // such a peer has no route for it). Rows that already have the current shape pass through untouched.
 
 import type { EntryMeta, TranscriptItem } from "../../shared/protocol";
+import { redactTourToolArgs } from "../../shared/tour";
 import { argsSummary, contentText, isObj, SPAWN_TOOLS, spawnName, str } from "./message";
 import { summaryStats } from "./tool-diff-stats";
 
@@ -65,7 +66,7 @@ export function upgradeLegacyRows<T>(items: T[]): T[] {
     const m = isObj(raw.message) ? raw.message : undefined;
     if (out.kind === "tool-call") {
       const block = Array.isArray(m?.content) ? m.content.find((c) => isObj(c) && c.type === "toolCall" && c.id === out.toolCallId) : undefined;
-      const args = isObj(block) ? block.arguments : undefined;
+      const args = isObj(block) ? redactTourToolArgs(out.text, block.arguments) : undefined;
       out.tool = { summary: argsSummary(args, out.text), ...(args !== undefined ? { args } : {}) };
       const spawn = SPAWN_TOOLS.has(out.text ?? "") ? spawnName(args) : "";
       if (spawn) out.tool.spawn = spawn;

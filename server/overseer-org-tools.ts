@@ -4,7 +4,7 @@ import type { OrgDetail, Person } from "../shared/orgs";
 import type { SessionSummary, SovaConfirmItem } from "../shared/protocol";
 import { expandHome, guardedFolderProblem, overseerFolder } from "./overseer-folders";
 import { listProjects } from "./projects/spaces";
-import { ADD_LEAD, confirmRefusal } from "./overseer-sender";
+import { ADD_LEAD, addNoClickRefusal, confirmRefusal } from "./overseer-sender";
 import { attentionChanged } from "./attention-memo";
 import { cardHeader } from "./overseer-tools";
 import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
@@ -137,7 +137,6 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     // A folder row: the same checkout root, into the same org (or none), and the same name when the row names one.
     const hasFolder = (f: { root: string; orgId: string | null; name?: string }) =>
       !!items?.some((i) => i.kind === "folder" && i.id === f.root && (i.orgId ?? null) === f.orgId && (i.name === undefined || i.name === f.name));
-    const folderText = (f: { root: string; orgId: string | null }) => `the folder ${f.root}${f.orgId ? ` (into the organization ${f.orgId})` : " (standalone)"}`;
     const missing: string[] = [];
     for (const p of t.projects ?? []) if (!has("project", null, p.id)) missing.push(`the project ${p.name} (${p.id})`);
     for (const p of t.people ?? []) if (!has("person", p.orgId, p.id)) missing.push(`${p.name} (${p.id})`);
@@ -154,6 +153,10 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       ];
       throw refuse(confirmRefusal(all.join(", "), lead));
     }
+  }
+  /** A folder as a card's row would list it: its root and the org it goes into (or standalone). */
+  function folderText(f: { root: string; orgId: string | null }): string {
+    return `the folder ${f.root}${f.orgId ? ` (into the organization ${f.orgId})` : " (standalone)"}`;
   }
   /** The operator's act made through the Overseer, in the turn its confirm card started (the statecharts check the card). */
   const goBy = (): OperatorBy => {
@@ -256,8 +259,19 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       origin = "session";
     }
     const asked = typeof raw === "string" ? expandHome(raw) : String(raw);
-    // No card at all: the card's sentence, before any other refusal.
-    if (!d.confirmed()) requireConfirm({ folders: [{ root: asked, orgId: null }] }, ADD_LEAD);
+    // No click opened this turn: the card's sentence, before any other refusal, naming the org asked
+    // for (resolved when it can be, else as written; never a refusal of its own here).
+    if (!d.confirmed()) {
+      let orgId: string | null = null;
+      if (given(p.org)) {
+        try {
+          orgId = orgOf(p.org).id;
+        } catch {
+          orgId = String(p.org).trim();
+        }
+      }
+      throw refuse(addNoClickRefusal(folderText({ root: asked, orgId })));
+    }
     const org = given(p.org) ? orgOf(p.org) : null;
     const f = await overseerFolder(raw);
     if ("problem" in f) throw refuse(f.problem);
@@ -395,7 +409,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
               throw refuse(`Not attached: ${typeof res.json.error === "string" ? res.json.error : "another host holds it."} Only the user can attach it anyway, taking it over from that host, on the Organizations page (sova_navigate {page: "orgs"}).`);
             return ok(res, "Attaching", 201);
           })) as OrgDetail;
-          return { content: text(`Attached ${r.name} (${r.id}) from ${r.dir}. Its project overseers wait at L0 until the user sets their level here, and links are not in the repo: the user sends new ones.`), details: { org: r.id } };
+          return { content: text(`Attached ${r.name} (${r.id}) from ${r.dir}. Its project overseers are paused: every switch acts as Off until the user presses Resume here, and links are not in the repo: the user sends new ones.`), details: { org: r.id } };
         }
         const org = orgOf(p.org);
         switch (p.op) {
@@ -755,7 +769,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
   // ---- sova_project_overseer (§app.overseer/org-project-overseers) ----------------------------------------------
 
   const SETTING_KEYS: Record<string, string> = {
-    autonomy: "autonomy",
+    powers: "powers",
+    resume: "resume",
+    autonomy: "autonomy", // one release: an older wording; sets the overseer's switches by the carry-over
     model: "model",
     thinking: "thinking",
     coding_model: "codingModel",
@@ -772,7 +788,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_project_overseer",
     label: "Project overseer",
     description:
-      "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {autonomy?, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
+      "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
       "idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. " +
       "message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. " +
       "code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
@@ -782,7 +798,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         op: str("start | settings | run_now | clear | idea | todo | message | code", { enum: ["start", "settings", "run_now", "clear", "idea", "todo", "message", "code"] }),
         org: str("Optional: the organization that places it, id or exact name."),
         project: str("Project id or exact name."),
-        autonomy: str("settings: L0 | L1 | L2 | L3."),
+        powers: { type: "object", description: "settings: what may happen without the user, per column: {overseer: {gather: true, codingStart: false, …}, assistant: {…}}. Powers: gather, whatsapp, ownerUpdates, roster, promote, bookkeeping, codingStart, codingPrompt, onboard, markMerged, copiesRun, copiesReset, share, deploy (the assistant column only gather, codingStart, codingPrompt, copiesRun, deploy). Only what you name changes." },
+        resume: bool("settings: true lifts the brake (an attach's pause, or an empty roster's) so it may act on its own again."),
+        autonomy: str("settings (older wording, one release): L0 | L1 | L2 | L3 sets the overseer's switches by the carry-over and resumes."),
         model: str('settings: its model "provider/model", or "" for the default; code: the coding session\'s model.'),
         thinking: str("settings: its thinking level; code: the coding session's."),
         coding_model: str("settings: coding sessions' model, or \"\" for its own."),
@@ -823,7 +841,12 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             for (const [k, v] of Object.entries(SETTING_KEYS)) if (p[k] !== undefined) body[v] = p[k];
             if (!Object.keys(body).length) throw refuse(`Nothing to change: give ${Object.keys(SETTING_KEYS).join(", ")}.`);
             await counted("org", async () => ok(await d.call("PATCH", at, body), "Saving its settings"));
-            const said = Object.keys(body).map((k) => (k === "extraSystemPrompt" ? (String(body[k]).trim() ? `extra instructions (${String(body[k]).trim().length} characters)` : "extra instructions removed") : k));
+            const said = Object.keys(body).map((k) =>
+              k === "extraSystemPrompt" ? (String(body[k]).trim() ? `extra instructions (${String(body[k]).trim().length} characters)` : "extra instructions removed")
+              : k === "powers" ? `switches (${Object.entries(body.powers as Record<string, Record<string, boolean>>).map(([col, m]) => `${col}: ${Object.entries(m ?? {}).map(([pw, on]) => `${pw} ${on ? "On" : "Off"}`).join(", ")}`).join("; ")})`
+              : k === "resume" ? "resumed"
+              : k,
+            );
             return { content: text(`${project.name}'s overseer: ${said.join(", ")} saved.`), details };
           }
           case "run_now": {

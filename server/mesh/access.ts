@@ -274,9 +274,26 @@ const READ_PREFIXES = [
   "provider-limits",
   "usage",
 ];
-// Never below `full`: the operator's credentials, the share pages' own routes, and this machine's
-// updates (whose writes refuse the peer listener outright).
-const FULL_PREFIXES = ["auth", "h", "i", "s", "updates"];
+// Never below `full`: the operator's credentials, the share pages' own routes, this machine's
+// updates (whose writes refuse the peer listener outright), and conversations' draft specs (the
+// operator's private review, §app.requirements/draft-specs).
+const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "draft-specs"];
+/** A project's conversation drafts (approve, build): `full`, ahead of the `projects` read rule. */
+const PROJECT_DRAFT_SPECS_RE = /^\/api\/projects\/[^/]+\/draft-specs(?:\/|$)/;
+
+function tourRequest(method: string, path: string): Classified {
+  const read = method === "GET" || method === "HEAD";
+  const edition = /^\/api\/tours\/[^/]+\/[^/]+\/editions\/[^/]+(.*)$/.exec(path);
+  const tail = edition?.[1];
+  if (tail !== undefined) {
+    if (read && (tail === "" || tail === "/progress" || /^\/assets\/[^/]+$/.test(tail)) || method === "PUT" && tail === "/progress") return { need: "sessions", rule: "tour:checked-reader" };
+    if (method === "POST" && ["/share-preview", "/shares", "/binding-preview", "/bindings"].includes(tail)
+      || read && ["/bindings", "/binding-destinations"].includes(tail)
+      || method === "DELETE" && /^\/(?:shares|bindings)\/[^/]+$/.test(tail)) return { need: "admin", rule: "tour:outside-sharing" };
+  }
+  // Recording, runtime controls and unknown operations never inherit reader authority.
+  return { need: "full", rule: "tour:full" };
+}
 
 const prefixRe = (list: string[]) => new RegExp(`^/api/(${list.map((p) => p.replace(/[-]/g, "\\-")).join("|")})(?:/|$)`);
 const SESSION_RE = prefixRe(SESSION_PREFIXES);
@@ -292,7 +309,9 @@ export function classifyRequest(method: string, pathname: string): Classified {
     for (const [re, need] of PEER_RULES) if (re.test(path)) return { need, rule: re.source };
     return { need: "full", rule: "default" };
   }
+  if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
   const read = method === "GET" || method === "HEAD";
+  if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };
   let m = SESSION_RE.exec(path);
   if (m) return { need: "sessions", rule: `sessions:${m[1]}` };
   m = READ_RE.exec(path);

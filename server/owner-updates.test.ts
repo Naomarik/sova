@@ -29,7 +29,7 @@ const store = await import("./project-overseer-store");
 const { writeNotes } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
-const { TOOL_NEEDS } = await import("./project-overseer-tools");
+const { TOOL_POWER } = await import("./project-overseer-tools");
 const { settled } = await import("./workspace-git");
 const { hostOf, setOrgClockForTest } = await import("./org-engine");
 
@@ -88,7 +88,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
   await po.patchProjectOverseer(pa.id, { autonomy: "L1" });
 
   test("L1; with no owner it refuses: there is no page to post to", async () => {
-    assert.equal(TOOL_NEEDS.sova_owner_update, "L1");
+    assert.equal(TOOL_POWER.sova_owner_update, "ownerUpdates");
     await assert.rejects(() => run("Hello."), /^Error: This organization has no owner, so there is no page to post to\.$/);
   });
 

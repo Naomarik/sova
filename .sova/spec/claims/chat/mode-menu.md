@@ -216,7 +216,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
 TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
-The chat then:
+A switch of a project's coding session whose minor modes leave `spec` out is refused before
+anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
+§app.project-overseer/coding-mode). The chat then:
 
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
   so it leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode
@@ -322,7 +324,7 @@ active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `
 unless align with the chat's Visuals still wants them, §chat.alignment/visuals; `align` its `align`
 tool, and with Visuals on the vis tools too; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
 system prompt stays as it was (none of them adds a line to it). That is one tool-set change per
-toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild.
+toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild. In an ordinary Sova chat, vis also adds or removes `record_tour` and `show_tour` (§app.tours/authoring): these two require vis itself, so align's Visuals alone never keeps them active. A hand-off's baseline scoped presentation is separate from this ordinary-chat loadout.
 `codemode` has no block, so no note tells the model about it either: its tool is the whole switch.
 A project mode with tools adds or removes them the same way, one tool-set change per toggle, and
 its block still reaches the model as a note, never by rewriting the prompt.

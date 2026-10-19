@@ -269,6 +269,9 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "session_send",
   "sova_create_session",
   "sova_navigate",
+  // Tours retain only a validated small card projection; full authoring input remains lazy.
+  "record_tour",
+  "show_tour",
 ]);
 
 /** The tool part of a tool-call or tool-result row (§chat.transcript/slim-rows). */
@@ -284,13 +287,13 @@ export interface ToolRowInfo {
   /** tool-result of a codemode script (§chat.transcript/codemode-card): its calls, failed and still running
       as recorded, for the folded line's "4 calls · 1 failed" before the card's content is fetched. */
   calls?: { total: number; failed: number; running: number };
-  /** EAGER_TOOLS only: the call's arguments as recorded. */
+  /** EAGER_TOOLS only: the call's arguments; tours keep only small validated references. */
   args?: unknown;
   /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */
   output?: string;
   /** EAGER_TOOLS only: the result's details. */
   details?: unknown;
-  /** The content is withheld: fetch it with GET /api/transcript/tool. Absent on EAGER_TOOLS rows. */
+  /** Full content is withheld: GET /api/transcript/tool. Tours may carry a small card alongside it. */
   lazy?: true;
   /** JSON size of the withheld content (the arguments, or the output and details). */
   bytes?: number;
@@ -316,6 +319,8 @@ export interface ToolContent {
     output: string;
     isError: boolean;
     details?: unknown;
+    /** Tour inspection images, fetched only on this authorized full-content endpoint. */
+    images?: string[];
     /** The entry's own `toolUseResult` (Claude Code's record of an edit), only when the message
         has no details object: the Changes viewer reads it in their place. The card never does. */
     toolUseResult?: unknown;
@@ -2033,6 +2038,10 @@ export interface SandboxInfo {
   state?: "off" | "subagents" | "on";
   enforcement: "full" | "partial" | "unavailable" | "none";
   status: string;
+  /** The sandbox is turning on: the extension's provisional entry (isStarting, reason SANDBOX_STARTING in
+      pi-config/extensions/sandbox/state.ts). On with enforcement "unavailable", nothing enforced yet.
+      Absent otherwise and from older servers. */
+  starting?: true;
 }
 
 /** POST /api/sandbox?path=… with `{ state }` (or the older `{ on }`; both together must agree):
@@ -3329,6 +3338,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
@@ -3339,7 +3349,11 @@ export type AttentionKind =
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
-  | "team-stalled";   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  | "team-stalled"   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  // ---- project assistant (al_1) ----
+  | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
+  | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
+  | "owner-link-request"; // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
 
 export interface AttentionItem {
   /** Session id. */
@@ -3699,8 +3713,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down" | "owner-outage";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down", "owner-outage"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {

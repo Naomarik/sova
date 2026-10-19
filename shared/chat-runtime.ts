@@ -58,7 +58,7 @@ export function unsentRefusal(msg: ChatClientMessage): { type: "error"; code: "r
 }
 
 /** The loadouts a chat may be opened with besides an ordinary one. */
-export type ChatSpecialKind = "overseer" | "baton" | "project-overseer";
+export type ChatSpecialKind = "overseer" | "baton" | "project-overseer" | "project-assistant";
 
 /** One extension dialog of a chat that waits on an answer (a browser is attached). */
 export interface ChatDialogInfo {
@@ -413,7 +413,7 @@ export type ChatClientFrame =
 export interface SpecialSpec {
   kind: ChatSpecialKind;
   /** The inline extension's name, unchanged. */
-  extension: "sova-overseer" | "sova-project-overseer" | "sova-baton";
+  extension: "sova-overseer" | "sova-project-overseer" | "sova-baton" | "sova-project-assistant";
   /** The folder the chat runs in on this host, or null: the header's. */
   cwd: string | null;
   /** Served, registered by the extension, in loadout order. */

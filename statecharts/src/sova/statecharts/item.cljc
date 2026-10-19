@@ -24,6 +24,7 @@
     [sova.statecharts.base :as b]
     [sova.statecharts.rules.item :as ri]
     [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.rules.refusal :as r]
     [sova.statecharts.engine.dsl :as dsl]))
 
@@ -172,7 +173,7 @@
    (b/ledger :ledger/take "create" (constantly 1))
    (started-noted (fn [d] (b/project-sid (:project-id d))) (fn [d] (b/build-sid (:project-id d) (:session-id (e d)))) (fn [d] (if (b/operator-act? d) "operator-coding" "coding")))])
 
-;; ---- drive (r3): the acts the statechart starts itself, at the level in force -------------------------------
+;; ---- drive (r3): the acts the statechart starts itself, while their power is On for the overseer -----------
 
 (defn drive-open?
   "The statechart may start acts now: the gap is in its pipeline (not on hold), the project not archived."
@@ -201,45 +202,62 @@
 
 (defn held-act? [d event] (some #(= (str (namespace event) "/" (name event)) (str (:event %))) (vals (:sova/holds d))))
 
+(defn- off-key [power k-fn] (fn [d] (str "off:" power ":" (k-fn d))))
+
+(defn- drive-off
+  "A drive whose facts hold but whose power is Off (or braked) for the overseer on its own: it stays put, and
+   the gap's timeline notes once why (`:drive-off`, the newest note per power)."
+  [power base k-fn]
+  (transition {:sova/feed :feed :cond (fn [env d] (and (base env d) (not (ri/power-on? d power)) (not (drove? d ((off-key power k-fn) d)))))}
+    (note-drove (off-key power k-fn))
+    (script {:expr (fn [_ d] [(ops/assign [:drive-off power] {:note (pw/drive-off-note power) :at (b/now-ms d)})])})))
+
+(defn- promote-base [env d] (and (drive-open? env d) (seq (ri/in-area-drafted-ids d)) (not (drove? d (promote-key d)))))
+(defn- build-base [env d] (and (drive-open? env d) (b/in? env :awaiting-build)
+                            (= "promoted" (ri/dphase d)) (ri/none-built? d) (seq (ri/not-built-ids d))
+                            (empty? (ri/live-builds d)) (not (held-act? d :build/start))
+                            (not (drove? d (build-key d)))))
+(defn- plan-base [env d] (and (drive-open? env d)
+                           (not (#{:asking :needs-operator} (lane-gathering d)))
+                           (not (b/in? env :gather-starting))
+                           (some? (next-plan d)) (not (held-act? d :gather/start)) (not (:plan-pending d))
+                           (not (drove? d (plan-key d)))))
+(defn- move-base [env d] (and (drive-open? env d) (ri/same-target-older d) (not (drove? d (move-key d)))))
+
 (defn- drive-transitions []
   [
-   ;; L2: promote the gap's drafted decisions whose author owns the area (never out of area)
-   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L2") (seq (ri/in-area-drafted-ids d))
-                                       (not (drove? d (promote-key d)))))}
+   ;; promote (was L2): promote the gap's drafted decisions whose author owns the area (never out of area)
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (promote-base env d) (ri/power-on? d "promote")))}
      (note-drove promote-key)
      (dsl/drive {:event :decision/promote :target (fn [d] (b/reconciler-sid (:org-id d) (:project-id d)))
                  :data (fn [d] {:ids (ri/in-area-drafted-ids d) :gap (:idea-id d)})}))
-   ;; L3: build once every live decision is promoted, none built, no build working or held
-   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L3") (b/in? env :awaiting-build)
-                                       (= "promoted" (ri/dphase d)) (ri/none-built? d) (seq (ri/not-built-ids d))
-                                       (empty? (ri/live-builds d)) (not (held-act? d :build/start))
-                                       (not (drove? d (build-key d)))))}
+   (drive-off "promote" promote-base promote-key)
+   ;; codingStart (was L3): build once every live decision is promoted, none built, no build working or held
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (build-base env d) (ri/power-on? d "codingStart")))}
      (note-drove build-key)
      (dsl/drive {:event :build/start
                  :data (fn [d] {:session-id (str (:id d) "-b" (inc (count (:builds d))))
                                 :title (str "Build " (:idea-id d))
                                 :decisions (ri/not-built-ids d)
                                 :prompt (ri/build-prompt d (ri/not-built-ids d))})}))
-   ;; L1: a planned gathering (filed at L0), each once, while the lane has no live gathering; never
+   (drive-off "codingStart" build-base build-key)
+   ;; gather (was L1): a planned gathering (filed any time), each once, while the lane has no live gathering; never
    ;; one to a person whose attempt on this gap ended with no decision (F8b: per target)
-   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1")
-                                       (not (#{:asking :needs-operator} (lane-gathering d)))
-                                       (not (b/in? env :gather-starting))
-                                       (some? (next-plan d)) (not (held-act? d :gather/start)) (not (:plan-pending d))
-                                       (not (drove? d (plan-key d)))))}
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (plan-base env d) (ri/power-on? d "gather")))}
      (note-drove plan-key)
      ;; one planned start in flight: the next waits for its outcome (a baton, a hold, or any later event)
      (script {:expr (fn [_ d] [(ops/assign :plans-started (conj (vec (:plans-started d)) (next-plan d))) (ops/assign :plan-pending true)])})
      (dsl/drive {:event :gather/start
                  :data (fn [d] (let [i (last (:plans-started d)) p (nth (:plans d) i)]
                                  (assoc p :session-id (str (:id d) "-g" (inc i)))))}))
-   ;; L1: close an own gathering nobody wrote in once a newer one to the same person is open
-   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1") (ri/same-target-older d)
-                                       (not (drove? d (move-key d)))))}
+   (drive-off "gather" plan-base plan-key)
+   ;; gather (was L1): close an own gathering nobody wrote in once a newer one to the same person is open
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (move-base env d) (ri/power-on? d "gather")))}
      (note-drove move-key)
      (dsl/drive {:event :baton/close :target (fn [d] (first (ri/same-target-older d)))
                  :data (fn [d] {:reason (str "A newer gathering on " (:idea-id d) " to the same person covers it.")
-                                :owner-project (:project-id d)})}))])
+                                :owner-project (:project-id d)})}))
+   (drive-off "gather" move-base move-key)])
 
 ;; ---- the statechart -----------------------------------------------------------------------------------------
 
@@ -260,7 +278,6 @@
     (state {:id :item :initial :live}
       (on-entry {} (dsl/watch (fn [d] (b/watch-sid (:project-id d)))))
       (dsl/hold-cancel-correction)
-      (b/hold-review)
       (b/flush-transition)
 
       (parallel {:id :live}
@@ -274,7 +291,7 @@
                                      (dsl/effect-ops d (dsl/effect-map :idea-status (fn [_] {:idea-id (:idea-id d) :status "dropped"}) d))))}))
         ;; a planned gathering, filed at L0: the statechart starts it once the level reaches L1
         (dsl/act {:sova/feed :feed :event :gather/plan :checks [invalid]}
-          (script {:expr (fn [_ d] [(ops/assign :plans (conj (vec (:plans d)) (dissoc (e d) :at :by :attended :autonomy :paused :ceiling
+          (script {:expr (fn [_ d] [(ops/assign :plans (conj (vec (:plans d)) (dissoc (e d) :at :by :attended :autonomy :powers :column :paused :ceiling
                                                                                      :archived :allowance :ledger :looks :at-once :card :hold-ms :invalid)))])}))
         ;; q9 corrections
         (dsl/correction {:event :correct/relink
@@ -386,20 +403,19 @@
       (final {:id :dropped}))))
 
 (def acts
-  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind :hours b/hours-window
+  {:gather/start       {:power "gather" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :hours b/hours-window
                         :card (fn [d] (b/start-card (:project-id d) d))
                         :what (fn [d] (str "A gathering on " (:idea-id d) " (\"" (:public-title (e d)) "\")"))}
-   :gather/plan        {:needs "L0" :tool "sova_start_gathering"}
-   :build/start        {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"
+   :gather/plan        {:power "always" :tool "sova_start_gathering"}
+   :build/start        {:power "codingStart" :tool "sova_create_session" :code-facing true :counts "create" :hold true
                         :what (fn [d] (str "A coding session for " (:idea-id d)))}
-   :gap/drop           {:needs "L0" :tool "sova_idea"}
-   :item/hold          {:needs nil}
-   :item/resume        {:needs nil}
-   :correct/reopen     {:needs "L1" :tool "sova_correct" :correction true}
-   :correct/skip-stall {:needs "L1" :tool "sova_correct" :correction true}
-   :correct/relink     {:needs "L1" :tool "sova_correct" :correction true}
-   :hold/cancel        {:needs "L0" :correction true}
-   :hold/approve       {:needs "L0" :correction true}})
+   :gap/drop           {:power "always" :tool "sova_idea"}
+   :item/hold          {:power nil}
+   :item/resume        {:power nil}
+   :correct/reopen     {:power "bookkeeping" :tool "sova_correct" :correction true}
+   :correct/skip-stall {:power "bookkeeping" :tool "sova_correct" :correction true}
+   :correct/relink     {:power "bookkeeping" :tool "sova_correct" :correction true}
+   :hold/cancel        {:power "always" :correction true}})
 
 (defn not-here [event config data]
   (let [gap (:idea-id data)]

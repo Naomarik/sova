@@ -7,6 +7,7 @@
     [clojure.string :as str]
     [sova.statecharts.registry :as registry]
     [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.watch :as w]
     [sova.statecharts.engine.core :as core]))
 
@@ -14,44 +15,44 @@
 (def op {:by "operator"})
 (def psid "project/pr1")
 (def wsid "watch/pr1")
-(def roster-ceiling {:autonomy "L0" :reason "The roster has no active people yet, so the overseer only proposes (L0)."})
+(def roster-ceiling {:autonomy "L0" :reason "The roster has no active people yet."})
 
 (defn- in? [eng sid s] (contains? (set (core/configuration eng sid)) s))
 (defn- refused [r event] (:sentence (:refused (first (filter #(= event (:event %)) (:steps r))))))
 
-;; ---- the level in force ---------------------------------------------------------------------------
+;; ---- the brakes and the look text -----------------------------------------------------------------
 
-(deftest paused-then-ceiling-then-setting
-  (is (= {:autonomy "L1"} (lv/effective-autonomy {})) "nobody caps it: the default setting")
-  (is (= {:autonomy "L3"} (lv/effective-autonomy {:autonomy "L3"})) "a standalone project runs at its setting")
-  (is (= roster-ceiling (lv/effective-autonomy {:autonomy "L3" :ceiling roster-ceiling})) "a ceiling below the setting caps it, with its reason")
-  (is (= {:autonomy "L1"} (lv/effective-autonomy {:autonomy "L1" :ceiling {:autonomy "L2" :reason "x"}})) "a ceiling never raises it")
-  (is (= {:autonomy "L2"} (lv/effective-autonomy {:autonomy "L2" :ceiling {:autonomy "L2" :reason "x"}})) "at the ceiling: no reason")
-  (is (= {:autonomy "L0" :reason lv/paused-reason} (lv/effective-autonomy {:autonomy "L3" :paused true :ceiling roster-ceiling})) "paused wins"))
+(deftest paused-then-ceiling-then-the-switches
+  (is (nil? (w/brake {})) "nobody caps it: no brake")
+  (is (= {:kind "empty-roster" :reason pw/empty-roster-reason} (w/brake {:ceiling roster-ceiling})) "an empty roster brakes it, with its reason")
+  (is (nil? (w/brake {:ceiling roster-ceiling :settings {:empty-roster-resumed true}})) "Resume lifted it")
+  (is (= {:kind "paused" :reason pw/paused-reason} (w/brake {:paused true :ceiling roster-ceiling})) "paused wins")
+  (is (= pw/all-off (w/powers-in-force {:paused true :settings {:powers {:overseer (pw/carry-over "L3")}}})) "under a brake every power is Off")
+  (is (= (pw/carry-over "L3") (w/powers-in-force {:settings {:powers {:overseer (pw/carry-over "L3")}}})) "a standalone project runs on its switches"))
 
-(deftest the-refusal-names-the-ceiling-and-no-gap
-  (is (= "This run was not started by the operator, and your autonomy here is L0 (The roster has no active people yet, so the overseer only proposes (L0).); sova_project_verbs needs L3. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."
-         (lv/level-check "sova_project_verbs" "L3" {:by "overseer" :autonomy "L3" :ceiling roster-ceiling})))
-  (is (nil? (lv/level-check "sova_project_verbs" "L3" {:by "overseer" :autonomy "L3"})) "no roster, no ceiling: L3 is L3"))
-
-;; ---- the watch's facts -----------------------------------------------------------------------------
+(deftest the-refusal-names-the-brake-and-no-level
+  (is (= "Nothing happens on its own right now: The roster has no active people yet. File what you would do as an idea (sova_idea) or raise a sova_card card; the operator's click starts a turn in which you may act."
+         (:sentence (pw/power-check "sova_project_verbs" "copiesRun" {:by "overseer" :powers (pw/carry-over "L3") :ceiling roster-ceiling}))))
+  (is (nil? (pw/power-check "sova_project_verbs" "copiesRun" {:by "overseer" :powers (pw/carry-over "L3")})) "no roster, no ceiling: the switch decides"))
 
 (deftest the-look-text-and-its-hint
   (is (= (str "[project watch] Since your last look:\n- A\n\n"
-              "Re-read the project (sova_project). Then act within your autonomy (L1): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.")
-         (w/watch-text ["A"] "L1" nil))
+              "Re-read the project (sova_project). Then act within what you may do on your own (Share a version to try): the tools tell you when a power is off. Keep your reply to a few lines for the operator.")
+         (w/watch-text ["A"] "Share a version to try" nil))
       "a project nobody places: no org words")
   (is (= (str "[project watch] Since your last look:\n- A\n\n"
               "Re-read the project (sova_project). Read sova_decisions where it matters. Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…). "
-              "Then act within your autonomy (L0): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.")
-         (w/watch-text ["A"] "L0" "Read sova_decisions where it matters. Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…).")))
-  (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check})]
+              "Then act within what you may do on your own (nothing on its own: The roster has no active people yet.): the tools tell you when a power is off. Keep your reply to a few lines for the operator.")
+         (w/watch-text ["A"] (w/powers-words {:ceiling roster-ceiling}) "Read sova_decisions where it matters. Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…).")))
+  (is (= "Start, offer and close gatherings; Message people on WhatsApp; Post owner updates; Fix the pipeline's bookkeeping; Share a version to try"
+         (w/powers-words {:settings {:powers {:overseer (pw/carry-over "L1")}}})))
+  (let [eng (core/new-engine registry/statecharts {:level-check pw/power-check})]
     (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
     (core/send! eng wsid :facts/changed {:ceiling roster-ceiling :look-hint "Hint."} {:now (+ t0 1)})
     (let [d (core/data eng wsid)]
       (is (= roster-ceiling (:ceiling d)))
       (is (= "Hint." (:look-hint d)))
-      (is (= "L0" (:autonomy (w/effective (assoc d :settings {:autonomy "L3"}))))))
+      (is (= "empty-roster" (:kind (w/brake d)))))
     (core/send! eng wsid :facts/changed {:ceiling nil} {:now (+ t0 2)})
     (is (nil? (:ceiling (core/data eng wsid))) "taken back (a project leaving an org, later)")
     (is (= "Hint." (:look-hint (core/data eng wsid))) "a fact not named is left alone")))
@@ -61,7 +62,7 @@
 (deftest a-standalone-project-on-its-own-engine
   ;; no :absorb-unknown: a send to any session that does not exist here (an org, a person, a placement)
   ;; would throw and roll the call back
-  (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check})
+  (let [eng (core/new-engine registry/statecharts {:level-check pw/power-check})
         att {:by "overseer" :attended true :autonomy "L1"}]
     (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r" :origin "folder" :created-at t0} t0)
     (is (= [psid "runtime/pr1" wsid] (core/session-ids eng)) "born with its watch and its software registry only (no reconciler)")
@@ -72,14 +73,14 @@
       (is (= "A coding session starts only in a turn the operator started: ask with sova_card."
              (refused (core/send! eng psid :build/start {:by "overseer" :autonomy "L3" :session-id "c9"} {:now (+ t0 3)}) :build/start))
           "an unattended build is refused at every level"))
-    (testing "sharing a running copy: held unattended at L1, at once in the operator's run, never above the level"
+    (testing "sharing a running copy: held unattended with share On, at once in the operator's run, refused with it Off"
       (let [share {:by "overseer" :verb "share" :instance "in_1" :endpoint "web.3000" :branch "sova/pay-3f9a1c" :overseer-id "po1"}]
-        (is (re-find #"sova_project_verbs needs L1" (refused (core/send! eng psid :services/share (assoc share :autonomy "L0") {:now (+ t0 2)}) :services/share)))
+        (is (re-find #"^Share a version to try is off for the overseer on its own\." (refused (core/send! eng psid :services/share (assoc share :autonomy "L0") {:now (+ t0 2)}) :services/share)))
         (let [r (core/send! eng psid :services/share (assoc share :autonomy "L1" :confirm-kinds ["preview"]) {:now (+ t0 2)})
               h (first (filter #(= ":services/share" (str (:event %))) (core/holds eng)))]
           (is (some? (:held (first (filter #(= :services/share (:event %)) (:steps r))))) "held")
           (is (= "A preview link: web.3000 of a running copy (sova/pay-3f9a1c)" (:what h)))
-          (is (true? (:confirm h)) "confirm kind preview")
+          (is (nil? (:confirm h)) "al_3 q2: no review wait, the old confirm list ignored")
           (core/send! eng psid :hold/cancel {:by "operator" :id (:id h)} {:now (+ t0 2)}))
         (let [r (core/send! eng psid :services/share (assoc share :autonomy "L0" :attended true) {:now (+ t0 2)})]
           (is (nil? (:held (first (filter #(= :services/share (:event %)) (:steps r))))) "the operator's run goes at once"))))
@@ -109,7 +110,7 @@
 ;; ---- placed: the placement follows its project --------------------------------------------------------
 
 (deftest a-placed-project-and-its-placement
-  (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
+  (let [eng (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true})
         pl  "placement/o1/pr1"]
     (core/start! eng "org/o1" "org" {:id "o1" :name "Acme" :slug "acme"} t0)
     (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r"} t0)

@@ -108,7 +108,7 @@ export function shareInfo(env: NodeJS.ProcessEnv = process.env): { bound: boolea
 
 /** Every link as the operator copies it, `/h/` (hand-off), `/i/` (owner page) and `/s/` (session
     share) alike: the effective address, else just the path. */
-export function linkUrl(kind: "h" | "i" | "s", token: string, env: NodeJS.ProcessEnv = process.env): string {
+export function linkUrl(kind: "h" | "i" | "s" | "t", token: string, env: NodeJS.ProcessEnv = process.env): string {
   return `${shareState(env).publicUrl ?? ""}/${kind}/${token}`;
 }
 

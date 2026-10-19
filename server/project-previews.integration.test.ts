@@ -115,7 +115,7 @@ const fetchVia = (label: string, path: string): Promise<{ status: number; body: 
 describe("the overseer's guard: L1, the hold, the operator's turn (§app.project-overseer/previews)", () => {
   test("below L1 in a run of its own: the statechart's refusal; nothing is made or held", async () => {
     await settings({ autonomy: "L0", holdMin: 10 });
-    await assert.rejects(() => run("sova_preview", folderStart), /This run was not started by the operator, and your autonomy here is L0; sova_preview needs L1\./);
+    await assert.rejects(() => run("sova_preview", folderStart), /Share a version to try is off for the overseer on its own\./);
     assert.equal(holdsOf().length, 0);
     assert.equal(mine().length, 0);
   });
@@ -135,8 +135,8 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
     assert.equal(mine().length, 0, "cancelled: never made");
   });
 
-  test("released when its hold ends (preview not on the confirm list): it is made then", async () => {
-    await settings({ autonomy: "L1", holdMin: 10, confirmKinds: [] });
+  test("released when its hold ends, with no approval step (al_3 q2): it is made then", async () => {
+    await settings({ autonomy: "L1", holdMin: 10 });
     const t0 = Date.now() + 2 * 86_400_000;
     setOrgClockForTest(() => t0);
     try {
@@ -150,26 +150,6 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
       assert.equal(v!.createdBy.startsWith("session:"), true);
       assert.ok(v!.url, "its link is kept");
       await previews.turnOffPreview(v!.id);
-    } finally {
-      setOrgClockForTest(null);
-      await settings({ confirmKinds: [...store.defaultPoSettings().confirmKinds] });
-    }
-  });
-
-  test("with preview on the confirm list, its hold waits for the overseer's approval past its end", async () => {
-    await settings({ autonomy: "L1", holdMin: 10 });
-    assert.ok(store.readPoSettings(store.projectOverseerPaths(project.id)).confirmKinds.includes("preview"));
-    const before = mine().length;
-    const t0 = Date.now() + 4 * 86_400_000;
-    setOrgClockForTest(() => t0);
-    try {
-      await run("sova_preview", folderStart);
-      setOrgClockForTest(() => t0 + 11 * 60_000);
-      projectHost(project.id).fireDue();
-      await new Promise((r) => setTimeout(r, 100));
-      assert.equal(mine().length, before, "unapproved: still waiting");
-      assert.equal(holdsOf().length, 1);
-      await cancel(holdsOf()[0]!.id);
     } finally {
       setOrgClockForTest(null);
     }
@@ -404,20 +384,6 @@ describe("a running copy's link shows its copy's state, read only (§mesh.public
     v = (await previews.previewViews({}, { copy })).find((x) => x.id === made.id)!;
     assert.equal(v.copy, undefined);
     assert.deepEqual(asked, [], "a turned-off link's copy is never read");
-  });
-});
-
-describe("confirm kinds: preview, and lists saved before it (§app.project-overseer/reviews)", () => {
-  test("a list saved without confirmKindsKnown gets preview on (send as saved); one saved after keeps it off", () => {
-    // Every kind there was before confirmKindsKnown was written, send (outreach's) included.
-    const old = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "send", "roster-approve", "roster-decline"];
-    assert.ok(store.parsePoSettings({ confirmKinds: old }).confirmKinds.includes("preview"));
-    assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"] }).confirmKinds, ["gather", "preview"], "send stays as saved: off");
-    assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"], confirmKindsKnown: [...old, "preview"] }).confirmKinds, ["gather"]);
-    const p = store.projectOverseerPaths(project.id);
-    store.patchPoSettings(p, { confirmKinds: ["build"] });
-    assert.deepEqual(JSON.parse(readFileSync(p.settings, "utf8")).confirmKindsKnown, [...old, "preview"]);
-    assert.deepEqual(store.readPoSettings(p).confirmKinds, ["build"], "unticked after it existed: stays off");
   });
 });
 

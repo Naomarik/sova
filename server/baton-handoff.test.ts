@@ -18,6 +18,7 @@ await import("./testing/in-process-chats"); // chats open in this process (the s
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const loadout = await import("./baton-loadout");
+const { DRAFT_TOOLS } = await import("./conversation-draft-tools");
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { offerOutsider, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
@@ -254,7 +255,7 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
     says(chat, c.sessionId, ana.id, "second");
     await until(() => calls.length === 2 && !piSession(chat).isStreaming);
     assert.ok(enumOf(calls[1]!).includes("hosting"), JSON.stringify(enumOf(calls[1]!)));
-    assert.deepEqual((calls[1] as { name: string }[]).map((t) => t.name).sort(), [...loadout.BATON_TOOLS].sort(), "the wrap-up's tool stays inactive");
+    assert.deepEqual((calls[1] as { name: string }[]).map((t) => t.name).sort(), [...loadout.BATON_TOOLS, ...loadout.LOOKUP_TOOLS, ...DRAFT_TOOLS].sort(), "the wrap-up's tool stays inactive");
   });
 
   test("through pi's own tool call: an unknown owner area is refused naming the choices; a case variant is stored as the roster spells it", async () => {

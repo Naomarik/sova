@@ -446,7 +446,6 @@
         (script {:expr (fn [_ d] (when (and (not (false? (:mint-link d))) (not= operator (:holder d)) (nil? (:offer-id d)))
                                    (dsl/effect-ops d (dsl/effect-map :mint-links (fn [_] {:n 1 :offer-id (:offer-id d)}) d))))}))
       (dsl/hold-cancel-correction)
-      (b/hold-review)
 
       ;; ── acts that don't move the course ──────────────────────────────────────────────────
       ;; record_decision: the transcript entry is written first (its id is the decision's); a
@@ -663,24 +662,23 @@
 (def acts
   ;; `:hours` (r7): an act that reaches a person waits for their working hours when automatic or
   ;; unattended (engine); the host stamps the person records it reaches as `target`/`targets`
-  {:baton/hand-to         {:needs nil :hours b/hours-window}
-   :baton/goal-done       {:needs nil}
-   :baton/record-decision {:needs nil}
-   :baton/propose         {:needs nil}
-   :baton/message         {:needs nil}
-   :baton/take-back       {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)]})}
-   :baton/handoff         {:needs nil :people-facing true :hours b/hours-window :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
-   :baton/offer           {:needs nil :people-facing true :confirm-kind "offer" :hours b/hours-window :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}
-   :baton/withdraw        {:needs nil}
-   :baton/close           {:needs "L1" :tool "sova_close_gathering" :people-facing true :hold true :confirm-kind "close"
+  {:baton/hand-to         {:power nil :hours b/hours-window}
+   :baton/goal-done       {:power nil}
+   :baton/record-decision {:power nil}
+   :baton/propose         {:power nil}
+   :baton/message         {:power nil}
+   :baton/take-back       {:power nil :people-facing true :card (fn [d] {:sessions [(:session-id d)]})}
+   :baton/handoff         {:power nil :people-facing true :hours b/hours-window :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
+   :baton/offer           {:power nil :people-facing true :hours b/hours-window :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}
+   :baton/withdraw        {:power nil}
+   :baton/close           {:power "gather" :tool "sova_close_gathering" :people-facing true :hold true
                            :what (fn [d] (str "Closing \"" (:public-title d) "\""))
                            :card (fn [d] {:sessions [(:session-id d)]})}
-   :baton/extend          {:needs nil}
-   :baton/abilities       {:needs nil}
-   :baton/hide            {:needs nil}
-   :baton/wrapup-retry    {:needs nil}
-   :hold/cancel           {:needs "L0" :correction true}
-   :hold/approve          {:needs "L0" :correction true}})
+   :baton/extend          {:power nil}
+   :baton/abilities       {:power nil}
+   :baton/hide            {:power nil}
+   :baton/wrapup-retry    {:power nil}
+   :hold/cancel           {:power "always" :correction true}})
 
 (def entry
   {:statechart    statechart

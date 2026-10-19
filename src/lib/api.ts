@@ -1,3 +1,5 @@
+import type { AssistantInfo, AssistantView } from "../../shared/project-assistant";
+import type { WorkModels } from "../../shared/powers";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1253,6 +1255,18 @@ export const previewOwnerPage = (id: string, at?: { project?: string; c?: string
   request<OwnerHome | OwnerProject | OwnerConversation>(
     `/api/orgs/${encodeURIComponent(id)}/owner/preview${at?.project ? `?project=${encodeURIComponent(at.project)}` : at?.c ? `?c=${encodeURIComponent(at.c)}` : ""}`,
   );
+// ---- the Project Assistant (§app/project-assistant): the Owner card's part ----
+const assistantUrl = (id: string, rest = "") => `/api/orgs/${encodeURIComponent(id)}/owner/${rest}`;
+export const assistantInfo = (id: string) => request<AssistantInfo>(assistantUrl(id, "assistant"));
+/** Set the org's models per kind of work; null clears one. */
+export const setAssistantModels = (id: string, models: WorkModels) => request<AssistantInfo>(assistantUrl(id, "assistant"), jsonInit("PUT", { models }));
+/** Mark Done or Decline an owner request. */
+export const setOwnerRequest = (id: string, rid: string, status: "done" | "declined") => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { status }));
+/** Open Assistant Chat: the owner's conversation (made when there is none). */
+export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
+/** The assistant's conversation as the owner sees it (the preview); no token, no use. */
+export const previewAssistant = (id: string) => request<AssistantView>(assistantUrl(id, "preview?assistant=1"));
+
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { ownerHidden }));

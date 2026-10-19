@@ -17,6 +17,7 @@ import {
   type PersonRef,
 } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
+import { normalizeTourAttachment, normalizeTourDetachment, SHOW_TOUR_TOOL, TOUR_ATTACHMENT_ENTRY, TOUR_DETACHMENT_ENTRY } from "../shared/tour";
 import { shareFences } from "../src/share/markdown";
 import { visKindWord } from "../src/vis/parse";
 import { canonicalKind } from "../src/vis/registry";
@@ -173,6 +174,9 @@ export function batonView(input: ViewInput): BatonView {
   const name = (ref: unknown): string => (typeof ref === "string" && names[ref]) || (ref === OPERATOR ? "Operator" : "Someone");
   const by = messageSenders(branch, input.row.holder);
 
+  // Revocation is authority, not conversation text: a later tombstone must also revoke an
+  // offer-cut reader who cannot see that later part of the conversation.
+  const detached = new Set(branch.flatMap(h => h.kind === "state" && h.key === TOUR_DETACHMENT_ENTRY ? normalizeTourDetachment(h.data)?.handle ?? [] : []));
   const items: BatonViewItem[] = [];
   let photos = 0;
   for (const h of branch) {
@@ -205,9 +209,21 @@ export function batonView(input: ViewInput): BatonView {
       }
       continue;
     }
+    if (h.kind === "tool-result") {
+      // The model showing an attached tour shows it here too, re-checked on every view: only a tour
+      // already visible above in this same view (attached, not detached, inside the cut). Its copy
+      // comes from that attachment, never from the result's payload; the attachment stays the authority.
+      const handle = h.tool === SHOW_TOUR_TOOL && !h.isError && h.details && typeof h.details === "object" ? (h.details as { handle?: unknown }).handle : undefined;
+      const shown = typeof handle === "string" ? items.find((i) => i.kind === "tour" && i.handle === handle) : undefined;
+      if (shown?.kind === "tour") items.push({ ...shown, id });
+      continue;
+    }
     if (h.kind !== "state") continue;
     const d = dataOf(h) ?? {};
-    if (h.key === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
+    if (h.key === TOUR_ATTACHMENT_ENTRY) {
+      const tour = normalizeTourAttachment(d);
+      if (tour && !detached.has(tour.handle)) items.push({ kind: "tour", id, handle: tour.handle, title: said(tour.title), summary: said(tour.summary), steps: tour.steps });
+    } else if (h.key === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
       const addressee = viewer === undefined || viewer === d.to;
       // The limit's hand-off tells the operator what to do; the people only that the limit was reached.
       const question = viewer !== undefined && d.to === OPERATOR && d.question === LIMIT_QUESTION ? LIMIT_REACHED_FOR_PEOPLE : said(String(d.question ?? ""));

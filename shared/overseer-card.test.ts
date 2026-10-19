@@ -89,6 +89,8 @@ describe("create", () => {
     assert.match(outs[0]!.text, /options: a\. Archive All \("Archive the 2 sessions listed"\) · b\. Keep/);
     assert.match(outs[0]!.text, /2\. \[Title s1\]\(sova:\/\/s\/s1\) \(s1\) \[default a\]/);
     assert.match(outs[0]!.text, /It stays open until you record it/);
+    // Act first, then record (§app.overseer/confirm): a refused act leaves the card open.
+    assert.match(outs[0]!.text, /do the act it approves first, then call sova_card answer .* once the act succeeded; a refused act leaves the card open\./);
   });
 
   test("the next id is one past the highest on the branch, never reused", () => {
@@ -220,6 +222,7 @@ describe("the note and the change line", () => {
     const note = cardsNote(cards)!;
     assert.match(note, /^\[cards\] Open cards in this conversation\./);
     assert.match(note, /record it with sova_card \(answer with their words, accept for "your recommendation"\)/);
+    assert.match(note, /do the act it approves first, then record it with sova_card .* once the act succeeded, one call per card; a refused act leaves the card open/);
     assert.match(note, /c_1 "Archive these\?" · open · v1/);
     assert.match(note, /per-item choices: a\. Archive · b\. Keep/);
     assert.match(note, /1\. td_1 · Do td_1/);

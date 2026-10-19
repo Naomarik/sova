@@ -122,7 +122,7 @@ describe("the owner (§app.owner-page/owner)", () => {
     assert.equal(a.status, 200);
     assert.match(a.body.link, /\/i\/[A-Za-z0-9_-]{43}$/);
     assert.ok(a.body.linkWarning, "no share listener bound in this process");
-    assert.equal(Date.parse(a.body.expiresAt) - Date.parse(a.body.createdAt), 90 * 86_400_000);
+    assert.equal(Date.parse(a.body.expiresAt) - Date.parse(a.body.createdAt), 7 * 86_400_000, "off after 7 days unused (owner-link-idle.test.ts)");
     const first = tokenOf(a.body.link);
     assert.equal(owner.ownerAccess(first).ok, true);
     const b = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
@@ -144,9 +144,9 @@ describe("the owner (§app.owner-page/owner)", () => {
     ]);
   });
 
-  test("expiry at 90 days, named as expired; an unknown token is 404", () => {
-    const { token } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 90 * 86_400_000 - 1);
-    assert.deepEqual(owner.ownerAccess(token), { ok: false, status: 410, why: "expired", link: plinks.findPersonLink(token)! });
+  test("off after 7 days unused, named as idle; an unknown token is 404", () => {
+    const { token } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 7 * 86_400_000 - 1);
+    assert.deepEqual(owner.ownerAccess(token), { ok: false, status: 410, why: "idle", link: plinks.findPersonLink(token)! });
     assert.deepEqual(owner.ownerAccess("A".repeat(43)), { ok: false, status: 404 });
     assert.deepEqual(owner.ownerAccess("short"), { ok: false, status: 404 });
   });
@@ -206,8 +206,10 @@ describe("the owner (§app.owner-page/owner)", () => {
     assert.equal(owner.ownerAccess(tokenOf(body.link)).ok, false);
   });
 
-  test("Needs you counts an owner link about to expire", () => {
-    plinks.mintOwnerLink(org.id, alp.id, Date.now() - 85 * 86_400_000);
+  test("Needs you counts an owner who asked for a new link, not a link that merely turned off", () => {
+    const idle = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 8 * 86_400_000);
+    assert.equal(owner.ownerLinkNeeds(org.id), 0);
+    assert.equal(owner.askForNewLink(idle.token).status, 202);
     assert.equal(owner.ownerLinkNeeds(org.id), 1);
     plinks.mintOwnerLink(org.id, alp.id);
     assert.equal(owner.ownerLinkNeeds(org.id), 0);
@@ -320,6 +322,7 @@ describe("the page's content (§app.owner-page/content)", () => {
 describe("the share listener's /i/ (§app.owner-page/link)", () => {
   test("the shapes pass; near-misses, POST and a socket path do not", () => {
     const t = "A".repeat(43);
+    assert.ok(shareMayReach("POST", `/i/${t}/ask-link`));
     for (const p of [`/i/${t}`, `/api/i/${t}`, `/api/i/${t}/p/q_abcdefgh`, `/api/i/${t}/c/k_23456789`]) assert.ok(shareMayReach("GET", p), p);
     for (const [m, p] of [
       ["GET", `/i/${t}/`],
@@ -331,6 +334,8 @@ describe("the share listener's /i/ (§app.owner-page/link)", () => {
       ["GET", `/api/i/${t}%2F`],
       ["POST", `/api/i/${t}`],
       ["POST", `/api/i/${t}/message`],
+      ["GET", `/i/${t}/ask-link`],
+      ["POST", `/api/i/${t}/ask-link`],
       ["GET", `/ws/i`],
       ["GET", `/api/i/${"A".repeat(42)}`],
     ] as const)

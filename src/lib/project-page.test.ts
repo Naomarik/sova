@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_PO_CAPS } from "../../shared/project-overseer";
-import { attentionLine, confirmSummary, emptySectionsLine, levelWords, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, summaryChips } from "./project-page";
-
-test("levelWords: the level and its meaning's first word", () => {
-  assert.equal(levelWords("L0"), "L0 Propose");
-  assert.equal(levelWords("L3"), "L3 Build");
-});
+import { attentionLine, emptySectionsLine, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, summaryChips } from "./project-page";
 
 test("summaryChips: a count not read yet is left out, never shown as 0", () => {
   assert.deepEqual(summaryChips({}), []);
@@ -61,15 +56,6 @@ test("emptySectionsLine: names only the empty sections, null when none is", () =
   assert.equal(emptySectionsLine({ ...none, pipeline: true }), "No pipeline rows yet.");
   assert.equal(emptySectionsLine({ ...none, conflicts: true, ideas: true }), "No conflicts or ideas yet.");
   assert.equal(emptySectionsLine({ conflicts: true, decisions: true, pipeline: true, ideas: true }), "No conflicts, decisions, pipeline rows or ideas yet.");
-});
-
-test("confirmSummary: all, some (named, in the list's order), none", () => {
-  const all = ["gather", "offer", "promote"];
-  const label = (k: string) => k.toUpperCase();
-  assert.equal(confirmSummary(all, all, label), "All 3 wait for its approval.");
-  assert.equal(confirmSummary(["promote", "gather"], all, label), "2 of 3 wait for its approval: GATHER, PROMOTE.");
-  assert.equal(confirmSummary([], all, label), "None waits for its approval.");
-  assert.equal(confirmSummary(["unknown"], all, label), "None waits for its approval.", "a kind the list doesn't know isn't counted");
 });
 
 test("the Limits table covers every cap exactly once", () => {

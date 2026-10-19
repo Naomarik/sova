@@ -435,7 +435,11 @@
   color: var(--color-ink-2);
 }
 .po-status-line { margin: 0; }
-.po-status-line > .button { min-height: 0; vertical-align: baseline; }
+/* Line 1 and its buttons on one row: the sentence wraps inside itself and Resume and
+   Details, the standard small buttons, follow it, kept together. */
+.po-status-first { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.po-status-first > .po-status-line { flex: 0 1 auto; min-width: 0; }
+.po-status-actions { display: flex; flex: none; align-items: center; gap: var(--space-2); }
 .po-status-more { color: var(--color-ink-muted); }
 /* Wide, every line shows and Details has nothing to do; below 480px only line 1 until it is pressed. */
 .po-status-toggle { display: none; }

@@ -104,7 +104,8 @@ or memory-on switch there is refused before anything is written.
 
 The engine logs the chat's **active branch**, read through the neutral reader, as numbered messages
 of six kinds: `user` (the user's words, an image as `[image]`), `sova` (the model's reply text),
-`tool` (one per tool call: its name and JSON arguments), `echo` (its result, clipped to its first and
+`tool` (one per tool call: its name and JSON arguments, `record_tour`'s supplied credentials as "[hidden]",
+§app.tours/sites), `echo` (its result, clipped to its first and
 last 15,000 characters; a failed one says so), `work` (a message an extension shows in the
 transcript, such as a worker's report) and `note` (a branch summary). Thinking, hidden notes (mode
 notes, alignment state, nudges), system and state entries are not logged. A text longer than 16,000

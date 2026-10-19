@@ -1,0 +1,75 @@
+{
+  "formatVersion": 1,
+  "_": "Seed spec of the made-up Mamluk Arabia website (Sova's simulation fixture). Not a real client.",
+  "grammar": {
+    "claimsRoot": "claims/",
+    "directoryKinds": [
+      "section"
+    ]
+  },
+  "claims": {
+    "§site/website": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/index.html",
+        "site/classes.html",
+        "site/contact.html",
+        "site/style.css"
+      ]
+    },
+    "§site.website/home": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/index.html"
+      ],
+      "requires": []
+    },
+    "§site.website/classes": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/classes.html"
+      ],
+      "requires": []
+    },
+    "§site.website/contact": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/contact.html"
+      ],
+      "requires": []
+    },
+    "§site.website/language": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/index.html",
+        "site/classes.html",
+        "site/contact.html"
+      ],
+      "requires": []
+    },
+    "§site.website/newsletter": {
+      "kind": "behavior",
+      "authority": "candidate",
+      "code": [
+        "site/index.html"
+      ],
+      "requires": []
+    }
+  },
+  "boundary": {
+    "include": [
+      "site"
+    ],
+    "exclude": []
+  }
+}

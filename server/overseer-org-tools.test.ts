@@ -250,7 +250,9 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
         .join(""),
     );
   }
-  const secrets = () => [TOKEN, TOKEN2, KEPT, "/h/", "/i/"];
+  /** Owner page link tokens made below (§app.owner-page/send): never in any output either. */
+  const ownerTokens: string[] = [];
+  const secrets = () => [TOKEN, TOKEN2, KEPT, ...ownerTokens, "/h/", "/i/"];
   const leaks = (s: string, about: boolean): string | null => leaksContact(s) ?? secrets().find((t) => s.includes(t)) ?? (!about && (s.includes("ABOUT-MARKER") || s.includes("pay late")) ? "about" : null);
 
   test("reads: every org, one org in full, a project, a person; none carries contact, a link or the About text", async () => {
@@ -536,6 +538,26 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const log = readFileSync(overseerActionsFile(), "utf8");
     assert.ok(log.includes('"tool":"sova_public_links"'), "control: its calls are logged");
     assert.ok(!log.includes(KEPT), "never the link");
+  });
+
+  test("sova_owner send_link (§app.owner-page/send): behind a card listing the owner; its refusal names why, never a link, token or number", async () => {
+    limits.reset();
+    const { ownerLinkFor } = await import("./owner");
+    assert.equal(orgs.readOrg(org.id).owner, maria.id, "control: Maria is the owner (set above)");
+    ownerTokens.push(ownerLinkFor(org.id).token);
+    card = null;
+    const typed = await call("sova_owner", { op: "send_link", org: org.id, person: "Maria Lopez" });
+    assert.match(typed.text, /^This reaches people or ends something: ask with sova_card, listing Maria Lopez \(p_[a-z0-9]+\) in its items/);
+    card = items(personItem(org.id, tony.id));
+    assert.match((await call("sova_owner", { op: "send_link", org: org.id, person: "Maria Lopez" })).text, /^This reaches people or ends something/, "the card lists someone else");
+    assert.equal((await call("sova_owner", { op: "send_link", org: org.id, person: "Tony Reyes" })).text, "Tony Reyes isn't Qorvex Holdings's owner. Nothing was sent.");
+    card = items(personItem(org.id, maria.id));
+    const r = await call("sova_owner", { op: "send_link", org: org.id, person: "Maria Lopez", note: `Call ${PHONE} if stuck.` });
+    assert.equal(r.ok, false);
+    assert.equal(r.text, "This note repeats private text (About this organization, notes, a goal or briefing, a profile or a contact). Write it again in your own words.");
+    const off = await call("sova_owner", { op: "send_link", org: org.id, person: "Maria Lopez" });
+    assert.equal(off.text, "Not sent to Maria Lopez: Outreach is off: set it up in Settings → Outreach. You can send it yourself from the People tab.");
+    card = null;
   });
 
   test("marker: no contact value, link token or /h/ URL in any result, refusal or action-log line; the About text only in its one read", () => {

@@ -1,9 +1,10 @@
 import { OPERATOR } from "../../shared/baton";
 import { LINK_WARNINGS } from "../../shared/public-links";
-import { handoffLine, type LinkKind, type LinkRef, type LinkRefusal, type OutreachLogLine } from "../../shared/outreach";
+import { handoffLine, ownerLine, type LinkKind, type LinkRef, type LinkRefusal, type OutreachLogLine } from "../../shared/outreach";
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
 import { batonById, currentOffer, keptLinks, reachedBy } from "../baton";
-import { operatorName, readProjects, readRoster } from "../orgs";
+import { operatorName, ownerOf, readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "../orgs";
+import { markOwnerLinkDelivered } from "../person-links";
 import { dropSiblingLinks, keepSiblingLink } from "../preview-kept";
 import { listPreviews, mintSibling, revokePreview } from "../preview-links";
 import { awaitShareLinks } from "../share/links-events";
@@ -18,7 +19,8 @@ import { previewAddress, previewOrigin, zoneOf } from "../share/preview-address"
 
 export interface LinkContext {
   orgId: string;
-  projectId: string;
+  /** Absent on an organization's own send (an owner page link): a project's kinds refuse then. */
+  projectId?: string;
   personId: string;
 }
 
@@ -175,7 +177,46 @@ const preview: LinkResolver = {
   },
 };
 
-export const RESOLVERS: Record<LinkKind, LinkResolver> = { handoff, preview };
+// ---- the org's owner page link (§app.owner-page/send) -----------------------------------------------
+
+const owner: LinkResolver = {
+  kind: "owner",
+  sessions: () => [],
+  check({ orgId, personId }, ref) {
+    if (ref.kind !== "owner") return no("link", "Not an owner page link.");
+    if (!readIndex().orgs.some((o) => o.id === orgId)) return no("not-owner", "That organization isn't attached here.");
+    if (ownerOf(orgId)?.id !== personId) return no("not-owner", `${nameOf(orgId, personId)} isn't ${readOrgOrPlaceholder(orgId).name}'s owner.`);
+    return addressRefusal();
+  },
+  // Their live link when its token is kept (nothing made, nothing turned off), else a new one as Get New Owner
+  // Link makes it: every older owner link of the org stops at once (one live link per org). Lazy: owner.ts
+  // loads the share listener's owner versions.
+  async resolve({ orgId, personId }, ref) {
+    if (ref.kind !== "owner") throw new LinkRefused("link", "Not an owner page link.");
+    const { ownerLinkToSend } = await import("../owner");
+    let got: ReturnType<typeof ownerLinkToSend>;
+    try {
+      got = (await awaitShareLinks(() => ownerLinkToSend(orgId, personId))).result;
+    } catch (err) {
+      throw new LinkRefused("not-owner", err instanceof Error ? err.message : String(err));
+    }
+    return {
+      url: linkUrl("i", got.token),
+      line: ownerLine(operatorName(), readOrgOrPlaceholder(orgId).name),
+      log: {},
+      minted: { ownerHash: got.hash, ...(got.made ? { made: "1" } : {}) },
+    };
+  },
+  // A failure turns nothing off: a link it made is the org's one live link (the older ones stopped at its
+  // mint); it stays undelivered, so the owner's ask stays in Needs you.
+  revoke() {},
+  // The message went: the link answers the owner's ask. Nothing else changes (a new owner's link included).
+  settle(m) {
+    if (m.ownerHash) markOwnerLinkDelivered(m.ownerHash);
+  },
+};
+
+export const RESOLVERS: Record<LinkKind, LinkResolver> = { handoff, preview, owner };
 
 /** A reference as the tools and routes pass it, checked for shape only. */
 export function parseLinkRef(v: unknown): LinkRef | null {

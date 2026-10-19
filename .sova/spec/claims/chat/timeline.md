@@ -2,8 +2,9 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 The session pane (§app/subagents-pane) has a **Timeline** tab: the whole session on one time axis. The outline's
-topics are chapter markers, each message you sent is a row, and what the agent did between two of
-your messages is a single line of counts under the row it belongs to — "3 replies · 14 tools ·
+topics are chapter markers, each message sent to the session is a row — yours, and one another
+session, the Overseer or a teammate sent, under a line naming who sent it — and what the agent did
+between two messages is a single line of counts under the row it belongs to — "3 replies · 14 tools ·
 6m". Notable moments (a compaction, a rewind, a subagent spawning or retiring, a model, thinking
 or mode change, an earlier summary of the session) get their own marker rows, and a stretch with
 nothing in it gets a dotless "idle 38m".
@@ -13,16 +14,16 @@ is every row in order. The timeline is the session at arm's length — where the
 where the long gaps were, where the model changed under you, what the session was about at each
 point.
 
-**It is also where you take a message back.** Each message you sent carries a **Rewind** that
+**It is also where you take a message back.** Each message on the branch carries a **Rewind** that
 takes the chat back to just before it, and the message's text comes back to the composer so it
 can be edited and sent again. It is pi's `/tree` on a user message, cut down to the one thing
 people use it for: "take that back and let me say it better." One toggle, **Inputs Only**,
-narrows the axis to your own messages and the gaps between them, which is the view `/tree` and
+narrows the axis to the messages you typed and the gaps between them, which is the view `/tree` and
 the composer's inputs row open.
 
 This tab absorbed the old Inputs tab: the same rows, the same rewind rules, the
 same notes, on the axis instead of in a second list of the same messages. Rewind is the pane's
-only verb, and it lives on exactly one kind of row: a message you sent, on the active branch.
+only verb, and it lives on exactly one kind of row: a message on the active branch.
 
 ## §chat.timeline/opening-it — Opening it
 
@@ -66,14 +67,18 @@ over with `margin-left:auto`, beside the subagents trigger (§app/subagents-pane
 </p>
 ```
 
-- **The count is the user's own messages on the active branch**, from `inputCount` in
-  `src/lib/input-count.ts`. It drops the moment a rewind lands, because the branch is what it
-  counts. The count stays visible: it is a fact about the session, whether or not the pane is open.
+- **The count is the messages you typed on the active branch, exactly the rows Inputs Only
+  lists**: never a message another session, the Overseer or a teammate sent, nor a wake nudge
+  (one own-input rule, `isOwnInput` in `shared/senders.ts`, used by the filter and the count
+  alike). It drops the moment a rewind lands, because the branch is what it counts. For the rows
+  the chat doesn't hold, the hello's summary lists the ones typed by the user apart from its list
+  of every input (`OlderSummary.ownInputs`; Undo last turn still reads the list of every input),
+  and a sender marker the chat holds for one of those rows takes it out of the count. The count stays visible: it is a fact about the session, whether or not the pane is open.
 - **Hidden at 0**, and hidden means *absent*: a session nobody has written to yet shows no control,
   not a greyed one. Before the chat's `hello` it shows the count known with rows kept for the
   session (§chat.transcript/rendering), when there is one. Otherwise, when the session is known to
   have an input — its list row has a derived title (a typed first message), or a row on screen is
-  an input — its box is held, invisible and out of the accessibility tree, so the status row is
+  one the user typed — its box is held, invisible and out of the accessibility tree, so the status row is
   there at its final height from the view's first frame; the `hello` fills it in, or removes it
   (a branch rewound past its first message). A session known to have none (a new one) holds
   nothing. It counts the
@@ -161,7 +166,7 @@ the kinds are the whole vocabulary — `input`, `chapter`, `marker`, `density`, 
 
 | Kind | What it is | Dot | Clock | Jumps | Acts |
 |---|---|---|---|---|---|
-| `input` | One message you sent, clamped to two lines (`.timeline-title`, full text in `title`); images-only reads "1 image" / "{n} images" | Solid, muted | Yes | Its own message | Rewind, on the active branch |
+| `input` | One message sent to the session, clamped to two lines (`.timeline-title`, full text in `title`); images-only reads "1 image" / "{n} images"; a sender line above it when someone other than you sent it | Solid, muted | Yes | Its own message | Rewind, on the active branch |
 | `chapter` | An outline topic, at its anchored message's time (`.timeline-chapter`, one line, ellipsized; `.outline-hash` for a `manual` topic) | Hollow, larger | Yes | The anchored message | — |
 | `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, when there is one — a rewind, a past summary or a settings change has none, so it is text | — |
 | `density` | What the agent did after the input directly above it — an input and its density line stay together, input on top | — | — | — | — |
@@ -175,6 +180,27 @@ The order is computed chronologically (`timelineRows()`: gaps, tie-breaks, rewin
 only then turned over for rendering, group-aware (`newestFirst()`): an input keeps its density
 line directly beneath it, and a gap stays between the same two rows. The filter only hides
 rows; the direction is the tab's, so both modes run newest first.
+
+### Who sent it
+
+A message another session sent (§chat.profiles/delivery), one the Overseer sent (its
+`sova-overseer-sent` marker, or a brief) and one a teammate sent in a shared session (a
+`sova-baton-sent` marker whose `by` isn't `operator`, §app.baton/attribution) keep their row,
+their place in time, their density line, their jump and their Rewind. Above the title, inside the
+row's third column and outside its jump button (so no control nests in another), a
+`p.session-sender.timeline-sender` names the sender the way the transcript does:
+
+- **Another session**: the `network` icon, "From {title}" with the title a link to that session
+  (`#/sid/<id>`), then "· hop {n}". No title: "From another session".
+- **The Overseer**: the `eye` icon, "From the Overseer".
+- **A teammate**: the `chat` icon, "From {name}", the name the shared session's roster gives the
+  person ("Someone" while unknown).
+
+The row's title, its tooltip and its full text are the message body: a message from another
+session drops its `[from session …]` header line, and a brief drops its brief tag. The sender comes
+only from those markers, never from the text, the same rule the transcript uses; one helper
+(`sendersOf` in `shared/senders.ts`) reads them for both, in either arrival order. A wake nudge
+keeps the row it always had, its reason as the title, with no sender line.
 
 ### Fixed rhythm, stated idle
 
@@ -303,17 +329,21 @@ One toggle button in the tab's own head, right-aligned on the state line's row:
 control: one press on, one press off, `aria-pressed` saying which. Pressed, a `check` icon sits
 before the words, so the state has a shape and never rests on colour (§design/ground-rules).
 
-**On, the axis is your messages and the time between them.** Every `input` row renders, each
-with its own density line under it (replies · tools · duration) and its Rewind; the `gap` rows are
-measured again between the rows that remain, so "idle 43m" is the silence between two of your
-messages. Every other row goes: chapters, compactions, rewind markers, subagents started and
-finished, model/thinking/mode changes and past summaries. The rows a fresh rewind left behind
-(below) stay — they are your messages too, and the filter is what `/tree` opens.
+**On, the axis is what you typed and the time between it.** Every `input` row of a message you
+typed renders, each with its own density line under it (replies · tools · duration) and its
+Rewind; the `gap` rows are measured again between the rows that remain, so "idle 43m" is the
+silence between two of your messages. Every other row goes: chapters, compactions, rewind markers,
+subagents started and finished, model/thinking/mode changes and past summaries, and the input rows
+you didn't type, with their density lines — a message another session sent, one the Overseer sent
+(its briefs included), one a teammate sent in a shared session, and a fired wake nudge. The rows a
+fresh rewind left behind (below) stay when you typed them, and go when someone else sent them: a
+left-behind row keeps its sender, so the filter never brings it back.
 
-**A fired wake nudge is an `input` row too** (§chat/transcript "wake" — it's a real user message under the
-hood, just rendered as a card in the thread). Its title is its reason, or "Wake nudge n1" when
-the nudge carried none — never the tagged message's first line. It gets the same density line
-and Rewind as any other input; nothing else distinguishes it on this axis.
+**A fired wake nudge is an `input` row with the filter off** (§chat/transcript "wake" — it's a
+real user message under the hood, just rendered as a card in the thread). Its title is its
+reason, or "Wake nudge n1" when the nudge carried none — never the tagged message's first line.
+It gets the same density line and Rewind as any other input. It is not something you typed, so
+Inputs Only leaves it out, and the composer's count doesn't count it.
 
 The list's name follows it: `aria-label="Session timeline, your messages only"`, and the foot line
 starts "Your messages only, newest first,".
@@ -326,7 +356,8 @@ question you are asking right now — "just my messages" — not a way you like 
 **Empty, filtered.** When the filter hides everything — a session with markers, chapters or
 summaries but no message of yours on the branch — the panel says why rather than going blank:
 "0 messages from you in this session yet." with "Turn off Inputs Only to see the rest of its
-timeline." A session with nothing at all shows the ordinary empty state, filter or not.
+timeline." — a session whose only messages came from other senders included. A session with
+nothing at all shows the ordinary empty state, filter or not.
 
 ## §chat.timeline/rewind — Rewind
 
@@ -334,7 +365,8 @@ timeline." A session with nothing at all shows the ordinary empty state, filter 
 the safe half of the row, and the whole of its hit area — and **Rewind** (ghost, `button-sm`)
 sits apart at the row's end in `.input-row-actions`, so the destructive half stays small and
 deliberate. Chapters, markers, density and gap rows never carry it: two places to destroy the same
-branch is one too many, and the thing you take back is always a message you sent.
+branch is one too many, and the thing you take back is always a message on the branch — yours, or
+one another session, the Overseer or a teammate sent.
 
 **The message's own strip asks for the same thing** (§chat.transcript/message-actions): the Rewind under a
 message in the transcript sends the identical `rewind` request over the same socket, with the same
@@ -383,7 +415,9 @@ last turn is off with its usual title and no reason.
 
 The composer gets the message's text ahead of whatever draft was there, the same way a Stop
 hands back queued messages, and announces "Rewound. Your message is back in the composer."
-Images aren't handed back, as in pi's `/tree`. The thread, context ring and mode redraw for the
+A message another session sent comes back as its body alone, without its `[from session …]`
+header line (the chat strips it from the `rewound` reply's text, so the transcript's Rewind does
+the same). Images aren't handed back, as in pi's `/tree`. The thread, context ring and mode redraw for the
 new branch; a rewind to the first message leaves an empty thread.
 
 On the axis, the rewound-to row stays as the **boundary** (`.input-row-boundary`, the accent tint)
@@ -500,6 +534,9 @@ refetch or an armed Rewind never remounts the row under focus.
   of `aria-pressed`, not colour.
 - **Each jump button opens with a visually hidden "Jump to this message: "**, so its name says
   what it does, not just what it contains.
+- **A sender line reads first.** It sits before the row's jump button in the DOM, as text with
+  one link (the sending session's), so a screen reader hears who sent a message before its words,
+  and the link and the jump are separate tab stops, never one inside the other.
 - **Rewind** is never hidden when it can't act: it stays in the row, `aria-disabled`, with the
   reason in its `title` and on `aria-describedby`, so it reads out with the button. Its name is
   "Rewind to before this message"; armed, "Confirm: rewind to before this message".
@@ -555,7 +592,7 @@ refetch or an armed Rewind never remounts the row under focus.
   filter gives back the short list.
 - **Newest first under the filter** (alone). Both modes run newest first, so the toggle changes
   only what rows there are, never which way the axis runs; the direction is the tab's.
-- **Rewind on a non-input row.** The thing you take back is always a message you sent. A marker
+- **Rewind on a non-input row.** The thing you take back is always a message on the branch. A marker
   or a chapter would be a second, vaguer handle on the same branch.
 - **A second control for the filter** (a segmented pair, a menu, a remembered preference). One
   press on, one press off; see "Inputs Only".
@@ -578,6 +615,7 @@ refetch or an armed Rewind never remounts the row under focus.
 | Row body | `button.timeline-body` (the whole hit area and the jump) · `span.timeline-body.timeline-body-static` (a marker with nothing to land on) `.timeline-title` (2-line clamp) `.timeline-chapter` (+ `.outline-hash`) `.timeline-meta` |
 | Input row | a third-column wrapper · `.input-row-line` · `button.timeline-body.input-row-body` · `.timeline-title.input-row-title` · `.input-row-actions` (Rewind; armed: `.button-destructive` Rewind Here + ghost Cancel) · `.input-row-note` (confirm, boundary, `.text-error` refusal) |
 | Between rows | `.timeline-gap` |
+| Sender line | `p.session-sender.timeline-sender` (the transcript's sender header, `.timeline-sender` resets its margins for the row) · an `.icon` (`network`, `eye` or `chat`) · the session link |
 | Borrowed | `.visually-hidden` (the jump prefix, the disabled reason, "Left behind by the rewind.") · `.usage-note.text-muted` (the foot) · `.empty.subagents-empty` (the empty states) · `.entry-jumped` (the landing tint, in the transcript) · `.outline-explained-open` (the strip's `Open Timeline` button, §app/insights) · `.run-status-link` (the composer's inputs trigger) |
 
 The input row borrows the old Inputs tab's `.input-row-*` classes rather than growing its own,

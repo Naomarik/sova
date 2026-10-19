@@ -235,11 +235,12 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
   omitted for an on-time fire.
 - **Open.** The whole message exactly as it was sent — all four lines (the fire line, the optional
   overdue line, the reason line, the standing instruction) — in mono, never rewritten or hidden.
-- **Counts as an input.** A wake row is on every list that counts "your messages": the composer's
-  "N inputs" trigger, the Timeline's Inputs Only view (where it shows the reason, or "Wake nudge
-  n1" with none — §chat/timeline), rewind targets, and the "calls after the last user message" scan that
-  decides whether an open tool call may still be running. Only its rendering differs from an
-  ordinary user row.
+- **An input, never one you typed.** A wake row is a Timeline input row (where it shows the
+  reason, or "Wake nudge n1" with none — §chat/timeline), a rewind target, the newest message Undo
+  last turn may take back, and a turn start for the "calls after the last user message" scan that
+  decides whether an open tool call may still be running. It is not in what counts the messages
+  you typed: the composer's "N inputs" trigger and the Timeline's Inputs Only view leave it out
+  (§chat.timeline/inputs-only).
 - **Never hidden, never titles the session.** "Hide tool calls" leaves wake rows alone, and a wake
   row never joins a hidden-tool-call group (it isn't a tool row). The session list never titles a
   session from a wake message — it waits for the next real one.
@@ -439,6 +440,8 @@ extensions add under a reply comes after it, outside the strip, and never change
   icon flips to a check for 1.5s and the toast says "Copied message."
 - **Rewind** (your messages) moves the branch to just before that message and hands its text back
   to the composer — the same request the Timeline's input rows make (§chat/timeline), with the same refusals.
+  A message another session sent comes back without its `[from session …]` header line: the
+  composer gets the body alone.
   **Regenerate** (replies) walks back to the user message that started the turn, rewinds there and
   re-sends that message's own stored text and images with the session's CURRENT model, so
   switch-model-then-regenerate compares. The whole turn re-runs, tools included, and the composer
@@ -791,7 +794,7 @@ virtualized.
   Rows never drawn have estimated heights, so a jump lands once and holds its row in the middle
   while the rows around it are drawn (§chat.transcript/jump-landing).
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
-  the rows they don't carry: the ids of their inputs, how many messages they hold, whether
+  the rows they don't carry: the ids of their inputs and, apart, of those the user typed, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
   and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
   Out's "up to message {n}", Undo last turn and the composer's alignment chip

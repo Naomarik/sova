@@ -258,7 +258,10 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   title}, hop}` (§app.overseer/sent-marker's mechanism, its third sender). Only the in-process tool
   can set it. The target's transcript then draws a sender header, "From {title}" linking to the
   sender and "hop {n}", above a neutral message row whose author reads "From a session", never
-  "You", and hides the header line from the row's text. On reload and live alike.
+  "You", and hides the header line from the row's text. On reload and live alike. The Timeline
+  tab's row for it carries the same sender line and shows the text without the header line
+  (§chat/timeline "Who sent it"); it is not something the user typed, so Inputs Only and the
+  composer's input count leave it out.
 - While queued in the target, its row carries the same sender header, **From {title}** (the queue
   snapshot's `fromSession`).
 - **The sender's transcript** shows each `session_send` as a card naming the target (a link) and

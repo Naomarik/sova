@@ -415,7 +415,10 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   session with a 409.
 - The operator's transcript shows the sender's name on each user row, and the hand-off, done and
   decision entries as cards. A row still streaming live gets its name as soon as its marker
-  arrives, never "You" for someone else's message until a reload.
+  arrives, never "You" for someone else's message until a reload. The operator's Timeline tab
+  names a teammate's message the same way, "From {name}" above its row, and Inputs Only and the
+  composer's input count leave it out; a message marked `operator` is the operator's own
+  (§chat/timeline "Who sent it").
 - **The model reads who wrote each message**, from the same markers (one rule for the views and
   the model: the last message, before its marker lands, is the holder's). In the model's context,
   and nowhere else (the transcript, the operator's view and the share pages are unchanged), each

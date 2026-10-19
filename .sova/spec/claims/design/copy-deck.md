@@ -727,6 +727,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Composer trigger | `{n} inputs` (1: `1 input`) · accessible name: `{n} inputs in this chat — show them on the Timeline` (1: `1 input in this chat — show it on the Timeline`) · absent at 0 |
 | Row name prefix (visually hidden) | `Jump to this message: ` |
 | Images-only row | `1 image` / `{n} images` |
+| Sender line, another session | `From {title}` (the title links to that session) `· hop {n}` · no title: `From another session` |
+| Sender line, Overseer | `From the Overseer` |
+| Sender line, teammate | `From {name}` (unknown: `From Someone`) |
 | Row action | Rewind · confirming: `Rewind Here` + `Cancel` · in flight: `Rewinding…` |
 | Confirm note | This message and every reply after it leave the branch. The session file keeps them. |
 | Another rewind in flight | A rewind is already in progress. |

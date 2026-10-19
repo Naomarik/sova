@@ -256,6 +256,10 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
       assert.equal(r.ok, false);
       assert.match(r.text, /A new owner link was made but not delivered/);
       remember();
+      // The message: the fixed owner line, a blank line, the link (§app.outreach/channels); never model-written.
+      const made = ownerLinks().at(-1)!;
+      assert.equal(failing.texts[0], `${orgs.operatorName()} sent you your page for Halden Works.\n\n${PUBLIC}/i/${tokenFor(made.hash, "i")}`);
+      assert.equal(made.askedAt, ownerLinks().find((l) => l.hash === record.hash)!.askedAt, "the new link carries the ask");
       assert.equal(owner.ownerLinkNeeds(org.id), 1, "a failed send leaves the ask");
       assert.ok(ownerAttention().some((i) => i.id === `owner-link-request:${org.id}`), "and Needs you shows it");
       const silent = standIn(() => ({ ok: false, code: "unknown", retryable: false, why: "The sender didn't answer." }));
@@ -269,9 +273,12 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
     } finally {
       setSendChannelForTest(null);
     }
-    const ok = await sendOwner("Omar Hughes");
+    const ok = await sendOwner("Omar Hughes", { note: "Here is your page again." });
     assert.equal(ok.ok, true, ok.text);
     assert.equal(owner.ownerLinkNeeds(org.id), 0, "a delivered send answers the ask");
+    assert.equal(ownerLinks().at(-1)!.undelivered, undefined);
+    assert.equal(logOf().at(-1)!.note, true, "the note went, its text never logged");
+    assert.ok(!readFileSync(join(root, "ws", "outreach.jsonl"), "utf8").includes("Here is your page"));
     assert.ok(!ownerAttention().some((i) => i.id === `owner-link-request:${org.id}`));
   });
 

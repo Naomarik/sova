@@ -4,6 +4,36 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.6.0 — 2026-10-19
+
+Guided tours, everything as a command, and the Overseer's approvals in its head. 63 commits since
+v0.5.0. The highlights:
+
+- **Guided tours.** Ask a chat for a tour of a real feature: with vis on, it records checked
+  step-by-step views at desktop and phone size, and you read it with Back and Next, share it by an
+  expiring link that shows exactly the edition you reviewed, or attach it to a hand-off. A recording
+  that needs a sign-in waits for you on the tour card and in Needs you.
+- **Everything is a command.** Sova's actions are one catalogue: the command palette, the `sova`
+  command line (`sova list`, `sova run`), extensions' own keys and places, and remote commands
+  across the mesh all reach the same actions. A project mode can now ship **commands** you and
+  scripts run by name, and **hooks** that run after a reply; only you approve a mode's hooks, never
+  the Overseer.
+- **Approvals & Schedules move to the Overseer's head.** They left the composer for a Schedules
+  menu in the head (the first item of ⋯ on a narrower window), with a dot while a schedule waits for
+  your approval.
+- **Overseer card clicks never get lost.** A click that doesn't reach the Overseer brings its
+  buttons back with "Your click didn't reach the Overseer. Click again." instead of becoming typed
+  text, and an approved act runs before the card records its answer.
+- **The Overseer can send an owner their page link** on WhatsApp, as your act only.
+- **Steadier chat starts.** A failed start retries once quietly before it says "This chat didn't
+  start.", and old failure banners leave once a newer turn starts.
+- **Spec tools.** Agreed stamps say where the go-ahead was given, every area says what it doesn't
+  own, merges of a spec go block by block, and the list of sections to read is shorter and ranked.
+
+Going back to `v0.5.0` (`SOVA_REF=v0.5.0`) hasn't been tested on this release: a project mode that
+declares commands or hooks shows as broken there, and the Overseer's approvals return to its
+composer chip.
+
 ## v0.5.0 — 2026-10-19
 
 Chat powers, a Folders sidebar and steadier chat starts. 53 commits since v0.4.0. The highlights:

@@ -16,6 +16,7 @@ A session is listed when one of these holds:
 - One of its subagents ended in an error.
 - It's idle with open alignment questions, and its branch isn't merged yet.
 - A baton hand-off is waiting on you.
+- One of its tour recordings is waiting for you to sign in to a site, on the tour card.
 - A playbook run proposes a branch to merge. Its row carries a **Merge Branch** button.
 
 A project's failed deploy or open deploy request, and a WhatsApp sender that stopped sending, belong to no session: they list under the session rows as rows of their own, each opening the page where you deal with it.

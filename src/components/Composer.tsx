@@ -1,6 +1,6 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { releaseControl } from "../lib/release-control";
-import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "../../shared/protocol";
+import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from "../lib/input-mode";
@@ -52,8 +52,7 @@ import { inputsText } from "../lib/input-count";
 import { isOpenDoc, type AlignEntry } from "../lib/align";
 import { AlignChip } from "./AlignChip";
 import { OverseerCardChip } from "./OverseerCardChip";
-import { OverseerPermitsChip } from "./OverseerPermitsChip";
-import { livePermits, type Permit } from "../../shared/overseer-grants";
+import { runStatusEnd } from "../lib/run-status";
 import type { OverseerCard } from "../../shared/overseer-card";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
@@ -182,16 +181,10 @@ export function Composer(props: {
   cards?: OverseerCard[];
   /** Jump to a card. */
   onJumpCard?: (card: OverseerCard) => void;
-  /** The Overseer's approvals and rules and its running count (§app.overseer/approvals,
-      §app.overseer/caps): the run-status row carries "3 of 10 running" while any runs, and the
-      approvals chip while any is live. */
-  autonomy?: { running: number; cap: number; permits: Permit[]; schedules?: ScheduleInfo[] };
-  onRevokePermit?: (id: string) => Promise<string | null>;
-  /** Approve or revoke a playbook schedule from the same panel (§chat.schedules/where-shown). */
-  onApproveSchedule?: (s: ScheduleInfo) => Promise<string | null>;
-  onRevokeSchedule?: (id: string) => Promise<string | null>;
-  onJumpCardId?: (card: string) => void;
-  onJumpToolCall?: (toolCallId: string) => void;
+  /** The Overseer's running count (§app.overseer/caps): the run-status row carries "3 of 10
+      running" while any runs. Its approvals and schedules live in the page head, not here
+      (§app.overseer/approvals). */
+  autonomy?: { running: number; cap: number };
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
   inputCount?: number;
   /** The branch has inputs whose count isn't known yet (lib/known-before-mount): the inputs
@@ -453,12 +446,14 @@ export function Composer(props: {
 
   /** The alignment chip, while an alignment is open (and there is somewhere to jump). */
   const runningRow = () => (props.autonomy && props.autonomy.running > 0 ? props.autonomy : null);
-  // The chip shows while an approval or rule is live, or while Sova knows of a schedule.
-  const permitsRow = () =>
-    props.autonomy && props.onRevokePermit && (livePermits(props.autonomy.permits).length || props.autonomy.schedules?.length)
-      ? { permits: props.autonomy.permits, schedules: props.autonomy.schedules ?? [] }
-      : null;
   const alignRow = () => (props.onJumpAlign && (props.aligns ?? []).some((e) => isOpenDoc(e.doc)) ? props.aligns! : null);
+  /** The row's right-hand cluster, in order; its parts as strings, so a chip keeps its node (and
+      its open menu) while the others come and go. */
+  const endItems = createMemo(() =>
+    runStatusEnd({ running: !!runningRow(), cards: !!(props.onJumpCard && props.cards?.length), align: !!alignRow(), inputs: !!inputsRow(), inputsHeld: inputsHeld() }),
+  );
+  const endParts = createMemo(() => endItems().map((p) => p.part), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const leadClass = (part: string) => (endItems()[0]?.part === part ? " run-status-lead" : "");
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
   const slashMatches = createMemo(() => {
@@ -905,7 +900,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || alignRow() || props.cards?.length || runningRow() || permitsRow()}>
+        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || alignRow() || props.cards?.length || runningRow()}>
           <p class="run-status">
             {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
                 compaction or a subagent — and nothing else in the row pulses. */}
@@ -983,61 +978,54 @@ export function Composer(props: {
                 </>
               )}
             </Show>
-            {/* The alignment chip, then the inputs trigger: right-aligned together (the chip takes the
-                auto margin when it is there), so they keep their place whatever else the row carries. */}
-            <Show when={runningRow()}>
-              {(r) => (
-                <button
-                  type="button"
-                  class="run-status-link run-status-running text-num"
-                  title="Sessions the Overseer started or messaged that are working now, of its limit. Opens Settings → Overseer → Limits."
-                  onClick={() => openSettings("overseer", "overseer-limits")}
-                >
-                  {r().running} of {r().cap} running
-                </button>
+            {/* The right end: one cluster in a fixed order, "3 of 10 running", the card chip, the
+                alignment chip, then the inputs trigger last (lib/run-status). Only its first part
+                takes the auto margin, so the row has two ends and nothing floats between them. */}
+            <For each={endParts()}>
+              {(part) => (
+                <Switch>
+                  <Match when={part === "running" && runningRow()}>
+                    {(r) => (
+                      <button
+                        type="button"
+                        class={`run-status-link run-status-running text-num${leadClass(part)}`}
+                        title="Sessions the Overseer started or messaged that are working now, of its limit. Opens Settings → Overseer → Limits."
+                        onClick={() => openSettings("overseer", "overseer-limits")}
+                      >
+                        {r().running} of {r().cap} running
+                      </button>
+                    )}
+                  </Match>
+                  <Match when={part === "cards" && props.cards?.length ? props.cards : null}>
+                    {(cards) => <OverseerCardChip cards={cards()} class={leadClass(part)} onJump={(c) => props.onJumpCard?.(c)} />}
+                  </Match>
+                  <Match when={part === "align" && alignRow()}>
+                    {(entries) => <AlignChip entries={entries()} class={leadClass(part)} onJump={(e) => props.onJumpAlign?.(e)} />}
+                  </Match>
+                  <Match when={part === "inputs" && inputsRow()}>
+                    {(row) => (
+                      <button
+                        type="button"
+                        class={`run-status-link run-status-inputs${leadClass(part)}`}
+                        aria-label={row().label}
+                        aria-expanded={props.inputsOpen ? "true" : "false"}
+                        aria-controls={PANE_ID}
+                        onClick={() => props.onShowTimeline?.(true)}
+                      >
+                        {row().text}
+                        <Icon name="chevron-right" small />
+                      </button>
+                    )}
+                  </Match>
+                  <Match when={part === "inputs-held"}>
+                    <span class={`run-status-link run-status-inputs${leadClass(part)}`} aria-hidden="true" style={{ visibility: "hidden" }}>
+                      {inputsText(1)}
+                      <Icon name="chevron-right" small />
+                    </span>
+                  </Match>
+                </Switch>
               )}
-            </Show>
-            <Show when={permitsRow()}>
-              {(permits) => (
-                <OverseerPermitsChip
-                  permits={permits().permits}
-                  schedules={permits().schedules}
-                  onRevoke={(id) => props.onRevokePermit?.(id) ?? Promise.resolve(null)}
-                  onApproveSchedule={(s) => props.onApproveSchedule?.(s) ?? Promise.resolve(null)}
-                  onRevokeSchedule={(id) => props.onRevokeSchedule?.(id) ?? Promise.resolve(null)}
-                  onJumpCard={(id) => props.onJumpCardId?.(id)}
-                  onJumpUse={(id) => props.onJumpToolCall?.(id)}
-                />
-              )}
-            </Show>
-            <Show when={props.onJumpCard && props.cards?.length ? props.cards : null}>{(cards) => <OverseerCardChip cards={cards()} onJump={(c) => props.onJumpCard?.(c)} />}</Show>
-            <Show when={alignRow()}>{(entries) => <AlignChip entries={entries()} onJump={(e) => props.onJumpAlign?.(e)} />}</Show>
-            <Show when={inputsRow()}>
-              {(row) => (
-                <button
-                  type="button"
-                  class="run-status-link"
-                  style={{ "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
-                  aria-label={row().label}
-                  aria-expanded={props.inputsOpen ? "true" : "false"}
-                  aria-controls={PANE_ID}
-                  onClick={() => props.onShowTimeline?.(true)}
-                >
-                  {row().text}
-                  <Icon name="chevron-right" small />
-                </button>
-              )}
-            </Show>
-            <Show when={inputsHeld()}>
-              <span
-                class="run-status-link"
-                aria-hidden="true"
-                style={{ visibility: "hidden", "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
-              >
-                {inputsText(1)}
-                <Icon name="chevron-right" small />
-              </span>
-            </Show>
+            </For>
           </p>
         </Show>
     </>

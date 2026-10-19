@@ -14,7 +14,7 @@ const TRIGGER_GAP = 4;
  * shared `.model-menu.action-menu` popover (top layer, light dismiss, Escape for free), placed
  * above or below the trigger, whichever fits.
  */
-export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEntry): void }) {
+export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEntry): void; /** More classes on the trigger (the run-status row's lead). */ class?: string }) {
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   const [open, setOpen] = createSignal(false);
@@ -45,7 +45,7 @@ export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEnt
       <button
         ref={trigger}
         type="button"
-        class="run-status-link run-status-align"
+        class={`run-status-link run-status-align${props.class ?? ""}`}
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-label={alignChipLabel(counts())}

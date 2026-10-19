@@ -2562,6 +2562,11 @@ export type WatchContext = ContextInfo | "compacted" | null;
 export interface OlderSummary {
   /** Row ids of the user's inputs (user rows and wake nudges), oldest first. */
   inputs: string[];
+  /** Of those, the rows the user typed (shared/senders.ts `isOwnInput`: no wake nudge, nor a message
+      another session, the Overseer or a teammate sent, by the sender markers among these rows),
+      oldest first: the composer's input count (§chat.timeline/opening-it). A marker among the rows
+      the client holds takes its target out too. Absent from older servers. */
+  ownInputs?: string[];
   /** Messages (distinct entries of user, wake, link and reply rows). */
   messages: number;
   /** Whether any is a reply's row (assistant text or a tool call). */

@@ -1,15 +1,17 @@
-// The composer's Inputs trigger: how many user messages this chat's active
-// branch holds, and what the row calls them. The Timeline's "Inputs Only" view lists exactly
+// The composer's Inputs trigger: how many messages the user typed on this chat's active
+// branch, and what the row calls them. The Timeline's "Inputs Only" view lists exactly
 // these rows (src/lib/inputs.ts `inputRows`), so the count drops after a rewind — which is the point.
 
 import type { TranscriptItem } from "../../shared/protocol";
-import { isInput } from "./turn";
+import { isOwnInput, sendersOf } from "../../shared/senders";
 
-/** User messages on the active branch: the rows that view lists. A fired wake nudge counts too
-    (isInput) — it is a real user message under the hood, just rendered differently. A link message
-    is not: a partner's words, never the user's input. */
-export const inputCount = (items: readonly TranscriptItem[]): number =>
-  items.reduce((n, it) => (isInput(it) ? n + 1 : n), 0);
+/** The messages the user typed on the active branch: the rows that view lists. Never a fired wake
+    nudge, a link message, nor a message another session, the Overseer or a teammate sent
+    (shared/senders.ts `isOwnInput`, by the sender markers among `items`). */
+export const inputCount = (items: readonly TranscriptItem[]): number => {
+  const senders = sendersOf(items);
+  return items.reduce((n, it) => (isOwnInput(it, senders) ? n + 1 : n), 0);
+};
 
 /** "7 inputs" / "1 input": the trigger's visible text. */
 export const inputsText = (n: number): string => `${n} ${n === 1 ? "input" : "inputs"}`;

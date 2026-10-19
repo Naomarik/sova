@@ -104,7 +104,7 @@ import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
-import type { RewindControl, RewindResult } from "../lib/inputs";
+import { handBackText, type RewindControl, type RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
@@ -125,7 +125,7 @@ import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
-import { inputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
+import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
@@ -281,7 +281,7 @@ export function ChatView(props: {
   const inputCount = () => {
     const list = items();
     const o = older() ?? keptOlder(cached, list);
-    return o ? inputTotal(list ?? [], o) : null;
+    return o ? ownInputTotal(list ?? [], o) : null;
   };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
@@ -964,15 +964,18 @@ export function ChatView(props: {
         // A rewind landed. The server has already broadcast the new branch's hello (and mode), so
         // the thread is reset; what's left is the rewound message, which goes ahead of the draft.
         case "rewound": {
+          // A message another session sent comes back as its body: the header line is the
+          // model's, not words to send again (§chat.timeline/rewind).
+          const editorText = msg.editorText ? handBackText(msg.editorText) : msg.editorText;
           batch(() => {
             setErrors([]); // they belonged to the turns just abandoned
             setTurnError(null);
             setCommandRows([]);
-            if (msg.editorText) setRestored({ text: msg.editorText });
+            if (editorText) setRestored({ text: editorText });
           });
-          announce(msg.editorText ? "Rewound. Your message is back in the composer." : "Rewound.");
+          announce(editorText ? "Rewound. Your message is back in the composer." : "Rewound.");
           props.onRewound?.({ path: props.path, entryId: msg.entryId });
-          settleRequest(msg.id, { ok: true, text: msg.editorText });
+          settleRequest(msg.id, { ok: true, text: editorText });
           break;
         }
         // settleRequest announces it: the pane shows the same message inline on its row.

@@ -120,7 +120,7 @@ describe("GET /api/transcript rows", () => {
       assert.deepEqual(r.olderSummary, summarize(whole.slice(0, r.older)));
       assert.equal(r.olderSummary.inputs.length + whole.slice(r.older).filter(isInput).length, whole.filter(isInput).length);
     }
-    assert.deepEqual(chunks.at(-1)!.olderSummary, { inputs: [], messages: 0, replies: false });
+    assert.deepEqual(chunks.at(-1)!.olderSummary, { inputs: [], ownInputs: [], messages: 0, replies: false });
   });
 
   test("a range down to the oldest input, in one request, reaches the top and concatenates", async () => {

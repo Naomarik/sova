@@ -2,11 +2,13 @@
 // counts the rows it holds (src/lib/turn.ts `isInput`, src/lib/message-count.ts), and the server
 // counts the rows it didn't send with a newest-rows-first hello (server/tail-hello.ts
 // `olderSummary`), so the two add up to the count of the whole branch. Imports only the card model
-// (shared/overseer-card.ts, pure) at runtime, for the open cards above the rows a client holds, and
-// the row facts reader (shared/wire-v1.ts, pure).
+// (shared/overseer-card.ts, pure) at runtime, for the open cards above the rows a client holds, the
+// row facts reader (shared/wire-v1.ts, pure) and the sender markers' reader (shared/senders.ts,
+// pure), for the rows the user typed.
 
 import { CARD_TOOL, isOpenCard, normalizeCardDetails, type CardDetails, type OverseerCard } from "./overseer-card";
 import type { AlignDocInfo, OlderSummary, TranscriptItem } from "./protocol";
+import { ownInputIds } from "./senders";
 import { rowFacts } from "./wire-v1";
 
 /** The user's inputs: a user row or a wake nudge (src/lib/turn.ts says why a link message isn't). */
@@ -34,6 +36,7 @@ export function summarize(rows: readonly TranscriptItem[]): OlderSummary {
   const cards = openCardRows(rows);
   return {
     inputs: rows.filter(isInput).map((r) => r.id),
+    ownInputs: ownInputIds(rows),
     messages: messageCount(rows),
     replies: rows.some(isReplyRow),
     ...(aligns.length ? { aligns } : {}),

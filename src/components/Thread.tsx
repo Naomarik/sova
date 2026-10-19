@@ -22,6 +22,7 @@ import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
+import { sendersOf } from "../../shared/senders";
 import { profileIconName } from "../lib/profiles";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
@@ -669,25 +670,12 @@ export function HistoryItems(props: {
     );
   });
 
-  /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
-  const batonSent = createMemo(() => {
-    const by = new Map<string, string>();
-    for (const it of props.items) if (it.batonMark?.kind === "sent") by.set(it.batonMark.targetId, it.batonMark.by);
-    return by;
-  });
+  /** Who sent each user row, when its marker says (another session §chat.profiles/delivery, the
+      Overseer, a baton participant §app.baton/attribution): target id → sender, in any order. The
+      Timeline reads the same helper, so the two never disagree (shared/senders.ts). */
+  const senders = createMemo(() => sendersOf(props.items));
+  const senderOf = (id: string) => senders().get(entryIdOf(id));
   const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
-  /** User rows the Overseer sent: its markers name them by id, in any order. */
-  const overseerSent = createMemo(() => {
-    const ids = new Set<string>();
-    for (const it of props.items) if (it.overseerMark?.kind === "sent") ids.add(it.overseerMark.targetId);
-    return ids;
-  });
-  /** User rows another session sent (§chat.profiles/delivery): target id → sender, in any order. */
-  const sessionSent = createMemo(() => {
-    const by = new Map<string, { sessionId: string; title: string; hop: number }>();
-    for (const it of props.items) if (it.sessionMark?.kind === "sent") by.set(it.sessionMark.targetId, { ...it.sessionMark.from, hop: it.sessionMark.hop });
-    return by;
-  });
   /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /**
@@ -869,9 +857,9 @@ export function HistoryItems(props: {
                 <UserTurn
                   text={item.text ?? ""}
                   time={item.at}
-                  overseer={overseerSent().has(entryIdOf(item.id))}
-                  sender={batonSent().has(entryIdOf(item.id)) ? nameOf(batonSent().get(entryIdOf(item.id))!) : undefined}
-                  fromSession={sessionSent().get(entryIdOf(item.id))}
+                  overseer={senderOf(item.id)?.kind === "overseer"}
+                  sender={((s) => (s?.kind === "baton" ? nameOf(s.by) : undefined))(senderOf(item.id))}
+                  fromSession={((s) => (s?.kind === "session" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(senderOf(item.id))}
                   images={item.images}
                   attachments={item.attachments}
                 />

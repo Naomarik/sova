@@ -1046,6 +1046,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .session-sender > span { min-width: 0; white-space: nowrap; }
 .session-sender > span:nth-of-type(2) { display: flex; gap: 0.3em; overflow: hidden; }
 .session-sender > span:nth-of-type(2) > a { min-width: 0; }
+/* The same line above a Timeline row (§chat/timeline "Who sent it"): in the row's column, not
+   pulled under a bubble. */
+.session-sender.timeline-sender { grid-row: 1; grid-column: 3; align-self: auto; margin: 0 0 var(--space-1); }
+.timeline-row:has(> .timeline-sender) > :not(.timeline-sender) { grid-row: 2; }
 .profile-card .card-body { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
 .profile-card .card-body > .text-muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-changes-head { flex-wrap: wrap; }

@@ -47,8 +47,12 @@ export interface PersonLinkRecord {
   revokedWhy?: PersonLinkWhy;
   /** The last use by a person (written at most once an hour; `expiresAt` is it + OWNER_IDLE_MS). */
   lastUsedAt?: string;
-  /** When the owner, holding this link after it turned off unused, last asked for a new one. */
+  /** When the owner, holding this link after it turned off unused, last asked for a new one. On a link
+      the Overseer's send made (`undelivered`), the ask it carries until its message went. */
   askedAt?: string;
+  /** Made by the Overseer's send (§app.owner-page/send) and not yet delivered: a failed or unknown send
+      leaves it, so the owner's ask stays in Needs you. A delivered send clears it (markOwnerLinkDelivered). */
+  undelivered?: true;
 }
 
 interface Store {
@@ -129,12 +133,17 @@ export function personLinkState(l: PersonLinkRecord, now = Date.now()): "live" |
   return Date.parse(l.expiresAt) <= now ? "expired" : "live";
 }
 
-/** Mint the org's owner link for `personId`; every older owner link of the org stops working now. Returns the token (kept, server/link-tokens.ts). */
-export function mintOwnerLink(orgId: string, personId: string, now = Date.now()): { token: string; record: PersonLinkRecord } {
+/** Mint the org's owner link for `personId`; every older owner link of the org stops working now. Returns the token (kept, server/link-tokens.ts).
+    `undelivered` (the Overseer's send, §app.owner-page/send): the new link carries the owner's pending ask
+    (their newest link's `askedAt`, when it turned off unused) until its message went. */
+export function mintOwnerLink(orgId: string, personId: string, now = Date.now(), opts: { undelivered?: boolean } = {}): { token: string; record: PersonLinkRecord } {
   const store = read();
   const at = new Date(now).toISOString();
   let gen = 0;
   const off: string[] = [];
+  // The ask the owner's newest link carries now (before the rotation below turns it off).
+  const newest = store.links.filter((l) => l.orgId === orgId && l.personId === personId).at(-1);
+  const ask = opts.undelivered && newest?.askedAt && !newest.revokedAt ? newest.askedAt : undefined;
   for (const l of store.links)
     if (l.orgId === orgId) {
       gen = Math.max(gen, l.gen || 0);
@@ -145,7 +154,17 @@ export function mintOwnerLink(orgId: string, personId: string, now = Date.now())
       }
     }
   const token = randomBytes(32).toString("base64url");
-  const record: PersonLinkRecord = { hash: hashToken(token), orgId, personId, scope: "owner", gen: gen + 1, createdAt: at, expiresAt: new Date(now + OWNER_IDLE_MS).toISOString() };
+  const record: PersonLinkRecord = {
+    hash: hashToken(token),
+    orgId,
+    personId,
+    scope: "owner",
+    gen: gen + 1,
+    createdAt: at,
+    expiresAt: new Date(now + OWNER_IDLE_MS).toISOString(),
+    ...(opts.undelivered ? { undelivered: true as const } : {}),
+    ...(ask ? { askedAt: ask } : {}),
+  };
   store.links.push(record);
   if (!store.key) store.key = handleKey();
   write(store);
@@ -194,6 +213,17 @@ export function recordAsk(hash: string, now = Date.now()): string | null {
   l.askedAt = new Date(now).toISOString();
   write(store);
   return l.askedAt;
+}
+
+/** The Overseer's send of this link went (§app.owner-page/send): it answers the owner's ask. Changes nothing
+    else, so a link of anyone else (a new owner's) is never touched. */
+export function markOwnerLinkDelivered(hash: string): void {
+  const store = read();
+  const l = store.links.find((x) => x.hash === hash);
+  if (!l?.undelivered) return;
+  delete l.undelivered;
+  delete l.askedAt;
+  write(store);
 }
 
 /** Turn off every live owner link matching; returns how many. */

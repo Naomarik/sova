@@ -142,6 +142,66 @@ function tokenMatches(candidate: string): boolean {
   return token !== null && timingSafeEqual(digest(candidate), digest(token));
 }
 
+/** Whether an x-sova-token header value is this install's token, compared as the gate compares it.
+    The record of who ran what (server/command-audit.ts, §app.command-audit/record) is written only
+    for a call that shows it: never for one the gate lets in without it (an exempt path, auth off). */
+let tokenBytes: { token: string; bytes: Buffer } | null = null;
+export function showsToken(header: string | undefined): boolean {
+  if (header === undefined) return false;
+  // The state the gate just read (initAuthToken's own cache), else read it now.
+  const token = pinned ?? (cached && cached.problem === null ? cached.token : initAuthToken().token);
+  if (token === null) return false;
+  // Constant time over the bytes, as tokenMatches is over their digests, but with no hash: this runs
+  // on every scripted call after the gate already compared. Only a length the token's own format
+  // makes public (TOKEN_RE) can differ before the comparison.
+  if (tokenBytes?.token !== token) tokenBytes = { token, bytes: Buffer.from(token) };
+  const given = Buffer.from(header.trim());
+  return given.length === tokenBytes.bytes.length && timingSafeEqual(given, tokenBytes.bytes);
+}
+
+// ---- each extension backend's own key (§app.extensions/backend-key, server/extension-keys.ts) ----
+
+/** What the gate asks of the extension keys; registered by buildApp (server/app.ts), so this file
+    imports nothing of the extensions (which import it). None registered: no key is one. */
+export interface ExtensionKeyCheck {
+  /** The installed extension `key` admits now, or null. */
+  idOf(key: string): string | null;
+  /** Whether `value` is any extension's key Sova issued, admitted now or not (what a proxy drops). */
+  isKey(value: string): boolean;
+  /** A socket a key's upgrade was let in for: closed when that key is revoked. */
+  socket(id: string, socket: Duplex): void;
+}
+let extensionKeys: ExtensionKeyCheck | null = null;
+export function setExtensionKeyCheck(check: ExtensionKeyCheck | null): void {
+  extensionKeys = check;
+}
+
+/** The extension an x-sova-token value is the key of, now; null for anything else. Never throws. */
+export function extensionCaller(header: string | undefined): string | null {
+  if (header === undefined || !extensionKeys) return null;
+  try {
+    return extensionKeys.idOf(header.trim());
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a value is any extension's key (server/extensions.ts drops an Authorization holding one). */
+export function isExtensionKey(value: string): boolean {
+  try {
+    return !!value && !!extensionKeys?.isKey(value);
+  } catch {
+    return false;
+  }
+}
+
+/** A key never reaches the credential routes: it pairs no device, reveals no token, sets no cookie. */
+const isAuthPath = (p: string | null): boolean => p === null || p === "/api/auth" || p.startsWith("/api/auth/");
+
+/** The header a caller's key rides in (§app.command-audit/attribution). The gate never reads it:
+    it says who called, after the token let the call in, and never lets anything in. */
+export { CALLER_HEADER } from "./caller-keys";
+
 // ---- where this server is bound, and the names it answers to ----------------------------------
 
 const boundHost = (): string => (process.env.HOST || "127.0.0.1").toLowerCase().replace(/^\[|\]$/g, "");
@@ -369,7 +429,11 @@ function verdict(a: Asked, opts: { exempt: boolean }): 401 | 403 | null {
   }
   if (opts.exempt && tokenExempt(a)) return null;
   if (!serverAuthEnabled()) return null;
-  return presentsToken(a) ? null : 401;
+  if (presentsToken(a)) return null;
+  // An installed extension's own key, in the token's header only (never a cookie): everything the
+  // token opens but the credential routes (§app.extensions/backend-key).
+  if (extensionCaller(a.header(TOKEN_HEADER)) === null) return 401;
+  return isAuthPath(a.path) ? 403 : null;
 }
 
 const REFUSALS = {
@@ -473,10 +537,38 @@ export function upgradeAllowed(req: IncomingMessage): boolean {
   return upgradeStatus(req) === null;
 }
 
+let upgradeNote: ((req: IncomingMessage) => void) | null = null;
+/** Told of each upgrade the gate allowed, after its decision (server/command-audit.ts records it). */
+export function onUpgradeAllowed(fn: ((req: IncomingMessage) => void) | null): void {
+  upgradeNote = fn;
+}
+
 /** Refuse an upgrade the gate refused, with its status (attachWebSockets). False when allowed. */
 export function refuseUpgrade(req: IncomingMessage, socket: Duplex): boolean {
   const status = upgradeStatus(req);
-  if (!status) return false;
+  if (!status) {
+    try {
+      upgradeNote?.(req);
+    } catch {
+      // the record never changes an answer
+    }
+    // A socket an extension's key opened is closed when that key is revoked or replaced.
+    if (extensionKeys) {
+      const v = req.headers[TOKEN_HEADER];
+      const header = Array.isArray(v) ? v[0] : v;
+      if (header !== undefined && !showsToken(header)) {
+        const id = extensionCaller(header);
+        if (id !== null) {
+          try {
+            extensionKeys.socket(id, socket);
+          } catch {
+            // tracking never changes an answer
+          }
+        }
+      }
+    }
+    return false;
+  }
   if (!socket.destroyed) {
     const json = JSON.stringify(refusal(status));
     socket.end(

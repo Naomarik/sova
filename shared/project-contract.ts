@@ -19,6 +19,77 @@ export const READ_VERBS: readonly Verb[] = ["status", "logs", "doctor"];
 /** The deploy verbs anyone with the project in scope may call: they read (§app.project-services/deploy-callers). */
 export const DEPLOY_READ_VERBS: readonly DeployVerb[] = ["deploy.status", "deploy.logs", "deploy.check"];
 
+// ---- a verb's params (§app.project-commands/verb-params) ------------------------------------------
+
+/** A verb param's type on the command line (`list`: comma-separated there, an array on the wire); the tools' schema type follows from it. */
+export type VerbParamType = "string" | "path" | "integer" | "boolean" | "list";
+
+/**
+ * One param a verb's request body may carry, written once for every caller: the agents' tools
+ * (server/project-services/tools.ts) and the command catalogue's `project.verb.*` entries
+ * (shared/commands/projects.ts), the operator's command line.
+ */
+export interface VerbParam {
+  /** The body key the engine reads. */
+  wire: string;
+  type: VerbParamType;
+  /** On the tools `project_verbs` and `sova_project_verbs`: its name there, what the model is told, and its bounds. Absent: not on the tools. */
+  tool?: {
+    name: string;
+    description: string;
+    /** What the Overseers' tool says instead, when it differs. */
+    overseerDescription?: string;
+    minimum?: number;
+    maximum?: number;
+    maxItems?: number;
+  };
+  /** On the command line: its flag and description, and its default for a deploy verb. Absent: not there. */
+  cli?: { flag: string; description: string; deployDefault?: string };
+}
+
+export const VERB_PARAMS: readonly VerbParam[] = [
+  { wire: "project", type: "path", tool: { name: "project", description: "The project: an absolute path inside it (default: this session's project)." }, cli: { flag: "project", description: "The project's root", deployDefault: "." } },
+  { wire: "instance", type: "string", tool: { name: "instance", description: "An instance id (from status)." }, cli: { flag: "instance", description: "An instance id" } },
+  { wire: "checkout", type: "path", tool: { name: "checkout", description: "create/up: an existing worktree (absolute path) to run as an instance." }, cli: { flag: "checkout", description: "A checkout's path" } },
+  { wire: "branch", type: "string", tool: { name: "branch", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)." }, cli: { flag: "branch", description: "A branch name" } },
+  { wire: "from", type: "string", tool: { name: "from", description: "create/up with a new branch: the commit it starts at (default the main checkout's HEAD)." }, cli: { flag: "from", description: "The ref a new branch starts from" } },
+  { wire: "slot", type: "integer", cli: { flag: "slot", description: "A slot number" } },
+  { wire: "services", type: "list", tool: { name: "services", description: "up/down/apply/logs: only these services." }, cli: { flag: "services", description: "Service names, comma-separated" } },
+  { wire: "restart", type: "boolean", tool: { name: "restart", description: "apply: restart instead of each service's reload." }, cli: { flag: "restart", description: "Restart what runs" } },
+  { wire: "lines", type: "integer", tool: { name: "lines", description: "logs: how many lines (default 100).", minimum: 1, maximum: 500 }, cli: { flag: "lines", description: "How many log lines" } },
+  { wire: "keepData", type: "boolean", tool: { name: "keep_data", description: "teardown: keep the data resources." }, cli: { flag: "keep-data", description: "Keep the instance's data" } },
+  { wire: "resources", type: "list", tool: { name: "resources", description: "reset: only these data resources." }, cli: { flag: "resources", description: "Resource names, comma-separated" } },
+  { wire: "ref", type: "string", tool: { name: "ref", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." }, cli: { flag: "ref", description: "A git ref" } },
+  { wire: "select", type: "list", tool: { name: "select", description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite.", maxItems: 50 }, cli: { flag: "select", description: "Test selectors, comma-separated" } },
+  { wire: "endpoint", type: "string", tool: { name: "endpoint", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' }, cli: { flag: "endpoint", description: "A service endpoint, service.port" } },
+  { wire: "days", type: "integer", tool: { name: "days", description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays).", minimum: 1, maximum: 7 }, cli: { flag: "days", description: "How many days a share link lasts" } },
+  { wire: "link", type: "string", tool: { name: "link", description: "revoke: one share link, by its id (pv_…)." }, cli: { flag: "link", description: "A share link id" } },
+  { wire: "target", type: "string", tool: { name: "target", description: "deploy.*: the deploy target, by name (deploy.status lists them)." }, cli: { flag: "target", description: "A deploy target" } },
+  { wire: "commit", type: "string", tool: { name: "commit", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)." }, cli: { flag: "commit", description: "A commit" } },
+  { wire: "plan", type: "string", tool: { name: "plan", description: "deploy.run: a plan's id (pl_…); only the operator runs one." }, cli: { flag: "plan", description: "A plan id" } },
+  { wire: "deploy", type: "string", tool: { name: "deploy", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." }, cli: { flag: "deploy", description: "A deploy id" } },
+  {
+    wire: "why",
+    type: "string",
+    tool: {
+      name: "why",
+      description: "deploy.request (and onboard): why, one line for the operator.",
+      overseerDescription: "onboard: why the playbook runs now; deploy.request: why to ship now (one line, for the operator).",
+    },
+    cli: { flag: "why", description: "Why" },
+  },
+  { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
+  { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
+  { wire: "confirm", type: "boolean", cli: { flag: "confirm", description: "The operator's confirm" } },
+  { wire: "dismiss", type: "boolean", cli: { flag: "dismiss", description: "Dismiss the request" } },
+];
+
+/** The flags each kind of verb takes on the command line, in the order they are listed there. */
+export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[] } = {
+  instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
+  deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
+};
+
 export const ERROR_CODES = [
   "not-found",
   "invalid-request",

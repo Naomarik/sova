@@ -679,8 +679,9 @@ product claim is §chat.mode-menu/project-modes.
 
 - **Format** (`project-format.ts`, no imports): the id is the folder name,
   `^[a-z][a-z0-9-]*$`, at most 30 characters, never a built-in's. `MODE.md` is a strict `---`
-  frontmatter with only `description` (required), `workers: yes|no` (default no) and `tools` (a
-  JSON array; lines starting with whitespace continue a value), then a non-empty body. A tool is
+  frontmatter with only `description` (required), `workers: yes|no` (default no), `tools`,
+  `commands` and `hooks` (each a JSON array; lines starting with whitespace continue a value), then
+  a non-empty body. A tool is
   `{name, description, params?, command, timeoutS?}`: at most 16, `name` lowercase with single
   underscores (at most 32), `params` a JSON schema of `type: "object"`, `command` an argv whose
   first element a bare program name on `PATH` (the machine's own, not covered by approval) or a
@@ -688,6 +689,18 @@ product claim is §chat.mode-menu/project-modes.
   absolute path; `scripts/x.js`, absolute paths and `../` are parse errors), `timeoutS` 1–600 (default 60). The model sees a tool as
   `projectToolName(id, name)`: the id with `-` as `_`, `__`, the name. There is no key that turns
   a mode on: a mode is on only when the user (`/mode`, Sova's menu) or the Overseer turns it on.
+- **Commands and hooks** (`commands`, `hooks`; parsed here, run by Sova, never by this extension).
+  A command is `{name, description, params?, run, timeoutS?}` (at most 16; the tool-name rule; `run`
+  under a tool's `command` rules; parsed into a tool's shape with `run` as `command`). A hook is
+  `{on, run, timeoutS?}` (at most 8; `on` is `turn.started` or `turn.ended`; default 30 s). The
+  snapshot carries `commands` / `hooks` only when declared, and `snapshotShaInput` adds them only
+  then, so every copy made before them keeps its sha. `toolsHash` covers them too: with either key the
+  first hash line is canonical JSON of `{tools, commands, hooks}`, without both it is the tools array
+  as before (so no earlier approval is asked again), and it is `""` only when all three are empty.
+  `refuseCall` re-hashes with them. Sova runs them in the chat's own process (its
+  `server/mode-commands.ts`); in the plain pi TUI they do nothing. Hooks need the user's own approval:
+  `isApprovedByUser` (project-tools-approval.ts), and `recordApproval` keeps a `user` record `user` when
+  the Overseer records the same hash.
 - **Discovery** (`project-discovery.ts`, node builtins only): `discoverProjectModes(cwd)` lists
   every usable mode and every broken folder (`bad-id`, `clash`, `no-entry`, `parse`) and never
   throws; one bad folder never hides the others. The server imports it for the menu.

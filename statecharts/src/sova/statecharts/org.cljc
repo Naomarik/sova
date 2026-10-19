@@ -101,6 +101,34 @@
               (fn [d] (some->> (:person-id (b/evt d)) (b/person-sid (:id d)))))
     (script {:expr (fn [_ d] (set-owner-ops d))})))
 
+;; ---- the owner's page link, sent to them (§app.owner-page/send) ---------------------------------------
+
+(def note-max 500)
+
+(defn owner-send-check
+  "owner/send-link: the host stamps the person (`target {id name status}`) and the note's leak check
+   (`leak`); only the org's current owner, active; a note of at most 500 characters."
+  [data]
+  (let [e    (b/evt data)
+        t    (:target e)
+        org  (:name data)
+        note (str/trim (or (:note e) ""))]
+    (cond
+      (nil? (:owner data)) (r/refuse 409 (str org " has no owner, so there is no owner page to send. Nothing was sent."))
+      (nil? (:id t)) (r/refuse 400 "person must be a roster person's id")
+      (not= (:id t) (:owner data)) (r/refuse 409 (str (:name t) " isn't " org "'s owner. Nothing was sent."))
+      (not= "active" (:status t)) (r/refuse 409 (str (:name t) " is not active. Nothing was sent."))
+      (> (count note) note-max) (r/refuse 400 "A note is at most 500 characters.")
+      (not (lv/blank? (:leak e))) (r/refuse 409 (:leak e)))))
+
+(defn owner-send-effect
+  "The send itself is the host's (the organization's own outreach send): who, by whom, the note."
+  [d]
+  (let [e    (b/evt d)
+        note (str/trim (or (:note e) ""))]
+    (cond-> {:person-id (get-in e [:target :id]) :by (or (:sent-by e) "operator")}
+      (not= "" note) (assoc :note note))))
+
 (defn- owner-transitions []
   [;; the same person again writes nothing (and is no refusal)
    (dsl/act {:sova/feed :feed :event :owner/set :checks [invalid owner-target-check] :cond same-owner?})
@@ -162,6 +190,12 @@
                     :data (fn [d] (let [{:keys [person changed]} (person-add-change d)]
                                     {:org-id (:id d) :id (:person-id (b/evt d)) :person person :changed changed :by (by-of d)}))}))
 
+      ;; §app.owner-page/send: the owner's page link to the owner on WhatsApp. The host resolves the link
+      ;; and sends in the effect (reusing their held live link, or making one as Get New Owner Link does);
+      ;; its result names the outcome only. In any owner state: the check refuses without an owner.
+      (dsl/act {:sova/feed :feed :event :owner/send-link :checks [invalid owner-send-check]}
+        (dsl/effect :owner-link-send owner-send-effect))
+
       ;; The holder record (r1): written by this host's residence at create, attach and detach.
       (transition {:sova/feed :quiet :event :holder/claim}
         (script {:expr (fn [_ d] [(ops/assign :holder (select-keys (b/evt d) [:host-id :host-name :since]))])}))
@@ -189,6 +223,9 @@
    :project/place {:power nil}
    :person/add   {:power nil}
    :owner/set    {:power nil}
+   ;; the global Overseer's only with a card listing the owner (registry with-card-checks)
+   :owner/send-link {:power nil :people-facing true
+                     :card (fn [d] {:people [(get-in (b/evt d) [:target :id])]})}
    :hold/cancel  {:power "always" :correction true}})
 
 (defn not-here [_event _config _data] "That can't be done now.")

@@ -67,6 +67,7 @@ Start: `{id, name, slug, createdAt, holder: {hostId, hostName, since}}`.
 | `project/place` | op · the host (the org-open invariant: a project session here with no placement) | `{projectId, placedVia: born \| import}` + `invalid` | spawns `placement/<org>/<projectId>` (`:if-exists :skip`: placing a placed project changes nothing). The project session itself (`project/<p>`) is started by the host in the same engine |
 | `person/add` | op | `{personId, person: PersonInput, byKind?}` + `namesTaken` | `rules/person apply-change` (caps, "{name} is already on the roster." 409); spawns `person` active |
 | `owner/set` | op | `{personId \| null}` + `target` | "Only an active person on the roster can be the owner." (400); same person: nothing; effect `revoke-owner-links {why: owner-changed}` |
+| `owner/send-link` | op · GO (card: the owner) | `{note?, sentBy?}` + `target`, `invalid`, `leak` | §app.owner-page/send, in any owner state: "{org} has no owner, so there is no owner page to send. Nothing was sent." (409), "{name} isn't {org}'s owner. Nothing was sent." (409), "{name} is not active. Nothing was sent." (409), note ≤ 500 (400), `leak` (409); effect `owner-link-send {personId, by, note?}` (the host's organization-own outreach send: no project, idempotency `org:<org>#<person>#<key>`) |
 | `holder/claim`, `holder/release` | residence | `{hostId, hostName, since}` / `{hostId}` | r1: the holder record |
 | `link/moved` (person) | engine | | the owner left → `owner-cleared`, effect `revoke-owner-links {why: left}` |
 

@@ -180,7 +180,8 @@
        :acts [[:owner/set {:person-id "p1" :target {:status "active"}}] [:owner/set {:person-id nil}] [:owner/set {:person-id "p2" :target {:status "left"}}]
               [:org/rename {:name "New"}] [:org/rename {:name ""}]
               [:org/hours {:tz "UTC" :hours {:days [1 2 3 4 5] :from "09:00" :to "17:00"}}] [:org/hours {:tz "" :hours nil}] [:org/hours {:tz "Mars/Olympus"}] [:project/place {:project-id "pr9" :placed-via "born"}]
-              [:person/add {:person-id "p9" :person {:name "Cy"} :names-taken []}] [:person/add {:person-id "p9" :person {:name "Ana"} :names-taken ["ana"]}]]})))
+              [:person/add {:person-id "p9" :person {:name "Cy"} :names-taken []}] [:person/add {:person-id "p9" :person {:name "Ana"} :names-taken ["ana"]}]
+              [:owner/send-link {:target {:id "p1" :name "Ana" :status "active"} :note "Hi"}] [:owner/send-link {:target {:id "p2" :name "Bob" :status "active"}}]]})))
 
 (deftest residence-matrix
   (clean! "residence"

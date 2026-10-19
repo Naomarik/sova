@@ -287,6 +287,7 @@
    ["org" ":org" [":holder/release"] "[]" 0] :quiet
    ["org" ":org" [":org/hours"] "[]" 0] :feed
    ["org" ":org" [":org/rename"] "[]" 0] :feed
+   ["org" ":org" [":owner/send-link"] "[]" 0] :feed
    ["org" ":org" [":person/add"] "[]" 0] :feed
    ["org" ":org" [":project/place"] "[]" 0] :feed
    ["org" ":owner-cleared" [":owner/set"] "[:owner-none]" 0] :feed

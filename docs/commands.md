@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 434 |
+| Routes registered | 464 |
 | Routes a catalogue entry points at | 97 |
 | Catalogue entries | 123 |
 | Class: Peer protocol | 38 |
@@ -25,10 +25,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
 | Class: Middleware and fallbacks | 2 |
-| Pending (not yet a command) | 279 |
+| Pending (not yet a command) | 309 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 109 |
+| Hand-written tool specs | 112 |
 
 ## Catalogue entries
 
@@ -247,6 +247,8 @@ class, leaves it, and a new route never joins it.
 | `POST /api/orgs/:id/about/revert` | admin |
 | `GET /api/orgs/:id/changes` | sessions |
 | `POST /api/orgs/:id/commit` | admin |
+| `GET /api/orgs/:id/conversations/:session/tours` | sessions |
+| `DELETE /api/orgs/:id/conversations/:session/tours/:handle` | admin |
 | `GET /api/orgs/:id/costs` | sessions |
 | `GET /api/orgs/:id/history` | sessions |
 | `GET /api/orgs/:id/history/events/:eid` | sessions |
@@ -264,6 +266,8 @@ class, leaves it, and a new route never joins it.
 | `POST /api/orgs/:id/owner/assistant/open` | admin |
 | `GET /api/orgs/:id/owner/link` | sessions |
 | `GET /api/orgs/:id/owner/preview` | sessions |
+| `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle` | sessions |
+| `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle/assets/:file` | sessions |
 | `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `POST /api/orgs/:id/owner/revoke` | admin |
 | `POST /api/orgs/:id/people` | admin |
@@ -274,6 +278,8 @@ class, leaves it, and a new route never joins it.
 | `GET /api/orgs/:id/people/:pid/history` | sessions |
 | `POST /api/orgs/:id/people/:pid/links/revoke` | admin |
 | `GET /api/orgs/:id/people/:pid/preview` | sessions |
+| `GET /api/orgs/:id/people/:pid/preview/tours/:session/:handle` | sessions |
+| `GET /api/orgs/:id/people/:pid/preview/tours/:session/:handle/assets/:file` | sessions |
 | `POST /api/orgs/:id/people/:pid/revert` | admin |
 | `POST /api/orgs/:id/projects` | admin |
 | `GET /api/orgs/:id/projects/:pid/conflicts` | sessions |
@@ -415,6 +421,30 @@ class, leaves it, and a new route never joins it.
 | `POST /api/subagents` | sessions |
 | `GET /api/targets/:name/folders` | sessions |
 | `GET /api/themes` | sessions |
+| `ALL /api/tours/*` | full |
+| `GET /api/tours/:sessionId/:tourId` | full |
+| `DELETE /api/tours/:sessionId/:tourId/accounts` | full |
+| `DELETE /api/tours/:sessionId/:tourId/approvals` | full |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId` | sessions |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/assets/:file` | sessions |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/binding-destinations` | admin |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/binding-preview` | admin |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/bindings` | admin |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/bindings` | admin |
+| `DELETE /api/tours/:sessionId/:tourId/editions/:editionId/bindings/:handle` | admin |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/destinations` | full |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/progress` | sessions |
+| `PUT /api/tours/:sessionId/:tourId/editions/:editionId/progress` | sessions |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/share-preview` | admin |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/shares` | admin |
+| `DELETE /api/tours/:sessionId/:tourId/editions/:editionId/shares/:id` | admin |
+| `POST /api/tours/:sessionId/:tourId/re-record` | full |
+| `GET /api/tours/:sessionId/jobs/:jobId` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/account` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/approve` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/approve-all` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/cancel` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/sign-in` | full |
 | `GET /api/transcript/tool` | sessions |
 | `GET /api/updates` | full |
 | `POST /api/updates/apply` | full |
@@ -719,4 +749,5 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/session-powers.ts` | 4 | `session_list`, `session_detail`, `session_read`, `session_send` |
 | `server/spec-lookup.ts` | 2 | `spec_lookup`, `code_read` |
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |
+| `server/tours/tools.ts` | 3 | `<computed: RECORD_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>` |
 | `server/vis-check.ts` | 1 | `vis_check` |

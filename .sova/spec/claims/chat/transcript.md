@@ -382,6 +382,8 @@ If the date isn't today, prefix `Mar 4 `. Put the full ISO string in `title`.
 One strip of actions under each delivered message: `<div class="message-actions" role="group"
 aria-label="Actions for your message|this reply">`, holding `button.button-icon.button-ghost.message-action`
 icons. Under a message of yours it is end-aligned like the message head (`.message-actions-end`).
+The strip is Sova's built-in contribution to the reply place (§app.commands/reply-place); what
+extensions add under a reply comes after it, outside the strip, and never changes it.
 
 - **One strip per ENTRY, never per row.** An assistant message renders one row per content block
   (`<entryId>:<n>`), so the strip hangs off the entry's LAST row that shows text — never off a tool

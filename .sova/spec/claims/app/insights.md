@@ -1571,7 +1571,8 @@ Sova that aren't archived.
   Session, Open Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
-  "No group"), Archive or Unarchive, Copy Path.
+  "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
+  what extensions add to the menu (§app.extensions/session-menu).
 - **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, a
   title field (Sova's title store, §app.session-list/session-titles): Enter saves, Escape cancels, an empty field restores the derived title,
   and leaving the field saves what's in it (empty: cancels). A value equal to the title the field

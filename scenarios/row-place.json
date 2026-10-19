@@ -1,0 +1,8 @@
+{
+  "name": "row-place",
+  "about": "An extension adds chips to session rows by naming \"row\" in its screens: the extension list carries row in its offers beside reply, a name that is no place is left out, and an entry that names no place has no offers at all.",
+  "steps": [
+    { "name": "install extensions that add to rows", "write": "sova/extensions.json", "json": { "version": 1, "extensions": [ { "id": "ci", "title": "CI", "dist": "{{work}}", "api": "http://127.0.0.1:9", "screens": ["row", "sidebar", "reply"] }, { "id": "odd", "title": "Odd", "dist": "{{work}}", "api": "http://127.0.0.1:9", "screens": ["rows"] } ] } },
+    { "name": "the list carries the row place", "sova": ["run", "extensions.list"], "json": { "$all": [ { "$some": { "id": "ci", "offers": { "screens": { "$eq": ["reply", "row"] } } } }, { "$some": { "id": "odd", "offers": { "$absent": true } } } ] } }
+  ]
+}

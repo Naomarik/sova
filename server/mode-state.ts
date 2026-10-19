@@ -63,12 +63,12 @@ export interface ModePatch {
   /** Approvals the user gave with this switch: the toolsHash each saw. */
   approve?: ProjectModeApproval[];
   /** Set by the route, never read from a body: the Overseer's own call, which counts as approval (q7). */
-  approvedBy?: "overseer";
+  approvedBy?: "overseer" | "user" | "caller";
 }
 
 /** What POST /api/mode was asked to do: change a chat's mode (or the default file, without a path),
     or make THIS chat's mode the default new sessions start from. */
-export type ModeRequest = { kind: "patch"; patch: ModePatch } | { kind: "saveDefault" } | { error: string };
+export type ModeRequest = { kind: "patch"; patch: ModePatch } | { kind: "saveDefault" } | { kind: "approveHooks"; approvals: ProjectModeApproval[] } | { error: string };
 
 /** Validate a POST /api/mode body. Unknown names are an error, not silently dropped. */
 export function parseModePatch(body: unknown): ModePatch | { error: string } {
@@ -122,6 +122,14 @@ export function parseModeRequest(body: unknown): ModeRequest {
     if (b.mode !== undefined || b.minorModes !== undefined || b.memory !== undefined || b.projectModes !== undefined || b.approve !== undefined)
       return { error: "saveDefault saves this chat's own mode: send no mode, minorModes, projectModes or memory with it" };
     return { kind: "saveDefault" };
+  }
+  // Your approval of project modes' hooks (§chat.mode-menu/project-mode-hooks) stands alone too: it switches nothing.
+  if (b?.approveHooks !== undefined) {
+    if (Object.keys(b).some((k) => k !== "approveHooks")) return { error: "approveHooks approves hooks only: send nothing else with it" };
+    const approvals = parseApprovals(b.approveHooks);
+    if ("error" in approvals) return { error: approvals.error.replace(/^approve /, "approveHooks ") };
+    if (approvals.length === 0) return { error: "approveHooks names at least one { id, hash }" };
+    return { kind: "approveHooks", approvals };
   }
   const patch = parseModePatch(body);
   return "error" in patch ? patch : { kind: "patch", patch };

@@ -51,6 +51,19 @@
   overflow-wrap: anywhere;
 }
 
+/* An extension's own status line on its card (lib/card-place): muted text, the tone in its dot. */
+.ext-card-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+  min-width: 0;
+}
+.ext-card-status > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-2); }
+
 /* The extension's own UI takes the rest of the pane under the head. */
 .ext-frame {
   flex: 1;
@@ -74,3 +87,54 @@
   height: 100%;
   z-index: 40;
 }
+
+/* ---- What extensions add under a reply (components/ReplySlot.tsx, §app.commands/reply-slot).
+   After Sova's own message actions, never among them, and always shown: these are facts about the
+   reply (a chip like "2 unverified claims"), not controls waiting for a hover. Sova draws every
+   chip in its own style; the frame is a picture. */
+.reply-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(100%, var(--measure));
+}
+.reply-slot-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.reply-slot-chip { gap: var(--space-1); }
+.reply-slot-armed { gap: var(--space-2); }
+.reply-slot-note {
+  flex: 1 1 18ch;
+  min-width: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.reply-slot-from { color: var(--color-ink-muted); }
+.reply-slot-refusal { color: var(--status-error); }
+.reply-slot-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+
+/* ---- What extensions add to a session row's line 3 (components/RowPlace.tsx,
+   §app.extensions/row-chips). In the meta line's own muted voice, like the readiness badge before
+   them: only the dot takes the tone, so the status is a dot and a word, never hue alone. Never
+   wrapped; the line's own truncation applies. */
+.session-row .list-meta .session-row-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.session-row-chip > .chip-dot { color: var(--color-ink-muted); }
+.session-row-chip-ok > .chip-dot { color: var(--status-success); }
+.session-row-chip-warn > .chip-dot { color: var(--status-warn); }
+.session-row-chip-error > .chip-dot { color: var(--status-error); }
+.session-row-chip-info > .chip-dot { color: var(--status-info); }

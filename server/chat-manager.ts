@@ -5,7 +5,7 @@ import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORK
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
@@ -80,7 +80,8 @@ function overseerMemoryNow(file: string | undefined): OverseerMemorySetting {
 }
 import { withWebMinors } from "./memory/permit";
 import { approvalNeededText, checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
-import { isApproved, recordApproval } from "./project-mode-approvals";
+import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-approvals";
+import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
 import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
 import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
 import { applyMemoryPatch, overseerMemoryOf, type OverseerMemorySetting, parseOverseerMemory, saveDefaultMemoryChoice } from "./memory/settings";
@@ -963,6 +964,8 @@ export const HELLO_WAIT_MS = 1500;
 class ChatSession {
   readonly clients = new Set<ChatClient>();
   private unsubscribe: (() => void) | null = null;
+  /** Its project modes' commands and hooks (§chat.mode-menu/project-mode-commands, …/project-mode-hooks). */
+  private modeActionsRef: ModeActions | undefined;
   /** Times each reply as it streams (§app.insights/reply-timing); a new one per bind. */
   private replyTimer = new ReplyTimer();
   /** This session's measured replies by entry id: one load at bind (the store, through the server)
@@ -1868,6 +1871,8 @@ class ChatSession {
       if (event.type === "run.start") {
         this.releaseLinks(true);
         emitChatEvent(this.path, "started");
+        // After the fact: schedules a mode's turn.started hooks (if any) and returns.
+        this.modeActions.turnStarted();
         // The runs in flight, for resuming what a restart cuts off (§app.overseer/auto-resume).
         runRecorder.started(this.path);
       }
@@ -1911,7 +1916,10 @@ class ChatSession {
           if (!this.harness.isRunning()) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
         }, 0);
       }
-      if (event.type === "run.settled") emitChatEvent(this.path, "settled");
+      if (event.type === "run.settled") {
+        emitChatEvent(this.path, "settled");
+        this.modeActions.turnSettled();
+      }
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -2103,6 +2111,25 @@ class ChatSession {
     return active ? projectModesOf(active) : [];
   }
 
+  /** This chat's mode commands and hooks: read accessors only, so nothing there can send or queue. */
+  private get modeActions(): ModeActions {
+    return (this.modeActionsRef ??= new ModeActions({
+      sessionId: () => this.harness.id,
+      cwd: () => this.harness.cwd || undefined,
+      projectOn: () => this.projectOn(),
+      copies: () => restoreProjectSnapshots(this.extensionBranch()),
+      sandboxOn: () => this.sandboxInfo()?.on === true,
+      notHere: () => notHereFor({ worker: this.workerSpec !== null, special: !!this.special, cwd: this.harness.cwd || undefined, remote: (cwd) => !!targetOfCwd(cwd) }),
+      approved: isApproved,
+      approvedByUser: isApprovedByUser,
+    }));
+  }
+
+  /** Run a command of a project mode on in this chat (POST /api/mode/command, §chat.mode-menu/project-mode-commands). */
+  runModeCommand(mode: string, name: string, args: unknown): Promise<ModeCommandOutcome> {
+    return this.modeActions.runCommand(mode, name, args);
+  }
+
   /** The checkout this chat's project modes come from, read now: none for a remote (target) chat, the
       Overseer, or a session that refuses mode switches. */
   private projectListing() {
@@ -2115,7 +2142,10 @@ class ChatSession {
       the chat has no checkout and nothing on; never throws. */
   projectModesInfo() {
     try {
-      return projectModesInfo(this.projectListing(), this.projectOn(), restoreProjectSnapshots(this.extensionBranch()), isApproved);
+      return projectModesInfo(this.projectListing(), this.projectOn(), restoreProjectSnapshots(this.extensionBranch()), isApproved, {
+        approvedByUser: isApprovedByUser,
+        hookNotes: this.modeActionsRef?.hookNotes(),
+      });
     } catch (err) {
       console.error("[chat] project modes unreadable", err);
       return {};
@@ -2146,6 +2176,36 @@ class ChatSession {
    * in the TUI, or a POST /api/mode with no ?path=. A new chat's switch stops being a side effect
    * of being new.
    */
+  /**
+   * Your own approval of project modes' hooks (§chat.mode-menu/project-mode-hooks): records `user` for each exact
+   * version given, the one on in this chat or the one its checkout offers now, when that version has hooks. A hash
+   * that isn't that version's answers like a stale approval (nothing recorded). Switches nothing.
+   */
+  approveHooks(approvals: readonly ProjectModeApproval[]): ChatModeResult & Partial<ProjectModeApprovalNeeded> {
+    if (this.overseer || this.special) throw new ModeRefusedError("This chat's project modes have no hooks to approve.");
+    const listing = this.projectListing();
+    if (listing.root === null) throw new ModeRefusedError("This chat has no project modes.");
+    const copies = restoreProjectSnapshots(this.extensionBranch());
+    const on = this.projectOn();
+    const stale: string[] = [];
+    const record: { id: string; hash: string }[] = [];
+    for (const a of approvals) {
+      const ref = on.find((r) => r.id === a.id);
+      const version = (ref && copies.get(ref.sha)) || listing.modes.find((m) => m.id === a.id);
+      if (!version?.hooks?.length) throw new ModeRefusedError(`Project mode "${a.id}" has no hooks to approve here.`);
+      if (version.toolsHash !== a.hash) stale.push(a.id);
+      else record.push(a);
+    }
+    if (stale.length > 0) {
+      const info = this.modeResult();
+      const fresh = (info.projectMinors ?? []).filter((m) => stale.includes(m.id));
+      return { ...info, error: `The hooks of ${stale.join(", ")} changed since you looked; check them again.`, needsApproval: fresh };
+    }
+    for (const a of record) recordApproval(listing.root, a.id, a.hash, "user");
+    this.broadcast(this.modeMessage());
+    return this.modeResult();
+  }
+
   async switchMode(patch: ModePatch): Promise<ChatModeResult & Partial<ProjectModeApprovalNeeded>> {
     if (this.overseer) throw new ModeRefusedError();
     const refused = this.specialRefuses("mode");
@@ -2159,7 +2219,9 @@ class ChatSession {
       if ("needsApproval" in check) {
         return { ...this.modeResult(), error: approvalNeededText(check), needsApproval: check.needsApproval };
       }
-      for (const a of check.record) recordApproval(listing.root!, a.id, a.hash, patch.approvedBy === "overseer" ? "overseer" : "user");
+      // Only the operator's own page records `user`, and only when the route says so: anything else is a caller's
+      // (fail closed). Hooks run on `user` alone.
+      for (const a of check.record) recordApproval(listing.root!, a.id, a.hash, patch.approvedBy ?? "caller");
     }
     // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
     if (!this.memoryOffered() && (patch.memory || (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory"))))
@@ -3721,6 +3783,7 @@ class ChatSession {
     for (const t of this.helloHeld.values()) clearTimeout(t);
     this.helloHeld.clear();
     this.memoryRef?.dispose();
+    this.modeActionsRef?.dispose();
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);

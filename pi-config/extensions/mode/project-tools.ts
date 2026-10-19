@@ -100,8 +100,11 @@ export interface RunProjectToolOptions {
 	projectRoot: string;
 	/** The session's cwd: the program runs there. */
 	cwd: string;
-	tool: ProjectModeTool;
+	/** A tool, a command (both named) or a hook (no name: SOVA_TOOL_NAME is left out). */
+	tool: Pick<ProjectModeTool, "command" | "timeoutS"> & { name?: string };
 	args: unknown;
+	/** A hook's run: SOVA_HOOK_EVENT is set to it instead of SOVA_TOOL_NAME. */
+	hookEvent?: string;
 	/** Overrides the tool's `timeoutS` (tests). */
 	timeoutMs?: number;
 	maxOutputBytes?: number;
@@ -149,12 +152,12 @@ export function runProjectTool(opts: RunProjectToolOptions): Promise<ProjectTool
 
 	return new Promise<ProjectToolRun>((done) => {
 		const [program, ...rest] = resolved.argv as [string, ...string[]];
-		const env = {
+		const env: NodeJS.ProcessEnv = {
 			...(opts.env ?? process.env),
 			SOVA_MODE_ID: opts.modeId,
 			SOVA_MODE_DIR: resolve(opts.dir),
 			SOVA_PROJECT_ROOT: opts.projectRoot,
-			SOVA_TOOL_NAME: opts.tool.name,
+			...(opts.hookEvent !== undefined ? { SOVA_HOOK_EVENT: opts.hookEvent } : { SOVA_TOOL_NAME: opts.tool.name ?? "" }),
 		};
 		const detached = process.platform !== "win32";
 		let child: ReturnType<typeof spawn>;
@@ -322,10 +325,11 @@ export function projectRootOfModeDir(dir: string): string {
  * no longer hash to the snapshot's `toolsHash`, which is what was approved when the chat turned the
  * mode on (t18). A reference file's edit refuses too: the whole folder is what was approved.
  */
-export function refuseCall(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash">, toolName: string, opts: Pick<ProjectToolOptions, "sandboxOn" | "isOn">): string | undefined {
+export function refuseCall(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash" | "commands" | "hooks">, toolName: string, opts: Pick<ProjectToolOptions, "sandboxOn" | "isOn">): string | undefined {
 	if (opts.isOn && !opts.isOn(snapshot.id)) return `${toolName} wasn't run: project mode ${snapshot.id} is off.`;
 	if (opts.sandboxOn()) return sandboxText(toolName, snapshot.id);
-	if (toolsHashOf(snapshot.dir, snapshot.tools) !== snapshot.toolsHash) return changedText(toolName, snapshot.id);
+	// The whole approved declaration: a copy with commands or hooks hashes them too, as its approval did.
+	if (toolsHashOf(snapshot.dir, snapshot.tools, { commands: snapshot.commands, hooks: snapshot.hooks }) !== snapshot.toolsHash) return changedText(toolName, snapshot.id);
 	return undefined;
 }
 
@@ -338,7 +342,7 @@ export function refuseCall(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "t
  * started, a timeout or an abort throws (a failed tool result); a program that ran returns its output
  * whatever its exit code, the code stated first.
  */
-export function projectToolDefinitions(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash">, opts: ProjectToolOptions) {
+export function projectToolDefinitions(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash" | "commands" | "hooks">, opts: ProjectToolOptions) {
 	const projectRoot = projectRootOfModeDir(snapshot.dir);
 	return snapshot.tools.map((tool) => {
 		const name = projectToolName(snapshot.id, tool.name);

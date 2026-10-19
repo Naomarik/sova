@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
 import { fetchTranscriptRows, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
@@ -16,7 +16,8 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
+import { HistoryItems, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
+import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import type { MessageActionItem } from "./MessageActions";
 import {
   actionReason,
@@ -146,8 +147,11 @@ export function WatchView(props: {
     topic,
   });
 
-  const watchActions: MessageActionsProvider = {
-    items(strip) {
+  /** What extensions add under its replies: asked once when the view opens (a watch has no run
+      of its own to end; lib/reply-place). */
+  const additions = useReplyAdditions({ session: () => props.sessionId, local: createMemo(() => !hostOf(props.path)), running: () => false });
+  const watchActions: ReplyPlace = {
+    builtIns: [{ id: "sova.message-actions", items(strip) {
       return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
@@ -160,7 +164,9 @@ export function WatchView(props: {
             return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)), run: () => {} };
         }
       });
-    },
+    } }],
+    added: additions.added,
+    runChip: additions.runChip,
   };
 
   const socket = createReconnectingSocket<WatchServerMessage>(newestOnly(wsUrl("/ws/watch", props.path)), {

@@ -78,6 +78,7 @@ const GLOBS = [
   "server/updates/*.test.ts",
   "server/harness/**/*.test.ts",
   "src/lib/*.test.ts",
+  "src/commands/*.test.ts",
   "src/lib/voice/*.test.ts",
   "src/vis/**/*.test.ts",
   // The model-levels core (builtins only) that Sova's pi adapter imports.

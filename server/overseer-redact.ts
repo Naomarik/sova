@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentRoot } from "./state-root";
@@ -12,8 +12,9 @@ export const MIN_SECRET_LENGTH = 12;
 /** A secret cut short (a truncated line, `abc…`) is caught from this many of its first or last characters. */
 export const MIN_FRAGMENT_LENGTH = 16;
 
-/** `text: true` = the file is read as plain text (`pick` gets the string), not parsed as JSON. */
-export type SecretSource = { path: string; pick: (json: unknown) => string[]; text?: true };
+/** `text: true` = the file is read as plain text (`pick` gets the string), not parsed as JSON.
+    `dir: true` = `path` is a folder and every regular file directly in it is such a source. */
+export type SecretSource = { path: string; pick: (json: unknown) => string[]; text?: true; dir?: true };
 
 /** A plain-text secret file (one value, e.g. Sova's own Jev key): the trimmed text when it is plausible. */
 export const textValue = (text: unknown): string[] => (typeof text === "string" && plausibleSecret(text.trim()) ? [text.trim()] : []);
@@ -44,7 +45,21 @@ export function secretSources(home = homedir(), agentDir = agentRoot()): SecretS
     // Sova's Web Push signing key (server/push-store.ts): the private half only; the public one is on the wire anyway.
     { path: join(home, ".pi", "agent", "sova", "secrets", "vapid.json"), pick: vapidPrivate },
     { path: join(agentDir, "sova", "secrets", "vapid.json"), pick: vapidPrivate },
+    // Each installed extension's own key (server/extension-keys.ts): every file in the folder is one key.
+    { path: join(home, ".pi", "agent", "sova", "extension-keys"), pick: textValue, text: true as const, dir: true as const },
+    { path: join(agentDir, "sova", "extension-keys"), pick: textValue, text: true as const, dir: true as const },
   ].filter((s, i, list) => list.findIndex((o) => o.path === s.path) === i);
+}
+
+/** A `dir` source's files, by name (so the signature is stable), each a plain source of its own. */
+function filesIn(s: SecretSource): SecretSource[] {
+  let names: string[];
+  try {
+    names = readdirSync(s.path).sort();
+  } catch {
+    return [{ path: s.path, pick: () => [], text: true }]; // none: its stat ("-") still enters the signature
+  }
+  return names.map((n) => ({ path: join(s.path, n), pick: s.pick, ...(s.text ? { text: true as const } : {}) }));
 }
 
 /** `secrets/vapid.json`: its `privateKey`. */
@@ -170,7 +185,8 @@ export class Redactor {
 
   /** Re-read the sources if any changed since the last call (a few stats; the files only when needed). */
   refresh(): this {
-    const stats = this.sources.map((s) => {
+    const files = this.sources.flatMap((s) => (s.dir ? filesIn(s) : [s]));
+    const stats = files.map((s) => {
       try {
         const st = statSync(s.path, { throwIfNoEntry: false });
         return st ? `${st.mtimeMs}:${st.size}:${st.ino}` : "-";
@@ -183,7 +199,7 @@ export class Redactor {
     if (signature === this.signature) return this;
     this.signature = signature;
     const found = new Set<string>(envValues.map((v) => v.trim()));
-    for (const s of this.sources) {
+    for (const s of files) {
       let json: unknown;
       try {
         const raw = readFileSync(s.path, "utf8");

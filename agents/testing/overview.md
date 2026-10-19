@@ -1,5 +1,5 @@
 ---
-watches: ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts"]
+watches: ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
 alsoUpdate: ["agents/testing/overview.md"]
 ---
 # Testing
@@ -99,6 +99,29 @@ environment every runner starts in, and the hermetic dev server.
 - Claude logins in a hermetic run (fake `claude`, `SOVA_CLAUDE_ACCOUNTS_DEV`, the pool e2e):
   [agents/extensions/claude-code/overview.md](../extensions/claude-code/overview.md).
 
+### Ratchets and scenarios (the commands work)
+
+Each is data a change may regenerate only on purpose, never to hide a regression; review the diff.
+
+- **Agent loadout snapshot** (`server/agent-loadouts.test.ts`, unit): every agent tool family's
+  model-facing words, frozen in `server/agent-loadouts.snapshot.json`. A deliberate wording change
+  re-takes it in the same commit: `SOVA_LOADOUT_UPDATE=1 pnpm test -- server/agent-loadouts.test.ts`.
+- **Commands inventory** (`server/commands-inventory.test.ts`, unit): every route is a catalogue
+  entry, a declared not-a-command class or a pending row (which only shrinks), each mesh need
+  pinned. Regenerate with
+  `SOVA_INVENTORY_OUT=$PWD/server/commands-inventory/baseline.json pnpm test -- server/commands-inventory.test.ts`,
+  then `node scripts/commands-inventory.mjs` (rewrites `docs/commands.md`; `--check` changes nothing
+  and exits 1 when stale). Never hand-edit either file.
+- **Commands fuzz** (`server/commands-fuzz.test.ts`, unit, runner only): bad input against every
+  catalogue entry. A new entry adds only its `FIXTURES` or `VALIDATE_ONLY` row (plus an `anchors()`
+  line when needed); no other line changes. `server/commands-fuzz/known-500.json` only shrinks.
+  Details: [agents/server/commands/overview.md](../server/commands/overview.md), "Adding an entry".
+- **Scenarios** (`scenarios/*.json`, run by `server/scenarios.integration.test.ts`, integration):
+  each boots its own throwaway server (`server/testing/hermetic-server.ts`: free port, stand-in
+  model, sentinel HOME) and drives it only through `scripts/sova.mjs`. The step format is in
+  `scripts/sova-scenario.mjs`'s header; `pnpm run scenario [<file>…]` runs them by hand. A new
+  scenario file is picked up with no other change.
+
 ## When you change X, also update Y
 
 | You change | Also |
@@ -107,6 +130,8 @@ environment every runner starts in, and the hermetic dev server.
 | a unit test needs a process, port or fetch | split those cases into the `.integration.test.ts` sibling |
 | add a test runner | import `hermetic-env.mjs` first |
 | a unit file's chats need pi-config's extensions | `linkPiConfigExtensions(agentDir)` from `server/testing/agent-dir.ts` |
+| a tool's wording an agent sees | re-take the loadout snapshot (`SOVA_LOADOUT_UPDATE=1`) in the same commit |
+| a route, or a catalogue entry | regenerate the inventory baseline and `docs/commands.md`; add the entry's fuzz case |
 | the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers or /test-repo-fence through a spec draft |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land. Landing (the

@@ -32,7 +32,7 @@ import { startUsagePoller } from "./usage-poll";
 import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
-import { cachedTitleOf, getSessionSummary, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
@@ -43,10 +43,13 @@ import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
 import { setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { setSovaPort } from "./extensions";
+import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
-import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
+import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
+import { startEvents } from "./events";
+import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { verifiedPeerSocket } from "./mesh/peer-address";
@@ -152,6 +155,8 @@ await finishImports();
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
+  // Each installed extension's own key, kept in step with the manifest (§app.extensions/backend-key).
+  startExtensionKeys();
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
@@ -204,7 +209,16 @@ onSummaryLineChanged(() => autoTitleSweep.nudge());
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
 // attention signals classify finished turns and long-running workers; session tags tag sessions.
-configureSessionFeed({ list: listSessions });
+// Sova's event stream (§app/events): asleep until /ws/events has a subscriber. Its observed events
+// come from the feed's own list reads, never a read of its own.
+const events = startEvents({
+  onChatEvent,
+  onAttention: onAttentionNotified,
+  holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
+  isHosted: (path) => chatHandle(path) !== undefined,
+  idOf,
+});
+configureSessionFeed({ list: () => listSessions().then(events.seeList) });
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({

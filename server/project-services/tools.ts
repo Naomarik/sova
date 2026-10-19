@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
@@ -21,44 +21,40 @@ import { registerInstanceNote, resultNote, sessionNote } from "./note";
 
 type Tool = ToolSpec;
 
-const PARAMS = {
-  type: "object",
-  properties: {
-    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS], description: "The verb." },
-    project: { type: "string", description: "The project: an absolute path inside it (default: this session's project)." },
-    instance: { type: "string", description: "An instance id (from status)." },
-    checkout: { type: "string", description: "create/up: an existing worktree (absolute path) to run as an instance." },
-    branch: { type: "string", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)." },
-    from: { type: "string", description: "create/up with a new branch: the commit it starts at (default the main checkout's HEAD)." },
-    services: { type: "array", items: { type: "string" }, description: "up/down/apply/logs: only these services." },
-    restart: { type: "boolean", description: "apply: restart instead of each service's reload." },
-    lines: { type: "integer", minimum: 1, maximum: 500, description: "logs: how many lines (default 100)." },
-    keep_data: { type: "boolean", description: "teardown: keep the data resources." },
-    resources: { type: "array", items: { type: "string" }, description: "reset: only these data resources." },
-    ref: { type: "string", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." },
-    select: { type: "array", items: { type: "string" }, maxItems: 50, description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite." },
-    endpoint: { type: "string", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' },
-    days: { type: "integer", minimum: 1, maximum: 7, description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays)." },
-    link: { type: "string", description: "revoke: one share link, by its id (pv_…)." },
-    target: { type: "string", description: "deploy.*: the deploy target, by name (deploy.status lists them)." },
-    commit: { type: "string", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)." },
-    plan: { type: "string", description: "deploy.run: a plan's id (pl_…); only the operator runs one." },
-    deploy: { type: "string", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." },
-    why: { type: "string", description: "deploy.request (and onboard): why, one line for the operator." },
-  },
-  required: ["verb"],
-  additionalProperties: false,
-} as const;
+/** The rows of the contract's param table the tools take, in its order. */
+const TOOL_PARAMS = VERB_PARAMS.filter((p) => p.tool);
+
+/** A tool's JSON schema for one row of the contract's param table. */
+function toolSchema(p: VerbParam, overseer: boolean): Record<string, unknown> {
+  const t = p.tool!;
+  const type = p.type === "path" ? "string" : p.type === "list" ? "array" : p.type;
+  return {
+    type,
+    ...(p.type === "list" ? { items: { type: "string" } } : {}),
+    ...(t.minimum !== undefined ? { minimum: t.minimum } : {}),
+    ...(t.maximum !== undefined ? { maximum: t.maximum } : {}),
+    ...(t.maxItems !== undefined ? { maxItems: t.maxItems } : {}),
+    description: overseer && t.overseerDescription ? t.overseerDescription : t.description,
+  };
+}
+
+/** The tools' params, from the contract's table (§app.project-commands/verb-params): the verb, then each param the tools take. */
+function paramsOf(verbs: readonly string[], overseer: boolean) {
+  return {
+    type: "object",
+    properties: {
+      verb: { type: "string", enum: verbs, description: "The verb." },
+      ...Object.fromEntries(TOOL_PARAMS.map((p) => [p.tool!.name, toolSchema(p, overseer)])),
+    },
+    required: ["verb"],
+    additionalProperties: false,
+  };
+}
+
+const PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS], false);
 
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
-const OVERSEER_PARAMS = {
-  ...PARAMS,
-  properties: {
-    ...PARAMS.properties,
-    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS, "onboard"], description: "The verb." },
-    why: { type: "string", description: "onboard: why the playbook runs now; deploy.request: why to ship now (one line, for the operator)." },
-  },
-} as const;
+const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);
 
 const ONBOARD_HELP =
   " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.";
@@ -87,8 +83,9 @@ const DEPLOY_HELP = {
 /** The request body the engine takes, from the tool's params. */
 function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select", "endpoint", "days", "link", "target", "commit", "plan", "deploy", "why"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
-  if (p.keep_data !== undefined) out.keepData = p.keep_data;
+  // A param whose tool name is its wire key is sent when it has a value; a renamed one (keep_data) whenever it is given.
+  for (const { wire, tool } of TOOL_PARAMS) if (tool!.name === wire && p[wire] !== undefined && p[wire] !== null && p[wire] !== "") out[wire] = p[wire];
+  for (const { wire, tool } of TOOL_PARAMS) if (tool!.name !== wire && p[tool!.name] !== undefined) out[wire] = p[tool!.name];
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
 }

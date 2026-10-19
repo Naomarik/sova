@@ -19,7 +19,7 @@ import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { UnackedSends } from "../lib/unacked-sends";
-import { CardClicks, handBack, reopenCards, type Unsent } from "../lib/hand-back";
+import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } from "../lib/hand-back";
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
@@ -846,7 +846,11 @@ export function ChatView(props: {
             if (card !== undefined) cards.push(card);
             return card === undefined;
           });
-          if (cards.length) setCardSent(reopenCards(untrack(cardSent), cards));
+          if (cards.length) {
+            setCardSent(reopenCards(untrack(cardSent), cards));
+            toast(CLICK_NOT_DELIVERED);
+            announce(CLICK_NOT_DELIVERED);
+          }
           // Every drained row goes; only typed text comes back.
           takeBackQueued(setLive, drained);
           const text = typed.filter((t) => t.trim()).join("\n\n");

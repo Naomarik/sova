@@ -547,6 +547,8 @@ export type BatonViewItem =
   | { kind: "handoff"; id: string; n: number; from: string; to: string; question: string; briefing?: string }
   | { kind: "decision"; id: string; by: string; area: string; statement: string }
   | { kind: "done"; id: string; summary: string }
+  /** Reviewed destination-owned presentation; the opaque handle authorizes no source access. */
+  | { kind: "tour"; id: string; handle: string; title: string; summary: string; steps: number }
   /** An offer. `to` = the invitees' names in the view with no viewer (the project overseer's) only;
       on a share page it is empty (no invitee learns who else was asked) and `invited` is the count.
       The briefing only for an invitee (or the view with no viewer). */

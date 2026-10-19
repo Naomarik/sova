@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { ASSET_MAX_BYTES, ASSET_NAME_TYPES, ASSET_TYPES, type ShareGatewaySetting } from "../../shared/public-links";
 import { FRAME_HOST_NAME, frameHostHeaders } from "../../shared/vis-frame-host";
 import { SESSION_SHARE_IMAGE_MAX_BYTES } from "../../shared/session-share";
+import { TOUR_LIMITS } from "../../shared/tour";
+import { findTourShare } from "../tours/shares";
 import { findLink, hashToken } from "../baton-links";
 import { meshApi } from "../mesh";
 import { REFUSED_HEADER } from "../mesh/hello";
@@ -14,7 +16,7 @@ import { findPersonLink } from "../person-links";
 import { findShareLink } from "../session-shares";
 import { verifiedAddress } from "./destination";
 import { hashLabel, previewHashKnown } from "../preview-links";
-import { FILE_UPLOAD_TIMEOUT_MS, inProcessShare, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
+import { FILE_UPLOAD_TIMEOUT_MS, inProcessShare, TOUR_IMAGE_PATH, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
 import { gatewayPreviewMatch, localPreviewOrigin } from "./preview-address";
 import { previewHopHeaders, previewHttpHop, previewUpgradeHop } from "./preview-hop";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
@@ -135,7 +137,7 @@ export interface GatewayRouter {
 }
 
 /** The token kinds a route may serve (never `x`). */
-type TokenKind = "h" | "i" | "s";
+type TokenKind = "h" | "i" | "s" | "t";
 type Route = { kind: TokenKind; token: string } | { kind: "asset"; name: string };
 /** Whether a hop's target still stands: `same`, `moved` (the link routes elsewhere now: the
     hop is retried by the page, the offline answer), or `gone` (it routes nowhere: an unknown
@@ -143,9 +145,12 @@ type Route = { kind: TokenKind; token: string } | { kind: "asset"; name: string 
 type Standing = "same" | "moved" | "gone";
 
 const TOKEN = "([A-Za-z0-9_-]{43})";
-const H_ROUTE = new RegExp(`^/(?:api/)?h/${TOKEN}(?:/message|/image|/file|/img/(?:0|[1-9][0-9]{0,3}))?$`);
-const I_ROUTE = new RegExp(`^/(?:api/)?i/${TOKEN}(?:/[pc]/[a-z]_[a-z2-9]{8})?$`);
+const TOUR_FILE = "[a-z0-9][a-z0-9-]{0,119}\\.png";
+const TOUR_TAIL = `tours/tr_[A-Za-z0-9_-]{16}(?:/assets/${TOUR_FILE}|/progress)?`;
+const H_ROUTE = new RegExp(`^/(?:api/)?h/${TOKEN}(?:/message|/image|/file|/img/(?:0|[1-9][0-9]{0,3})|/${TOUR_TAIL})?$`);
+const I_ROUTE = new RegExp(`^/(?:api/)?i/${TOKEN}(?:/[pc]/[a-z]_[a-z2-9]{8}(?:/${TOUR_TAIL})?)?$`);
 const S_ROUTE = new RegExp(`^/(?:api/)?s/${TOKEN}(?:/img/(?:0|[1-9][0-9]{0,4}))?$`);
+const T_ROUTE = new RegExp(`^/(?:api/)?t/${TOKEN}(?:/assets/${TOUR_FILE}|/progress|/readers)?$`);
 
 /** What a judged share path is for: a token of a kind, or a hashed asset. */
 export function routeOf(pathname: string): Route | null {
@@ -157,6 +162,8 @@ export function routeOf(pathname: string): Route | null {
   if (i) return { kind: "i", token: i[1]! };
   const sh = S_ROUTE.exec(pathname);
   if (sh) return { kind: "s", token: sh[1]! };
+  const tour = T_ROUTE.exec(pathname);
+  if (tour) return { kind: "t", token: tour[1]! };
   return null;
 }
 
@@ -208,7 +215,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   // config() re-reads peers.json when it changed on disk (one stat), so a hand edit counts too.
   const peers = opts.peers ?? (() => meshApi.config()?.peers ?? []);
   const resolve = opts.resolve ?? ((peer: PeerEntry) => verifiedAddress(peer, process.env, peers));
-  const isLocal = opts.isLocal ?? ((token, kind) => (kind === "h" ? findLink(token) : kind === "i" ? findPersonLink(token) : findShareLink(token)) !== null);
+  const isLocal = opts.isLocal ?? ((token, kind) => (kind === "h" ? findLink(token) : kind === "i" ? findPersonLink(token) : kind === "t" ? findTourShare(token) : findShareLink(token)) !== null);
   const hasAsset = opts.hasAsset ?? ((name) => existsSync(join(shareDist(), "assets", name)));
   const strip = opts.strip ?? stripForwarded;
   const reachable = opts.preflight ?? preflight;
@@ -374,7 +381,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       r.on("error", () => res.destroy());
       answer(r);
     });
-    if (req.method === "POST") req.pipe(up);
+    if (req.method === "POST" || req.method === "PUT") req.pipe(up);
     else up.end();
   };
 
@@ -550,7 +557,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     // A session share's image, and a gathering's photo (§app.baton/images), are capped here too,
     // counted while streaming (defense in depth: the origin caps it already, but an older or
     // misconfigured one might not).
-    const cap = (kind === "s" || kind === "h") && ctx.url.pathname.includes("/img/") ? imageMax : Infinity;
+    const cap = TOUR_IMAGE_PATH.test(ctx.url.pathname) ? TOUR_LIMITS.assetBytes : (kind === "s" || kind === "h") && ctx.url.pathname.includes("/img/") ? imageMax : Infinity;
     return hop(req, res, ctx, hit, () => holds(hit.nodeId, h, kind, hit.ingressPort), (up) => {
       const declared = Number(up.headers["content-length"]);
       if (Number.isFinite(declared) && declared > cap) {

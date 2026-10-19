@@ -104,5 +104,5 @@ export function OwnerApp() {
   };
   window.addEventListener("hashchange", onHash);
   onCleanup(() => window.removeEventListener("hashchange", onHash));
-  return <OwnerPage route={route()} load={load} href={ownerHash} onTitle={(t) => (document.title = t)} ask={ask} assistant={assistant} versionHref={(h) => `/i/${TOKEN}/v/${h}`} />;
+  return <OwnerPage route={route()} load={load} href={ownerHash} tourBase={(conversation, handle) => `/api/i/${TOKEN}/c/${encodeURIComponent(conversation)}/tours/${encodeURIComponent(handle)}`} onTitle={(t) => (document.title = t)} ask={ask} assistant={assistant} versionHref={(h) => `/i/${TOKEN}/v/${h}`} />;
 }

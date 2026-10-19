@@ -199,14 +199,29 @@ test("the Shares card counts live links only, leaves out a host that didn't answ
     previews: [preview("pv_a", "active"), preview("pv_b", "active", { siblingOf: "pv_a", sentTo: "ana" }), preview("pv_c", "off"), preview("pv_d", "expired")],
   });
   // ss_2 is stopped: neither its link nor its old presence counts.
-  assert.deepEqual(counts, { sessionShares: 1, orgLinks: 2, previewLinks: 2, viewing: 2, total: 5 });
+  assert.deepEqual(counts, { sessionShares: 1, orgLinks: 2, previewLinks: 2, tourLinks: 0, viewing: 2, total: 5 });
   assert.equal(sharesCardLine(counts!), "1 session share · 2 organization links · 2 preview links · 2 viewing now");
   // Nothing answered: no counts at all (the card keeps reading), never a row of zeros.
   assert.equal(sharesCounts({ hosts: [{ host: null, overview: null, error: "x" }], previews: null }), null);
 });
 
 test("the Shares card's line: singulars, no viewing clause at 0, and the empty line", () => {
-  assert.equal(sharesCardLine({ sessionShares: 0, orgLinks: 0, previewLinks: 0, viewing: 0, total: 0 }), "No public links are open.");
-  assert.equal(sharesCardLine({ sessionShares: 2, orgLinks: 1, previewLinks: 0, viewing: 0, total: 3 }), "2 session shares · 1 organization link · 0 preview links");
-  assert.equal(sharesCardLine({ sessionShares: 0, orgLinks: 0, previewLinks: 1, viewing: 0, total: 1 }), "0 session shares · 0 organization links · 1 preview link");
+  assert.equal(sharesCardLine({ sessionShares: 0, orgLinks: 0, previewLinks: 0, tourLinks: 0, viewing: 0, total: 0 }), "No public links are open.");
+  assert.equal(sharesCardLine({ sessionShares: 2, orgLinks: 1, previewLinks: 0, tourLinks: 0, viewing: 0, total: 3 }), "2 session shares · 1 organization link · 0 preview links");
+  assert.equal(sharesCardLine({ sessionShares: 0, orgLinks: 0, previewLinks: 1, tourLinks: 0, viewing: 0, total: 1 }), "0 session shares · 0 organization links · 1 preview link");
+});
+
+test("the Shares card counts every answering host's live tour links, and names them only when there are any", () => {
+  const tour = (id: string) => ({ id, sessionId: "fixture-chat", tourId: "tour-a", editionId: "edition-a", title: "Made-up tour", checkedAt: "2026-09-30T00:00:00Z", createdAt: "2026-09-30T00:00:00Z", expiresAt: "2026-10-30T00:00:00Z", opened: 0, visits: [] });
+  const counts = sharesCounts({
+    hosts: [
+      { host: null, overview: { sessionShares: [], orgLinks: [], tourLinks: [tour("ts_a"), tour("ts_b")] }, error: null },
+      { host: "older-peer", overview: { sessionShares: [], orgLinks: [orgLink()] }, error: null },
+      { host: "down", overview: null, error: "offline" },
+    ],
+    previews: [],
+  });
+  assert.deepEqual(counts, { sessionShares: 0, orgLinks: 1, previewLinks: 0, tourLinks: 2, viewing: 0, total: 3 });
+  assert.equal(sharesCardLine(counts!), "0 session shares · 1 organization link · 0 preview links · 2 tour links");
+  assert.equal(sharesCardLine({ ...counts!, tourLinks: 1, total: 2 }), "0 session shares · 1 organization link · 0 preview links · 1 tour link");
 });

@@ -92,6 +92,20 @@ test("liveHiddenCounts: status from live tools, pending calls run only while the
   assert.deepEqual(liveHiddenCounts(live, TOOLS), { calls: 3, failed: 1, running: 0, thinking: 0 });
 });
 
+test("tour requests, checked cards and failures stay visible while ordinary work is hidden", () => {
+  for (const name of ["record_tour", "show_tour"]) {
+    for (const failed of [false, true]) {
+      const items = [call("plain", "p"), result("plain-result", "p"), row("tour", "tool-call", { text: name, toolCallId: "t" }), result("tour-result", "t", failed)];
+      const split = splitHidden(items, TOOLS);
+      assert.deepEqual(split.shown.map(r => r.id), ["tour", "tour-result"]);
+      assert.deepEqual(split.hidden.map(r => r.id), ["plain", "plain-result"]);
+      assert.equal(isHiddenBlock({ type: "toolCall", id: "t", name, argsText: "" }, TOOLS), false);
+      const orphan = row("orphan", "tool-result", { facts: { tool: { name, isError: failed } } });
+      assert.deepEqual(splitHidden([orphan], TOOLS).shown.map(r => r.id), ["orphan"]);
+    }
+  }
+});
+
 test("labels: digits, singular and plural", () => {
   assert.equal(toolsHiddenLabel(1), "1 tool call hidden");
   assert.equal(toolsHiddenLabel(12), "12 tool calls hidden");

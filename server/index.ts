@@ -20,6 +20,7 @@ import { stopVoice } from "./voice/service";
 import { startStaticPreviews } from "./project-previews";
 import { startOutreach } from "./outreach/core";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
+import { startTourSweep } from "./tours/sweep";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
 import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onReceiverIdle, warmChatRuntime } from "./chat-handle";
@@ -148,6 +149,9 @@ rollForwardCopies();
 await openAttachedOrgs();
 await openRegisteredProjects();
 await finishImports();
+// Deleted chats' leftover tours (§app.session-list/archive-cleanup): one pass now that every session
+// root is registered, then a cheap retry each minute. Any doubt about an owner keeps its tours.
+export const tourSweep = startTourSweep();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
@@ -287,6 +291,8 @@ async function shutdown() {
   // (§app.chat-processes/survives-restart). Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();
   usagePoller.stop();
+  // A cleanup pass already running finishes (bounded); none starts.
+  await Promise.race([tourSweep.stop(), new Promise((r) => setTimeout(r, 5_000))]);
   // A plateau's held-back last reading is written, so the next start knows how long it lasted.
   try {
     usageHistory().flush();

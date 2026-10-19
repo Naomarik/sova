@@ -7,15 +7,15 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { VIS_KINDS, visGuide } from "./minor.ts";
+import { VIS_GUIDE_NAMES, visGuide } from "./minor.ts";
 
 export const VIS_GUIDE_TOOL = "vis_guide";
 
 export const VIS_GUIDE_DESCRIPTION =
-	"The rules for drawing one `vis` kind: the rules every kind shares and the `mark` syntax, then that kind's syntax, examples and mark targets. Call it before you write a kind whose rules aren't already in this conversation; html and svg share one guide.";
+	"Look up one vis catalogue entry before using it: a drawing kind returns shared rules then its syntax/examples; tour returns the core of the tool-backed tour workflow (not a fence); tour-signin, tour-sites, tour-sova and tour-sharing return the parts it names. html and svg share one guide.";
 
 export const VIS_GUIDE_PARAMETERS = Type.Object(
-	{ kind: StringEnum(VIS_KINDS, { description: "The kind to draw, as the vis minor mode lists it" }) },
+	{ kind: StringEnum(VIS_GUIDE_NAMES, { description: "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names" }) },
 	{ additionalProperties: false },
 );
 

@@ -9,7 +9,8 @@ project overseer posts at each real milestone, who was asked and what was decide
 was built (as counts), and the client conversations themselves. On it they also talk to their
 Project Assistant (§app/project-assistant), see their requests and where they stand, and open the
 versions they can try. Reading changes nothing; only the Project Assistant's chat and the ask for
-a new link write.
+a new link write. Reviewed checked tours attached within a conversation it already exposes are
+readable there (§app.tours/handoffs), without any new application access or agent controls.
 
 The word **owner** here always means the organization's owner. It is not a baton session's owner
 (who started the session, §app/baton) and it is not a project's main stakeholder
@@ -46,6 +47,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   working as before (§app.baton/links); the owner page adds reading, it replaces nothing.
 
 ## §app.owner-page/link — One personal link, off after a week unused, one at a time
+
+Scoped tour reads additionally require current owner access and a tour handle bound to a conversation and cut already exposed by the owner-page view. For these byte routes, revoked or expired tokens and unauthorized or guessed handles all answer missing 404 before file access, rather than disclosing link or artifact state; ordinary owner-page dead-link answers remain as below (§app.tours/handoffs).
 
 - **Shape.** `/i/<token>` on the share listener's public address, built exactly like a hand-off
   link (§app.baton/links): 32 random bytes, base64url; the store keeps its SHA-256, compared
@@ -93,6 +96,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   visit, their own included.
 
 ## §app.owner-page/content — What the page shows
+
+A shown conversation can include its reviewed checked tour attachments (§app.tours/handoffs), through the same filtered public projection and opaque handles. Their viewer is read-only, with no Ask control, script, report, source identity or recorded site address. Pictures belong only to the exact attached edition; message-photo count-only behavior is unchanged.
 
 - **Three views**, each in the URL fragment so the browser's Back works:
   - **Home** (`/i/<token>`): the org's name, a greeting to the owner by first name, when it was
@@ -146,6 +151,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   through the link the operator sent for it.
 
 ## §app.owner-page/conversations — Which conversations the owner reads
+
+A visible conversation's reviewed tour attachment follows that same conversation's current filtered cut; when the model shows an attachment visible above in that cut, the same item appears again at that point, copied from the attachment, never from the tool result's own data. Hiding the conversation or project, an attachment outside that cut, or a different conversation's handle makes every tour read indistinguishable from missing: 404 before any file read, without counts or filenames that disclose it (§app.tours/handoffs). Current active-branch detachment removes a tour immediately even when its detachment entry is beyond the owner's exposed cut, without exposing that later entry or deleting retained snapshots.
 
 - **Client conversations, all of them, by default**: every gathering, offer and settle session of
   a shown project, other people's messages included. Staff are not told the owner reads them.
@@ -206,6 +213,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 
 ## §app.owner-page/never — What the page never shows
 
+Tour reads reveal only a checked public presentation bound to a conversation and cut the owner-page filter already exposes. They never reveal an authoring script, recording report, source identity, recorded site address, credentials, another conversation's tour, a later cut's attachment or a different edition's asset (§app.tours/handoffs).
+
 - The page's data is built by one server function, field by field from its own wire shapes
   (`shared/owner.ts`); it never passes a stored row, a person, a project or a decision along
   whole. Every text a model wrote passes the outsider redaction (`said`, then the secret
@@ -237,14 +246,17 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   §app.session-share/reading describes.
 - **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
   `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
-  `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant` (a message to it),
-  the socket `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>` (a version) and
-  `POST /i/<token>/ask-link` (§app.owner-page/link). Any other `/i/` or `/api/i/` path or method
-  answers 404. Only a message to the Project Assistant reaches a model.
+  `GET /api/i/<token>/c/<k_handle>/tours/<handle>` and its narrowly scoped exact-edition asset reads
+  (§app.tours/handoffs), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
+  (a message to it), the socket `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
+  (a version) and `POST /i/<token>/ask-link` (§app.owner-page/link). The tour reads check current
+  owner access and the already-exposed conversation cut before any file read, and recheck after
+  asynchronous reads; denial is indistinguishable missing 404. They have no Ask control. Any other
+  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant reaches a
+  model.
 - **Fresh.** The page reads again every 60 seconds while it is visible (paused while hidden, at
   once when shown again) and says when it last did.
-- **Limits.** The listener's per-address limit applies, and per token at most 120 requests a
-  minute (429).
+- **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
 - **Errors.** When a read fails for any reason but a dead link, the page says it couldn't load,
   that the link still works, and offers `Try Again`; what it showed before stays.
 

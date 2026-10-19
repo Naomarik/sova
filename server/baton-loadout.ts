@@ -21,7 +21,10 @@ import { actorOn, batonById, batonFileOf, batonOfPath, batonSid, BRIEFING_MAX, h
 import { linksOfKey, revokeLinks } from "./baton-links";
 import { READ_LINK_TOOL, readLinkTool, READS_MAX } from "./baton-read-link";
 import { confirmFileTool, FILE_TOOLS, FILES_ON, inspectFilesTool, noteRunModel } from "./baton-files";
-import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
+import { GATHERING_VIS_GUIDE, BATON_TOUR_GUIDE } from "./baton-vis-guide";
+import { SHOW_TOUR_TOOL } from "../shared/tour";
+import { showBatonTourTool } from "./tours/tools";
+import { batonTourContext, resolveBatonTour } from "./tours/bindings-scope";
 import { areaKeyOf, decisionProvenance, ownerAreaChoices, pickOwnerArea, quoteCheckOf, type DecisionDisposition } from "./decisions";
 import type { Provenance } from "./org-history-capture";
 import { OWNER_AREA_NONE, prepareOwnerArea } from "../shared/decisions";
@@ -70,7 +73,7 @@ import { batonDraftTools, catchUpConversationDraft, changeOfRef, DRAFT_TOOLS, no
 export const LOOKUP_TOOLS = [SPEC_LOOKUP_TOOL, CODE_READ_TOOL] as const;
 
 /** The tools a baton conversation has. */
-export const BATON_TOOLS = ["hand_to", "goal_done", "record_decision", "propose_roster_edit"] as const;
+export const BATON_TOOLS = ["hand_to", "goal_done", "record_decision", "propose_roster_edit", SHOW_TOUR_TOOL] as const;
 /** The runtime's allowlist: the conversation's tools, `read_link` (active only while the session
     can read links, §app.baton/read-link), and the wrap-up's, which is active only during the
     wrap-up turn (and refuses outside it). */
@@ -140,7 +143,7 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
       ? `\n# People who have left the organization\n\nNever hand to them or propose them as new people. If someone names one of them, say they have left and ask who covers their area now.\n\n${former.map((p) => `- ${p.name}${p.role ? ` — was ${p.role}` : ""}`).join("\n")}\n`
       : "",
   };
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "");
+  return `${template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "")}\n\n${BATON_TOUR_GUIDE}`;
 }
 
 /** What a run's prompt says of the project: its overview (built fresh at the run's start) and the
@@ -242,7 +245,7 @@ export function batonTools(sessionId: string, state: BatonWriter = runWriter): T
   const hit = batonById(sessionId);
   const roster = hit ? readRoster(hit.row.orgId) : [];
   const [handTo, goalDone, ...rest] = conversationTools(sessionId, state);
-  return [handTo!, goalDone!, recordDecisionTool(sessionId, state, roster), ...rest];
+  return [handTo!, goalDone!, recordDecisionTool(sessionId, state, roster), ...rest, showBatonTourTool(handle => resolveBatonTour(sessionId, handle))];
 }
 
 /** The nearest user message up the tree from the leaf `id`: where a decision's quote was said. The
@@ -834,6 +837,7 @@ registerSpecialHost({
     // inspect_files shows an image only to a model that sees images.
     noteRunModel(sessionId, images);
     answer.prompt = await batonPrompt(sessionId, photos);
+    if (!wrapupActive(sessionId)) answer.prompt.customPrompt = `${answer.prompt.customPrompt ?? ""}${await batonTourContext(sessionId)}`;
     const row = batonById(sessionId)?.row;
     if (row) answer.baton = batonPack(row);
     return answer;

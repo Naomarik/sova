@@ -58,6 +58,7 @@ import {
   type OverseerSentMarkerData,
 } from "../../shared/protocol";
 import { normalizeLoadout, type LoadoutEntryData } from "../session-loadout";
+import { normalizeTourAttachment, normalizeTourDetachment, TOUR_ATTACHMENT_ENTRY, TOUR_DETACHMENT_ENTRY, type TourAttachment, type TourDetachment } from "../../shared/tour";
 
 const isRecord = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** An object, as the readers that test `!d || typeof d !== "object"` take it (an array included). */
@@ -185,6 +186,11 @@ export const BATON_DONE = kind<BatonDoneData>(BATON_DONE_ENTRY, "branch-list", (
 export const BATON_PROPOSAL = kind<BatonProposalData>(BATON_PROPOSAL_ENTRY, "branch-list", (d) => (isObject(d) ? (d as BatonProposalData) : null));
 export const BATON_WRAPUP = kind<BatonWrapupData>(BATON_WRAPUP_ENTRY, "branch-list", (d) => (isObject(d) ? (d as BatonWrapupData) : null));
 
+/** A destination-owned, reviewed tour binding; file membership is checked before asset I/O. */
+export const TOUR_ATTACHMENT = kind<TourAttachment>(TOUR_ATTACHMENT_ENTRY, "branch-list", d => normalizeTourAttachment(d) ?? null);
+/** Active-branch revocation applies before any reader-specific visibility cut. */
+export const TOUR_DETACHMENT = kind<TourDetachment>(TOUR_DETACHMENT_ENTRY, "branch-list", d => normalizeTourDetachment(d) ?? null);
+
 // ---- Extension-owned shapes (the pi-config core builds and reads the data; Sova routes it) ----------
 
 /** The session's active mode triple (newest usable on the branch), the data `pinEntryFor` builds. A body
@@ -266,7 +272,7 @@ export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
-    BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
+    BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
   ].map((k) => [k.type, k as StateKind<unknown>]),
 );

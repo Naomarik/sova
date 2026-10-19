@@ -126,6 +126,20 @@ describe("courier", () => {
     assert.deepEqual(back, [{ path: P, texts: ["lost?"] }]);
   });
 
+  test("a confirm card's click is delivered as any send but never put back into a draft (refused, or never opened)", () => {
+    const { sockets, back, deps } = harness();
+    const click = { type: "prompt", text: "c_9 a: Register it.", clientId: "k1", confirm: "c_9" };
+    courier(P, [click, prompt("c2", "typed")], new Map(), deps);
+    sockets[0]!.open();
+    assert.deepEqual(sockets[0]!.sent, [click, prompt("c2", "typed")], "the click goes, with its mark");
+    sockets[0]!.answer({ type: "error", code: "refused", message: "restarting", clientId: "k1" });
+    sockets[0]!.answer({ type: "error", code: "refused", message: "restarting", clientId: "c2" });
+    assert.deepEqual(back, [{ path: P, texts: ["typed"] }], "only the typed text");
+    courier(P, [click], new Map(), deps);
+    sockets[1]!.drop();
+    assert.equal(back.length, 1, "a connection that never opened puts no click back");
+  });
+
   test("an open connection handed over: nothing re-sent, it listens for the sends it carried", () => {
     const { back, deps } = harness();
     const s = new FakeSocket();

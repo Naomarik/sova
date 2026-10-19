@@ -19,6 +19,7 @@ import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { UnackedSends } from "../lib/unacked-sends";
+import { CardClicks, handBack, reopenCards, type Unsent } from "../lib/hand-back";
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
@@ -645,8 +646,7 @@ export function ChatView(props: {
     const rows = unsentRows(live, handedBack);
     if (rows.length === 0) return;
     for (const r of rows) if (r.id) handedBack.add(r.id);
-    const current = drafts.get(props.path);
-    setDraftText(props.path, [...rows.map((r) => r.text), ...(current ? [current] : [])].join("\n\n"));
+    handBackSends(rows);
   };
 
   /** Ids a `queue_item_gone` has spoken for, so a later snapshot can't be read as evidence about
@@ -660,19 +660,33 @@ export function ChatView(props: {
   const handedBack = new Set<string>();
   /** Sends the server hasn't acknowledged: back in the draft when the chat goes from under the pane. */
   const unacked = new UnackedSends();
-  /** Texts the pane got back (a refusal, a reconnect) go to the top of the draft. */
-  const putBack = (texts: string[]) => {
-    if (!texts.length) return;
-    const current = drafts.get(props.path);
-    setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
+  /** The confirm card clicks this pane sent, by client id: one handed back goes to its card, never the draft. */
+  const clicks = new CardClicks();
+  /**
+   * Every send the pane gets back (a refusal, a reload or close, a connection that ended before its
+   * chat's hello, a queued one that left undelivered) goes through here (lib/hand-back): typed texts
+   * to the top of the draft, announced with `said`; a card click never: its card's "Sent" mark
+   * clears, so the buttons come back, and the pane says so (§app.overseer/confirm). Returns the
+   * typed texts handed back.
+   */
+  const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
+    if (!back.length) return [];
+    const r = handBack({ draft: drafts.get(props.path), cardSent: untrack(cardSent) }, back, clicks);
+    if (r.texts.length) {
+      setDraftText(props.path, r.draft ?? "");
+      if (said) announce(said);
+    }
+    if (r.note) {
+      setCardSent(r.cardSent);
+      toast(r.note);
+      announce(r.note);
+    }
+    return r.texts;
   };
-  /** The sends made on connection `conn` it never acknowledged, back to the composer: it ended
-      before its chat's hello, so no chat took them. Earlier connections' sends stay. */
+  /** The sends made on connection `conn` it never acknowledged come back: it ended before its
+      chat's hello, so no chat took them. Earlier connections' sends stay. */
   const handBackUnsent = (conn: number) => {
-    const back = unacked.takeFrom(conn, handedBack);
-    if (!back.length) return;
-    putBack(back);
-    announce("That message couldn't be sent. It's back in the composer.");
+    handBackSends(unacked.takeFrom(conn, handedBack), "That message couldn't be sent. It's back in the composer.");
   };
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
@@ -806,11 +820,7 @@ export function ChatView(props: {
           sawGone = !props.summary?.()?.chat;
           socket.close();
           // Sends it never took can't be refused back on this socket any more: they come back now.
-          const back = unacked.takeAll(handedBack);
-          if (back.length) {
-            putBack(back);
-            announce("That message couldn't be sent. It's back in the composer.");
-          }
+          handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
           return;
         }
         case "workers":
@@ -828,7 +838,18 @@ export function ChatView(props: {
           break;
         // Stop drained what was still queued; it goes back to the draft, not behind the next prompt.
         case "queue_cleared": {
-          const text = takeBackQueued(setLive, [...msg.steering, ...msg.followUp]);
+          const drained = [...msg.steering, ...msg.followUp];
+          // A queued card click never goes to the composer: its buttons come back (lib/hand-back).
+          const cards: string[] = [];
+          const typed = drained.filter((t) => {
+            const card = clicks.takeByText(t);
+            if (card !== undefined) cards.push(card);
+            return card === undefined;
+          });
+          if (cards.length) setCardSent(reopenCards(untrack(cardSent), cards));
+          // Every drained row goes; only typed text comes back.
+          takeBackQueued(setLive, drained);
+          const text = typed.filter((t) => t.trim()).join("\n\n");
           if (text) {
             setRestored({ text });
             announce("Queued message returned to the composer.");
@@ -890,7 +911,12 @@ export function ChatView(props: {
           claimed.add(msg.itemId);
           if (effect.row === "delivered") markDelivered(setLive, msg.itemId);
           else markRemoved(setLive, msg.itemId);
-          if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
+          if (effect.row === "delivered") clicks.forget(msg.itemId);
+          // A card click that left undelivered: its buttons come back, never the composer (lib/hand-back).
+          if (first && effect.restore && clicks.cardOf(msg.itemId) !== undefined && !handedBack.has(msg.itemId)) {
+            handedBack.add(msg.itemId);
+            handBackSends([{ id: msg.itemId, text }]);
+          } else if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
             handedBack.add(msg.itemId);
             setRestored({ text });
             announce(
@@ -1058,8 +1084,8 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
-              // A command it names makes no user row: its text comes back from here.
-              putBack([unacked.take(msg.clientId, handedBack)].filter((t): t is string => t !== null));
+              // A command it names makes no user row: its text comes back from here (a click: its card).
+              handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
@@ -1071,11 +1097,7 @@ export function ChatView(props: {
               setCode(null);
               // The chat is going (a reload, a stop): this socket's sends the server never took can't
               // be refused back to it any more (the pane reconnects under a new id), so they come back now.
-              const back = unacked.takeAll(handedBack);
-              if (back.length) {
-                putBack(back);
-                announce("That message couldn't be sent. It's back in the composer.");
-              }
+              handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
               // The Overseer's runtime can be replaced by a clear in another tab: its route may now
               // name a new file, and reconnecting here would reopen the old one.
               if (props.overseer) {
@@ -1209,7 +1231,8 @@ export function ChatView(props: {
     stopTakingBack();
     const frames = outbox.take();
     const w = untrack(wait);
-    const held = w.open ? unacked.of(w.conn) : new Map<string, string>();
+    // A card click is never put back by the courier (lib/hand-back): only typed sends are held for it.
+    const held = new Map([...(w.open ? unacked.of(w.conn) : new Map<string, string>())].filter(([id]) => clicks.cardOf(id) === undefined));
     if (!frames.length && !held.size) return;
     courier(props.path, frames, held, chatCourier, socket.release() ?? undefined);
   });
@@ -1862,6 +1885,8 @@ export function ChatView(props: {
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
     const frame = steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) };
+    // A click is known as one wherever it is handed back (lib/hand-back).
+    if (confirm && !steer) clicks.note(clientId, confirm, text);
     if (holding()) hold(frame);
     else {
       if (!socket.send(frame)) return false;

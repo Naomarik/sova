@@ -36,6 +36,37 @@
     (is (= "pr1 is not a project here." (h/refusal x osid :project/place (assoc op :project-id "pr1" :invalid "pr1 is not a project here."))))
     (is (= "Bob is already on the roster." (h/refusal x osid :person/add (assoc op :person {:name "Bob"} :names-taken #{"bob"}))))))
 
+(deftest owner-send-link
+  ;; §app.owner-page/send: only the org's current, active owner; the note; the global Overseer's card
+  (let [x    (org)
+        omar {:id "p1" :name "Omar" :status "active"}
+        maria {:id "p2" :name "Maria" :status "active"}
+        send (fn [y ev] (h/send! y osid :owner/send-link ev))]
+    (is (= "Acme has no owner, so there is no owner page to send. Nothing was sent."
+           (h/refusal x osid :owner/send-link (assoc op :target omar))) "no owner")
+    (let [y (h/send! x osid :owner/set (assoc op :person-id "p1" :target {:status "active"}))]
+      (is (= "Maria isn't Acme's owner. Nothing was sent." (h/refusal y osid :owner/send-link (assoc op :target maria))) "anyone else")
+      (is (= "Omar is not active. Nothing was sent." (h/refusal y osid :owner/send-link (assoc op :target (assoc omar :status "left")))))
+      (is (= "A note is at most 500 characters." (h/refusal y osid :owner/send-link (assoc op :target omar :note (apply str (repeat 501 "a"))))))
+      (is (= "It repeats private text." (h/refusal y osid :owner/send-link (assoc op :target omar :leak "It repeats private text."))))
+      (is (= "Acme isn't attached here." (h/refusal y osid :owner/send-link (assoc op :target omar :invalid "Acme isn't attached here."))))
+      (testing "the global Overseer: only with a card listing the owner"
+        (is (= "This reaches people or ends something: ask with sova_card, listing p1 in its items, and act in the turn the user's click starts."
+               (h/refusal y osid :owner/send-link {:by "operator" :via "overseer" :target omar})))
+        (is (some? (h/refusal y osid :owner/send-link {:by "operator" :via "overseer" :card {:people ["p2"]} :target omar})) "a card listing someone else")
+        (is (= "This reaches people or ends something: ask with sova_card, listing p2 in its items, and act in the turn the user's click starts."
+               (h/refusal y osid :owner/send-link {:by "operator" :via "overseer" :card {:people ["p1"]} :target maria}))
+            "the card comes before the owner check")
+        (is (nil? (h/refusal y osid :owner/send-link {:by "operator" :via "overseer" :card {:people ["p1"]} :target omar :sent-by "operator-via-overseer"}))))
+      (let [z (send y (assoc op :target omar :note "  Hi Omar  " :sent-by "operator-via-overseer"))
+            eff (last (filter #(= "owner-link-send" (:kind %)) (h/outbox z osid)))]
+        (is (= {:person-id "p1" :by "operator-via-overseer" :note "Hi Omar"} (select-keys eff [:person-id :by :note])))
+        (is (h/in? z osid :owner-set) "it changes no state"))
+      (testing "a card raised before the owner changed sends nothing"
+        (let [w (h/send! y osid :owner/set (assoc op :person-id "p2" :target {:status "active"}))]
+          (is (= "Omar isn't Acme's owner. Nothing was sent."
+                 (h/refusal w osid :owner/send-link {:by "operator" :via "overseer" :card {:people ["p1"]} :target omar}))))))))
+
 (deftest residence
   (let [sid "residence/o1"
         attach (fn [] (h/start! (h/new-host) "residence" sid {:org-id "o1" :org-name "Acme" :host-id "h_me" :host-name "me" :mode "attach" :commit-every-ms 3600000}))

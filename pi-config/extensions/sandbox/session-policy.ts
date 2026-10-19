@@ -4,13 +4,17 @@
  * it before the proxy and the probe; Sova's server calls it for a session it hosts or holds on disk
  * (linked-session file transfer, `server/link-sandbox.ts`), so the two never disagree.
  *
- * Node builtins only (with backend.ts, policy.ts and state.ts), no pi imports. Pure apart from
- * reading the policy files: it never creates the session tmp (`ensureSessionTmpDir` does).
+ * Node builtins only (with backend.ts, policy.ts, state.ts, env.ts and proxy.ts), no pi imports.
+ * Resolution only reads policy files. `prepareSessionCommand` additionally owns a private tmp,
+ * allowlisting proxy and backend launch resources until the caller disposes them.
  */
-import { lstatSync, mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { lstatSync, mkdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
-import { type Backend, backendFor, gitProtectedPaths, shadowSource } from "./backend.ts";
+import { dirname, join } from "node:path";
+import { type Backend, type Confined, type Policy, backendFor, gitProtectedPaths, shadowSource } from "./backend.ts";
+import { hostEnv, scrubEnv } from "./env.ts";
+import { proxySocketPath, startProxy, type ProxyHandle, type ProxyOptions } from "./proxy.ts";
 import { type ParentScope, type ResolvedPolicy, type Result, resolvePolicy } from "./policy.ts";
 
 export interface SessionPolicyInput {
@@ -72,4 +76,69 @@ export function resolveSessionPolicy(input: SessionPolicyInput): Result<Resolved
 		extraWritable: roots,
 		extraReadOnly: roots.map((r) => join(r, ".agent")),
 	});
+}
+
+export type PreparedSessionCommand = Confined & { dispose(): Promise<void> };
+
+/**
+ * Runtime-free whole-command launch for a hosted tool. Uses the same resolver, proxy and exact
+ * backend probe as the extension. The caller must supply the session's effective parent scope;
+ * a script never supplies any of this input. No fallback to an unconfined argv is possible.
+ * A private attempt tmp/proxy avoid changing resources owned by the chat's extension.
+ */
+export async function prepareSessionCommand(
+	input: SessionPolicyInput,
+	argv: readonly string[],
+	/** `proxy`: off-by-default options for this attempt's own proxy only (proxy.ts); the chat's proxy never gets them. */
+	options: { env?: Record<string, string>; backend?: Backend; proxy?: Pick<ProxyOptions, "forbid" | "local" | "admit"> } = {},
+): Promise<Result<PreparedSessionCommand>> {
+	if (!argv.length || argv.some((s) => !s || s.includes("\0"))) return { ok: false, error: "invalid command argv" };
+	let proxy: ProxyHandle | undefined;
+	let tmp: string | undefined;
+	let confined: Confined | undefined;
+	let disposed = false;
+	const dispose = async () => {
+		if (disposed) return;
+		disposed = true;
+		try { await confined?.cleanup?.(); } finally {
+			try { await proxy?.close(); } finally { if (tmp) rmSync(dirname(tmp), { recursive: true, force: true }); }
+		}
+	};
+	try {
+		const resourceId = `${input.sessionId || "session"}-tool-${randomUUID()}`;
+		tmp = ensureSessionTmpDir(resourceId);
+		const backend = options.backend ?? backendFor(input.platform);
+		const resolved = resolveSessionPolicy({ ...input, tmpDir: tmp, backend });
+		if (!resolved.ok) { await dispose(); return resolved; }
+		const p = resolved.value;
+		if (p.outsideParent) { await dispose(); return { ok: false, error: "session cwd is outside its parent's sandbox" }; }
+		let network: Policy["network"] = { mode: p.writeOnly ? "host" : "none" };
+		if (p.level === "workspace-write" && !p.writeOnly) {
+			// Failure tightens to no network, just as snapshot() does.
+			try { proxy = await startProxy({ socket: proxySocketPath(resourceId), allow: p.proxyAllow, ...options.proxy }); } catch { /* no network */ }
+			if (proxy) network = { mode: "proxy", proxy: { socket: proxy.socket, allow: p.proxyAllow } };
+		}
+		const policy: Policy = {
+			level: p.level, workspaceRoot: p.workspaceRoot, writable: p.writable,
+			readOnlyWithinWritable: p.readOnlyWithinWritable, hidden: p.hidden, tmpDir: p.tmpDir,
+			shadowed: p.shadowed, network, sessionId: input.sessionId,
+			env: p.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, p.envAllow),
+			...(p.writeOnly ? { hostTmp: true } : {}),
+		};
+		const probe = await backend.probe(policy);
+		if (!probe.ok) { await dispose(); return { ok: false, error: probe.reason }; }
+		if (probe.enforcement === "partial" && !p.acceptPartial) {
+			await dispose(); return { ok: false, error: `partial sandbox enforcement: ${(probe.reasons ?? []).join("; ")}` };
+		}
+		const result = await backend.confine({ argv: [...argv], cwd: input.cwd, policy, env: options.env });
+		if (!result.ok) { await dispose(); return { ok: false, error: result.reason }; }
+		confined = result.confined;
+		if (confined.enforcement === "partial" && !p.acceptPartial) {
+			await dispose(); return { ok: false, error: "partial sandbox enforcement is not accepted" };
+		}
+		return { ok: true, value: { ...confined, dispose } };
+	} catch (error) {
+		await dispose();
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
 }

@@ -2,7 +2,7 @@ import { setProfileStartAdopt } from "./lib/profile-start";
 import { deliverStranded, handOverWhenGoing } from "./lib/chat-outbox";
 import { chatCourier } from "./lib/chat-courier";
 import { loadAlignment } from "./lib/alignment-draft";
-import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, lazy, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
@@ -34,7 +34,9 @@ import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
-import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
+import { bindKey, paletteKeyAction } from "./commands/keys";
+import { composerOf } from "./commands/composers";
+import { isOverseerHash, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
@@ -69,7 +71,7 @@ import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsDialog, TABS as SETTINGS_TAB_LABELS } from "./components/SettingsDialog";
 import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsView";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
@@ -94,6 +96,7 @@ import { BrandLink, sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
+import { ExtensionsContext } from "./lib/reply-place";
 
 /** The session the hash names. A peer's (`#/p/<host>/s/<path>`) records its host first, so every
     request the view makes for it goes there even before the peer's list has loaded. */
@@ -149,6 +152,10 @@ const EXTENSIONS_POLL_MS = 15_000;
 /** While a peer is configured, its status and its sessions are re-read this often. Never with none. */
 const MESH_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
+/** The command palette and the shortcut sheet: their own files, fetched on their first opening. */
+const CommandPalette = lazy(() => import("./components/CommandPalette"));
+const ShortcutSheet = lazy(() => import("./components/ShortcutSheet"));
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Live `matchMedia` (the ExplainTiles pattern): the spine is a desktop affordance, so it only
     shows while the viewport is unfolded, and a resize across 768px swaps it in or out. */
@@ -438,6 +445,8 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
+  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
   // "Configure Delegate" (lib/settings-nav.ts holds which tab, so either can open it).
   /** Each open chat's rewind, for the Timeline's input rows. By path: a workspace has several
@@ -538,15 +547,27 @@ export function App() {
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
-  /** Alt+O: the Overseer, from anywhere (lib/overseer `isOverseerShortcut`). */
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (!isOverseerShortcut(e)) return;
-    e.preventDefault();
+  /** Ctrl/⌘+K: the command palette; "?": the shortcut sheet (§app/command-palette). Each is a
+      separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is
+      the field's own (delete to the end of the line), so it's left to it there. */
+  const offPaletteKey = bindKey("palette.open", (e) => {
+    const act = paletteKeyAction(e, IS_MAC);
+    if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
+    if (act === "toggle") setPaletteOpen((open) => !open);
+    return true; // a held key's repeats are swallowed: it toggles once
+  });
+  const offShortcutsKey = bindKey("shortcuts.open", () => {
+    if (paletteOpen()) return false;
+    setShortcutsOpen(true);
+    return true;
+  });
+  /** Alt+O: the Overseer, from anywhere (commands/keys). */
+  const offOverseerKey = bindKey("overseer.open", () => {
     if (location.hash !== OVERSEER_HASH) location.hash = OVERSEER_HASH;
-  };
+    return true;
+  });
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
-  window.addEventListener("keydown", onKeyDown);
   // A view that changed a session's list fields (a baton strip's hand-off, take back, approve) asks
   // for the list and the Needs you digest now rather than at the next poll (lib/list-refresh.ts).
   const offListRefresh = onListRefresh(window, { list: refresh, attention: () => attention.refetch() });
@@ -554,7 +575,9 @@ export function App() {
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("hashchange", onHash);
-    window.removeEventListener("keydown", onKeyDown);
+    offOverseerKey();
+    offPaletteKey();
+    offShortcutsKey();
     offListRefresh();
     clearInterval(tick);
   });
@@ -1059,7 +1082,9 @@ export function App() {
   };
 
   return (
-    <>
+    // The extension list this page polls anyway, for every place on Sova's screens extensions add to
+    // (lib/reply-place): no place makes a request of its own to learn which do.
+    <ExtensionsContext.Provider value={extensions.data}>
       {/*
         In a workspace the transcripts are the panes': the link points at the focused one, and its
         name and target move together.
@@ -1386,7 +1411,32 @@ export function App() {
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}
       </Show>
+      <Show when={paletteOpen()}>
+        <CommandPalette
+          host={{
+            wide: unfolded,
+            collapsed,
+            extensions: () => (extensions.data() ?? []).map((x) => ({ id: x.id, title: x.title })),
+            openNewSessionDialog: () => setCreating(true),
+            openShortcuts: () => setShortcutsOpen(true),
+            settingsTabs: () => SETTINGS_TAB_LABELS,
+          }}
+          context={() => {
+            const s = summary();
+            const c = composerOf(focusedPath());
+            return {
+              session: s ? { path: s.path, id: s.id, title: s.title, terminal: !!s.live } : null,
+              composer: c ? { commands: c.commands(), off: c.off(), hasDraft: c.hasDraft() } : null,
+            };
+          }}
+          composer={() => composerOf(focusedPath())}
+          onClose={() => setPaletteOpen(false)}
+        />
+      </Show>
+      <Show when={shortcutsOpen()}>
+        <ShortcutSheet onClose={() => setShortcutsOpen(false)} />
+      </Show>
       <GlobalRegions />
-    </>
+    </ExtensionsContext.Provider>
   );
 }

@@ -6,6 +6,8 @@ sessions (§app/baton). It has a **roster** of people with terse profiles, a set
 and a **workspace repo**: one plain git repo per organization that holds all of it. The operator
 is not a roster person; the operator's display name is host-local.
 
+Reviewed checked tour attachments belong to their hand-off conversations (§app.tours/handoffs). Their safe pictures and explanation travel with the organization's private workspace backup, with no new application access for readers.
+
 Orgs open as a page, `#/orgs` (the list) and `#/orgs/<id>` (one org), with a back link to the
 landing page like Usage and Agents. The entry point is the landing page's Organizations card, its
 last section (§chat.transcript/landing-page): totals across every org, the most recently active
@@ -328,6 +330,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   "Read-only. Nothing you do here reaches {first name}, and no visit is recorded." When no link of
   theirs could open the session now (they left, it's closed, or they were never given one), it
   adds "{first name}'s links don't open this session now." `Close` closes it.
+  Reviewed tour items use that same filtered preview and cut (§app.tours/handoffs), through explicit person-preview-scoped manifest and exact-edition asset callbacks. They show only the checked public presentation, have no Ask or write control and record no visit. Missing or refused preview authorization fails closed; there is no fallback to operator tour ownership routes.
 - **Profile changes** (`Profile Changes`): the person's history, newest first — field, old → new,
   who changed it (`you`, `you, via the Overseer` for a change the global Overseer made for the
   operator, §app.overseer/org-attribution, `wrap-up`, `referral`, `overseer` for the project's
@@ -366,13 +369,9 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   **Ideas** card (its **+** adds one), where a placed project keeps them on Requirements as Gaps and
   ideas; its ideas chip opens the card's tab. Its Settings omit the gathering sessions' model and
   abilities and the Limits rows for gatherings and promotion (Gathering sessions started, Decisions
-  promoted, Gathering sessions open), and its level sentences and approval list name nothing of an
-  organization (no roster, gathering, outreach or promotion kinds). Its level sentences: L0 "Propose:
-  reads, files ideas, asks you before anything else.", L1 "Gather: may also publish preview links of
-  its coding sessions' apps.", L2 "Reconcile: nothing more than L1 here; promoting decisions needs an
-  organization.", L3 "Build: may also run the project's instances; a coding session starts only in a
-  turn you started." Its approval list holds only starting and prompting a coding session and
-  publishing a preview link ("All 3 wait for its approval."); kinds it hides keep their saved state. An idea or to-do offers **Send to person…** only while placed;
+  promoted, Gathering sessions open), and its switches (§design.copy-deck/project-powers) have the
+  overseer's column only, with no act only an organization has (gatherings, WhatsApp, owner updates,
+  the roster), as the server lists them. An idea or to-do offers **Send to person…** only while placed;
   **Start Coding Session** always.
 - **Head.** The page head is the project's name (§app.organizations/org-page: cut with an
   ellipsis, the whole name as its `title`), the meta line (the org · folder while placed, the folder
@@ -381,14 +380,16 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   **Archive Project…** (or **Unarchive Project** while archived, §app.organizations/archive). No
   destructive button sits in the head itself.
 - **Summary**, under the head on every tab:
-  - **The overseer line**: the level in force as a chip-like word pair (`L3 Build`), then
-    "Watching" or "Not watching", then the last run in the page's own words
+  - **The overseer line**: "Paused" (its `title` the brake's reason) while a brake holds every
+    switch Off, then "Watching" or "Not watching", then the last run in the page's own words
     (§app.project-overseer/watch-loop: "Last looked on its own {time}{tail}." or "It hasn't looked
     on its own yet.") and "{n} run(s) today."; the line is one line where it fits and wraps on a
     phone. The **Working** chip while it works, **Run Now** and **Open Overseer** (or **Start
     Overseer**, with the unread count) sit beside it. Under it, only when true: "Waiting to look
     at: …", today's and the last message's allowance used, and each Waiting line
-    (§app.project-overseer/limits); the paused-by-attach banner with Resume at {level}.
+    (§app.project-overseer/limits); while braked, a warn banner with **Resume** (paused by an
+    attach: "Paused on {host}" and when it was attached; an empty roster: "Paused" and the
+    server's reason). No level shows on the page.
   - **A strip of count chips**, each a link that opens its tab and brings its section into view:
     `{n} sessions` (coding sessions, Overview), `{n} previews` (active preview links, Overview),
     the project's cost (`$27.21`, Cost), `{n} conflicts` (open, warn while above 0,
@@ -444,15 +445,15 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   opening the add form.
 - **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
-- **Settings.** In this order: **Overseer** (the Watch switch and its hint; the level as a
-  segmented control `L0 | L1 | L2 | L3` whose selected level's sentence shows under it, the
-  "In force now" note and the hint; the approval list as a summary line with **Edit**,
-  §app.project-overseer/reviews); **Sessions it starts** (the gathering and coding sessions'
+- **Settings.** In this order: **Overseer** (the Watch switch and its hint); **What may happen
+  without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
+  Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
+  the overseer on its own and, while an organization places the project, one for the Project
+  Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
   model, thinking, abilities and mode selects, three to a row where they fit); **Extra
   instructions**; **Limits** (§app.project-overseer/limits); the Owner Page card while the org has
   an owner (§app.owner-page/controls); and a **Danger zone** with **Archive Project** (or
-  Unarchive). Every control saves exactly as it did before the page had tabs: a pick, tick or
-  switch at once, Extra instructions and Limits on their own Save.
+  Unarchive). A pick or switch saves at once; Extra instructions and Limits on their own Save.
 - **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
   page's does, and every control stays at least 44px tall.
 
@@ -501,10 +502,11 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     the owner page, and the ones taken down, §app.owner-page/updates), `costs.json` (each session's
     title and token counts as last counted, by model, time and token kind, §app.project-costs/ledger),
     `usage.jsonl` (the reconciler's decide calls' usage, §app.project-costs/recording), and the
-    overseer's `overseer/` — `overseer.json` (autonomy, models, caps,
+    overseer's `overseer/` — `overseer.json` (powers and the never-looser level beside them, models, caps,
     watch, extra instructions, memory), `notes.md`, `ideas/`, `todos.json` and `files.jsonl` (the files
     people sent, by name, size and status, never their bytes, which stay on the host that took
     them, §app/file-intake);
+  - currently attached checked hand-off tour snapshots, their redacted picture bytes and conversation bindings (§app.tours/storage), so a restored conversation keeps its explanation without the old recording computer; never jobs, browser profiles, test-account state, approvals, share tokens or raw staging. Even when workspace ignore rules exclude tours or pictures, only each validated checked destination-public manifest and the exact picture inventory it lists may bypass ignores: realpath-contained beneath the workspace, with no symlinks, directory globs, source/private artifacts, scripts or reports. Oversize snapshots are refused before attachment. After a backup commit, every inventory path is verified in the committed Git tree; a missing path produces a clear organization backup warning. Detachment removes the snapshot from the next backup tree without deleting retained on-disk bytes or erasing older Git history;
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent;
@@ -528,6 +530,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   marks, archive and tags, the write guard's stats — which an attach derives again for the org's
   sessions. A project's own spec (`.sova/spec` under the project root, drafts local) is the
   project repo's, not the workspace's.
+- **Tour backup dirtiness.** Generated untracked artifacts in the reserved tour snapshot storage do not alone make the workspace backup dirty or cause recurring no-op backup attempts; this includes retained detached snapshots. Tracked tour changes remain visible as pending changes and still receive backup validation and warnings. A new binding or detachment changes the neutral conversation transcript and therefore still triggers its backup.
 - **Commits.** Creating an org makes the first commit. After that a committer looks at every
   attached org's repo once an hour: an hour after the repo's last commit (counted from HEAD, so
   Commit Now, a restart or a commit made on another host all count; `SOVA_WORKSPACE_COMMIT_MS`
@@ -581,7 +584,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
 - Cloning an org's workspace repo onto any Sova host and attaching it ("Attach a Restored Repo",
   `POST /api/orgs/attach {dir}`) brings the whole organization: the org, its roster with every
   history line, its projects, every baton session with its transcript, holder, hand-offs, offers
-  and wrap-up state, the decisions and conflicts, every recorded visit (§app.baton/visits), and each
+  and wrap-up state, its currently attached checked hand-off tour snapshots and redacted pictures (§app.tours/storage), the decisions and conflicts, every recorded visit (§app.baton/visits), and each
   project overseer with its conversations, settings, notes, actions, ideas, to-dos and the
   sessions it started, and its history with every event's id, links and recorded words
   (§app.org-history/portability). Nothing is read from the old host. An attach commits what it wrote before it
@@ -591,19 +594,26 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   in a commit of their own within the same attach. A clone with nothing to recover gets only the
   "Attached on …" commit. If that follow-up commit is refused, the refusal is logged and those
   changes go in with the next regular commit (the hourly one or the shutdown commit).
+- Currently attached checked hand-off tour snapshots restore with their conversation bindings, without fetching anything from the old recording host. Exact checked public inventory paths travel despite workspace ignores, or the organization shows a clear backup warning if the committed inventory is incomplete; oversize attachments are refused. A detached snapshot is excluded from the next committed backup tree, although retained local bytes and older Git history remain. Source-chat deletion cannot break a destination-owned attachment. Public tour links, jobs, credentials and browser profiles do not travel; fresh public tour links need a new review and mint (§app.tours/storage).
 - **Links must be re-issued.** No link is in the repo, so every old link answers 404 on the new
   host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"), the owner
   link included (the owner itself travels, in the org's statechart). The attach form says so. A person's page lists no links until new ones are sent; their old visits still
   show, marked `link from another host`, and new visits append to the same log.
-- **Project overseers start paused at L0.** The attach pauses every project of the org in its
-  host-local watch statechart (§app.project-overseer/statecharts). While paused, the level in force is L0 ("Paused at L0: this organization
-  was attached on this host. Set its level to resume."), the watch loop starts nothing for it (its
-  reasons wait), its chat head shows the warn chip "L0 in force" and the reason with **Resume at
-  {level}** (§app.project-overseer/page), and the project page shows a warn banner "Paused
-  at L0 on this host" with a **Resume at {level}** button. Setting its level on this host
-  (`PATCH …/overseer {autonomy}`, any level, the one it had included) ends the pause; no other
-  setting does. An org created on this host, and a project added after the attach, are not paused;
-  detaching and attaching again pauses again.
+- **Project overseers start paused.** The attach pauses every project of the org in its host-local
+  watch statechart (§app.project-overseer/statecharts). While paused, every switch of both columns acts
+  as Off (§app.project-overseer/autonomy-levels; the reason: "Paused: this organization was attached on
+  this host. Press Resume to let it act on its own again."), the watch loop starts nothing for it (its
+  reasons wait), its chat head shows the warn chip "Paused" and the reason with **Resume**
+  (§app.project-overseer/page), and the project page shows a warn banner "Paused on {host}" with a
+  **Resume** button. Resume on this host (`PATCH …/overseer {resume: true}`; for one release an older
+  client's `{autonomy}` does the same) ends the pause; changing a switch does not. An org created on
+  this host, and a project added after the attach, are not paused; detaching and attaching again
+  pauses again.
+- **An older host's save is never looser.** A project's switches travel in its `overseer.json` with
+  the never-looser level beside them. When a host whose Sova doesn't know switches saves that file (it
+  writes `confirmKinds`/`confirmKindsKnown`, or leaves the switches' `stamp` stale, whatever level it
+  writes, the same one included), this host reads the overseer column again from that level by the
+  carry-over, with the one-time note (§app.project-overseer/autonomy-levels).
 - **This host's view is derived again.** For each baton session the attach sets its listing title
   to the public title, and for each overseer conversation "Overseer · <project>" (a title the
   operator already gave one here stays); marks them as web sessions; and records their files'
@@ -850,6 +860,8 @@ Organizations region's own Needs you, never the global one.
   `PUT /api/orgs/:id/owner`, cleared by Sova only when that person leaves.
 
 ## §app.organizations/privacy — Profiles stay private
+
+Public tour titles, summaries, step/view explanations, callouts and reference text receive the same applicable phrase redaction as the conversation. Pictures require operator preview and approval because text redaction cannot inspect pixels; privacy masks are burned into the only published bytes, never removable CSS blur. Tour projections expose no private profile, source identity, account data or unredacted recording report (§app.tours/handoffs).
 
 - `contact` never enters any model prompt. The global Overseer's organization tools carry none:
   not in a read, a result, an error, a confirm card or the action log, and contact it writes is

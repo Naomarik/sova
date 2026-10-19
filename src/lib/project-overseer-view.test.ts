@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
 import { IDEA_ID_RE } from "../../shared/protocol";
-import { actionLine, allowanceLine, gapArea, headState, holdHint, holdWords, historyTitle, itemSendInput, lastRunLine, lastRunTail, levelName, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
-import { AUTONOMY_MEANING, DEFAULT_PO_CAPS, type Autonomy } from "../../shared/project-overseer";
+import { PAUSED_LINE, actionLine, allowanceLine, gapArea, headState, holdHint, holdWords, historyTitle, itemSendInput, lastRunLine, lastRunTail, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
+import { DEFAULT_PO_CAPS } from "../../shared/project-overseer";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
   id,
@@ -153,33 +153,18 @@ test("what it waits for, one line per held item; the message allowance's and a s
 
 // ---- the chat head (§app.project-overseer/page) ----
 
-const headInfo = (o: { chosen?: Autonomy; effective?: Autonomy; reason?: string; paused?: string | null } = {}) => ({
-  settings: { autonomy: o.chosen ?? "L1" },
-  effective: { autonomy: o.effective ?? o.chosen ?? "L1", ...(o.reason ? { reason: o.reason } : {}) },
-  paused: o.paused ?? null,
-});
+const headInfo = (brake: { kind: "paused" | "empty-roster"; reason: string } | null = null) => ({ settings: { powers: { brake } } });
 
-test("the head's state chip: Working while its turn runs, else L0 in force while forced, else none", () => {
+test("the head's state chip: Working while its turn runs, else Paused (with the brake's reason) while braked, else none; never a level", () => {
   const idle = headState(headInfo(), false);
-  const working = headState(headInfo({ effective: "L0", reason: "Paused." , paused: "2026-09-01" }), true);
-  const forced = headState(headInfo({ chosen: "L2", effective: "L0", reason: "The roster has no active people yet." }), false);
-  const paused = headState(headInfo({ chosen: "L0", paused: "2026-09-01", reason: "Paused at L0." }), false);
-  const chosenL0 = headState(headInfo({ chosen: "L0" }), false);
+  const working = headState(headInfo({ kind: "paused", reason: "Attached here." }), true);
+  const roster = headState(headInfo({ kind: "empty-roster", reason: "The roster has no active people yet." }), false);
+  const paused = headState(headInfo({ kind: "paused", reason: "Attached here." }), false);
   assert.equal(idle, null);
-  assert.equal(chosenL0, null, "L0 by choice is not a warning");
-  assert.deepEqual([working?.tone, working?.text], ["accent", "Working"], "working wins over forced");
-  assert.deepEqual([forced?.tone, forced?.text, forced?.title], ["warn", "L0 in force", "The roster has no active people yet."]);
-  assert.equal(paused?.tone, "warn", "a pause is shown even with L0 chosen");
-  assert.notEqual(working?.text, forced?.text);
-});
-
-test("the level button names the level, its meaning and, only while forced, what is in force", () => {
-  const plain = levelName(headInfo({ chosen: "L2" }));
-  const forced = levelName(headInfo({ chosen: "L2", effective: "L0", reason: "x" }));
-  assert.ok(plain.includes("L2") && plain.includes(AUTONOMY_MEANING.L2), plain);
-  assert.ok(!plain.includes("In force"), plain);
-  assert.ok(forced.startsWith(plain.replace(/ Change level\.$/, "")) && forced.includes("In force now: L0."), forced);
-  assert.match(plain, /Change level\.$/);
+  assert.deepEqual([working?.tone, working?.text], ["accent", "Working"], "working wins over a brake");
+  assert.deepEqual([roster?.tone, roster?.text, roster?.title], ["warn", "Paused", "The roster has no active people yet."]);
+  assert.deepEqual([paused?.text, paused?.title], ["Paused", "Attached here."]);
+  for (const c of [roster, paused]) assert.doesNotMatch(c!.text, /L[0-3]|in force/);
 });
 
 test("status line 1: the last run in the project page's words, then how many reasons wait; never a time for the next look", () => {
@@ -191,28 +176,30 @@ test("status line 1: the last run in the project page's words, then how many rea
   assert.equal(waitingToLook(3), "Waiting to look at 3 things.");
 });
 
-test("status strip: at most 3 lines, each only with something to say; a pause leads with its reason and a Resume", () => {
+test("status strip: at most 3 lines, each only with something to say; a pause leads with a short Paused line and a Resume, never its reason", () => {
   const usage = (o: { pending?: string[]; used?: number; held?: boolean } = {}) => ({
     pending: o.pending ?? [],
     allowance: { today: { ...Object.fromEntries(["gather", "promote", "create", "prompt"].map((k) => [k, { used: 0, max: 6 }])), gather: { used: o.used ?? 0, max: 6 } } },
     held: o.held ? [{ key: "day:gather" }] : [],
   });
-  const base = { ...headInfo(), settings: { autonomy: "L1" as Autonomy, caps: DEFAULT_PO_CAPS }, lastRun: null };
+  const base = { settings: { powers: { brake: null }, caps: DEFAULT_PO_CAPS }, lastRun: null };
   const quiet = statusLines({ ...base, usage: usage() } as never, "");
-  assert.deepEqual(quiet, { lines: ["It hasn't looked on its own yet."], resume: null, pendingTitle: "" });
+  assert.deepEqual(quiet, { lines: ["It hasn't looked on its own yet."], resume: false, pendingTitle: "" });
   const busy = statusLines({ ...base, usage: usage({ pending: ["A.", "B."], used: 2, held: true }) } as never, "");
   assert.equal(busy.lines.length, 3);
   assert.equal(busy.lines[0], "It hasn't looked on its own yet. Waiting to look at 2 things.");
   assert.equal(busy.pendingTitle, "A. B.");
   assert.match(busy.lines[1]!, /^Today on its own: 2 of 6 gathering sessions/);
   assert.match(busy.lines[2]!, /^Waiting until midnight/);
-  const paused = statusLines({ ...base, ...headInfo({ chosen: "L2", effective: "L0", reason: "Paused at L0: attached here.", paused: "2026-09-01" }), settings: { ...base.settings, autonomy: "L2" }, usage: usage({ pending: ["A."], used: 2, held: true }) } as never, "");
+  const braked = (kind: "paused" | "empty-roster", reason: string) => ({ ...base, settings: { ...base.settings, powers: { brake: { kind, reason } } } });
+  const paused = statusLines({ ...braked("paused", "Paused: attached here."), usage: usage({ pending: ["A."], used: 2, held: true }) } as never, "");
   assert.equal(paused.lines.length, 3, "still at most 3 lines");
-  assert.equal(paused.lines[0], "Paused at L0: attached here.");
-  assert.equal(paused.resume, "L2", "Resume at the chosen level");
-  const roster = statusLines({ ...base, ...headInfo({ chosen: "L2", effective: "L0", reason: "The roster has no active people yet." }), settings: { ...base.settings, autonomy: "L2" }, usage: usage() } as never, "");
-  assert.equal(roster.lines[0], "The roster has no active people yet.");
-  assert.equal(roster.resume, null, "a level change can't fix an empty roster");
+  assert.equal(paused.lines[0], PAUSED_LINE, "the short line, never the reason (the menu's banner says it)");
+  assert.ok(!paused.lines.some((l) => l.includes("attached here")), "the reason is not repeated in the strip");
+  assert.equal(paused.resume, true);
+  const roster = statusLines({ ...braked("empty-roster", "The roster has no active people yet."), usage: usage() } as never, "");
+  assert.equal(roster.lines[0], PAUSED_LINE);
+  assert.equal(roster.resume, true, "Resume lifts either brake");
 });
 
 test("history rows and started rows", () => {
@@ -228,45 +215,4 @@ test("holdWords and holdHint: no hold at 0, else the minutes and where to cancel
   assert.equal(holdWords(60), "1 hour");
   assert.equal(holdHint(0), "What it starts on its own that reaches a person or the code goes ahead at once.");
   assert.equal(holdHint(10), "What it starts on its own that reaches a person or the code waits 10 min in Needs you, where you can cancel it.");
-});
-
-test("the confirm list: labels by kind (an unknown kind reads as its id), toggling keeps the server's order, and what a tick says", async () => {
-  const { confirmKindLabel, toggleConfirmKind, confirmKindDone } = await import("./project-overseer-view");
-  assert.equal(confirmKindLabel("gather"), "Starting a gathering");
-  assert.equal(confirmKindLabel("roster-decline"), "Declining a proposed person");
-  assert.equal(confirmKindLabel("new-kind"), "new-kind");
-  const all = ["gather", "offer", "promote"] as const;
-  assert.deepEqual(toggleConfirmKind(all, ["promote"], "gather", true), ["gather", "promote"]);
-  assert.deepEqual(toggleConfirmKind(all, ["gather", "promote"], "gather", false), ["promote"]);
-  assert.equal(confirmKindDone("promote", true), "Promoting decisions: waits for the overseer's approval once its hold ends.");
-  assert.equal(confirmKindDone("promote", false), "Promoting decisions: goes ahead when its hold ends.");
-});
-
-test("every act kind the server lists has its own label", async () => {
-  const { CONFIRM_KINDS } = await import("../../shared/project-overseer");
-  const { CONFIRM_KIND_LABEL } = await import("./project-overseer-view");
-  for (const k of CONFIRM_KINDS) assert.ok(CONFIRM_KIND_LABEL[k], k);
-});
-
-test("confirmKindsFor: a standalone project's approval list names nothing of an organization", async () => {
-  const { CONFIRM_KINDS } = await import("../../shared/project-overseer");
-  const { confirmKindsFor, confirmKindLabel } = await import("./project-overseer-view");
-  assert.deepEqual(confirmKindsFor(CONFIRM_KINDS, true), [...CONFIRM_KINDS]);
-  const own = confirmKindsFor(CONFIRM_KINDS, false);
-  assert.deepEqual(own, ["build", "prompt", "preview"]);
-  for (const k of own) assert.doesNotMatch(confirmKindLabel(k), /gather|promot|owner|whatsapp|person/i, k);
-});
-
-test("the level lines: a standalone project's name nothing of an organization; a placed one's are the org's", async () => {
-  const { AUTONOMY_LEVELS, AUTONOMY_MEANING, autonomyMeaning } = await import("../../shared/project-overseer");
-  const { levelName } = await import("./project-overseer-view");
-  for (const l of AUTONOMY_LEVELS) {
-    assert.equal(autonomyMeaning(l, true), AUTONOMY_MEANING[l]);
-    assert.doesNotMatch(autonomyMeaning(l, false), /roster|gathering session|referral|gap/i, l);
-    // The level's name (the word before the colon) is the same either way.
-    assert.equal(autonomyMeaning(l, false).split(":")[0], AUTONOMY_MEANING[l].split(":")[0], l);
-  }
-  const info = { settings: { autonomy: "L1" as const }, effective: { autonomy: "L1" as const } };
-  assert.equal(levelName(info, false), "Level L1, Gather: may also publish preview links of its coding sessions' apps. Change level.");
-  assert.match(levelName(info), /people on the roster/);
 });

@@ -165,8 +165,8 @@ const DENY = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "NOTIFY_S
 
 /**
  * The variables the launch sets for one chat process, and only for it: its socket, file, id, unit and
- * build, the state root of the server that started it, and where its code was copied from and to
- * (§app.chat-processes/code-generations). A server never reads them: one started from a chat's own
+ * build, the state root of the server that started it, where its code was copied from and to
+ * (§app.chat-processes/code-generations), and its caller key (§app.command-audit/keys). A server never reads them: one started from a chat's own
  * tools (a hermetic server in a worktree) deletes them from its env at boot (scrubChatProcessEnv),
  * and a chat process never inherits them from its server.
  */
@@ -179,6 +179,7 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_CHAT_STATE_ROOT",
   "SOVA_CHAT_LIVE_ROOT",
   "SOVA_CHAT_COPIES_ROOT",
+  "SOVA_CALLER_KEY",
 ] as const;
 
 /** Delete every chat process's own variable from a server's env (the server: at boot, before anything reads it); the names it held. */
@@ -423,6 +424,9 @@ export class ChatSupervisor {
   /** Replacement processes' pids counted as own from their start until repoint or stopUnit, by unit. */
   private replacementClaims = new Map<string, Claim>();
   private ticking = false;
+  /** A close waited for (an idle close, awaitExit), by chat id, until it is done: a start of the same
+      chat waits for it, since its new process would run under the same unit name the close may stop. */
+  private closing = new Map<string, Promise<void>>();
   /** When the driver last said each chat's unit was up (check), by chat id: the watch's slow reconcile. */
   private statusAt = new Map<string, number>();
   private skippedEnv = new Set<string>();
@@ -519,6 +523,52 @@ export class ChatSupervisor {
     }
   }
 
+  /** Wait until `unit` no longer runs process `pid` (gone, or another process now: never this one's to
+      stop); false when `pid` is still its main process after `ms`. No pid recorded: until the unit is gone. */
+  private async waitProcessGone(unit: string, pid: number | null, ms: number): Promise<boolean> {
+    const until = this.now() + ms;
+    for (;;) {
+      const st = await this.deps.driver.status(unit);
+      const gone = isGone(st) || (pid !== null && st.pid !== null && st.pid !== pid);
+      if (gone || this.now() >= until) return gone;
+      await this.sleep(this.deps.pollMs ?? 100);
+    }
+  }
+
+  /** Process `rec.pid`'s close: waited for up to 30 s, then its unit stopped, only while the unit still
+      runs that process. */
+  private async closeProcess(rec: ChatRecord): Promise<void> {
+    if (await this.waitProcessGone(rec.unit, rec.pid, this.deps.exitWaitMs ?? EXIT_WAIT_MS)) return;
+    const st = await this.deps.driver.status(rec.unit);
+    if (rec.pid !== null && st.pid !== null && st.pid !== rec.pid) return this.log(`${rec.unit}: not stopped, it runs another process now (pid ${st.pid}, not ${rec.pid})`);
+    await this.deps.driver.stop(rec.unit);
+  }
+
+  /** Run `close` (a close of chat `chatId`'s process) with starts of the chat held until it is done, and
+      until every other close of the chat still in flight is done too (an idle close and a worker stop's
+      awaitExit can overlap): the entry chains them, so it clears only when the last one settles. */
+  private holdStarts<T>(chatId: string, close: () => Promise<T>): Promise<T> {
+    const p = close();
+    const before = this.closing.get(chatId);
+    const held = Promise.all([before, p.catch(() => {})]).then(() => {});
+    this.closing.set(chatId, held);
+    void held.then(() => {
+      if (this.closing.get(chatId) === held) this.closing.delete(chatId);
+    });
+    return p;
+  }
+
+  /** Wait, up to `ms`, for a close of chat `chatId` in flight; false when it is still going. */
+  private async closed(chatId: string, ms: number): Promise<boolean> {
+    const until = this.now() + ms;
+    for (;;) {
+      const p = this.closing.get(chatId);
+      if (!p) return true;
+      if (this.now() >= until) return false;
+      await Promise.race([p, this.sleep(this.deps.pollMs ?? 100)]);
+    }
+  }
+
   /** Start `unit` for `chat` and wait for its main process; the record is the caller's to write. */
   private async spawn(chat: ChatLaunch, unit: string, sock: string): Promise<ChatRecord> {
     const { argv, env, build, nice, workdir } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
@@ -546,6 +596,10 @@ export class ChatSupervisor {
    * for, up to 10 s, until its unit and the session's writer lock are free.
    */
   async start(chat: ChatLaunch): Promise<ChatRecord> {
+    // A close of its previous process still waited for (it may stop the unit by name): done first,
+    // whether or not that process is still tracked (a link's end forgets it as soon as it exits).
+    if (!(await this.closed(chat.chatId, this.deps.predecessorWaitMs ?? PREDECESSOR_WAIT_MS)))
+      throw new Error(`The chat's previous process (${this.unitOf(chat.chatId)}) is still closing.`);
     const held = this.chats.get(chat.chatId);
     if (held) {
       const st = await this.deps.driver.status(held.rec.unit);
@@ -883,7 +937,10 @@ export class ChatSupervisor {
    * Close an idle chat through its drain: the chat re-checks that it is quiet (an open tab doesn't count).
    * A refusal restarts its idle clock; an accepted drain is waited for 30 s, then the unit is stopped.
    */
-  private async idleStop(chatId: string, t: Tracked): Promise<void> {
+  private idleStop(chatId: string, t: Tracked): Promise<void> {
+    return this.holdStarts(chatId, () => this.idleClose(chatId, t));
+  }
+  private async idleClose(chatId: string, t: Tracked): Promise<void> {
     if (!this.deps.drain) return;
     t.draining = true;
     try {
@@ -894,7 +951,7 @@ export class ChatSupervisor {
         t.idleSince = null;
         return;
       }
-      if (!(await this.waitGone(t.rec.unit, this.deps.exitWaitMs ?? EXIT_WAIT_MS))) await this.deps.driver.stop(t.rec.unit);
+      await this.closeProcess(t.rec);
       if (this.chats.get(chatId) === t) this.forget(chatId);
       this.log(`${chatId}: closed (idle)`);
       this.deps.onStopped?.(chatId, "idle");
@@ -975,7 +1032,7 @@ export class ChatSupervisor {
   async awaitExit(chatId: string): Promise<void> {
     const t = this.chats.get(chatId);
     if (!t) return;
-    if (!(await this.waitGone(t.rec.unit, this.deps.exitWaitMs ?? EXIT_WAIT_MS))) await this.deps.driver.stop(t.rec.unit);
+    await this.holdStarts(chatId, () => this.closeProcess(t.rec));
   }
   /** Wait up to 10 s until no process holds `sessionPath`'s writer lock (a stale one, of a dead pid, counts as free). */
   async waitUnlocked(sessionPath: string): Promise<boolean> {

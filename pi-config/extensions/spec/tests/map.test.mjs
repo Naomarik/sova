@@ -16,7 +16,11 @@ test("map: every area with its lede's first sentence, label counts, crossing edg
   assert.equal(ed.title, "Editor (`EditorPane`)");
   assert.equal(ed.what, "The editor pane, where a draft is written.");
   assert.equal(ed.claims, 3);
-  assert.deepEqual(ed.labels, { authority: { accepted: 2, migrated: 1 }, evidence: { unreviewed: 1, verified: 2 }, unlabelled: 0 });
+  assert.deepEqual(ed.labels, { accepted: 2, migrated: 1, unreviewed: 1, verified: 2 }, "flat, authority then evidence; no unlabelled when none is");
+  assert.deepEqual(Object.keys(ed.labels), ["accepted", "migrated", "unreviewed", "verified"]);
+  assert.ok(!("namespace" in ed) && !("whatSource" in ed), "the id names the namespace; a prose what needs no source");
+  assert.deepEqual(j.lines.find((l) => l.id === "§ot/base").labels, { unlabelled: 1 }, "unlabelled when some claim has neither label");
+  assert.deepEqual(j.counts.labels, { accepted: 3, migrated: 1, unreviewed: 1, verified: 2, unlabelled: 7 });
   assert.equal(ed.requiresOut, 1, "compose → §ot/base");
   assert.equal(ed.requiresIn, 2, "§ot/uses and §ot/whole");
   const hubs = j.lines.filter((l) => l.type === "hub");
@@ -32,7 +36,7 @@ test("map: every area with its lede's first sentence, label counts, crossing edg
 test("map NAMESPACE and map §area: one namespace; one area's claims, crossing edges and the tokens it defines", () => {
   const root = fixture();
   const ns = cli(root, ["map", "ot"]).j;
-  assert.ok(ns.lines.filter((l) => l.type === "area").every((l) => l.namespace === "ot"));
+  assert.ok(ns.lines.filter((l) => l.type === "area").every((l) => l.id.startsWith("§ot/")));
   assert.equal(ns.counts.claims, 7);
   assert.equal(cli(root, ["map", "zz"]).j.code, "unknown-namespace");
   const a = cli(root, ["map", "§ed/seed"]).j;
@@ -64,7 +68,7 @@ test("map pages under a small budget with a stateless cursor, losing no line; fl
   const bad = cli(root, ["map", "--cursor", "AAAA"]).j;
   assert.equal(bad.code, "token-malformed");
   const help = cli(root, ["map", "--help"]).j;
-  assert.match(help.help, /^map \[namespace \| §ns\/name\]/);
+  assert.match(help.help, /^map \[namespace \| '<area §id>'\]/);
   assert.equal(cli(root, ["map"], { budget: 5 }).j.code, "usage");
 });
 

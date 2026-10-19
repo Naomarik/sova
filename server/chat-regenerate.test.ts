@@ -13,6 +13,7 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 const { resolveRegenerate: resolveOnHistory } = await import("./chat-manager");
 const { historyOf } = await import("./harness/pi/reader");
 const { parseWakeNudge } = await import("../shared/wake");
+const { tourSignInNoticeText } = await import("./tours/sign-in-notice");
 
 /** The rule over raw pi entries, read as a held session's branch is (historyOf). */
 const resolveRegenerate = (branch: readonly unknown[], entryId: string) => resolveOnHistory(historyOf(branch), entryId);
@@ -168,6 +169,13 @@ describe("resolving what a regenerate replays", () => {
     const r = resolveRegenerate(b, "a2");
     assert.equal(r.ok, false);
     assert.equal(!r.ok && r.reason, "wake");
+    assert.match(!r.ok ? r.message : "", /answered a scheduled wake-up/);
+    // A tour's sign-in notice is refused the same way, under its own name (the real notice text).
+    const notice = tourSignInNoticeText(1, { origin: "https://app.example", fields: ["username", "password"] });
+    assert.equal(parseWakeNudge(notice)?.tour, true, "the fixture really is a tour notice by Sova's own predicate");
+    const t = resolveRegenerate([user("u1", null, text("hello")), assistant("a1", "u1", "hi"), user("t1", "a1", text(notice)), assistant("a2", "t1", "sign in on the card")], "a2");
+    assert.equal(!t.ok && t.reason, "wake");
+    assert.equal(!t.ok && t.message, "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again.");
     // An ordinary message that merely MENTIONS a nudge is not one: the predicate decides, and it
     // requires the tag at the start.
     const talksAbout = [user("u2", null, text("what does [wake_nudge n1] mean?")), assistant("a3", "u2", "it is a scheduler tag")];

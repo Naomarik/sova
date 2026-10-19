@@ -307,6 +307,8 @@ describe("the composer's model switch writes back the level it clamped to", () =
 describe("turns the user did not start are read-only", () => {
   // Every tool, classified. A tool added later fails the first test until it is placed here.
   const ACTING: Record<string, Record<string, unknown>> = {
+    sova_draft_approve: { project: "any", session: "some-id" },
+    sova_draft_build: { project: "any", session: "some-id" },
     sova_create_session: { cwd: agentDir },
     sova_send: { session: "some-id", text: "hi" },
     sova_set_session: { session: "some-id", title: "t" },
@@ -348,7 +350,7 @@ describe("turns the user did not start are read-only", () => {
     sova_card: { ops: [{ op: "create", title: "Archive these?", options: [{ label: "Yes" }, { label: "No" }] }] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_public_links", "sova_orgs", "sova_org_person", "sova_projects"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_public_links", "sova_orgs", "sova_org_person", "sova_projects", "spec_lookup", "sova_draft_specs"];
   /** Reads with a rule of their own: the organization's history only in a turn the operator started
 , refused with its own sentence otherwise, never the generic read-only one. */
   const OPERATOR_TURN_READS: Record<string, { params: Record<string, unknown>; refusal: string }> = {

@@ -7,6 +7,7 @@ import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from ".
 import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
+import { registerComposer } from "../commands/composers";
 import {
   cachedFileIndex,
   capMentionEntries,
@@ -659,6 +660,25 @@ export function Composer(props: {
     input.setSelectionRange(at + 1, at + 1);
     updateSlash();
   };
+  // The command palette's "This chat" rows (commands/composers): the menu's commands, and "/name "
+  // put in this textarea exactly as the menu's Enter on an empty draft leaves it. Nothing is sent.
+  createEffect(() => {
+    const off = registerComposer(props.path, {
+      commands: () => menuCommands(props.commands ?? []),
+      off: () => reason()?.text ?? null,
+      hasDraft: () => text().trim().length > 0 || images().length > 0,
+      insert: (name) => {
+        if (disabled()) return;
+        const next = `/${name} `;
+        setDraft(next);
+        input.value = next;
+        input.focus();
+        input.setSelectionRange(next.length, next.length);
+        updateSlash();
+      },
+    });
+    onCleanup(off);
+  });
   // Announce the count on open and when it changes, at most once a second (latest wins).
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   let lastAnnounced = 0;

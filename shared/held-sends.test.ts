@@ -2,7 +2,7 @@
 // (§chat.transcript/send-while-starting): taken, or refused and handed back once.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { ANSWER_MAX_CHARS, HeldSends } from "./held-sends";
+import { ANSWER_MAX_CHARS, draftTexts, HeldSends } from "./held-sends";
 
 const prompt = (clientId: string, text = `text of ${clientId}`) => ({ type: "prompt", text, clientId });
 
@@ -72,5 +72,23 @@ describe("HeldSends", () => {
       { id: "b", text: "text of b" },
     ]);
     assert.deepEqual(h.takeAll(), []);
+  });
+
+  test("a confirm card's click comes back marked with its card, and never as draft text (§app.overseer/confirm)", () => {
+    const h = new HeldSends();
+    h.sent({ type: "prompt", text: "c_9 a: Register it.", clientId: "k1", confirm: "c_9" });
+    h.sent(prompt("t"));
+    const refused = h.heard({ type: "error", code: "refused", message: "restarting", clientId: "k1" });
+    assert.deepEqual(refused, [{ id: "k1", text: "c_9 a: Register it.", card: "c_9" }]);
+    assert.deepEqual(draftTexts(refused), []);
+    h.sent({ type: "prompt", text: "c_9 a: Register it.", clientId: "k2", confirm: "c_9" });
+    const all = h.heard({ type: "error", code: "reloaded", message: "x" });
+    assert.deepEqual(all.map((u) => [u.id, u.card ?? null]), [["t", null], ["k2", "c_9"]]);
+    assert.deepEqual(draftTexts(all), ["text of t"], "only the typed text goes to the draft");
+    // A click acknowledged then sent again under another id carries nothing over.
+    h.sent({ type: "prompt", text: "x", clientId: "k3", confirm: "c_1" });
+    h.heard({ type: "send_ack", clientId: "k3", queued: false });
+    h.sent(prompt("k3", "typed"));
+    assert.deepEqual(h.takeAll(), [{ id: "k3", text: "typed" }]);
   });
 });

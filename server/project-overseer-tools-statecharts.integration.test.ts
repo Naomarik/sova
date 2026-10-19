@@ -95,7 +95,7 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
     const seen = acts().length;
     try {
       await settings({ autonomy: "L0" });
-      await assert.rejects(() => verb({ verb: "up" }), /^Error: This run was not started by the operator, and your autonomy here is L0; sova_project_verbs needs L3\. Do not retry it\./);
+      await assert.rejects(() => verb({ verb: "up" }), /^Error: Create, start and update running copies is off for the overseer on its own\. Do not retry it\./);
       assert.deepEqual(actions().at(-1) && [actions().at(-1).tool, actions().at(-1).outcome], ["sova_project_verbs", "refused"]);
       assert.equal((await verb({ verb: "status" })).state, "absent", "nothing was made; a read runs at any level");
       await settings({ autonomy: "L3" });
@@ -122,7 +122,7 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
       ]);
       // test runs project code: services/run, so L3 (§app.project-services/test); this project declares none.
       const before = acts().length;
-      await assert.rejects(() => verb({ verb: "test" }), /your autonomy here is L0; sova_project_verbs needs L3/);
+      await assert.rejects(() => verb({ verb: "test" }), /Create, start and update running copies is off for the overseer on its own/);
       await settings({ autonomy: "L3" });
       const t = await verb({ verb: "test" });
       assert.equal(t.error?.code, "unsupported", "taken, then the engine's own answer");
@@ -137,7 +137,7 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
 });
 
 describe("sova_project_verbs share is the project's services/share (§app.project-overseer/previews)", () => {
-  test("L0 refused; L1 unattended held, then approved: the link is minted, never in a result; revoke at L0, never held", async () => {
+  test("share Off refused; On unattended held, then its hold ends: the link is minted, never in a result; revoke at L0, never held", async () => {
     const { stopStaticServe, staticServes } = await import("./preview-serve");
     const { writeFileSync } = await import("node:fs");
     const port = await reservePorts(1); // held across the run's processes, not a free port picked and let go
@@ -162,7 +162,7 @@ describe("sova_project_verbs share is the project's services/share (§app.projec
       assert.equal(up.ok, true, JSON.stringify(up.error));
       const instance = up.instance!;
       await settings({ autonomy: "L0" });
-      await assert.rejects(() => verb({ verb: "share", instance, endpoint: "site.http" }), /your autonomy here is L0; sova_project_verbs needs L1/);
+      await assert.rejects(() => verb({ verb: "share", instance, endpoint: "site.http" }), /Share a version to try is off for the overseer on its own/);
       assert.equal(holdsOf().length, 0, "refused above its level: nothing held");
       const notDeclared = (await verb({ verb: "share", instance, endpoint: "site.admin" }, true)).result;
       assert.equal(notDeclared.error?.code, "share-denied", "the engine's own checks come first: no act, nothing held");
@@ -175,9 +175,15 @@ describe("sova_project_verbs share is the project's services/share (§app.projec
       const holds = holdsOf();
       assert.equal(holds.length, 1);
       assert.equal(holds[0]!.what, "A preview link: site.http of a running copy (" + instance + ")");
-      // The overseer approves it (confirm kind preview): the effect mints it.
-      const approved = textOf(await run("sova_hold", { op: "approve", id: holds[0]!.id, reason: "Ana asked to see it" }));
-      assert.doesNotMatch(approved, /not sent|refused/i);
+      // al_3 q2: no review; its hold ends and the effect mints it.
+      const h0 = hostOf(org.id).holds().find((h) => holdRef(h) === holds[0]!.id)!;
+      setOrgClockForTest(() => h0.until + 1);
+      try {
+        await hostOf(org.id).fireDue();
+        await hostOf(org.id).idle();
+      } finally {
+        setOrgClockForTest(null);
+      }
       const status = await verb({ verb: "status", instance });
       assert.doesNotMatch(status.json, /preview\.example\.invalid/, "the overseer never sees the link");
       const listed = textOf(await run("sova_previews", {}));

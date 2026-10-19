@@ -209,6 +209,36 @@ const ids = (items: QueueItem[]) => items.map((i) => i.id);
 const states = (items: QueueItem[]) => items.map((i) => `${i.id}:${i.state}`);
 
 describe("the outgoing queue", () => {
+  test("a click queued behind a running turn reaches its hand-off with its confirm card and its sender (§app.overseer/org-people-facing)", async () => {
+    const sdk = new FakeSdk();
+    const seen: WebQueueItem[] = [];
+    const handOff = sdk.handOff.bind(sdk);
+    sdk.handOff = async (item, streaming) => {
+      seen.push(item);
+      return handOff(item, streaming);
+    };
+    const r = rig(sdk);
+    r.queue.enqueue({ kind: "followUp", text: "c_9 a: Register it.", origin: "client", id: "k1", confirm: "c_9" });
+    r.queue.enqueue({ kind: "followUp", text: "from the batch", origin: "server", id: "k2", byPerson: true });
+    r.queue.enqueue({ kind: "followUp", text: "c_9 a: Register it.", origin: "client", id: "k3" });
+    await settle();
+    r.sdk.deliver("followUp");
+    r.queue.onSdkEvent();
+    await settle();
+    r.sdk.deliver("followUp");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(
+      seen.map((i) => [i.id, i.confirm ?? null, i.byPerson ?? null]),
+      [
+        ["k1", "c_9", null],
+        ["k2", null, true],
+        ["k3", null, null],
+      ],
+      "the same text typed carries no card",
+    );
+  });
+
   test("hands exactly one item to the SDK and holds the rest, in order", async () => {
     const r = rig();
     for (const id of ["a", "b", "c"]) r.queue.enqueue({ kind: "steer", text: id, origin: "client", id });

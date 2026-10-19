@@ -74,7 +74,7 @@ import { sentence } from "./WorkerSlotRow";
 /** The tab rail. Sixteen screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
-const TABS = [
+export const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "accounts", label: "Accounts", icon: "refresh" as const },

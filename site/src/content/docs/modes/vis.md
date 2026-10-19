@@ -39,6 +39,28 @@ note's number.
 
 There is an example of every kind at the end of this page, under [Examples](#examples).
 
+## Recorded tours
+
+Ask in chat for a tour of a real feature or UI experiment. Say what it should cover, who it is for,
+and what they should understand or decide. The agent asks for anything missing, then organizes
+chapters, main steps and named views, with desktop and phone pictures. Before/After can be views
+of the same step; a state that cannot be recorded safely is clearly labelled reference text.
+
+The vis catalogue's `tour` entry teaches the agent the full recording workflow. It uses hosted
+`record_tour` and `show_tour` tools, not a `vis tour` drawing fence. Sova checks a no-image dry run,
+records with installed Chrome, then provides contact sheets for the agent to review before a
+complete checked edition can be shown. Recording never sends, saves, approves or submits; it
+follows the chat's sandbox. A new site needs your approval, and sign-in uses test accounts only.
+
+Read the tour with Back/Next for main steps and chips for views. Your place is saved server-side,
+so Continue works across desktop and phone. Ask in chat to change a tour; re-recording keeps the
+previous complete edition readable until its replacement passes checking.
+
+A share link needs your preview of every picture and its text, plus an expiry. Each link stays on
+the edition you reviewed; a changed tour needs a new link. Reviewed tours can also be attached to
+organization hand-off conversations without granting participants access to the recorded app.
+Ask About This Step fills a draft on their turn, never sends it.
+
 ## Reading a drawing
 
 Each drawing has a title (or its kind's name), the drawing itself, its numbered notes and its
@@ -93,7 +115,11 @@ With vis on, the agent has a short entry in its instructions: when to draw, and 
 Each kind's exact syntax comes from a `vis_guide` tool, which the agent calls before the first
 drawing of a kind in a chat, so a reply that draws nothing carries no drawing grammar. A
 `vis_check` tool, in chats Sova runs, lets it test a free-form block before sending it. Both tools
-come and go with the mode, and a chat with align on that started with Visuals has them too.
+come and go with the mode, and a chat with align on that started with Visuals has them too. The
+`tour` entry instead returns its recording workflow, with Sova's hosted `record_tour` and
+`show_tour` tools. Tour tools require vis mode on; align with Visuals alone keeps drawing tools
+only. Hand-off conversations receive only scoped presentation access, independent of their drawing
+switches.
 
 Turning vis on in the middle of a chat reaches the agent from its next message. Workers don't get
 vis: drawings are for you, and a worker's replies are read by its parent session.

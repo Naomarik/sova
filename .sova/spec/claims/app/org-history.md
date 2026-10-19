@@ -56,8 +56,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
 - Each event names, separately: who **initiated** it (the request or act it came from), who
   **decided** it (a person, the operator, an overseer, a model), who **recorded** it (the tool,
   route or model that wrote it), who **executed** it (Sova, a worker, a session, an outside
-  service), and the **authorization** it went through (the autonomy level in force, attended or
-  unattended as evaluated for that act, and the hold, grant or confirm card it rests on with the
+  service), and the **authorization** it went through (the power the act needed, a switch's or "always" when no switch gates it or "operator" when only the operator's turn makes it, the column of switches its caller was checked against, the overseer's or the Project Assistant's, and the never-looser level of that column then; an unattended act a switch allowed is authorized by that power, an attended or held one names it beside the turn or hold; rows recorded before the switches keep the level they recorded and name no power), attended or unattended as evaluated for that act, and the hold, grant or confirm card it rests on with the
   targets that covered, by id only where the runtime knew it; an id it didn't know reads unknown,
   never a made-up one).
 - **A confirm card authorizes its targets, not the act's choices.** When the global Overseer acts
@@ -143,8 +142,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
   `deferred` or `do-not-do`; each gets a stable id `o1`…`oN`, never words), `reason` and
   `review` (a condition, or a date) beside its statement and quote (§app.baton/hand-off). A project overseer
   records its own deliberate choice, an abstention included (deciding not to start, not to build,
-  not to send), with `sova_decide {disposition, what, reason, options?, gap?, review?,
-  supersedes?}` (L0, any turn; `reason` always required, `review` required for `defer`): it records a decision event decided by the overseer, with its
+  not to send), with `sova_decide {disposition, what, reason, options?, gap?, review?, supersedes?}` (always allowed, any turn; `reason` always required, `review` required for `defer`): it records a decision event decided by the overseer, with its
   attendance as evaluated, and changes no statechart. Sova never manufactures a decision for a
   guard that simply didn't fire, and never records thoughts.
 - These stay distinct outcomes, each with its own word: **Rejected** / **Deferred** / **Won't do**
@@ -441,7 +439,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
   the author, as when a model writes a person's reason), or "Reason not recorded"; who initiated, decided, recorded and executed it and on what
   authorization, each "Not recorded" when unknown, followed by the why recorded for it when there is
   one ("Not recorded: the gathering's turn."), who an authorization was by named ("A person's decision ·
-  by Mahmoud", never a raw kind), and a decision's authority on its own line only when it isn't who
+  by Mahmoud", never a raw kind), a power by its switch row and column ("Start coding sessions (the Project Assistant's switch) · unattended"; "No switch needed", "The operator's alone"), a row recorded before the switches by its level ("Autonomy level L2 · unattended"), and a decision's authority on its own line only when it isn't who
   decided. Then the options as recorded only (Selected,
   Rejected, Deferred, Won't do, each with its reason or review condition; a condition that
   already starts with "until" shows as written, any other as "Until: {condition}"), the numbered evidence

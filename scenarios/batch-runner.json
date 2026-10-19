@@ -1,0 +1,32 @@
+{
+  "name": "batch-runner",
+  "about": "A script fanning one job out to three sessions: each made, sent its message without waiting (one through --json), every reply collected, all tagged as one batch, found in the list by that tag, then archived together. sova watch only diffs list reads, so the script waits until it has seen each session listed before changing them.",
+  "steps": [
+    { "name": "watch the list", "watch": "w", "events": ["created", "tagged", "archived"] },
+    { "name": "session one", "sova": ["run", "session.create", "--cwd", "."], "save": "a" },
+    { "name": "session two", "sova": ["run", "session.create", "--cwd", "{{work}}"], "save": "b" },
+    { "name": "session three", "sova": ["run", "session.create", "--json", "{\"cwd\":\".\"}"], "save": "c" },
+    { "name": "three different sessions", "sova": ["run", "session.get", "--session", "{{c.id}}"], "json": { "id": { "$not": "{{a.id}}" }, "cwd": "{{work}}" } },
+    { "name": "send one", "sova": ["run", "session.send", "--session", "{{a.path}}", "--text", "Job 1: name the package."], "json": { "ok": true } },
+    { "name": "send two", "sova": ["run", "session.send", "--session", "{{b.id}}", "--text", "Job 2: name the package."], "json": { "ok": true } },
+    { "name": "send three, as JSON", "sova": ["run", "session.send", "--json", "{\"session\":\"{{c.path}}\",\"text\":\"Job 3: name the package.\"}"], "json": { "ok": true } },
+    { "name": "reply one", "sova": ["run", "session.read", "--session", "{{a.path}}"], "until": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } } },
+    { "name": "reply two", "sova": ["run", "session.read", "--session", "{{b.path}}"], "until": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } } },
+    { "name": "reply three", "sova": ["run", "session.read", "--session", "{{c.path}}"], "until": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } } },
+    { "name": "each kept its own message", "sova": ["run", "session.read", "--session", "{{b.path}}"], "json": { "items": { "$all": [{ "$some": { "kind": "user", "text": "Job 2: name the package." } }, { "$none": { "kind": "user", "text": "Job 1: name the package." } }] } } },
+    { "name": "all three are listed", "sova": ["run", "session.list"], "until": { "$some": { "id": "{{c.id}}" } } },
+    { "name": "watch sees one listed", "await": "w", "event": { "event": "created", "id": "{{a.id}}" } },
+    { "name": "watch sees two listed", "await": "w", "event": { "event": "created", "id": "{{b.id}}" } },
+    { "name": "watch sees three listed", "await": "w", "event": { "event": "created", "id": "{{c.id}}" } },
+    { "name": "tag one", "sova": ["run", "session.tags.set", "--session", "{{a.id}}", "--tags", "batch-7"] },
+    { "name": "tag two", "sova": ["run", "session.tags.set", "--session", "{{b.id}}", "--tags", "batch-7"] },
+    { "name": "tag three", "sova": ["run", "session.tags.set", "--session", "{{c.id}}", "--tags", "batch-7,last"] },
+    { "name": "the list shows the batch", "sova": ["run", "session.list"], "json": { "$some": { "id": "{{c.id}}", "tags": { "user": ["batch-7", "last"] } } } },
+    { "name": "watch sees the last tag", "await": "w", "event": { "event": "tagged", "id": "{{c.id}}", "tags": { "user": ["batch-7", "last"] } } },
+    { "name": "archive one", "sova": ["run", "session.archive", "--session", "{{a.path}}"] },
+    { "name": "archive two", "sova": ["run", "session.archive", "--session", "{{b.path}}"] },
+    { "name": "archive three", "sova": ["run", "session.archive", "--session", "{{c.path}}"] },
+    { "name": "all three archived", "sova": ["run", "session.get", "--session", "{{b.id}}"], "json": { "archived": true, "tags": { "user": ["batch-7"] } } },
+    { "name": "watch sees the last one archived", "await": "w", "event": { "event": "archived", "id": "{{c.id}}", "archived": true } }
+  ]
+}

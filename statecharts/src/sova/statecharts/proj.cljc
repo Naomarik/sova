@@ -91,20 +91,28 @@
 
 ;; ---- starts ----------------------------------------------------------------------------------------
 
+(defn- owner-request? [e] (and (map? (:basis e)) (= "owner-request" (some-> (:kind (:basis e)) name)) (not (lv/blank? (:id (:basis e))))))
+
 (defn attended-build-check
-  "q7: the overseer starts a coding session here only in a turn the operator started."
+  "q7: the overseer starts a coding session here only in a turn the operator started. The Project
+   Assistant starts one on its own only as a fix for an owner's request (`basis {kind owner-request, id}`)."
   [data]
-  (let [e (b/evt data)]
-    (when (and (= "overseer" (some-> (:by e) name)) (not (true? (:attended e))))
-      (r/refuse 409 "A coding session starts only in a turn the operator started: ask with sova_card."))))
+  (let [e (b/evt data) by (some-> (:by e) name)]
+    (cond
+      (true? (:attended e)) nil
+      (= "overseer" by) (r/refuse 409 "A coding session starts only in a turn the operator started: ask with sova_card.")
+      (and (= "assistant" by) (not (owner-request? e))) (r/refuse 409 "A fix starts only from an owner's request: file it first, then start the fix for it."))))
+
+(defn- own-kind? [e] (contains? #{"overseer" "assistant"} (some-> (:by e) name)))
 
 (defn build-data [data]
-  (let [e (b/evt data)]
+  (let [e (b/evt data) by (some-> (:by e) name)]
     (merge (select-keys e [:title :prompt :model :thinking :mode :op-item :folder :worktree])
       {:project-id (:id data) :session-id (:session-id e)
-       :kind (if (= "overseer" (some-> (:by e) name)) "coding" "operator-coding")
-       :started-by (if (= "overseer" (some-> (:by e) name)) "overseer" "operator")
-       :via (via data) :gap "none" :decisions [] :created-at (b/now-ms data)})))
+       :kind (if (own-kind? e) "coding" "operator-coding")
+       :started-by (case by "overseer" "overseer" "assistant" "assistant" "operator")
+       :via (via data) :gap "none" :decisions [] :created-at (b/now-ms data)}
+      (when (owner-request? e) {:basis {:kind "owner-request" :id (str (:id (:basis e)))}}))))
 
 (def create-cap (lv/cap-check "create" (constantly 1) b/evt))
 
@@ -155,7 +163,6 @@
   (chart/statechart {:initial :project}
     (state {:id :project :initial :regions}
       (dsl/hold-cancel-correction)
-      (b/hold-review)
       (b/flush-transition)
       ;; r11: an item's build joins the list (and the project watches it); a link says when one settled
       ;; and when one merged
@@ -204,6 +211,16 @@
       ;; are the engine's. Stopping is never refused for an archived project.
       (dsl/act {:sova/feed :feed :event :services/down :checks [invalid]})
       (dsl/act {:sova/feed :feed :event :services/run :checks [not-archived invalid]})
+      ;; reset and teardown, their own power (copiesReset): split out of services/run
+      (dsl/act {:sova/feed :feed :event :services/reset :checks [not-archived invalid]})
+      ;; Deploy (power deploy): the project's own recipe plans and runs once the act goes ahead (held for the
+      ;; waiting period when nobody's turn started it); the recipe decides by itself whether it ships, and a
+      ;; plan that needs an override is refused (the host's effect: overrides are the operator's alone).
+      (dsl/act {:sova/feed :feed :event :deploy/run :checks [not-archived invalid]}
+        (dsl/effect :deploy-run (fn [d] (let [e (b/evt d)] (cond-> {:by (some-> (:by e) name) :attended (true? (:attended e))}
+                                                             (:target e) (assoc :target (:target e))
+                                                             (:commit e) (assoc :commit (:commit e))
+                                                             (:why e) (assoc :why (:why e)))))))
       ;; Sharing one of them (§app.project-overseer/previews): L1, held when unattended, as preview/start; the
       ;; engine checked the share before the act, and the effect mints the link (again checked) once it goes
       ;; ahead. Revoking one is no act.
@@ -255,24 +272,26 @@
             (dsl/act {:sova/feed :feed :event :overseer/start})))))))
 
 (def acts
-  {:project/edit      {:needs nil}
-   :project/archive   {:needs nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
-   :project/unarchive {:needs nil}
-   :overseer/start    {:needs nil}
-   :overseer/clear    {:needs nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
-   :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"
+  {:project/edit      {:power nil}
+   :project/archive   {:power nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
+   :project/unarchive {:power nil}
+   :overseer/start    {:power nil}
+   :overseer/clear    {:power nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
+   :build/start       {:power "codingStart" :tool "sova_create_session" :code-facing true :counts "create" :hold true
                        :what (fn [d] (str "A coding session \"" (or (:title (b/evt d)) "untitled") "\""))}
-   :session/prompt    {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true :confirm-kind "prompt"
+   :session/prompt    {:power "codingPrompt" :tool "sova_send" :code-facing true :counts "prompt" :hold true
                        :what (fn [d] (str "A prompt to \"" (or (not-empty (:title (b/evt d))) (:session-id (b/evt d))) "\""))}
-   :preview/start     {:needs "L1" :tool "sova_preview" :people-facing true :hold true :confirm-kind "preview"
+   :preview/start     {:power "share" :tool "sova_preview" :people-facing true :hold true
                        :what (fn [d] (str "A preview link: " (str/trim (or (:purpose (b/evt d)) ""))))}
-   :services/down     {:needs "L0" :tool "sova_project_verbs"}
-   :services/run      {:needs "L3" :tool "sova_project_verbs"}
-   :services/share    {:needs "L1" :tool "sova_project_verbs" :people-facing true :hold true :confirm-kind "preview" :what share-what}
-   :verbs/onboard     {:needs "L3" :tool "sova_project_verbs" :code-facing true :counts "create" :hold true :confirm-kind "build"
+   :services/down     {:power "always" :tool "sova_project_verbs"}
+   :services/run      {:power "copiesRun" :tool "sova_project_verbs"}
+   :services/reset    {:power "copiesReset" :tool "sova_project_verbs"}
+   :deploy/run        {:power "deploy" :tool "sova_project_verbs" :code-facing true :hold true
+                       :what (fn [d] (str "A deploy" (when-let [t (:target (b/evt d))] (str " to " t)) " through the project's own recipe"))}
+   :services/share    {:power "share" :tool "sova_project_verbs" :people-facing true :hold true :what share-what}
+   :verbs/onboard     {:power "onboard" :tool "sova_project_verbs" :code-facing true :counts "create" :hold true
                        :what (fn [d] (str "The Project verbs playbook on " (:name d)))}
-   :hold/cancel       {:needs "L0" :correction true}
-   :hold/approve      {:needs "L0" :correction true}})
+   :hold/cancel       {:power "always" :correction true}})
 
 (defn not-here [_event _config _data] "That can't be done now.")
 

@@ -17,6 +17,11 @@ It lives on the project, under `/api/orgs/:id/projects/:pid/` (the route list is
 `conflicts/:cid/route`, `conflicts/:cid/resolve`, `spec`. Main listener only; never on the share
 listener. Every write runs in the project's one-job-at-a-time queue.
 
+Each gathering, settle and Project Assistant conversation also writes the requirements agreed in
+it into a spec draft of its own, which the person locks in and the operator reviews, approves and
+has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draft-approval), under
+`/api/draft-specs` and `/api/projects/:pid/draft-specs/`.
+
 ## §app.requirements/decisions — The decision index
 
 - The source is the transcripts: every `sova-baton-decision` entry of the project's baton
@@ -103,7 +108,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   send nothing and work either way: while it is off, only a reconcile run is refused.
 - **When.** **Reconcile** on the project page (or `POST …/reconcile`), a project overseer's
   reconcile tool, the project's statechart when a gathering session of it ends with decisions recorded
-  (at L1 and above, §app.project-overseer/drive), or on its own 2 seconds after a decision is
+  (always: sorting decisions into drafts needs no power, §app.project-overseer/drive), or on its own 2 seconds after a decision is
   recorded in a routed conflict's own baton session, open or already settled (a statechart timer, so a
   restart doesn't lose it). Nothing runs on a schedule. At most one run of a project runs at a
   time: a request while one runs makes it run once more after, and a run the server starts takes
@@ -253,8 +258,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 ## §app.requirements/promotion — Piecemeal, explicit promotion
 
-- The operator selects drafted decisions (or a project overseer allowed to promote does, or its
-  project's statechart on its own at L2, after a hold: §app.project-overseer/drive, /holds); anything
+- The operator selects drafted decisions (or a project overseer allowed to promote does, or its project's statechart on its own with `promote` On, after a hold: §app.project-overseer/drive, /holds); anything
   else is refused with its reason.
 - **Out of area.** A decision whose author may not decide it (`authorOwnsArea` false: not
   the operator, not an owner of its owner area, or of its topic area for a decision recorded before
@@ -307,12 +311,149 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 - Only a promotion commits. Drafting, reconciling, a frozen hash and the workspace repo's own
   commits (§app.organizations/workspace-repo) are unchanged; Sova never pushes the client repo.
 
+## §app.requirements/conversation-drafts — Each conversation writes its own draft
+
+- **One draft per conversation.** Every gathering session, settle session (§app/baton) and Project
+  Assistant conversation has its own spec draft, `conv-<session id>` (lowercased; letters, digits
+  and hyphens), in the root of each project it is about, where the spec tools keep drafts
+  (`.sova/spec/drafts/`, local, like every draft). It is made through the spec draft tools at the
+  conversation's first requirement (a conversation that agrees nothing has none), from the
+  project's **main-line spec**: the spec committed on its recorded target branch, else `master`,
+  else `main` (the copy the spec look-up reads), never the branch the root has checked out or its
+  uncommitted edits; a root not in Git is read as it is. A project with no spec on its main line
+  starts it from the tools' empty baseline, and nothing is written into the root's current spec.
+  Every comparison below (catch-up, clashes, the draft-specs answer) is against that same base.
+- **Its record.** What the conversation agreed is kept in the workspace of the org (or the
+  standalone project) that holds the project, one file per conversation and project
+  (`projects/<project id>/conversation-drafts/<session id>.json`), never in the draft folder: who
+  the conversation is with, its title, its state, when the summary was shown and confirmed, and its
+  items. The items are the source of truth; the draft folder is rebuilt from the current spec and
+  them.
+- **Agreeing is recording a decision.** Every decision the conversation records (`record_decision`,
+  §app.baton/hand-off) becomes an item: `r1`, `r2`… in that conversation, with its statement, area,
+  the person's words, who said it and when, and status `agreed`. It is **new** behaviour, or, when
+  the call gave `changes` (a spec look-up reference the conversation was given, resolved on the
+  server), a **change** to the record it names, with that record's prose hash when it was agreed.
+  The decision also goes on to the reconciler as before (§app.requirements/reconciler).
+- **The writer is deterministic** (§app.requirements/drafts-with-provenance): each item becomes a
+  `note` record `§requirements.<area>/<slug>` of the draft, written as a decision is. A change is
+  such a note too, naming the record it changes (`changes` in its manifest record, and a "Changes
+  §…" line); Sova never rewrites that record: the coding session that builds the change does. An
+  item keeps its record id from one rebuild to the next; when the current spec meanwhile took that
+  id for another record, it moves to a free one; when the current spec already holds the item's
+  decision (promoted either way), the item is that record and is not written into the draft again.
+- **Caught up before each reply.** Before every reply of the conversation its draft is rebuilt on
+  the main line's spec as it is now and its items written again; nothing is run when neither the spec nor the items
+  changed since the last rebuild. A change whose target's prose moved since it was agreed (another
+  draft merged a change to it), or whose target is gone, is a **clash**: the item stays in the
+  draft, marked; the operator sees it (§app.requirements/draft-specs), and the chat's prompt tells
+  it, in plain words, to check that requirement with the person again. A gathering or settle
+  session's decisions the record lacks (one recorded before conversation drafts, or one a crash
+  kept from its item) are added at the catch-up, once each.
+- **Nothing a conversation does writes the current spec**: its `claims/` and `manifest.json` are
+  byte for byte what they were before it, confirmed or not, until the operator approves
+  (§app.requirements/draft-approval).
+- **The person never sees it.** The draft, its wording, its items' ids, its state and its record
+  never reach the person's page, its socket, the owner page or a share page; the person hears only
+  the plain-words summary they lock in (§app.requirements/lock-in).
+- **Switching over.** A gathering or settle session open before conversation drafts gets the draft
+  tools at its next turn, and the decisions it already recorded seed its record, each a new item.
+  Requirement notes already promoted the old way stay in the spec as they are.
+
+## §app.requirements/lock-in — The person locks in what was agreed
+
+- Three tools, besides `record_decision`, in every gathering, settle and Project Assistant
+  conversation (never in the wrap-up turn), with no switch; a conversation about more than one
+  project names it (`project`):
+  - `requirement_drop {id}`: the person let a requirement go; the item is `dropped`. One the
+    operator already approved can't be dropped from the conversation.
+  - `requirements_summary {}`: everything agreed (dropped items left out), for the repeat-back. It
+    marks when the summary was given and where in the conversation.
+  - `requirements_confirm {summary}`: the person's yes.
+- When the conversation's requirements are gathered, the chat calls `requirements_summary` and
+  repeats back, as simply as possible and in the person's own voice and language, everything
+  agreed as it understood it and what is going to be built, never ids or how it is recorded. The
+  person approves it, changes it or lets parts go.
+- Only an explicit yes locks it in: `requirements_confirm` is refused before `requirements_summary`
+  ("Call requirements_summary and repeat everything agreed back to the person first, then wait for
+  their yes."), and until the person has written after it ("Wait for the person's answer: confirm
+  only after they say yes in a message of their own."). The record is **unconfirmed** until then
+  and **confirmed** after, with the summary the chat gave. Any decision or drop after a summary,
+  before or after the lock-in, makes it unconfirmed and clears the summary: a correction ("mostly
+  right, but add branding") needs a new repeat-back and a new yes.
+- While agreed requirements are unconfirmed, the chat can't end the conversation: `goal_done` is
+  refused with "Repeat back what's agreed and get a clear yes first: call requirements_summary, say
+  it back in their words, and call requirements_confirm once they say yes. Drop what they let go
+  with requirement_drop." The operator can still close it.
+- There is no timeout and no timer. Until the person confirms, nothing happens, the conversation
+  stays open, and its draft shows to the operator as "Not confirmed yet". Locking in merges
+  nothing: the operator still decides (§app.requirements/draft-approval).
+
+## §app.requirements/draft-specs — "What are the draft specs?"
+
+- The operator asks either overseer "what are the draft specs?": both have the read tool
+  `sova_draft_specs {project?, session?}` (the project overseer's is confined to its own project).
+  The same answer is the operator route `GET /api/draft-specs?project=<id>&session=<id>` (every
+  project when `project` is omitted) → `{drafts: DraftSpecSummary[]}`, main listener only.
+- One summary per conversation with a record, newest first: its project, its person's name, the
+  conversation's title and kind, its state (unconfirmed or confirmed), its draft's name, its new
+  items and its changes compared with the current spec (each change with the current text of the
+  record it changes), how many clash, and when it was last updated. A dropped item is not listed.
+  Each item's status reads as it is now: `promoted` once its decision is in the current spec,
+  either way; a change `built` once the coding session that built it promoted its note.
+- It is the operator's: never on the share listener, the owner page or any outsider's chat. On the
+  mesh peer listener the draft-specs routes, approve and build included, need a peer's `full` grant
+  (§mesh.peers/grants), never `sessions` or `admin` alone.
+
+## §app.requirements/draft-approval — Approving and building a conversation's draft
+
+- The operator decides what is merged, and may change the draft first. **Approve**: `POST
+  /api/projects/:pid/draft-specs/:sessionId/approve {items?}` (every listed item when omitted) →
+  200 `{promoted, waitingForBuild, alreadyPromoted, commit?, draft}`. Its **new** items are promoted
+  into the current spec at once, through a promotion draft of the spec tools with `--doc-only`
+  evidence naming the conversation, the person, the dates and their words, and committed like any
+  promotion (§app.requirements/promotion-commit); they become `promoted`. An item whose decision
+  is already in the current spec is not promoted again (`alreadyPromoted`). Its **changes** become
+  `approved` and wait, so the spec never describes behaviour the app doesn't have.
+- Approve writes into the project root's own spec, so it runs only while the root has its main line
+  checked out, the branch the draft was built on (§app.requirements/conversation-drafts). On any other
+  branch, or a detached HEAD, it is refused with 409 and writes nothing: "The project folder is on
+  {branch}; approving writes into {main}'s spec. Switch it to {main} first." A repository with no
+  main line is refused too; a root not in Git is not affected.
+- **Build**: `POST /api/projects/:pid/draft-specs/:sessionId/build {items?}` → 202 `{sessionId,
+  title, path?, items}` starts a coding session of the project, the operator's, titled "Build:
+  {title}". It takes every item not built or dropped, new and change alike (agreed, approved, or
+  promoted and not built yet), unless `items` narrows it. Its first prompt names the conversation's
+  draft and groups the items under "New requirements" and "Changes to existing behaviour": each
+  with its text, the person's words, its note record, and for a change the current text of the
+  record it changes. It tells the session what to do with each record in its own spec draft: a
+  new requirement already in the spec gets its code and evidence recorded; one not yet in the spec
+  is copied from the conversation's draft and promoted with its code; a change updates the record
+  it changes and is promoted with its note. Each item keeps the session's id and becomes
+  `approved` if it was only agreed. A new requirement reads `built` once its record maps code with
+  reviewed or verified evidence; a change once its note is in the current spec. With nothing left
+  to build it is refused (409).
+- **The two paths stay linked.** A decision is still reconciled and promotable the old way
+  (§app.requirements/promotion, under the promote power); once either path promotes it, the other
+  reads it promoted, and no second record is written.
+- Approve and build are the operator's acts only: the routes, or an overseer in a turn the operator
+  is in, through `sova_draft_approve {project?, session, items?}` and `sova_draft_build {project?,
+  session, items?}` (both overseers; the project overseer's confined to its project). In any other
+  turn they are refused ("Approving a draft is the operator's: ask them."), whatever the power
+  switches say.
+
 ## §app.requirements/rejected — Not done, and why
 
 - **A model writing the records**: the statement and the quote already are the prose; a writer
   model would paraphrase what the person said.
-- **One draft per session** (`gather-<sid>`): claim files move whole, so two session drafts
-  touching one area would conflict at the second promotion; the project draft is rebuilt instead.
+- **One shared waiting list of loose decisions** for what conversations agree (the project
+  draft alone): nobody could see what one conversation would change as a whole. Each conversation
+  now has its own draft (§app.requirements/conversation-drafts), caught up with the current spec
+  before each reply, so a second draft touching the same records clashes visibly instead of
+  conflicting at promotion.
+- **The person reading their draft as it grows**: it would read unapproved wording as a promise;
+  they lock in a plain-words summary instead (§app.requirements/lock-in).
+- **A timer locking a conversation in**: only the person's explicit yes does.
 - **A `requirement` record kind**: a spec-core change; `note` + `provenance` promotes with
   `--doc-only` today.
 - **A Settings switch for the reconciler**: it never runs unasked; the gate is the action itself,

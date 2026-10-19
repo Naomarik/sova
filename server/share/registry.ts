@@ -93,7 +93,7 @@ function hashesIn(name: string): string[] {
     claimant of each, whatever a peer registers. Read from the link stores' files. */
 export function localShareHashes(): Set<string> {
   return new Set(
-    [...hashesIn("baton-links.json"), ...hashesIn("person-links.json"), ...hashesIn("session-shares.json"), ...hashesIn("preview-links.json")].map((h) => h.toLowerCase()),
+    [...hashesIn("baton-links.json"), ...hashesIn("person-links.json"), ...hashesIn("session-shares.json"), ...hashesIn("preview-links.json"), ...hashesIn("tour-shares.json")].map((h) => h.toLowerCase()),
   );
 }
 
@@ -262,7 +262,7 @@ export class GatewayRegistry {
 
   /** Where a hash goes for a route of `kind`, or null: unknown, expired, of another kind, or its
       host no longer live. */
-  lookup(h: string, kind: "h" | "i" | "s" | "p", now: number, live: (nodeId: string) => boolean): RegistryHit | null {
+  lookup(h: string, kind: "h" | "i" | "s" | "p" | "t", now: number, live: (nodeId: string) => boolean): RegistryHit | null {
     this.hosts();
     const row = this.byHash.get(h);
     if (!row || row.kind !== kind || row.exp <= now || !live(row.host.nodeId)) return null;

@@ -104,7 +104,7 @@ describe("who started it (§app.baton/told)", () => {
     const t = await toldOf(sessionId);
     assert.equal(t.prompt.kind, "preview", "never run: a render, labelled as such");
     assert.match(t.prompt.text, /Mine to find out/);
-    assert.deepEqual(t.tools.map((x) => x.name), ["hand_to", "goal_done", "record_decision", "propose_roster_edit"]);
+    assert.deepEqual(t.tools.map((x) => x.name), ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "show_tour"]);
     assert.deepEqual(t.inactive, [{ name: "read_link", when: "while it can read links" }, { name: "write_profile_updates", when: "only during the wrap-up" }]);
     assert.equal(t.startedFor, undefined);
     assert.equal(t.projectName, "Portal");
@@ -164,7 +164,7 @@ describe("what it is told: the prompt as the file last recorded it (§app.baton/
     append(path, [
       { type: "model_change", timestamp: "2026-09-30T10:00:00.000Z", provider: "zai", modelId: "glm-5.3" },
       { type: "thinking_level_change", timestamp: "2026-09-30T10:00:00.000Z", thinkingLevel: "low" },
-      system("2026-09-30T10:00:01.000Z", { sections: { preamble: "PREAMBLE-ONE private steering", cwd: "<cwd>(none)</cwd>" }, toolsAdded: ["hand_to", "goal_done", "record_decision", "propose_roster_edit"].map((n) => decl(n)) }),
+      system("2026-09-30T10:00:01.000Z", { sections: { preamble: "PREAMBLE-ONE private steering", cwd: "<cwd>(none)</cwd>" }, toolsAdded: ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "show_tour"].map((n) => decl(n)) }),
       { type: "message", timestamp: "2026-09-30T10:01:00.000Z", message: { role: "user", content: "hi", timestamp: 1 } },
       // Read links turned on, then a hand-off re-renders the prompt; read_link turned off again (tools only).
       system("2026-09-30T10:02:00.000Z", { toolsAdded: [decl("read_link", "Open a page someone wrote.")] }),
@@ -177,7 +177,7 @@ describe("what it is told: the prompt as the file last recorded it (§app.baton/
     assert.equal(t.prompt.text, "PREAMBLE-TWO after the hand-off\n\n<cwd>(none)</cwd>", "the section patched by name, the other kept");
     assert.equal(t.prompt.at, "2026-09-30T10:03:00.000Z", "last changed: the last entry that changed the text");
     assert.equal(t.prompt.changes, 2);
-    assert.deepEqual(t.tools.map((x) => x.name), ["hand_to", "goal_done", "record_decision", "propose_roster_edit"], "read_link added, then removed");
+    assert.deepEqual(t.tools.map((x) => x.name), ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "show_tour"], "read_link added, then removed");
     assert.deepEqual(t.tools[0], { name: "hand_to", description: "hand_to does its thing.", parameters: decl("hand_to").parameters });
     assert.deepEqual(t.inactive.map((x) => x.name), ["read_link", "write_profile_updates"]);
     assert.equal(t.model, "zai/glm-5.3");
@@ -190,11 +190,11 @@ describe("what it is told: the prompt as the file last recorded it (§app.baton/
     assert.deepEqual(t.inactive.map((x) => x.name), ["write_profile_updates"]);
 
     // The wrap-up: its own prompt, apart; the conversation's stays the one before it.
-    append(path, [system("2026-09-30T11:00:00.000Z", { sections: { preamble: WRAPUP_SYSTEM }, toolsAdded: [decl("write_profile_updates")], toolsRemoved: ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "read_link"].map((name) => ({ name })) })]);
+    append(path, [system("2026-09-30T11:00:00.000Z", { sections: { preamble: WRAPUP_SYSTEM }, toolsAdded: [decl("write_profile_updates")], toolsRemoved: ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "show_tour", "read_link"].map((name) => ({ name })) })]);
     t = await toldOf(id);
     assert.equal(t.prompt.kind === "recorded" && t.prompt.text, "PREAMBLE-TWO after the hand-off\n\n<cwd>(none)</cwd>");
     assert.deepEqual(t.wrapup, { text: `${WRAPUP_SYSTEM}\n\n<cwd>(none)</cwd>`, at: "2026-09-30T11:00:00.000Z" });
-    assert.deepEqual(t.tools.map((x) => x.name), ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "read_link"], "the conversation's tools");
+    assert.deepEqual(t.tools.map((x) => x.name), ["hand_to", "goal_done", "record_decision", "propose_roster_edit", "show_tour", "read_link"], "the conversation's tools");
   });
 
   test("the replay is pi-ai's, resolved beside the pi package", async () => {
@@ -204,7 +204,7 @@ describe("what it is told: the prompt as the file last recorded it (§app.baton/
   });
 
   test("the loadout's tools it lacks, by name, and a model the file never recorded", () => {
-    assert.deepEqual(told.inactiveTools(["hand_to", "goal_done", "record_decision", "propose_roster_edit", "read_link", "write_profile_updates"]), []);
+    assert.deepEqual(told.inactiveTools(["hand_to", "goal_done", "record_decision", "propose_roster_edit", "show_tour", "read_link", "write_profile_updates"]), []);
     assert.deepEqual(told.recordedModel([]), { model: null, thinking: null });
   });
 });

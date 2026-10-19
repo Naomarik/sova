@@ -188,8 +188,30 @@ test("dialing waits for a socket that isn't there yet, when asked to", async () 
   await srv.close();
 });
 
+test("a chat busy loading its code says hello late: the dial's budget waits for it, a dial with none doesn't", async () => {
+  const sock = join(dir, `s${++n}`, "c.sock");
+  const { mkdirSync } = await import("node:fs");
+  const { createServer } = await import("node:net");
+  mkdirSync(join(dir, `s${n}`), { recursive: true });
+  // Accepts at once, says hello 300 ms later (as a chat whose event loop is busy loading its code does).
+  const hello = encodeFrame({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_PROTO - 1, epoch: 0, build: "b", pid: 1, startedAt: 1, unit: "u", sessionId: "s", path: "/p", state: "booting", seq: 0 });
+  const conns: import("node:net").Socket[] = [];
+  const late = createServer((s) => {
+    conns.push(s);
+    s.on("error", () => {});
+    setTimeout(() => s.writable && s.write(hello), 300);
+  });
+  await new Promise<void>((r) => late.listen(sock, r));
+  await assert.rejects(connectLink(sock, { epoch: 1, build: "b", settings: DEFAULT_RUNTIME_SETTINGS, since: null, helloWithinMs: 50, log: quiet }), /didn't say hello in time/);
+  const ok = await connectLink(sock, { epoch: 1, build: "b", settings: DEFAULT_RUNTIME_SETTINGS, since: null, helloWithinMs: 50, retryForMs: 2_000, log: quiet });
+  assert.equal(ok.hello.state, "booting");
+  ok.link.close();
+  for (const c of conns) c.destroy();
+  await new Promise<void>((r) => late.close(() => r()));
+});
+
 test("a chat that greeted booting and says ready right after control: the server's wait for ready hears it", async () => {
-  // As a chat process whose start ended before its server's control came (main.ts takeControl): its
+  // As a chat process whose start ended before its server's control came (host.ts onControl): its
   // ready hello arrives in the same breath as the control, before the server listens for it. Both
   // waits for ready, the start's (chat-host) and a reload's (rollout linkWaitReady), still hear it.
   const sock = join(dir, `s${++n}`, "c.sock");

@@ -11,6 +11,7 @@ import { after, describe, test } from "node:test";
 import { TOOL_CONTENT_MAX_IDS, type ToolContentResponse, type TranscriptItem } from "../shared/protocol";
 import { argsSummary, contentText } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
+import { tourScriptFixture } from "../shared/tour-fixtures";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-tool-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -95,6 +96,37 @@ const tools = async (ids: string[]) => {
 const entry = (id: string) => entries.find((e) => e.id === id)! as any;
 const masterArgs = (callId: string) => entry("a1").message.content.find((b: any) => b.id === callId).arguments;
 const masterOutput = (id: string) => contentText(entry(id).message.content);
+
+test("tour rows eagerly keep only strict card references; scripts and reports remain authorized lazy content", async () => {
+  const p = canonicalPath(join(sessionsDir, "2026-10-03T00-00-00-000Z_tours.jsonl"));
+  const script = { ...tourScriptFixture(), accountId: "private-test-account" };
+  const card = { v: 1, tourId: "tour-demo", editionId: "edition-demo", title: "Drafts", steps: 1, status: "ready" };
+  const lines = [
+    { type: "session", version: 3, id: "tours", timestamp: T, cwd: agentDir },
+    { type: "message", id: "tour-call", parentId: null, timestamp: T, message: { role: "assistant", content: [{ type: "toolCall", id: "ct", name: "record_tour", arguments: { op: "dry-run", script, tourId: "tour-demo" } }] } },
+    { type: "message", id: "tour-result", parentId: "tour-call", timestamp: T, message: { role: "toolResult", toolCallId: "ct", toolName: "record_tour", isError: false, content: [{ type: "text", text: `PRIVATE-RECORDING-REPORT ${LONG}` }, { type: "image", data: "UE5HLUJZVEVTLVNFQ1JFVA==", mimeType: "image/png" }], details: card } },
+    { type: "message", id: "tour-failed", parentId: "tour-result", timestamp: T, message: { role: "toolResult", toolCallId: "failed", toolName: "show_tour", isError: true, content: [{ type: "text", text: "PRIVATE-FAILURE" }], details: card } },
+    { type: "message", id: "tour-malformed", parentId: "tour-failed", timestamp: T, message: { role: "toolResult", toolCallId: "malformed", toolName: "show_tour", isError: false, content: [{ type: "text", text: "PRIVATE-MALFORMED" }], details: { ...card, script } } },
+  ];
+  writeFileSync(p, lines.map(x => JSON.stringify(x)).join("\n") + "\n");
+  for (const extra of ["", "&wire=2", "&tail=1"]) {
+    const result = await get(`/api/transcript?path=${encodeURIComponent(p)}${extra}`);
+    assert.equal(result.status, 200);
+    for (const secret of ["private-test-account", "example.test", "PRIVATE-", "scriptDigest", "audience", "UE5HLUJZVEVTLVNFQ1JFVA==", "data:image/png"]) assert.ok(!result.text.includes(secret), `${secret} omitted from eager rows ${extra}`);
+    const rows = JSON.parse(result.text).items as TranscriptItem[];
+    const call = rows.find(r => r.kind === "tool-call")!;
+    assert.deepEqual(call.tool?.args, { op: "dry-run", tourId: "tour-demo" });
+    assert.equal(call.tool?.lazy, true);
+    assert.deepEqual(rows.find(r => r.id === "tour-result")?.tool?.details, card);
+    for (const id of ["tour-failed", "tour-malformed"]) assert.equal(rows.find(r => r.id === id)?.tool?.details, undefined, "no plausible finished card for failed/malformed results");
+    assert.ok(result.text.length < 6000, "card row payload does not grow with script/report size");
+  }
+  const lazy = await get(`/api/transcript/tool?path=${encodeURIComponent(p)}&ids=tour-call:0,tour-result`);
+  assert.equal(lazy.status, 200);
+  assert.ok(lazy.text.includes("private-test-account"), "authorized full arguments remain accessible when requested");
+  assert.ok(lazy.text.includes("PRIVATE-RECORDING-REPORT"));
+  assert.ok(lazy.text.includes("data:image/png;base64,UE5HLUJZVEVTLVNFQ1JFVA=="), "owner can retrieve full inspection images lazily");
+});
 
 describe("slim rows", () => {
   test("no row carries an entry copy, and nothing anywhere carries a signature", async () => {

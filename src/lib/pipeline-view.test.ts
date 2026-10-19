@@ -163,10 +163,10 @@ test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your cl
     heldWaitLine({ what: "A WhatsApp message to Sam Okafor", goesAt: tomorrow9, wait: "outage" }, now),
     "A WhatsApp message to Sam Okafor waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp is still down at Thu 09:00 your time (in 18h). You can cancel it.",
   );
-  assert.equal(
-    heldWaitLine({ what, goesAt: now - 12 * 60_000, reviewSince: now - 12 * 60_000 }, now),
-    "A message to Sam Okafor is waiting for the overseer's review, for 12m. It goes ahead only when the overseer approves it; you can cancel it.",
-  );
+  // Nothing waits for an approval any more (al_3): a held act that an old server still marks as in review reads as its hold.
+  const reviewed = heldWaitLine({ what, goesAt: now - 12 * 60_000, reviewSince: now - 12 * 60_000 } as never, now);
+  assert.doesNotMatch(reviewed, /review|approv/i);
+  assert.equal(reviewed, heldWaitLine({ what, goesAt: now - 12 * 60_000 }, now));
   assert.equal(sendAt(new Date(2026, 8, 30, 18, 30).getTime(), now), "18:30");
   assert.equal(sendAt(new Date(2026, 9, 5, 9, 0).getTime(), now), "Mon 09:00");
   assert.equal(sendAt(new Date(2026, 9, 12, 9, 0).getTime(), now), "Oct 12 09:00");

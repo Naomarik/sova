@@ -109,8 +109,16 @@ test("a held overseer message waits for its own organization's number only: Offi
   const h = hostOf(harbor.id).holds().find((x) => x.event === "outreach/send")!;
   sales.close(440);
   await until(async () => (await stateOf("local:sales")) === "replaced");
-  const approved = JSON.stringify((await run("sova_hold", { op: "approve", id: `${h.sessionId}:${h.id}`, reason: "test: go now" })).content);
-  assert.match(approved, /but WhatsApp is down/);
+  {
+    // al_3 q2: nothing approves it; its hold ends and it waits for its number
+    const { setOrgClockForTest } = await import("./org-engine");
+    setOrgClockForTest(() => h.until + 1);
+    try {
+      await hostOf(harbor.id).fireDue();
+    } finally {
+      setOrgClockForTest(null);
+    }
+  }
   const waiting = outage().map((x) => x.id);
   assert.equal(waiting.length, 1);
   // Office goes down and comes back: Harbor's wait stays.

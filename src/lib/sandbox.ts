@@ -32,6 +32,8 @@ export function sandboxBadge(info: SandboxInfo | null): SandboxBadge | null {
     case "subagents":
       return { icon: "shield-partial", tone: "ok", word: null, label };
   }
+  // Turning on (the provisional state): not broken, just not enforced yet.
+  if (info.starting) return { icon: "shield-on", tone: "warn", word: "Turning on…", label };
   switch (info.enforcement) {
     case "full":
       return { icon: "shield-on", tone: "ok", word: null, label };

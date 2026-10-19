@@ -17,7 +17,7 @@ import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
-import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
@@ -45,6 +45,8 @@ import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
+import { TourCard } from "./TourCard";
+import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
@@ -53,23 +55,14 @@ import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, N
 import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
-import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
+import { backWords } from "../lib/error-feed";
+import type { ReplyPlace } from "../lib/reply-place";
+import { ReplyPlaceView } from "./ReplyPlace";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
 export const ToolSourceContext = createContext<ToolSource | null>(null);
-
-/**
- * What a view hangs under each delivered message. The thread decides
- * WHERE a strip goes — once per entry, never once per rendered block — and the view decides what
- * it holds: a chat offers Copy · Rewind/Regenerate, a watch offers Copy with the others'
- * reasons, and a transcript rendered with no provider (a subagent's) shows no strip at all.
- */
-export interface MessageActionsProvider {
-  items(strip: MessageStrip): MessageActionItem[];
-  /** The last refusal for that entry, kept on its row after the announcement. */
-  note?(entryId: string): string | null;
-}
 
 /** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
     every head shares. The age drops once it would only repeat the date (past 7 days). */
@@ -480,6 +473,18 @@ export function TurnError(props: { message: string }) {
   );
 }
 
+/** "This chat didn't start." The chat's start failed, its server-side retry too (§chat.transcript/states):
+    no turn ran, so never "The turn stopped…". `back`: messages that went back to the composer. */
+export function StartError(props: { message: string; back: number }) {
+  return (
+    <Banner
+      tone="error"
+      title="This chat didn't start."
+      body={`${props.message.replace(/\.$/, "")}.${backWords(props.back, " ")}${props.back > 0 ? " Send again to retry." : ""}`}
+    />
+  );
+}
+
 /** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
     words sit in its text, its producer's model on the row. The server words it "Error…" for a
     stop reason of "error" and "Aborted…" otherwise. */
@@ -544,9 +549,11 @@ export function HistoryItems(props: {
   limitPath?: string;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
-  /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
-      disclosure) — an action is about the chat you are in, not about every transcript on screen. */
-  actions?: MessageActionsProvider;
+  /** What hangs under each delivered message: the reply place (src/lib/reply-place.ts). The
+      thread decides WHERE it goes (once per entry, never once per rendered block) and the view
+      what it holds. Absent: no strips at all (a subagent transcript, the hidden-rows disclosure)
+      — an action is about the chat you are in, not about every transcript on screen. */
+  actions?: ReplyPlace;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
   /** Rows above the list that the view doesn't hold yet (lib/older-rows): fetched as the reader
@@ -589,6 +596,10 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
   };
+  const tourOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeTourCardDetails(detailsOf(r)) : undefined;
+  };
   const calls = createMemo(() => {
     const ids = new Set<string>();
     for (const it of props.items) if (it.kind === "tool-call" && it.toolCallId) ids.add(it.toolCallId);
@@ -620,6 +631,7 @@ export function HistoryItems(props: {
   const asCard = (it: TranscriptItem): boolean => {
     if (it.kind !== "tool-call") return false;
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
+    if (TOUR_TOOLS.has(it.text ?? "")) return true;
     return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
   };
 
@@ -634,7 +646,7 @@ export function HistoryItems(props: {
       (it) =>
         it.kind === "thinking" ||
         (it.kind === "tool-call" && !asCard(it)) ||
-        (it.kind === "tool-result" && !(it.toolCallId && callIds.has(it.toolCallId))),
+        (it.kind === "tool-result" && !isTourResult(it) && !(it.toolCallId && callIds.has(it.toolCallId))),
     );
     const skip = list.map((it) => it.kind === "tool-result" && !!it.toolCallId && callIds.has(it.toolCallId));
     const runs = chainRuns(working, skip, compressWork());
@@ -966,6 +978,9 @@ export function HistoryItems(props: {
               </Match>
               {/* A show_changes result whose details check out reads as a card that opens the
                   changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
+              <Match when={item.kind === "tool-call" && TOUR_TOOLS.has(item.text ?? "") && tourOf(item.toolCallId)}>
+                {(details) => <TourCard details={details()} />}
+              </Match>
               <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
                 {(details) => <ShowChangesCard details={details()} />}
               </Match>
@@ -1074,17 +1089,8 @@ export function HistoryItems(props: {
                 </Show>
               </Match>
             </Switch>
-            {/* Under the bubble, once per entry (see `strips`). */}
-            <Show when={strip()}>
-              {(strip) => (
-                <MessageActions
-                  label={stripLabel(strip().role)}
-                  align={strip().role === "user" ? "end" : "start"}
-                  items={props.actions!.items(strip())}
-                  note={props.actions!.note?.(strip().entryId) ?? null}
-                />
-              )}
-            </Show>
+            {/* Under the bubble, once per entry (see `strips`): the reply place. */}
+            <Show when={strip()}>{(strip) => <ReplyPlaceView place={props.actions!} strip={strip()} />}</Show>
           </div>
           </Show>
           )
@@ -1151,7 +1157,9 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
           const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
+          const tour = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
           return (
+            <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
             <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
             <Show
@@ -1179,6 +1187,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
             </Show>
             </Show>
             </Show>
@@ -1243,6 +1252,7 @@ export function LiveEntries(props: {
         const tool = props.live.tools[b.id];
         return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
       }
+      if (TOUR_TOOLS.has(b.name)) return false;
       return !CARD_RENDER_NAMES.has(b.name);
     });
     const skip = blocks.map((b) => b !== null && !shows(b));
@@ -1671,6 +1681,15 @@ export function ThreadScroller(props: {
       if (!first && follow) return;
       reflowed = !first;
     }
+    // Any scroll up by the reader's own hand that takes the view off the very end stops following,
+    // however small. More than 2px off it: a browser clamp or its
+    // scroll anchoring inside INPUT_MS, and a bounce at the end on a phone (scrollTop falling back
+    // to its maximum), leave the view at the end. A disclosure the reader toggled is re-read below.
+    if (follow && reader && up && lastGap > 2 && !held?.jump && !toggled) {
+      follow = false;
+      setAway(props.count);
+      return;
+    }
     const near = lastGap < FOLLOW_PX;
     // A jump never brings following back, even one landing at the end right after a press in the
     // transcript (a card reference), which would otherwise read as the reader's scroll.
@@ -1872,26 +1891,38 @@ export function ThreadScroller(props: {
     ),
   );
 
-  /** Content was added or changed: back to the bottom while following. */
-  const settle = () => {
+  /** Content was added or changed: back to the bottom while following. A change in the rows
+      (`grownOnly`, the MutationObserver) moves a view off the end only when it added height below
+      it, so the gap to the end grew since it was last read: a change that adds nothing (a
+      control's state when the chat connects, hidden text, a checkmark) never moves the view. */
+  const settle = (grownOnly = false) => {
     // Before following: a scroll event between the rows landing and this frame may have read the
     // view they grew as the reader's own.
     if (holdAtRead()) return;
     if (!follow) return;
     if (toggled) return onScroll();
+    if (grownOnly) {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gap > 2 && gap - lastGap < 1) return;
+    }
     toBottom();
   };
   // A mutation's settle waits for the frame (still before its paint), so the write to `scrollTop`
   // no longer forces a layout of the whole thread inside the task that changed it, once per change.
+  // Any caller in that frame asking for a settle whatever grew (`onScroll`) wins over a mutation's.
   let settleFrame = 0;
-  const settleSoon = () => {
+  let settleAlways = false;
+  const settleSoon = (always = true) => {
+    if (always) settleAlways = true;
     if (settleFrame) return;
     settleFrame = requestAnimationFrame(() => {
       settleFrame = 0;
-      settle();
+      const whatever = settleAlways;
+      settleAlways = false;
+      settle(!whatever);
     });
   };
-  const observer = new MutationObserver(settleSoon);
+  const observer = new MutationObserver(() => settleSoon(false));
   onCleanup(() => {
     observer.disconnect();
     cancelAnimationFrame(settleFrame);

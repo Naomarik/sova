@@ -5,6 +5,13 @@
 
 (def golden
   {
+   ["watch" ":watch" [":operator/powers-set"] "[]" 0] :feed
+   ["project" ":project" [":services/reset"] "[]" 0] :feed
+   ["project" ":project" [":deploy/run"] "[]" 0] :feed
+   ["item" ":driving" [] "[]" 7] :feed
+   ["item" ":driving" [] "[]" 6] :quiet
+   ["item" ":driving" [] "[]" 5] :feed
+   ["item" ":driving" [] "[]" 4] :quiet
    ["baton" ":baton" [":session/retire"] "[:retired]" 0] :feed
    ["build" ":build" [":session/retire"] "[:retired]" 0] :feed
    ["project" ":project" [":link/moved"] "[]" 0] :quiet
@@ -12,26 +19,12 @@
    ["placement" ":placement" [":link/moved"] "[]" 1] :quiet
    ["placement" ":placement" [":sova.statecharts/flush"] "[]" 0] :quiet
    ["placement" ":placement" [":started/noted"] "[]" 0] :quiet
-   ["placement" ":placement" [":hold/approve"] "[]" 0] :correction
    ["placement" ":placement" [":hold/cancel"] "[]" 0] :correction
-   ["placement" ":placement" [":hold/waiting"] "[]" 0] :feed
    ["placement" ":placement" [":placement/edit"] "[]" 0] :feed
    ["project" ":project" [":sova.statecharts/flush"] "[]" 0] :quiet
    ["project" ":project" [":started/noted"] "[]" 0] :quiet
    ["project" ":project" [":session/prompt"] "[]" 0] :feed
    ["decision" ":edited-in-spec" [":effect/done"] "[:as-promoted]" 0] :feed
-   ["baton" ":baton" [":hold/approve"] "[]" 0] :correction
-   ["baton" ":baton" [":hold/waiting"] "[]" 0] :feed
-   ["build" ":build" [":hold/approve"] "[]" 0] :correction
-   ["build" ":build" [":hold/waiting"] "[]" 0] :feed
-   ["item" ":item" [":hold/approve"] "[]" 0] :correction
-   ["item" ":item" [":hold/waiting"] "[]" 0] :feed
-   ["person" ":person" [":hold/approve"] "[]" 0] :correction
-   ["person" ":person" [":hold/waiting"] "[]" 0] :feed
-   ["project" ":project" [":hold/approve"] "[]" 0] :correction
-   ["project" ":project" [":hold/waiting"] "[]" 0] :feed
-   ["reconciler" ":reconciler" [":hold/approve"] "[]" 0] :correction
-   ["reconciler" ":reconciler" [":hold/waiting"] "[]" 0] :feed
    ["baton" ":at-limit" [] "[:under]" 0] :quiet
    ["baton" ":baton" [":baton/abilities"] "[]" 0] :feed
    ["baton" ":baton" [":baton/extend"] "[]" 0] :feed
@@ -224,9 +217,9 @@
    ["item" ":drafted" [] "[:spec-edited]" 0] :feed
    ["item" ":drafted" [] "[:unreconciled]" 0] :feed
    ["item" ":driving" [] "[]" 0] :quiet
-   ["item" ":driving" [] "[]" 1] :quiet
+   ["item" ":driving" [] "[]" 1] :feed
    ["item" ":driving" [] "[]" 2] :quiet
-   ["item" ":driving" [] "[]" 3] :quiet
+   ["item" ":driving" [] "[]" 3] :feed
    ["item" ":failed" [] "[:awaiting-build]" 0] :feed
    ["item" ":failed" [] "[:build-starting]" 0] :feed
    ["item" ":failed" [] "[:done]" 0] :feed

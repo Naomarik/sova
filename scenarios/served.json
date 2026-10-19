@@ -1,0 +1,15 @@
+{
+  "name": "served",
+  "about": "The running Sova tells a script what it can run and what happens: sova list reads the server's own list, and sova watch hears a short turn of a chat Sova runs from the event stream, marked hosted and with a cursor to resume from.",
+  "steps": [
+    { "name": "watch", "watch": "w" },
+    { "name": "the server's list", "sova": ["list", "--json"], "json": { "$some": { "id": "session.list", "effect": "looks", "route": { "method": "GET", "path": "/api/sessions" } } } },
+    { "name": "one entry from it", "sova": ["describe", "session.send"], "json": { "id": "session.send", "effect": "changes", "sessionKey": "path" } },
+    { "name": "a new session", "sova": ["run", "session.create", "--cwd", "."], "save": "s" },
+    { "name": "ask it something", "sova": ["run", "session.send", "--session", "{{s.path}}", "--text", "Read package.json and tell me the package name."], "json": { "ok": true } },
+    { "name": "the turn starts, from a chat Sova runs", "await": "w", "event": { "event": "turn.started", "path": "{{s.path}}", "source": "hosted", "cursor": { "$match": "^[a-z0-9]{8,32}:\\d+$" } } },
+    { "name": "and ends, however short it was", "await": "w", "event": { "event": "turn.ended", "path": "{{s.path}}", "source": "hosted", "cursor": { "$match": "^[a-z0-9]{8,32}:\\d+$" } } },
+    { "name": "the reply is there", "sova": ["run", "session.read", "--session", "{{s.path}}"], "until": { "items": { "$some": { "kind": "assistant-text", "text": "The package name is in package.json." } } } },
+    { "name": "a cursor that isn't one", "sova": ["watch", "--since", "yesterday"], "exit": 3, "stderr": "sova: --since takes a cursor <stream>:<seq>" }
+  ]
+}

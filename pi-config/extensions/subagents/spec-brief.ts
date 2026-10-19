@@ -18,7 +18,7 @@ export interface CarriedRule { anchor: string; sentences: number }
 export const CARRIED_RULES: readonly CarriedRule[] = [
 	{ anchor: "never put `§` IDs", sentences: 1 },
 	{ anchor: "Every behavior change is spec'd.", sentences: 2 },
-	{ anchor: "Behavior no claim covers gets a new claim", sentences: 2 },
+	{ anchor: "Behavior no claim covers gets a new claim", sentences: 3 },
 	{ anchor: "While coding, a `[spec census]` note", sentences: 1 },
 	{ anchor: "Any § the task didn't create is foreign", sentences: 1 },
 	{ anchor: "Where the task needs a change", sentences: 1 },

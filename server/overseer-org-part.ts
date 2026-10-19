@@ -30,6 +30,9 @@ import { contributeProjectPart, type GapPart, type OtherSessions, type OverseerT
 import { listDecisions, promoteDecisions, reconcileProject } from "./reconcile";
 import { renderTranscript, sessionRef } from "./session-guards";
 import { readView } from "./share/hub";
+import { specEntries } from "./spec-lookup";
+import { ownerRequestsLines } from "./project-assistant-store";
+import "./spec-lookup-part"; // every project's spec look-up: the overseer's spec_lookup, overview, a standalone project's Spec line
 
 /**
  * The organization's part of a project it places (design "What crosses the seam"): what the project layer's
@@ -400,6 +403,12 @@ const buildNote = (d: DecisionRow): string =>
 
 const namesOf = (roster: Person[]): Record<string, string> => Object.fromEntries(roster.map((x) => [x.id, x.name]));
 
+/** The project's open owner requests, as sova_project shows them: nothing when there are none. */
+function ownerRequestsPart(orgId: string, projectId: string): string[] {
+  const t = ownerRequestsLines(orgId, projectId);
+  return t ? ["", t] : [];
+}
+
 async function orgRead(orgId: string, projectId: string): Promise<string[]> {
   const project = placedProject(orgId, projectId);
   if (!project) return [];
@@ -407,6 +416,7 @@ async function orgRead(orgId: string, projectId: string): Promise<string[]> {
   const active = roster.filter((x) => x.status === "active");
   const proposed = roster.filter((x) => x.status === "proposed");
   const batons = projectBatons(orgId, projectId);
+  const entries = await specEntries(projectId);
   const nm = namesOf(roster);
   let dec: DecisionsInfo | null = null;
   let decErr = "";
@@ -441,7 +451,10 @@ async function orgRead(orgId: string, projectId: string): Promise<string[]> {
     conflicts.length ? conflicts.map((c) => `- ${c.id} · ${c.areaKey} · routed to ${nm[c.routedTo] ?? c.routedTo} (${c.routeReason})`).join("\n") : "(none)",
     "",
     "## Spec",
-    dec ? `${dec.spec.exists ? "exists" : "none yet"} · ${dec.spec.promoted} promoted${builtCounts(dec)} · ${dec.spec.drafted} drafted, not promoted${dec.spec.frozen ? " · frozen" : ""}` : "(unavailable)",
+    // §app.project-overseer/tools: every entry the main line's spec has, then the promoted decisions.
+    dec ? `${entries === null ? (dec.spec.exists ? "exists · " : "none yet · ") : entries === 0 ? "none yet · " : `${entries} entries · `}${dec.spec.promoted} promoted requirements${builtCounts(dec)} · ${dec.spec.drafted} drafted, not promoted${dec.spec.frozen ? " · frozen" : ""}` : "(unavailable)",
+    // §app.project-assistant/requests: the owner's open requests, data for the operator (never a task of its own).
+    ...ownerRequestsPart(orgId, projectId),
   ];
 }
 

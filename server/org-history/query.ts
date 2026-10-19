@@ -6,6 +6,7 @@
 // of its own; it never walks on from a boundary card. Everything here is deterministic: the same
 // history and the same input give the same answer.
 import { createHash } from "node:crypto";
+import { powerWord } from "../../shared/powers";
 import {
   HISTORY_BOUNDS,
   KIND_HEADLINES,
@@ -862,7 +863,8 @@ export class HistoryReads {
             unknowns.push(`${id}: ${word} not recorded`);
             return `${word}: not recorded`;
           }
-          return `${word}: ${"label" in v ? v.label : (v as Authorization).kind}${"level" in v && v.level ? ` ${v.level}` : ""}`;
+          const power = "kind" in v && !("label" in v) ? (v as Authorization).power : undefined;
+          return `${word}: ${"label" in v ? v.label : (v as Authorization).kind}${power ? ` ${powerWord(power, (v as Authorization).column) ?? power}` : ""}${"level" in v && v.level ? ` ${v.level}` : ""}`;
         };
         lines.push([who("initiatedBy", "initiated by"), who("decidedBy", "decided by"), who("recordedBy", "recorded by"), who("executedBy", "executed by"), who("authorization", "authorization")].join(" · "));
         if (s.attended != null) lines.push(s.attended ? "Attended (evaluated for this act)" : "Unattended (evaluated for this act)");

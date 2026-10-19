@@ -9,6 +9,7 @@ import { addWatcher, viewForToken } from "./hub";
 import { socketClosed, socketOpened } from "../visits";
 import { createShareApp, logVisit, PAGE_CSP } from "./routes";
 import { sessionShareUpgrade } from "./session-routes";
+import { assistantShareUpgrade } from "../project-assistant-share";
 import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { clientAddress, trustedClient } from "./security";
@@ -48,6 +49,8 @@ export { RateLimiter };
  */
 
 const TOKEN = "[A-Za-z0-9_-]{43}";
+const TOUR_HANDLE = "tr_[A-Za-z0-9_-]{16}";
+const TOUR_FILE = "[a-z0-9][a-z0-9-]{0,119}\\.png";
 const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/h/${TOKEN}$`) },
   { method: "GET", re: /^\/h\/assets\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/ },
@@ -58,11 +61,24 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/img/(?:0|[1-9][0-9]{0,3})$`) },
   // A person's files (§app.baton/files): the upload only; nothing reads a file back here.
   { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/file$`) },
-  // The Owner page (§app.owner-page/link): read-only, GET only, no socket.
+  // The Owner page (§app.owner-page/link): its reads, and a link that turned off unused asking for a new one.
   { method: "GET", re: new RegExp(`^/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
+  { method: "POST", re: new RegExp(`^/i/${TOKEN}/ask-link$`) },
+  // The Project Assistant (§app.project-assistant/chat): its view, a message to it; its socket is /ws/i.
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
+  { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
+  { method: "GET", re: new RegExp(`^/i/${TOKEN}/v/v_[a-z2-9]{8}$`) },
+  // Reviewed tour attachments are scoped to the conversation and its exact checked edition.
+  { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/tours/${TOUR_HANDLE}(?:/assets/${TOUR_FILE}|/progress)?$`) },
+  { method: "PUT", re: new RegExp(`^/api/h/${TOKEN}/tours/${TOUR_HANDLE}/progress$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}/tours/${TOUR_HANDLE}(?:/assets/${TOUR_FILE})?$`) },
+  { method: "GET", re: new RegExp(`^/t/${TOKEN}$`) },
+  { method: "GET", re: new RegExp(`^/api/t/${TOKEN}(?:/assets/${TOUR_FILE}|/progress)?$`) },
+  { method: "POST", re: new RegExp(`^/api/t/${TOKEN}/readers$`) },
+  { method: "PUT", re: new RegExp(`^/api/t/${TOKEN}/progress$`) },
   // Session shares (§app/session-share): read-only, GET only; their socket is /ws/s.
   { method: "GET", re: new RegExp(`^/s/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/s/${TOKEN}$`) },
@@ -70,8 +86,8 @@ const ROUTES: { method: string; re: RegExp }[] = [
 ];
 
 /** The share sockets, by path: `/ws/h` a hand-off's, `/ws/s` a session share's. */
-export type ShareSocketKind = "h" | "s";
-const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/s": "s" };
+export type ShareSocketKind = "h" | "s" | "i";
+const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/s": "s", "/ws/i": "i" };
 
 /** The raw request target split into path and query, or null unless it is origin-form: "/"
     then anything but a second "/" (absolute-form "http://…", authority-form "host:443", "*" and
@@ -102,6 +118,7 @@ export const REQUESTS_PER_MINUTE = 60;
 /** Photo reads have a per-address bucket of their own: a thread full of photos must not use up
     the page's 60 a minute. */
 export const IMAGE_REQUESTS_PER_MINUTE = 240;
+export const TOUR_IMAGE_REQUESTS_PER_MINUTE = 240;
 /** A request's headers must arrive within this, and its whole body within REQUEST_TIMEOUT_MS
     (else 408): a 16 KB body needs no more, and a slow client can't hold a socket for Node's
     default five minutes. A photo upload alone has UPLOAD_TIMEOUT_MS (a phone on mobile data). */
@@ -114,10 +131,11 @@ export const FILE_UPLOAD_TIMEOUT_MS = 300_000;
 const UPLOAD_PATH = new RegExp(`^/api/h/${TOKEN}/image$`);
 const FILE_PATH = new RegExp(`^/api/h/${TOKEN}/file$`);
 const IMAGE_PATH = new RegExp(`^/api/h/${TOKEN}/img/`);
+export const TOUR_IMAGE_PATH = new RegExp(`^/api/(?:t/${TOKEN}|h/${TOKEN}/tours/${TOUR_HANDLE}|i/${TOKEN}/c/k_[a-z2-9]{8}/tours/${TOUR_HANDLE})/assets/${TOUR_FILE}$`);
 /** The body cap for a judged path: the photo upload's own, the file upload's own, 16 KB for everything else. */
 export const bodyMaxFor = (pathname: string): number => (UPLOAD_PATH.test(pathname) ? UPLOAD_BODY_MAX : FILE_PATH.test(pathname) ? FILE_BODY_MAX : BODY_MAX);
 
-const PAGE_SHELL = new RegExp(`^/[his]/${TOKEN}$`);
+const PAGE_SHELL = new RegExp(`^/[hist]/${TOKEN}$`);
 /** A phone past the address limit reloading its link gets a page, not raw JSON. Static: no token,
     no names. */
 const TOO_MANY_PAGE =
@@ -165,6 +183,7 @@ function routeKind(pathname: string): string {
   if (pathname.startsWith("/api/")) return pathname.startsWith("/api/i/") ? "owner api" : pathname.startsWith("/api/s/") ? "session api" : "api";
   if (pathname === "/ws/h") return "socket";
   if (pathname === "/ws/s") return "session socket";
+  if (pathname === "/ws/i") return "owner socket";
   return pathname.startsWith("/i/") ? "owner page" : pathname.startsWith("/s/") ? "session page" : "page";
 }
 
@@ -237,8 +256,10 @@ export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgra
     handle(req, res);
   };
   const sessionUpgrade = sessionShareUpgrade();
+  const assistantUpgrade = assistantShareUpgrade(SHARE_WS_MAX_PAYLOAD);
   const upgrade: ShareUpgrade = (req, socket, head, ctx) => {
     if (ctx.kind === "s") return sessionUpgrade(req, socket, head, ctx);
+    if (ctx.kind === "i") return assistantUpgrade(req, socket, head, ctx);
     const { url, token } = ctx;
     const access = linkAccess(token);
     if (!access.ok) {
@@ -356,6 +377,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const clientOf = opts.client ?? ((req: IncomingMessage) => trustedClient(req, { trust: "local-proxy" }));
   const perAddress = new RateLimiter(REQUESTS_PER_MINUTE);
   const perAddressImages = new RateLimiter(IMAGE_REQUESTS_PER_MINUTE);
+  const perAddressTourImages = new RateLimiter(TOUR_IMAGE_REQUESTS_PER_MINUTE);
   const perPreview = new RateLimiter(PREVIEW_LIMITS.requestsPerMinute);
   const preview = opts.preview;
   /** The preview a request is for; a throw is the share host's. */
@@ -438,7 +460,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       failed("client")(err);
       return;
     }
-    if ((IMAGE_PATH.test(url.pathname) ? perAddressImages : perAddress).limited(client)) {
+    if ((TOUR_IMAGE_PATH.test(url.pathname) ? perAddressTourImages : IMAGE_PATH.test(url.pathname) ? perAddressImages : perAddress).limited(client)) {
       tooMany(res, PAGE_SHELL.test(url.pathname));
       return;
     }

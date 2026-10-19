@@ -78,10 +78,10 @@
       (is (= "Site is archived. Unarchive it first." (h/refusal (project-moved (placement) [:archived :no-overseer] {}) plsid :baton/start (assoc op :session-id "s1")))
           "the placement starts nothing for an archived project (its exported facts)")
       (is (h/in? (h/send! a psid :project/unarchive op) psid :active)))
-    (testing "q7: the overseer's build only in a turn the operator started, at every level"
+    (testing "q7: the overseer's build only in a turn the operator started, whatever the switches"
       (is (= "A coding session starts only in a turn the operator started: ask with sova_card."
              (h/refusal x psid :build/start {:by "overseer" :autonomy "L3" :session-id "c1"})))
-      (is (re-find #"sova_create_session needs L3" (h/refusal x psid :build/start {:by "overseer" :autonomy "L1" :session-id "c1"})))
+      (is (re-find #"^Start coding sessions is off" (h/refusal x psid :build/start {:by "overseer" :autonomy "L1" :session-id "c1"})))
       (is (nil? (h/refusal x psid :build/start {:by "overseer" :attended true :session-id "c1"}))))
     (let [y  (h/send! x psid :build/start (assoc op :session-id "c1"))
           sp (last (h/directives y psid))]
@@ -161,12 +161,14 @@
   (let [x (project)
         po (fn [level] {:by "overseer" :autonomy level :verb "up"})]
     (is (nil? (h/refusal x psid :services/down (assoc (po "L0") :verb "down"))) "down from L0")
-    (is (= "This run was not started by the operator, and your autonomy here is L0; sova_project_verbs needs L3. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."
+    (is (= "Create, start and update running copies is off for the overseer on its own. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."
            (h/refusal x psid :services/run (po "L0"))))
-    (is (re-find #"sova_project_verbs needs L3" (h/refusal x psid :services/run (po "L2"))))
+    (is (re-find #"^Create, start and update running copies is off" (h/refusal x psid :services/run (po "L2"))))
+    (is (re-find #"^Reset or tear down running copies is off" (h/refusal x psid :services/reset (assoc (po "L1") :verb "reset"))) "reset and teardown: their own power")
+    (is (nil? (h/refusal x psid :services/reset (assoc (po "L3") :verb "reset"))))
     (is (nil? (h/refusal x psid :services/run (po "L3"))) "up at L3")
     (is (nil? (h/refusal x psid :services/run (assoc (po "L0") :attended true))) "the operator's own run, at any level")
-    (is (re-find #"sova_project_verbs needs L3" (h/refusal x psid :services/run (assoc (po "L3") :paused true))) "paused is L0")
+    (is (re-find #"Press Resume" (h/refusal x psid :services/run (assoc (po "L3") :paused true))) "paused: every power acts as Off")
     (is (= "Nothing runs on port 4910." (h/refusal x psid :services/run (assoc (po "L3") :invalid "Nothing runs on port 4910."))) "the host's own check")
     (let [a (h/send! x psid :project/archive op)]
       (is (= "Site is archived. Unarchive it first." (h/refusal a psid :services/run (po "L3"))))
@@ -179,7 +181,7 @@
   ;; effect shares the copy's endpoint, never a link.
   (let [x (project)
         po (fn [level] {:by "overseer" :autonomy level :verb "share" :instance "in_1" :endpoint "web.3000" :days 2 :overseer-id "po1"})]
-    (is (re-find #"sova_project_verbs needs L1" (h/refusal x psid :services/share (po "L0"))))
+    (is (re-find #"^Share a version to try is off" (h/refusal x psid :services/share (po "L0"))))
     (is (nil? (h/refusal x psid :services/share (assoc (po "L0") :attended true))) "the operator's own run, at any level")
     (is (nil? (h/refusal x psid :services/share (po "L1"))) "share at L1")
     (is (= "web.9 is not declared for sharing." (h/refusal x psid :services/share (assoc (po "L1") :invalid "web.9 is not declared for sharing."))) "the host's own check")
@@ -289,7 +291,7 @@
     (is (= "text must not be blank." (h/refusal x psid :session/prompt (assoc att :session-id "c9" :title "Pay page" :text " "))))
     (is (= "\"Pay page\" is open in a terminal, so it is read-only." (h/refusal x psid :session/prompt (assoc att :session-id "c9" :title "Pay page" :text "t" :live true))))
     (is (= "Unknown mode" (h/refusal x psid :session/prompt (assoc att :session-id "c9" :text "t" :invalid "Unknown mode"))) "the host's mode refusal")
-    (is (re-find #"sova_send needs L3" (h/refusal x psid :session/prompt {:by "overseer" :autonomy "L2" :session-id "c9" :text "t"})))
+    (is (re-find #"^Send coding sessions prompts is off" (h/refusal x psid :session/prompt {:by "overseer" :autonomy "L2" :session-id "c9" :text "t"})))
     (is (re-find #"^Today's allowance is used: 12 of 12" (h/refusal x psid :session/prompt (assoc att :attended false :session-id "c9" :text "t" :ledger "day" :allowance {:prompt {:used 12 :max 12}}))))))
 
 (deftest server-3-p3-2-a-freeze-keeps-the-specs-hash

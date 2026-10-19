@@ -13,11 +13,11 @@
 // the step on a stop in the middle of one, and each step to its server in a `boot` frame. Only this
 // process records the trail: the server's own warm-up hears no step. Tests:
 // SOVA_CHAT_TEST_HANG_BOOT=<build> hangs the start in a "test hang" step, with a `sleep` child running,
-// when this build is that one; SOVA_CHAT_TEST_BEAT_MS beats faster than every 10 s;
-// SOVA_CHAT_TEST_SLOW_BOOT_MS=<ms> holds the start that long in a "test delay" step (a control that
-// surely comes while the chat starts).
+// when this build is that one; SOVA_CHAT_TEST_HOLD_BOOT=<build> holds the start, its code loaded, until
+// a server has taken control (so that control is the one handed over as the boot ends);
+// SOVA_CHAT_TEST_BEAT_MS beats faster than every 10 s.
 import { spawn, type ChildProcess } from "node:child_process";
-import { CHAT_WIRE_MIN_PROTO, CHAT_WIRE_PROTO, type ExitCause, type FrameOf } from "../../shared/chat-runtime-wire";
+import type { ExitCause, FrameOf } from "../../shared/chat-runtime-wire";
 import { BEAT_MS, BootTrail, childPrograms, stoppedText } from "./boot-steps";
 import { dropGcTimerEnv } from "./gc-timer";
 import { type ControlFrame, type Link, serveLink } from "./link";
@@ -74,6 +74,8 @@ let host: Host | null = null;
 let state: "booting" | "ready" = "booting";
 /** A controller that came before the chat's code was loaded: handed to the host once it is. */
 let early: { link: Link; control: ControlFrame } | null = null;
+/** SOVA_CHAT_TEST_HOLD_BOOT: told when a controller came while booting. */
+let earlyCame: (() => void) | null = null;
 let exiting = false;
 
 function exitNow(cause: ExitCause, link: Link | null): void {
@@ -90,22 +92,12 @@ function exitNow(cause: ExitCause, link: Link | null): void {
   void server.close().finally(() => setTimeout(() => process.exit(0), 50));
 }
 
-/** Hand a controller to the loaded chat. A link whose hello said booting hears the state now, in one
-    hello, here and nowhere else: whether its control came while the chat started (kept in `early`
-    until now) or only after the start was done. The host's own hellos (host.ts setState) can't say
-    it: the host starts ready, so its state never changes to ready (§app.chat-processes/supervision). */
-function takeControl(h: Host, link: Link, control: ControlFrame): void {
-  h.onControl(link, control);
-  if (link.greeting?.state === "booting" && link.isOpen) {
-    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: control.epoch, ...h.hello() });
-  }
-}
-
 const server = await serveLink(sock, {
   hello: () => host?.hello() ?? { build, pid: process.pid, startedAt, unit, sessionId, path, state, seq: 0 },
   onControl(link, control) {
-    if (host) return takeControl(host, link, control);
+    if (host) return host.onControl(link, control);
     early = { link, control };
+    earlyCame?.();
     startTrail.report();
     // While booting, only a drain means anything: there is no chat to close yet.
     link.on("drain", (f: FrameOf<"drain">) => {
@@ -141,14 +133,13 @@ if (env.SOVA_CHAT_TEST_HANG_BOOT && env.SOVA_CHAT_TEST_HANG_BOOT === build) {
   hangChild = spawn("sleep", ["120"], { stdio: "ignore" });
   await new Promise(() => {});
 }
-const slowBootMs = Number(env.SOVA_CHAT_TEST_SLOW_BOOT_MS);
-if (slowBootMs > 0) {
-  startTrail.step("test delay");
-  await new Promise((r) => setTimeout(r, slowBootMs));
-}
 startTrail.step("chat code");
 const { ChatRuntimeHost, RELOAD_MESSAGE, warmChatRuntime } = await import("./host");
 await warmChatRuntime(startTrail.step);
+if (env.SOVA_CHAT_TEST_HOLD_BOOT && env.SOVA_CHAT_TEST_HOLD_BOOT === build) {
+  startTrail.step("test hold");
+  if (!early) await new Promise<void>((resolve) => (earlyCame = resolve));
+}
 startTrail.step("host");
 if (!exiting) {
   host = new ChatRuntimeHost({
@@ -166,7 +157,9 @@ if (!exiting) {
   startTrail.finish();
   // Set by onControl meanwhile (a callback: the compiler can't see it).
   const pending = early as { link: Link; control: ControlFrame } | null;
-  if (pending?.link.isOpen) takeControl(host, pending.link, pending.control);
+  // The host says the state changed on this link (its opening hello said booting), as it does for a
+  // control that comes after this point.
+  if (pending?.link.isOpen) host.onControl(pending.link, pending.control);
   early = null;
   if (stopping) void host.close("operator", { dispose: true, message: RELOAD_MESSAGE });
 }

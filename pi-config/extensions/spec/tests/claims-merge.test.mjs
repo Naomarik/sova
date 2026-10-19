@@ -103,6 +103,48 @@ test("merge-claims: the same declaration changed differently conflicts, with bot
   assert.match(r.text, /^>>>>>>> /m);
 });
 
+// One declaration of bullets, a table and a paragraph, for the block-by-block merge.
+const BLOCKY = TOP.replace("One says X.\n", [
+  "One says X.", "", "- **First.** The first promise,", "  wrapped onto a second line.", "- **Second.** The second promise.",
+  "  - **Nested.** A nested promise.", "- **Third.** The third promise.", "", "| Row | Text |", "|---|---|", "| a | Alpha |", "| b | Beta |", "",
+  "A closing paragraph that", "wraps.", ""].join("\n"));
+
+test("merge-claims: one declaration changed on both sides in different blocks merges, neighbours included, with both sides' changes", () => {
+  const ours = BLOCKY.replace("wrapped onto a second line.", "wrapped onto a second line, ours.").replace("| a | Alpha |", "| a | Alpha, ours |");
+  const theirs = BLOCKY.replace("The second promise.", "The second promise, theirs.").replace("| b | Beta |", "| b | Beta, theirs |").replace("wraps.", "wraps, theirs.");
+  const want = ours.replace("The second promise.", "The second promise, theirs.").replace("| b | Beta |", "| b | Beta, theirs |").replace("wraps.", "wraps, theirs.");
+  for (const [o, t] of [[ours, theirs], [theirs, ours]]) {
+    const r = driver(BLOCKY, o, t);
+    assert.equal(r.j.exit, 0, JSON.stringify(r.j));
+    assert.equal(r.text, want);
+  }
+  // A nested item is its own block: its parent item changed on the other side still merges.
+  const n = driver(BLOCKY, BLOCKY.replace("A nested promise.", "A nested promise, ours."), BLOCKY.replace("The second promise.", "The second promise, theirs."));
+  assert.equal(n.j.exit, 0, JSON.stringify(n.j));
+  assert.match(n.text, /The second promise, theirs\.\n  - \*\*Nested\.\*\* A nested promise, ours\./);
+});
+
+test("merge-claims: the same block changed on both sides conflicts with markers around whole blocks, even on different lines of it", () => {
+  const r = driver(BLOCKY, BLOCKY.replace("The first promise,", "The first promise, ours,"), BLOCKY.replace("wrapped onto a second line.", "wrapped onto a second line, theirs."));
+  assert.equal(r.j.exit, 1);
+  assert.equal(r.j.merge, "blocks");
+  assert.ok(r.j.conflicts.some((c) => c.startsWith("§a.top/one")), JSON.stringify(r.j));
+  assert.match(r.text, /^<<<<<<< ours\n- \*\*First\.\*\* The first promise, ours,\n  wrapped onto a second line\.\n=======\n- \*\*First\.\*\* The first promise,\n  wrapped onto a second line, theirs\.\n>>>>>>> theirs\n/m);
+  assert.doesNotMatch(r.text, /[\uE000\uE001]/);
+  // Both sides adding a different block at the same place conflicts too.
+  const add = (s) => BLOCKY.replace("- **Third.**", `- **New.** ${s}.\n- **Third.**`);
+  const a = driver(BLOCKY, add("Ours"), add("Theirs"));
+  assert.equal(a.j.exit, 1);
+  assert.match(a.text, /New\.\*\* Ours[\s\S]*=======[\s\S]*New\.\*\* Theirs/);
+  // A block added right after a block the other side changed merges; right before it, it conflicts.
+  const ours = BLOCKY.replace("The second promise.", "The second promise, ours.");
+  const after = driver(BLOCKY, ours, BLOCKY.replace("- **Third.**", "- **New.** Added.\n- **Third.**"));
+  assert.equal(after.j.exit, 0, JSON.stringify(after.j));
+  assert.match(after.text, /The second promise, ours\.\n  - \*\*Nested\.\*\* A nested promise\.\n- \*\*New\.\*\* Added\.\n- \*\*Third/);
+  const before = driver(BLOCKY, ours, BLOCKY.replace("- **Second.**", "- **New.** Added.\n- **Second.**"));
+  assert.equal(before.j.exit, 1, JSON.stringify(before.j));
+});
+
 test("merge-claims: changed on one side, deleted on the other conflicts; a file without declarations gets Git's line merge", () => {
   const del = TOP.replace("## §a.top/two\n\nTwo says Y.\n", "").replace(/\n+$/, "\n");
   const r = driver(TOP, TOP.replace("Two says Y.", "Two says Y, changed."), del);

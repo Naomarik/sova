@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
 import type { BatonView, BatonViewFile, BatonViewImage, BatonViewItem } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
+import { TourAttachment, type TourHost } from "./TourAttachment";
 import "./thread.css";
 import { createMarkdownPatcher } from "../vis/hydrate";
 import { batonKinds, renderShareMarkdown, type ShareVisKinds, type ShareVisual } from "./markdown";
@@ -148,11 +149,14 @@ export function MessagePhotos(props: { srcs: string[]; from: string }) {
     name of whoever reads (the share page): the first hand-off to them is "Your question", since the
     status line above already names them. `drawings`: the view's, so a reply's `vis html` runs in
     a frame only while the session allows it (§app.baton/outsider-view). */
-export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string; viewer?: string; drawings?: BatonView["drawings"] }) {
+export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string; viewer?: string; drawings?: BatonView["drawings"]; tour?: TourHost }) {
   const it = props.item;
   const photos = (m: { images?: BatonViewImage[] }) => m.images ?? [];
   return (
     <Switch>
+      <Match when={it.kind === "tour" && it}>
+        {t => <Show when={props.tour} fallback={<p class="text-muted">This tour isn't available in this view.</p>}>{host => <TourAttachment handle={t().handle} title={t().title} summary={t().summary} steps={t().steps} host={host()} />}</Show>}
+      </Match>
       <Match when={it.kind === "message" && it}>
         {(m) => (
           <article class="share-msg" classList={{ "share-msg-own": m().by === "you" }} aria-label={`${m().by === "you" ? "You" : m().name}`}>

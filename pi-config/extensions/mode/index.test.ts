@@ -306,6 +306,53 @@ test("vis_guide: the shared rules then the kind's file, for the listed kinds onl
 	for (const bad of ["mermaid", "overview", "shared", "html-svg", ""]) assert.throws(() => visGuide(bad), /No vis kind/);
 });
 
+test("vis_guide: tour returns the core alone, and each named part returns its own file alone", () => {
+	const file = (name: string) => stripVisComments(readFileSync(new URL(`./vis/${name}.md`, import.meta.url), "utf8"));
+	const core = visGuide("tour");
+	assert.equal(core, file("tour"), "the core is tour.md, owner notes stripped, no shared fence rules");
+	assert.doesNotMatch(core, /^# vis: rules for every kind/m);
+	const parts = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"];
+	for (const part of parts) {
+		const text = visGuide(part);
+		assert.equal(text, file(part), part);
+		assert.match(text, new RegExp(`^# ${part}: `), `${part} opens with its own heading`);
+		assert.doesNotMatch(text, /<!--/);
+		assert.ok(core.includes(`\`${part}\``), `the core names ${part}`);
+	}
+	// Parts are lookups, never catalogue kinds: the kind list stays as it was, and only the tour line names them.
+	for (const part of parts) assert.ok(!VIS_KINDS.includes(part) && !Object.hasOwn(VIS_KIND_FILES, part), part);
+	const tourLine = VIS_INSTRUCTIONS.split("\n").find((line) => line.startsWith("- tour: "))!;
+	for (const part of parts) assert.ok(tourLine.includes(`\`${part}\``), `the catalogue's tour line names ${part}`);
+	for (const word of ["signin", "sites", "sova", "sharing", "tour-other"]) assert.throws(() => visGuide(word), /No vis kind/, word);
+	// The core stays short enough for a cheap model to carry: about 3,000 tokens at ~4.44 chars per token.
+	assert.ok(core.length <= 13_500, `the core is ${core.length} chars`);
+});
+
+test("vis_guide: the tour core opens hands-off, looks before it rehearses, and names when to read each part", () => {
+	const core = visGuide("tour");
+	const at = (needle: string) => { const i = core.indexOf(needle); assert.ok(i >= 0, `the core says ${needle}`); return i; };
+	// The hands-off rule comes first: never change the app, never sign in outside the recorder, never read Sova's records; ask instead.
+	const handsOff = at("## Hands off");
+	const section = core.slice(handsOff, core.indexOf("\n## ", handsOff + 1));
+	assert.match(section, /Never change the app you tour, its data or its settings/);
+	assert.match(section, /Never sign in to the app outside the recorder/);
+	assert.match(section, /Never read Sova's own records/);
+	assert.match(section, /\.pi\/agent\/sova/, "names the live server's state folder, not only a test tree's");
+	assert.match(section, /ask the user/);
+	assert.ok(handsOff < at("## Rules behind most failures"), "hands-off is at the top, before the failure rules");
+	// `look` comes before the first rehearsal: before the first dry-run call, and as the workflow's first step.
+	const look = at('op:"look"');
+	assert.ok(handsOff < look, "hands-off before exploring");
+	assert.ok(look < at('op:"dry-run"'), "look before the first dry run");
+	assert.ok(at("**Look:**") < at("**Dry run:**"), "the workflow's first step is the look");
+	// The ordinary case reads no part: each pointer says when, and each part opens with "only when".
+	for (const part of ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"]) {
+		assert.match(core, new RegExp(`\`${part}\` only (when|for)`), `the core says when to read ${part}`);
+		assert.match(visGuide(part), /^Read this only when /m, `${part} says when to read it`);
+	}
+	assert.ok(core.length <= 13_500, `the core is ${core.length} chars, over its cap`);
+});
+
 test("spec: a registered minor mode, composed after align and never bridged", () => {
 	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "codemode", "memory"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
@@ -473,7 +520,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
 	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
-	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\./, "the claim comes before the code");
+	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\. When the task's go-ahead already agrees to it, run `agree` on it then, before that edit, not at the end\./, "the claim, and its agreement, come before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
@@ -504,9 +551,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
 	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
-	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
+	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	assert.ok(spec.split(/\s+/).length <= 868, "short enough to ride every turn: growing it is a deliberate change");
+	assert.ok(spec.split(/\s+/).length <= 906, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
@@ -546,13 +593,13 @@ test("spec: the guide's doc-only cases are the draft tool's: each one it names i
 		// The refusal for a built behavior states the tool's whole doc-only rule: its kinds, agreed kinds and field keys.
 		const refused = docOnly("§g.doc/built");
 		assert.equal(refused.status, 1, "a built behavior's prose change is not doc-only");
-		const rule = JSON.stringify(refused.out).match(/--doc-only covers only ([a-z/]+) kinds, agreed ([a-z/]+) records with no code, and ([a-z/]+)-only changes, not /);
+		const rule = JSON.stringify(refused.out).match(/--doc-only covers only ([a-z/]+) kinds, agreed ([a-z/]+) records with no code, and ([A-Za-z/]+)-only changes, not /);
 		assert.ok(rule, "the tool's doc-only rule has the three parts the guide names: if it gains a part, revisit the guide");
 		const [, kinds, agreedKinds, fields] = rule;
 		assert.deepEqual(agreedKinds!.split("/").sort(), ["behavior", "surface"], "agreed records: behaviors and surfaces");
 		// Each case the guide names is one the tool accepts, driven on its own record.
 		const cases: Record<string, string> = { notes: "§g.doc/note", sections: "§g.doc/sec", "agreed records without code": "§g.doc/agreed" };
-		cases[`${fields!.split("/").sort((a, b) => ["embeds", "about", "core"].indexOf(a) - ["embeds", "about", "core"].indexOf(b)).map((f) => `\`${f}\``).join("/")}-only changes`] = "§g.doc/field";
+		cases[`${fields!.split("/").sort((a, b) => ["embeds", "about", "core", "notOwned"].indexOf(a) - ["embeds", "about", "core", "notOwned"].indexOf(b)).map((f) => `\`${f}\``).join("/")}-only changes`] = "§g.doc/field";
 		for (const kind of kinds!.split("/")) assert.ok(`${kind}s` in cases, `the tool's doc-only kind ${kind} has a case here`);
 		assert.deepEqual([...named].sort(), Object.keys(cases).sort(), "the guide names exactly the tool's doc-only cases");
 		for (const [label, id] of Object.entries(cases)) assert.equal(docOnly(id).status, 0, `the tool takes --doc-only for ${label} (${id})`);

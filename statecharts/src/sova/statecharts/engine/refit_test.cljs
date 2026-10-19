@@ -420,7 +420,7 @@
     (core/send! eng "kid/ana" :kid/touch {} {:now (+ t0 2 day)})
     (is (= 1 (:touched (core/data eng "kid/ana"))) "an event to a cold session loads it first")))
 
-;; ---- r8a feed class, r7 hours waits, q12 confirm-required holds and approve-early --------------------
+;; ---- r8a feed class, r7 hours waits, no approval wait (al_3 q2), approve-early ---------------------------
 
 (deftest every-step-has-a-feed-class
   (let [eng (parent (new-eng))]
@@ -466,42 +466,34 @@
       (core/send! eng "par" :message/send {:by "overseer" :attended true :window (+ t0 7200000)} {:now (+ t0 4)})
       (is (= 4 (count (:messages (core/data eng "par"))))))))
 
-(deftest a-confirm-required-hold-waits-past-its-end-until-approved
+(deftest no-hold-waits-past-its-end-for-an-approval
+  ;; al_3 q2: the confirmation checklist is gone; an envelope's old :confirm-kinds is ignored
   (let [eng (parent (new-eng))
         env (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"])]
     (let [r (core/send! eng "par" :gather/start (assoc env :to "a") {:now t0})
           h (:held (first (:steps r)))]
-      (is (true? (:confirm h)))
+      (is (nil? (:confirm h)))
       (is (= [:gather/start :hold/held] (map :event (:steps r))) "r8: the session hears it was held, in the same call")
       (is (= [{:id "gather/start#0" :event :gather/start :kind "gather/start" :what "Gathering with a" :until (+ t0 1000)
-               :project-id "p1" :confirm true :by "system"}]
+               :project-id "p1" :by "system"}]
             (map #(dissoc % :at) (:held (core/data eng "par"))))))
     (let [r (core/fire-due! eng (+ t0 1000))]
-      (is (= [:hold/waiting] (map :event (:steps r))) "at its end it waits")
-      (is (= [{:id "gather/start#0" :event :gather/start :kind "gather/start" :what "Gathering with a" :project-id "p1" :by "system"}]
-            (map #(dissoc % :at) (:waiting (core/data eng "par")))) "with the hold's project (an org-level statechart routes its review by it)")
-      (is (in? eng "par" :idle))
-      (is (= [true] (map :waiting (core/holds eng))) "still listed, waiting (stall clock from :until)"))
-    (is (empty? (:steps (core/fire-due! eng (+ t0 99999)))) "nothing more happens by itself")
-    (is (= "A correction needs a reason: say why."
-          (:sentence (:refused (first (:steps (core/send! eng "par" :hold/approve {:by "overseer" :level "L0" :id "gather/start#0"} {:now (+ t0 100000)})))))))
-    (let [r (core/send! eng "par" :hold/approve {:by "overseer" :level "L0" :id "gather/start#0" :reason "looks right"} {:now (+ t0 100000)})]
-      (is (= [:hold/approve :gather/start :hold/released] (map :event (:steps r))))
+      (is (= [:gather/start :hold/released] (map :event (:steps r))) "at its end it goes ahead")
       (is (in? eng "par" :gathering))
       (is (empty? (core/holds eng))))))
 
-(deftest only-listed-kinds-wait-and-the-switch-turns-waiting-off
-  (testing "a kind not in the confirm list goes ahead at its end"
-    (let [eng (parent (new-eng))]
-      (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :confirm-kinds ["promote"]) {:now t0})
-      (core/fire-due! eng (+ t0 1000))
-      (is (in? eng "par" :gathering))))
-  (testing "switch off: a confirm-required hold goes ahead at its end"
-    (with-redefs [policy/unreviewed-holds-wait? false]
-      (let [eng (parent (new-eng))]
-        (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"]) {:now t0})
-        (core/fire-due! eng (+ t0 1000))
-        (is (in? eng "par" :gathering))))))
+(deftest a-hold-saved-waiting-for-a-review-goes-ahead-at-resume
+  ;; a snapshot from before al_3 q2: its hold's timer fired and it waits (:waiting true); resume releases it
+  (let [eng (parent (new-eng))]
+    (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :to "a") {:now t0})
+    (let [text (-> (core/dump eng "par") (str/replace-first ":since" ":waiting true :confirm true :since"))
+          eng2 (new-eng)]
+      (core/load! eng2 "par" text)
+      (is (= [true] (map :waiting (core/holds eng2))))
+      (let [r (core/resume! eng2 ["par"] {:now (+ t0 5000)})]
+        (is (some #{:hold/released} (map :event (:steps r))) "released through every guard, as at its end")
+        (is (in? eng2 "par" :gathering))
+        (is (empty? (core/holds eng2)))))))
 
 (deftest approve-early-releases-a-hold-now
   (let [eng (parent (new-eng))]
@@ -513,8 +505,7 @@
 
 (deftest the-switches-are-as-decided
   (is (true? policy/overseer-unattended-held?) "r4/r6, decided (q11)")
-  (is (false? policy/operator-acts-wait-for-hours?) "r7, decided (q13)")
-  (is (true? policy/unreviewed-holds-wait?) "q12"))
+  (is (false? policy/operator-acts-wait-for-hours?) "r7, decided (q13)"))
 
 ;; ---- eng3 survivors: R04, R17, R12 ------------------------------------------------------------------
 
@@ -529,16 +520,14 @@
     (core/fire-due! eng window)
     (is (= 1 (count (:messages (core/data eng "par")))))))
 
-(deftest a-waiting-hold-keeps-its-session-warm
+(deftest a-pending-hold-keeps-its-session-warm
   (let [statecharts (assoc-in rp/statecharts ["refit-parent" :cold?] (fn [c _] (contains? c :idle)))
         eng    (core/new-engine statecharts {:level-check rp/level-check})
         day    core/cold-after-ms]
     (core/start! eng "par" "refit-parent" {} t0)
-    (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"]) {:now t0})
-    (core/fire-due! eng (+ t0 1000))
-    (is (= [true] (map :waiting (core/holds eng))))
-    (is (nil? (core/next-due-at eng)) "no timer left: only the hold itself pends")
-    (is (= [] (core/cold-sessions eng (+ t0 1000 day day))) "R17: a pending hold keeps it warm")
+    (core/send! eng "par" :gather/start (assoc unattended :hold-ms (* 3 day)) {:now t0})
+    (is (= 1 (count (core/holds eng))))
+    (is (= [] (core/cold-sessions eng (+ t0 day 1000))) "R17: a pending hold keeps it warm")
     (core/send! eng "par" :hold/cancel {:by "operator" :id "gather/start#0"} {:now (+ t0 2000)})
     (is (= ["par"] (core/cold-sessions eng (+ t0 2000 day day))))))
 
@@ -590,18 +579,6 @@
       (is (= {:statechart "refit-parent" :configuration [:top :gathering] :running true}
             (select-keys p [:statechart :configuration :running])))
       (is (= 1 (:gathers (:data p)))))))
-
-(deftest a-confirm-kind-may-be-a-fn-of-the-act
-  (let [statecharts (assoc-in rp/statecharts ["refit-parent" :acts :gather/start :confirm-kind]
-                 (fn [d] (if (<= 2 (count (:to (dsl/evt d)))) "offer" "gather")))
-        eng    (core/new-engine statecharts {:level-check rp/level-check})
-        env    (assoc unattended :hold-ms 1000 :confirm-kinds ["offer"])]
-    (core/start! eng "par" "refit-parent" {} t0)
-    (is (true? (:confirm (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to ["a" "b"]) {:now t0}))))))
-      "two targets: an offer, which the list names")
-    (core/send! eng "par" :hold/cancel {:by "operator" :id "gather/start#0"} {:now t0})
-    (is (nil? (:confirm (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to ["a"]) {:now (+ t0 1)}))))))
-      "one target: a gather, which it doesn't")))
 
 (deftest a-watcher-that-exists-nowhere-is-dropped-not-thrown
   (let [store (atom {})

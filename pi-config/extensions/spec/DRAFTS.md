@@ -10,7 +10,7 @@ Like the other tools here, it needs only the Node standard library.
 - Promotion requires recorded evidence for each selected `§` ID: of its implementation and
   verification, or doc-only evidence that records a decision, not a build. Doc-only evidence covers
   three cases: a note or section; an agreed record not built yet; and a change to a behavior or
-  surface record's `embeds` or `core` field alone, unless it is agreed and maps code ("Field-only
+  surface record's `embeds`, `core` or `notOwned` field alone, unless it is agreed and maps code ("Field-only
   changes"; `about` belongs on notes).
 
 ```sh
@@ -21,7 +21,7 @@ node $d diff NAME [--against base|current]              --root DIR [--json]
 node $d check NAME [--base REV] [--all]                 --root DIR [--json]
 node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
         (--commit REV | --snapshot | --doc-only) [--path P]… [--log FILE] [--write]   --root DIR [--json]
-node $d agree NAME --id '§x' [--id …] --by WHO --verification TEXT [--at ISO] [--write]   --root DIR [--json]
+node $d agree NAME --id '§x' [--id …] --by WHO --verification TEXT [--source REF] [--at ISO] [--write]   --root DIR [--json]
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
 node $d recover [--write]                               --root DIR [--json]
 node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
@@ -145,6 +145,11 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
 | `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). `agree` refuses the same `agreed-rewritten` cases before it stamps, and refuses (`agree-refused`) an ID the draft has no prose for, or one that is a note or section. |
+| `agree-unsourced` / `agreed-unsourced` | `agree` got no `--source` and `SPEC_AGREE_SOURCE` is unset or blank, so it stamped nothing (exit 1); or a promotion gives a record a new or replaced `agreed` with no `source` (a hand-written stamp). Get the reference to the person's go-ahead from whoever holds it; a worker without one reports the records ready to agree. An `agreed` current already has, kept as it is, needs no source. A hand-written `source` that is a description, not a reference, is refused the same way. |
+| `agree-source-mismatch` | `SPEC_AGREE_SOURCE` is set and `--source` names something else (exit 1, nothing stamped). Omit `--source`: `agree` uses the variable, the go-ahead the runtime recorded. |
+| `agree-source-not-reference` | The source (`--source`, or the variable) is a description, not a reference: a scheme, a colon and a locator with no spaces, such as `pi-session:<session id>#<entry id>` (both ids), a URL or `chat:c1#m3` (exit 1, nothing stamped). Pass the reference, or omit `--source` when the variable is set. |
+| `agree-source-unresolved` / `agreed-source-unresolved` | A `pi-session:<session id>#<entry id>` source doesn't resolve: no session file under `$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`) is named `…_<session id>.jsonl` or carries that id in its header, or the entry isn't there, or it isn't a `message` by the `user` (exit 1, nothing stamped; at promotion, a hand-written stamp). Pass the reference of the user message that holds the go-ahead, or report the records ready to agree. Only `pi-session:` is resolved: any other scheme (a URL, `chat:…`) is checked for its form alone, for projects whose go-ahead lives outside pi. |
+| `agree-source-not-given` | The process is a worker (its runtime set `SPEC_AGREE_GIVEN`) that was given no reference, and `--source` names one (exit 1, nothing stamped). A worker can't name the go-ahead itself: report the records ready to agree. |
 | `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
@@ -194,20 +199,28 @@ ID the draft changed in a merged file is selected (`selection-incomplete` otherw
 ### Agreed, not built
 
 A requirements chat can end with its promises in current before any code exists. Put
-`"agreed": {"by": "<who agreed>", "at": "<ISO date>"}` on each behavior or surface record the person
-agreed to (`at` may carry a time: `2026-10-05T14:30Z`), with `authority: "accepted"` and no `code`.
+`"agreed": {"by": "<who agreed>", "at": "<ISO date>", "source": "<where the go-ahead is>"}` on each behavior or
+surface record the person agreed to (`at` may carry a time: `2026-10-05T14:30Z`), with `authority: "accepted"` and no
+`code`. `source` is an opaque reference no tool resolves (a transcript and message id, a review comment's address, a
+meeting note), 1-200 characters on one line; promotion refuses a new `agreed` without it (`agreed-unsourced`).
 Then `evidence --doc-only` (the `--verification` text says where it was agreed) and promote. That
 records the decision, not that it was built.
 
-`agree NAME --id '§x'… --by WHO --verification TEXT [--write]` does all of that in one call, once
-the draft has the promise's prose. On each named behavior or surface it sets `agreed: {by, at}` (`at`
-is now, in UTC to the minute, unless `--at` gives an ISO date or time) and `authority: "accepted"`;
+`agree NAME --id '§x'… --by WHO --verification TEXT [--source REF] [--write]` does all of that in one call, once
+the draft has the promise's prose. On each named behavior or surface it sets `agreed: {by, at, source}` (`at`
+is now, in UTC to the minute, unless `--at` gives an ISO date or time; `source` is the environment variable
+`SPEC_AGREE_SOURCE`, which the agent's runtime sets to the message holding the person's go-ahead, else
+`--source`; with neither it refuses, `agree-unsourced`, and stamps nothing; while the variable is set, a
+different `--source` is refused, `agree-source-mismatch`; a source is a reference, never a description,
+else `agree-source-not-reference`; a `pi-session:` reference must resolve to a user message in pi's session
+files, else `agree-source-unresolved`, while other schemes are checked for their form only; a worker given no
+reference refuses any `--source`, `agree-source-not-given`) and `authority: "accepted"`;
 a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
 one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
 with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it
 doesn't is in PROMOTE.md ("Agreed, promoted by `agree`"). A record that maps code is only stamped:
 its build records commit or snapshot evidence. An `agreed` this draft already gave, by the same
-person, is kept, so running it again changes nothing. Without `--write` it previews. With the align
+person from the same source, is kept, so running it again changes nothing. Without `--write` it previews. With the align
 minor mode on too, the align tool's result for the go-ahead (status implementing) tells the agent
 to do exactly this before building.
 
@@ -227,15 +240,15 @@ to do exactly this before building.
   note to its output (`notes: [{code: "agreed-kept-on-change", id, agreed, removed, added,
   message}]`), never a refusal. Read it: if the meaning changed, stamp the go-ahead that changed it
   with `agree`; a rewording keeps `agreed` and needs nothing.
-- **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a
-  behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
+- **Shape.** `agreed` must be an object with a non-empty `by`, a real date `at` and, optionally, a
+  `source` (1-200 characters, one line), and no other key, on a behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
 - It is a record field, not a label value: the core ignores record fields it doesn't know, while an
   unknown `authority` or `evidence` value makes it refuse the manifest (exit 2), so cores that
   predate `agreed` still load a manifest carrying it.
 
 ### Field-only changes
 
-A change that only adds, changes or removes a behavior or surface record's `embeds` or `core` field
+A change that only adds, changes or removes a behavior or surface record's `embeds`, `core` or `notOwned` field
 rewires what a reader is handed, not what the code does, so it may take `evidence --doc-only`.
 `about` belongs on notes (`check` warns when it sits elsewhere), and a note's `about` change takes
 `--doc-only` as any note change does; a misplaced `about` on a behavior or surface counts like the
@@ -246,7 +259,8 @@ record or a deletion is not field-only.
 
 - **What `--verification` says.** What was read to decide the field: for an embed, both passages and
   the code that renders the embedded surface inside the embedding one; for `about`, the note and its
-  target; for `core`, the passage and why every task needs it. The tool checks only that the text
+  target; for `core`, the passage and why every task needs it; for `notOwned`, the area, each owner
+  and the code that puts each thing there. The tool checks only that the text
   is not empty (every `--verification` must have text), never what it says.
 - **Bundled changes.** A field change together with any other change to the same record is refused
   for `--doc-only` as `doc-only-bundled`, naming what else changed (`prose`, `the code list`, `the
@@ -350,8 +364,12 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
 promotion does, with the merge base, ours and theirs as base, current and draft, so two branches
 that changed different declarations (or added H2s at one spot) merge into the bytes the two
 promotions give one after the other, in either order. It reads declarations from the file's own
-H1/H2 headings and loads no graph. When the same declaration or gap changed differently on both
-sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
+H1/H2 headings and loads no graph. A declaration both sides changed differently merges block by
+block (a list item with its wrapped lines, a nested item, a table row, a line of a fenced block, a
+paragraph, a blank line): different blocks merge, neighbours included, and both sides' changes
+stand. When both sides changed the same block, added blocks at the same place, or one added a block
+directly before one the other changed, it writes that declaration with Git's markers around the
+whole blocks and exits 1. When a gap changed differently on both sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
 declarations), or the result doesn't read back as the declarations it came from, it writes Git's
 own line merge (`git merge-file`), markers and all, so no side's prose is lost, and exits 1
 (`claims-conflict`), which Git reports as a conflict, settled by the one recovery in PROMOTE.md.
@@ -369,9 +387,10 @@ Without `--write` it only reports. It writes nothing but the `--ours` file.
 - **No semantic verification.** The tool checks commits, ancestry, bytes and graph structure.
   Whether the code implements the prose is the recorder's claim. So is what `--verification`
   says. A hand-edited evidence entry is still held to the same byte and revision checks.
-- **Conflicts are per declaration, not per line.** Two different edits to one declaration conflict,
-  even when they touch different sentences. The tool doesn't rebase or merge text inside a span, and
-  falls back to whole-file comparison for reordered or CRLF files.
+- **Promotion conflicts are per declaration, not per line.** Two different edits to one declaration
+  conflict in a promotion, even when they touch different sentences: promotion doesn't merge text
+  inside a span, and falls back to whole-file comparison for reordered or CRLF files. Only the Git
+  merge driver merges inside a declaration, by blocks.
 - **The `claimsRoot` can't move** in a draft, and the tool refuses one that differs between base,
   current and draft.
 - **Promotion rewrites `manifest.json` as JSON with 2-space indentation** whenever a record or

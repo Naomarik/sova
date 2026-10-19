@@ -12,6 +12,7 @@ import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-exe
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
 import { sovaToken } from "./auth";
+import { callerKeys as serverCallerKeys, type CallerKeys } from "./caller-keys";
 import {
   acquireChatHandle,
   assertOpenConfig,
@@ -131,6 +132,8 @@ export interface RouterDeps {
   bootWaitMs?: number;
   openWaitMs?: number;
   slowStartMs?: number;
+  /** Each chat process's key (§app.command-audit/keys); default the server's own. */
+  callerKeys?: CallerKeys;
 }
 
 export class ChatHostRouter {
@@ -166,6 +169,7 @@ export class ChatHostRouter {
   private readonly bootWaitMs: number;
   private readonly openWaitMs: number;
   private readonly slowStartMs: number;
+  private readonly callerKeys: CallerKeys;
   /** Unused code generations collected (after the take-back, hourly, after a run of reloads). */
   private gc: { collect: () => Promise<void>; stop: () => void } | null = null;
 
@@ -183,6 +187,9 @@ export class ChatHostRouter {
     this.openWaitMs = deps.openWaitMs ?? OPEN_WAIT_MS;
     this.slowStartMs = deps.slowStartMs ?? SLOW_START_MS;
     this.resumeCrashed = deps.resumeCrashed ?? resumeCrashedChat;
+    this.callerKeys = deps.callerKeys ?? serverCallerKeys;
+    // A key names its chat only while the supervisor tracks that chat on that unit: every end of a process untracks it.
+    this.callerKeys.setLiveness((chatId, unit) => this.sup.list().some((r) => r.chatId === chatId && r.unit === unit));
     // Every process starts on the generation's copy, the checkout when there is none: a new chat, a
     // reopen, a reload's replacement, a worker. One already running keeps its own.
     const currentCode = deps.gen?.dir ?? REPO;
@@ -213,6 +220,8 @@ export class ChatHostRouter {
             SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
+            // After the worker spec's env: a loadout never chooses its key.
+            SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },
         }),
         build: id,
@@ -488,6 +497,13 @@ export class ChatHostRouter {
         // surviving chat, and so not its copy.
         found(new Map());
         this.sup.watch(2_000);
+        // The keys of chats this start did not take back, only after a whole take-back (a failed one may not know a survivor).
+        if (tookBack)
+          try {
+            this.callerKeys.prune();
+          } catch (err) {
+            log(`caller keys: the prune failed (${err instanceof Error ? err.message : String(err)})`);
+          }
         if (this.gen && tookBack) this.gc = startGenerationGc(() => this.buildsInUse());
         else if (this.gen) log("unused code is not collected this server life: the take-back failed");
       });
@@ -539,6 +555,10 @@ export class ChatHostRouter {
     const each = await Promise.race([this.takingBack, hang.then(() => null)]);
     const mine = each?.get(path);
     if (mine) await Promise.race([mine, hang]);
+  }
+  /** The take-back of this path's chat, if one of it was left running (bounded). */
+  settled(path: string): Promise<void> {
+    return this.takenBack(path);
   }
   get(path: string): ChatHandle | undefined {
     const h = this.remotes.get(path);
@@ -907,6 +927,11 @@ export function startChatHost(): void {
     },
     close: (path, message, opts) => (router ? router.close(path, message, opts) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
+    // The router itself first (as acquire), then that chat's take-back.
+    takenBack: async (path) => {
+      await Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
+      await router?.settled(path);
+    },
   });
 }
 

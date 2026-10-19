@@ -69,7 +69,8 @@ The rest are whole-chain views:
 - **`impact §id`** lists what `requires` or `embeds` it, directly or indirectly.
 - **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest; this one
   includes `server`, `shared`, `site` (its docs pages and what they are built from; the rest of the
-  site is excluded), `src` and `vite.config.ts`. **`census --changed [--base REV]`** checks only the
+  site is excluded), `src` and `vite.config.ts`; files Git ignores there (`site/node_modules`, `site/dist`)
+  are not counted. **`census --changed [--base REV]`** checks only the
   files your task changed: the ones that differ from `REV` (default `HEAD`), plus untracked files.
   Each changed file inside the boundary is either claimed (listed with its §IDs) or reported as
   `changed-unclaimed` (exit 1). Changed files outside the boundary are listed, not failed.
@@ -127,7 +128,7 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    exactly as ported: it records provenance, not verification. `evidence` says what you did:
    `reviewed` or `verified`.
 3. Record evidence. A behavior or surface needs at least one implementation file, unless it is
-   agreed and not built yet, or the change is to its `embeds` or `core` field alone and it is not an
+   agreed and not built yet, or the change is to its `embeds`, `core` or `notOwned` field alone and it is not an
    agreed record that maps code (both `--doc-only`, below), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
    record's `code`, which binds them to the evidence, or pass `--path`. This repo uses Git, so name an existing commit that holds the
    implementation, and never commit unrelated changes to get one:
@@ -140,7 +141,7 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
 
    Without Git, use `--snapshot`, which keeps the exact bytes. `--doc-only` covers `note` and
    `section` records, agreed behaviors or surfaces with no code (DRAFTS.md, "Agreed, not built"), and
-   a change to an existing behavior's or surface's `embeds` or `core` field alone, unless the record is
+   a change to an existing behavior's or surface's `embeds`, `core` or `notOwned` field alone, unless the record is
    agreed and maps code: that is refused (`doc-only-refused`) and needs `--commit` or `--snapshot`
    (DRAFTS.md, "Field-only changes"). `about` belongs on notes, which take `--doc-only` anyway.
 4. Promote. The preview prints a plan hash, and `--write` applies exactly that plan:
@@ -170,8 +171,9 @@ git config merge.sova-spec-claims.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-Without them, Git falls back to its line merge. Both sides changing the same record or the same
-declaration still conflict; `merge-claims` then leaves Git's conflict markers, with both sides' prose.
+Without them, Git falls back to its line merge. Both sides changing the same record, or the same
+block of one declaration (a list item, a table row, a paragraph), still conflict; `merge-claims`
+then leaves Git's conflict markers, with both sides' prose.
 
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 

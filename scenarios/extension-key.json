@@ -1,0 +1,15 @@
+{
+  "name": "extension-key",
+  "about": "An installed extension's backend calls Sova with its own key: the key appears in the extension's key file, opens Sova's commands and lists the extension's own, every call it makes is recorded as the extension's, and uninstalling the extension refuses the key at once.",
+  "steps": [
+    { "name": "install an extension", "write": "sova/extensions.json", "json": { "version": 1, "extensions": [ { "id": "x", "dist": "{{work}}", "api": "http://127.0.0.1:9", "commands": [ { "name": "ping", "label": "Ping" } ] } ] } },
+    { "name": "its key appears for the backend", "read": "sova/extension-keys/x-2d711642.key", "save": "key" },
+    { "name": "the key lists Sova's commands and the extension's own", "sova": ["list", "--json"], "env": { "SOVA_TOKEN": "{{key}}" }, "json": { "$all": [ { "$some": { "id": "ext.x.ping" } }, { "$some": { "id": "session.list" } } ] } },
+    { "name": "the key runs a Sova command", "sova": ["run", "session.list"], "env": { "SOVA_TOKEN": "{{key}}" } },
+    { "name": "the record names the extension", "sova": ["run", "audit.list", "--caller", "ext:x"], "env": { "SOVA_TOKEN": "{{key}}" }, "until": { "rows": { "$some": { "caller": "ext:x", "command": "session.list", "status": 200 } } } },
+    { "name": "a wrong key is refused", "sova": ["run", "session.list"], "env": { "SOVA_TOKEN": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, "exit": 2 },
+    { "name": "uninstall it", "write": "sova/extensions.json", "json": { "version": 1, "extensions": [] } },
+    { "name": "its key is refused at once", "sova": ["run", "session.list"], "env": { "SOVA_TOKEN": "{{key}}" }, "exit": 2 },
+    { "name": "and its actions are gone from the list", "sova": ["list", "--json"], "json": { "$none": { "id": "ext.x.ping" } } }
+  ]
+}

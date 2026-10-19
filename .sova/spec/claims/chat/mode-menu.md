@@ -140,17 +140,26 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   shows them after the minor modes and before Subagents, in their own group labelled "This
   project · {name}" (the checkout's name; "This project" when there is none), one
   `menuitemcheckbox` row each with the id (mono) and the mode file's description, in the same
-  roving focus, with no gear. The trigger names the project modes that are on after the built-in
+  roving focus, with no gear, except that a mode that is on and whose hooks wait for your approval
+  (the Overseer turned it on, §chat.mode-menu/project-mode-hooks) has an **Approve Hooks** chevron
+  beside its row, which opens the approval panel for its hooks only: Back, "Approve {id}'s hooks?",
+  why only you can, one card per hook with when it runs and its command line, and **Approve Hooks**
+  and **Cancel**; it switches nothing. The trigger names the project modes that are on after the built-in
   ones ("delegate · spec · deploy-notes"). The rows are read from the checkout each time the menu
   opens and after each switch; a menu already open doesn't follow a change to the files until it is
   opened again. Under the description a row says its state in words,
   never by tint alone (copy in §design.copy-deck/mode-menu): broken (off, `aria-disabled`, can't be
   turned on), removed from the project (on; turning it off removes the row), changed since turned
   on, its files broken now while it is on, asks before turning on (it has tools not approved), or
-  its tools changed since approval (on, its tools won't run). Turning on a mode that asks opens the
+  its tools changed since approval (on, its tools won't run), its hooks need your approval (on,
+  the Overseer's approval doesn't cover them), or its hooks are paused (on, a hook ran 10 times in 10
+  minutes). Turning on a mode that asks opens the
   **approval panel** in the same popover, like the Memory type panel: Back, "Turn on {id}?", what it
-  lets the model do, one card per tool with its name, description and command line, where it runs
-  from, that the approval covers its tools and every file in the folder, which bare programs (`node`,
+  lets the model do (and, for a mode with commands or hooks, what you and scripts can run and what
+  runs after things happen in the chat), one card per tool with its name, description and command
+  line, one per command with its `mode.{id}.{name}` id, description and command line, and one per
+  hook with when it runs and its command line, where it runs
+  from, that the approval covers its tools (or what it runs) and every file in the folder, which bare programs (`node`,
   `python3`, `sh`) are the machine's own and not covered, and **Approve and Turn On** and **Cancel**. Turning a mode off never asks. A chat with no
   project modes has no such group.
 - **`Save as default`** is the menu's one write of the default. Pressing it makes **this chat's**
@@ -216,7 +225,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
 TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
-The chat then:
+A switch of a project's coding session whose minor modes leave `spec` out is refused before
+anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
+§app.project-overseer/coding-mode). The chat then:
 
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
   so it leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode
@@ -322,7 +333,7 @@ active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `
 unless align with the chat's Visuals still wants them, §chat.alignment/visuals; `align` its `align`
 tool, and with Visuals on the vis tools too; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
 system prompt stays as it was (none of them adds a line to it). That is one tool-set change per
-toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild.
+toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild. In an ordinary Sova chat, vis also adds or removes `record_tour` and `show_tour` (§app.tours/authoring): these two require vis itself, so align's Visuals alone never keeps them active. A hand-off's baseline scoped presentation is separate from this ordinary-chat loadout.
 `codemode` has no block, so no note tells the model about it either: its tool is the whole switch.
 A project mode with tools adds or removes them the same way, one tool-set change per toggle, and
 its block still reaches the model as a note, never by rewriting the prompt.
@@ -476,8 +487,9 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   name: `^[a-z][a-z0-9-]*$`, at most 30 characters. `MODE.md` opens with a `---` fence of
   `key: value` lines like a playbook's (§chat.playbooks/where-playbooks-come-from: not YAML), read
   strictly: only `description` (required, one line, shown in the menu), `workers: yes|no` (default
-  `no`) and `tools` (a JSON array; indented lines continue a value). Any other key, a repeated key,
-  a bad tool or an empty body makes the mode broken, so there is no key that turns a mode on. The
+  `no`), `tools`, `commands` and `hooks` (each a JSON array; indented lines continue a value;
+  §chat.mode-menu/project-mode-commands, §chat.mode-menu/project-mode-hooks). Any other key, a
+  repeated key, a bad tool, command or hook or an empty body makes the mode broken, so there is no key that turns a mode on. The
   text after the fence is the mode's instructions: the block the model gets while the mode is on,
   under the heading `# Project minor mode: <id>` and a `Folder:` line with the folder's absolute
   path, against which every relative path in the mode resolves, so the instructions can point at the
@@ -526,13 +538,16 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   nothing. While the chat's sandbox is On
   (§chat.sandbox/states), a project tool call runs nothing either: it is refused, telling the model
   to ask the user to turn the sandbox off, since the sandbox confines only the chat's own tools. Sova loads no code from the project into the chat itself: a tool is a program it runs.
-- **Approval.** A mode with tools needs the user's approval before it is first turned on, and
-  again whenever its tools or its folder change: the declared tools, or any file in the mode's
+- **Approval.** A mode with tools, commands or hooks needs the user's approval before it is first
+  turned on, and again whenever what it runs or its folder changes: the declared tools, commands and
+  hooks, or any file in the mode's
   folder, at any depth, hidden files included (a symlink counts as the path it points to), except
   `MODE.md` itself. So a script that sources a helper beside it, or a program that imports a
   sibling, can't change under an approval. Editing the instructions in `MODE.md` alone never asks
-  again, and a mode without tools never needs approval. What you approve is what you saw: the
-  approval records a fingerprint of the declared tools and every file in the folder, and it is refused when the folder changed since the menu
+  again, and a mode without tools, commands or hooks never needs approval. A mode that declares
+  neither commands nor hooks keeps exactly the fingerprint it had before they existed, so no approval
+  given before is asked again. What you approve is what you saw: the
+  approval records a fingerprint of the declared tools, commands and hooks and every file in the folder, and it is refused when the folder changed since the menu
   showed them. Approvals are kept per user in Sova's state root, outside every repo, by checkout
   and mode, the last 8 approved fingerprints each, so switching a branch back to a version already
   approved doesn't ask again. Sova can't tell
@@ -544,8 +559,10 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
     are now, to check again.
   - In a terminal, `/mode` turns a mode with tools on only when that exact version of its tools is
     already approved; it never asks there (§chat.mode-menu/terminal).
-  - When the Overseer turns a mode on, that counts as the approval: nothing waits for you, and the
-    approval is recorded as if you had given it.
+  - When the Overseer turns a mode on, that counts as the approval of its tools and commands:
+    nothing waits for you, and the approval is recorded as the Overseer's. It never approves the
+    mode's hooks: they stay inactive until you approve them yourself
+    (§chat.mode-menu/project-mode-hooks).
   - If any file in the folder changes on disk after its approval while the mode is on, the next
     call of any of its tools runs nothing: it is refused, telling the model the mode's files changed
     and need re-approval, and the row says its tools changed since you approved them. Turning the mode off
@@ -566,6 +583,84 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   together.
 
 Not covered: nothing beyond the mode extension's own behavior is added for the plain pi TUI.
+
+## §chat.mode-menu/project-mode-commands — A project mode's commands
+
+A project mode may declare commands: programs of the mode that you, a script and that chat's agent
+can run by name while the mode is on in a chat, without asking the model.
+
+- **Declaring one.** `commands` in `MODE.md` is a JSON array of at most 16 commands, each with a
+  name (the tool-name rule: `^[a-z][a-z0-9]*(_[a-z0-9]+)*$`, at most 32 characters, unique among the
+  mode's commands), a description, its parameters (a JSON schema of an object; none by default),
+  `run` (an argv under exactly the rules of a tool's command, §chat.mode-menu/project-modes) and an
+  optional time limit (1–600 seconds, 60 by default). A bad one makes the mode broken. Its id is
+  `mode.<mode id>.<name>` (the `release` mode's `release_check` is `mode.release.release_check`).
+- **Running one.** `sova run mode.<id>.<name> --session <chat> [--<param> <value>]…` from a terminal
+  or a script, or the chat's agent from its own terminal the same way. It is `POST
+  /api/mode/command?path=<chat>` with `{ mode, name, args }` (the catalogue entry `chat.mode-command`).
+  It runs exactly as the mode's tools run: in the chat's folder, with the arguments as JSON on its
+  standard input (any JSON object, at most 1 MB: unlike a tool call's, they are not checked against
+  the declared parameters, so the program checks its own), `SOVA_MODE_ID`, `SOVA_MODE_DIR`, `SOVA_PROJECT_ROOT` and `SOVA_TOOL_NAME` (the
+  command's name) set, in a process group of its own killed whole at its time limit, with the
+  chat's own environment, which is the reach an approved tool has. The answer is its exit code, its
+  output and its errors, each cut at 256 KB with the cut marked; a program that ran answers even
+  when it failed. `sova list --session <chat>` lists the commands of that chat's modes that are on,
+  and Sova's record of who ran what names each run by its `mode.<id>.<name>` id.
+- **When it runs nothing.** It runs from the version of the mode the chat turned on, never from the
+  folder's `MODE.md`, and only while all of these hold, each checked at every run: the mode is on in
+  that chat; the chat isn't a worker (a worker is refused for being one, "this chat is a worker.",
+  whatever its own branch has on); its sandbox isn't On; that version is approved now (by you or
+  by the Overseer); and no file in the folder changed since. Otherwise it answers with a sentence
+  saying which, and runs nothing. A chat runs at most 4 of its mode commands at once: a fifth is
+  refused with a sentence to try again when one finishes. A chat open in a terminal (live) can't
+  run one through Sova, as it can't be switched.
+- **Who may call.** This machine's own door: a mesh peer needs the `full` grant for it, whatever it
+  may do with the chat otherwise (§mesh/peers).
+
+## §chat.mode-menu/project-mode-hooks — A project mode's hooks
+
+A project mode may declare hooks: programs of the mode that run after something happened in a
+chat that has the mode on. They report what already happened; they never block, delay, change or
+answer anything, and they never send a message into a chat.
+
+- **Declaring one.** `hooks` in `MODE.md` is a JSON array of at most 8 hooks, each `{ "on", "run" }`
+  and an optional time limit (1–600 seconds, 30 by default). `on` is `turn.started` (a reply
+  started) or `turn.ended` (a reply finished, however it ended: stopped and failed ones too); any
+  other value makes the mode broken. `run` is an argv under exactly the rules of a tool's command.
+  Events of the whole project (a session created, renamed, tagged or archived in the checkout) and
+  a chat's attention are not offered yet.
+- **When it runs.** Only on a turn that runs in that chat while Sova hosts it: never when the chat
+  opens, is restored, reloads onto new code or is resumed, and never in a worker or in the plain pi
+  terminal. It runs after the event, without making anything wait for it. It gets the event as JSON
+  on its standard input, `{ "event", "sessionId", "at", "mode" }`, and `SOVA_MODE_ID`,
+  `SOVA_MODE_DIR`, `SOVA_PROJECT_ROOT` and `SOVA_HOOK_EVENT`, in the chat's folder, in a process group
+  of its own killed whole at its time limit or when the chat closes.
+- **No credential in its environment, but not walled off.** A hook's environment holds only the
+  basics (`PATH`, `HOME`, `USER`, the locale, `TERM`, `TMPDIR`, …) and those four: none of the
+  chat's own variables and no Sova address, key or token, so a hook gets no Sova credential in its
+  environment. It is not walled off from Sova: like any program you run outside a sandbox, a hook
+  can still read Sova's operator token file from disk under `HOME`, and a program that sends that
+  token as Sova's cookie is taken for your own page, so it could approve hooks.
+- **Approval.** Hooks are part of what you approve (§chat.mode-menu/project-modes), and they need
+  your own approval: when the Overseer turned the mode on, its tools and commands work but its hooks
+  stay inactive, and the mode's row says "Hooks need your approval" with **Approve Hooks**, which
+  approves that exact version (refused, like a stale approval, when it changed since the row was
+  drawn). Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
+  the Overseer, by a chat's agent with its chat's key, by a script or extension sending Sova's token,
+  or through a mesh peer is refused. An approval those callers give when turning a mode on is kept
+  as theirs: its tools and commands run, its hooks wait for yours. Telling your page from a script is a heuristic (the
+  page sends Sova's token as its cookie, a script as a header): a program holding the token can
+  present it as the cookie, which is the token-on-disk limit above. Each run
+  checks, as a command does, that the chat isn't a worker (a worker's hook is skipped for being
+  one, whatever its own branch has on), that the mode is on with that version, the sandbox
+  isn't On, nothing in the folder changed, and that you approved that version.
+- **Bounded.** A hook never runs twice at once: an event while it runs leaves at most one more run
+  waiting. Each hook runs at most 10 times in any 10 minutes, per hook, in each chat (a mode's 8 hooks may
+  each run 10 times): past that its runs are skipped,
+  never saved for later, the mode's row says "Hooks paused: a hook ran 10 times in 10 minutes.",
+  and it runs again once the 10 minutes allow. A hook that fails, times out or is skipped writes one
+  line to the chat's log and nothing else: the chat, its transcript, the model and its queue never
+  see it.
 
 ## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
 

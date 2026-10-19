@@ -269,6 +269,9 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "session_send",
   "sova_create_session",
   "sova_navigate",
+  // Tours retain only a validated small card projection; full authoring input remains lazy.
+  "record_tour",
+  "show_tour",
 ]);
 
 /** The tool part of a tool-call or tool-result row (§chat.transcript/slim-rows). */
@@ -284,13 +287,13 @@ export interface ToolRowInfo {
   /** tool-result of a codemode script (§chat.transcript/codemode-card): its calls, failed and still running
       as recorded, for the folded line's "4 calls · 1 failed" before the card's content is fetched. */
   calls?: { total: number; failed: number; running: number };
-  /** EAGER_TOOLS only: the call's arguments as recorded. */
+  /** EAGER_TOOLS only: the call's arguments; tours keep only small validated references. */
   args?: unknown;
   /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */
   output?: string;
   /** EAGER_TOOLS only: the result's details. */
   details?: unknown;
-  /** The content is withheld: fetch it with GET /api/transcript/tool. Absent on EAGER_TOOLS rows. */
+  /** Full content is withheld: GET /api/transcript/tool. Tours may carry a small card alongside it. */
   lazy?: true;
   /** JSON size of the withheld content (the arguments, or the output and details). */
   bytes?: number;
@@ -316,6 +319,8 @@ export interface ToolContent {
     output: string;
     isError: boolean;
     details?: unknown;
+    /** Tour inspection images, fetched only on this authorized full-content endpoint. */
+    images?: string[];
     /** The entry's own `toolUseResult` (Claude Code's record of an edit), only when the message
         has no details object: the Changes viewer reads it in their place. The card never does. */
     toolUseResult?: unknown;
@@ -1827,8 +1832,39 @@ export interface ProjectMinorInfo {
   changed?: true;
   /** Has tools whose exact set (toolsHash) the user hasn't approved. */
   needsApproval?: true;
-  /** What an approval approves: the declared tools and every file in the mode's folder except MODE.md. Absent: no tools. */
+  /** What an approval approves: the declared tools, commands and hooks and every file in the mode's folder
+      except MODE.md. Absent: the mode runs nothing. */
   toolsHash?: string;
+  /** Its commands (`mode.<id>.<name>`, §chat.mode-menu/project-mode-commands); absent when it declares none. */
+  commands?: ProjectMinorTool[];
+  /** Its hooks (§chat.mode-menu/project-mode-hooks); absent when it declares none. */
+  hooks?: ProjectMinorHook[];
+  /** Approved, but not by you (the Overseer turned it on): its hooks stay inactive until you approve them. */
+  hooksNeedApproval?: true;
+  /** One of its hooks is over its run budget now ("Hooks paused: …"). */
+  hookNote?: string;
+}
+
+/** POST /api/mode/command's answer (§chat.mode-menu/project-mode-commands): how its program ended (it ran, whatever its exit code). */
+export interface ModeCommandResult {
+  id: string;
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  truncated: { stdout: boolean; stderr: boolean };
+  durationMs: number;
+  /** The same text a tool call gives the model. */
+  text: string;
+}
+
+export type ModeCommandOutcome = { ok: true; result: ModeCommandResult } | { ok: false; status: 400 | 404 | 409 | 429; error: string };
+
+/** One hook a project mode declares, as the approval shows it. */
+export interface ProjectMinorHook {
+  on: "turn.started" | "turn.ended";
+  command: string[];
 }
 
 /** A chat's project modes: in its `mode` message and ChatModeResult. Absent from older servers. */
@@ -1846,6 +1882,14 @@ export interface ProjectModeApproval {
   id: string;
   hash: string;
 }
+
+// POST /api/mode?path=… { approveHooks: ProjectModeApproval[] } -> ChatModeResult: your own approval of a mode's
+//                                  hooks (§chat.mode-menu/project-mode-hooks), for the version offered or on now;
+//                                  switches nothing. A stale hash → 409 ProjectModeApprovalNeeded. Refused (403)
+//                                  from the Overseer, a chat's own caller key and any mesh peer.
+// POST /api/mode/command?path=… { mode, name, args? } -> ModeCommandResult (§chat.mode-menu/project-mode-commands):
+//                                  runs a command of a mode on in that chat. 409 a sentence (off, sandbox, not
+//                                  approved, changed), 404 no such command, 429 four already running. Peers: `full`.
 
 /** 409 body of a turn-on that needs approval. */
 export interface ProjectModeApprovalNeeded {
@@ -2033,6 +2077,10 @@ export interface SandboxInfo {
   state?: "off" | "subagents" | "on";
   enforcement: "full" | "partial" | "unavailable" | "none";
   status: string;
+  /** The sandbox is turning on: the extension's provisional entry (isStarting, reason SANDBOX_STARTING in
+      pi-config/extensions/sandbox/state.ts). On with enforcement "unavailable", nothing enforced yet.
+      Absent otherwise and from older servers. */
+  starting?: true;
 }
 
 /** POST /api/sandbox?path=… with `{ state }` (or the older `{ on }`; both together must agree):
@@ -3329,6 +3377,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
@@ -3339,7 +3388,11 @@ export type AttentionKind =
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
-  | "team-stalled";   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  | "team-stalled"   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  // ---- project assistant (al_1) ----
+  | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
+  | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
+  | "owner-link-request"; // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
 
 export interface AttentionItem {
   /** Session id. */
@@ -3699,8 +3752,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down" | "owner-outage";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down", "owner-outage"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {
@@ -3769,7 +3822,9 @@ export interface PushPayload {
 }
 /** GET /api/extensions: one entry per valid manifest record (`<state root>/extensions.json`, or
     SOVA_EXTENSIONS_FILE), in manifest order. `status` is a 1.5 s GET `<api>/api/health` (2xx =
-    "ok"), cached 10 s per extension; `error` says why a "down" one is down. ext-contract-v1.2. */
+    "ok"), cached 10 s per extension; `error` says why a "down" one is down. `offers` is what the
+    manifest entry declares it adds to Sova (shared/extension-offers.ts validates and bounds it),
+    absent when it declares nothing valid and on a peer's listed-only entry. ext-contract-v1.15. */
 export interface ExtensionInfo {
   id: string; // [A-Za-z0-9._-]+; the UI is at /ext/<id>/, the app route is #/ext/<id>
   title: string;
@@ -3777,7 +3832,29 @@ export interface ExtensionInfo {
   icon?: string; // a Sova icon name (public/icons/<name>.svg)
   status: "ok" | "down";
   error?: string;
+  offers?: ExtensionOffers;
 }
+/** What an extension offers Sova (ext-contract-v1.15): only the keys it declared something valid
+    under, each non-empty. */
+export interface ExtensionOffers {
+  /** Its own actions, run as POST /ext/<id>/api/commands/<name> (§app.commands/extension-commands). */
+  commands?: ExtensionCommandInfo[];
+  /** The places on Sova's screens it adds to; Sova asks it for each through GET
+      /ext/<id>/api/screens/<place> (shared/extension-offers.ts SCREEN_PLACES). */
+  screens?: ScreenPlace[];
+}
+export interface ExtensionCommandInfo {
+  name: string; // [a-z0-9][a-z0-9-]{0,47}
+  label: string;
+  summary?: string;
+  /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
+      (src/lib/menu-place.ts). Absent: in no menu. */
+  menu?: "session";
+}
+/** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
+    delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
+    "card", the status line of an extension's home card (src/lib/card-place.ts). All ext-contract-v1.16. */
+export type ScreenPlace = "reply" | "row" | "card";
 
 // ---------------------------------------------------------------------------
 // Mesh: other Sova hosts on the tailnet (server/mesh/). The allowlist is `<state root>/peers.json`;

@@ -11,12 +11,19 @@ import { acquireChatHandle } from "../chat-handle";
 import { OrgError } from "../orgs";
 import { imageForToken, refreshShare, viewForToken } from "./hub";
 import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
-import { ownerAccess } from "../owner";
-import { ownerView } from "../owner-page";
+import { askForNewLink, noteOwnerUse, ownerAccess } from "../owner";
+import { attentionChanged } from "../attention-memo";
+import { ownerVersionOf, ownerView } from "../owner-page";
+import { openVersion } from "../owner-versions";
+import { AssistantRefusal, assistantView, sendOwnerMessage } from "../project-assistant";
+import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
+import { mountPublicTourRoutes } from "./tour-routes";
+import { mountBatonTourRoutes } from "../tours/bindings-routes";
 import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
 import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter } from "./rate-limit";
+import { OWNER_READS_PER_MINUTE, ownerReadTokenLimited } from "./tour-limits";
 import { ensureAssetsCurrent } from "./registry-push";
 import { shareDist } from "./share-dist";
 
@@ -58,11 +65,10 @@ export const imageTokenLimited = (token: string, now = Date.now()): boolean => i
 const IMAGE_CSP = "default-src 'none'; sandbox";
 
 /** Owner page reads per token per minute (a page re-reads every 60 s; this is the ceiling). */
-export const OWNER_GETS_PER_MINUTE = 120;
-const ownerGets = new RateLimiter(OWNER_GETS_PER_MINUTE);
+export const OWNER_GETS_PER_MINUTE = OWNER_READS_PER_MINUTE;
 
 /** Sliding one-minute window of Owner page reads per token; true when this one is over the limit. */
-export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerGets.limited(token, now);
+export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerReadTokenLimited(token, now);
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
@@ -362,6 +368,12 @@ export function createShareApp(): Hono {
     return c.body(readFileSync(index, "utf8"), 200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": PAGE_CSP });
   });
 
+  /** A dead or unknown owner link's answer (§app.owner-page/link): only turning off unused is named; no org or person, ever. */
+  const ownerDead = (c: import("hono").Context, access: ReturnType<typeof ownerAccess>) => {
+    if (access.ok || access.status === 404) return c.json(refusal("not-found", "This link doesn't open anything."), 404);
+    return c.json(access.why === "idle" ? { ...refusal("gone", "This link turned off after a week without use.", "expired"), ...(access.link?.askedAt ? { asked: true } : {}) } : refusal("gone", "This link is no longer active."), 410);
+  };
+
   const ownerRead = (what: (c: import("hono").Context) => { project?: string; conversation?: string }) => async (c: import("hono").Context) => {
     const token = c.req.param("token") ?? "";
     if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
@@ -370,9 +382,7 @@ export function createShareApp(): Hono {
     if (!access.ok) {
       const dead = access.link;
       if (access.status === 410 && dead) logVisit(token, "refused", () => recordRefused(ownerVisit(dead), ua));
-      // §app.owner-page/link: only an expiry is named; no org or person, ever.
-      if (access.status === 404) return c.json(refusal("not-found", "This link doesn't open anything."), 404);
-      return c.json(access.why === "expired" ? refusal("gone", "This link has expired.", "expired") : refusal("gone", "This link is no longer active."), 410);
+      return ownerDead(c, access);
     }
     let view;
     try {
@@ -383,8 +393,79 @@ export function createShareApp(): Hono {
       throw err;
     }
     logVisit(token, "open", () => noteShareVisit(recordOpen(ownerVisit(access.link), { tab: c.req.query("v"), userAgent: ua }), c.env));
+    // A person's read is a use: the link's 7 days start again (never a previewer's or a script's).
+    if (classify(ua).kind === "person") noteOwnerUse(access);
     return c.json(view);
   };
+  // The Project Assistant (§app.project-assistant/chat): its conversation as the owner reads it, and their messages.
+  app.get("/api/i/:token/assistant", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
+    return c.json(await assistantView(access.orgId));
+  });
+  app.post("/api/i/:token/assistant", async (c) => {
+    const token = c.req.param("token");
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
+    }
+    // Only { text }: no sender, nothing else. The sender IS the link's owner.
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text")) return c.json(refusal("bad-request", "Only { text } is accepted."), 400);
+    const text = (body as { text?: unknown }).text;
+    if (typeof text === "string" && text.trim().length > ASSISTANT_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${ASSISTANT_TEXT_MAX} characters.`), 413);
+    if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
+    noteOwnerUse(access);
+    try {
+      await sendOwnerMessage(access.orgId, text);
+    } catch (err) {
+      if (err instanceof AssistantRefusal) return c.json(refusal(err.code, err.message), err.status);
+      console.warn(`[share] assistant message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json(refusal("busy", "The Project Assistant can't take a message right now. Try again in a moment."), 503);
+    }
+    return c.json({ ok: true }, 202);
+  });
+
+  // A version to try (§app.project-assistant/versions): the link and the copy checked again, then on to
+  // its owner-bound preview. The address goes only into this redirect, never into a JSON answer.
+  app.get("/i/:token/v/:handle", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const v = await ownerVersionOf(access.orgId, c.req.param("handle")).catch(() => null);
+    if (!v) return c.json(refusal("missing", "Not found."), 404);
+    // A link previewer's fetch never opens a version; only a person's Open is a use.
+    const kind = classify(c.req.header("user-agent")).kind;
+    if (kind === "preview") return c.json(refusal("missing", "Not found."), 404);
+    if (kind === "person") noteOwnerUse(access);
+    const live = ownerAccess(token);
+    const url = live.ok ? await openVersion(v, live.link).catch((err) => {
+      console.warn(`[share] owner version on ${tokenTag(token)} failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }) : null;
+    if (!url) return c.text("This version isn't running right now. Go back and try again later.", 409, { "Content-Type": "text/plain; charset=utf-8" });
+    return c.redirect(url, 302);
+  });
+
+  // Ask for a new link (§app.owner-page/link): only a link that turned off unused; at most once a day.
+  app.post("/i/:token/ask-link", (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const r = askForNewLink(token);
+    if (r.status === 202) {
+      attentionChanged();
+      return c.json({ ok: true, askedAt: r.askedAt }, 202);
+    }
+    if (r.status === 409) return c.json(refusal("live", "This link still works."), 409);
+    return ownerDead(c, ownerAccess(token));
+  });
   app.get("/api/i/:token", ownerRead(() => ({})));
   app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
   app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));
@@ -392,6 +473,8 @@ export function createShareApp(): Hono {
   // ---- session shares (§app/session-share): read-only ------------------------------------------
 
   mountSessionShareRoutes(app, shareDist, PAGE_CSP);
+  mountPublicTourRoutes(app, PAGE_CSP);
+  mountBatonTourRoutes(app);
 
   app.all("*", (c) => c.json({ error: "Not found" }, 404));
   return app;

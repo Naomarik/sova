@@ -33,7 +33,7 @@ import type {
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
-import type { ChatClientMessage, ChatModeResult, HeldChatState } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, HeldChatState, ProjectModeApproval } from "../shared/protocol";
 import {
   BusyError,
   type ChatClient,
@@ -69,6 +69,7 @@ import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools"
 import { stateRoot } from "./state-root";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
+import { tourTools } from "./tours/tools";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
@@ -167,6 +168,12 @@ export abstract class ChatHandle {
   }
   modeResult(): Promise<ChatModeResult> {
     return this.call("modeResult", {});
+  }
+  approveHooks(approvals: ProjectModeApproval[]) {
+    return this.call("approveHooks", { approvals });
+  }
+  runModeCommand(mode: string, name: string, args?: unknown) {
+    return this.call("runModeCommand", { mode, name, ...(args !== undefined ? { args } : {}) });
   }
   pinMode(): Promise<boolean> {
     return this.call("pinMode", {});
@@ -407,6 +414,14 @@ export async function acquireChatHandle(path: string, force = false): Promise<Ch
   return router.acquire(path, force);
 }
 
+/** Whether a chat is open for a session file, once a take-back of it (after a server restart) is
+    done: the chat, or undefined. A router that takes nothing back answers at once. */
+export async function chatHandleTakenBack(path: string): Promise<ChatHandle | undefined> {
+  if (!router && routerComing) await routerComing.promise;
+  await router?.takenBack?.(path);
+  return router?.get(path);
+}
+
 /** The open chat for a session file (already through resolveSessionPath), or undefined. */
 export const chatHandle = (path: string): ChatHandle | undefined => router?.get(path);
 
@@ -429,6 +444,9 @@ export interface ChatRouter {
   close(path: string, message: string, opts?: CloseOpts): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */
   composersChanged?(): void;
+  /** Resolves once this path's chat, if a previous server left it running, is taken back (bounded),
+      so `get` can be trusted for it; at once when none of it was left running. */
+  takenBack?(path: string): Promise<void>;
 }
 let router: ChatRouter | null = null;
 export function setChatRouter(r: ChatRouter | null): void {
@@ -635,7 +653,7 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) })];
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId)];
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   // A powers profile's queue_open (its own extension registers it, from this declaration) and its
   // sends, a server action (§app.chat-processes/server-actions).

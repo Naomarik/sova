@@ -406,8 +406,7 @@ like the others: one result shape, every caller.
 - **Idempotent.** Sharing the same instance and endpoint again while its link is active answers
   that same link, its expiry moved to the later of its current one and `days` from now.
 - **Who shares.** The operator, confirmed (`confirm`; the Branches tab's confirm, the CLI's
-  `--confirm`), else `needs-confirm`. The project overseer through its statechart's act
-  `services/share` (L1, people-facing, held like a preview; §app.project-services/callers). The
+  `--confirm`), else `needs-confirm`. The project overseer through its statechart's act `services/share` (power `share`, people-facing, held like a preview; §app.project-services/callers). The
   global Overseer gets `needs-confirm` ("The operator shares it from the project's Branches tab.").
   A coding session gets `forbidden`. `revoke` is open to any caller with the instance in scope and
   is never an act or held.
@@ -514,17 +513,11 @@ same engine in-process, never over HTTP:
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
   instances it created; conform of its project. Anything else is `forbidden`.
 - **`sova_project_verbs`** for the Overseers. The global Overseer reads any project and acts in a
-  turn the user started; the project overseer acts only on its project: reads at any level,
-  and every other verb only once its project statechart took the act (`services/down` at L0,
-  `services/run` at L3 for create, up, apply, test, reset, teardown and conform; any of them in a run the
-  operator started; §app.project-overseer/tools). Above its level the statechart refuses with a
-  sentence telling it to file the gap as an idea or raise a confirm card, and the engine never
-  runs; the engine itself checks no level. For both, reset and teardown of an instance it did not
+  turn the user started; the project overseer acts only on its project: reads always, and every other verb only once its project statechart took the act (`services/down` always, `services/run` with `copiesRun` for create, up, apply, test and conform, `services/reset` with `copiesReset` for reset and teardown; any of them in a run the operator started; §app.project-overseer/tools). With its power Off (or a brake on) the statechart refuses with the power's sentence telling it to file it as an idea or raise a confirm card, and the engine never runs; the engine itself checks no power. For both, reset and teardown of an instance it did not
   create, stopping a shared service, and down of a copy with an active share link, answer
   `needs-confirm`: the operator does it.
 
-`share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through
-its statechart's act `services/share` (L1, people-facing, held like a preview), run only after every
+`share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through its statechart's act `services/share` (power `share`, people-facing, held like a preview), run only after every
 check of the share passed, so a refused share never reaches the statechart; the global Overseer's is
 `needs-confirm` ("The operator shares it from the project's Branches tab."); a coding session's is
 `forbidden`. `revoke` is any caller's with the instance in scope (a session: its own checkouts'), with
@@ -538,7 +531,7 @@ verbs have callers of their own (§app.project-services/deploy-callers).
 A project whose root is the running Sova server's own checkout (the git checkout the server's code
 was loaded from) is Sova hosting itself. On it, a verb that stops or restarts the main checkout's
 instance (slot 0) — `apply`, `down`, `reset` and `teardown` — always needs the operator's confirm,
-whatever the caller and at every autonomy level: the operator passes `confirm` (the CLI's
+whatever the caller and whatever its switches: the operator passes `confirm` (the CLI's
 `--confirm`); every other caller gets `needs-confirm` ("…stops or restarts the Sova server's own
 checkout: the operator does it…"). Confirmed, it goes ahead whatever the chats are doing. Every
 chat, worker and hidden chat runs in a process of its own (§app/chat-processes), so stopping or
@@ -787,10 +780,21 @@ each open request, are act-tier attention items of no session (§app.overseer/at
 
 The deploy verbs' reads, `deploy.status`, `deploy.logs` and `deploy.check`, are anyone's with the project
 in scope (a coding session's and a project overseer's own project). `deploy.plan` is the operator's,
-and the global Overseer's in a turn the user started; a project overseer's and a coding session's is
-`forbidden` ("A deploy is the operator's: raise it with deploy.request {target, commit?, why}, and the
-operator opens its plan."). `deploy.run` and `deploy.rollback` are the operator's alone, confirmed, from
-the project's Deploy panel or `sova-project deploy.run --plan <id> --confirm` (`sova-project
-deploy.rollback --target <name> --confirm`); every tool gets `forbidden`. `deploy.request` is the
-overseers'; a coding session's is `forbidden`. Conformance and Sova on its own never deploy. So a
-coding session's `project_verbs` reads deploys and is refused the rest, and no model ever ships.
+and the global Overseer's in a turn the user started. `deploy.run` is the operator's, confirmed, from
+the project's Deploy panel or `sova-project deploy.run --plan <id> --confirm`, and otherwise only the
+project's own **deploy act** (`deploy/run` on the project's statechart, power `deploy`,
+§app.project-overseer/autonomy-levels): a project overseer (on its own, column overseer; or in the
+operator's turn, unrestricted) or the Project Assistant (column assistant) sets it off, it waits the
+waiting period like any act that reaches the code (Cancel in Needs you; none in the operator's turn),
+and when released it plans and runs the project's own deploy recipe, which decides by itself whether
+it ships. A plan that needs an override (failing tests, a dirty tree) is refused to it: overrides are
+the operator's alone. Outside that act a project overseer's or the assistant's `deploy.plan` or
+`deploy.run` is `forbidden` ("A deploy is the operator's: raise it with deploy.request {target,
+commit?, why}, and the operator opens its plan."). `deploy.rollback` and clearing a deploy request are
+the operator's alone (`sova-project deploy.rollback --target <name> --confirm`). `deploy.request` is
+the overseers' and the assistant's, always, with `deploy` Off too; a coding session's is
+`forbidden`. Conformance and Sova on its own never deploy, and a coding session never ships or asks.
+Each verbs tool's own description says who ships through it: the project overseer's, that `deploy.run` (or
+`deploy.plan`) sets off the project's deploy act under the deploy power, with no overrides, and that
+`deploy.rollback` is the operator's; a coding session's, that it never ships or asks; the global Overseer's,
+that shipping is the operator's and `deploy.request` raises it.

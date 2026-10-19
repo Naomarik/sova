@@ -6,6 +6,7 @@ import "./owner.css";
 import { OwnerApp } from "./OwnerApp";
 import { SessionShareApp } from "./SessionShareApp";
 import { ShareApp } from "./ShareApp";
+import { TourShareApp } from "./TourShareApp";
 import { setShareFrameHost } from "./vis";
 import { FRAME_HOST_PATH } from "../../shared/vis-frame-host";
 
@@ -16,5 +17,5 @@ import { FRAME_HOST_PATH } from "../../shared/vis-frame-host";
 // An html drawing's frame loads this build's frame host from the page's own host (§chat.markdown/visuals).
 setShareFrameHost(FRAME_HOST_PATH);
 const path = location.pathname;
-const App = path.startsWith("/i/") ? OwnerApp : path.startsWith("/s/") ? SessionShareApp : ShareApp;
+const App = path.startsWith("/t/") ? TourShareApp : path.startsWith("/i/") ? OwnerApp : path.startsWith("/s/") ? SessionShareApp : ShareApp;
 render(() => <App />, document.getElementById("root")!);

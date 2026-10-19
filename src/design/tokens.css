@@ -281,6 +281,15 @@
 }
 
 
+/* Marks drawn over a recorded picture (tour targets, leaders, numbered pins). The picture keeps
+   the colours it was recorded with whatever the app theme is, so these never follow the theme:
+   ink on paper, each with a halo of the other, reads on a light or a dark recorded page. */
+:root {
+  --color-on-picture-ink:   var(--brand-ink);
+  --color-on-picture-paper: var(--brand-white);
+}
+
+
 /* -----------------------------------------------------------------------------
    5 · TYPOGRAPHY
    Inter for what a person reads; JetBrains Mono for machine facts — paths,

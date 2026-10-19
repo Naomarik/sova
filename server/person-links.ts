@@ -1,7 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { OWNER_LINK_DAYS } from "../shared/owner";
 import { hashToken, TOKEN_RE } from "./baton-links";
 import { dropTokens, keepTokens } from "./link-tokens";
 import { shareLinksChanged } from "./share/links-events";
@@ -15,16 +14,22 @@ import { stateRoot } from "./state-root";
  * capability, and an attach elsewhere mints new links. The token itself is kept in link-tokens.json
  * (server/link-tokens.ts) until the link is turned off; this file's keys never change.
  *
- * One live owner link per org: minting turns the older one off at once. It lasts
- * OWNER_LINK_DAYS from minting, with no renewal. Turned off also when the owner changes, leaves,
- * or the org is detached (server/owner.ts).
+ * One live owner link per org: minting turns the older one off at once. It turns itself off after
+ * OWNER_IDLE_DAYS unused: `expiresAt` is that deadline, moved forward by each use (noteOwnerLinkUse,
+ * at most once an hour, `lastUsedAt`); there is no absolute expiry. A link that turned off unused may
+ * ask the operator for a new one, at most once a day (`askedAt`). Turned off also when the owner changes, leaves, or the
+ * org is detached (server/owner.ts).
  *
  * The file also keeps the host's handle key: the Owner page names projects and conversations by
  * an HMAC of their id under it (`q_…`, `k_…`), so no id leaves the server and a handle means
  * nothing on another host.
  */
 
-export const OWNER_LINK_TTL_MS = OWNER_LINK_DAYS * 86_400_000;
+/** Days unused after which an owner link turns itself off (al_1 q13). */
+export const OWNER_IDLE_DAYS = 7;
+export const OWNER_IDLE_MS = OWNER_IDLE_DAYS * 86_400_000;
+/** A use moves the deadline at most this often (one write an hour, not one per page read). */
+export const OWNER_USE_WRITE_MS = 3_600_000;
 
 export type PersonLinkWhy = "rotated" | "off" | "owner-changed" | "left" | "detached";
 
@@ -40,6 +45,10 @@ export interface PersonLinkRecord {
   expiresAt: string;
   revokedAt?: string;
   revokedWhy?: PersonLinkWhy;
+  /** The last use by a person (written at most once an hour; `expiresAt` is it + OWNER_IDLE_MS). */
+  lastUsedAt?: string;
+  /** When the owner, holding this link after it turned off unused, last asked for a new one. */
+  askedAt?: string;
 }
 
 interface Store {
@@ -84,10 +93,11 @@ function handleKey(): string {
 
 const HANDLE_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
 /** A handle as it may appear in a URL. */
-export const HANDLE_RE = /^[qk]_[a-z2-9]{8}$/;
+export const HANDLE_RE = /^[qkvr]_[a-z2-9]{8}$/;
 
-/** The Owner page's name for a project (`q`) or a conversation (`k`): stable on this host, meaningless elsewhere. */
-export function handleOf(kind: "q" | "k", id: string): string {
+/** The Owner page's name for a project (`q`), a conversation (`k`), a version (`v`, a running copy) or a
+    request (`r`): stable on this host, meaningless elsewhere. */
+export function handleOf(kind: "q" | "k" | "v" | "r", id: string): string {
   const mac = createHmac("sha256", handleKey()).update(`${kind}:${id}`).digest();
   let s = "";
   for (let i = 0; i < 8; i++) s += HANDLE_ALPHABET[mac[i]! % HANDLE_ALPHABET.length];
@@ -95,6 +105,22 @@ export function handleOf(kind: "q" | "k", id: string): string {
 }
 
 // ---- links ---------------------------------------------------------------------------------------
+
+/** What else follows an owner link (its owner-bound versions, server/owner-versions.ts): told when links stop or a use moves a deadline. */
+export type OwnerLinkEvent = { kind: "ended"; hashes: string[] } | { kind: "used"; hash: string; expiresAt: string };
+const linkListeners = new Set<(e: OwnerLinkEvent) => void>();
+export function onOwnerLinkEvent(cb: (e: OwnerLinkEvent) => void): () => void {
+  linkListeners.add(cb);
+  return () => linkListeners.delete(cb);
+}
+function tell(e: OwnerLinkEvent): void {
+  for (const cb of linkListeners)
+    try {
+      cb(e);
+    } catch (err) {
+      console.warn(`[person-links] a listener failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+}
 
 export const personLinkDead = (l: PersonLinkRecord, now = Date.now()): boolean => !!l.revokedAt || Date.parse(l.expiresAt) <= now;
 
@@ -119,13 +145,14 @@ export function mintOwnerLink(orgId: string, personId: string, now = Date.now())
       }
     }
   const token = randomBytes(32).toString("base64url");
-  const record: PersonLinkRecord = { hash: hashToken(token), orgId, personId, scope: "owner", gen: gen + 1, createdAt: at, expiresAt: new Date(now + OWNER_LINK_TTL_MS).toISOString() };
+  const record: PersonLinkRecord = { hash: hashToken(token), orgId, personId, scope: "owner", gen: gen + 1, createdAt: at, expiresAt: new Date(now + OWNER_IDLE_MS).toISOString() };
   store.links.push(record);
   if (!store.key) store.key = handleKey();
   write(store);
   dropTokens(off);
   keepTokens("i", [token]);
   shareLinksChanged({ kind: "i", cause: "mint" });
+  if (off.length) tell({ kind: "ended", hashes: off });
   return { token, record };
 }
 
@@ -139,6 +166,34 @@ export function findPersonLink(token: string): PersonLinkRecord | null {
     if (have.length === want.length && timingSafeEqual(have, want)) hit = l;
   }
   return hit;
+}
+
+/** A use of a live link (a person's read, message or Open): its deadline moves to OWNER_IDLE_MS from
+    now, written at most once an hour. A dead link's use changes nothing. */
+export function noteOwnerLinkUse(hash: string, now = Date.now()): void {
+  const store = read();
+  const l = store.links.find((x) => x.hash === hash);
+  if (!l || personLinkDead(l, now)) return;
+  const want = now + OWNER_IDLE_MS;
+  if (want - Date.parse(l.expiresAt) < OWNER_USE_WRITE_MS) return;
+  l.expiresAt = new Date(want).toISOString();
+  l.lastUsedAt = new Date(now).toISOString();
+  write(store);
+  tell({ kind: "used", hash, expiresAt: l.expiresAt });
+}
+
+/** Asking again inside this window answers the same and records nothing. */
+export const ASK_AGAIN_MS = 86_400_000;
+
+/** The owner asked for a new link through `hash` (a link that turned off unused): at most once a day. Returns the ask's time. */
+export function recordAsk(hash: string, now = Date.now()): string | null {
+  const store = read();
+  const l = store.links.find((x) => x.hash === hash);
+  if (!l) return null;
+  if (l.askedAt && now - Date.parse(l.askedAt) < ASK_AGAIN_MS) return l.askedAt;
+  l.askedAt = new Date(now).toISOString();
+  write(store);
+  return l.askedAt;
 }
 
 /** Turn off every live owner link matching; returns how many. */
@@ -156,6 +211,7 @@ export function revokePersonLinks(match: (l: PersonLinkRecord) => boolean, why: 
     write(store);
     dropTokens(off);
     shareLinksChanged({ kind: "i", cause: "revoke" });
+    tell({ kind: "ended", hashes: off });
   }
   return n;
 }

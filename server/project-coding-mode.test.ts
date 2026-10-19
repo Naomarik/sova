@@ -12,7 +12,7 @@ const agentDir = join(tmp, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(agentDir, { recursive: true });
 after(() => rmSync(tmp, { recursive: true, force: true }));
-const { checkedCodingModeChoice, codingModeChoice, codingModeSwitch, describeCodingMode, hostDefaultMode, profileName } = await import("./project-coding-mode");
+const { checkedCodingModeChoice, codingModeChoice, codingModeSwitch, codingSpecRefusal, describeCodingMode, hostDefaultMode, profileName, SPEC_ALWAYS_ON, SPEC_ALWAYS_ON_MENU } = await import("./project-coding-mode");
 const store = await import("./project-overseer-store");
 const { promotionMessage } = await import("./reconcile");
 const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
@@ -26,7 +26,9 @@ test("unnamed: this computer's default (mode.json), read each time", () => {
   assert.deepEqual(hostDefaultMode(), { mode: "delegate", minorModes: ["align", "spec"] });
   assert.deepEqual(codingModeChoice({}, hostDefaultMode()), { mode: { mode: "delegate", minorModes: ["align", "spec"] } }, "nothing named: the default whole, no profile picked");
   writeDefault("normal", ["vis"]);
-  assert.deepEqual(hostDefaultMode(), { mode: "normal", minorModes: ["vis"] }, "a later change of the default reaches the next start");
+  assert.deepEqual(hostDefaultMode(), { mode: "normal", minorModes: ["spec", "vis"] }, "a later change of the default reaches the next start, spec always on");
+  writeDefault("normal", []);
+  assert.deepEqual(hostDefaultMode(), { mode: "normal", minorModes: ["spec"] }, "a default without spec still starts coding sessions with it");
 });
 
 test("a stored codingMode is ignored and dropped at the next write; a patch naming one is refused", () => {
@@ -42,12 +44,24 @@ test("a stored codingMode is ignored and dropped at the next write; a patch nami
   assert.equal("codingMode" in raw, false, "dropped at the file's next write");
 });
 
-test("every mode and minor-mode combination is accepted; no ceiling", () => {
+test("spec is always on: a minor-mode set that leaves it out is refused, from an Overseer or the mode menu", () => {
+  const base = { mode: "normal" as const, minorModes: ["spec"] };
+  for (const on of [[], ["align"], ["vis", "codemode"]]) {
+    assert.deepEqual(codingModeChoice({ minor_modes: on }, base), { error: SPEC_ALWAYS_ON });
+    assert.deepEqual(codingModeSwitch({ minor_modes: on }), { error: SPEC_ALWAYS_ON });
+    assert.equal(codingSpecRefusal(on), SPEC_ALWAYS_ON_MENU);
+  }
+  assert.equal(codingSpecRefusal(undefined), null, "a switch naming no minor modes keeps the session's own");
+  assert.equal(codingSpecRefusal(["spec"]), null);
+});
+
+test("every mode and minor-mode combination with spec is accepted; no other ceiling", () => {
   const base = { mode: "normal" as const, minorModes: ["spec"] };
   const minors = ["align", "spec", "vis", "codemode"];
   for (const mode of ["normal", "delegate"] as const)
     for (let bits = 0; bits < 16; bits++) {
       const on = minors.filter((_, i) => bits & (1 << i));
+      if (!on.includes("spec")) continue;
       const r = codingModeChoice({ mode, minor_modes: on }, base);
       assert.ok("mode" in r, `${mode} + [${on}] is accepted`);
       assert.equal(r.mode.mode, mode);
@@ -55,14 +69,13 @@ test("every mode and minor-mode combination is accepted; no ceiling", () => {
       const sw = codingModeSwitch({ mode, minor_modes: on });
       assert.ok("mode" in sw && sw.mode?.mode === mode, `a running session can be switched to ${mode} + [${on}]`);
     }
-  assert.deepEqual(codingModeChoice({ minor_modes: [] }, base), { mode: { mode: "normal", minorModes: [] } }, "spec may be turned off");
   assert.deepEqual(codingModeChoice({ mode: "delegate" }, base), { mode: { mode: "delegate", minorModes: ["spec"] } }, "omitted minors keep the default's");
 });
 
 test("only unknown names are refused, each with its sentence", () => {
   const base = { mode: "normal" as const, minorModes: [] };
   assert.equal((codingModeChoice({ mode: "turbo" }, base) as { error: string }).error, "Unknown mode turbo: use normal or delegate.");
-  assert.equal((codingModeChoice({ minor_modes: ["bogus", "align"] }, base) as { error: string }).error, "Unknown minor mode bogus: use align, spec, vis or codemode.");
+  assert.equal((codingModeChoice({ minor_modes: ["bogus", "align", "spec"] }, base) as { error: string }).error, "Unknown minor mode bogus: use align, spec, vis or codemode.");
   assert.match((codingModeChoice({ minor_modes: "spec" }, base) as { error: string }).error, /minor_modes must be a list/);
   assert.equal((codingModeSwitch({ mode: "turbo" }) as { error: string }).error, "Unknown mode turbo: use normal or delegate.");
   assert.deepEqual(codingModeSwitch({}), { mode: null }, "naming nothing switches nothing");
@@ -72,15 +85,15 @@ test("memory is never a coding session's: refused when named, dropped from the d
   const base = { mode: "normal" as const, minorModes: [] };
   const refusal = "Memory is for chats only: the user turns it on from a chat's mode menu, never in a coding session.";
   assert.equal((codingModeChoice({ minor_modes: ["spec", "memory"] }, base) as { error: string }).error, refusal);
-  assert.equal((codingModeSwitch({ minor_modes: ["memory"] }) as { error: string }).error, refusal);
+  assert.equal((codingModeSwitch({ minor_modes: ["spec", "memory"] }) as { error: string }).error, refusal);
   writeDefault("normal", ["spec", "memory"]);
   assert.deepEqual(hostDefaultMode(), { mode: "normal", minorModes: ["spec"] }, "a default with memory starts coding sessions without it");
 });
 
 test("subagent_profile: any profile here or off; an unknown one refused with where to look", () => {
   writeDefault("normal", []);
-  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "big" }), { mode: { mode: "normal", minorModes: [], subagentProfile: "big" } });
-  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "off" }), { mode: { mode: "normal", minorModes: [], subagentProfile: "off" } });
+  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "big" }), { mode: { mode: "normal", minorModes: ["spec"], subagentProfile: "big" } });
+  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "off" }), { mode: { mode: "normal", minorModes: ["spec"], subagentProfile: "off" } });
   assert.equal((checkedCodingModeChoice({ subagent_profile: "nope" }) as { error: string }).error, "Unknown subagent profile: nope. sova_list_subagent_profiles lists them.");
   assert.deepEqual(codingModeSwitch({ subagent_profile: "big" }), { mode: { subagentProfile: "big" } }, "a profile alone leaves the mode as it is");
   const info = { profiles: [{ id: "off", name: "Off" }, { id: "big", name: "Big team" }], current: { id: "house", name: "House" } } as never;

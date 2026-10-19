@@ -1069,3 +1069,68 @@ test("push special: the server's word on a special chat's composer reaches the c
   assert.equal(specialSpecOf(t.path)?.composerClosed, null);
   setSpecialSpec(t.path, null);
 });
+
+test("a link opened while the chat booted hears one hello saying ready when control comes after the boot; a link opened ready hears none", async () => {
+  const s = session();
+  // The boot has ended: the host exists and is ready, and its server's control hasn't come yet.
+  const host = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: "b1", startedAt: 1, exit: () => {}, log: quiet, tickMs: 60_000 });
+  const control = (e: number) => ({ t: "control" as const, proto: CHAT_WIRE_PROTO, epoch: e, serverPid: 1, serverStartedAt: 1, build: "b1", since: null, settings: DEFAULT_RUNTIME_SETTINGS });
+  const link = (said: "booting" | "ready") => {
+    const [a, b] = pair();
+    const runtimeEnd = new Link(a as never, { log: quiet });
+    const server = new Link(b as never, { log: quiet });
+    const states = collect(server, "hello");
+    // As serveLink does: the link's first frame, sent as the connection came, with the state then.
+    runtimeEnd.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_PROTO - 1, epoch: 0, ...host.hello(), state: said });
+    return { runtimeEnd, states };
+  };
+  const booted = link("booting");
+  host.onControl(booted.runtimeEnd, control(++epoch));
+  await settle();
+  assert.deepEqual(booted.states.map((h) => h.state), ["booting", "ready"], "one ready hello, after the booting one");
+  // The next server's link, opened once the chat was ready: its opening hello says so, and no other comes.
+  const ready = link("ready");
+  host.onControl(ready.runtimeEnd, control(++epoch));
+  await settle();
+  assert.deepEqual(ready.states.map((h) => h.state), ["ready"]);
+  assert.deepEqual(booted.states.map((h) => h.state), ["booting", "ready"], "nothing more on the old link");
+});
+
+test("taking control that throws partway still says the state once on a link whose opening hello said booting", async () => {
+  const control = (e: number) => ({ t: "control" as const, proto: CHAT_WIRE_PROTO, epoch: e, serverPid: 1, serverStartedAt: 1, build: "b1", since: null, settings: DEFAULT_RUNTIME_SETTINGS });
+  const booted = (host: InstanceType<typeof ChatRuntimeHost>) => {
+    const [a, b] = pair();
+    const runtimeEnd = new Link(a as never, { log: quiet });
+    const server = new Link(b as never, { log: quiet });
+    const hellos = collect(server, "hello");
+    runtimeEnd.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_PROTO - 1, epoch: 0, ...host.hello(), state: "booting" });
+    return { runtimeEnd, hellos };
+  };
+  /** `method` throws while `run` runs (the host's own timers call it again later: put back after). */
+  const throwsOnce = (host: object, method: string, run: () => void) => {
+    const own = host as Record<string, unknown>;
+    own[method] = () => {
+      throw new Error("boom");
+    };
+    try {
+      assert.throws(run, /boom/);
+    } finally {
+      delete own[method];
+    }
+  };
+  // Booted, no chat yet: the server's build is taken first on every compatible link.
+  const s = session();
+  const fresh = new ChatRuntimeHost({ path: s.path, sessionId: s.id, unit: "u", build: "b1", startedAt: 1, exit: () => {}, log: quiet, tickMs: 60_000 });
+  const one = booted(fresh);
+  const e1 = ++epoch;
+  throwsOnce(fresh, "setServerBuild", () => fresh.onControl(one.runtimeEnd, control(e1)));
+  await settle();
+  assert.deepEqual(one.hellos.map((h) => [h.state, h.epoch]), [["booting", 0], ["ready", e1]], "one hello saying ready, with this control's epoch");
+  // A chat open: its state goes to the new server, and that throws.
+  const t = await setup();
+  const two = booted(t.host);
+  const e2 = ++epoch;
+  throwsOnce(t.host, "sendState", () => t.host.onControl(two.runtimeEnd, control(e2)));
+  await settle();
+  assert.deepEqual(two.hellos.map((h) => [h.state, h.epoch]), [["booting", 0], ["open", e2]]);
+});

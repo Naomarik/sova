@@ -30,11 +30,13 @@ import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
 import {
 	describeActive,
+	isStarting,
 	markerText,
 	normalizeActive,
 	parseState,
 	restoreActive,
 	SANDBOX_DISCOVER_EVENT,
+	SANDBOX_STARTING,
 	SANDBOX_ENTRY_TYPE,
 	SANDBOX_STATE_EVENT,
 	type SandboxActive,
@@ -286,15 +288,51 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 	}
 
-	/** Bring the tools and the state to `state`; the result is recorded only when `record`. */
-	async function apply(state: SandboxState, record: boolean): Promise<void> {
+	/**
+	 * Bring the tools and the state to `state`. `record`: true records the result; "if-changed" (the
+	 * /sandbox command) records it only when it changed; false records nothing. Calls run one at a
+	 * time, so an earlier change can never land after a later one.
+	 *
+	 * Turning On when the newest entry isn't already On first records a provisional On entry
+	 * (enforcement `unavailable`, reason SANDBOX_STARTING) BEFORE the confined tools exist, then the
+	 * real state after the snapshot, whatever the snapshot does: whenever this session's tools are
+	 * confined, its newest entry says On (§chat.sandbox/states).
+	 */
+	let applying: Promise<void> = Promise.resolve();
+	function apply(state: SandboxState, record: boolean | "if-changed"): Promise<void> {
+		const run = applying.then(() => applyNow(state, record));
+		applying = run.catch(() => {});
+		return run;
+	}
+
+	async function applyNow(state: SandboxState, record: boolean | "if-changed"): Promise<void> {
+		const before = JSON.stringify(active);
+		let recordNow = record === true;
 		if (state === "on") {
-			registerConfined();
 			if (remote) {
+				registerConfined();
 				active = { version: 1, on: true, level: active.level, backend: "none", enforcement: "none", reasons: [NOT_ON_REMOTE] };
 			} else {
-				const s = await snapshot();
-				const level = s.ok ? s.policy.level : levelFromFile();
+				const provisional = record === true || (record === "if-changed" && !active.on);
+				if (provisional) {
+					active = { version: 1, on: true, level: active.level, backend: backend.id, enforcement: "unavailable", reasons: [SANDBOX_STARTING] };
+					append();
+					// The real state follows, always: never leave the provisional entry newest.
+					recordNow = true;
+				}
+				let s: Snapshot;
+				try {
+					registerConfined();
+					s = await snapshot();
+				} catch {
+					s = { ok: false, reason: "the sandbox could not start" };
+				}
+				let level = active.level;
+				try {
+					level = s.ok ? s.policy.level : levelFromFile();
+				} catch {
+					// Keep the level already in effect: the entry below must still be written.
+				}
 				active = s.ok
 					? { version: 1, on: true, level, backend: backend.id, enforcement: s.enforcement, ...(s.reasons ? { reasons: s.reasons } : {}) }
 					: { version: 1, on: true, level, backend: backend.id, enforcement: "unavailable", reasons: [s.reason] };
@@ -308,7 +346,7 @@ export default function sandbox(pi: ExtensionAPI) {
 			proxy = undefined;
 			await p?.close().catch(() => {});
 		}
-		if (record) append();
+		if (recordNow || (record === "if-changed" && JSON.stringify(active) !== before)) append();
 		renderStatus();
 		emitState();
 	}
@@ -348,8 +386,9 @@ export default function sandbox(pi: ExtensionAPI) {
 		const state: SandboxState = launchedOn ? "on" : restored ? stateOf(restored) : flag ?? (defaultOn() ? "on" : "subagents");
 		const on = state === "on";
 		// Opening a session writes nothing unless it comes up on without an entry saying so: then the
-		// choice is pinned, so a later default change cannot loosen this session.
-		const record = on && restored?.on !== true;
+		// choice is pinned, so a later default change cannot loosen this session. A provisional entry
+		// left newest (the session stopped while turning on) is not a record: the real state follows.
+		const record = on && (restored?.on !== true || isStarting(restored));
 		if (!on && registered === "none" && !active.on) {
 			active = offState(active.level, state === "off");
 			renderStatus();
@@ -430,14 +469,12 @@ export default function sandbox(pi: ExtensionAPI) {
 				return;
 			}
 			// `/sandbox on` while on re-probes (a fixed cause clears `unavailable`); it records only a change.
-			const before = JSON.stringify(active);
 			const stateBefore = stateOf(active);
 			if (want !== "on" && stateBefore === want) {
 				notify(describeActive(active));
 				return;
 			}
-			await apply(want, false);
-			if (JSON.stringify(active) !== before) append();
+			await apply(want, "if-changed");
 			// A new state reaches workers only at their start or resume (§chat.sandbox/states): say so.
 			const workersNote = stateOf(active) !== stateBefore ? ". Running subagents keep theirs until resumed." : "";
 			notify(`${describeActive(active)}${workersNote}`, active.on && active.enforcement === "unavailable" ? "error" : "info");

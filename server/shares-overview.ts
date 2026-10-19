@@ -1,4 +1,4 @@
-import type { OrgLinkRow, SessionShare, SessionShareVisit, SharesOverview } from "../shared/session-share";
+import type { OrgLinkRow, SessionShare, SessionShareVisit, SharesOverview, TourLinkRow } from "../shared/session-share";
 import { listPreviews } from "./preview-links";
 import { readIdentity, withIdentity, type IdentityLine } from "./visitor-identity";
 import { allBatons, namesOf } from "./baton";
@@ -104,6 +104,32 @@ export function orgLinkRows(now = Date.now(), identity: Map<string, IdentityLine
   return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/** Every live standalone tour link (`/t/`) whose source chat still owns it, newest first. A link
+    store that can't be read lists none (it serves none either). Visits are keyed by the link only. */
+export async function tourLinkRows(now = Date.now(), identity: Map<string, IdentityLine[]> = readIdentity()): Promise<TourLinkRow[]> {
+  // Loaded on first use: the Shares page's other rows never wait on (or cycle through) the tour stores.
+  const [{ tourShares, TOUR_VISIT_RECIPIENT }, { readEdition }] = await Promise.all([import("./tours/shares"), import("./tours/store")]);
+  const store = tourShares();
+  let links: ReturnType<typeof store.liveLinks>;
+  try { links = store.liveLinks(now); } catch { return []; }
+  if (!links.length) return [];
+  const { tourOwnerCurrent, tourOwnerPath } = await import("./tours/ownership");
+  // The same current-owner proof the tour routes admit with (server/tour-routes.ts tourSessionOwned).
+  const tourSessionOwned = async (id: string) => { const path = await tourOwnerPath(id); return !!path && tourOwnerCurrent(id, path); };
+  const owned = new Map<string, boolean>();
+  const rows: TourLinkRow[] = [];
+  for (const l of links) {
+    if (!owned.has(l.sessionId)) owned.set(l.sessionId, await tourSessionOwned(l.sessionId).catch(() => false));
+    if (!owned.get(l.sessionId)) continue;
+    const m = store.manifest(l), source = readEdition(l.sessionId, l.tourId, l.editionId);
+    if (!m || !source) continue;
+    const visits = readSessionVisits(l.id, TOUR_VISIT_RECIPIENT).map((v) => withIdentity(v, identity));
+    const token = tokenFor(l.hash, "t");
+    rows.push({ id: l.id, sessionId: l.sessionId, tourId: l.tourId, editionId: l.editionId, title: m.title, checkedAt: source.manifest.check.checkedAt, createdAt: l.createdAt, expiresAt: l.expiresAt, ...visitSummary(visits), visits, ...(token ? { link: linkUrl("t", token) } : {}) });
+  }
+  return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 /** GET /api/shares-overview: this host's session shares (from the store, with their recipients'
     presence and visits already folded in) and its live org links. */
 export async function sharesOverview(sessionShares: SessionShare[], now = Date.now()): Promise<SharesOverview> {
@@ -115,5 +141,5 @@ export async function sharesOverview(sessionShares: SessionShare[], now = Date.n
     const visits = readPreviewVisits(p.id).map((v) => withIdentity(v, identity));
     if (visits.length) previewVisits[p.id] = visits;
   }
-  return { sessionShares: shares, orgLinks: orgLinkRows(now, identity), previewVisits };
+  return { sessionShares: shares, orgLinks: orgLinkRows(now, identity), tourLinks: await tourLinkRows(now, identity), previewVisits };
 }

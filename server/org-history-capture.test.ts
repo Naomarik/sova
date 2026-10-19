@@ -5,6 +5,7 @@ import { describe, test } from "node:test";
 import { CAPTURE_MATRIX, type HistoryInput } from "../shared/org-history";
 import { ADAPTER, ADAPTER_VERSION, CAPTURED_KINDS, actorsOf, composeHistory, type CaptureContext } from "./org-history-capture";
 import type { Step } from "./statecharts";
+import { authorization as recorded } from "./org-history/record";
 
 const step = (s: Partial<Step> & Pick<Step, "sessionId" | "event">): Step => ({
   at: 1_000,
@@ -37,7 +38,7 @@ describe("composeHistory", () => {
     assert.deepEqual(look.parentKeys, [{ key: req.source.key, via: "request" }]);
     assert.deepEqual(look.actors.initiatedBy, { kind: "operator" });
     assert.equal(look.policy?.attended, false);
-    assert.deepEqual(look.actors.authorization, { kind: "autonomy-level", attended: false });
+    assert.deepEqual(look.actors.authorization, { kind: "power", column: "overseer", attended: false });
 
     // later, in that look: the overseer files a gap
     const gap = step({ sessionId: "placement/o1/p1", statechart: "placement", event: "gap/file", data: { ...overseerEnv(false, { lookRun: "r7" }), gapId: "g_1", ideaId: "i1" }, projectId: "p1" });
@@ -55,6 +56,28 @@ describe("composeHistory", () => {
     assert.deepEqual(a.initiatedBy, { kind: "operator" });
     assert.deepEqual(a.decidedBy, { kind: "project-overseer", id: "p1", session: "c1" });
     assert.deepEqual(a.authorization, { kind: "attended-turn", attended: true, level: "L3" });
+  });
+
+  test("with switches: the authorization records the act's power and the caller's column; older rows keep their level", () => {
+    const powers = { codingStart: true, codingPrompt: false };
+    const start = actorsOf(step({ sessionId: "item/o1/p1/g_1", statechart: "item", event: "build/start", data: overseerEnv(false, { powers, column: "overseer", autonomy: "L2" }) }), "p1");
+    assert.deepEqual(start.authorization, { kind: "power", attended: false, power: "codingStart", column: "overseer", level: "L2" });
+    // an act no switch gates (nil in the registry, or "always") reads "always", never a made-up power
+    const cancel = actorsOf(step({ sessionId: "build/p1/s1", statechart: "build", event: "hold/cancel", data: overseerEnv(false, { powers, column: "overseer" }) }), "p1");
+    assert.equal((cancel.authorization as { power?: string }).power, "always");
+    const attended = actorsOf(step({ sessionId: "build/p1/s1", statechart: "build", event: "build/prompt", data: overseerEnv(true, { powers, column: "overseer" }) }), "p1");
+    assert.equal((attended.authorization as { kind: string }).kind, "attended-turn");
+    assert.equal((attended.authorization as { power?: string }).power, "codingPrompt");
+    // the Project Assistant's act: its own column; who it was by is a model the envelope doesn't name
+    const asst = actorsOf(step({ sessionId: "item/o1/p1/g_1", statechart: "item", event: "build/start", data: { by: "assistant", attended: false, powers: { codingStart: true }, column: "assistant", autonomy: "L0" } }), "p1");
+    assert.deepEqual(asst.authorization, { kind: "power", attended: false, power: "codingStart", column: "assistant", level: "L0" });
+    assert.deepEqual(asst.decidedBy, { kind: "model" });
+    assert.equal((asst.initiatedBy as { unknown?: boolean }).unknown, true);
+    // a row from before the switches (no powers in its envelope): its level, no power, no column
+    const old = actorsOf(step({ sessionId: "item/o1/p1/g_1", statechart: "item", event: "build/start", data: overseerEnv(false) }), "p1");
+    assert.deepEqual(old.authorization, { kind: "autonomy-level", attended: false, level: "L3" });
+    // the record keeps power and column as captured
+    assert.deepEqual(recorded(asst.authorization), asst.authorization);
   });
 
   test("paused or capped: the level in force is recorded, not the setting", () => {

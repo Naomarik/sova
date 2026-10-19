@@ -12,7 +12,6 @@ import {
   boardRows,
   boardTotals,
   filterCounts,
-  gistTitle,
   inDefaultScope,
   linesShown,
   orderTrees,
@@ -39,16 +38,14 @@ import { compactModel, relativeTime, tildePath } from "../lib/format";
 import { browserZone, costsHref, type CostsQuery, DEFAULT_COSTS_QUERY } from "../lib/cost-history";
 import { agentsHref, teamKey } from "../lib/insights";
 import { createPoll, type Poll } from "../lib/poll";
-import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
-import { hostOf } from "../lib/mesh";
-import { archiveSession, renameSession } from "../lib/session-actions";
+import { renameSession } from "../lib/session-actions";
 import { archiveBlockReason } from "../lib/archive-block";
-import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
+import { quoted } from "../lib/session-groups";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { announce, copyText, home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import { home, localRunning, sessionContext } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import "../agents-board.css";
-import { ActionMenu } from "./ActionMenu";
+import { RowMenu } from "./SessionRowMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
 import { PerformanceTab } from "./PerformanceTab";
@@ -333,118 +330,6 @@ function RowDetailView(props: { row: BoardRow; ctx: BoardCtx; id: string }) {
   );
 }
 
-/** The ⋯ menu: every action the row has, the only door to them at folded width. */
-function RowMenu(props: { row: BoardRow; ctx: BoardCtx; archive: { label: string; blocked: string | null } | null }) {
-  const s = () => props.row.session;
-  const gist = () => gistTitle(s());
-  const setTitle = async (title: string | null) => {
-    if (await renameSession(s(), title)) props.ctx.onRefresh();
-  };
-  const move = async (id: string | null) => {
-    const before = groupNameOf(sessionGroups(), s().groupId);
-    if (id === (s().groupId ?? null)) return;
-    if (!(await setSessionGroup(s().path, id))) return;
-    const after = groupNameOf(sessionGroups(), id ?? undefined);
-    const done = id === null ? `Removed from ${before ? quoted(before) : "the group"}.` : `${before ? "Moved" : "Added"} to ${quoted(after ?? "the group")}.`;
-    toast(done);
-    announce(done);
-    props.ctx.onRefresh();
-  };
-  return (
-    <ActionMenu label={`Actions for ${quoted(s().title)}`} title="Session actions" class="board-more">
-      {(menu) => (
-        <Show
-          when={menu.screen() === "groups"}
-          fallback={
-            <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(s().title)}`}>
-              <div class="model-menu-group" role="group" aria-label="Open">
-                <menu.Item label="Open Session" aria={`Open ${quoted(s().title)}`} icon={<Icon name="arrow-right" small />} href={sessionHref(s().path)} />
-                <menu.Item
-                  label={props.ctx.detailsPath === s().path ? "Close Session Details" : "Session Details"}
-                  aria={`${props.ctx.detailsPath === s().path ? "Close the session details" : "Session details"} of ${quoted(s().title)}`}
-                  icon={<Icon name="info" small />}
-                  onRun={() => props.ctx.onOpenDetails(s().path)}
-                />
-                <menu.Item
-                  label="Open Subagents"
-                  aria={`Open the subagents pane of ${quoted(s().title)}`}
-                  icon={<Icon name="worker" small />}
-                  keepFocus
-                  onRun={() => props.ctx.onOpenSubagents(s().path)}
-                />
-              </div>
-              <div class="model-menu-group" role="group" aria-label="Title">
-                <menu.Item label="Rename…" aria={`Rename ${quoted(s().title)}`} icon={<Icon name="pencil" small />} keepFocus onRun={() => props.ctx.setRenaming(s().path)} />
-                <menu.Item
-                  label="Use Gist as Title"
-                  aria={`Use the gist as the title of ${quoted(s().title)}`}
-                  icon={<Icon name="pencil" small />}
-                  description={gist() ?? undefined}
-                  disabled={gist() ? "" : summaryLineOf(s()) ? "The gist is already the title." : "No gist yet."}
-                  onRun={() => void setTitle(gist())}
-                />
-                <menu.Item
-                  label="Reset to Original Title"
-                  aria={`Reset ${quoted(s().title)} to its original title`}
-                  icon={<Icon name="undo" small />}
-                  description={s().originalTitle}
-                  disabled={s().originalTitle === undefined ? "Not renamed." : ""}
-                  onRun={() => void setTitle(null)}
-                />
-              </div>
-              <div class="model-menu-group" role="group" aria-label="Organize">
-                <menu.Item
-                  label="Move to Group…"
-                  aria={`Move ${quoted(s().title)} into a group`}
-                  icon={<Icon name="folder" small />}
-                  description={groupNameOf(sessionGroups(), s().groupId) ?? undefined}
-                  stayOpen
-                  onRun={() => {
-                    void loadSessionGroups();
-                    menu.show("groups");
-                  }}
-                />
-                <Show when={props.archive}>
-                  {(a) => (
-                    <menu.Item
-                      label={a().label}
-                      aria={`${a().label} ${quoted(s().title)}`}
-                      icon={<Icon name="archive" small />}
-                      disabled={a().blocked ?? ""}
-                      onRun={() => {
-                        const path = s().path;
-                        const next = !s().archived;
-                        void archiveSession(path, next, next ? archivedProjectOf(s()) : unarchivedProjectOf(s(), hostOf(path) === null)).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
-                      }}
-                    />
-                  )}
-                </Show>
-                <menu.Item label="Copy Path" aria={`Copy the path of ${quoted(s().title)}`} icon={<Icon name="copy" small />} onRun={() => void copyText(s().path, "Copied path.")} />
-              </div>
-            </div>
-          }
-        >
-          <div class="model-menu-list" role="menu" aria-label="Move to group">
-            <div class="model-menu-group" role="group" aria-label="Groups">
-              <div class="list-group-label">Groups</div>
-              <For each={[{ id: null as string | null, name: "No group" }, ...sessionGroups().map((g) => ({ id: g.id as string | null, name: g.name }))]}>
-                {(g) => (
-                  <menu.Item
-                    label={g.name}
-                    aria={g.id ? `Move ${quoted(s().title)} to ${quoted(g.name)}` : `Take ${quoted(s().title)} out of its group`}
-                    icon={<Icon name={g.id === (s().groupId ?? null) ? "check" : "folder"} small />}
-                    onRun={() => void move(g.id)}
-                  />
-                )}
-              </For>
-            </div>
-          </div>
-        </Show>
-      )}
-    </ActionMenu>
-  );
-}
-
 function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   const r = () => props.row;
   const s = () => r().session;
@@ -625,7 +510,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           >
             <Icon name="info" />
           </button>
-          <RowMenu row={r()} ctx={props.ctx} archive={archive()} />
+          <RowMenu row={r()} ctx={props.ctx} href={sessionHref(s().path)} archive={archive()} />
         </div>
       </div>
 

@@ -40,7 +40,7 @@ export interface StampWho {
   turnId?: string;
 }
 
-type SettingsPart = Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
+type SettingsPart = Pick<ProjectOverseerSettings, "powers" | "caps" | "holdMin">;
 
 /** The envelope for an act on `projectId` (or an act on no project, with the project facts at their defaults). */
 export function stampEnvelope(

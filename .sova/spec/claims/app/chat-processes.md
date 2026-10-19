@@ -76,8 +76,10 @@ death: nothing is reported and nothing is resumed.
 
 ## §app.chat-processes/server-actions — Server actions from a chat process
 
+An ordinary chat receives `record_tour` and `show_tour` only while vis is on; align's Visuals alone does not enable either tool. A hand-off's already-reviewed, scoped `show_tour` is separate baseline context, never recording access (§app.tours/authoring).
+
 A few tools act on the server's own state: an ordinary chat's `project_verbs` (a project's running
-instances) and `queue_push` (a topic's queue); every tool of the Overseer, a project overseer and a
+instances), `queue_push` (a topic's queue) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
 baton session, their file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) included; and a
 powers chat's `queue_open`. Some of what a chat does without a tool acts on it too: a baton
 composer's message (who sent it, and the statechart's note of it), saving the model or thinking a
@@ -108,7 +110,11 @@ whose socket path fits neither is refused, never given a path cut short. The cha
 4-byte big-endian length followed by that many bytes of UTF-8 JSON, one object with a type `t`. A
 frame above 64 MiB, an empty one, or one that isn't such an object closes the link. Every
 connection starts with the chat's `hello` (protocol, build, pid, state, last event number, highest
-controller epoch). The server answers `control` with its epoch, which never goes down across
+controller epoch). A later `hello` on the same link says only that the chat's state changed: once
+the link's `control` has come, whenever the chat's state differs from what the link's last `hello`
+said, the link hears one `hello` with the state now, and never another for the same state. A link
+opened while the chat boots thus hears exactly one `hello` saying ready, whether the boot ends
+before that `control` arrives or after. The server answers `control` with its epoch, which never goes down across
 restarts; a lower or equal epoch on a second link is refused, a higher one replaces the link before
 it, and a command carrying another epoch is refused unrun. Each side speaks protocol N and accepts
 N-1. The kernel frames (hello, control, refuse, ping, drain, drained, exit, bye) never change, so
@@ -149,9 +155,10 @@ nothing but the server ever starts a chat again.
   and `OLDPWD`, and the server's own `PORT` and `HOST`. On `PATH` come Sova's Bun first, then the
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
-  copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`). A chat process's own
+  copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
+  `SOVA_CALLER_KEY` (§app.command-audit/keys). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
-  `_COPIES_ROOT`) are never passed on from the server's environment, and a server deletes them from
+  `_COPIES_ROOT`, and `SOVA_CALLER_KEY`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.
@@ -173,11 +180,7 @@ nothing but the server ever starts a chat again.
   and the chat starts on the last good code, or its open is refused (§app/chat-processes). In time
   means, for every chat, its socket answers within 10 s of the start and its `hello` says it is ready
   within 40 s after that: a start normally takes under a second, and the slowest measured under heavy
-  load took 34 s. A chat that finished starting after its first `hello` (which said it was still
-  starting) but before the server took control says it is ready at once, in a `hello` right after
-  the server's `control`, exactly once: the server never waits out the limit for a chat that is
-  ready, whether it is starting the chat or waiting for a reload's replacement
-  (§app.chat-processes/code-pickup).
+  load took 34 s.
 - **One process per chat.** Starting a chat whose previous process is still exiting waits up to
   10 s for that process and the session's writer lock to go.
 - **Claude programs.** Across all chat processes at most 4 idle Claude CLI children are kept
@@ -193,7 +196,10 @@ working worker or server action) is asked to close after 30 minutes like that
 (`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
 has it open: an open tab doesn't keep it running. The chat checks again that it is still quiet,
 and refuses otherwise, which restarts the clock. A chat that accepts but has not exited 30 s later
-is stopped. An idle stop is not a death and never gets a "continue". A tab that had it open keeps
+is stopped. That stop only ever reaches the process that accepted: a chat started again while it
+closes (someone sent to it, say) waits, as for any previous process still exiting (up to 10 s,
+§app.chat-processes/supervision), until that close is done, and its new process is never stopped
+by it, under either driver. An idle stop is not a death and never gets a "continue". A tab that had it open keeps
 its rows and draft and doesn't reconnect: its socket, a reconnect or a server restart never starts
 the chat again; only something that needs the chat does, such as sending from that tab
 (§chat.transcript/instant-open, "A chat closed while its tab is open"). The chat stays closed until

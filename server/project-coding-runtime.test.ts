@@ -27,6 +27,8 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
+/** The whole app, for a test whose own `app` holds only the overseer's routes. */
+const serverApp = app;
 // Wired as server/index.ts wires them: the Overseer's tools call the routes in-process, the link
 // extension's tools would call back at the listener's origin (none is bound here), and the
 // project overseer's listeners hear each build's turn start and end.
@@ -129,7 +131,7 @@ describe("a project's coding sessions", async () => {
     const info = await po.projectOverseerInfo(project.id);
     let wt = await po.projectWorktrees(project.id);
     assert.equal(wt.available, true);
-    assert.deepEqual({ mode: info.codingModeNow.mode, minorModes: info.codingModeNow.minorModes }, { mode: "delegate", minorModes: ["align"] }, "what one started now gets: this computer's default");
+    assert.deepEqual({ mode: info.codingModeNow.mode, minorModes: info.codingModeNow.minorModes }, { mode: "delegate", minorModes: ["align", "spec"] }, "what one started now gets: this computer's default, spec always on");
     const rowOf = () => wt.sessions.find((s) => s.sessionId === started!.sessionId);
     const r0 = rowOf();
     assert.deepEqual(r0 && { state: r0.state, merged: r0.merged, ahead: r0.ahead, startedBy: r0.startedBy, branch: r0.branch, target: r0.target }, { state: "open", merged: false, ahead: 0, startedBy: "operator", branch: w.branch, target: "master" });
@@ -212,7 +214,7 @@ describe("a project's coding sessions", async () => {
     await po.ensureProjectOverseer(project.id);
     const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_create_session")!;
     // Unattended at L1: refused before anything. An unknown mode: refused before anything.
-    await assert.rejects(tool.execute("t1", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /needs L3/);
+    await assert.rejects(tool.execute("t1", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /Start coding sessions is off for the overseer on its own\./);
     store.patchPoSettings(store.projectOverseerPaths(project.id), { autonomy: "L3", holdMin: 0 });
     // q7: unattended, a build names the gap whose promoted decisions it builds; with none it is refused.
     await assert.rejects(tool.execute("t1b", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /A coding session starts only in a turn the operator started: ask with sova_card\./);
@@ -238,10 +240,10 @@ describe("a project's coding sessions", async () => {
     // Any mode it names, minor modes included: no ceiling.
     const before3 = readBuilds(project.id).length;
     store.patchPoSettings(store.projectOverseerPaths(project.id), { caps: { createPerTurn: 10 } });
-    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["vis", "codemode"], subagent_profile: "off" }, undefined, undefined, undefined as never).catch(() => {});
+    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["spec", "vis", "codemode"], subagent_profile: "off" }, undefined, undefined, undefined as never).catch(() => {});
     const named = readBuilds(project.id).slice(before3)[0];
     assert.ok(named?.path, "started");
-    assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["vis", "codemode"] });
+    assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec", "vis", "codemode"] });
     const picked = (await acquireChat(named.path)).subagentProfileInfo().current;
     assert.equal(picked.id, "off", "the profile it named, picked for that session");
   });
@@ -276,7 +278,7 @@ describe("a project's coding sessions", async () => {
     assert.ok(row?.path && !row.worktree, JSON.stringify(row));
     assert.equal(row.inRoot, "it isn't a Git repository.");
     assert.equal(JSON.parse(readFileSync(row.path!, "utf8").split("\n")[0]!).cwd, plainRoot);
-    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["vis"] });
+    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec", "vis"] }, "spec always on");
     const info = await po.projectWorktrees(plain.id);
     assert.deepEqual({ available: info.available, reason: info.reason }, { available: false, reason: row.inRoot });
     const listed = info.sessions.find((s) => s.sessionId === row.sessionId);
@@ -343,6 +345,15 @@ describe("a project's coding sessions", async () => {
     const list = po.toolsForTest(project.id).find((t) => t.name === "sova_list_sessions")!;
     const out = ((await list.execute("t", {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
     assert.ok(out.includes(`- ${made.sessionId} "Untitled coding session" · started by the operator · idle · ${made.worktree!.branch} · no commits yet`), out);
+    // Spec stays on (§app.project-overseer/coding-mode): the mode menu's switch leaving it out is a 409, nothing changed.
+    const modeUrl = `/api/mode?path=${encodeURIComponent(made.path)}`;
+    const post = (body: unknown) => serverApp.request(modeUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const off = await post({ minorModes: ["align"] });
+    assert.equal(off.status, 409);
+    assert.equal(((await off.json()) as { error: string }).error, "Spec is always on for coding sessions; it can't be turned off.");
+    assert.deepEqual(held(chat).minorModes, ["align", "spec"], "nothing changed");
+    assert.equal((await post({ minorModes: ["spec"] })).status, 200, "a switch keeping spec goes through");
+    assert.equal((await post({ mode: "normal" })).status, 200, "a switch naming no minor modes keeps the session's own");
     // Clean Up's husk sweep never takes it; an ordinary empty session of the same age is taken.
     const { cleanupSessions, idOf } = await import("./sessions-index");
     const husk = join(agentDir, "sessions", "--tmp-husk--", "2026-09-28T00-00-00-000Z_01a0e999-0000-7000-8000-000000000001.jsonl");
@@ -433,7 +444,7 @@ describe("a project's coding sessions", async () => {
     const d = hostOf(org.id).data(sid) ?? {};
     assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
     assert.equal(d["modeNotSet"], undefined, "its mode was set");
-    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align"] }, "this computer's default, never a stored codingMode");
+    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] }, "this computer's default with spec, never a stored codingMode");
     assert.match((await buildsOf(project.id, client)).find((r) => r.sessionId === row!.sessionId)?.worktree?.branch ?? "", /^sova\/build-gap-login-[0-9a-f]{6}$/, "its branch is named after its title");
     // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the statechart's
     // log shows the first prompt sent and answered.

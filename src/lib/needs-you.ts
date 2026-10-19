@@ -65,8 +65,9 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
 }
 
 /** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status;
-    WhatsApp sending down, §app.outreach/sender-health). */
-const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down"]);
+    WhatsApp sending down, §app.outreach/sender-health; an org owner's request, outage or ask for a new link,
+    §app.project-assistant/requests). */
+const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request"]);
 
 /**
  * The region's items of no session: a deploy target whose latest deploy failed, an overseer's request to deploy,

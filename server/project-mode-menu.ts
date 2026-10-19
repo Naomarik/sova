@@ -4,7 +4,7 @@
 // Pure apart from the discovery read; no pi.
 import { discoverProjectModes } from "../pi-config/extensions/mode/project-discovery.ts";
 import { isProjectModeId, type ProjectModeListing, type ProjectModeRef, type ProjectModeSnapshot } from "../shared/project-modes";
-import type { ChatProjectModes, ProjectMinorInfo, ProjectModeApproval } from "../shared/protocol";
+import type { ChatProjectModes, ProjectMinorHook, ProjectMinorInfo, ProjectModeApproval } from "../shared/protocol";
 
 /** Whether the user (or the Overseer) approved exactly this tool set of this mode in this checkout. */
 export type ApprovedFn = (root: string, id: string, toolsHash: string) => boolean;
@@ -19,9 +19,35 @@ export function listingFor(cwd: string | undefined, remote: boolean): ProjectMod
 
 const toolsOf = (s: Pick<ProjectModeSnapshot, "tools">) => s.tools.map((t) => ({ name: t.name, description: t.description, command: [...t.command] }));
 
-function infoOf(mode: ProjectModeSnapshot, root: string | null, approved: ApprovedFn): ProjectMinorInfo {
-  const needs = mode.toolsHash !== "" && !(root !== null && approved(root, mode.id, mode.toolsHash));
+/** What the menu needs beyond `approved` to show a mode's commands and hooks (§chat.mode-menu/project-mode-hooks). */
+export interface ActionsInfo {
+  /** Whether YOU approved this exact version (hooks need it; an Overseer approval doesn't count). */
+  approvedByUser?: ApprovedFn;
+  /** Per mode id, the note of hooks over their budget now. */
+  hookNotes?: ReadonlyMap<string, string>;
+}
+
+/** A version's commands and hooks, and whether its hooks wait for your approval: each key only when it applies. */
+const NO_ACTIONS: Partial<ProjectMinorInfo> = Object.freeze({});
+
+function actionsOf(mode: Pick<ProjectModeSnapshot, "id" | "commands" | "hooks" | "toolsHash">, root: string | null, approved: ApprovedFn, extra: ActionsInfo | undefined): Partial<ProjectMinorInfo> {
+  // Today's modes (neither key) take nothing here: the menu's read costs what it did.
+  if (!mode.commands?.length && !mode.hooks?.length) return NO_ACTIONS;
+  const hooks: ProjectMinorHook[] = (mode.hooks ?? []).map((h) => ({ on: h.on, command: [...h.command] }));
+  const waiting =
+    hooks.length > 0 && root !== null && extra?.approvedByUser !== undefined && approved(root, mode.id, mode.toolsHash) && !extra.approvedByUser(root, mode.id, mode.toolsHash);
+  const note = hooks.length > 0 ? extra?.hookNotes?.get(mode.id) : undefined;
   return {
+    ...(mode.commands?.length ? { commands: toolsOf({ tools: mode.commands }) } : {}),
+    ...(hooks.length > 0 ? { hooks } : {}),
+    ...(waiting ? { hooksNeedApproval: true as const } : {}),
+    ...(note ? { hookNote: note } : {}),
+  };
+}
+
+function infoOf(mode: ProjectModeSnapshot, root: string | null, approved: ApprovedFn, extra?: ActionsInfo): ProjectMinorInfo {
+  const needs = mode.toolsHash !== "" && !(root !== null && approved(root, mode.id, mode.toolsHash));
+  const info: ProjectMinorInfo = {
     id: mode.id,
     description: mode.description,
     workers: mode.workers,
@@ -30,6 +56,13 @@ function infoOf(mode: ProjectModeSnapshot, root: string | null, approved: Approv
     ...(needs ? { needsApproval: true as const } : {}),
     ...(mode.toolsHash !== "" ? { toolsHash: mode.toolsHash } : {}),
   };
+  return mode.commands?.length || mode.hooks?.length ? Object.assign(info, actionsOf(mode, root, approved, extra)) : info;
+}
+
+/** Drop the actions keys an info got from the folder's version (a kept copy then sets its own). */
+function withoutActions(info: ProjectMinorInfo): ProjectMinorInfo {
+  const { commands: _c, hooks: _h, hooksNeedApproval: _w, hookNote: _n, ...rest } = info;
+  return rest;
 }
 
 /**
@@ -44,6 +77,7 @@ export function projectModesInfo(
   on: readonly ProjectModeRef[],
   snapshots: ReadonlyMap<string, ProjectModeSnapshot>,
   approved: ApprovedFn,
+  extra?: ActionsInfo,
 ): ChatProjectModes {
   if (listing.modes.length === 0 && listing.problems.length === 0 && on.length === 0) return {};
   const onById = new Map(on.map((r) => [r.id, r]));
@@ -51,10 +85,14 @@ export function projectModesInfo(
   const seen = new Set<string>();
   for (const mode of listing.modes) {
     seen.add(mode.id);
-    const info = infoOf(mode, listing.root, approved);
+    let info = infoOf(mode, listing.root, approved, extra);
     const ref = onById.get(mode.id);
     const kept = ref ? snapshots.get(ref.sha) : undefined;
-    if (kept) Object.assign(info, { description: kept.description, workers: kept.workers, tools: toolsOf(kept), dir: kept.dir });
+    // A mode on shows the version the chat runs: its words, tools, commands and hooks.
+    if (kept) {
+      if (info.commands || info.hooks || kept.commands?.length || kept.hooks?.length) info = Object.assign(withoutActions(info), actionsOf(kept, listing.root, approved, extra));
+      Object.assign(info, { description: kept.description, workers: kept.workers, tools: toolsOf(kept), dir: kept.dir });
+    }
     if (ref && (ref.sha !== mode.sha || (kept && kept.toolsHash !== mode.toolsHash))) info.changed = true;
     minors.push(info);
   }

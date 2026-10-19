@@ -64,8 +64,8 @@ export class Link {
   compatible = true;
   /** The protocol the peer speaks (its hello's or control's): a proto-1 peer gets no stage-3 frames. */
   peerProto = CHAT_WIRE_PROTO;
-  /** The hello this side opened the link with (the chat process's end), or null. */
-  greeting: HelloFrame | null = null;
+  /** The state the last `hello` this side sent on the link said; null before its first. */
+  saidState: HelloFrame["state"] | null = null;
   private readonly log: (line: string) => void;
 
   constructor(
@@ -127,6 +127,7 @@ export class Link {
       return false;
     }
     this.socket.write(bytes);
+    if (frame.t === "hello") this.saidState = frame.state;
     if (this.socket.writableLength > (this.opts.backlogMax ?? LINK_BACKLOG_MAX_BYTES)) {
       this.log(`the peer stopped reading (${this.socket.writableLength} bytes waiting): dropping the link`);
       this.end({ reason: "backlog" });
@@ -237,8 +238,7 @@ export async function serveLink(sockPath: string, opts: ServeLinkOptions): Promi
   const log = opts.log ?? ((l: string) => console.error(`[chat-link] ${l}`));
   const server: Server = createServer((socket) => {
     const link = new Link(socket, opts);
-    link.greeting = { t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() };
-    link.send(link.greeting);
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() });
     const timer = setTimeout(() => link.close({ reason: "closed" }), opts.controlWithinMs ?? 10_000);
     timer.unref?.();
     void link.closed.then(() => clearTimeout(timer));
@@ -301,7 +301,8 @@ export interface ConnectLinkOptions extends LinkOptions {
   /** Keep dialing a socket that isn't there yet (or refuses) for this long, every `retryEveryMs`. */
   retryForMs?: number;
   retryEveryMs?: number;
-  /** How long the chat may take to say hello once connected. */
+  /** How long the chat may take to say hello once connected; never less than what is left of
+      `retryForMs` (a chat still loading its code answers late: the start's budget is the socket's). */
   helloWithinMs?: number;
 }
 
@@ -332,11 +333,12 @@ export async function connectLink(sockPath: string, opts: ConnectLinkOptions): P
       continue;
     }
     const link = new Link(socket, opts);
+    const helloMs = Math.max(opts.helloWithinMs ?? 5_000, until - Date.now());
     const hello = await new Promise<HelloFrame>((resolve, reject) => {
       const timer = setTimeout(() => {
         link.close();
         reject(new Error(`The chat process at ${sockPath} didn't say hello in time.`));
-      }, opts.helloWithinMs ?? 5_000);
+      }, helloMs);
       const off = link.on("hello", (h) => {
         off();
         clearTimeout(timer);

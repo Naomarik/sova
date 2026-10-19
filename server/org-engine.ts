@@ -31,7 +31,7 @@ export type OrgHostApi = Pick<
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
     registers it as it loads. Injected, so this module imports nothing that imports server/orgs.ts
     (orgs registers its change listener here as it loads). */
-type SettingsPart = Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
+type SettingsPart = Pick<ProjectOverseerSettings, "powers" | "caps" | "holdMin">;
 let settingsSource: { read(projectId: string, workspaceDir: string): SettingsPart; defaults(): SettingsPart } | null = null;
 export function setProjectSettingsSource(source: NonNullable<typeof settingsSource>): void {
   settingsSource = source;

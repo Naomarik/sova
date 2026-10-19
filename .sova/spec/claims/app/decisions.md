@@ -303,7 +303,8 @@ appends (one line each).
   (`llm_inflight`, §app.insights/llm-inflight): a snapshot on every connect, then one frame per
   change of the total or its coverage; it never prompts a list read.
 - Changes are sent when a store is written or a pane attaches, and the server compares every 5 s
-  while a feed is connected, so a turn that starts in a TUI clears its mark.
+  while a feed is connected, or while Sova's event stream has a subscriber (§app.events/idle: it
+  observes through these same comparisons), so a turn that starts in a TUI clears its mark.
 - The same comparison sends `list_changed` (no payload; never on connect) when a session appears
   in or leaves the list, or a row's live record, running state, last activity, archived flag or
   title changes (a stored title changes in Sova's title store, never in the file: the Overseer's

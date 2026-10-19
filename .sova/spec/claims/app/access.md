@@ -37,7 +37,9 @@ except `sova token`, which exists to be read by its owner.
 ## §app.access/gate — What the gate answers, and what it never asks
 
 The main listener answers a request when it presents the token as either this install's cookie
-or an `x-sova-token: <token>` header, and refuses it otherwise with `401`. The cookie is named
+or an `x-sova-token: <token>` header, or an installed extension's own key in that header
+(§app.extensions/backend-key; never as a cookie, and `403` on `/api/auth/*`), and refuses it
+otherwise with `401`. The cookie is named
 per install, `sova_token_<8 hex>`, so two Sovas on one host name (the live one beside a hermetic
 one: cookies ignore ports) never overwrite each other's; it is `HttpOnly`, `SameSite=Strict`,
 `Path=/`, kept a year, and `Secure` when the app was reached over https. A request carrying
@@ -103,12 +105,23 @@ script cannot set, is answered and given the cookie instead of the unlock screen
 above unchanged: a request carrying proxy headers (which is how the tailnet reaches this listener,
 through loopback), a cross-site request, a page on another port of this host, a foreign Host, and
 any caller that sets no fetch metadata at all still needs the token. The rule is a convenience for
-the person at the keyboard, never a licence for the network.
+the person at the keyboard, never a licence for the network. A guided-tour recorder is not that
+person (§app.tours/sites): every request it makes carries `X-Sova-Tour-Recorder: 1`, and silent
+local sign-in, unlock, /api/auth/token and pairing all refuse a request carrying it; a recorder
+signs in to its own managed test copy only by a cookie Sova sets for that exact address. A request carrying the header, whatever its value, also has every method but GET and HEAD refused,
+and so is its upgrade to any live connection other than `/ws/watch` (the chat socket `/ws/chat`
+included), each logged as one fixed line. A recording of a test
+copy also carries an HTTP-only recorder marker cookie for that copy's origin, because browsers send
+no added headers on a live-connection handshake. The copy treats the marker exactly as it treats
+the recorder header: no silent sign-in, token, pairing or unlock, no write, and no live connection
+other than `/ws/watch`. `/ws/watch` ignores
+every client frame anyway.
 
 Every answer on the main listener, a refusal and the static shell included, carries
 `X-Sova-Server: sova`, which a preview link refuses to pass on, so no preview can front a Sova
 port (§mesh.public/preview). A request forwarded to a peer (`/peer/<id>/…`) carries none of this
-host's credentials — no cookie, no `x-sova-token`, no `Authorization` — and a peer's answer can
+host's credentials — no cookie, no `x-sova-token`, no `Authorization`, no chat's key in
+`x-sova-caller` (§app.command-audit/keys) — and a peer's answer can
 set no cookie here.
 
 The **sockets** are checked the same way and for the same reasons: every upgrade on the main
@@ -181,15 +194,20 @@ Every caller keeps working with no new step for the person:
   runtime without the flag sends none, as before.
 - **Extension UIs** served at `/ext` are the same origin as the app and ride the same cookie.
 - **Extension backends** never see it: a request proxied to one loses every `sova_token_*`
-  cookie, `x-sova-token`, and an `Authorization` that carries the token, while its other cookies
-  and headers (an extension's own `Authorization` included) pass through. A backend that calls
-  this server back reads the token itself, from `SOVA_TOKEN` if started with it or from the token
-  file, as docs/customization.md tells its author.
+  cookie, `x-sova-token`, a chat's key in `x-sova-caller`, and an `Authorization` that carries
+  the token, while its other cookies and headers (an extension's own `Authorization` included,
+  unless it carries an extension's key) pass through. A backend that calls this server back sends
+  its own key (§app.extensions/backend-key), and every such call is recorded as its extension's;
+  reading the token itself, from `SOVA_TOKEN` if started with it or from the token file, still
+  works as before.
 - **Scripts and documented commands** that talk to the main listener send `x-sova-token`, read
   from `SOVA_TOKEN`, else the target's own token file (`scripts/sova-token.mjs` for Node scripts, which
   `pnpm run auth:token` runs from the checkout, and `$(sova token)` in the docs' curl lines for a
-  host that installed the launcher); a rig that starts its own servers pins one token for
-  them with `SOVA_TOKEN`, or reads each server's file.
+  host that installed the launcher; the command line `scripts/sova.mjs`, §app.commands/cli, sends it
+  the same way on its requests and on its `/ws/watch` upgrade); a rig that starts its own servers pins one token for
+  them with `SOVA_TOKEN`, or reads each server's file. From a chat Sova runs, the same helper also
+  sends the chat's key in `x-sova-caller`, beside the token and never instead of it: the key only
+  says which chat called (§app.command-audit/attribution).
 - **`sova token` and `sova open`** are the installed launcher's: `token` prints the token from the
   agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and before the server ever
   minted a token says to start it once and exits nonzero; it never starts the server. `open` is

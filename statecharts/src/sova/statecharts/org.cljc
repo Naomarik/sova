@@ -223,8 +223,9 @@
    :project/place {:power nil}
    :person/add   {:power nil}
    :owner/set    {:power nil}
-   ;; the global Overseer's only with a card listing the owner (registry with-card-checks)
-   :owner/send-link {:power nil :people-facing true
+   ;; the operator's (and the global Overseer's for them, only with a card listing the owner: registry
+   ;; with-card-checks); no overseer's or assistant's own run. No `:tool`: no project overseer's tool makes it.
+   :owner/send-link {:power "operator" :people-facing true
                      :card (fn [d] {:people [(get-in (b/evt d) [:target :id])]})}
    :hold/cancel  {:power "always" :correction true}})
 

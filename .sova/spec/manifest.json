@@ -1461,12 +1461,22 @@
         "by": "naomarik",
         "at": "2026-10-13T12:56Z"
       },
-      "evidence": "verified"
+      "evidence": "verified",
+      "notOwned": [
+        "§app.claude-code-provider/continuity",
+        "§app.worker-restore/restore",
+        "§app.load-priority/workers"
+      ]
     },
     "§app/extension-dialogs": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§app.harness/session-open",
+        "§app.overseer/dialog-answers",
+        "§app/extensions"
+      ]
     },
     "§app/insights": {
       "kind": "surface",
@@ -1478,7 +1488,12 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T02:51Z"
-      }
+      },
+      "notOwned": [
+        "§app/claude-logins",
+        "§app.session-list/working-now",
+        "§app/resource-monitor"
+      ]
     },
     "§app/new-session-dialog": {
       "kind": "surface",
@@ -1499,7 +1514,12 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-15T19:32Z"
-      }
+      },
+      "notOwned": [
+        "§mesh.remote-sessions/host-picker",
+        "§app.project-overseer/new-coding-session",
+        "§workspace.groups/making-a-comparison"
+      ]
     },
     "§app/project-assistant": {
       "kind": "surface",
@@ -1516,7 +1536,12 @@
     "§app/session-list": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§app.projects/list",
+        "§app.overseer/attention-digest",
+        "§app.insights/token-velocity"
+      ]
     },
     "§app/settings-dialog": {
       "kind": "surface",
@@ -1530,7 +1555,12 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-15T04:52Z"
-      }
+      },
+      "notOwned": [
+        "§chat.voice/runtime",
+        "§chat.alignment/settings-file",
+        "§app.overseer/caps"
+      ]
     },
     "§app/shell": {
       "kind": "surface",
@@ -1538,6 +1568,11 @@
       "evidence": "reviewed",
       "code": [
         "src/App.tsx"
+      ],
+      "notOwned": [
+        "§app/session-list",
+        "§chat/transcript",
+        "§app/access"
       ]
     },
     "§app/spec-lookup": {
@@ -1558,6 +1593,11 @@
       "code": [
         "src/components/SubagentPane.tsx",
         "src/components/SessionView.tsx"
+      ],
+      "notOwned": [
+        "§app/worker-restore",
+        "§app/insights",
+        "§chat/timeline"
       ]
     },
     "§app.tours/authoring": {
@@ -3546,12 +3586,22 @@
       "evidence": "reviewed",
       "code": [
         "src/components/Composer.tsx"
+      ],
+      "notOwned": [
+        "§chat/slash-commands",
+        "§chat/model-menu",
+        "§chat.voice/button"
       ]
     },
     "§chat/context-window": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§app/session-list",
+        "§app.subagents-pane/worker-rows",
+        "§app/insights"
+      ]
     },
     "§chat/images": {
       "kind": "surface",
@@ -3559,6 +3609,11 @@
       "evidence": "verified",
       "code": [
         "server/attachments.ts"
+      ],
+      "notOwned": [
+        "§chat/composer",
+        "§chat/markdown",
+        "§chat.transcript/transcript-items"
       ]
     },
     "§chat/markdown": {
@@ -3569,6 +3624,11 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "src/lib/session-links.ts"
+      ],
+      "notOwned": [
+        "§app/markdown-viewer",
+        "§chat/transcript",
+        "§chat.images/lightbox"
       ]
     },
     "§chat/memory": {
@@ -3582,6 +3642,11 @@
         "server/memory/engine.ts",
         "shared/memory.ts",
         "shared/protocol.ts"
+      ],
+      "notOwned": [
+        "§chat/mode-menu",
+        "§app.harness/reader",
+        "§app.claude-code-provider/no-memory"
       ]
     },
     "§chat/mode-menu": {
@@ -3601,7 +3666,12 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-14T08:06Z"
-      }
+      },
+      "notOwned": [
+        "§chat/subagent-profiles",
+        "§chat/memory",
+        "§app.project-overseer/coding-mode"
+      ]
     },
     "§chat/model-menu": {
       "kind": "surface",
@@ -3611,6 +3681,11 @@
         "src/components/ModelMenu.tsx",
         "src/components/ComposerMenu.tsx",
         "src/components/SessionView.tsx"
+      ],
+      "notOwned": [
+        "§chat.composer/composer-flyout",
+        "§app.claude-code-provider/model-names",
+        "§app/model-levels"
       ]
     },
     "§chat/slash-commands": {
@@ -3627,17 +3702,32 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T00:19Z"
-      }
+      },
+      "notOwned": [
+        "§app/subagents-pane",
+        "§app.chat-processes/workers",
+        "§chat/composer"
+      ]
     },
     "§chat/timeline": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§chat/transcript",
+        "§app/subagents-pane",
+        "§app.insights/summary-sections"
+      ]
     },
     "§chat/transcript": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§chat/timeline",
+        "§chat/composer",
+        "§app/session-list"
+      ]
     },
     "§design.copy-deck/composer": {
       "kind": "note",
@@ -3895,27 +3985,51 @@
     "§design/copy-deck": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§chat/sandbox",
+        "§workspace/groups",
+        "§chat/composer"
+      ]
     },
     "§design/deviations": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "notOwned": [
+        "§design/ground-rules",
+        "§design/menu-rows",
+        "§app/markdown-viewer"
+      ]
     },
     "§design/ground-rules": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§design/copy-deck",
+        "§design/token-index",
+        "§design/deviations"
+      ]
     },
     "§design/overview": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "notOwned": [
+        "§design/copy-deck",
+        "§design/ground-rules",
+        "§design/token-index"
+      ]
     },
     "§design/token-index": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "notOwned": [
+        "§design/ground-rules",
+        "§app.settings-dialog/themes"
+      ]
     },
     "§workspace.groups/a-pane": {
       "kind": "behavior",
@@ -4048,6 +4162,11 @@
       "evidence": "unreviewed",
       "code": [
         "src/components/GroupView.tsx"
+      ],
+      "notOwned": [
+        "§app.session-list/groups",
+        "§chat/composer",
+        "§app.session-list/auto-titles"
       ]
     },
     "§chat.transcript/setup-card-figures": {
@@ -4240,6 +4359,11 @@
         "src/components/PlaybooksDialog.tsx",
         "src/components/ChatView.tsx",
         "src/components/ComposerMenu.tsx"
+      ],
+      "notOwned": [
+        "§chat/schedules",
+        "§chat/slash-commands",
+        "§chat.profiles/projects"
       ]
     },
     "§design.copy-deck/playbooks": {
@@ -4390,6 +4514,11 @@
         "pi-config/extensions/sandbox/policy.ts",
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/README.md"
+      ],
+      "notOwned": [
+        "§chat.composer/sandbox-shield",
+        "§chat.worktrees/sandbox",
+        "§app.claude-logins/registry"
       ]
     },
     "§chat.composer/sandbox-shield": {
@@ -4632,6 +4761,11 @@
         "pi-config/extensions/sessions/index.ts",
         "pi-config/extensions/sessions/presence.ts",
         "pi-config/extensions/sessions/public/SCHEMA.md"
+      ],
+      "notOwned": [
+        "§chat.transcript/live-watch",
+        "§app.harness/agent-root",
+        "§app/session-list"
       ]
     },
     "§app/tours": {
@@ -4665,7 +4799,12 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-14T15:54Z"
-      }
+      },
+      "notOwned": [
+        "§app/installer",
+        "§app.project-services/adopt",
+        "§mesh.front-door/stale-tab"
+      ]
     },
     "§app/worker-restore": {
       "kind": "surface",
@@ -4679,7 +4818,12 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T02:54Z"
-      }
+      },
+      "notOwned": [
+        "§app.chat-processes/worker-crash",
+        "§app.subagents-pane/transcript-view",
+        "§chat.sandbox/workers"
+      ]
     },
     "§chat.context-window/last-reply": {
       "kind": "behavior",
@@ -4813,6 +4957,11 @@
         "server/mesh/resync-test-fixtures.ts",
         "server/index.ts",
         "docs/mesh.md"
+      ],
+      "notOwned": [
+        "§mesh/sync",
+        "§app.claude-logins/pool",
+        "§mesh/lan"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -4998,6 +5147,11 @@
         "server/mesh/proxy.ts",
         "server/mesh/index.ts",
         "src/lib/mesh.ts"
+      ],
+      "notOwned": [
+        "§mesh.peers/grants",
+        "§app/new-session-dialog",
+        "§mesh/lan"
       ]
     },
     "§mesh/sync": {
@@ -5006,6 +5160,11 @@
       "evidence": "verified",
       "code": [
         "server/sync/index.ts"
+      ],
+      "notOwned": [
+        "§chat.subagent-profiles/file",
+        "§mesh.peers/grants",
+        "§app.claude-logins/pool"
       ]
     },
     "§mesh/ui": {
@@ -5015,6 +5174,11 @@
       "code": [
         "src/components/MeshView.tsx",
         "src/mesh.css"
+      ],
+      "notOwned": [
+        "§mesh.peers/grants",
+        "§app.claude-logins/pool",
+        "§mesh/details"
       ]
     },
     "§mesh.front-door/config": {
@@ -5065,6 +5229,11 @@
       "evidence": "verified",
       "code": [
         "server/mesh/front-door.ts"
+      ],
+      "notOwned": [
+        "§mesh.details/browser-access",
+        "§app.updates/reload-note",
+        "§app/shell"
       ]
     },
     "§mesh.sync/api-keys-only": {
@@ -5188,7 +5357,12 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-14T15:54Z"
-      }
+      },
+      "notOwned": [
+        "§app/access",
+        "§app/updates",
+        "§app.server-runtime/choice"
+      ]
     },
     "§app.extensions/cards": {
       "kind": "behavior",
@@ -5313,6 +5487,11 @@
       "code": [
         "server/extensions.ts",
         "src/components/ExtensionView.tsx"
+      ],
+      "notOwned": [
+        "§app.settings-dialog/themes",
+        "§chat.transcript/landing-page",
+        "§app/shell"
       ]
     },
     "§app.subagents-pane/context-fill": {
@@ -5798,6 +5977,11 @@
         "server/overseer.ts",
         "server/overseer-store.ts",
         "server/chat-manager.ts"
+      ],
+      "notOwned": [
+        "§app/project-overseer",
+        "§chat.memory/overseer",
+        "§chat.worktrees/readiness"
       ]
     },
     "§chat.mode-menu/prompt-holds-across-turn-starters": {
@@ -6074,6 +6258,11 @@
       "code": [
         "shared/protocol.ts",
         "server/decide.ts"
+      ],
+      "notOwned": [
+        "§app.overseer/attention-digest",
+        "§app.overseer/seen",
+        "§chat.alignment/session-mark"
       ]
     },
     "§design.copy-deck/settings-decisions": {
@@ -6217,6 +6406,11 @@
       "code": [
         "server/mesh/details.ts",
         "src/components/MeshDetails.tsx"
+      ],
+      "notOwned": [
+        "§mesh.peers/health",
+        "§mesh.peers/allowlist",
+        "§mesh.ui/page"
       ]
     },
     "§app.teams/seats": {
@@ -6245,6 +6439,11 @@
       "code": [
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/index.ts"
+      ],
+      "notOwned": [
+        "§teams.defaults/routing",
+        "§app/worker-restore",
+        "§app.insights/team-cards"
       ]
     },
     "§app.settings-dialog/decisions-autosave": {
@@ -6454,6 +6653,11 @@
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
+      ],
+      "notOwned": [
+        "§app/teams",
+        "§chat.subagent-profiles/resolution",
+        "§app.claude-code-provider/catalog"
       ]
     },
     "§mesh.vps/claude-code": {
@@ -6474,6 +6678,11 @@
       "code": [
         "scripts/mesh-vps/deploy.sh",
         "scripts/mesh-vps/remote-setup.sh"
+      ],
+      "notOwned": [
+        "§mesh.lan/accept-process",
+        "§mesh.peers/resync",
+        "§app.server-runtime/choice"
       ]
     },
     "§mesh.phone/claude-store": {
@@ -6497,7 +6706,12 @@
         "scripts/mesh-termux/install.sh",
         "scripts/mesh-termux/deploy.sh"
       ],
-      "requires": []
+      "requires": [],
+      "notOwned": [
+        "§mesh.sync/logins",
+        "§app.claude-logins/pool",
+        "§mesh/peers"
+      ]
     },
     "§mesh.details/browser-access": {
       "kind": "behavior",
@@ -7808,6 +8022,11 @@
         "src/components/BatonStrip.tsx",
         "src/orgs.css",
         "server/baton-view.ts"
+      ],
+      "notOwned": [
+        "§app.outreach/send",
+        "§app.organizations/privacy",
+        "§app.project-overseer/statecharts"
       ]
     },
     "§app/organizations": {
@@ -7828,6 +8047,11 @@
         "src/components/PersonPage.tsx",
         "src/components/Sidebar.tsx",
         "server/tours/bindings.ts"
+      ],
+      "notOwned": [
+        "§app/baton",
+        "§app/project-overseer",
+        "§app/outreach"
       ]
     },
     "§app/project-overseer": {
@@ -7854,6 +8078,11 @@
         "§app/overseer",
         "§app/baton",
         "§app/requirements"
+      ],
+      "notOwned": [
+        "§app/overseer",
+        "§app/baton",
+        "§app/requirements"
       ]
     },
     "§app/requirements": {
@@ -7869,6 +8098,11 @@
         "src/components/ProjectPage.tsx",
         "server/conversation-draft-routes.ts",
         "shared/conversation-drafts.ts"
+      ],
+      "notOwned": [
+        "§app.baton/hand-off",
+        "§app.organizations/stakeholder",
+        "§app/decisions"
       ]
     },
     "§app.insights/usage-resend": {
@@ -8108,6 +8342,11 @@
         "pi-config/extensions/worktrees/index.ts",
         "pi-config/extensions/worktrees/state.ts",
         "pi-config/extensions/worktrees/README.md"
+      ],
+      "notOwned": [
+        "§chat/merge-round",
+        "§chat/sandbox",
+        "§app.decisions/attention-signals"
       ]
     },
     "§app.insights/explanations-page": {
@@ -8630,6 +8869,11 @@
         "src/lib/push.ts",
         "server/web-push.test.ts",
         "server/push.test.ts"
+      ],
+      "notOwned": [
+        "§app.overseer/attention-digest",
+        "§app.session-list/needs-you",
+        "§app.decisions/team-stall"
       ]
     },
     "§app.overseer/links-tools": {
@@ -8867,6 +9111,11 @@
         "shared/protocol.ts",
         "server/mesh/links.test.ts",
         "server/mesh/links-transfer-test-fixtures.ts"
+      ],
+      "notOwned": [
+        "§mesh/remote-sessions",
+        "§app.overseer/links-tools",
+        "§mesh.peers/listener"
       ]
     },
     "§chat.mode-menu/workers": {
@@ -9197,6 +9446,11 @@
         "src/share/thread.tsx",
         "server/share/edge.ts",
         "server/share/routes.ts"
+      ],
+      "notOwned": [
+        "§app.baton/share-listener",
+        "§app.baton/outsider-view",
+        "§app.organizations/org-page"
       ]
     },
     "§design.copy-deck/owner-page": {
@@ -9642,7 +9896,12 @@
         "src/lib/costs.ts",
         "server/usage-helper/price-book.ts"
       ],
-      "evidence": "verified"
+      "evidence": "verified",
+      "notOwned": [
+        "§app.insights/usage-ledger",
+        "§app.organizations/org-page",
+        "§app.project-overseer/limits"
+      ]
     },
     "§design.copy-deck/project-costs": {
       "kind": "note",
@@ -9831,6 +10090,11 @@
         "pi-config/extensions/mode/index.ts",
         "src/components/AlignmentSettings.tsx",
         "pi-config/extensions/mode/align-settings.ts"
+      ],
+      "notOwned": [
+        "§chat/alignment-review",
+        "§chat/mode-menu",
+        "§chat.composer/anatomy"
       ]
     },
     "§app.requirements/owner-area": {
@@ -10564,6 +10828,11 @@
       "evidence": "verified",
       "code": [
         "src/components/ChangesViewer.tsx"
+      ],
+      "notOwned": [
+        "§chat.worktrees/merge-card",
+        "§chat.worktrees/pane",
+        "§chat.transcript/transcript-items"
       ]
     },
     "§app.baton/abilities": {
@@ -10760,6 +11029,11 @@
         "shared/protocol.ts",
         "server/resource-monitor.ts",
         "src/components/ResourceMonitor.tsx"
+      ],
+      "notOwned": [
+        "§app.insights/sidebar-foot",
+        "§app/load-priority",
+        "§app/settings-dialog"
       ]
     },
     "§app.claude-logins/accounts-tab": {
@@ -10929,6 +11203,11 @@
       "code": [
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/README.md"
+      ],
+      "notOwned": [
+        "§app/claude-code-provider",
+        "§app.insights/usage-cards",
+        "§mesh/peers"
       ]
     },
     "§app.session-list/auto-titles": {
@@ -11318,6 +11597,11 @@
       "code": [
         "src/components/VoiceInput.tsx",
         "server/voice/service.ts"
+      ],
+      "notOwned": [
+        "§app.settings-dialog/voice-models",
+        "§chat/composer",
+        "§workspace.groups/send-all-mode"
       ]
     },
     "§design.copy-deck/settings-voice": {
@@ -11561,6 +11845,11 @@
         "shared/public-links.ts",
         "server/share/runtime.ts",
         "server/share/routes.ts"
+      ],
+      "notOwned": [
+        "§app.baton/share-listener",
+        "§app/session-share",
+        "§app.project-services/share"
       ]
     },
     "§app.organizations/host-offline": {
@@ -12180,6 +12469,11 @@
         "server/session-shares-routes.ts",
         "server/session-share-view.ts",
         "src/share/SessionShareApp.tsx"
+      ],
+      "notOwned": [
+        "§app.baton/links",
+        "§app.owner-page/link",
+        "§mesh.public/routing"
       ]
     },
     "§design.copy-deck/session-share": {
@@ -12599,6 +12893,11 @@
         "pi-config/extensions/provider-limits/stream.ts",
         "pi-config/extensions/provider-limits/README.md",
         "pi-config/README.md"
+      ],
+      "notOwned": [
+        "§app.subagents-pane/worker-rows",
+        "§app.settings-dialog/models",
+        "§app/claude-logins"
       ]
     },
     "§app.session-share/share-page": {
@@ -13205,6 +13504,11 @@
       "evidence": "verified",
       "code": [
         "shared/profiles.ts"
+      ],
+      "notOwned": [
+        "§chat/subagent-profiles",
+        "§app.settings-dialog/profiles",
+        "§chat/playbooks"
       ]
     },
     "§app.claude-logins/switch-cost": {
@@ -13291,6 +13595,10 @@
       ],
       "requires": [
         "§chat/markdown"
+      ],
+      "notOwned": [
+        "§chat/markdown",
+        "§chat.images/lightbox"
       ]
     },
     "§chat.profiles/live-commit": {
@@ -13569,6 +13877,11 @@
         "shared/schedules.ts",
         "server/schedule-routes.ts",
         ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ],
+      "notOwned": [
+        "§chat/playbooks",
+        "§app.overseer/approvals",
+        "§app/claude-logins"
       ]
     },
     "§app.session-list/drop-overlay": {
@@ -13880,6 +14193,11 @@
       "code": [
         "shared/outreach.ts",
         "server/outreach/core.ts"
+      ],
+      "notOwned": [
+        "§app.baton/links",
+        "§app.project-overseer/holds",
+        "§app.organizations/working-hours"
       ]
     },
     "§app.project-overseer/previews": {
@@ -14312,6 +14630,10 @@
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/mode/spec-mode.md",
         "pi-config/extensions/spec/core/sova-spec-assess.mjs"
+      ],
+      "notOwned": [
+        "§chat.merge-round/landing-suites",
+        "§chat/mode-menu"
       ]
     },
     "§chat.worktrees/merged-state": {
@@ -14785,6 +15107,11 @@
         "shared/project-contract.ts",
         "server/project-services/engine.ts",
         "server/project-services/routes.ts"
+      ],
+      "notOwned": [
+        "§app/project-runtime",
+        "§chat.profiles/projects",
+        "§mesh.public/preview-serve"
       ]
     },
     "§chat.merge-round/private-names": {
@@ -14828,7 +15155,12 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-10T10:39Z"
-      }
+      },
+      "notOwned": [
+        "§chat.worktrees/readiness",
+        "§chat.worktrees/merge-board",
+        "§chat/schedules"
+      ]
     },
     "§chat.merge-round/driver": {
       "kind": "behavior",
@@ -14945,6 +15277,11 @@
         "src/lib/auth.ts",
         "src/components/Unlock.tsx",
         "scripts/install.sh"
+      ],
+      "notOwned": [
+        "§mesh.peers/listener",
+        "§mesh.public/preview",
+        "§app.baton/share-listener"
       ]
     },
     "§app.overseer/input-source": {
@@ -15129,6 +15466,11 @@
         "server/topic-store.ts",
         "server/topic-delivery.ts",
         "shared/topic-message.ts"
+      ],
+      "notOwned": [
+        "§chat/merge-round",
+        "§mesh.links/delivery",
+        "§app.decisions/session-tags"
       ]
     },
     "§app.access/devices": {
@@ -15316,7 +15658,12 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-12T13:59Z"
-      }
+      },
+      "notOwned": [
+        "§app/claude-logins",
+        "§app.insights/usage-ledger",
+        "§app.subagents-pane/claude-code-workers"
+      ]
     },
     "§tools.spec/context-packets": {
       "kind": "behavior",
@@ -15526,7 +15873,11 @@
     "§chat/work-chain-setting": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§app.settings-dialog/general",
+        "§chat.transcript/transcript-items"
+      ]
     },
     "§chat.subagent-profiles/file": {
       "kind": "behavior",
@@ -15685,6 +16036,11 @@
       "code": [
         "shared/subagent-profiles.ts",
         "pi-config/extensions/subagents/subagent-profiles.ts"
+      ],
+      "notOwned": [
+        "§chat/profiles",
+        "§teams/defaults",
+        "§mesh.sync/profile-library"
       ]
     },
     "§tools.spec/assessment-observations": {
@@ -15770,7 +16126,12 @@
     "§chat/session-fork": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "notOwned": [
+        "§chat.worktrees/inherit",
+        "§chat.transcript/message-actions",
+        "§app.chat-processes/workers"
+      ]
     },
     "§app.project-services/instance-note": {
       "kind": "behavior",
@@ -15855,7 +16216,12 @@
       "agreed": {
         "by": "user (al_1: sure, let's get this merge ready)",
         "at": "2026-10-17T08:42Z"
-      }
+      },
+      "notOwned": [
+        "§chat.worktrees/readiness",
+        "§app.insights/worktrees-endpoint",
+        "§chat.worktrees/dirty-freshness"
+      ]
     },
     "§app.insights/pace-tick": {
       "kind": "behavior",
@@ -15996,6 +16362,11 @@
         "src/components/ProjectsView.tsx",
         "src/App.tsx",
         "src/lib/api.ts"
+      ],
+      "notOwned": [
+        "§app.session-list/organizations",
+        "§app/organizations",
+        "§app/project-services"
       ]
     },
     "§app.projects/import": {
@@ -16220,6 +16591,11 @@
         "server/projects/runtime.ts",
         "server/projects/runtime-routes.ts",
         "shared/project-runtime.ts"
+      ],
+      "notOwned": [
+        "§app.project-services/conform",
+        "§app.project-services/contract",
+        "§app.project-services/deploy"
       ]
     },
     "§app.teams/wait-completion": {
@@ -16458,6 +16834,11 @@
       "code": [
         "pi-config/extensions/mode/align.ts",
         "pi-config/extensions/mode/index.ts"
+      ],
+      "notOwned": [
+        "§chat.alignment/tool",
+        "§chat.subagent-profiles/resolution",
+        "§app.settings-dialog/alignment"
       ]
     },
     "§chat.transcript/setup-card-toggles": {
@@ -16734,6 +17115,11 @@
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
         "server/runtime-choice.integration.test.ts"
+      ],
+      "notOwned": [
+        "§app.claude-code-provider/one-program",
+        "§app/chat-processes",
+        "§chat.profiles/live-commit"
       ]
     },
     "§app.server-runtime/quirks": {
@@ -16824,6 +17210,10 @@
         "docs/perf/RUNBOOK.md",
         "scripts/perf/load-experiment.mjs",
         "scripts/perf/load-standin.mjs"
+      ],
+      "notOwned": [
+        "§app/chat-processes",
+        "§app/resource-monitor"
       ]
     },
     "§chat.transcript/empty-worktrees": {
@@ -17543,6 +17933,11 @@
         "server/mesh/lan-reverse.ts",
         "server/mesh/lan-dialer.ts",
         "server/mesh/lan-relay.ts"
+      ],
+      "notOwned": [
+        "§mesh.peers/listener",
+        "§mesh.peers/grants",
+        "§mesh.remote-sessions/proxy"
       ]
     },
     "§app.claude-logins/login-moved": {
@@ -18262,6 +18657,11 @@
         "shared/harness-wire.ts",
         "shared/harness-state.ts",
         "shared/harness-session.ts"
+      ],
+      "notOwned": [
+        "§app/chat-processes",
+        "§app/claude-code-provider",
+        "§chat.transcript/slim-rows"
       ]
     },
     "§app.insights/velocity-scrub": {
@@ -18457,7 +18857,9 @@
         "pi-config/extensions/spec/tests/frame.test.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/README.md"
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-not-owned.test.mjs",
+        "pi-config/extensions/spec/core/map.mjs"
       ]
     },
     "§tools.spec/graph-payload": {
@@ -18514,7 +18916,8 @@
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/tests/map.test.mjs",
         "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+        "pi-config/extensions/spec/tests/map-fields.test.mjs",
+        "pi-config/extensions/spec/tests/map-not-owned.test.mjs"
       ]
     },
     "§tools.spec/unread-landed": {
@@ -18792,6 +19195,10 @@
         "pi-config/extensions/model-levels/core.ts",
         "pi-config/extensions/model-levels/README.md",
         "pi-config/README.md"
+      ],
+      "notOwned": [
+        "§chat.composer/composer-flyout",
+        "§chat/model-menu"
       ]
     },
     "§app.server-runtime/test-tiers": {
@@ -19212,6 +19619,11 @@
         "server/project-files.ts",
         "server/project-files.test.ts",
         "shared/project-files.ts"
+      ],
+      "notOwned": [
+        "§app.baton/files",
+        "§app.project-overseer/files",
+        "§app.organizations/files-card"
       ]
     },
     "§design.copy-deck/gathering-files": {
@@ -19240,6 +19652,11 @@
         "src/costs-tab.css",
         "src/orgs.css",
         "src/design/align-viewer.css"
+      ],
+      "notOwned": [
+        "§chat/mode-menu",
+        "§chat/model-menu",
+        "§chat.composer/composer-flyout"
       ]
     },
     "§app.insights/ollama-activity": {
@@ -19994,7 +20411,12 @@
     "§site/docs": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "notOwned": [
+        "§site/landing",
+        "§chat/mode-menu",
+        "§chat/subagent-profiles"
+      ]
     },
     "§site.docs/codemode": {
       "kind": "behavior",
@@ -20355,6 +20777,11 @@
       "evidence": "verified",
       "code": [
         "shared/org-history.ts"
+      ],
+      "notOwned": [
+        "§app.requirements/decisions",
+        "§app.project-overseer/statecharts",
+        "§app.organizations/workspace-repo"
       ]
     },
     "§site.landing/fold-device": {
@@ -20371,7 +20798,10 @@
     "§site/landing": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "notOwned": [
+        "§site/docs"
+      ]
     },
     "§app.settings-dialog/alignment": {
       "kind": "behavior",

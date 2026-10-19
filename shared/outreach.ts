@@ -227,9 +227,10 @@ export type SendOutcome = "sent" | "failed" | "refused";
 /**
  * What a send carries as its link: a reference the server resolves to a URL in the send's own step
  * (§app.outreach/links), never a URL or a token. `handoff`: the person's link to a gathering session
- * (minted then); `preview`: a public preview link of the project, by its id.
+ * (minted then); `preview`: a public preview link of the project, by its id; `owner`: the org's owner
+ * page link, in an organization's own send only (§app.owner-page/send).
  */
-export type LinkRef = { kind: "handoff"; session: string } | { kind: "preview"; preview: string };
+export type LinkRef = { kind: "handoff"; session: string } | { kind: "preview"; preview: string } | { kind: "owner" };
 export type LinkKind = LinkRef["kind"];
 
 /** A send's answer (the routes, the tools). Never a link, a token or a number. */
@@ -242,6 +243,8 @@ export interface SendAnswer {
   retryable?: boolean;
   /** It waits in the project's hold (an unattended project overseer): goes at `goesAt` unless cancelled. */
   held?: { id: string; goesAt: string; what: string };
+  /** An owner page link send made a new link (every older one of the org stopped): it stays even when the send failed. */
+  madeLink?: boolean;
 }
 /** @deprecated the operator's Send on WhatsApp answer: a SendAnswer. */
 export type SendLinkAnswer = SendAnswer;
@@ -271,7 +274,8 @@ export interface OutreachLogLine {
   personId: string;
   channel: ChannelId;
   intent: "send";
-  projectId: string;
+  /** Absent only on an organization's own send (an owner page link, §app.owner-page/send). */
+  projectId?: string;
   /** The link's kind and its reference's ids (a session and hand-off, or a preview). */
   link?: LinkKind;
   sessionId?: string;
@@ -293,7 +297,7 @@ export interface OutreachLogLine {
 export interface PersonSendRow {
   id: string;
   at: string;
-  /** What went: the gathering's public title, "A preview", or "A message". */
+  /** What went: the gathering's public title, "A preview", "Their owner page", or "A message". */
   what: string;
   sessionId?: string;
   channel: ChannelId;
@@ -335,6 +339,7 @@ export const NOT_SENT_REASONS: Record<string, string> = {
   "preview-off": "the preview was turned off",
   "preview-expired": "the preview expired",
   "preview-address": "no preview address was available (Settings → Public links)",
+  "not-owner": "they are not the organization's owner",
   "address-off": "no public address is set (Settings → Public links)",
   "address-unreachable": "the public address can't be reached",
   "address-not-accepted": "the gateway doesn't accept this host's links",
@@ -357,6 +362,9 @@ export const notSentReason = (code: string | undefined): string => (code && NOT_
 
 /** A gathering link's default line (§app.outreach/channels): fixed, never model-written. */
 export const handoffLine = (operatorName: string, publicTitle: string): string => `${operatorName} asked you a question: ${publicTitle}`;
+
+/** An owner page link's default line (§app.owner-page/send, §design.copy-deck/owner-page): fixed, never model-written. */
+export const ownerLine = (operatorName: string, orgName: string): string => `${operatorName} sent you your page for ${orgName}.`;
 
 /** The message: the note (else the link's default line), a blank line, the link. */
 export const composeMessage = (line: string | undefined, url: string | undefined): string => [line, url].filter((x): x is string => !!x).join("\n\n");

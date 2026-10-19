@@ -1,5 +1,5 @@
 import type { AttentionItem } from "../shared/protocol";
-import { ownerPageInfo } from "./owner";
+import { ownerAskOpen, ownerPageInfo } from "./owner";
 import { readIndex, readOrgOrPlaceholder, readProjects } from "./orgs";
 import { orgRequests } from "./project-assistant-store";
 
@@ -26,7 +26,7 @@ export function ownerAttention(): AttentionItem[] {
       ownerName = info.person.name;
       orgName = readOrgOrPlaceholder(o.id).name;
       projects = readProjects(o.id);
-      if (info.link?.state === "expired" && info.link.askedAt)
+      if (info.link?.askedAt && ownerAskOpen(info))
         out.push({
           id: `owner-link-request:${o.id}`,
           path: "",

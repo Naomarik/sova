@@ -41,6 +41,30 @@ export function ownerLinkFor(orgId: string, opts: { keep?: boolean } = {}, now =
   return { token, createdAt: record.createdAt, expiresAt: record.expiresAt };
 }
 
+/**
+ * The link the Overseer's send gives the owner (§app.owner-page/send): their live link when its token is
+ * kept (Get Owner Link's), making nothing; else a new one made as Get New Owner Link makes it (every older
+ * owner link of the org stops at once), marked undelivered and carrying the owner's ask until its message
+ * went. Checked here, synchronously before any mint: `personId` is still the org's active owner.
+ */
+export function ownerLinkToSend(orgId: string, personId: string, now = Date.now()): { token: string; hash: string; made: boolean } {
+  const owner = ownerOf(orgId);
+  if (!owner || owner.id !== personId) throw new OrgError("They are not the organization's owner now.", 409);
+  const live = ownerLinksOf(orgId).filter((l) => l.personId === personId && personLinkState(l, now) === "live").at(-1);
+  const kept = live ? tokenFor(live.hash, "i") : null;
+  if (live && kept) return { token: kept, hash: live.hash, made: false };
+  const { token, record } = mintOwnerLink(orgId, personId, now, { undelivered: true });
+  return { token, hash: record.hash, made: true };
+}
+
+/** What the Overseer's send would do now (§app.owner-page/send), for its read: reuse the owner's live kept link, or make a new one. */
+export function ownerSendPlan(orgId: string, now = Date.now()): "reuse" | "new" | null {
+  const owner = ownerOf(orgId);
+  if (!owner) return null;
+  const live = ownerLinksOf(orgId).filter((l) => l.personId === owner.id && personLinkState(l, now) === "live").at(-1);
+  return live && tokenFor(live.hash, "i") ? "reuse" : "new";
+}
+
 /** Turn Off Owner Link (and the org statechart's `revoke-owner-links` effect). Returns how many were live. */
 export function revokeOwnerLinks(orgId: string, why: "off" | "detached" | "owner-changed" | "left" = "off"): number {
   return revokePersonLinks((l) => l.orgId === orgId, why);
@@ -117,11 +141,16 @@ export function ownerPageInfo(orgId: string, now = Date.now()): OwnerPageInfo {
   };
 }
 
+/** The owner's ask is still open (§app.owner-page/link): their newest link turned off unused and they asked,
+    or the newest is one the Overseer's send made that hasn't been delivered yet, still carrying the ask
+    (§app.owner-page/send). */
+export const ownerAskOpen = (info: Pick<OwnerPageInfo, "person" | "link">): boolean => !!info.person && !!info.link?.askedAt && info.link.state !== "off";
+
 /** Needs you: 1 while the owner, holding their newest link after it turned off unused, asked for a
-    new one; a new link answers it. A link that turned off with nobody asking needs nothing. */
+    new one; a new link answers it (one the Overseer's send made, only once its message went). A link
+    that turned off with nobody asking needs nothing. */
 export function ownerLinkNeeds(orgId: string, now = Date.now()): number {
-  const info = ownerPageInfo(orgId, now);
-  return info.person && info.link?.state === "expired" && info.link.askedAt ? 1 : 0;
+  return ownerAskOpen(ownerPageInfo(orgId, now)) ? 1 : 0;
 }
 
 /** A person's owner links for their page, newest first, with visits counted per generation. */

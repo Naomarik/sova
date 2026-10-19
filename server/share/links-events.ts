@@ -19,7 +19,7 @@ import { MINT_ACK_TIMEOUT_MS } from "../../shared/public-links";
 
 export interface ShareLinksChange {
   /** The link kind that changed: `h` hand-off, `i` owner page, `s` session share, `p` preview. */
-  kind: "h" | "i" | "s" | "p";
+  kind: "h" | "i" | "s" | "p" | "t";
   /** `mint`: new links; `revoke`: links stopped; `renew`: live links' expiry changed, none new. */
   cause: "mint" | "revoke" | "renew";
   /** A mint's exact new token hashes, when it made several (a session share mints one link per

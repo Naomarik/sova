@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import type { OrgLinkRow, SessionShare, SessionShareVisit } from "../../shared/session-share";
+import type { OrgLinkRow, SessionShare, SessionShareVisit, TourLinkRow } from "../../shared/session-share";
 import { projectHref } from "../lib/projects-route";
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
@@ -27,9 +27,9 @@ import {
   runningLine,
   sentToLine,
 } from "../lib/previews";
-import { DELETE_LINK, deleteLinkConfirm, LINK_DELETED, linkGone } from "../lib/link-delete";
+import { DELETE_LINK, DELETE_THIS_LINK, deleteLinkConfirm, LINK_DELETED, LINK_GONE, linkGone } from "../lib/link-delete";
 import { copyText, toast } from "../lib/ui-state";
-import { copyableLink, expiresWord, type HostShares, openedLine, presenceWord, readShares, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, linksViewingNow, visitLine, visitTitle } from "../lib/session-shares";
+import { copyableLink, expiresWord, type HostShares, openedLine, presenceWord, readShares, revokeHandoff, revokeOwnerLink, revokeTourLink, sharesOverview, shareLine, shareLive, stopShare, linksViewingNow, visitLine, visitTitle } from "../lib/session-shares";
 import { DeleteButton } from "./DeleteButton";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
@@ -85,6 +85,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
   const live = () => shares().filter((s) => shareLive(s.share));
   const ended = () => shares().filter((s) => !shareLive(s.share));
   const orgLinks = createMemo(() => hosts().flatMap((h) => (h.overview?.orgLinks ?? []).map((link) => ({ host: h.host, link }))));
+  const tourLinks = createMemo(() => hosts().flatMap((h) => (h.overview?.tourLinks ?? []).map((link) => ({ host: h.host, link }))));
   const down = () => hosts().filter((h) => h.error);
   /** This host's preview visits (§mesh.public/visitor-log), by preview id. */
   const previewVisits = (id: string) => hosts().find((h) => h.host === null)?.overview?.previewVisits?.[id] ?? [];
@@ -109,6 +110,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
       meta={
         <Show when={loaded()}>
           {live().length} session {live().length === 1 ? "share" : "shares"} · {orgLinks().length} organization {orgLinks().length === 1 ? "link" : "links"}
+          <Show when={tourLinks().length > 0}> · {tourLinks().length} tour {tourLinks().length === 1 ? "link" : "links"}</Show>
           <Show when={viewing() > 0}> · {viewing()} viewing now</Show>
         </Show>
       }
@@ -122,7 +124,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
     >
       <For each={down()}>{(h) => <p class="usage-note">{hostName(h.host)} can't be reached, so its links aren't listed.</p>}</For>
 
-      <Show when={loaded() && shares().length === 0 && orgLinks().length === 0 && previews().length === 0 && down().length === 0}>
+      <Show when={loaded() && shares().length === 0 && orgLinks().length === 0 && tourLinks().length === 0 && previews().length === 0 && down().length === 0}>
         <div class="empty">
           <p class="empty-title">No public links are open.</p>
           <p class="empty-body">Share a session from its Sharing tab: Session details, then Sharing.</p>
@@ -169,6 +171,19 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                   onRevoke={() => void act(() => (l.link.kind === "handoff" && l.link.sessionId ? revokeHandoff(l.host, l.link.sessionId) : revokeOwnerLink(l.host, l.link.orgId)), LINK_DELETED)}
                 />
               )}
+            </For>
+          </ul>
+        </section>
+      </Show>
+
+      <Show when={tourLinks().length > 0}>
+        <section class="card shares-card" aria-labelledby="shares-tour-title">
+          <h2 class="shares-card-title" id="shares-tour-title">
+            Tour links
+          </h2>
+          <ul class="list">
+            <For each={tourLinks()}>
+              {(l) => <TourLinkItem host={l.host} link={l.link} now={props.now} hostName={meshOn() ? hostName(l.host) : null} onRevoke={() => void act(() => revokeTourLink(l.host, l.link), LINK_DELETED)} />}
             </For>
           </ul>
         </section>
@@ -421,6 +436,33 @@ function OrgLinkItem(props: { link: OrgLinkRow; now: number; hostName: string | 
           {(link) => <CopyButton label="Copy Link" title={`Copy ${l().personName}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
         </Show>
         <DeleteButton label={DELETE_LINK} confirm={deleteLinkConfirm(l().personName)} note={linkGone(l().personName)} onRun={() => props.onRevoke()} />
+      </div>
+    </li>
+  );
+}
+
+/** A standalone reviewed-tour link (`/t/`): pinned to one checked edition, so a changed tour needs
+    a new link. Its visits are only what opt-in Log visitors recorded; a reader's resume link never shows. */
+function TourLinkItem(props: { host: string | null; link: TourLinkRow; now: number; hostName: string | null; onRevoke(): void }) {
+  const l = () => props.link;
+  return (
+    <li class="list-row shares-row">
+      <div class="list-main">
+        <p class="list-title shares-row-title">
+          <a href={sessionLink(l().sessionId)}>{l().title}</a>
+          <Show when={props.hostName}>{(h) => <span class="chip chip-count">{h()}</span>}</Show>
+        </p>
+        <p class="list-meta">
+          Edition checked {absoluteTime(l().checkedAt, props.now)} · {expiresWord(l().expiresAt, props.now)}
+        </p>
+        <p class="list-meta">{openedLine(l().opened, l().lastAt, (iso) => relativeTime(iso, props.now))}</p>
+        <Visits id={`tour:${props.host ?? ""}:${l().id}`} visits={l().visits} now={props.now} />
+      </div>
+      <div class="shares-row-actions">
+        <Show when={l().link}>
+          {(link) => <CopyButton label="Copy Link" title={`Copy the link to ${l().title}`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+        </Show>
+        <DeleteButton label={DELETE_LINK} confirm={DELETE_THIS_LINK} note={LINK_GONE} onRun={() => props.onRevoke()} />
       </div>
     </li>
   );

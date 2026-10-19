@@ -105,7 +105,17 @@ script cannot set, is answered and given the cookie instead of the unlock screen
 above unchanged: a request carrying proxy headers (which is how the tailnet reaches this listener,
 through loopback), a cross-site request, a page on another port of this host, a foreign Host, and
 any caller that sets no fetch metadata at all still needs the token. The rule is a convenience for
-the person at the keyboard, never a licence for the network.
+the person at the keyboard, never a licence for the network. A guided-tour recorder is not that
+person (§app.tours/sites): every request it makes carries `X-Sova-Tour-Recorder: 1`, and silent
+local sign-in, unlock, /api/auth/token and pairing all refuse a request carrying it; a recorder
+signs in to its own managed test copy only by a cookie Sova sets for that exact address. A request carrying the header, whatever its value, also has every method but GET and HEAD refused,
+and so is its upgrade to any live connection other than `/ws/watch` (the chat socket `/ws/chat`
+included), each logged as one fixed line. A recording of a test
+copy also carries an HTTP-only recorder marker cookie for that copy's origin, because browsers send
+no added headers on a live-connection handshake. The copy treats the marker exactly as it treats
+the recorder header: no silent sign-in, token, pairing or unlock, no write, and no live connection
+other than `/ws/watch`. `/ws/watch` ignores
+every client frame anyway.
 
 Every answer on the main listener, a refusal and the static shell included, carries
 `X-Sova-Server: sova`, which a preview link refuses to pass on, so no preview can front a Sova

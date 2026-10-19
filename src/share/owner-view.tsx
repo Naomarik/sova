@@ -65,6 +65,8 @@ export function OwnerPage(props: {
   go?(route: OwnerRoute): void;
   /** The operator's preview: no refresh, no footer about the link. */
   preview?: boolean;
+  /** Explicit current-conversation scope, supplied independently by public and operator hosts. */
+  tourBase?(conversation: string, handle: string): string;
   /** The page's title, for the browser tab. */
   onTitle?(title: string): void;
   /** Ask for a new link, from a link that turned off unused (§app.owner-page/link); true once asked. */
@@ -259,7 +261,7 @@ export function OwnerPage(props: {
                 <ProjectView project={d() as OwnerProject} now={now()} link={link} />
               </Match>
               <Match when={true}>
-                <ConversationView conv={d() as OwnerConversation} now={now()} link={link} />
+                <ConversationView conv={d() as OwnerConversation} now={now()} link={link} tourBase={props.tourBase} />
               </Match>
             </Switch>
           )}
@@ -645,7 +647,7 @@ function ProjectView(props: { project: OwnerProject; now: number; link: Link }) 
   );
 }
 
-function ConversationView(props: { conv: OwnerConversation; now: number; link: Link }) {
+function ConversationView(props: { conv: OwnerConversation; now: number; link: Link; tourBase?(conversation: string, handle: string): string }) {
   const c = () => props.conv;
   return (
     <>
@@ -663,7 +665,7 @@ function ConversationView(props: { conv: OwnerConversation; now: number; link: L
         </p>
       </header>
       <section class="owner-thread" aria-label="Conversation">
-        <For each={c().items}>{(it) => <Item item={it} reader drawings={c().drawings} />}</For>
+        <For each={c().items}>{(it) => <Item item={it} reader drawings={c().drawings} tour={props.tourBase ? { base: handle => props.tourBase!(c().id, handle) } : undefined} />}</For>
       </section>
     </>
   );

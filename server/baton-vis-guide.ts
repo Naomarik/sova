@@ -14,6 +14,8 @@ import { stripVisComments, VIS_FILES, VIS_KIND_FILES, VIS_KINDS } from "../pi-co
     `html` a frame only with interactive drawings, `code` never. */
 export const SHARE_VIS_KINDS = ["flow", "chart", "matrix", "timeline", "tree", "steps", "wireframe", "layers", "state", "sequence"] as const;
 
+export const BATON_TOUR_GUIDE = `# Reviewed tours\n\nA tour is a checked recording already approved for this conversation, not a drawing fence. It is available whether Draw, Interactive drawings or Read links are on or off. Use show_tour only with an attached opaque handle from the public tour context. Never record, run a shell, read a source file or browse to produce a tour. If someone asks for more coverage, keep their request in this conversation for an authorized operator or builder; it waits until someone with access can record and review it. Asking never grants access to the recorded application.\n\nPeople may Ask About This Step or Request More Coverage only on their turn. These controls prefill a draft; they never send it. The owner page and person preview stay read-only.`;
+
 const OPENING = `# Drawings
 
 The person's page draws \`vis\` fences as small figures. When a picture would help the person see their own subject faster than prose (their figures side by side, the steps of their own work, a screen or layout they describe, as a \`wireframe\`), you may put ONE drawing in a reply: a fenced block whose info string is \`vis <kind>\`, with a one-line \`caption:\`, next to a sentence that says what to notice. Most replies need none. In a wireframe, use the person's own words and figures or a placeholder like "AED —"; never invent sample names or numbers.

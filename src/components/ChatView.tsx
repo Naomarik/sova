@@ -139,6 +139,7 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
+import { TourSessionContext } from "./TourCard";
 import { HistoryItems, holdReaderAcrossSwap, LiveEntries, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
@@ -1433,7 +1434,7 @@ export function ChatView(props: {
 
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
-  const actionState = (wake = false, link = false, topic = false): ActionState => ({
+  const actionState = (wake = false, link = false, topic = false, tourNotice = false): ActionState => ({
     chat: true,
     live: false, // a ChatView only exists for a session Sova may write to
     streaming: live.running,
@@ -1443,6 +1444,7 @@ export function ChatView(props: {
     pending: forking() || pending().rewind + pending().regenerate > 0,
     paused: blocked()?.text ?? null,
     wake,
+    tourNotice,
     link,
     topic,
   });
@@ -1500,7 +1502,7 @@ export function ChatView(props: {
           case "regenerate":
             return {
               kind,
-              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)),
+              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)),
               run: () => regenerate(strip.entryId),
             };
         }
@@ -2201,6 +2203,16 @@ export function ChatView(props: {
             <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
+              <TourSessionContext.Provider value={{
+                sessionId: () => props.summary?.()?.id,
+                host: () => hostOf(props.path),
+                canAsk: () => !blocked(),
+                ask: (question) => {
+                  if (blocked()) return;
+                  setRestored({ text: question });
+                  focusComposer();
+                },
+              }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -2223,6 +2235,7 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              </TourSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (

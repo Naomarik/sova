@@ -14,6 +14,17 @@ server parses fences with the renderer's own code.
   rules, one file per kind), read once at load by `minor.ts`; the `vis_guide` tool (`vis-guide-tool.ts`) returns
   `shared.md` then the asked kind's file. A kind file carrying the stub marker is never taught. A worker, which has no
   `vis_guide`, reads the files directly (`VIS_GUIDE_DIR`).
+- The tool-backed catalogue entry `tour` is not a fence kind and never joins the renderer registry.
+  `vis_guide {kind:"tour"}` returns `vis/tour.md` alone (no shared fence grammar): the core, about 3,000
+  tokens, must-know rules first. `vis_guide` also takes the parts the core names (`VIS_TOOL_PARTS`:
+  `tour-signin`, `tour-sites`, `tour-sova`, `tour-sharing`), each returned alone and never listed as a kind
+  (the tool's enum is `VIS_GUIDE_NAMES`). Each rule lives in exactly one of these files; the recorder's
+  failure messages and the sign-in notice cite the part names, so renaming a part changes `server/tours/` too.
+  Sova's served `record_tour` / `show_tour` require explicit vis mode; align Visuals alone never
+  grants them. A hand-off has only scoped show, independent of drawing switches.
+  `VIS_TOOL_ENTRIES` separates these workflow files from `VIS_KIND_FILES`; `src/vis/guide.test.ts` validates
+  the core's one worked script with the actual strict normalizer, without treating it as a fence example,
+  and `server/tours/tools-signin.test.ts` the two `signIn` examples in `tour-signin.md`.
 - The renderer: `src/vis/` (parse side `parse.ts`, `registry.ts`, `core/`, and per kind under `kinds/`). The site
   page: `site/src/content/docs/modes/vis.md`.
 - Tests: `pnpm test -- src/vis/*.test.ts src/vis/core/*.test.ts src/vis/kinds/*/*.test.ts` (golden, parse, lenience, layout and guide tests; `src/vis/guide.test.ts` checks the
@@ -23,6 +34,7 @@ server parses fences with the renderer's own code.
 
 - **One rule for the tools.** `visToolsWanted` in `minor.ts`: the vis tools (`vis_guide`, and in Sova's hosted
   sessions `vis_check`) are in the loadout when vis is on, or align is on in a session started with Visuals.
+  Tour tools require explicit vis on instead.
   `server/vis-check.ts` and `server/chat-manager.ts` take it from there.
 - **The parse side runs on the server.** `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports
   `src/vis/parse.ts` and `src/vis/kinds/frame/parse.ts`. So the parse side of `src/vis/` (`parse.ts`, `registry.ts`,

@@ -27,7 +27,16 @@ with its policy templates in `pi-config/sandbox-policy/`. Sova imports its sessi
   imported by `server/link-sandbox.ts`: `resolveSessionPolicy`, the one resolution of a session's policy from its
   agent dir, cwd, session id and tracked worktrees (the extension's `snapshot()` calls it too), and
   `readDenial` / `writeDenial` / `hiddenBelow`, so a linked session's file transfer is refused exactly where that
-  session's own tools would be.
+  session's own tools would be. `prepareSessionCommand` in that same facade is the whole-command
+  launch seam used by the tour recorder: the server supplies trusted effective session scope, runs
+  the controller and browser under the returned confined argv/env/fds, reaps them, then disposes
+  the private attempt tmp/proxy. Setup failures never fall back to an unconfined browser. Its `proxy`
+  option (`forbid`, `local` in `proxy.ts`, off by default, never on the session's own proxy) is how a
+  sandbox-on recording refuses non-public DNS answers and reaches its one verified running copy; a
+  change to either is a contract change (README).
+- The provisional `starting` entry (`SANDBOX_STARTING`, `isStarting` in `state.ts`) is read by
+  `server/sandbox-state.ts` (`SandboxInfo.starting`, the shield's "Turning on…") and by the tour
+  recorder (`server/tours/context.ts`, which refuses while it is newest). Keep all three on the constant.
 - The sandbox imports nothing outside its own directory. It asks the server's
   `Symbol.for("sova:tool-command-prefix")` hook for the niceness prefix of tool commands (§app.load-priority/workers);
   unset, as in the TUI, nothing changes.

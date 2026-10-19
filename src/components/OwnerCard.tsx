@@ -248,6 +248,7 @@ export function OwnerPreview(props: { orgId: string; orgName: string; ownerName:
             route={route()}
             load={load}
             href={ownerHash}
+            tourBase={(conversation, handle) => `/api/orgs/${encodeURIComponent(props.orgId)}/owner/preview/c/${encodeURIComponent(conversation)}/tours/${encodeURIComponent(handle)}`}
             go={(r) => {
               setRoute(r);
               body.scrollTop = 0;

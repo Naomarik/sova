@@ -18,9 +18,12 @@ import { openVersion } from "../owner-versions";
 import { AssistantRefusal, assistantView, sendOwnerMessage } from "../project-assistant";
 import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
+import { mountPublicTourRoutes } from "./tour-routes";
+import { mountBatonTourRoutes } from "../tours/bindings-routes";
 import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
 import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter } from "./rate-limit";
+import { OWNER_READS_PER_MINUTE, ownerReadTokenLimited } from "./tour-limits";
 import { ensureAssetsCurrent } from "./registry-push";
 import { shareDist } from "./share-dist";
 
@@ -62,11 +65,10 @@ export const imageTokenLimited = (token: string, now = Date.now()): boolean => i
 const IMAGE_CSP = "default-src 'none'; sandbox";
 
 /** Owner page reads per token per minute (a page re-reads every 60 s; this is the ceiling). */
-export const OWNER_GETS_PER_MINUTE = 120;
-const ownerGets = new RateLimiter(OWNER_GETS_PER_MINUTE);
+export const OWNER_GETS_PER_MINUTE = OWNER_READS_PER_MINUTE;
 
 /** Sliding one-minute window of Owner page reads per token; true when this one is over the limit. */
-export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerGets.limited(token, now);
+export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerReadTokenLimited(token, now);
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
@@ -471,6 +473,8 @@ export function createShareApp(): Hono {
   // ---- session shares (§app/session-share): read-only ------------------------------------------
 
   mountSessionShareRoutes(app, shareDist, PAGE_CSP);
+  mountPublicTourRoutes(app, PAGE_CSP);
+  mountBatonTourRoutes(app);
 
   app.all("*", (c) => c.json({ error: "Not found" }, 404));
   return app;

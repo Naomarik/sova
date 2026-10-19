@@ -200,6 +200,8 @@ for an earlier revision of the same alignment its one-line change row, at the ca
 call's own tool card renders nothing once this result is there. A failed `align` call stays an
 ordinary tool-call and tool-result.
 
+**tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
+
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
 a machine event fired the turn, not the person. Same `.toolcard` shell as tool-call/tool-result
@@ -450,7 +452,9 @@ extensions add under a reply comes after it, outside the strip, and never change
   batch (§chat.topics/row) is the same, with its own reason: "That reply answered notes other
   sessions pushed to a topic, not a message you sent, so there's nothing to send again.", and so
   is a reply to a linked session's message: "That reply answered a linked session's message, not
-  one you sent, so there's nothing to send again."
+  one you sent, so there's nothing to send again." A reply that answered a tour's sign-in notice
+  (a "Tour sign-in" wake row, §app.tours/sites) is the same, with its own reason: "That reply
+  answered a tour's sign-in notice, not a message you sent, so there's nothing to send again."
 - **Both confirm inline, in place.** The first press arms: the strip becomes the sentence plus
   `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
   button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:
@@ -874,6 +878,8 @@ what it did before.
 
 ## §chat.transcript/slim-rows — Rows carry what they draw
 
+Tour tools retain only a bounded card projection with job/tour/edition references and the small summary needed to draw the card (§app.tours/editions). Their large script, report and picture bytes never become eager row payloads; full authoring arguments stay lazy and authorized. A malformed or failed result cannot look like a complete checked tour.
+
 A transcript row carries what its folded form draws and no copy of the entry it came from, so a
 long session's rows weigh about what its text weighs, and opening, switching and reloading never
 wait on megabytes nobody looks at. Nothing on screen changes: every row, its time, its chips, the
@@ -900,9 +906,12 @@ shows exactly what it showed before.
   way to try again. The folded line's tooltip shows the whole line, as before. Cards that draw as cards rather than
   tool cards (`show_changes`, `sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
   `session_send`, `sova_create_session`, `sova_navigate`) keep their whole content on the row.
-  While a reply streams, its rows show everything as they always did.
+  While a reply streams, its rows show everything as they always did. One exception holds everywhere, streaming
+  included: `record_tour`'s supplied credentials show as "[hidden]" and its arguments stream only once they end
+  (§app.tours/sites).
 - **Full content where it's needed.** Copying, the Changes viewer and every server-side reader
-  (the Overseer's session reads) still get every tool's whole arguments and output.
+  (the Overseer's session reads) still get every tool's whole arguments and output, except `record_tour`'s
+  supplied credentials, which every view shows as "[hidden]".
 
 ## §chat.transcript/recall-rows — Memory recalls are quiet rows
 
@@ -1143,7 +1152,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    `a.card.ext-card` to `#/shares` (§app.session-share/shares-page) with the `external` icon, the
    title `Shares`, a count chip (`{n}`: every live public link counted on the line), and one line:
    `{n} session shares · {n} organization links · {n} preview links` (`1 session share`,
-   `1 organization link`, `1 preview link` at 1), then ` · {n} viewing now` only while anyone is
+   `1 organization link`, `1 preview link` at 1), then ` · {n} tour links` (`1 tour link`) only
+   when there are live standalone tour (`/t/`) links, then ` · {n} viewing now` only while anyone is
    (the Shares page's own viewing count). Session shares are the shares with a live link and
    organization links every live hand-off and owner link, both from `GET /api/shares-overview` on
    this host and each up peer; preview links are this host's active previews from
@@ -1739,7 +1749,7 @@ whole row as the target, and its Arguments and Output.
 The timeline breaks at anything that is the message rather than the working — a user or assistant
 message, a report, a card tool (`sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
 `session_send`, `sova_create_session`, or `show_changes` with valid successful details),
-a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step.
+a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step. Tour tools `record_tour` and `show_tour` also break the timeline, including their safe request/progress/failure rows before a valid card projection; Hide tools never conceals them (§app.tours/recording).
 No step summary draws as a card; the expanded thinking aside is the only subtly shaded content.
 
 A row that draws nothing is TRANSPARENT to the timeline: it is not a step and it never breaks a

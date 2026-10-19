@@ -10,7 +10,7 @@ import { PREVIEW_VISITS_FILE } from "./visits";
  * Who opened this host's links, with their address (§mesh.public/visitor-log): while the host's
  * Log visitors switch is on, `<stateRoot>/visitor-identity.jsonl` (0600, host-local, never synced or
  * committed) gets `{id, at, ip, ua, lang?, referer?, path?}`, `id` the visit's id in its visit log
- * (server/visits.ts). A `/h/`, `/i/` or `/s/` visit gets one line per address and user agent (per
+ * (server/visits.ts). A `/h/`, `/i/`, `/s/` or `/t/` visit gets one line per address and user agent (per
  * process); a preview visit one per page load. Never a token, a preview label, a hash, Host,
  * cookies or Authorization. Read only by the Shares page (server/shares-overview.ts). Lines older
  * than RETENTION_MS are pruned here and in preview-visits.jsonl. Writing never fails a request.
@@ -88,12 +88,13 @@ export function noteVisitor(id: string | null, v: VisitorSeen, perPage = false, 
   }
 }
 
-/** A `/h/`, `/i/` or `/s/` visit (recordOpen's id) from a share route: its client, user agent and
-    language, off the Node request in the route's `c.env` (none when the app is called without one). */
-export function noteShareVisit(id: string | null, env: unknown): void {
+/** A `/h/`, `/i/`, `/s/` or `/t/` visit (recordOpen's id) from a share route: its client, user agent and
+    language, off the Node request in the route's `c.env` (none when the app is called without one).
+    `redact` scrubs known secrets from the user agent and language before they are kept. */
+export function noteShareVisit(id: string | null, env: unknown, redact: (text: string) => string = text => text): void {
   const req = (env as { incoming?: IncomingMessage } | undefined)?.incoming;
   if (!id || !req) return;
-  noteVisitor(id, { ip: shareClientOf(req) ?? req.socket?.remoteAddress ?? "", ua: one(req.headers["user-agent"]), lang: one(req.headers["accept-language"]) });
+  noteVisitor(id, { ip: shareClientOf(req) ?? req.socket?.remoteAddress ?? "", ua: redact(one(req.headers["user-agent"]) ?? ""), lang: redact(one(req.headers["accept-language"]) ?? "") });
 }
 
 /** A Referer's origin when it is off the preview zone (any `*.<zone>` host carries a label); else undefined. */

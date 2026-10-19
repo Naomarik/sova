@@ -574,6 +574,25 @@ transcripts carry the mode, never the routing.
   policy on its own; nothing here routes around a denied provider to a model
   nobody configured.
 
+## Vis catalogue and guided tours
+
+The vis catalogue (`vis/overview.md`) teaches drawing kinds and a separate tool-backed `tour` entry.
+`vis_guide {kind:"tour"}` returns `vis/tour.md` alone: a short core with the rules behind most failed
+dry runs first, a sign-in checklist, the dry-run, recording, waiting and visual-checking workflow, a
+failure-to-fix table and one worked example. The rare cases are parts `vis_guide` returns by name, each
+alone (`VIS_TOOL_PARTS` in `minor.ts`; never listed as kinds): `tour-signin` (sign-in and test accounts),
+`tour-sites` (sources, site approval, sandbox, network rules), `tour-sova` (recording Sova itself) and
+`tour-sharing` (links, hand-offs, published editions). Each rule lives in one file. It is not a fence grammar;
+there is no executable `vis tour` fence and merely reading a message never records a browser.
+Drawing entries still return `vis/shared.md` followed by their own file, unchanged.
+
+Sova supplies `record_tour` and `show_tour` through its hosted tools (also on its Claude Code
+provider), only while the vis minor mode is on. Align with Visuals alone retains drawing guide/check
+access and grants neither tour tool. This portable extension registers no recorder
+and depends on no Sova runtime; without those hosted tools the guide says the workflow is
+unavailable, not to substitute shell screenshots. Organization hand-off sessions get only a
+scoped `show_tour` for reviewed tours already attached to their conversation.
+
 ## Writing style and Visuals
 
 `~/.pi/agent/mode-align.json` (`align-settings.ts`, node builtins only) holds

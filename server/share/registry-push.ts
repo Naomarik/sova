@@ -109,7 +109,7 @@ function liveLinks(now: number): RegistryLink[] {
   const latest = now + REGISTRY_LIMITS.maxExpiryAheadMs;
   const seen = new Set<string>();
   const out: RegistryLink[] = [];
-  const add = (rows: StoredLink[], kind: "h" | "i" | "s" | "p") => {
+  const add = (rows: StoredLink[], kind: "h" | "i" | "s" | "p" | "t") => {
     for (const l of rows) {
       if (!l || typeof l.hash !== "string" || !REGISTRY_LIMITS.hash.test(l.hash) || l.revokedAt || seen.has(l.hash)) continue;
       const exp = typeof l.expiresAt === "string" ? Date.parse(l.expiresAt) : NaN;
@@ -122,6 +122,7 @@ function liveLinks(now: number): RegistryLink[] {
   add(storeLinks("person-links.json"), "i");
   add(storeLinks("session-shares.json"), "s");
   add(storeLinks("preview-links.json"), "p");
+  add(storeLinks("tour-shares.json"), "t");
   return out.sort((a, b) => b.exp - a.exp);
 }
 
@@ -167,7 +168,7 @@ function snapshotOf(live: RegistryLink[], seq: number, kinds: ReadonlySet<Regist
 /** The row kinds a target gets: `h` and `i` always, `s` and `p` only once it stated them itself. */
 function kindsFor(target: GatewayTarget | null): Set<RegistryLink["kind"]> {
   const out = new Set<RegistryLink["kind"]>(["h", "i"]);
-  for (const k of ["s", "p"] as const) if (routesKind(target, k)) out.add(k);
+  for (const k of ["s", "p", "t"] as const) if (routesKind(target, k)) out.add(k);
   return out;
 }
 
@@ -283,7 +284,7 @@ async function sendLoop(): Promise<void> {
     // The capability evidence this snapshot is built on, judged again right before it is sent.
     const kinds = kindsFor(target);
     const snap = snapshotOf(live, seq, kinds);
-    const carriesSessions = snap.links.some((l) => l.kind === "s" || l.kind === "p");
+    const carriesSessions = snap.links.some((l) => l.kind === "s" || l.kind === "p" || l.kind === "t");
     const check = validateSnapshot(JSON.parse(JSON.stringify(snap)), { now });
     if (!check.ok) {
       console.warn(`[share] the registry snapshot failed its own check (${check.why}); not sent`);
@@ -321,7 +322,7 @@ async function sendLoop(): Promise<void> {
       // the compatible h/i set goes again at once (once per run), so h/i publication isn't held.
       skewRetried = true;
       forgetKinds();
-      console.warn("[share] the gateway refused a snapshot with session or preview links; sending without them until it states their kinds again");
+      console.warn("[share] the gateway refused a snapshot with session, preview or tour links; sending without them until it states their kinds again");
       again = true;
       continue;
     }
@@ -388,7 +389,7 @@ function readBatch(): void {
     for (const e of events) e.resolve(warning("unconfirmed", ""));
     return;
   }
-  const fresh = { h: new Set<string>(), i: new Set<string>(), s: new Set<string>(), p: new Set<string>() };
+  const fresh = { h: new Set<string>(), i: new Set<string>(), s: new Set<string>(), p: new Set<string>(), t: new Set<string>() };
   const liveNow = liveLinks(Date.now());
   const liveSet = new Set(liveNow.map((l) => l.h));
   // A mint that names its hashes owns exactly those: they are nobody else's fresh candidates.
@@ -399,7 +400,7 @@ function readBatch(): void {
     if (!named.has(l.h)) fresh[l.kind].add(l.h);
   }
   for (const h of named) seen.add(h);
-  const mints = { h: 0, i: 0, s: 0, p: 0 };
+  const mints = { h: 0, i: 0, s: 0, p: 0, t: 0 };
   for (const e of events) if (e.change.cause === "mint" && !e.change.hashes) mints[e.change.kind] += 1;
   const carrying = outbox.seq + 1;
   for (const e of events) {
@@ -479,9 +480,10 @@ export function registryRouteChanged(): void {
 
 /** Ask the gateway again; when it now lists `s` or `p` and didn't before, those links are owed. */
 async function refreshThenPush(): Promise<void> {
-  const before = [gatewayRoutes("s"), gatewayRoutes("p")];
+  const kinds = ["s", "p", "t"] as const;
+  const before = kinds.map(k => gatewayRoutes(k));
   await refreshGateway();
-  if (started && ((!before[0] && gatewayRoutes("s")) || (!before[1] && gatewayRoutes("p")))) {
+  if (started && kinds.some((k, i) => !before[i] && gatewayRoutes(k))) {
     setDirty(true);
     void kick();
   }

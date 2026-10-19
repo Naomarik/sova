@@ -6,6 +6,8 @@ sessions (§app/baton). It has a **roster** of people with terse profiles, a set
 and a **workspace repo**: one plain git repo per organization that holds all of it. The operator
 is not a roster person; the operator's display name is host-local.
 
+Reviewed checked tour attachments belong to their hand-off conversations (§app.tours/handoffs). Their safe pictures and explanation travel with the organization's private workspace backup, with no new application access for readers.
+
 Orgs open as a page, `#/orgs` (the list) and `#/orgs/<id>` (one org), with a back link to the
 landing page like Usage and Agents. The entry point is the landing page's Organizations card, its
 last section (§chat.transcript/landing-page): totals across every org, the most recently active
@@ -328,6 +330,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   "Read-only. Nothing you do here reaches {first name}, and no visit is recorded." When no link of
   theirs could open the session now (they left, it's closed, or they were never given one), it
   adds "{first name}'s links don't open this session now." `Close` closes it.
+  Reviewed tour items use that same filtered preview and cut (§app.tours/handoffs), through explicit person-preview-scoped manifest and exact-edition asset callbacks. They show only the checked public presentation, have no Ask or write control and record no visit. Missing or refused preview authorization fails closed; there is no fallback to operator tour ownership routes.
 - **Profile changes** (`Profile Changes`): the person's history, newest first — field, old → new,
   who changed it (`you`, `you, via the Overseer` for a change the global Overseer made for the
   operator, §app.overseer/org-attribution, `wrap-up`, `referral`, `overseer` for the project's
@@ -503,6 +506,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     watch, extra instructions, memory), `notes.md`, `ideas/`, `todos.json` and `files.jsonl` (the files
     people sent, by name, size and status, never their bytes, which stay on the host that took
     them, §app/file-intake);
+  - currently attached checked hand-off tour snapshots, their redacted picture bytes and conversation bindings (§app.tours/storage), so a restored conversation keeps its explanation without the old recording computer; never jobs, browser profiles, test-account state, approvals, share tokens or raw staging. Even when workspace ignore rules exclude tours or pictures, only each validated checked destination-public manifest and the exact picture inventory it lists may bypass ignores: realpath-contained beneath the workspace, with no symlinks, directory globs, source/private artifacts, scripts or reports. Oversize snapshots are refused before attachment. After a backup commit, every inventory path is verified in the committed Git tree; a missing path produces a clear organization backup warning. Detachment removes the snapshot from the next backup tree without deleting retained on-disk bytes or erasing older Git history;
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent;
@@ -526,6 +530,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   marks, archive and tags, the write guard's stats — which an attach derives again for the org's
   sessions. A project's own spec (`.sova/spec` under the project root, drafts local) is the
   project repo's, not the workspace's.
+- **Tour backup dirtiness.** Generated untracked artifacts in the reserved tour snapshot storage do not alone make the workspace backup dirty or cause recurring no-op backup attempts; this includes retained detached snapshots. Tracked tour changes remain visible as pending changes and still receive backup validation and warnings. A new binding or detachment changes the neutral conversation transcript and therefore still triggers its backup.
 - **Commits.** Creating an org makes the first commit. After that a committer looks at every
   attached org's repo once an hour: an hour after the repo's last commit (counted from HEAD, so
   Commit Now, a restart or a commit made on another host all count; `SOVA_WORKSPACE_COMMIT_MS`
@@ -579,7 +584,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
 - Cloning an org's workspace repo onto any Sova host and attaching it ("Attach a Restored Repo",
   `POST /api/orgs/attach {dir}`) brings the whole organization: the org, its roster with every
   history line, its projects, every baton session with its transcript, holder, hand-offs, offers
-  and wrap-up state, the decisions and conflicts, every recorded visit (§app.baton/visits), and each
+  and wrap-up state, its currently attached checked hand-off tour snapshots and redacted pictures (§app.tours/storage), the decisions and conflicts, every recorded visit (§app.baton/visits), and each
   project overseer with its conversations, settings, notes, actions, ideas, to-dos and the
   sessions it started, and its history with every event's id, links and recorded words
   (§app.org-history/portability). Nothing is read from the old host. An attach commits what it wrote before it
@@ -589,6 +594,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   in a commit of their own within the same attach. A clone with nothing to recover gets only the
   "Attached on …" commit. If that follow-up commit is refused, the refusal is logged and those
   changes go in with the next regular commit (the hourly one or the shutdown commit).
+- Currently attached checked hand-off tour snapshots restore with their conversation bindings, without fetching anything from the old recording host. Exact checked public inventory paths travel despite workspace ignores, or the organization shows a clear backup warning if the committed inventory is incomplete; oversize attachments are refused. A detached snapshot is excluded from the next committed backup tree, although retained local bytes and older Git history remain. Source-chat deletion cannot break a destination-owned attachment. Public tour links, jobs, credentials and browser profiles do not travel; fresh public tour links need a new review and mint (§app.tours/storage).
 - **Links must be re-issued.** No link is in the repo, so every old link answers 404 on the new
   host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"), the owner
   link included (the owner itself travels, in the org's statechart). The attach form says so. A person's page lists no links until new ones are sent; their old visits still
@@ -854,6 +860,8 @@ Organizations region's own Needs you, never the global one.
   `PUT /api/orgs/:id/owner`, cleared by Sova only when that person leaves.
 
 ## §app.organizations/privacy — Profiles stay private
+
+Public tour titles, summaries, step/view explanations, callouts and reference text receive the same applicable phrase redaction as the conversation. Pictures require operator preview and approval because text redaction cannot inspect pixels; privacy masks are burned into the only published bytes, never removable CSS blur. Tour projections expose no private profile, source identity, account data or unredacted recording report (§app.tours/handoffs).
 
 - `contact` never enters any model prompt. The global Overseer's organization tools carry none:
   not in a read, a result, an error, a confirm card or the action log, and contact it writes is

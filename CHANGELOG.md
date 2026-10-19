@@ -4,6 +4,32 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.5.0 — 2026-10-19
+
+Chat powers, a Folders sidebar and steadier chat starts. 53 commits since v0.4.0. The highlights:
+
+- **Switches replace overseer levels.** A project overseer's powers are On/Off switches in two
+  columns, what it may do on its own and what the client's Project Assistant may set off, instead
+  of levels L0–L3. Your old level carries over (what it allowed is On, the rest Off). While a brake
+  holds, every switch acts as Off and draws held; what you set is kept.
+- **Every chat can read the project's spec.** Chats look up the product documentation on their own,
+  and each conversation that gathers requirements writes its own spec draft, locked in only by an
+  explicit yes.
+- **The owner page gets the Project Assistant.** Versions to try behind the owner link, models per
+  kind of work, outage alerts, and an owner link that turns off after 7 days unused.
+- **Folders replaces Live & web.** The sidebar's top region is called Folders, sits under Projects
+  and folds like it; a session a project already lists isn't repeated there.
+- **Chats start more reliably.** A slow start names the step it is stuck in, a late hello no longer
+  gives up early, and a reader who scrolls up while a chat streams stays where they are.
+- **One update banner.** Every tab learns that Sova changed through the same banner, mesh on or off;
+  the bottom-right "Sova was updated" note is gone.
+- **Smaller fixes.** Less idle CPU, no Review Changes on a branch without commits of its own, and
+  the changes viewer refuses an empty comparison instead of showing a different change.
+
+Going back to `v0.4.0` (`SOVA_REF=v0.4.0`) hasn't been tested on this release: each project overseer
+runs at a level Sova saved beside its switches, never looser than they were, so it may be allowed
+less than here; the switches stay stored and return when you upgrade again.
+
 ## v0.4.0 — 2026-10-16
 
 Memory for the Overseers, side-by-side steps drawings and a faster project page. 45 commits since

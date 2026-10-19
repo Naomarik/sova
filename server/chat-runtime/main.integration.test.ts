@@ -6,11 +6,12 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DEFAULT_RUNTIME_SETTINGS } from "../../shared/chat-runtime-wire";
-import { awaitFrame, connectLink } from "./link";
+import { CHAT_WIRE_PROTO, DEFAULT_RUNTIME_SETTINGS } from "../../shared/chat-runtime-wire";
+import { awaitFrame, connectLink, Link } from "./link";
 
 const root = join(import.meta.dirname, "..", "..");
 const base = mkdtempSync(join(tmpdir(), "crm-"));
@@ -76,6 +77,38 @@ test("boots, says ready, opens its chat, serves a browser, and drains on purpose
   assert.equal(trail.length, 2, p.out());
   assert.match(trail[0]!, /^\[chat-runtime\] ready in \d+\.\d\d s \(headless [\d.]+ s, chat code [\d.]+ s, model setup [\d.]+ s, extensions load [\d.]+ s, warm session [\d.]+ s, extensions start [\d.]+ s, extensions stop [\d.]+ s, host [\d.]+ s(, other [\d.]+ s)?; cpu [\d.]+ s\)$/);
   assert.match(trail[1]!, /^\[chat-runtime\] opened in \d+\.\d\d s \(open file [\d.]+ s, loadout [\d.]+ s, extensions load [\d.]+ s, session [\d.]+ s, extensions start [\d.]+ s, finish [\d.]+ s(, other [\d.]+ s)?; cpu [\d.]+ s\)$/);
+});
+
+test("a server whose control comes after the chat got ready still hears it is ready", { timeout: 60_000 }, async () => {
+  // The race a loaded machine hits: the connection's hello said booting, the chat finished booting, and
+  // only then the server's control came. The server waits for a hello that says ready; it must get one.
+  const p = chatProcess();
+  let socket: Socket | null = null;
+  for (let i = 0; i < 200 && !socket; i++) {
+    socket = await new Promise<Socket | null>((r) => {
+      const s = createConnection(p.sock);
+      s.once("connect", () => r(s));
+      s.once("error", () => r(null));
+    });
+    if (!socket) await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.ok(socket, p.out());
+  const link = new Link(socket, { log: () => {} });
+  const first = await awaitFrame(link, "hello", 10_000);
+  assert.equal(first.state, "booting", "dialed as soon as it listens, before its code is loaded");
+  // Control is held back until the chat says (in its log) that it is ready; it closes a link with no
+  // control after 10 s.
+  for (let i = 0; i < 180 && !/\[chat-runtime\] ready in/.test(p.out()); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.match(p.out(), /\[chat-runtime\] ready in/);
+  const ready = awaitFrame(link, "hello", 10_000, (h) => h.state === "ready");
+  link.send({ t: "control", proto: CHAT_WIRE_PROTO, epoch: 1, serverPid: process.pid, serverStartedAt: Date.now(), build: "b1", since: null, settings: DEFAULT_RUNTIME_SETTINGS });
+  assert.equal((await ready).state, "ready");
+  // And it opens as usual on that link.
+  const opened = awaitFrame(link, "opened", 30_000);
+  link.send({ t: "open", id: "o1", path: p.path, force: true, link: null, served: [] });
+  assert.equal((await opened).ok, true, p.out());
+  p.child.kill("SIGTERM");
+  await p.exited;
 });
 
 test("SIGTERM closes it as the operator's stop", { timeout: 60_000 }, async () => {

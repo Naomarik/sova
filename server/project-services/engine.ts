@@ -79,7 +79,10 @@ export type Caller =
   | { kind: "overseer"; id: string }
   /** `act`: its project statechart's act for a verb that is not a read (§app.project-overseer/tools), which holds the
       level; the engine checks none. */
-  | { kind: "project-overseer"; id: string; root: string; act: VerbAct }
+  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true }
+  /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
+      project's released `deploy/run` act (`deployAct`), checked against its column of powers. */
+  | { kind: "assistant"; id: string; root: string; deployAct?: true }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
@@ -696,6 +699,8 @@ export class ProjectEngine {
         throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
       return;
     }
+    // The Project Assistant runs no verb on running copies (its powers act through the project's own acts).
+    if (caller.kind === "assistant") throw new VerbFailure("forbidden", "the Project Assistant runs no verb on running copies");
     // A coding session.
     if (verb === "conform") return;
     const checkout = run.rec?.checkout ?? (run as Run & { target?: string }).target ?? null;

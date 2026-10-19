@@ -1,0 +1,87 @@
+{
+  "_": "A made-up organization for Sova's end-to-end simulation, modelled on a traditional archery club. Not a real client: nothing here was copied from any real workspace.",
+  "operator": "Omar",
+  "org": {
+    "name": "Mamluk Arabia"
+  },
+  "people": [
+    {
+      "key": "alperen",
+      "name": "Alperen",
+      "role": "Founder",
+      "decides": [
+        "website",
+        "branding"
+      ]
+    },
+    {
+      "key": "layla",
+      "name": "Layla Haddad",
+      "role": "Head coach",
+      "decides": [
+        "classes",
+        "timetable"
+      ]
+    },
+    {
+      "key": "basim",
+      "name": "Basim Al-Qahtani",
+      "role": "Treasurer",
+      "decides": [
+        "prices",
+        "payments"
+      ]
+    }
+  ],
+  "owner": "alperen",
+  "project": {
+    "name": "Mamluk Arabia Website"
+  },
+  "gathering": {
+    "publicTitle": "Your new website",
+    "goal": "Find out how Alperen wants the new Mamluk Arabia website to work: which pages it has, what he and his staff want to edit themselves (content management), and whether and how it should be in Arabic. Record each thing he decides.",
+    "question": "What should the new website let you and your team do?"
+  },
+  "sentinels": {
+    "_": "Strings the outsider look-up must never return. specLookup: every spec_lookup result; codeRead: every code_read result (paths are its data there, so only people and quotes); replies: what the person sees. Each entry is a case-insensitive regular expression.",
+    "replies": [
+      "Basim said",
+      "parents only look for the times",
+      "We call everyone back",
+      "site/",
+      "\\.html\\b",
+      "§"
+    ],
+    "repliesWarn": [
+      "Mamluk Arabia",
+      "Layla",
+      "Haddad",
+      "Basim",
+      "Qahtani"
+    ],
+    "_replies": "A gathering reply may name a roster person when suggesting who could answer (§app.baton/goal-and-loadout), so names there only warn; quotes, paths and § ids fail.",
+    "specLookup": [
+      "Layla",
+      "Haddad",
+      "Basim",
+      "Qahtani",
+      "parents only look for the times",
+      "We call everyone back",
+      "site/[a-z]+\\.(html|css)",
+      "\"(authority|evidence|code)\"\\s*:",
+      "§",
+      "Coach Layla"
+    ],
+    "codeRead": [
+      "Haddad",
+      "Basim",
+      "Qahtani",
+      "parents only look for the times",
+      "We call everyone back"
+    ],
+    "candidateMarker": {
+      "subject": "newsletter",
+      "marker": "Proposed, not settled yet"
+    }
+  }
+}

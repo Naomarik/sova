@@ -5,7 +5,7 @@
   (:require
     [cljs.test :refer [deftest is testing]]
     [sova.statecharts.registry :as registry]
-    [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.rules.runtime :as rr]
     [sova.statecharts.engine.core :as core]))
 
@@ -36,7 +36,7 @@
    :proof proof})
 
 (defn- eng! []
-  (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check})]
+  (let [eng (core/new-engine registry/statecharts {:level-check pw/power-check})]
     (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r" :origin "folder" :created-at t0} t0)
     (core/send! eng psid :overseer/start (assoc op :conversation-id "c1") {:now (+ t0 1)})
     eng))
@@ -155,9 +155,9 @@
         "an unattended overseer starts no run while registered and current")
     (is (nil? (refused (core/send! eng psid :verbs/onboard (assoc l3 :attended true :ledger "message" :session-id "o3" :prompt "Run it" :runtime-standing "registered") {:now (+ t0 11)}) :verbs/onboard))
         "in a turn the operator started it may")
-    (is (= "This run was not started by the operator, and your autonomy here is L2; sova_project_verbs needs L3. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."
+    (is (= "Set up the project's verbs is off for the overseer on its own. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."
            (:sentence (refused (core/send! eng psid :verbs/onboard (assoc l3 :autonomy "L2" :session-id "o4" :prompt "Run it") {:now (+ t0 12)}) :verbs/onboard)))
-        "below L3 the level refuses")))
+        "with onboard Off (an L2 carry-over) the power refuses")))
 
 (deftest the-standing-rule
   (is (= "unregistered" (rr/standing-of {})))
@@ -237,7 +237,7 @@
                  (assoc :version 1)
                  (update-in [:wmem :com.fulcrologic.statecharts/configuration] #(-> (set %) (disj :registered) (conj :gone)))
                  core/snapshot-text)
-        eng2 (core/new-engine registry/statecharts {:level-check lv/level-check})]
+        eng2 (core/new-engine registry/statecharts {:level-check pw/power-check})]
     (is (= 2 (:version (core/load! eng2 rsid v1))))
     (is (in? eng2 rsid :unregistered) "a standing this version lacks starts over")
     (is (in? eng2 rsid :idle) "the playbook region keeps its state")
@@ -263,7 +263,7 @@
                    (assoc :version 1)
                    (update-in [:wmem dk :playbook] #(-> % (assoc :approves (:proposes %)) (dissoc :proposes)))
                    core/snapshot-text)
-          eng2 (core/new-engine registry/statecharts {:level-check lv/level-check})]
+          eng2 (core/new-engine registry/statecharts {:level-check pw/power-check})]
       (is (= "deploy" (get-in (core/read-snapshot v1) [:wmem dk :playbook :approves])) "the v1 dump carries :approves")
       (is (= 2 (:version (core/load! eng2 rsid v1))))
       (is (in? eng2 rsid :proposed))

@@ -49,7 +49,7 @@
     (is (= "Ana Ruiz is not waiting for approval." (h/refusal (born ana) sid :person/approve op)))
     (is (= "Ana Ruiz is active, not proposed." (h/refusal (born ana) sid :person/approve {:by "overseer" :attended true})))
     (testing "the overseer needs L2 outside the operator's turns"
-      (is (re-find #"sova_roster needs L2" (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L1"})))
+      (is (re-find #"^Approve or decline proposed people is off" (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L1"})))
       (is (nil? (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L2"}))))))
 
 (deftest field-authority

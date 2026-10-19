@@ -244,10 +244,11 @@ broken block's source (§app.baton/outsider-view).
   above the fix. No retry when the run was stopped or failed, when a message is queued behind it
   (that message goes first), when the session's file is held by another writer, or when vis is
   off. A block that draws with warnings never triggers one.
+- **Tool-backed Tours.** The vis catalogue also lists `tour` (§app/tours), a recorded explanation of a real interface. It is not a fence kind and is not added to the pure renderer registry. `vis_guide {kind: "tour"}` returns the core of the tour authoring and recording workflow and points to `record_tour` and `show_tour`, not the shared drawing-fence grammar; `vis_guide` also takes the four parts that core names (`tour-signin`, `tour-sites`, `tour-sova`, `tour-sharing`) and returns each alone (§app.tours/authoring). The parts are no catalogue kind: the prompt's kind list is unchanged, and only the `tour` line names them. In ordinary chats, recording and showing require vis on; align's Visuals alone grants neither tour tool, even though the existing guide/check tools retain that availability. Scoped hand-off tour presentation is baseline conversation context. Opening a message never records a tour.
 - **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
   shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
   pairs, the `mark` syntax) followed by that kind's file (its syntax, examples and `mark` targets);
-  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists; a
+  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, or a tour part; a
   stub or unknown kind is refused. It runs in Sova's process, never on a remote target, so it
   answers in every session the mode reaches (`mcp__sova__vis_guide` on the claude-code provider).
   It enters and leaves the loadout where `vis_check` does (at a session's start, when a prompt starts
@@ -303,12 +304,12 @@ broken block's source (§app.baton/outsider-view).
   draw (at most 1–2 per reply, small, captioned, next to prose that says what to notice), that
   every kind has its own syntax, never guessed from another, so the first fence of each kind in the
   conversation follows a `vis_guide` call for it, never to nest a `vis` fence in another fence, and
-  one line per kind saying what it draws (`vis/overview.md`, about 1.6K characters). The shared rules (with
+  one line per kind saying what it draws (`vis/overview.md`, about 1.9K characters). The shared rules (with
   the 200-character text limit and the one-line caption) and each kind's syntax reach the model
   only through `vis_guide`, so a reply that draws nothing carries no grammar. A kind flagged `stub`
   in the registry is never taught: its line is dropped from the list and `vis_guide` refuses it.
-  The guide's files match the registry (one per kind, `html` and `svg` sharing one; a stub file
-  exactly for a stub kind; the list names exactly the kinds that aren't stubs), its examples draw
+  The fence guide's files match the renderer registry (one per fence kind, `html` and `svg` sharing one; a stub file
+  exactly for a stub kind; the fence list names exactly the kinds that aren't stubs). The separate tool-backed `tour` catalogue entry has its own workflow guide and no fence renderer. The drawing examples draw
   without warnings, and the flow and state examples are checked for what they mean, not only that
   they parse (`guide.test.ts`).
 - **No regression.** A block that drew before soft warnings, inline flow labels

@@ -25,6 +25,7 @@ const KIND: Record<PushKind, { label: string; hint: string }> = {
   "worker-error": { label: "Subagent error", hint: "A subagent ended in an error." },
   "playbook-review": { label: "Playbook needs you", hint: "A playbook run proposes a change to approve and merge." },
   "whatsapp-down": { label: "WhatsApp down", hint: "WhatsApp sending stopped and needs you: down, logged out, blocked, or the sender unreachable." },
+  "owner-outage": { label: "App down", hint: "An organization's owner tells the Project Assistant their app is down." },
 };
 
 /**

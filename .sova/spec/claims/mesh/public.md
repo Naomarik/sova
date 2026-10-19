@@ -2,7 +2,7 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 People outside the tailnet open hand-off links (`/h/`), owner-page links (`/i/`) and session share
-links (`/s/`, §app/session-share) on a public address. One host, usually the VPS, can be the **public gateway**: its share listener
+links (`/s/`, §app/session-share), and standalone reviewed tour links (`/t/`, §app.tours/sharing) on a public address. One host, usually the VPS, can be the **public gateway**: its share listener
 (§app.baton/share-listener) sits on `127.0.0.1` behind a **front** outside Sova that terminates TLS
 for one hostname. Any other host can send its links **through** that gateway: it registers the
 SHA-256 of each live token with the gateway over the tailnet, and the gateway forwards a request
@@ -46,7 +46,7 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - **The effective address**, first match wins: `SOVA_SHARE_PUBLIC_URL` (an `http` or `https` bare
   origin; any other value is ignored with one warning, and the setting decides); this host's own
   gateway address; the via gateway's address (as its info or ack last stated it, else its hello's,
-  else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/` and `/s/` link is built by one
+  else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/`, `/s/` and reviewed tour `/t/` link is built by one
   helper on that address, or is just the path with none. The answer is a `ShareState`: `state` off,
   configured, verified or unreachable; `source` env, setting, gateway or bound; `publicUrl`; `via`
   (the gateway peer's current id); `warning` with its `warningCode` whenever a link may not
@@ -81,7 +81,7 @@ links". When nothing answers in time, it replies with the state as it stands.
   calling peer `{publicUrl, accepting, seq}` (`seq`: the last snapshot stored for it, null when not
   accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`. Asked with
   `?kinds=1`, the answer adds `kinds`, the link kinds this gateway accepts and routes (`h`, `i`,
-  `s`, `x`, `p`), and asked also with `preview=1` it adds `previewUrl` when a preview address is
+  `s`, `x`, `p`, `t`), and asked also with `preview=1` it adds `previewUrl` when a preview address is
   set (§mesh.public/preview-address); without it the answer keeps exactly the three keys, since an older routed host parses
   it strictly.
 - `routed` (in `GET /api/public-links`, only while this host is the gateway): every host that
@@ -132,8 +132,10 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 ## §mesh.public/registry — Which host minted a token
 
+Reviewed expiring standalone tour links use kind `t`. A routed host includes `t` rows only after the exact gateway target advertises `t` support, with the same target/generation binding, rechecks and fallback rules as other negotiated kinds. An older gateway receives no unknown `t` row that could reject the whole snapshot and break hand-off or owner links; a tour mint through an unsupported gateway is explicitly refused. Expiry or revocation withdraws the tour row without changing its edition pin.
+
 - **Push.** A routed host sends its gateway its whole live set as a `RegistrySnapshot`, `PUT
-  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x" | "p"}[],
+  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x" | "p" | "t"}[],
   assets, ingressPort}`: every hand-off, owner and session share link not revoked or expired, as
   the lowercase hex SHA-256 of its token, and the names in its own share build's `assets/`.
   Session links (`s`) go only to a gateway target whose own info listed `s` in `kinds`: an older
@@ -200,6 +202,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   changed, its address now ambiguous or unmapped) is closed. Leaving the route unbinds it.
 
 ## §mesh.public/routing — The gateway routes by token hash
+
+A `t` row routes only `/t/<token>` and its narrowly scoped `/api/t/<token>/…` presentation and picture reads; an `h` row additionally carries token-scoped bound tour reads within the conversation's visibility (§app.tours/handoffs). Tour picture hops have explicit byte caps and a separate bounded image bucket. Membership, edition pin, expiry and revocation remain the minting host's authority and are checked again after reads. Unknown, cross-kind or guessed assets never become an operator API path. A failed or partial picture hop is not returned as a whole valid image.
 
 - The share edge (allowed paths, the per-address limit, timeouts, the body cap) runs at the gateway
   before any hop. Then: a token this host minted, live or not, is served in-process; else a hash a
@@ -268,8 +272,8 @@ A registered hash whose host is down, has no verified address, refuses the gatew
 
 | Request | Answer |
 |---|---|
-| Page shell `/h/<t>`, `/i/<t>`, `/s/<t>` | 503 static page that names no host and repeats no token; `Retry-After: 60`, `no-store`, `no-referrer`, `nosniff`, the share page's CSP |
-| `/api/h/…`, `/api/i/…`, `/api/s/…`, POST included | 503 `{error: "offline", retryAfter: 60}`; the body is dropped, never buffered or replayed |
+| Page shell `/h/<t>`, `/i/<t>`, `/s/<t>`, `/t/<t>` | 503 static page that names no host and repeats no token; `Retry-After: 60`, `no-store`, `no-referrer`, `nosniff`, the share page's CSP |
+| `/api/h/…`, `/api/i/…`, `/api/s/…`, `/api/t/…` (tour manifests and picture reads included), POST included | 503 `{error: "offline", retryAfter: 60}`; the body is dropped, never buffered or replayed |
 | `/ws/h` or `/ws/s` upgrade | 503 |
 | A live `/ws/h` or `/ws/s` hop whose host goes away | Close 4503 |
 | An asset whose source fails | 503 |
@@ -606,17 +610,23 @@ would have expired, and answers them 410 too.
   visitor's address to preview apps** ("Preview apps get X-Forwarded-For."). Off means nothing
   below is written and no address is sent.
 - **Log visitors** covers every link this host minted: hand-off (`/h/`), owner (`/i/`), session
-  share (`/s/`) and preview links. Each time the visit log records or continues a visit
+  share (`/s/`), tour (`/t/`) and preview links. Each time the visit log records or continues a visit
   (§app.baton/visits), Sova appends a line to `<stateRoot>/visitor-identity.jsonl` (0600,
   host-local, never synced or committed) `{id, at, ip, ua, lang?, referer?, path?}`: `id` the
   visit's id in its visit log, `ip` the client address as the share edge computed it
   (§mesh.public/forwarded-for), `ua` the raw user agent (at most 512 characters), `lang` the
-  `Accept-Language`. A `/h/`, `/i/` or `/s/` visit gets one line per address and user agent (each
+  `Accept-Language`. A `/h/`, `/i/`, `/s/` or `/t/` visit gets one line per address and user agent (each
   run of Sova); a preview visit one line per page load (at most 200 a visit each run), with its
   path (no query) and, when the page came from another site, that `Referer`'s origin only (a path
   can carry someone's token). A host under the preview zone is never another site. Never written there or anywhere: the token, the preview
   label, any hash of either, `Host`, cookies or `Authorization`; a value that would carry the
   preview's own origin is left out. The identity never goes into an org's `visits.jsonl`.
+- **Tour links.** A tour link (`/t/`) is recorded only while Log visitors is on. With it off,
+  opening one writes neither a visit nor an identity line. With it on, a tour that opened (after
+  its link, edition and source chat are checked) records or continues one visit under that link in
+  the host's session visit log, and a link previewer's fetch of the page records a preview line as
+  `/s/` does. A refused, expired or guessed link writes nothing. A reader's resume link and saved
+  place are never written there or joined to a visit.
 - **Preview visits.** While Log visitors is on, a page load (a navigation, as the preview's own
   pages judge it) through the minting host's proxy is recorded in
   `<stateRoot>/preview-visits.jsonl` (0600, host-local) by the rules of §app.baton/visits, its

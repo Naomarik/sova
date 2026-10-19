@@ -37,6 +37,7 @@ import { projectOverseerUnread } from "./project-overseer-unread";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
+import { removeSessionTours } from "./tours/lifecycle";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -1040,6 +1041,12 @@ function sessionArchived(id: string): void {
   }
 }
 
+/** The transcript unlink is irreversible: residual tour cleanup must not misreport its outcome. */
+async function cleanDeletedTours(id: string): Promise<void> {
+  try { await removeSessionTours(id); }
+  catch { console.error("[sessions] Deleted chat tour cleanup is pending; a later sweep will retry."); }
+}
+
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
 
 export type ArchiveResult =
@@ -1085,6 +1092,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
       if (!draftCounts(readDrafts()[s.id])) {
         await closeChat(s.path, "Session archived; its runtime was closed.");
         await unlink(s.path);
+        await cleanDeletedTours(s.id);
         cache.delete(s.path);
         setArchived(s.id, false);
         removeWebSession(s.id);
@@ -1241,6 +1249,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     try {
       await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
       await unlink(path);
+      await cleanDeletedTours(id);
       cache.delete(path);
       setArchived(id, false);
       removeWebSession(id);

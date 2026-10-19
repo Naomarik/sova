@@ -34,7 +34,7 @@ const OUTCOMES = new Set<string>(HISTORY_OUTCOMES);
 const RELATIONS = new Set<string>(RELATION_TYPES);
 const VIAS = new Set(["request", "timer", "tool-call", "effect", "spawn", "notification", "operator-act", "invocation"]);
 const ACTOR_KINDS = new Set(["operator", "person", "project-overseer", "global-overseer", "model", "sova", "statechart", "system", "worker", "session", "validation-runner", "external"]);
-const AUTH_KINDS = new Set(["operator-act", "attended-turn", "autonomy-level", "grant", "confirm-card", "hold-release", "person-decision", "safety", "none"]);
+const AUTH_KINDS = new Set(["operator-act", "attended-turn", "autonomy-level", "power", "grant", "confirm-card", "hold-release", "person-decision", "safety", "none"]);
 const ENTITY_TYPES = new Set(["org", "project", "person", "gap", "gathering", "decision", "conflict", "build", "hold", "promotion", "session", "commit", "file", "outreach", "owner-update", "setting", "spec-claim", "look", "preview", "instance"]);
 const CHECKS = new Set(["checked", "quote-not-found", "speaker-mismatch", "source-unavailable", "unchecked"]);
 
@@ -85,12 +85,15 @@ function actor(v: unknown): ActorRef | Unknown {
   return ref;
 }
 
-function authorization(v: unknown): Authorization | Unknown {
+/** One authorization as recorded: known fields only, a malformed kind refused. */
+export function authorization(v: unknown): Authorization | Unknown {
   if (!v || typeof v !== "object" || isUnknown(v)) return actor(v) as Unknown;
   const a = v as Authorization;
   if (!AUTH_KINDS.has(a.kind)) throw new HistoryInputError(`unknown authorization ${String(a.kind)}`);
   const out: Authorization = { kind: a.kind };
   if (id(a.level)) out.level = id(a.level);
+  if (id(a.power)) out.power = id(a.power);
+  if (a.column === "overseer" || a.column === "assistant") out.column = a.column;
   if (typeof a.attended === "boolean") out.attended = a.attended;
   if (id(a.ref)) out.ref = id(a.ref);
   if (a.by) {

@@ -206,8 +206,8 @@ export class Link {
 // ---- the chat process's end ------------------------------------------------------------------------
 
 export interface ServeLinkOptions extends LinkOptions {
-  /** The hello to open each connection with, as the chat stands now. */
-  hello(): Omit<HelloFrame, "t" | "proto" | "minProto" | "epoch">;
+  /** The hello to open each connection with (`link`), as the chat stands now. */
+  hello(link: Link): Omit<HelloFrame, "t" | "proto" | "minProto" | "epoch">;
   /** A server took control on `link` (its `control` frame). The link before it, if any, was closed. */
   onControl(link: Link, control: ControlFrame): void;
   /** How long a connection may take to send `control` before it is closed. */
@@ -235,7 +235,7 @@ export async function serveLink(sockPath: string, opts: ServeLinkOptions): Promi
   const log = opts.log ?? ((l: string) => console.error(`[chat-link] ${l}`));
   const server: Server = createServer((socket) => {
     const link = new Link(socket, opts);
-    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() });
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello(link) });
     const timer = setTimeout(() => link.close({ reason: "closed" }), opts.controlWithinMs ?? 10_000);
     timer.unref?.();
     void link.closed.then(() => clearTimeout(timer));
@@ -298,7 +298,8 @@ export interface ConnectLinkOptions extends LinkOptions {
   /** Keep dialing a socket that isn't there yet (or refuses) for this long, every `retryEveryMs`. */
   retryForMs?: number;
   retryEveryMs?: number;
-  /** How long the chat may take to say hello once connected. */
+  /** How long the chat may take to say hello once connected; never less than what is left of
+      `retryForMs` (a chat still loading its code answers late: the start's budget is the socket's). */
   helloWithinMs?: number;
 }
 
@@ -329,11 +330,12 @@ export async function connectLink(sockPath: string, opts: ConnectLinkOptions): P
       continue;
     }
     const link = new Link(socket, opts);
+    const helloMs = Math.max(opts.helloWithinMs ?? 5_000, until - Date.now());
     const hello = await new Promise<HelloFrame>((resolve, reject) => {
       const timer = setTimeout(() => {
         link.close();
         reject(new Error(`The chat process at ${sockPath} didn't say hello in time.`));
-      }, opts.helloWithinMs ?? 5_000);
+      }, helloMs);
       const off = link.on("hello", (h) => {
         off();
         clearTimeout(timer);

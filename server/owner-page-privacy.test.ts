@@ -78,6 +78,8 @@ const M = {
   tokens: "987654321",
   routeReason: "MK-ROUTE-q7x self-asserted",
   proposed: "MK-PROPOSED-q7x",
+  // The Project Assistant's models (§app.project-assistant/never): the operator's, never the owner's.
+  assistantModel: "mkprov/MK-MODEL-q7x",
   hiddenTitle: "MK-HIDDENTITLE-q7x",
   hiddenText: "MK-HIDDENTEXT-q7x",
   offProject: "MK-OFFPROJECT-q7x",
@@ -213,6 +215,12 @@ const ids = (): string[] => [
   "Firefox",
 ];
 
+// The Project Assistant's records: its models (a marker), one owner request (its id must never show).
+const paStore = await import("./project-assistant-store");
+paStore.setAssistantModels(org.id, { models: { reply: { model: M.assistantModel }, coding: { model: M.assistantModel } } });
+const ownerReq = paStore.fileRequest(org.id, { projectId: pa.id, kind: "bug", title: "The booking form is slow", text: "It takes a minute." });
+const idsWithRequest = () => [...ids(), ownerReq.id];
+
 /** Everything the owner can fetch, and the operator's preview of it: [label, body]. */
 async function everyAnswer(): Promise<[string, string][]> {
   const out: [string, string][] = [];
@@ -233,7 +241,9 @@ async function everyAnswer(): Promise<[string, string][]> {
     if (r.status === 200) for (const c of (JSON.parse(r.text) as OwnerProject).conversations) conversations.add(c.id);
   }
   for (const k of conversations) await get(`/api/i/${token}/c/${k}`);
-  for (const p of [`/api/orgs/${org.id}/owner/preview`, ...[...projects].map((q) => `/api/orgs/${org.id}/owner/preview?project=${q}`), ...[...conversations].map((k) => `/api/orgs/${org.id}/owner/preview?c=${k}`)]) {
+  // The Project Assistant's conversation and the versions' route (§app.project-assistant/never).
+  await get(`/api/i/${token}/assistant`);
+  for (const p of [`/api/orgs/${org.id}/owner/preview`, `/api/orgs/${org.id}/owner/preview?assistant=1`, ...[...projects].map((q) => `/api/orgs/${org.id}/owner/preview?project=${q}`), ...[...conversations].map((k) => `/api/orgs/${org.id}/owner/preview?c=${k}`)]) {
     const res = await app.request(p);
     out.push([`${res.status} preview ${p}`, await res.text()]);
   }
@@ -262,6 +272,8 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;
     assert.equal(home.projects.length, 1);
     assert.equal(home.waiting.length, 1, "the owner's own question shows");
+    assert.deepEqual(home.requests?.map((r) => r.title), ["The booking form is slow"], "control: the owner's request shows, by its title");
+    assert.ok(answers.some(([l]) => l === `200 GET /api/i/${token}/assistant`), "control: the assistant's view answered");
     assert.equal(home.projects[0]!.latestNews?.text.includes("Opening hours are agreed."), true, "the update shows");
     assert.ok(
       answers.some(([, t]) => t.includes("We open at nine.")),
@@ -273,7 +285,7 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
   test("no marker, id, token, hash or path in any answer", () => {
     for (const [label, body] of answers) {
       for (const [field, mark] of Object.entries(M)) assert.ok(!body.includes(mark), `${field} leaked in ${label}`);
-      for (const id of ids()) assert.ok(!body.includes(id), `${id} leaked in ${label}`);
+      for (const id of idsWithRequest()) assert.ok(!body.includes(id), `${id} leaked in ${label}`);
       assert.ok(!body.includes(token), `the owner's own token echoed in ${label}`);
       if (label.includes(" GET /i/")) continue; // the static shell: markers and ids only
       // Keys that would carry a cost, a model, a visit or a profile field.

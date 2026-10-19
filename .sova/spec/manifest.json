@@ -224,17 +224,20 @@
         "server/chat-host.ts",
         "server/session-powers.ts",
         "server/chat-host.test.ts",
-        "server/chat-runtime/host.test.ts"
+        "server/chat-runtime/host.test.ts",
+        "server/tours/tools.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§chat.topics/push",
-        "§app.project-services/instance-note"
+        "§app.project-services/instance-note",
+        "§app/tours"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T03:59Z"
-      }
+        "by": "user (guided-tours build brief)",
+        "at": "2026-10-15T04:40:29.961829+00:00"
+      },
+      "evidence": "verified"
     },
     "§app.chat-processes/server-messages": {
       "kind": "behavior",
@@ -739,6 +742,132 @@
         "pi-config/extensions/remote/connection.test.ts"
       ]
     },
+    "§app.project-assistant/chat": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/owner-page",
+        "§app.owner-page/link",
+        "§app.baton/share-listener",
+        "§app.chat-processes/special-kinds",
+        "§chat.memory/overseer"
+      ],
+      "code": [
+        "server/project-assistant.ts",
+        "server/project-assistant-loadout.ts",
+        "server/project-assistant-prompt.md",
+        "server/project-assistant-share.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "server/share/router.ts",
+        "shared/chat-runtime.ts",
+        "server/chat-manager.ts",
+        "server/stream-guard.ts",
+        "server/harness/state-kinds.ts",
+        "server/orgs.ts",
+        "src/share/assistant-view.tsx",
+        "src/share/OwnerApp.tsx",
+        "src/share/owner-view.tsx",
+        "src/lib/owner-words.ts",
+        "server/project-assistant.integration.test.ts",
+        "server/project-assistant-prompt.test.ts",
+        "server/project-assistant-attended.test.ts"
+      ]
+    },
+    "§app.project-assistant/models": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-costs/price-table"
+      ],
+      "code": [
+        "server/project-assistant-store.ts",
+        "server/project-assistant-prices.ts",
+        "server/project-assistant-routes.ts",
+        "server/org-routes.ts",
+        "src/components/OwnerCardAssistant.tsx",
+        "src/components/OwnerCardAssistant.css",
+        "src/lib/api.ts"
+      ]
+    },
+    "§app.project-assistant/never": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.owner-page/never",
+        "§app.baton/outsider-view"
+      ],
+      "code": [
+        "server/project-assistant.ts",
+        "server/owner-page-privacy.test.ts",
+        "server/project-assistant.integration.test.ts"
+      ]
+    },
+    "§app.project-assistant/requests": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.overseer/attention-digest",
+        "§app/notifications"
+      ],
+      "code": [
+        "server/project-assistant-store.ts",
+        "server/owner-attention.ts",
+        "server/overseer.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "shared/project-assistant.ts",
+        "shared/protocol.ts",
+        "server/project-assistant-routes.ts",
+        "src/components/OwnerCardAssistant.tsx",
+        "src/lib/needs-you.ts",
+        "src/components/PushSettings.tsx",
+        "src/share/owner-view.tsx",
+        "server/project-assistant.integration.test.ts"
+      ]
+    },
+    "§app.project-assistant/tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-services/deploy-callers",
+        "§app.owner-page/conversations"
+      ],
+      "code": [
+        "server/project-assistant-tools.ts",
+        "server/project-assistant-loadout.ts",
+        "server/project-assistant.integration.test.ts",
+        "server/project-assistant-attended.test.ts"
+      ]
+    },
+    "§app.project-assistant/versions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/share",
+        "§app.project-services/instances",
+        "§mesh.public/preview",
+        "§app.owner-page/link"
+      ],
+      "code": [
+        "server/owner-versions.ts",
+        "server/preview-kept.ts",
+        "server/preview-links.ts",
+        "server/person-links.ts",
+        "server/owner-page.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "shared/owner.ts",
+        "src/share/owner-view.tsx",
+        "server/owner-versions.test.ts"
+      ]
+    },
     "§app.session-list/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
@@ -782,7 +911,17 @@
       "evidence": "verified",
       "code": [
         "server/sessions-index.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/sessions-index.test.ts",
+        "server/tours/lifecycle.ts",
+        "server/tours/lifecycle.test.ts",
+        "server/tours/lifecycle-import.test.ts",
+        "server/tours/ownership.ts",
+        "server/tours/ownership.test.ts",
+        "server/tours/sweep.ts",
+        "server/tours/sweep.test.ts",
+        "server/index.ts",
+        "server/tours/sweep-startup.integration.test.ts"
       ]
     },
     "§app.session-list/content-rules": {
@@ -1034,6 +1173,94 @@
         "server/chat-manager.ts"
       ]
     },
+    "§app.spec-lookup/code-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/outsider-view"
+      ],
+      "code": [
+        "server/code-read.ts",
+        "server/code-read.test.ts",
+        "server/spec-lookup.ts",
+        "server/spec-lookup.integration.test.ts"
+      ]
+    },
+    "§app.spec-lookup/outsider-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/tool",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/spec-lookup-projection.ts",
+        "server/spec-lookup-projection.test.ts",
+        "server/spec-lookup.test.ts",
+        "server/spec-lookup.integration.test.ts",
+        "server/code-read.ts"
+      ]
+    },
+    "§app.spec-lookup/overview": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/tool"
+      ],
+      "code": [
+        "server/spec-lookup.ts",
+        "server/spec-lookup.test.ts",
+        "server/spec-lookup-part.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-part.test.ts"
+      ]
+    },
+    "§app.spec-lookup/tool": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/spec-lookup",
+        "§tools/spec"
+      ],
+      "code": [
+        "server/spec-lookup.ts",
+        "server/spec-lookup.test.ts",
+        "server/spec-lookup.integration.test.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-tools.test.ts"
+      ]
+    },
+    "§app.spec-lookup/who-gets-what": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.spec-lookup/tool",
+        "§app.spec-lookup/code-read",
+        "§app.spec-lookup/overview",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/overseer-org-part.ts",
+        "server/project-overseer-prompt.md",
+        "server/overseer-prompt.md",
+        "server/spec-lookup-part.ts",
+        "server/overseer-tools.ts",
+        "server/baton-abilities.test.ts",
+        "server/baton-runtime.test.ts",
+        "server/overseer-org-part.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/project-overseer.test.ts"
+      ]
+    },
     "§app.subagents-pane/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1234,22 +1461,12 @@
         "by": "naomarik",
         "at": "2026-10-13T12:56Z"
       },
-      "evidence": "verified",
-      "notOwned": [
-        "§app.claude-code-provider/continuity",
-        "§app.worker-restore/restore",
-        "§app.load-priority/workers"
-      ]
+      "evidence": "verified"
     },
     "§app/extension-dialogs": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§app.harness/session-open",
-        "§app.overseer/dialog-answers",
-        "§app/extensions"
-      ]
+      "evidence": "unreviewed"
     },
     "§app/insights": {
       "kind": "surface",
@@ -1261,12 +1478,7 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T02:51Z"
-      },
-      "notOwned": [
-        "§app/claude-logins",
-        "§app.session-list/working-now",
-        "§app/resource-monitor"
-      ]
+      }
     },
     "§app/new-session-dialog": {
       "kind": "surface",
@@ -1287,22 +1499,24 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-15T19:32Z"
-      },
-      "notOwned": [
-        "§mesh.remote-sessions/host-picker",
-        "§app.project-overseer/new-coding-session",
-        "§workspace.groups/making-a-comparison"
+      }
+    },
+    "§app/project-assistant": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-assistant.ts",
+        "server/project-assistant-loadout.ts",
+        "shared/project-assistant.ts",
+        "src/share/assistant-view.tsx",
+        "server/project-assistant.integration.test.ts"
       ]
     },
     "§app/session-list": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§app.projects/list",
-        "§app.overseer/attention-digest",
-        "§app.insights/token-velocity"
-      ]
+      "evidence": "unreviewed"
     },
     "§app/settings-dialog": {
       "kind": "surface",
@@ -1316,12 +1530,7 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-15T04:52Z"
-      },
-      "notOwned": [
-        "§chat.voice/runtime",
-        "§chat.alignment/settings-file",
-        "§app.overseer/caps"
-      ]
+      }
     },
     "§app/shell": {
       "kind": "surface",
@@ -1329,11 +1538,17 @@
       "evidence": "reviewed",
       "code": [
         "src/App.tsx"
-      ],
-      "notOwned": [
-        "§app/session-list",
-        "§chat/transcript",
-        "§app/access"
+      ]
+    },
+    "§app/spec-lookup": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/spec-lookup.ts",
+        "server/spec-lookup-projection.ts",
+        "server/code-read.ts",
+        "server/spec-lookup-part.ts"
       ]
     },
     "§app/subagents-pane": {
@@ -1343,12 +1558,539 @@
       "code": [
         "src/components/SubagentPane.tsx",
         "src/components/SessionView.tsx"
-      ],
-      "notOwned": [
-        "§app/worker-restore",
-        "§app/insights",
-        "§chat/timeline"
       ]
+    },
+    "§app.tours/authoring": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/app.ts",
+        "shared/tour.ts",
+        "shared/tour.test.ts",
+        "shared/tour-fixtures.ts",
+        "server/tours/tools.ts",
+        "server/tours/tools.test.ts",
+        "server/vis-tools-sync.test.ts",
+        "scripts/run-tests.mjs",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/vis-guide-tool.ts",
+        "pi-config/extensions/mode/vis/overview.md",
+        "pi-config/extensions/mode/vis/tour.md",
+        "pi-config/extensions/mode/vis/tour-signin.md",
+        "pi-config/extensions/mode/vis/tour-sites.md",
+        "pi-config/extensions/mode/vis/tour-sova.md",
+        "pi-config/extensions/mode/vis/tour-sharing.md",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/README.md",
+        "agents/modes/vis/overview.md",
+        "src/vis/guide.test.ts",
+        "server/tours/tools-signin.test.ts",
+        "server/tours/tools-signin-account.test.ts",
+        "server/tours/tools-help.test.ts",
+        "shared/tour-script-problems.test.ts"
+      ],
+      "requires": [
+        "§chat.markdown/visuals",
+        "§app.harness/new-work"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T22:55Z"
+      }
+    },
+    "§app.tours/editions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/tour.ts",
+        "server/tours/store.ts",
+        "server/tours/checks.ts",
+        "server/tours/assets.ts",
+        "shared/protocol.ts",
+        "server/harness/state-kinds.ts",
+        "server/tours/tools.ts",
+        "src/components/Thread.tsx",
+        "server/transcript.ts",
+        "server/transcript-tool.test.ts"
+      ],
+      "requires": [
+        "§app.tours/recording",
+        "§chat.transcript/slim-rows",
+        "§app.harness/state"
+      ]
+    },
+    "§app.tours/handoffs": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/baton.ts",
+        "server/harness/state-kinds.ts",
+        "server/tours/bindings.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-index.ts",
+        "server/tours/bindings-index.test.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tours/tools.ts",
+        "server/tour-routes.ts",
+        "server/baton-view.ts",
+        "server/baton-loadout.ts",
+        "server/baton-vis-guide.ts",
+        "server/harness/pi/golden/special-model-view.json",
+        "src/share/thread.tsx",
+        "src/share/ShareApp.tsx",
+        "src/share/OwnerApp.tsx",
+        "src/share/owner-view.tsx",
+        "server/share/edge.ts",
+        "server/share/routes.ts",
+        "server/tours/shares.test.ts",
+        "server/tours/bindings.test.ts",
+        "server/share/tour-routes.ts",
+        "src/share/TourAttachment.tsx",
+        "src/components/TourReadCard.tsx",
+        "src/lib/tour-draft.ts",
+        "src/lib/tour-draft.test.ts",
+        "src/components/OwnerCard.tsx",
+        "src/components/PersonPage.tsx",
+        "server/tours/bindings-app.integration.test.ts",
+        "server/tours/bindings-portable.integration.test.ts",
+        "server/workspace-git.ts",
+        "server/share/hub.ts",
+        "server/tours/bindings-destination-routes.ts",
+        "src/components/BatonTours.tsx",
+        "src/components/BatonStrip.tsx",
+        "src/lib/tour-api.ts",
+        "server/org-routes.ts",
+        "server/tours/bindings-destination.integration.test.ts",
+        "server/tours/bindings-portable-host.ts",
+        "server/tours/shares-lock.integration.test.ts"
+      ],
+      "requires": [
+        "§app.baton/outsider-view",
+        "§app.baton/goal-and-loadout",
+        "§app.organizations/privacy",
+        "§app.tours/sharing"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:49Z"
+      }
+    },
+    "§app.tours/look": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/tours/look.ts",
+        "server/tours/look.test.ts",
+        "server/tours/runner-look.integration.test.ts",
+        "server/tours/runtime-look.test.ts"
+      ],
+      "requires": [
+        "§app.tours/recording",
+        "§app.tours/sites",
+        "§app.tours/sandbox"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T21:58Z"
+      }
+    },
+    "§app.tours/recording": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/tours/runner.ts",
+        "server/tours/runner-child.ts",
+        "server/tours/browser-addresses.ts",
+        "server/tours/browser-addresses.test.ts",
+        "server/tours/runner-protocol.ts",
+        "server/tours/runner.integration.test.ts",
+        "server/tours/runtime.integration.test.ts",
+        "server/tours/runtime-app.integration.test.ts",
+        "server/tours/runtime.ts",
+        "server/tours/runtime.test.ts",
+        "server/tours/runtime-routes.ts",
+        "server/tours/runtime-routes.test.ts",
+        "server/tours/context.ts",
+        "server/tours/context.test.ts",
+        "server/tours/job.ts",
+        "server/tours/browser.ts",
+        "server/tours/targets.ts",
+        "server/tours/targets.test.ts",
+        "server/tours/checks.ts",
+        "server/tours/checks.test.ts",
+        "server/tours/contact-sheet.ts",
+        "server/tours/tools.ts",
+        "src/components/TourCard.tsx",
+        "src/lib/tour-state.ts",
+        "src/lib/tour-state.test.ts",
+        "server/tours/runner-sova.integration.test.ts",
+        "server/tours/runner-hash.integration.test.ts",
+        "server/tours/sova-copy.integration.test.ts",
+        "server/tours/signin-store.ts",
+        "server/tours/runner-signin.test.ts",
+        "server/tours/runtime-signin.test.ts",
+        "server/tours/runner-signin.integration.test.ts",
+        "server/tours/runner-socket.integration.test.ts",
+        "server/tours/runner-capture.integration.test.ts",
+        "server/tours/runtime-status.test.ts",
+        "server/tours/runner-report.integration.test.ts",
+        "server/tours/mark-box.test.ts",
+        "server/tours/runner-signin-settle.integration.test.ts",
+        "server/tours/runner-signin-landed.integration.test.ts",
+        "server/tours/runner-signin-inplace.integration.test.ts",
+        "server/tours/runner-signin.integration.fixture.ts"
+      ],
+      "requires": [
+        "§app.tours/sandbox",
+        "§app.tours/sites",
+        "§app.tours/source-identity",
+        "§app.tours/resources"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:49Z"
+      }
+    },
+    "§app.tours/requests": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/TourViewer.tsx",
+        "src/components/TourReadCard.tsx",
+        "src/lib/tour-state.ts",
+        "src/lib/tour-state.test.ts",
+        "src/lib/tour-draft.ts",
+        "src/lib/tour-draft.test.ts",
+        "src/share/ShareApp.tsx",
+        "pi-config/extensions/mode/vis/tour.md"
+      ],
+      "requires": [
+        "§app.tours/authoring",
+        "§app.baton/outsider-view"
+      ]
+    },
+    "§app.tours/resources": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/tours/queue.ts",
+        "server/tours/queue.test.ts",
+        "server/tours/job.ts",
+        "server/tours/job.test.ts",
+        "server/tours/runner.ts",
+        "server/tours/browser.ts",
+        "server/tours/sandbox-priority.integration.test.ts",
+        "server/process-priority.ts",
+        "server/process-priority.test.ts",
+        "package.json",
+        "pnpm-lock.yaml",
+        "server/tours/runtime.test.ts",
+        "server/tours/runtime-restart.test.ts"
+      ],
+      "requires": [
+        "§app.load-priority/workers",
+        "§app.resource-monitor/attribution"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:49Z"
+      }
+    },
+    "§app.tours/sandbox": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/tours/sandbox.ts",
+        "server/tours/browser.ts",
+        "pi-config/extensions/sandbox/session-policy.ts",
+        "pi-config/extensions/sandbox/README.md",
+        "agents/extensions/sandbox/overview.md",
+        "server/tours/sandbox-probe.integration.fixture.ts",
+        "server/tours/sandbox.integration.test.ts",
+        "server/tours/sandbox-runtime.integration.test.ts",
+        "server/tours/browser.test.ts",
+        "server/tours/context.ts",
+        "server/tours/context.test.ts",
+        "server/tours/runtime.integration.test.ts",
+        "server/tours/accounts.test.ts",
+        "server/tours/runtime.test.ts",
+        "server/project-services/tour-target.integration.test.ts",
+        "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
+        "pi-config/extensions/sandbox/proxy.ts",
+        "server/tours/runner.ts",
+        "server/tours/runner-protocol.ts",
+        "server/tours/runner-child.ts",
+        "server/tours/browser-addresses.ts",
+        "server/tours/browser-addresses.test.ts",
+        "server/tours/runtime.ts",
+        "server/tours/runner.test.ts",
+        "server/tours/browser-prediction.integration.test.ts",
+        "server/tours/runner-proxy.ts",
+        "server/tours/runner-proxy.integration.test.ts"
+      ],
+      "requires": [
+        "§chat.sandbox/what-on-enforces",
+        "§chat.sandbox/workers",
+        "§chat.sandbox/fail-closed"
+      ]
+    },
+    "§app.tours/sharing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/tours/shares.ts",
+        "server/tours/public-view.ts",
+        "server/tours/assets.ts",
+        "server/tour-routes.ts",
+        "server/link-tokens.ts",
+        "shared/public-links.ts",
+        "src/components/TourShare.tsx",
+        "src/share/TourShareApp.tsx",
+        "src/share/main.tsx",
+        "server/share/edge.ts",
+        "server/share/routes.ts",
+        "server/share/router.ts",
+        "server/share/registry-push.ts",
+        "server/tours/shares.test.ts",
+        "server/share/tour-routes.test.ts",
+        "server/share/tour-transport.test.ts",
+        "server/share/tour-transport.integration.test.ts",
+        "server/tour-routes.integration.test.ts",
+        "server/tours/route-fixture.integration.fixture.ts",
+        "server/share-registry.test.ts",
+        "server/share/tour-limits.ts",
+        "server/share/tour-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "src/share/TourAttachment.tsx",
+        "server/share/registry.ts",
+        "server/share/links-events.ts",
+        "server/share/share-state.ts",
+        "src/lib/tour-progress-save.ts",
+        "src/lib/tour-progress-save.test.ts",
+        "src/lib/tour-share-preview.ts",
+        "src/lib/tour-share-preview.test.ts",
+        "server/tours/shares-lock.integration.test.ts"
+      ],
+      "requires": [
+        "§app.tours/editions",
+        "§mesh.public/registry",
+        "§mesh.public/routing",
+        "§app.baton/share-listener",
+        "§mesh.public/visitor-log"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:49Z"
+      }
+    },
+    "§app.tours/sites": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/tour.ts",
+        "shared/tour.test.ts",
+        "server/tours/private.ts",
+        "server/tours/private.test.ts",
+        "server/tours/approvals.ts",
+        "server/tours/approvals.test.ts",
+        "server/tours/accounts.ts",
+        "server/tours/accounts.test.ts",
+        "server/tours/browser.ts",
+        "server/tours/browser-addresses.ts",
+        "server/tours/browser-addresses.test.ts",
+        "server/tours/runner-child.ts",
+        "server/tours/tools.ts",
+        "src/components/TourCard.tsx",
+        "server/tour-routes.ts",
+        "server/tours/runtime.ts",
+        "server/tours/runtime.test.ts",
+        "pi-config/extensions/mode/vis/tour.md",
+        "server/auth.ts",
+        "server/auth-gate.test.ts",
+        "server/tours/runner-header.ts",
+        "server/auth.test.ts",
+        "server/project-services/tour-target.ts",
+        "server/tours/runtime-routes.ts",
+        "server/tours/runtime-routes.test.ts",
+        "server/project-services/tour-target-sova.test.ts",
+        "server/tours/runner-sova.test.ts",
+        "server/tours/runtime-sova.test.ts",
+        "server/tours/browser-prediction.integration.test.ts",
+        "server/tours/runner-sova.integration.test.ts",
+        "server/tours/sova-copy.integration.test.ts",
+        "server/project-services/tour-target-sova.integration.test.ts",
+        "src/lib/tour-api.ts",
+        "server/tours/runtime-sites.test.ts",
+        "server/tours/runner-proxy.ts",
+        "server/tours/runner-proxy.integration.test.ts",
+        "server/tours/runner.ts",
+        "server/tours/sandbox.ts",
+        "server/tours/runner.test.ts",
+        "server/tours/runner.integration.test.ts",
+        "src/lib/tour-state.test.ts",
+        "server/tours/runner-redirect.integration.test.ts",
+        "server/tours/runner-protocol.ts",
+        "pi-config/extensions/sandbox/proxy.ts",
+        "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
+        "server/tours/runner-load.integration.test.ts",
+        "server/project-services/tour-target-listener.ts",
+        "server/project-services/tour-target-listener.test.ts",
+        "server/tours/signin-store.ts",
+        "server/tours/tools-signin.test.ts",
+        "server/tour-login-hidden.test.ts",
+        "server/tours/sign-in-notice.ts",
+        "server/tours/runner-signin.test.ts",
+        "server/tours/sign-in-notice.test.ts",
+        "server/tours/runtime-signin.test.ts",
+        "server/tours/runner-signin.integration.test.ts",
+        "server/tours/tools-signin-account.test.ts",
+        "server/tours/sign-in-notice-stale.test.ts",
+        "server/tours/resumed-notice.test.ts",
+        "server/app.ts",
+        "server/tours/runner-signin-inplace.integration.test.ts",
+        "server/tours/runner-signin.integration.fixture.ts"
+      ],
+      "requires": [
+        "§app.tours/sandbox",
+        "§app.tours/source-identity"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-15T19:49Z"
+      }
+    },
+    "§app.tours/source-identity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/tour.ts",
+        "server/project-services/tour-target.ts",
+        "server/tours/runner.ts",
+        "server/project-services/tour-target.test.ts",
+        "server/project-services/tour-target.integration.test.ts",
+        "server/auth.ts",
+        "server/project-services/tour-target-sova.test.ts",
+        "server/project-services/tour-target-sova.integration.test.ts",
+        "server/tours/runner-load.integration.test.ts",
+        "server/project-services/tour-target-listener.ts",
+        "server/project-services/tour-target-listener.test.ts",
+        "server/tours/runtime.test.ts",
+        "server/tours/tools.ts",
+        "server/tours/tools.test.ts"
+      ],
+      "requires": [
+        "§app.project-services/instance-note"
+      ]
+    },
+    "§app.tours/storage": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/app.ts",
+        "server/tours/store.ts",
+        "server/tours/assets.ts",
+        "server/tours/private.ts",
+        "server/tours/private.test.ts",
+        "server/tours/deleted.ts",
+        "server/tours/deleted.test.ts",
+        "server/tours/lifecycle.ts",
+        "server/tours/lifecycle.test.ts",
+        "server/tours/lifecycle-import.test.ts",
+        "server/sessions-index.ts",
+        "server/sessions-index.test.ts",
+        "server/tours/runtime.integration.test.ts",
+        "server/tours/runtime-app.integration.test.ts",
+        "server/tours/runtime.ts",
+        "server/tours/runtime.test.ts",
+        "server/tours/queue.ts",
+        "server/tours/queue.test.ts",
+        "server/tours/job.ts",
+        "server/tours/job.test.ts",
+        "server/tours/shares.ts",
+        "server/tours/shares.test.ts",
+        "server/tours/progress.ts",
+        "server/tours/progress.test.ts",
+        "server/tours/bindings.ts",
+        "server/tour-routes.ts",
+        "server/tour-routes.integration.test.ts",
+        "server/tours/route-fixture.integration.fixture.ts",
+        "server/tours/ownership.ts",
+        "server/tours/sweep.ts",
+        "server/tours/sweep.test.ts",
+        "server/org-routes.ts",
+        "server/tours/store.test.ts",
+        "server/workspace-git.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-portable.integration.test.ts",
+        "server/share/hub.ts",
+        "server/tours/context.ts",
+        "server/tours/ownership.test.ts",
+        "server/tours/sweep-startup.integration.test.ts",
+        "server/index.ts",
+        "server/tours/runtime-routes.ts",
+        "server/tours/bindings-backup.integration.test.ts",
+        "server/tours/bindings-portable-host.ts"
+      ],
+      "requires": [
+        "§app.organizations/workspace-repo",
+        "§app.organizations/portability",
+        "§app.tours/editions"
+      ]
+    },
+    "§app.tours/viewer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/TourViewer.tsx",
+        "src/components/TourViewer.css",
+        "src/components/TourCard.tsx",
+        "src/components/TourReadCard.tsx",
+        "src/components/TourShare.tsx",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/tour-geometry.ts",
+        "src/lib/tour-geometry.test.ts",
+        "src/lib/tour-state.ts",
+        "src/lib/tour-state.test.ts",
+        "src/lib/tour-api.ts",
+        "server/tours/progress.ts",
+        "server/tours/progress.test.ts",
+        "server/tours/destinations.ts",
+        "server/tours/destinations.test.ts",
+        "server/tour-routes.ts",
+        "src/components/PersonPage.tsx",
+        "server/tour-routes.integration.test.ts",
+        "server/tours/route-fixture.integration.fixture.ts",
+        "src/lib/tour-progress-save.ts",
+        "src/lib/tour-progress-save.test.ts",
+        "src/design/tokens.css",
+        "src/lib/tour-ui.test.ts"
+      ],
+      "requires": [
+        "§app.tours/editions",
+        "§app.tours/requests"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-16T05:54Z"
+      }
     },
     "§app.updates/auto-upgrade": {
       "kind": "behavior",
@@ -1888,8 +2630,8 @@
         "server/archive-subagent-guard.test.ts"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "user (guided-tours go-ahead: al_6 recorder sign-in decisions)",
+        "at": "2026-10-19T08:08Z"
       }
     },
     "§chat.memory/overseer": {
@@ -2091,8 +2833,8 @@
         "server/mode-state.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T16:29Z"
+        "by": "Omar (operator)",
+        "at": "2026-10-17"
       }
     },
     "§chat.mode-menu/memory-panel": {
@@ -2534,14 +3276,18 @@
     "§chat.transcript/a-queued-message": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/queue.ts",
         "src/lib/live.ts",
         "src/components/Thread.tsx",
         "src/lib/live.test.ts",
         "server/chat-manager.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:14Z"
+      }
     },
     "§chat.transcript/accessibility": {
       "kind": "behavior",
@@ -2606,13 +3352,14 @@
         "server/chat-host.ts",
         "server/archive-quiet-close.test.ts",
         "server/quiet-close-actions.test.ts",
-        "server/chat-host.test.ts"
+        "server/chat-host.test.ts",
+        "scripts/e2e/transcript-follow.mjs"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T08:19Z"
+        "by": "naomarik",
+        "at": "2026-10-19T08:09Z"
       },
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
@@ -2658,13 +3405,18 @@
         "server/watch.ts",
         "src/lib/older-rows-view.ts",
         "server/transcript-rows.ts",
-        "src/components/Thread.tsx"
-      ]
+        "src/components/Thread.tsx",
+        "scripts/e2e/transcript-follow.mjs"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-18T20:32Z"
+      }
     },
     "§chat.transcript/message-actions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/MessageActions.tsx",
         "src/lib/message-reveal.ts",
@@ -2726,9 +3478,10 @@
         "server/mesh/access.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T08:50Z"
-      }
+        "by": "naomarik",
+        "at": "2026-10-19T08:09Z"
+      },
+      "evidence": "reviewed"
     },
     "§chat.transcript/states": {
       "kind": "behavior",
@@ -2778,11 +3531,13 @@
         "src/components/Thread.tsx",
         "src/design/base.css",
         "src/components/ExplainCard.tsx",
-        "pi-config/extensions/explain/store.ts"
+        "pi-config/extensions/explain/store.ts",
+        "src/lib/hidden-rows.ts",
+        "src/lib/hidden-rows.test.ts"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-13T16:19Z"
+        "by": "user (guided-tours go-ahead: al_6 recorder sign-in decisions)",
+        "at": "2026-10-19T08:08Z"
       }
     },
     "§chat/composer": {
@@ -2791,22 +3546,12 @@
       "evidence": "reviewed",
       "code": [
         "src/components/Composer.tsx"
-      ],
-      "notOwned": [
-        "§chat/slash-commands",
-        "§chat/model-menu",
-        "§chat.voice/button"
       ]
     },
     "§chat/context-window": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§app/session-list",
-        "§app.subagents-pane/worker-rows",
-        "§app/insights"
-      ]
+      "evidence": "unreviewed"
     },
     "§chat/images": {
       "kind": "surface",
@@ -2814,11 +3559,6 @@
       "evidence": "verified",
       "code": [
         "server/attachments.ts"
-      ],
-      "notOwned": [
-        "§chat/composer",
-        "§chat/markdown",
-        "§chat.transcript/transcript-items"
       ]
     },
     "§chat/markdown": {
@@ -2829,11 +3569,6 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "src/lib/session-links.ts"
-      ],
-      "notOwned": [
-        "§app/markdown-viewer",
-        "§chat/transcript",
-        "§chat.images/lightbox"
       ]
     },
     "§chat/memory": {
@@ -2847,11 +3582,6 @@
         "server/memory/engine.ts",
         "shared/memory.ts",
         "shared/protocol.ts"
-      ],
-      "notOwned": [
-        "§chat/mode-menu",
-        "§app.harness/reader",
-        "§app.claude-code-provider/no-memory"
       ]
     },
     "§chat/mode-menu": {
@@ -2871,12 +3601,7 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-14T08:06Z"
-      },
-      "notOwned": [
-        "§chat/subagent-profiles",
-        "§chat/memory",
-        "§app.project-overseer/coding-mode"
-      ]
+      }
     },
     "§chat/model-menu": {
       "kind": "surface",
@@ -2886,11 +3611,6 @@
         "src/components/ModelMenu.tsx",
         "src/components/ComposerMenu.tsx",
         "src/components/SessionView.tsx"
-      ],
-      "notOwned": [
-        "§chat.composer/composer-flyout",
-        "§app.claude-code-provider/model-names",
-        "§app/model-levels"
       ]
     },
     "§chat/slash-commands": {
@@ -2907,32 +3627,17 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T00:19Z"
-      },
-      "notOwned": [
-        "§app/subagents-pane",
-        "§app.chat-processes/workers",
-        "§chat/composer"
-      ]
+      }
     },
     "§chat/timeline": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§chat/transcript",
-        "§app/subagents-pane",
-        "§app.insights/summary-sections"
-      ]
+      "evidence": "unreviewed"
     },
     "§chat/transcript": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§chat/timeline",
-        "§chat/composer",
-        "§app/session-list"
-      ]
+      "evidence": "unreviewed"
     },
     "§design.copy-deck/composer": {
       "kind": "note",
@@ -3016,7 +3721,7 @@
     "§design.copy-deck/message-actions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "about": [
         "§chat.transcript/message-actions"
       ]
@@ -3043,6 +3748,22 @@
       "evidence": "verified",
       "about": [
         "§app/new-session-dialog"
+      ]
+    },
+    "§design.copy-deck/project-powers": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts",
+        "src/lib/powers-view.test.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/projects.css"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.organizations/project-page"
       ]
     },
     "§design.copy-deck/settings-modes-delegate": {
@@ -3174,51 +3895,27 @@
     "§design/copy-deck": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§chat/sandbox",
-        "§workspace/groups",
-        "§chat/composer"
-      ]
+      "evidence": "unreviewed"
     },
     "§design/deviations": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
-      "notOwned": [
-        "§design/ground-rules",
-        "§design/menu-rows",
-        "§app/markdown-viewer"
-      ]
+      "evidence": "verified"
     },
     "§design/ground-rules": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§design/copy-deck",
-        "§design/token-index",
-        "§design/deviations"
-      ]
+      "evidence": "unreviewed"
     },
     "§design/overview": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed",
-      "notOwned": [
-        "§design/copy-deck",
-        "§design/ground-rules",
-        "§design/token-index"
-      ]
+      "evidence": "reviewed"
     },
     "§design/token-index": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
-      "notOwned": [
-        "§design/ground-rules",
-        "§app.settings-dialog/themes"
-      ]
+      "evidence": "verified"
     },
     "§workspace.groups/a-pane": {
       "kind": "behavior",
@@ -3351,11 +4048,6 @@
       "evidence": "unreviewed",
       "code": [
         "src/components/GroupView.tsx"
-      ],
-      "notOwned": [
-        "§app.session-list/groups",
-        "§chat/composer",
-        "§app.session-list/auto-titles"
       ]
     },
     "§chat.transcript/setup-card-figures": {
@@ -3548,11 +4240,6 @@
         "src/components/PlaybooksDialog.tsx",
         "src/components/ChatView.tsx",
         "src/components/ComposerMenu.tsx"
-      ],
-      "notOwned": [
-        "§chat/schedules",
-        "§chat/slash-commands",
-        "§chat.profiles/projects"
       ]
     },
     "§design.copy-deck/playbooks": {
@@ -3663,7 +4350,10 @@
         "pi-config/extensions/sandbox/proxy.ts",
         "pi-config/extensions/sandbox/env.ts",
         "pi-config/extensions/sandbox/tools.ts",
-        "pi-config/extensions/sandbox/index.ts"
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
+        "pi-config/extensions/sandbox/session-policy.ts",
+        "pi-config/extensions/sandbox/README.md"
       ]
     },
     "§chat.sandbox/workers": {
@@ -3700,11 +4390,6 @@
         "pi-config/extensions/sandbox/policy.ts",
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/README.md"
-      ],
-      "notOwned": [
-        "§chat.composer/sandbox-shield",
-        "§chat.worktrees/sandbox",
-        "§app.claude-logins/registry"
       ]
     },
     "§chat.composer/sandbox-shield": {
@@ -3947,11 +4632,19 @@
         "pi-config/extensions/sessions/index.ts",
         "pi-config/extensions/sessions/presence.ts",
         "pi-config/extensions/sessions/public/SCHEMA.md"
-      ],
-      "notOwned": [
-        "§chat.transcript/live-watch",
-        "§app.harness/agent-root",
-        "§app/session-list"
+      ]
+    },
+    "§app/tours": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/app.ts",
+        "shared/tour.ts",
+        "server/tours/tools.ts",
+        "src/components/TourCard.tsx",
+        "server/tour-routes.integration.test.ts",
+        "server/tours/route-fixture.integration.fixture.ts"
       ]
     },
     "§app/updates": {
@@ -3972,12 +4665,7 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-14T15:54Z"
-      },
-      "notOwned": [
-        "§app/installer",
-        "§app.project-services/adopt",
-        "§mesh.front-door/stale-tab"
-      ]
+      }
     },
     "§app/worker-restore": {
       "kind": "surface",
@@ -3991,12 +4679,7 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T02:54Z"
-      },
-      "notOwned": [
-        "§app.chat-processes/worker-crash",
-        "§app.subagents-pane/transcript-view",
-        "§chat.sandbox/workers"
-      ]
+      }
     },
     "§chat.context-window/last-reply": {
       "kind": "behavior",
@@ -4130,11 +4813,6 @@
         "server/mesh/resync-test-fixtures.ts",
         "server/index.ts",
         "docs/mesh.md"
-      ],
-      "notOwned": [
-        "§mesh/sync",
-        "§app.claude-logins/pool",
-        "§mesh/lan"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -4320,11 +4998,6 @@
         "server/mesh/proxy.ts",
         "server/mesh/index.ts",
         "src/lib/mesh.ts"
-      ],
-      "notOwned": [
-        "§mesh.peers/grants",
-        "§app/new-session-dialog",
-        "§mesh/lan"
       ]
     },
     "§mesh/sync": {
@@ -4333,11 +5006,6 @@
       "evidence": "verified",
       "code": [
         "server/sync/index.ts"
-      ],
-      "notOwned": [
-        "§chat.subagent-profiles/file",
-        "§mesh.peers/grants",
-        "§app.claude-logins/pool"
       ]
     },
     "§mesh/ui": {
@@ -4347,11 +5015,6 @@
       "code": [
         "src/components/MeshView.tsx",
         "src/mesh.css"
-      ],
-      "notOwned": [
-        "§mesh.peers/grants",
-        "§app.claude-logins/pool",
-        "§mesh/details"
       ]
     },
     "§mesh.front-door/config": {
@@ -4402,11 +5065,6 @@
       "evidence": "verified",
       "code": [
         "server/mesh/front-door.ts"
-      ],
-      "notOwned": [
-        "§mesh.details/browser-access",
-        "§app.updates/reload-note",
-        "§app/shell"
       ]
     },
     "§mesh.sync/api-keys-only": {
@@ -4530,12 +5188,7 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-14T15:54Z"
-      },
-      "notOwned": [
-        "§app/access",
-        "§app/updates",
-        "§app.server-runtime/choice"
-      ]
+      }
     },
     "§app.extensions/cards": {
       "kind": "behavior",
@@ -4660,11 +5313,6 @@
       "code": [
         "server/extensions.ts",
         "src/components/ExtensionView.tsx"
-      ],
-      "notOwned": [
-        "§app.settings-dialog/themes",
-        "§chat.transcript/landing-page",
-        "§app/shell"
       ]
     },
     "§app.subagents-pane/context-fill": {
@@ -4715,14 +5363,16 @@
         "server/project-services/deploy-attention.ts",
         "server/outreach/health.ts",
         "server/project-holds.ts",
-        "server/outreach-health.test.ts"
+        "server/outreach-health.test.ts",
+        "server/tours/sign-in-notice.ts",
+        "server/tours/sign-in-notice.test.ts"
       ],
       "requires": [
         "§app.overseer/seen"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T02:42Z"
+        "by": "user (guided-tours go-ahead: al_6 recorder sign-in decisions)",
+        "at": "2026-10-19T08:08Z"
       }
     },
     "§app.overseer/caps": {
@@ -4752,7 +5402,7 @@
     "§app.overseer/confirm": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-confirm.ts",
         "server/overseer-tools.ts",
@@ -4786,13 +5436,21 @@
         "src/lib/session-links.ts",
         "src/lib/card-refs.ts",
         "server/overseer-org-tools.ts",
-        "server/overseer-folders.ts"
+        "server/overseer-folders.ts",
+        "src/lib/hand-back.ts",
+        "src/lib/hand-back.test.ts",
+        "src/lib/unacked-sends.ts",
+        "src/lib/chat-outbox.ts"
       ],
       "requires": [
         "§app.overseer/tools",
         "§app.overseer/links",
         "§app.overseer/ideas"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:01Z"
+      }
     },
     "§app.overseer/dialog-answers": {
       "kind": "behavior",
@@ -5140,11 +5798,6 @@
         "server/overseer.ts",
         "server/overseer-store.ts",
         "server/chat-manager.ts"
-      ],
-      "notOwned": [
-        "§app/project-overseer",
-        "§chat.memory/overseer",
-        "§chat.worktrees/readiness"
       ]
     },
     "§chat.mode-menu/prompt-holds-across-turn-starters": {
@@ -5421,11 +6074,6 @@
       "code": [
         "shared/protocol.ts",
         "server/decide.ts"
-      ],
-      "notOwned": [
-        "§app.overseer/attention-digest",
-        "§app.overseer/seen",
-        "§chat.alignment/session-mark"
       ]
     },
     "§design.copy-deck/settings-decisions": {
@@ -5569,11 +6217,6 @@
       "code": [
         "server/mesh/details.ts",
         "src/components/MeshDetails.tsx"
-      ],
-      "notOwned": [
-        "§mesh.peers/health",
-        "§mesh.peers/allowlist",
-        "§mesh.ui/page"
       ]
     },
     "§app.teams/seats": {
@@ -5602,11 +6245,6 @@
       "code": [
         "pi-config/extensions/subagents/teams.ts",
         "pi-config/extensions/subagents/index.ts"
-      ],
-      "notOwned": [
-        "§teams.defaults/routing",
-        "§app/worker-restore",
-        "§app.insights/team-cards"
       ]
     },
     "§app.settings-dialog/decisions-autosave": {
@@ -5630,7 +6268,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -5647,7 +6285,9 @@
         "src/lib/api.ts",
         "src/design/base.css",
         "src/lib/org-region.ts",
-        "src/components/PlaybookReview.tsx"
+        "src/components/PlaybookReview.tsx",
+        "server/tours/sign-in-notice.ts",
+        "server/tours/sign-in-notice.test.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -5814,11 +6454,6 @@
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
-      ],
-      "notOwned": [
-        "§app/teams",
-        "§chat.subagent-profiles/resolution",
-        "§app.claude-code-provider/catalog"
       ]
     },
     "§mesh.vps/claude-code": {
@@ -5839,11 +6474,6 @@
       "code": [
         "scripts/mesh-vps/deploy.sh",
         "scripts/mesh-vps/remote-setup.sh"
-      ],
-      "notOwned": [
-        "§mesh.lan/accept-process",
-        "§mesh.peers/resync",
-        "§app.server-runtime/choice"
       ]
     },
     "§mesh.phone/claude-store": {
@@ -5867,12 +6497,7 @@
         "scripts/mesh-termux/install.sh",
         "scripts/mesh-termux/deploy.sh"
       ],
-      "requires": [],
-      "notOwned": [
-        "§mesh.sync/logins",
-        "§app.claude-logins/pool",
-        "§mesh/peers"
-      ]
+      "requires": []
     },
     "§mesh.details/browser-access": {
       "kind": "behavior",
@@ -6087,7 +6712,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -6121,7 +6746,8 @@
         "server/share-message.integration.test.ts"
       ],
       "requires": [
-        "§app.organizations/privacy"
+        "§app.organizations/privacy",
+        "§app/tours"
       ]
     },
     "§app.baton/hand-off": {
@@ -6338,14 +6964,16 @@
         "server/share-message.integration.test.ts",
         "src/vis/kinds/frame/ImageView.tsx",
         "src/vis/kinds/frame/svg-image.ts",
-        "src/vis/kinds/frame/svg-image.test.ts"
+        "src/vis/kinds/frame/svg-image.test.ts",
+        "server/tours/public-view.ts"
       ],
       "requires": [
-        "§app.organizations/privacy"
+        "§app.organizations/privacy",
+        "§app/tours"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-13T22:37Z"
+        "by": "user (guided-tours build brief)",
+        "at": "2026-10-15T04:40:29.961829+00:00"
       }
     },
     "§app.baton/rejected": {
@@ -6382,11 +7010,14 @@
         "server/share-message.integration.test.ts",
         "server/public-links.integration.test.ts",
         "server/share/rate-limit.ts",
-        "server/share-rate-limit.test.ts"
+        "server/share-rate-limit.test.ts",
+        "server/tour-routes.ts",
+        "server/tours/bindings-app.integration.test.ts"
       ],
       "requires": [
         "§app.baton/links",
-        "§app.baton/outsider-view"
+        "§app.baton/outsider-view",
+        "§app/tours"
       ]
     },
     "§app.organizations/decisions": {
@@ -6519,13 +7150,21 @@
         "server/org-routes.ts",
         "server/org-holder.ts",
         "server/decision-markers-attach.test.ts",
-        "server/org-history/bootstrap.test.ts"
+        "server/org-history/bootstrap.test.ts",
+        "server/tours/bindings.ts",
+        "server/tours/store.ts",
+        "server/workspace-git.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-portable.integration.test.ts",
+        "server/share/hub.ts",
+        "server/tours/bindings-portable-host.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
         "§app.organizations/registry",
         "§app.project-overseer/autonomy-levels",
-        "§app.baton/links"
+        "§app.baton/links",
+        "§app/tours"
       ]
     },
     "§app.organizations/privacy": {
@@ -6545,7 +7184,8 @@
         "server/owner-page.ts",
         "server/org-host/log.ts",
         "server/org-host/privacy.test.ts",
-        "src/share/markdown.ts"
+        "src/share/markdown.ts",
+        "server/tours/public-view.ts"
       ]
     },
     "§app.organizations/projects": {
@@ -6620,7 +7260,7 @@
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -6652,7 +7292,15 @@
         "server/org-effects.ts",
         "statecharts/src/sova/statecharts/residence.cljc",
         "statecharts/test/sova/statecharts/refit/residence_test.cljs",
-        "statecharts/src/sova/statecharts/engine/queue.cljs"
+        "statecharts/src/sova/statecharts/engine/queue.cljs",
+        "server/tours/bindings.ts",
+        "server/tours/store.ts",
+        "server/org-routes.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-portable.integration.test.ts",
+        "server/share/hub.ts",
+        "server/tours/bindings-backup.integration.test.ts",
+        "server/tours/bindings-portable-host.ts"
       ],
       "agreed": {
         "by": "user (al_1: let's just have it an hour)",
@@ -6725,7 +7373,11 @@
         "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
         "statecharts/test/sova/statecharts/refit/registry_test.cljs",
         "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "shared/powers.ts",
+        "server/project-overseer-settings.test.ts",
+        "statecharts/src/sova/statecharts/rules/powers.cljc",
+        "statecharts/test/sova/statecharts/refit/powers_test.cljs"
       ],
       "requires": [
         "§app.project-overseer/tools"
@@ -6915,6 +7567,27 @@
         "§app.project-overseer/autonomy-levels"
       ]
     },
+    "§app.requirements/conversation-drafts": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/drafts-with-provenance",
+        "§app/baton",
+        "§app.baton/hand-off"
+      ],
+      "code": [
+        "server/conversation-draft.ts",
+        "server/conversation-draft-store.ts",
+        "server/conversation-draft-tools.ts",
+        "server/spec-draft-writer.ts",
+        "shared/conversation-drafts.ts",
+        "shared/baton.ts",
+        "server/conversation-draft.test.ts",
+        "server/conversation-draft.integration.test.ts",
+        "server/conversation-draft-tools.test.ts"
+      ]
+    },
     "§app.requirements/decisions": {
       "kind": "behavior",
       "authority": "accepted",
@@ -6943,6 +7616,40 @@
       ],
       "requires": [
         "§app.baton/hand-off"
+      ]
+    },
+    "§app.requirements/draft-approval": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/conversation-drafts",
+        "§app.requirements/promotion",
+        "§app.requirements/promotion-commit"
+      ],
+      "code": [
+        "server/conversation-draft-routes.ts",
+        "server/conversation-draft.ts",
+        "server/reconcile.ts",
+        "shared/conversation-drafts.ts",
+        "server/conversation-draft-tools.test.ts"
+      ]
+    },
+    "§app.requirements/draft-specs": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/conversation-drafts",
+        "§mesh.peers/grants"
+      ],
+      "code": [
+        "server/conversation-draft-routes.ts",
+        "shared/conversation-drafts.ts",
+        "server/app.ts",
+        "server/conversation-draft-tools.test.ts",
+        "server/mesh/access.ts",
+        "server/mesh/access.test.ts"
       ]
     },
     "§app.requirements/drafts-with-provenance": {
@@ -6976,6 +7683,20 @@
       "requires": [
         "§app.organizations/projects",
         "§app.requirements/promotion"
+      ]
+    },
+    "§app.requirements/lock-in": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/conversation-drafts"
+      ],
+      "code": [
+        "server/conversation-draft-store.ts",
+        "server/conversation-draft-tools.ts",
+        "server/baton.ts",
+        "server/conversation-draft-tools.test.ts"
       ]
     },
     "§app.requirements/promotion": {
@@ -7085,12 +7806,8 @@
         "server/baton.ts",
         "server/org-routes.ts",
         "src/components/BatonStrip.tsx",
-        "src/orgs.css"
-      ],
-      "notOwned": [
-        "§app.outreach/send",
-        "§app.organizations/privacy",
-        "§app.project-overseer/statecharts"
+        "src/orgs.css",
+        "server/baton-view.ts"
       ]
     },
     "§app/organizations": {
@@ -7109,12 +7826,8 @@
         "src/App.tsx",
         "src/lib/org-cards.ts",
         "src/components/PersonPage.tsx",
-        "src/components/Sidebar.tsx"
-      ],
-      "notOwned": [
-        "§app/baton",
-        "§app/project-overseer",
-        "§app/outreach"
+        "src/components/Sidebar.tsx",
+        "server/tours/bindings.ts"
       ]
     },
     "§app/project-overseer": {
@@ -7141,11 +7854,6 @@
         "§app/overseer",
         "§app/baton",
         "§app/requirements"
-      ],
-      "notOwned": [
-        "§app/overseer",
-        "§app/baton",
-        "§app/requirements"
       ]
     },
     "§app/requirements": {
@@ -7158,12 +7866,9 @@
         "server/decisions-routes.test.ts",
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
-        "src/components/ProjectPage.tsx"
-      ],
-      "notOwned": [
-        "§app.baton/hand-off",
-        "§app.organizations/stakeholder",
-        "§app/decisions"
+        "src/components/ProjectPage.tsx",
+        "server/conversation-draft-routes.ts",
+        "shared/conversation-drafts.ts"
       ]
     },
     "§app.insights/usage-resend": {
@@ -7403,11 +8108,6 @@
         "pi-config/extensions/worktrees/index.ts",
         "pi-config/extensions/worktrees/state.ts",
         "pi-config/extensions/worktrees/README.md"
-      ],
-      "notOwned": [
-        "§chat/merge-round",
-        "§chat/sandbox",
-        "§app.decisions/attention-signals"
       ]
     },
     "§app.insights/explanations-page": {
@@ -7532,13 +8232,22 @@
       "kind": "behavior",
       "requires": [
         "§app.session-list/cleanup-org-guard",
-        "§app.organizations/workspace-repo"
+        "§app.organizations/workspace-repo",
+        "§app.tours/storage"
       ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
         "server/sessions-index.ts",
-        "server/archive-org-guard.test.ts"
+        "server/archive-org-guard.test.ts",
+        "server/sessions-index.test.ts",
+        "server/tours/lifecycle.ts",
+        "server/tours/lifecycle.test.ts",
+        "server/tours/lifecycle-import.test.ts",
+        "server/tours/ownership.ts",
+        "server/tours/ownership.test.ts",
+        "server/tours/sweep.ts",
+        "server/tours/sweep.test.ts"
       ]
     },
     "§app.baton/visits": {
@@ -7567,7 +8276,7 @@
     "§app.organizations/person-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/roster",
@@ -7577,7 +8286,8 @@
         "§app.baton/outsider-view",
         "§app.baton/visits",
         "§app.requirements/decisions",
-        "§app.requirements/routing"
+        "§app.requirements/routing",
+        "§app.tours/handoffs"
       ],
       "code": [
         "src/components/PersonPage.tsx",
@@ -7594,7 +8304,12 @@
         "src/lib/orgs-route.ts",
         "src/components/InsightsPage.tsx",
         "server/person-page.test.ts",
-        "src/lib/minute-clock.ts"
+        "src/lib/minute-clock.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts"
       ]
     },
     "§app.organizations/org-sessions": {
@@ -7703,7 +8418,8 @@
         "server/overseer-tools.ts",
         "server/overseer-runtime.test.ts",
         "server/overseer-prompt.md",
-        "server/overseer-org-view.ts"
+        "server/overseer-org-view.ts",
+        "server/app.ts"
       ]
     },
     "§app.project-overseer/coding-worktrees": {
@@ -7914,11 +8630,6 @@
         "src/lib/push.ts",
         "server/web-push.test.ts",
         "server/push.test.ts"
-      ],
-      "notOwned": [
-        "§app.overseer/attention-digest",
-        "§app.session-list/needs-you",
-        "§app.decisions/team-stall"
       ]
     },
     "§app.overseer/links-tools": {
@@ -8156,11 +8867,6 @@
         "shared/protocol.ts",
         "server/mesh/links.test.ts",
         "server/mesh/links-transfer-test-fixtures.ts"
-      ],
-      "notOwned": [
-        "§mesh/remote-sessions",
-        "§app.overseer/links-tools",
-        "§mesh.peers/listener"
       ]
     },
     "§chat.mode-menu/workers": {
@@ -8251,7 +8957,8 @@
         "§app.baton/outsider-view",
         "§app.owner-page/conversations",
         "§app.owner-page/updates",
-        "§app.owner-page/never"
+        "§app.owner-page/never",
+        "§app.tours/handoffs"
       ],
       "code": [
         "server/owner-page.ts",
@@ -8262,7 +8969,15 @@
         "src/lib/owner-words.ts",
         "src/lib/owner-words.test.ts",
         "server/owner-page.test.ts",
-        "server/owner-page.integration.test.ts"
+        "server/owner-page.integration.test.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts",
+        "src/share/OwnerApp.tsx",
+        "server/share/edge.ts",
+        "server/share/routes.ts"
       ]
     },
     "§app.owner-page/controls": {
@@ -8289,7 +9004,8 @@
         "src/lib/api.ts",
         "server/person-page.ts",
         "server/org-routes.ts",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/OwnerCardAssistant.tsx"
       ]
     },
     "§app.owner-page/conversations": {
@@ -8298,7 +9014,8 @@
       "evidence": "verified",
       "requires": [
         "§app.owner-page/owner",
-        "§app.baton/goal-and-loadout"
+        "§app.baton/goal-and-loadout",
+        "§app.tours/handoffs"
       ],
       "code": [
         "server/baton.ts",
@@ -8310,7 +9027,18 @@
         "src/components/BatonStrip.tsx",
         "src/components/OwnerProjectCard.tsx",
         "server/owner-page.test.ts",
-        "server/owner-page.integration.test.ts"
+        "server/owner-page.integration.test.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts",
+        "src/share/OwnerApp.tsx",
+        "src/share/owner-view.tsx",
+        "src/share/thread.tsx",
+        "server/share/edge.ts",
+        "server/share/routes.ts",
+        "server/baton-view.ts"
       ]
     },
     "§app.owner-page/link": {
@@ -8321,7 +9049,8 @@
         "§app.owner-page/owner",
         "§app.baton/links",
         "§app.baton/share-listener",
-        "§app.baton/visits"
+        "§app.baton/visits",
+        "§app.tours/handoffs"
       ],
       "code": [
         "server/person-links.ts",
@@ -8335,7 +9064,15 @@
         "src/share/owner-view.tsx",
         "server/owner-page.test.ts",
         "server/owner-page.integration.test.ts",
-        "server/share/share-state.ts"
+        "server/share/share-state.ts",
+        "server/owner-link-idle.test.ts",
+        "server/share/edge.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts",
+        "src/share/thread.tsx"
       ]
     },
     "§app.owner-page/never": {
@@ -8344,13 +9081,24 @@
       "evidence": "verified",
       "requires": [
         "§app.baton/outsider-view",
-        "§app.organizations/privacy"
+        "§app.organizations/privacy",
+        "§app.tours/handoffs"
       ],
       "code": [
         "server/owner-page.ts",
         "server/share/hub.ts",
         "server/owner-page-privacy.test.ts",
-        "server/owner-page-privacy.integration.test.ts"
+        "server/owner-page-privacy.integration.test.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts",
+        "src/share/OwnerApp.tsx",
+        "src/share/owner-view.tsx",
+        "src/share/thread.tsx",
+        "server/share/edge.ts",
+        "server/share/routes.ts"
       ]
     },
     "§app.owner-page/owner": {
@@ -8376,10 +9124,11 @@
     "§app.owner-page/page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.baton/share-listener",
-        "§app.owner-page/content"
+        "§app.owner-page/content",
+        "§app.tours/handoffs"
       ],
       "code": [
         "src/share/main.tsx",
@@ -8393,7 +9142,15 @@
         "server/owner-page.integration.test.ts",
         "src/design/tokens.css",
         "src/share/index.html",
-        "server/share/share-state.ts"
+        "server/share/share-state.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts",
+        "src/share/thread.tsx",
+        "server/share/edge.ts",
+        "server/tours/bindings-app.integration.test.ts"
       ]
     },
     "§app.owner-page/rejected": {
@@ -8431,12 +9188,15 @@
         "server/owner-page.ts",
         "src/share/OwnerApp.tsx",
         "src/share/owner-view.tsx",
-        "shared/owner.ts"
-      ],
-      "notOwned": [
-        "§app.baton/share-listener",
-        "§app.baton/outsider-view",
-        "§app.organizations/org-page"
+        "shared/owner.ts",
+        "server/tours/bindings-scope.ts",
+        "server/tours/bindings-routes.ts",
+        "server/tours/bindings-routes.test.ts",
+        "server/tours/public-view.ts",
+        "server/tour-routes.ts",
+        "src/share/thread.tsx",
+        "server/share/edge.ts",
+        "server/share/routes.ts"
       ]
     },
     "§design.copy-deck/owner-page": {
@@ -8648,7 +9408,7 @@
     "§app.project-overseer/page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ProjectOverseerHead.tsx",
         "src/components/SessionView.tsx",
@@ -8656,7 +9416,9 @@
         "src/lib/project-overseer-view.ts",
         "src/lib/project-overseer-view.test.ts",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts"
       ],
       "requires": [
         "§app.project-overseer/identity",
@@ -8664,7 +9426,11 @@
         "§app.project-overseer/limits",
         "§app.project-overseer/watch-loop",
         "§app.overseer/identity-and-clear"
-      ]
+      ],
+      "agreed": {
+        "by": "operator (al_4 go-ahead)",
+        "at": "2026-10-18T22:21Z"
+      }
     },
     "§design.copy-deck/project-overseer-head": {
       "kind": "note",
@@ -8673,7 +9439,9 @@
       "code": [
         "src/components/ProjectOverseerHead.tsx",
         "src/lib/project-overseer-view.ts",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts"
       ]
     },
     "§chat.transcript/compressed-transfer": {
@@ -8874,12 +9642,7 @@
         "src/lib/costs.ts",
         "server/usage-helper/price-book.ts"
       ],
-      "evidence": "verified",
-      "notOwned": [
-        "§app.insights/usage-ledger",
-        "§app.organizations/org-page",
-        "§app.project-overseer/limits"
-      ]
+      "evidence": "verified"
     },
     "§design.copy-deck/project-costs": {
       "kind": "note",
@@ -9068,11 +9831,6 @@
         "pi-config/extensions/mode/index.ts",
         "src/components/AlignmentSettings.tsx",
         "pi-config/extensions/mode/align-settings.ts"
-      ],
-      "notOwned": [
-        "§chat/alignment-review",
-        "§chat/mode-menu",
-        "§chat.composer/anatomy"
       ]
     },
     "§app.requirements/owner-area": {
@@ -9256,15 +10014,17 @@
         "server/vis-check.test.ts",
         "src/vis/multimark.test.ts",
         "shared/vis-frame-host.ts",
-        "server/vis-tools-sync.test.ts"
+        "server/vis-tools-sync.test.ts",
+        "pi-config/extensions/mode/vis/tour.md"
       ],
       "requires": [
         "§chat.markdown/code-blocks",
-        "§chat.markdown/streaming"
+        "§chat.markdown/streaming",
+        "§app/tours"
       ],
       "agreed": {
-        "by": "omar",
-        "at": "2026-10-15T21:59Z"
+        "by": "user",
+        "at": "2026-10-17T16:46Z"
       }
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -9287,7 +10047,10 @@
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "server/vis-check.ts",
         "pi-config/extensions/mode/tests/style-turn.mjs",
-        "server/vis-tools-sync.test.ts"
+        "server/vis-tools-sync.test.ts",
+        "server/served-tools.ts",
+        "server/chat-handle.ts",
+        "server/chat-manager.ts"
       ],
       "requires": [
         "§chat.mode-menu/prompt-holds-across-turn-starters",
@@ -9295,8 +10058,8 @@
         "§app.worker-restore/claude-bridge-restart"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "by": "user (guided-tours vis-only operator decision)",
+        "at": "2026-10-15T04:58:35.959Z"
       }
     },
     "§app.organizations/archive": {
@@ -9392,7 +10155,10 @@
         "src/components/Thread.tsx",
         "server/org-routes.ts",
         "server/orgs.ts",
-        "server/overseer-sender.ts"
+        "server/overseer-sender.ts",
+        "server/chat-compact.test.ts",
+        "server/queue.test.ts",
+        "server/chat-queue-clients.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -9401,7 +10167,11 @@
         "§app.baton/links",
         "§app.baton/needs-you",
         "§app.organizations/roster"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:01Z"
+      }
     },
     "§app.overseer/org-project-overseers": {
       "kind": "behavior",
@@ -9794,11 +10564,6 @@
       "evidence": "verified",
       "code": [
         "src/components/ChangesViewer.tsx"
-      ],
-      "notOwned": [
-        "§chat.worktrees/merge-card",
-        "§chat.worktrees/pane",
-        "§chat.transcript/transcript-items"
       ]
     },
     "§app.baton/abilities": {
@@ -9807,7 +10572,8 @@
       "requires": [
         "§app.baton/goal-and-loadout",
         "§app.baton/outsider-view",
-        "§chat.markdown/visuals"
+        "§chat.markdown/visuals",
+        "§app/tours"
       ],
       "code": [
         "server/gathering-abilities.ts",
@@ -9864,7 +10630,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§app.resource-monitor/sampling-and-history"
+        "§app.resource-monitor/sampling-and-history",
+        "§app/tours"
       ],
       "code": [
         "server/resource-monitor-attrib.ts",
@@ -9876,11 +10643,13 @@
         "server/resource-monitor-attrib.test.ts",
         "server/resource-monitor-proc.test.ts",
         "server/chat-host.ts",
-        "src/lib/monitor-view.ts"
+        "src/lib/monitor-view.ts",
+        "server/tours/runner.ts",
+        "server/tours/browser.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-14T08:11Z"
+        "by": "user (guided-tours build brief)",
+        "at": "2026-10-15T04:40:29.961829+00:00"
       }
     },
     "§app.resource-monitor/entry-button": {
@@ -9991,11 +10760,6 @@
         "shared/protocol.ts",
         "server/resource-monitor.ts",
         "src/components/ResourceMonitor.tsx"
-      ],
-      "notOwned": [
-        "§app.insights/sidebar-foot",
-        "§app/load-priority",
-        "§app/settings-dialog"
       ]
     },
     "§app.claude-logins/accounts-tab": {
@@ -10165,11 +10929,6 @@
       "code": [
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/README.md"
-      ],
-      "notOwned": [
-        "§app/claude-code-provider",
-        "§app.insights/usage-cards",
-        "§mesh/peers"
       ]
     },
     "§app.session-list/auto-titles": {
@@ -10559,11 +11318,6 @@
       "code": [
         "src/components/VoiceInput.tsx",
         "server/voice/service.ts"
-      ],
-      "notOwned": [
-        "§app.settings-dialog/voice-models",
-        "§chat/composer",
-        "§workspace.groups/send-all-mode"
       ]
     },
     "§design.copy-deck/settings-voice": {
@@ -10633,7 +11387,8 @@
       "kind": "behavior",
       "requires": [
         "§mesh.public/setting",
-        "§mesh.peers/hello"
+        "§mesh.peers/hello",
+        "§app/tours"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -10644,7 +11399,10 @@
         "server/public-links-routes.ts",
         "server/share-registry.test.ts",
         "server/share-offline.test.ts",
-        "server/share-offline.integration.test.ts"
+        "server/share-offline.integration.test.ts",
+        "shared/public-links.ts",
+        "server/share/registry-push.ts",
+        "server/share/tour-transport.test.ts"
       ]
     },
     "§mesh.public/ingress": {
@@ -10670,7 +11428,8 @@
     "§mesh.public/offline": {
       "kind": "behavior",
       "requires": [
-        "§design.copy-deck/public-links"
+        "§design.copy-deck/public-links",
+        "§app/tours"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -10684,7 +11443,8 @@
         "server/share-offline.test.ts",
         "server/share-offline.integration.test.ts",
         "server/share-router.test.ts",
-        "server/share-router.integration.test.ts"
+        "server/share-router.integration.test.ts",
+        "server/share/tour-transport.integration.test.ts"
       ]
     },
     "§mesh.public/panel": {
@@ -10708,7 +11468,8 @@
       "kind": "behavior",
       "requires": [
         "§mesh.public/gateway",
-        "§mesh.public/setting"
+        "§mesh.public/setting",
+        "§app/tours"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -10728,11 +11489,13 @@
         "server/share-security.integration.test.ts",
         "server/share-edge.test.ts",
         "server/share-edge.integration.test.ts",
-        "server/share-router.integration.test.ts"
+        "server/share-router.integration.test.ts",
+        "server/share/tour-transport.test.ts",
+        "server/share/tour-transport.integration.test.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-10T16:40Z"
+        "by": "user (guided-tours build brief)",
+        "at": "2026-10-15T04:40:29.961829+00:00"
       }
     },
     "§mesh.public/routing": {
@@ -10740,7 +11503,8 @@
       "requires": [
         "§mesh.public/registry",
         "§mesh.public/forwarded-for",
-        "§mesh.public/offline"
+        "§mesh.public/offline",
+        "§app/tours"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -10758,7 +11522,9 @@
         "server/runtime-quirks.integration.test.ts",
         "server/share-router.integration.test.ts",
         "server/share-ws-hop.integration.test.ts",
-        "server/share-offline.integration.test.ts"
+        "server/share-offline.integration.test.ts",
+        "server/share/tour-transport.test.ts",
+        "server/share/tour-transport.integration.test.ts"
       ]
     },
     "§mesh.public/setting": {
@@ -10782,7 +11548,9 @@
         "server/mesh/peer-wire-test-fixtures.ts",
         "server/share/share-state.ts",
         "server/public-links.integration.test.ts",
-        "server/share-edge.integration.test.ts"
+        "server/share-edge.integration.test.ts",
+        "server/share/tour-transport.test.ts",
+        "server/share/tour-transport.integration.test.ts"
       ]
     },
     "§mesh/public": {
@@ -10791,12 +11559,8 @@
       "evidence": "verified",
       "code": [
         "shared/public-links.ts",
-        "server/share/runtime.ts"
-      ],
-      "notOwned": [
-        "§app.baton/share-listener",
-        "§app/session-share",
-        "§app.project-services/share"
+        "server/share/runtime.ts",
+        "server/share/routes.ts"
       ]
     },
     "§app.organizations/host-offline": {
@@ -11219,7 +11983,8 @@
       "requires": [
         "§app.baton/links",
         "§app.baton/share-listener",
-        "§mesh.public/registry"
+        "§mesh.public/registry",
+        "§app.tours/sharing"
       ],
       "code": [
         "server/session-shares.ts",
@@ -11241,7 +12006,9 @@
         "server/share-ingress.integration.test.ts",
         "server/app.ts",
         "server/link-tokens.ts",
-        "server/link-tokens.test.ts"
+        "server/link-tokens.test.ts",
+        "server/tours/shares.ts",
+        "server/tours/shares.test.ts"
       ]
     },
     "§app.session-share/never": {
@@ -11257,7 +12024,8 @@
         "server/preview-kept.ts",
         "server/link-tokens.ts",
         "server/session-shares.test.ts",
-        "server/baton.test.ts"
+        "server/baton.test.ts",
+        "server/tours/shares.test.ts"
       ]
     },
     "§app.session-share/overview": {
@@ -11274,7 +12042,8 @@
         "server/shares-overview.ts",
         "server/session-share-activity.test.ts",
         "shared/session-share.ts",
-        "server/owner-page.test.ts"
+        "server/owner-page.test.ts",
+        "server/shares-overview-tours.test.ts"
       ]
     },
     "§app.session-share/page": {
@@ -11327,17 +12096,22 @@
     "§app.session-share/shares-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.session-share/sheet",
-        "§app.insights/placement"
+        "§app.insights/placement",
+        "§app/tours"
       ],
       "code": [
         "src/components/SharesPage.tsx",
         "src/App.tsx",
         "src/components/Sidebar.tsx",
         "src/lib/session-shares.ts",
-        "src/shares.css"
+        "src/shares.css",
+        "shared/session-share.ts",
+        "server/shares-overview.ts",
+        "server/shares-overview-tours.test.ts",
+        "src/lib/session-shares.test.ts"
       ]
     },
     "§app.session-share/sheet": {
@@ -11406,11 +12180,6 @@
         "server/session-shares-routes.ts",
         "server/session-share-view.ts",
         "src/share/SessionShareApp.tsx"
-      ],
-      "notOwned": [
-        "§app.baton/links",
-        "§app.owner-page/link",
-        "§mesh.public/routing"
       ]
     },
     "§design.copy-deck/session-share": {
@@ -11558,7 +12327,8 @@
         "statecharts/test/sova/statecharts/refit/item_test.cljc",
         "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
         "statecharts/test/sova/statecharts/refit/holds_test.cljs",
-        "server/org-engine.ts"
+        "server/org-engine.ts",
+        "statecharts/src/sova/statecharts/rules/powers.cljc"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -11829,11 +12599,6 @@
         "pi-config/extensions/provider-limits/stream.ts",
         "pi-config/extensions/provider-limits/README.md",
         "pi-config/README.md"
-      ],
-      "notOwned": [
-        "§app.subagents-pane/worker-rows",
-        "§app.settings-dialog/models",
-        "§app/claude-logins"
       ]
     },
     "§app.session-share/share-page": {
@@ -12440,11 +13205,6 @@
       "evidence": "verified",
       "code": [
         "shared/profiles.ts"
-      ],
-      "notOwned": [
-        "§chat/subagent-profiles",
-        "§app.settings-dialog/profiles",
-        "§chat/playbooks"
       ]
     },
     "§app.claude-logins/switch-cost": {
@@ -12531,10 +13291,6 @@
       ],
       "requires": [
         "§chat/markdown"
-      ],
-      "notOwned": [
-        "§chat/markdown",
-        "§chat.images/lightbox"
       ]
     },
     "§chat.profiles/live-commit": {
@@ -12813,11 +13569,6 @@
         "shared/schedules.ts",
         "server/schedule-routes.ts",
         ".sova/playbooks/merge-round/PLAYBOOK.md"
-      ],
-      "notOwned": [
-        "§chat/playbooks",
-        "§app.overseer/approvals",
-        "§app/claude-logins"
       ]
     },
     "§app.session-list/drop-overlay": {
@@ -13129,11 +13880,6 @@
       "code": [
         "shared/outreach.ts",
         "server/outreach/core.ts"
-      ],
-      "notOwned": [
-        "§app.baton/links",
-        "§app.project-overseer/holds",
-        "§app.organizations/working-hours"
       ]
     },
     "§app.project-overseer/previews": {
@@ -13195,7 +13941,7 @@
     "§app.overseer/project-card-clicks": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/OverseerCards.tsx"
@@ -13203,7 +13949,11 @@
       "requires": [
         "§app.overseer/confirm",
         "§app/project-overseer"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:08Z"
+      }
     },
     "§app.organizations/statechart-migration": {
       "kind": "behavior",
@@ -13562,10 +14312,6 @@
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/mode/spec-mode.md",
         "pi-config/extensions/spec/core/sova-spec-assess.mjs"
-      ],
-      "notOwned": [
-        "§chat.merge-round/landing-suites",
-        "§chat/mode-menu"
       ]
     },
     "§chat.worktrees/merged-state": {
@@ -13616,11 +14362,13 @@
         "src/lib/poll.ts",
         "src/components/ui.tsx",
         "src/components/ProjectsView.tsx",
-        "server/project-overseer-fast.integration.test.ts"
+        "server/project-overseer-fast.integration.test.ts",
+        "src/components/PowersGrid.tsx",
+        "src/lib/powers-view.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T19:32Z"
+        "by": "Omar (operator)",
+        "at": "2026-10-17"
       }
     },
     "§chat.playbooks/bundles": {
@@ -14037,11 +14785,6 @@
         "shared/project-contract.ts",
         "server/project-services/engine.ts",
         "server/project-services/routes.ts"
-      ],
-      "notOwned": [
-        "§app/project-runtime",
-        "§chat.profiles/projects",
-        "§mesh.public/preview-serve"
       ]
     },
     "§chat.merge-round/private-names": {
@@ -14085,12 +14828,7 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-10T10:39Z"
-      },
-      "notOwned": [
-        "§chat.worktrees/readiness",
-        "§chat.worktrees/merge-board",
-        "§chat/schedules"
-      ]
+      }
     },
     "§chat.merge-round/driver": {
       "kind": "behavior",
@@ -14154,7 +14892,8 @@
         "server/app.ts",
         "server/auth.test.ts",
         "server/auth-gate.test.ts",
-        "server/auth-gate.integration.test.ts"
+        "server/auth-gate.integration.test.ts",
+        "server/tours/runner-header.ts"
       ]
     },
     "§app.access/token": {
@@ -14206,11 +14945,6 @@
         "src/lib/auth.ts",
         "src/components/Unlock.tsx",
         "scripts/install.sh"
-      ],
-      "notOwned": [
-        "§mesh.peers/listener",
-        "§mesh.public/preview",
-        "§app.baton/share-listener"
       ]
     },
     "§app.overseer/input-source": {
@@ -14395,11 +15129,6 @@
         "server/topic-store.ts",
         "server/topic-delivery.ts",
         "shared/topic-message.ts"
-      ],
-      "notOwned": [
-        "§chat/merge-round",
-        "§mesh.links/delivery",
-        "§app.decisions/session-tags"
       ]
     },
     "§app.access/devices": {
@@ -14587,12 +15316,7 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-12T13:59Z"
-      },
-      "notOwned": [
-        "§app/claude-logins",
-        "§app.insights/usage-ledger",
-        "§app.subagents-pane/claude-code-workers"
-      ]
+      }
     },
     "§tools.spec/context-packets": {
       "kind": "behavior",
@@ -14736,7 +15460,8 @@
         "§app.baton/visits",
         "§mesh.public/preview-proxy",
         "§mesh.public/forwarded-for",
-        "§app.session-share/shares-page"
+        "§app.session-share/shares-page",
+        "§app/tours"
       ],
       "code": [
         "server/visitor-logging.ts",
@@ -14763,7 +15488,9 @@
         "src/shares.css",
         "src/app.css",
         "server/share-preview-router.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/share/tour-routes.ts",
+        "server/tour-routes.integration.test.ts"
       ]
     },
     "§chat.transcript/work-chain": {
@@ -14772,7 +15499,9 @@
       "evidence": "verified",
       "code": [
         "src/components/Thread.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/hidden-rows.ts",
+        "src/lib/hidden-rows.test.ts"
       ]
     },
     "§chat.work-chain-setting/preference": {
@@ -14797,11 +15526,7 @@
     "§chat/work-chain-setting": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§app.settings-dialog/general",
-        "§chat.transcript/transcript-items"
-      ]
+      "evidence": "unreviewed"
     },
     "§chat.subagent-profiles/file": {
       "kind": "behavior",
@@ -14960,11 +15685,6 @@
       "code": [
         "shared/subagent-profiles.ts",
         "pi-config/extensions/subagents/subagent-profiles.ts"
-      ],
-      "notOwned": [
-        "§chat/profiles",
-        "§teams/defaults",
-        "§mesh.sync/profile-library"
       ]
     },
     "§tools.spec/assessment-observations": {
@@ -15050,12 +15770,7 @@
     "§chat/session-fork": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "notOwned": [
-        "§chat.worktrees/inherit",
-        "§chat.transcript/message-actions",
-        "§app.chat-processes/workers"
-      ]
+      "evidence": "unreviewed"
     },
     "§app.project-services/instance-note": {
       "kind": "behavior",
@@ -15140,12 +15855,7 @@
       "agreed": {
         "by": "user (al_1: sure, let's get this merge ready)",
         "at": "2026-10-17T08:42Z"
-      },
-      "notOwned": [
-        "§chat.worktrees/readiness",
-        "§app.insights/worktrees-endpoint",
-        "§chat.worktrees/dirty-freshness"
-      ]
+      }
     },
     "§app.insights/pace-tick": {
       "kind": "behavior",
@@ -15286,11 +15996,6 @@
         "src/components/ProjectsView.tsx",
         "src/App.tsx",
         "src/lib/api.ts"
-      ],
-      "notOwned": [
-        "§app.session-list/organizations",
-        "§app/organizations",
-        "§app/project-services"
       ]
     },
     "§app.projects/import": {
@@ -15515,11 +16220,6 @@
         "server/projects/runtime.ts",
         "server/projects/runtime-routes.ts",
         "shared/project-runtime.ts"
-      ],
-      "notOwned": [
-        "§app.project-services/conform",
-        "§app.project-services/contract",
-        "§app.project-services/deploy"
       ]
     },
     "§app.teams/wait-completion": {
@@ -15758,11 +16458,6 @@
       "code": [
         "pi-config/extensions/mode/align.ts",
         "pi-config/extensions/mode/index.ts"
-      ],
-      "notOwned": [
-        "§chat.alignment/tool",
-        "§chat.subagent-profiles/resolution",
-        "§app.settings-dialog/alignment"
       ]
     },
     "§chat.transcript/setup-card-toggles": {
@@ -16039,11 +16734,6 @@
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
         "server/runtime-choice.integration.test.ts"
-      ],
-      "notOwned": [
-        "§app.claude-code-provider/one-program",
-        "§app/chat-processes",
-        "§chat.profiles/live-commit"
       ]
     },
     "§app.server-runtime/quirks": {
@@ -16093,10 +16783,12 @@
         "src/lib/change-rows.test.ts",
         "src/lib/context.test.ts",
         "src/lib/message-count.test.ts",
-        "src/components/ToolCard.tsx"
+        "src/components/ToolCard.tsx",
+        "src/components/Thread.tsx"
       ],
       "requires": [
-        "§chat.transcript/rendering"
+        "§chat.transcript/rendering",
+        "§app/tours"
       ]
     },
     "§app.load-priority/workers": {
@@ -16111,12 +16803,15 @@
         "server/process-priority.ts",
         "server/process-priority.test.ts",
         "server/process-priority.integration.test.ts",
-        "server/chat-manager.ts"
+        "server/chat-manager.ts",
+        "server/tours/runner.ts"
       ],
-      "requires": [],
+      "requires": [
+        "§app/tours"
+      ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-13T02:26Z"
+        "by": "user (guided-tours build brief)",
+        "at": "2026-10-15T04:40:29.961829+00:00"
       }
     },
     "§app/load-priority": {
@@ -16129,10 +16824,6 @@
         "docs/perf/RUNBOOK.md",
         "scripts/perf/load-experiment.mjs",
         "scripts/perf/load-standin.mjs"
-      ],
-      "notOwned": [
-        "§app/chat-processes",
-        "§app/resource-monitor"
       ]
     },
     "§chat.transcript/empty-worktrees": {
@@ -16358,7 +17049,11 @@
         "§app.overseer/org-attribution",
         "§app.overseer/caps",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:01Z"
+      }
     },
     "§app.claude-logins/macos-keychain": {
       "kind": "behavior",
@@ -16577,7 +17272,10 @@
         "server/project-services/tools.ts",
         "server/project-services/deploy-callers.test.ts",
         "server/project-services/deploy-callers.integration.test.ts",
-        "scripts/sova-project.mjs"
+        "scripts/sova-project.mjs",
+        "server/project-overseer.ts",
+        "server/project-services/engine.ts",
+        "statecharts/src/sova/statecharts/proj.cljc"
       ]
     },
     "§app.project-services/deploy-check": {
@@ -16645,14 +17343,15 @@
     "§mesh.peers/grants": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "requires": [
         "§mesh.peers/listener",
         "§mesh.peers/allowlist",
         "§mesh.sync/categories",
         "§mesh.sync/logins",
         "§app.claude-logins/pool",
-        "§app.access/gate"
+        "§app.access/gate",
+        "§app/tours"
       ],
       "code": [
         "shared/mesh-access.ts",
@@ -16844,11 +17543,6 @@
         "server/mesh/lan-reverse.ts",
         "server/mesh/lan-dialer.ts",
         "server/mesh/lan-relay.ts"
-      ],
-      "notOwned": [
-        "§mesh.peers/listener",
-        "§mesh.peers/grants",
-        "§mesh.remote-sessions/proxy"
       ]
     },
     "§app.claude-logins/login-moved": {
@@ -17387,11 +18081,12 @@
       "requires": [
         "§app.harness/boundary",
         "§app.harness/reader",
-        "§app.harness/state"
+        "§app.harness/state",
+        "§app.tours/handoffs"
       ],
       "agreed": {
-        "by": "Omar (al_1 go-ahead)",
-        "at": "2026-10-13T16:19Z"
+        "by": "user (guided-tours build brief)",
+        "at": "2026-10-15T05:20Z"
       }
     },
     "§app.harness/state": {
@@ -17567,11 +18262,6 @@
         "shared/harness-wire.ts",
         "shared/harness-state.ts",
         "shared/harness-session.ts"
-      ],
-      "notOwned": [
-        "§app/chat-processes",
-        "§app/claude-code-provider",
-        "§chat.transcript/slim-rows"
       ]
     },
     "§app.insights/velocity-scrub": {
@@ -17638,14 +18328,15 @@
     "§app.baton/strip-layout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/BatonStrip.tsx",
         "src/components/SendOnWhatsApp.tsx",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
         "src/orgs.css",
-        "src/design/tokens.css"
+        "src/design/tokens.css",
+        "src/components/BatonTours.tsx"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -17766,9 +18457,7 @@
         "pi-config/extensions/spec/tests/frame.test.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/tests/map-not-owned.test.mjs",
-        "pi-config/extensions/spec/core/map.mjs"
+        "pi-config/extensions/spec/README.md"
       ]
     },
     "§tools.spec/graph-payload": {
@@ -17825,8 +18514,7 @@
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/tests/map.test.mjs",
         "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/tests/map-fields.test.mjs",
-        "pi-config/extensions/spec/tests/map-not-owned.test.mjs"
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
     "§tools.spec/unread-landed": {
@@ -18104,10 +18792,6 @@
         "pi-config/extensions/model-levels/core.ts",
         "pi-config/extensions/model-levels/README.md",
         "pi-config/README.md"
-      ],
-      "notOwned": [
-        "§chat.composer/composer-flyout",
-        "§chat/model-menu"
       ]
     },
     "§app.server-runtime/test-tiers": {
@@ -18528,11 +19212,6 @@
         "server/project-files.ts",
         "server/project-files.test.ts",
         "shared/project-files.ts"
-      ],
-      "notOwned": [
-        "§app.baton/files",
-        "§app.project-overseer/files",
-        "§app.organizations/files-card"
       ]
     },
     "§design.copy-deck/gathering-files": {
@@ -18561,11 +19240,6 @@
         "src/costs-tab.css",
         "src/orgs.css",
         "src/design/align-viewer.css"
-      ],
-      "notOwned": [
-        "§chat/mode-menu",
-        "§chat/model-menu",
-        "§chat.composer/composer-flyout"
       ]
     },
     "§app.insights/ollama-activity": {
@@ -19268,10 +19942,11 @@
         "§chat.alignment/visuals",
         "§chat.markdown/vis-wireframe",
         "§chat.markdown/vis-flow-groups",
-        "§chat.markdown/vis-flow-sections"
+        "§chat.markdown/vis-flow-sections",
+        "§app/tours"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "site/src/content/docs/modes/vis.md"
       ]
@@ -19319,12 +19994,7 @@
     "§site/docs": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed",
-      "notOwned": [
-        "§site/landing",
-        "§chat/mode-menu",
-        "§chat/subagent-profiles"
-      ]
+      "evidence": "reviewed"
     },
     "§site.docs/codemode": {
       "kind": "behavior",
@@ -19685,11 +20355,6 @@
       "evidence": "verified",
       "code": [
         "shared/org-history.ts"
-      ],
-      "notOwned": [
-        "§app.requirements/decisions",
-        "§app.project-overseer/statecharts",
-        "§app.organizations/workspace-repo"
       ]
     },
     "§site.landing/fold-device": {
@@ -19706,10 +20371,7 @@
     "§site/landing": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed",
-      "notOwned": [
-        "§site/docs"
-      ]
+      "evidence": "reviewed"
     },
     "§app.settings-dialog/alignment": {
       "kind": "behavior",

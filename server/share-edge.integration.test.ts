@@ -251,7 +251,7 @@ test("the upgrade hook gets /ws/h with a well-formed token only", async () => {
 });
 
 
-test("the upgrade hook gets /ws/h and /ws/s with their kind from the path; no other socket", async () => {
+test("the upgrade hook gets /ws/h, /ws/s and /ws/i with their kind from the path; no other socket", async () => {
   const got: [string, string][] = [];
   const s = await bound(
     edge.createShareServer({
@@ -265,11 +265,15 @@ test("the upgrade hook gets /ws/h and /ws/s with their kind from the path; no ot
     assert.equal((await wsStatus(`ws://${s.base}/ws/s?token=${TOKEN}`)).status, 418);
     assert.equal((await wsStatus(`ws://${s.base}/ws/h?token=${TOKEN}`)).status, 418);
     assert.equal((await wsStatus(`ws://${s.base}/ws/s?token=short`)).status, 404);
-    assert.equal((await wsStatus(`ws://${s.base}/ws/i?token=${TOKEN}`)).status, 404);
+    // The owner page's Project Assistant (§app.project-assistant/chat).
+    assert.equal((await wsStatus(`ws://${s.base}/ws/i?token=${TOKEN}`)).status, 418);
+    assert.equal((await wsStatus(`ws://${s.base}/ws/i?token=short`)).status, 404);
+    assert.equal((await wsStatus(`ws://${s.base}/ws/x?token=${TOKEN}`)).status, 404);
     assert.equal((await wsStatus(`ws://${s.base}/ws/s/?token=${TOKEN}`)).status, 404);
     assert.deepEqual(got, [
       ["s", TOKEN],
       ["h", TOKEN],
+      ["i", TOKEN],
     ]);
   } finally {
     s.close();

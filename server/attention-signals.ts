@@ -2,6 +2,7 @@ import type { HEntry } from "../shared/harness";
 import type { DecisionSettings, SessionSummary, TeamDuty, WorkerInfo } from "../shared/protocol";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
+import { redactTourToolArgs } from "../shared/tour";
 import { parseWakeNudge } from "../shared/wake";
 import type { WorkerTranscriptAdapters, WorkerTranscriptItem, WorkerTranscriptRef, WorkerTranscriptSummary } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
@@ -137,7 +138,7 @@ export function turnFacts(branch: readonly HEntry[]): TurnFacts | null {
     if (h.kind === "assistant") {
       for (const b of h.blocks) {
         if (b.type !== "toolCall") continue;
-        const call: ToolCallFact = { name: String(b.name ?? "tool"), args: JSON.stringify(b.arguments ?? {}), result: "" };
+        const call: ToolCallFact = { name: String(b.name ?? "tool"), args: JSON.stringify(redactTourToolArgs(b.name, b.arguments) ?? {}), result: "" };
         tools.push(call);
         if (typeof b.id === "string") byCall.set(b.id, call);
       }

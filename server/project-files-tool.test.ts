@@ -19,7 +19,8 @@ const files = await import("./project-files");
 const { projectOverseerTools } = await import("./project-overseer-tools");
 const { setFileCopyGuards } = await import("./project-files-tool");
 const { attachmentDisposition, downloadHeaders } = await import("./project-files-routes");
-const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths } = await import("./project-overseer-store");
+const { defaultPoSettings, powersInForce, projectOverseerPaths } = await import("./project-overseer-store");
+const { readStoredPowers } = await import("../shared/powers");
 const { uncommitted } = await import("./project-worktrees");
 const PID = "prj_bbbbbbbb";
 files.setLedgerPathForTests((pid) => join(root, "ws", pid, "files.jsonl"));
@@ -37,12 +38,12 @@ const build = (over: Partial<CodingWorktree> = {}): CodingWorktree =>
   ({ sessionId: "c1", path: "/s/c1.jsonl", title: "Import the dump", startedBy: "overseer", branch: "sova/build-abc123", worktree: wt, base: null, target: "main", state: "open", merged: false, ahead: 0, dirty: false, running: false, workers: 0, ...over }) as CodingWorktree;
 
 function tools(opts: { attended?: boolean; autonomy?: Autonomy; builds?: CodingWorktree[] } = {}) {
-  const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1" };
+  const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1", powers: readStoredPowers({ autonomy: opts.autonomy ?? "L1" }) };
   const host = {
     paths: projectOverseerPaths(PID, join(root, "ws")),
     project: () => ({ id: PID, name: "Portal", root: repo, archived: false, createdAt: "" }),
     settings: () => settings,
-    effective: () => effectiveAutonomy(settings, null),
+    effective: () => powersInForce(settings.powers, null),
     attended: () => opts.attended ?? false,
     overseerId: () => "po-1",
     engine: () => PID,
@@ -76,7 +77,7 @@ describe("sova_files", () => {
 
   test("copy: L3 outside the operator's turn; into incoming/, a taken name deduped, excluded from git so nothing is uncommitted", async () => {
     const id = await received("export.json", '{"a": 1}');
-    await assert.rejects(tools({ autonomy: "L1" })({ op: "copy", id, session: "c1" }), /needs L3 in a turn the operator didn't start/);
+    await assert.rejects(tools({ autonomy: "L1" })({ op: "copy", id, session: "c1" }), /Send coding sessions prompts is off for the overseer on its own\./);
     const out = await tools({ autonomy: "L3" })({ op: "copy", id, session: "sova://s/c1" });
     assert.match(out, /^Copied to incoming\/export\.json in \[Import the dump\]\(sova:\/\/s\/c1\)'s worktree/);
     assert.equal(readFileSync(join(wt, "incoming", "export.json"), "utf8"), '{"a": 1}');

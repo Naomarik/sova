@@ -12,6 +12,7 @@ import { isDirectLocal } from "./compression";
 import { DEFAULT_SERVE_PORT } from "./mesh/front-door";
 import { localRequest } from "./mesh/proxy";
 import { judgedPath } from "./mesh/paths";
+import { TOUR_RECORDER_HEADER } from "./tours/runner-header";
 
 // The main listener's gate (§app.access/token, §app.access/gate): one per-install token, carried
 // as the install's cookie or an x-sova-token header, plus a Host rule and a cross-site rule that
@@ -31,7 +32,14 @@ export const tokenFile = (): string => join(agentRoot(), "sova", "auth-token");
 
 /** Per install, so two Sovas on one host name (4800 beside a hermetic 4810: cookies ignore
     ports) never overwrite each other's cookie. Derived from the agent dir, not the token. */
-export const AUTH_COOKIE = `sova_token_${createHash("sha256").update(resolve(agentRoot())).digest("hex").slice(0, 8)}`;
+export const authCookieName = (agentDir: string): string => `sova_token_${createHash("sha256").update(resolve(agentDir)).digest("hex").slice(0, 8)}`;
+export const AUTH_COOKIE = authCookieName(agentRoot());
+/** A guided-tour recorder's marker cookie for a managed test copy, bound to the copy's state
+    directory like its sign-in cookie. Browsers add no headers to a socket handshake, so the
+    recorder sets this (HttpOnly, via its browser context, never by any Set-Cookie of Sova's) beside
+    the copy's cookie; it counts exactly as the recorder header does (fromTourRecorder). */
+export const tourRecorderCookieName = (agentDir: string): string => `sova_tour_recorder_${createHash("sha256").update(resolve(agentDir)).digest("hex").slice(0, 8)}`;
+const TOUR_RECORDER_COOKIE = tourRecorderCookieName(agentRoot());
 
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,}$/;
@@ -179,6 +187,8 @@ let listenPort = Number(process.env.PORT) || 4800;
 export function setAuthPort(port: number): void {
   listenPort = port;
 }
+/** The port this process's main listener is bound to (setAuthPort). */
+export const authListenPort = (): number => listenPort;
 
 /** `name`, `name:port`, `[v6]:port` or a URL → the bare lower-case host name, or null. */
 function hostnameOf(value: string): string | null {
@@ -393,6 +403,7 @@ const setAuthCookie = (c: Context, token: string): void => {
     Everything else — a proxy-headered request, a cross-site or same-site one, a socket upgrade, a
     curl with no metadata — keeps the rules above, token included. */
 function silentLocal(a: Asked, incoming: unknown): boolean {
+  if (fromTourRecorder(a.header)) return false;
   if (a.method !== "GET" && a.method !== "HEAD") return false;
   const site = a.header("sec-fetch-site");
   if ((site !== "same-origin" && site !== "none") || a.header("sec-fetch-mode") !== "navigate") return false;
@@ -401,12 +412,28 @@ function silentLocal(a: Asked, incoming: unknown): boolean {
   return isDirectLocal(incoming as IncomingMessage);
 }
 
+/** A guided-tour recorder's request (server/tours/runner-header.ts): the recorder header, whatever its
+    value, or this install's recorder marker cookie (a socket handshake carries no added header). It is
+    never the person at the keyboard. Header names are case-insensitive in both readers. */
+export const fromTourRecorder = (header: (name: string) => string | undefined): boolean =>
+  header(TOUR_RECORDER_HEADER) !== undefined || (header("cookie") ?? "").split(";").some((part) => part.split("=", 1)[0]!.trim() === TOUR_RECORDER_COOKIE);
+
+/** The one fixed line a refused recorder write logs: no path, body, frame or credential. */
+const RECORDER_WRITE_REFUSED = "[auth] refused a guided-tour recorder's write";
+const RECORDER_SOCKET_REFUSED = "[auth] refused a guided-tour recorder's socket";
+
 /** The gate for a main-listener request: null to answer it, else the refusal to send. A call with
     no socket (app.request) or from the peer listener (c.env.meshPeer) is never asked. */
 export function authGate(c: Context): Response | null {
   const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
   if (!env?.incoming || env.meshPeer) return null;
   const a: Asked = { method: c.req.method, path: judgedPath(new URL(c.req.url).pathname), header: (n: string) => c.req.header(n) };
+  // A recorder never changes a Sova: every non-GET is refused before anything else answers it,
+  // even on a copy it is signed in to.
+  if (fromTourRecorder(a.header) && a.method !== "GET" && a.method !== "HEAD") {
+    console.warn(RECORDER_WRITE_REFUSED);
+    return new Response(JSON.stringify(REFUSALS[403]), { status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", [SERVER_HEADER]: "sova" } });
+  }
   const status = verdict(a, { exempt: true });
   // A browser on this machine opening the app's own address is answered — and handed the install's
   // cookie — instead of meeting the unlock screen (silentLocal says why it's only the person at
@@ -432,6 +459,11 @@ function upgradeStatus(req: IncomingMessage): 401 | 403 | null {
     return Array.isArray(v) ? v.join(n === "cookie" ? "; " : ", ") : v;
   };
   const path = judgedPath(new URL(req.url ?? "/", "http://localhost").pathname);
+  // A recorder may only watch: /ws/chat would start the chat's process on this Sova.
+  if (fromTourRecorder(header) && path !== "/ws/watch") {
+    console.warn(RECORDER_SOCKET_REFUSED);
+    return 403;
+  }
   return verdict({ method: "GET", path, header }, { exempt: false });
 }
 
@@ -475,6 +507,8 @@ function servedOverHttps(c: Context): boolean {
 /** POST /api/auth/unlock {token} or {code}: either credential sets the same cookie. The gate
     has already checked Host and the cross-site rule. Neither credential is ever echoed. */
 export async function unlock(c: Context): Promise<Response> {
+  // A recorder signs in to its own test copy only by the cookie Sova sets for it, never here.
+  if (fromTourRecorder((n) => c.req.header(n))) return c.json(REFUSALS[403], 403);
   let body: { token?: unknown; code?: unknown } | null;
   try {
     body = await c.req.json();
@@ -511,7 +545,7 @@ function pairOrigin(value: string, local = false): URL | null {
 /** Gated, local-only credential routes. Peer identity is not the owner's browser credential. */
 export function pair(c: Context): Response {
   c.header("Cache-Control", "no-store");
-  if (!localRequest(c)) return c.json({ error: "Forbidden" }, 403);
+  if (!localRequest(c) || fromTourRecorder((n) => c.req.header(n))) return c.json({ error: "Forbidden" }, 403);
   const host = c.req.header("host");
   if (!host) return c.json({ error: "Forbidden" }, 403);
   const { code, expiresAt } = mintCode();
@@ -541,6 +575,6 @@ export function pair(c: Context): Response {
 /** Deliberate recovery only: never log the credential, and never let a cache retain it. */
 export function revealToken(c: Context): Response {
   c.header("Cache-Control", "no-store");
-  if (!localRequest(c)) return c.json({ error: "Forbidden" }, 403);
+  if (!localRequest(c) || fromTourRecorder((n) => c.req.header(n))) return c.json({ error: "Forbidden" }, 403);
   return c.json({ token: sovaToken() });
 }

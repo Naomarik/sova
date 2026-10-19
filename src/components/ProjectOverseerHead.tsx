@@ -1,10 +1,12 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { AUTONOMY_LEVELS, autonomyMeaning, type Autonomy, type ProjectOverseerInfo } from "../../shared/project-overseer";
+import type { ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import { ApiError, clearProjectOverseer, getProjectOverseer, patchProjectOverseer, runProjectOverseer } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { projectHref, projectSessionHref } from "../lib/projects-route";
-import { headState, historyTitle, levelName, startedWords, statusLines } from "../lib/project-overseer-view";
+import { headState, historyTitle, startedWords, statusLines } from "../lib/project-overseer-view";
+import { brakeDone, columnsFor, powerGroups, powersButtonName } from "../lib/powers-view";
+import { PowersPanel } from "./PowersGrid";
 import { announce, localRunning, toast } from "../lib/ui-state";
 import { unchangedError } from "../lib/unchanged-error";
 import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
@@ -95,7 +97,7 @@ export function createProjectOverseerControl(o: { projectId: string; path: strin
 
 /**
  * The project overseer's own head, in place of the session head on its current conversation
- * (§app.project-overseer/page): the level, Run Now and ⋯ (Watch, History…, Clear, Project Page)
+ * (§app.project-overseer/page): What may happen without you, Run Now and ⋯ (Watch, History…, Clear, Project Page)
  * on line 1, the project and what it started on the meta line, then the status strip. On an
  * earlier conversation: its title, age and the way back to the current one, nothing else.
  */
@@ -113,12 +115,11 @@ export function ProjectOverseerHead(props: {
   const c = props.control;
   const s = () => props.summary();
   const projectName = () => c.info()?.projectName ?? s().project?.projectName ?? "this project";
-  /** An organization places the project: a placed project's sessions carry the org's tag too. */
-  const placed = () => !!s().org;
   const age = (at: string) => relativeTime(at, props.now);
   const history = () => c.info()?.history ?? [];
 
-  const setLevel = (level: Autonomy) => void c.act(() => patchProjectOverseer(c.projectId, { autonomy: level }), `Level: ${level}.`);
+  const save = (x: ProjectOverseerPatch, done: string) => void c.act(() => patchProjectOverseer(c.projectId, x), done);
+  const resume = () => save({ resume: true }, brakeDone);
   const runNow = () => {
     if (c.busy() || c.acting()) return;
     void c.act(() => runProjectOverseer(c.projectId), "The overseer is looking now.");
@@ -129,29 +130,20 @@ export function ProjectOverseerHead(props: {
   const showScreen = (menu: ActionMenuApi, name: string) => {
     menu.show(name);
     queueMicrotask(() => {
-      const row = document.querySelector<HTMLElement>(".action-menu:popover-open [role=menuitem]");
+      const row = document.querySelector<HTMLElement>(".action-menu:popover-open [role=menuitem], .action-menu:popover-open .po-powers-panel button");
       if (row) row.focus();
       else menu.focusTrigger();
     });
   };
   const earlierWords = (n: number) => `${n} earlier ${n === 1 ? "conversation" : "conversations"}`;
 
-  const LevelRows = (p: { menu: ActionMenuApi }) => (
-    <For each={AUTONOMY_LEVELS}>
-      {(level) => {
-        const chosen = () => c.info()?.settings.autonomy === level;
-        return (
-          <p.menu.Item
-            label={level}
-            icon={chosen() ? <Icon name="check" small /> : <span class="po-level-spacer" aria-hidden="true" />}
-            aria={`${level}, ${autonomyMeaning(level, placed())}${chosen() ? " Chosen." : ""}`}
-            description={autonomyMeaning(level, placed())}
-            onRun={() => setLevel(level)}
-          />
-        );
-      }}
-    </For>
+  /** The same switches as the project page's (§design.copy-deck/project-powers), in a menu panel. */
+  const Powers = (p: { info: ProjectOverseerInfo }) => (
+    <div class="po-powers-panel">
+      <PowersPanel info={p.info} busy={c.acting()} idPrefix="po-powers" compact save={save} />
+    </div>
   );
+  const powersName = (i: ProjectOverseerInfo) => powersButtonName(powerGroups(i.settings.powers), i.settings.powers, columnsFor(i.settings.powers), i.settings.powers.brake);
 
   if (props.earlier) {
     return (
@@ -179,7 +171,7 @@ export function ProjectOverseerHead(props: {
 
   const chip = () => {
     const i = c.info();
-    return i ? headState(i, c.busy()) : c.busy() ? headState({ settings: { autonomy: "L0" }, effective: { autonomy: "L0" } }, true) : null;
+    return i ? headState(i, c.busy()) : c.busy() ? headState({ settings: { powers: { brake: null } } }, true) : null;
   };
   const status = createMemo(() => {
     const i = c.info();
@@ -262,8 +254,8 @@ export function ProjectOverseerHead(props: {
         <ContextGauge path={props.path} />
         <Show when={c.info()}>
           {(i) => (
-            <ActionMenu label={levelName(i(), placed())} title="What it may do on its own" icon="sliders" text={i().settings.autonomy} class="button-sm button-ghost po-level po-wide">
-              {(menu) => <LevelRows menu={menu} />}
+            <ActionMenu label={powersName(i())} title="What may happen without you" icon="sliders" text="Without you" class="button-sm button-ghost po-level po-wide" panelClass="po-powers-menu">
+              {() => <Powers info={i()} />}
             </ActionMenu>
           )}
         </Show>
@@ -281,7 +273,7 @@ export function ProjectOverseerHead(props: {
             <Show
               when={menu.screen() === null}
               fallback={
-                <Show when={menu.screen() === "history"} fallback={<LevelRows menu={menu} />}>
+                <Show when={menu.screen() === "history"} fallback={<Show when={c.info()}>{(i) => <Powers info={i()} />}</Show>}>
                   <For each={history()} fallback={<p class="mode-option-note po-menu-state">No earlier conversations yet.</p>}>
                     {(h) => (
                       <menu.Item
@@ -296,10 +288,10 @@ export function ProjectOverseerHead(props: {
                 </Show>
               }
             >
-              {/* Below 480px the level and Run Now leave line 1 and live here. */}
+              {/* Below 480px What may happen without you and Run Now leave line 1 and live here. */}
               <div class="po-menu-narrow">
                 <menu.Item label="Run Now" aria="Run Now" disabled={c.busy() ? "Working now" : undefined} onRun={runNow} />
-                <menu.Item label="Level…" aria={c.info() ? levelName(c.info()!, placed()) : "Level"} description={c.info()?.settings.autonomy} stayOpen onRun={() => showScreen(menu, "level")} />
+                <menu.Item label="Without You…" aria={c.info() ? powersName(c.info()!) : "What may happen without you"} stayOpen onRun={() => showScreen(menu, "powers")} />
               </div>
               <Show when={c.info()}>
                 {(i) => (
@@ -355,25 +347,27 @@ export function ProjectOverseerHead(props: {
       >
         {(st) => (
           <section class="po-status" classList={{ "po-status-open": moreOpen() }} aria-label="Overseer status">
-            <p class="po-status-line" title={st().pendingTitle || undefined}>
-              {st().lines[0]}
-              <Show when={st().resume}>
-                {(level) => (
-                  <>
-                    {" "}
-                    <button type="button" class="button button-sm" aria-disabled={c.acting() ? "true" : undefined} onClick={() => setLevel(level())}>
-                      Resume at {level()}
+            {/* Line 1 is a row: its sentence, then Resume (while braked) and Details (below 480px),
+                standard small buttons that never wrap under the sentence on their own. */}
+            <div class="po-status-first">
+              <p class="po-status-line" title={st().pendingTitle || undefined}>
+                {st().lines[0]}
+              </p>
+              <Show when={st().resume || st().lines.length > 1}>
+                <div class="po-status-actions">
+                  <Show when={st().resume}>
+                    <button type="button" class="button button-sm" aria-disabled={c.acting() ? "true" : undefined} onClick={() => !c.acting() && resume()}>
+                      Resume
                     </button>
-                  </>
-                )}
+                  </Show>
+                  <Show when={st().lines.length > 1}>
+                    <button type="button" class="button button-sm button-ghost po-status-toggle" aria-expanded={moreOpen()} onClick={() => setMoreOpen((v) => !v)}>
+                      Details
+                    </button>
+                  </Show>
+                </div>
               </Show>
-              <Show when={st().lines.length > 1}>
-                {" "}
-                <button type="button" class="button button-sm button-ghost po-status-toggle" aria-expanded={moreOpen()} onClick={() => setMoreOpen((v) => !v)}>
-                  Details
-                </button>
-              </Show>
-            </p>
+            </div>
             <For each={st().lines.slice(1)}>{(line) => <p class="po-status-line po-status-more">{line}</p>}</For>
           </section>
         )}

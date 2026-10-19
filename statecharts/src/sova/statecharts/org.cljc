@@ -184,12 +184,12 @@
         (owner-transitions)))))
 
 (def acts
-  {:org/rename   {:needs nil}
-   :org/hours    {:needs nil}
-   :project/place {:needs nil}
-   :person/add   {:needs nil}
-   :owner/set    {:needs nil}
-   :hold/cancel  {:needs "L0" :correction true}})
+  {:org/rename   {:power nil}
+   :org/hours    {:power nil}
+   :project/place {:power nil}
+   :person/add   {:power nil}
+   :owner/set    {:power nil}
+   :hold/cancel  {:power "always" :correction true}})
 
 (defn not-here [_event _config _data] "That can't be done now.")
 

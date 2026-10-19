@@ -6,6 +6,7 @@
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { EntryMeta, V1EventFrame, V2EventFrame } from "../../../shared/protocol";
+import { hideTourCredentialsDeep, RECORD_TOUR_TOOL } from "../../../shared/tour";
 import { fromV1 } from "../../../shared/wire-v1";
 
 const SIGNATURE_KEYS = new Set(["thinkingSignature", "textSignature", "thoughtSignature"]);
@@ -37,9 +38,10 @@ export function withoutSignatures<T>(v: T): T {
 
 /** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small, and
     every provider signature (§chat.transcript/slim-rows: encrypted reasoning never reaches the
-    browser; message_end, turn_end and agent_end carry whole messages). */
+    browser; message_end, turn_end and agent_end carry whole messages), and record_tour's supplied
+    credentials (§app.tours/sites: every view of its arguments shows "[hidden]"). */
 export function toV1Event(event: any): unknown {
-  return withoutSignatures(wireEvent(event));
+  return hideTourCredentialsDeep(withoutSignatures(wireEvent(event)));
 }
 
 function wireEvent(event: any): unknown {
@@ -53,6 +55,9 @@ function wireEvent(event: any): unknown {
       const tc = partial?.content?.[ame.contentIndex];
       if (tc?.type === "toolCall") wire = { ...rest, id: tc.id, toolName: tc.name };
     }
+    // record_tour's arguments stream as raw JSON, credentials and all: its deltas carry nothing, and
+    // its card shows the arguments once they end, hidden (toolcall_end, message_end).
+    if (ame.type === "toolcall_delta" && partial?.content?.[ame.contentIndex]?.name === RECORD_TOUR_TOOL) wire = { ...wire, delta: "" };
   }
   return { type: "message_update", usage: event.message?.usage, assistantMessageEvent: wire };
 }

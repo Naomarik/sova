@@ -418,7 +418,7 @@ rides only that one result. What the align tool records is unchanged.
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
 
 A promotion whose only change to an existing behavior or surface record is adding, changing or
-removing its `embeds`, `core` or `notOwned` field may use doc-only evidence: such a change rewires what a reader
+removing its `embeds` or `core` field may use doc-only evidence: such a change rewires what a reader
 is handed, not what the code does. `about` belongs on notes (`check` warns when it sits elsewhere),
 and a note's `about` change takes doc-only evidence as any note change does; a misplaced `about` on
 a behavior or surface counts like the other two fields. Only means the record's prose (its span, and any bytes
@@ -426,7 +426,7 @@ outside spans attributed to it), its `code` list, its labels (`authority`, `evid
 other field read the same in the draft as in its base. The `--verification` text must say what was
 read to decide the field: for an embed, both passages and the code that renders the embedded surface
 inside the embedding one; for `about`, the note and its target; for `core`, the passage and why
-every task needs it; for `notOwned`, the area, each owner and the code that puts each thing there. The tool enforces only that the text is not empty, never what it says. A field
+every task needs it. The tool enforces only that the text is not empty, never what it says. A field
 change bundled with any other change to the same record is refused for doc-only evidence
 (`doc-only-bundled`, naming what else changed) and needs commit or snapshot evidence, as any other
 behavior or surface change does. A record that carries `agreed` follows §tools.spec/agreed-promotion
@@ -572,16 +572,6 @@ the earliest and latest `agreed.at` among them as dates, never as ages, and how 
 current words. When no record in view carries `agreed`, the map says so and the JSON has no count, so
 an absent count never reads as zero.
 
-Each area whose record carries `notOwned` (§tools.spec/record-fields) shows, under its what line, a
-"doesn't own" line: each owner, in record order, or "nothing declared" for `[]`. The overview's text names
-each owner by its § id alone, and its JSON leaves the owners out, keeping the count and a note
-(`not-owned-per-area`) that points at `map '§ns/area'`, so the whole map keeps fitting one page in
-either form; the one-area view gives each owner's § id and heading title. Every view counts the areas in
-view that carry the field, as "doesn't own: written for <k> of <n> area(s)"; when at least one does,
-each area without it shows "doesn't own: (not written)", so a missing line never reads as owning
-everything. When no area in view carries it, that line says so instead, no area shows a "doesn't
-own" line, and the JSON has no count.
-
 `map`, `where` and `impact --near` are bounded and stateless like the contents view: compact JSON
 with `--json` and readable text without, explicit budgets from 1,024 to 32,768 bytes (`map` defaults
 to 32,768 so the whole map usually fits one call, the others to 12,000), lines that do not fit left
@@ -715,8 +705,7 @@ H2s that are behaviors with no `requires` key, whose dependencies are unknown, n
 them among the unknowns, so an area whose H2s were never investigated never reads as needing nothing.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size, the number of
-code files its record lists (which `read` names), and its own "what"; for an area's H1 whose record
-carries `notOwned`, then its "doesn't own" line, as `read` shows it, on every direction. Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
+code files its record lists (which `read` names), and its own "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
 (`down` keeps declaration order, and notes about an H2 come before the notes about its H1): the § id and its heading title; **what**; for `out`, `in` and
 `mentions`, **why**; and **size** in UTF-8 bytes, which is what reading it alone costs, and for an H1
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
@@ -775,10 +764,7 @@ returns the lede and then every H2 of the file in declaration order, each as its
 text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines,
 any declared labels and any `agreed` record, shown as in the contents view, and the code files its
 record lists: the first 12 paths, each marked when it is missing or refused, then how many more there
-are, so a builder learns which files keep the promise without the whole closure's code list. An
-area's H1 whose record carries `notOwned` (§tools.spec/record-fields) also shows, on the passage's
-first fragment, a "doesn't own" line: each owner's heading title and § id, in record order, or
-"nothing declared" for `[]`; an H2 never shows its area's. A passage larger than the budget arrives as exact UTF-8 fragments,
+are, so a builder learns which files keep the promise without the whole closure's code list. A passage larger than the budget arrives as exact UTF-8 fragments,
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names
@@ -790,17 +776,13 @@ stored-nothing rules are the contents view's, with compact JSON with `--json` an
 without; exit 0 when the stream is done, 1 when more remains, 2 on a refusal such as an unknown id
 or an untrusted graph.
 
-## §tools.spec/record-fields — Optional `embeds`, `core`, `about` and `notOwned` record fields
+## §tools.spec/record-fields — Optional `embeds`, `core` and `about` record fields
 
-A manifest record may carry four optional fields, each project flagging its own records; none is a
+A manifest record may carry three optional fields, each project flagging its own records; none is a
 new kind, label value or top-level key, so a core that predates them reads the same manifest and
 ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
 whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see
-§tools.spec/frame). `notOwned: [§id]` on an area (an H1) names the claims, elsewhere, that own what a
-reader might expect the area to own, so `map`, `read` and `toc` of the area say where its edge is
-(§tools.spec/spec-map, §tools.spec/single-read, §tools.spec/contents-view) by each owner's own heading, and the manifest stays relations only; `[]` says it was looked at and
-nothing needs saying. It is not a dependency: no view follows it as an edge.
-`about: [§id]` on a note names the surface or behavior the note serves, so the
+§tools.spec/frame). `about: [§id]` on a note names the surface or behavior the note serves, so the
 note is written once and its target's record is never edited to link it.
 
 An `embeds` edge is a dependency like `requires`: `scope` and `packet` follow it with the reason
@@ -818,15 +800,13 @@ passage it delivers, and `packet` adds to its prose, after the closure, the note
 the packet delivers (the requested claim, its H1, the surfaces it embeds and every other claim its
 closure reaches), each once, in note id order, with the reason `about` naming each delivered claim
 it serves. On a spec whose records carry none of these
-fields, every existing output is unchanged except packet's help text, its new `frame` part, and the
-map's one line saying no area in view carries `notOwned`.
+fields, every existing output is unchanged except packet's help text and its new `frame` part.
 
 `check` validates them. A value of the wrong shape is a record error, like a malformed `requires`:
-`embeds`, `about` or `notOwned` not an array of § ids, or `core` not a boolean. A misuse is a
-warning naming the record, so one misplaced field never makes the whole graph untrusted: `about` on a
-record that is not a note, `notOwned` on a record that is not an H1 (`not-owned-not-area`), a target
-or owner with no record, an `embeds` target that is not a surface, an `about` target that is a note
-or section, and an owner inside the area that names it (`not-owned-inside`).
+`embeds` or `about` not an array of § ids, or `core` not a boolean. A misuse is a warning naming the
+record, so one misplaced field never makes the whole graph untrusted: `about` on a record that is
+not a note, a target with no record, an `embeds` target that is not a surface, and an `about` target
+that is a note or section.
 
 ## §tools.spec/frame — The always-on frame is its own stream, at most 12,000 bytes
 

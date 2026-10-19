@@ -208,9 +208,16 @@ export function isUnknown(v: unknown): v is Unknown {
 
 /** What allowed the act, as evaluated for that act: never inherited from what started the chain. */
 export interface Authorization {
-  kind: "operator-act" | "attended-turn" | "autonomy-level" | "grant" | "confirm-card" | "hold-release" | "person-decision" | "safety" | "none";
-  /** The level in force, for `autonomy-level`. */
+  /** `power`: an unattended act allowed by the caller's switch (shared/powers.ts). `autonomy-level`: the same,
+      recorded before the switches (its rows keep their `level`). */
+  kind: "operator-act" | "attended-turn" | "autonomy-level" | "power" | "grant" | "confirm-card" | "hold-release" | "person-decision" | "safety" | "none";
+  /** The never-looser level of the caller's switches then (the level in force, for rows recorded before them). */
   level?: string;
+  /** The power the act needed: a power id (shared/powers.ts POWERS), "always" (no switch gates it) or "operator"
+      (only the operator's turn may make it). Absent on rows recorded before the switches. */
+  power?: string;
+  /** The column of switches the caller was checked against. */
+  column?: "overseer" | "assistant";
   attended?: boolean;
   /** The grant, card or hold it rests on, by id. */
   ref?: string;

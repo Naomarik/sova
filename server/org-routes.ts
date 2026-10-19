@@ -61,10 +61,14 @@ import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
+import { registerAssistantRoutes } from "./project-assistant-routes";
+import { assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
 import { registerOrgHistoryRoutes } from "./org-history-routes";
+import { mountTourPreviewRoutes } from "./tours/bindings-routes";
+import { mountTourDestinationRoutes } from "./tours/bindings-destination-routes";
 import { registerOrgHistoryAnnotationRoutes } from "./org-history-annotations";
 
 /**
@@ -331,6 +335,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
   // The org's History tab: its reads and Purge Reason…, on this listener only.
   registerOrgHistoryRoutes(app);
   registerOrgHistoryAnnotationRoutes(app);
+  // The Owner card's Project Assistant part (§app/project-assistant).
+  registerAssistantRoutes(app);
   app.get("/api/orgs", (c) => c.json(withOrgActivity(orgsInfo())));
   app.post(
     "/api/orgs",
@@ -637,12 +643,16 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json(await orgPage(id));
     }),
   );
+  mountTourPreviewRoutes(app);
+  mountTourDestinationRoutes(app);
   // Preview Owner Page: the same function the owner's link calls; no token, no visit.
   app.get(
     "/api/orgs/:id/owner/preview",
     handle(async (c) => {
       const project = c.req.query("project");
       const conversation = c.req.query("c");
+      // The Project Assistant's conversation as the owner sees it (§app.project-assistant/chat).
+      if (c.req.query("assistant") === "1") return c.json(await assistantView(p(c, "id")));
       return c.json(await ownerView(p(c, "id"), { ...(project !== undefined ? { project } : {}), ...(conversation !== undefined ? { conversation } : {}) }));
     }),
   );

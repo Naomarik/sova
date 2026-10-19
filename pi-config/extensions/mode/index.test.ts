@@ -306,6 +306,53 @@ test("vis_guide: the shared rules then the kind's file, for the listed kinds onl
 	for (const bad of ["mermaid", "overview", "shared", "html-svg", ""]) assert.throws(() => visGuide(bad), /No vis kind/);
 });
 
+test("vis_guide: tour returns the core alone, and each named part returns its own file alone", () => {
+	const file = (name: string) => stripVisComments(readFileSync(new URL(`./vis/${name}.md`, import.meta.url), "utf8"));
+	const core = visGuide("tour");
+	assert.equal(core, file("tour"), "the core is tour.md, owner notes stripped, no shared fence rules");
+	assert.doesNotMatch(core, /^# vis: rules for every kind/m);
+	const parts = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"];
+	for (const part of parts) {
+		const text = visGuide(part);
+		assert.equal(text, file(part), part);
+		assert.match(text, new RegExp(`^# ${part}: `), `${part} opens with its own heading`);
+		assert.doesNotMatch(text, /<!--/);
+		assert.ok(core.includes(`\`${part}\``), `the core names ${part}`);
+	}
+	// Parts are lookups, never catalogue kinds: the kind list stays as it was, and only the tour line names them.
+	for (const part of parts) assert.ok(!VIS_KINDS.includes(part) && !Object.hasOwn(VIS_KIND_FILES, part), part);
+	const tourLine = VIS_INSTRUCTIONS.split("\n").find((line) => line.startsWith("- tour: "))!;
+	for (const part of parts) assert.ok(tourLine.includes(`\`${part}\``), `the catalogue's tour line names ${part}`);
+	for (const word of ["signin", "sites", "sova", "sharing", "tour-other"]) assert.throws(() => visGuide(word), /No vis kind/, word);
+	// The core stays short enough for a cheap model to carry: about 3,000 tokens at ~4.44 chars per token.
+	assert.ok(core.length <= 13_500, `the core is ${core.length} chars`);
+});
+
+test("vis_guide: the tour core opens hands-off, looks before it rehearses, and names when to read each part", () => {
+	const core = visGuide("tour");
+	const at = (needle: string) => { const i = core.indexOf(needle); assert.ok(i >= 0, `the core says ${needle}`); return i; };
+	// The hands-off rule comes first: never change the app, never sign in outside the recorder, never read Sova's records; ask instead.
+	const handsOff = at("## Hands off");
+	const section = core.slice(handsOff, core.indexOf("\n## ", handsOff + 1));
+	assert.match(section, /Never change the app you tour, its data or its settings/);
+	assert.match(section, /Never sign in to the app outside the recorder/);
+	assert.match(section, /Never read Sova's own records/);
+	assert.match(section, /\.pi\/agent\/sova/, "names the live server's state folder, not only a test tree's");
+	assert.match(section, /ask the user/);
+	assert.ok(handsOff < at("## Rules behind most failures"), "hands-off is at the top, before the failure rules");
+	// `look` comes before the first rehearsal: before the first dry-run call, and as the workflow's first step.
+	const look = at('op:"look"');
+	assert.ok(handsOff < look, "hands-off before exploring");
+	assert.ok(look < at('op:"dry-run"'), "look before the first dry run");
+	assert.ok(at("**Look:**") < at("**Dry run:**"), "the workflow's first step is the look");
+	// The ordinary case reads no part: each pointer says when, and each part opens with "only when".
+	for (const part of ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"]) {
+		assert.match(core, new RegExp(`\`${part}\` only (when|for)`), `the core says when to read ${part}`);
+		assert.match(visGuide(part), /^Read this only when /m, `${part} says when to read it`);
+	}
+	assert.ok(core.length <= 13_500, `the core is ${core.length} chars, over its cap`);
+});
+
 test("spec: a registered minor mode, composed after align and never bridged", () => {
 	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "codemode", "memory"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");

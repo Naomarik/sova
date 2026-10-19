@@ -1,21 +1,24 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
-import { actsText, livePermits, type Permit, permitsChipText } from "../../shared/overseer-grants";
-import type { ScheduleFire, ScheduleInfo } from "../../shared/protocol";
+import { createSignal, For, Show } from "solid-js";
+import { actsText, livePermits, type Permit } from "../../shared/overseer-grants";
+import type { OverseerAutonomy, ScheduleFire, ScheduleInfo } from "../../shared/protocol";
 import { agoTime, stampTime } from "../lib/format";
 import { overseerHistoryHref } from "../lib/overseer";
 import { canApprove, canRevoke, runsAsText, scheduleStateText } from "../lib/schedules";
 import { ScheduleStateChip } from "./ScheduleCard";
-import { Icon } from "./ui";
 
-/** The gap the panel keeps from every viewport edge, and the one it keeps from its trigger. */
-const EDGE_GAP = 8;
-const TRIGGER_GAP = 4;
-
-/** "1 approval · 2 schedules": the permits' own words, then every schedule Sova knows of. */
-export function permitsAndSchedulesText(permits: readonly Permit[], schedules: readonly ScheduleInfo[]): string {
-  const parts = [permitsChipText(permits)].filter(Boolean);
-  if (schedules.length) parts.push(`${schedules.length} schedule${schedules.length === 1 ? "" : "s"}`);
-  return parts.join(" · ");
+/**
+ * What the Overseer's chat publishes to its page head (§app.overseer/approvals): the one autonomy
+ * reading it keeps (read on open, at every turn's end and every 15 s) and the acts on it. The head
+ * never reads the autonomy itself, so its dot, its note and this panel all follow that one poll.
+ */
+export interface OverseerApprovals {
+  autonomy(): OverseerAutonomy | undefined;
+  revokePermit(id: string): Promise<string | null>;
+  approveSchedule(s: ScheduleInfo): Promise<string | null>;
+  revokeSchedule(id: string): Promise<string | null>;
+  /** Scroll the conversation to a card, or to an act's row in the thread. */
+  jumpCard(card: string): void;
+  jumpUse(toolCallId: string): void;
 }
 
 /** What the state chip doesn't already say: the next fire, or why it is paused or not valid. */
@@ -27,86 +30,37 @@ const FIRE_WORDS: Record<ScheduleFire["kind"], string> = { new: "Started a sessi
 export const permitExpiry = (p: Permit): string => (p.kind === "grant" && p.until ? `Until ${stampTime(p.until)}` : "Until revoked");
 
 /**
- * The Overseer composer's approvals chip (§app.overseer/approvals): "2 approvals · 1 rule" in the
- * run-status row while any is live. It opens a panel listing each live approval for later and
- * standing rule: what it allows, the card it came from, when it ends, its uses (each a link to the
- * act in the thread) and Revoke. The panel is the shared `.model-menu.action-menu` popover, placed
- * above or below the trigger, whichever fits (a bottom sheet on a phone, like every such menu).
+ * The Approvals & Schedules screen's body (§app.overseer/approvals): each live approval for later
+ * and standing rule (what it allows, the card it came from, when it ends, its uses as links to the
+ * acts in the thread, Revoke), then every playbook schedule (§chat.schedules/where-shown) with
+ * Approve or Revoke. The ⋯ menu's screen and the wide head's Schedules ▾ both draw it; `close`
+ * shuts whichever menu holds it, before any link or jump goes anywhere.
  */
-export function OverseerPermitsChip(props: {
-  permits: Permit[];
-  /** Every playbook schedule Sova knows of (§chat.schedules/where-shown). */
-  schedules?: ScheduleInfo[];
-  onRevoke(id: string): Promise<string | null>;
-  onApproveSchedule?(s: ScheduleInfo): Promise<string | null>;
-  onRevokeSchedule?(id: string): Promise<string | null>;
-  onJumpCard(card: string): void;
-  onJumpUse(toolCallId: string): void;
-}) {
-  let trigger!: HTMLButtonElement;
-  let menu!: HTMLDivElement;
-  const [open, setOpen] = createSignal(false);
+export function OverseerApprovalsBody(props: { approvals: OverseerApprovals; close(): void }) {
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-  const rows = () => [...livePermits(props.permits)].reverse();
+  const autonomy = () => props.approvals.autonomy();
+  const rows = () => [...livePermits(autonomy()?.permits ?? [])].reverse();
+  const schedules = () => autonomy()?.schedules ?? [];
 
-  const place = () => {
-    if (!menu.isConnected || !menu.matches(":popover-open")) return;
-    const r = trigger.getBoundingClientRect();
-    const box = menu.getBoundingClientRect();
-    const above = r.top - TRIGGER_GAP - box.height;
-    const top = above >= EDGE_GAP ? above : Math.min(r.bottom + TRIGGER_GAP, innerHeight - EDGE_GAP - box.height);
-    const left = Math.min(Math.max(r.right - box.width, EDGE_GAP), Math.max(EDGE_GAP, innerWidth - EDGE_GAP - box.width));
-    menu.style.setProperty("--menu-top", `${Math.round(Math.max(top, EDGE_GAP))}px`);
-    menu.style.setProperty("--menu-left", `${Math.round(left)}px`);
-  };
-  addEventListener("resize", place);
-  onCleanup(() => removeEventListener("resize", place));
-
-  const schedules = () => props.schedules ?? [];
-  const chipText = () => permitsAndSchedulesText(props.permits, schedules());
-  const revoke = async (id: string, fn: (id: string) => Promise<string | null> = props.onRevoke) => {
+  const act = async (id: string, fn: () => Promise<string | null>) => {
     setBusy(id);
     setError(null);
-    const failed = await fn(id);
+    const failed = await fn();
     setBusy(null);
     if (failed) setError(failed);
-    queueMicrotask(place);
   };
   const jump = (fn: () => void) => {
-    menu.hidePopover();
+    props.close();
     fn();
   };
 
   return (
-    <>
-      <button
-        ref={trigger}
-        type="button"
-        class="run-status-link run-status-align run-status-permits"
-        aria-haspopup="dialog"
-        aria-expanded={open() ? "true" : "false"}
-        aria-label={`${chipText()}: what runs without you`}
-        title="What the Overseer and your schedules may do without you"
-        onClick={() => {
-          if (open()) return menu.hidePopover();
-          setError(null);
-          menu.showPopover();
-          place();
-        }}
-      >
-        <Icon name="shield" small />
-        <span class="text-num">{chipText()}</span>
-        <Icon name="chevron-down" small />
-      </button>
-      <div
-        ref={menu}
-        class="model-menu action-menu permits-panel"
-        popover="auto"
-        role="dialog"
-        aria-label="Approvals and rules"
-        onToggle={(e) => setOpen((e as ToggleEvent).newState === "open")}
-      >
+    <div class="permits-body" role="group" aria-label="Approvals and schedules">
+      <Show when={autonomy()} fallback={<p class="permits-lede">Reading approvals and schedules.</p>}>
+        <Show when={!rows().length && !schedules().length}>
+          <p class="permits-lede">Nothing runs without you: no approvals, rules or schedules.</p>
+        </Show>
         <Show when={rows().length}>
           <p class="permits-lede">The Overseer may do these without you. Revoking one applies before its next run.</p>
         </Show>
@@ -126,7 +80,7 @@ export function OverseerPermitsChip(props: {
                     {(s, i) => (
                       <>
                         {i() > 0 ? ", " : ""}
-                        <a href={`#/sid/${encodeURIComponent(s.id)}`} onClick={() => menu.hidePopover()}>
+                        <a href={`#/sid/${encodeURIComponent(s.id)}`} onClick={() => props.close()}>
                           {s.title}
                         </a>
                       </>
@@ -140,14 +94,14 @@ export function OverseerPermitsChip(props: {
                 <Show
                   when={p.from}
                   fallback={
-                    <button type="button" class="permit-link text-mono" onClick={() => jump(() => props.onJumpCard(p.card))}>
+                    <button type="button" class="permit-link text-mono" onClick={() => jump(() => props.approvals.jumpCard(p.card))}>
                       {p.card} {p.option}
                     </button>
                   }
                 >
                   {(from) => (
                     <>
-                      <a class="permit-link text-mono" href={overseerHistoryHref(from())} onClick={() => menu.hidePopover()}>
+                      <a class="permit-link text-mono" href={overseerHistoryHref(from())} onClick={() => props.close()}>
                         {p.card} {p.option}
                       </a>{" "}
                       in an earlier conversation
@@ -162,7 +116,7 @@ export function OverseerPermitsChip(props: {
                   <For each={[...p.uses].reverse().slice(0, 5)}>
                     {(u) => (
                       <li>
-                        <button type="button" class="permit-link" onClick={() => jump(() => props.onJumpUse(u.toolCallId))}>
+                        <button type="button" class="permit-link" onClick={() => jump(() => props.approvals.jumpUse(u.toolCallId))}>
                           <span class="text-mono">{u.tool}</span> · {agoTime(u.at)}
                         </button>
                       </li>
@@ -171,7 +125,7 @@ export function OverseerPermitsChip(props: {
                 </ul>
               </Show>
               <div class="permit-actions">
-                <button type="button" class="button button-sm button-destructive" disabled={busy() === p.id} onClick={() => void revoke(p.id)}>
+                <button type="button" class="button button-sm button-destructive" disabled={busy() === p.id} onClick={() => void act(p.id, () => props.approvals.revokePermit(p.id))}>
                   {p.kind === "grant" ? "Revoke Approval" : "Revoke Rule"}
                 </button>
               </div>
@@ -203,7 +157,7 @@ export function OverseerPermitsChip(props: {
                         <li>
                           <Show when={f.sessionId} fallback={FIRE_WORDS[f.kind]}>
                             {(id) => (
-                              <a class="permit-link" href={`#/sid/${encodeURIComponent(id())}`} onClick={() => menu.hidePopover()}>
+                              <a class="permit-link" href={`#/sid/${encodeURIComponent(id())}`} onClick={() => props.close()}>
                                 {FIRE_WORDS[f.kind]}
                               </a>
                             )}
@@ -216,13 +170,13 @@ export function OverseerPermitsChip(props: {
                 </Show>
                 <Show when={canApprove(sch) || canRevoke(sch)}>
                   <div class="permit-actions">
-                    <Show when={canApprove(sch) && props.onApproveSchedule}>
-                      <button type="button" class="button button-sm" disabled={busy() === sch.id} onClick={() => void revoke(sch.id, () => props.onApproveSchedule!(sch))}>
+                    <Show when={canApprove(sch)}>
+                      <button type="button" class="button button-sm" disabled={busy() === sch.id} onClick={() => void act(sch.id, () => props.approvals.approveSchedule(sch))}>
                         Approve Schedule
                       </button>
                     </Show>
-                    <Show when={canRevoke(sch) && props.onRevokeSchedule}>
-                      <button type="button" class="button button-sm button-destructive" disabled={busy() === sch.id} onClick={() => void revoke(sch.id, (id) => props.onRevokeSchedule!(id))}>
+                    <Show when={canRevoke(sch)}>
+                      <button type="button" class="button button-sm button-destructive" disabled={busy() === sch.id} onClick={() => void act(sch.id, () => props.approvals.revokeSchedule(sch.id))}>
                         Revoke Schedule
                       </button>
                     </Show>
@@ -232,8 +186,8 @@ export function OverseerPermitsChip(props: {
             )}
           </For>
         </Show>
-        <Show when={error()}>{(e) => <p class="permits-error" role="alert">{e()}</p>}</Show>
-      </div>
-    </>
+      </Show>
+      <Show when={error()}>{(e) => <p class="permits-error" role="alert">{e()}</p>}</Show>
+    </div>
   );
 }

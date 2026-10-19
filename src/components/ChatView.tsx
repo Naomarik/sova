@@ -23,6 +23,7 @@ import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } f
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
 import { CardJumpContext } from "../lib/card-refs";
@@ -165,6 +166,9 @@ export interface OverseerChat {
       Ideas panel) sends an ordinary user message, as a quick action does. Returns the unbind the
       chat calls when it unmounts. */
   bindSender?(sender: OverseerSender): () => void;
+  /** Hands the page head this chat's one autonomy reading and its acts while mounted, for the
+      head's Approvals & Schedules (§app.overseer/approvals); returns the unbind. */
+  bindApprovals?(approvals: OverseerApprovals): () => void;
 }
 
 /** A user message into the Overseer's chat, through the composer's own send. */
@@ -395,6 +399,17 @@ export function ChatView(props: {
     if (rows.some((row) => jumpToEntry(row.id, props.path))) return;
     toast("That act isn't in the transcript on screen.");
   };
+  if (props.overseer?.bindApprovals) {
+    const unbind = props.overseer.bindApprovals({
+      autonomy,
+      revokePermit,
+      approveSchedule: approveScheduleFromPanel,
+      revokeSchedule: revokeScheduleFromPanel,
+      jumpCard: jumpToCardId,
+      jumpUse: jumpToToolCall,
+    });
+    onCleanup(unbind);
+  }
   const jumpToAlign = (entry: AlignEntry) => {
     if (entry.rowId && jumpToEntry(entry.rowId, props.path)) return;
     // A revision above the rows held: fetch down to it, then land.
@@ -2363,11 +2378,6 @@ export function ChatView(props: {
         cards={openCards(cards())}
         onJumpCard={jumpToCard}
         autonomy={props.overseer ? autonomy() : undefined}
-        onRevokePermit={props.overseer ? revokePermit : undefined}
-        onApproveSchedule={props.overseer ? approveScheduleFromPanel : undefined}
-        onRevokeSchedule={props.overseer ? revokeScheduleFromPanel : undefined}
-        onJumpCardId={jumpToCardId}
-        onJumpToolCall={jumpToToolCall}
         autofocus={props.autofocus}
         model={modelControl}
         claudeLogin={claudeLogin}

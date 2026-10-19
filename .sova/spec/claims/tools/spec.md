@@ -18,7 +18,7 @@ Draft commands say what a draft introduced apart from what the spec already had,
 a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
 A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
-note serves), and an `agreed` decision (who decided and when); the claims flagged `core` form an
+note serves), `notOwned` (on an area, the claims elsewhere that own what a reader might look for in it), and an `agreed` decision (who decided, when, and where the go-ahead was given); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
 They change context delivery, not release policy. Structured observation-only assessments are separately
 recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
@@ -183,15 +183,17 @@ every settle of that worker, never a per-call note, and nothing checks or acts o
 At the first tool call after a session's last edit (a call that can write but changed nothing of
 the session's own, after one or more that did), the `[spec census]` note carries one line naming the
 foreign § the session's own changed files landed in that the session hasn't read: "Unread § your
-change landed in: read first §a, §b; +N more: <command>". It is the same in pi sessions, pi workers and
-Claude Code workers. The § come from `census --changed --related` (with the task's draft when it
-has one), in census-rank order (§tools.spec/census-rank), keeping only those a session's own
-changed file lands in: at most 5 are marked read first, the first of that order that score above
-zero or have a stale literal. Every other one is counted, never dropped: "+N more:" is followed by
-the exact census command the line came from (`node "$core/sova-spec.mjs" census --changed
---related` with the same `--root`, `--base`, `--own-base` and `--spec`), whose output names each
-of them, so the line stays short however many § the change touched (under 300 characters for 25
-touched § with short ids). With none marked read first, it reads "N unread: <command>".
+change landed in: read first §a, §b; lower-ranked: <command>". It is the same in pi sessions, pi
+workers and Claude Code workers. The § come from `census --changed --related` (with the task's draft
+when it has one), in census-rank order (§tools.spec/census-rank), keeping only those a session's own
+changed file lands in: at most 10 are marked read first, the first of that order whose relevance is
+at least 0.036 or that have a stale literal, so a § that only shares a broad changed file with many
+others is not asked for. Every other one is left to the census, never dropped, and never counted,
+so the line asks for the § it names and no others: "lower-ranked:" is followed by the exact census
+command the line came from (`node "$core/sova-spec.mjs" census --changed --related` with the same
+`--root`, `--base`, `--own-base` and `--spec`), whose output names each of them, so the line stays
+short however many § the change touched (under 500 characters for 25 touched § with short ids).
+With none marked read first, it reads "none read first; lower-ranked: <command>".
 A § with a stale literal says so beside its id: "(still states 12)". A § the session ran
 `sova-spec.mjs read` on, by its literal id in any of its shell commands so far (a read of a shell
 variable counts every § that command spells), counts as read; a §
@@ -240,14 +242,31 @@ two or more digits. A § scores the sum of the weights of the distinct ones its 
 prose, backticked tokens and fenced examples) contains as whole names, each weighing more the fewer
 of the spec's passages contain it, as `where` weighs a file's tokens (§tools.spec/where-lookup). A
 string or number the change removed and didn't add back that a § still states is a `stale` literal
-of that §; a § with one ranks above every § without. `census.rank` lists each foreign touched §
-once, best first (an equal score puts the § mapping fewer code files first, then goes by id), with its `score`, `reason` (the matched names, heaviest first) and
-`stale` literals; `census.readFirst` is its first 5 that score above zero or have a stale literal,
-and `census.named` every other one, so each is in exactly one of the two. The text output prints a
+of that §. A § that lands only through a broad file shares that file with many others, so its score
+is divided by its `fanIn`: of the changed files it lands in, the fewest foreign touched § any one of
+them lands in, and by the heaviest weight a name can have (the log of the passage count plus one),
+so the same relevance means the same in a spec of any size: 1 is one name no other passage holds,
+landing through a file no other touched § maps. That quotient is its `relevance` (rounded to 3
+decimals). `census.rank` lists each
+foreign touched § once, best relevance first (an equal relevance puts the higher score first, then
+the § mapping fewer code files, then goes by id), with its `score`, `fanIn`, `relevance`, `reason`
+(the matched names, heaviest first) and `stale` literals; `census.readFirst` is its first 10 whose
+relevance is at least 0.036 or that have a stale literal, and `census.named` every other one, so each
+is in exactly one of the two. The text output prints a
 `read first (ranked by the changed lines):` line, each § with its heaviest names and stale
 literals, and a `named:` line. Nothing in the ranking knows a project: the names come from
 the diff and the spec. A rank is a literal match, never proof that a § is or isn't affected; without
 `--related` the census does not rank.
+
+## §tools.spec/census-ignored — Whole-tree `census` leaves out what Git ignores, and only that
+
+`census` without `--changed` counts the files under the manifest boundary. When the project root is
+in a Git work tree, a file Git ignores there (its `.gitignore` files, `.git/info/exclude` and the
+user's global excludes: dependencies, build output, caches) is not counted unless a record's `code`
+maps it, and `census.ignored` gives how many were left out, with a `census-ignored` note. Git's
+ignore rules never hide a tracked file, even one an ignore pattern matches, nor an untracked file
+Git does not ignore: both are counted as before. Outside Git, when Git cannot run or answer, and when
+an enclosing repository ignores the whole project, no file is left out and `census.ignored` is 0.
 
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
@@ -263,11 +282,14 @@ reading step. Every command the guide spells is one the shipped tools parse, wit
 guide pairs with it.
 
 The guide's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
-agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about` or
-`core` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
+agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about`,
+`core` or `notOwned` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
 guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
 `manifest.json` conflict it sends the agent to the census note. For a decision the user agreed to, it points to `agree`
-(§tools.spec/agree-command) in one line, and to PROMOTE.md for when that lands. The exemption from drafts is decided from passages read, and the
+(§tools.spec/agree-command) in one line, and to PROMOTE.md for when that lands.
+Its step for behavior no claim covers says that when the task's go-ahead already agrees to it, the
+agent runs `agree` on it right then, before the first code edit, not at the end; a worker's spec brief
+carries that step too. The exemption from drafts is decided from passages read, and the
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
 (§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
 finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
@@ -324,12 +346,19 @@ setup names no project path but the tools' own. `merge-claims` merges a claim fi
 the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
 the roles of base, current and draft, so the merged file has the bytes the two promotions give when
 landed one after the other in one tree, in either order. The driver finds declarations from the
-file's own H1 and H2 headings, without loading the graph. When a declaration or a gap changed
+file's own H1 and H2 headings, without loading the graph. A declaration both sides changed
+differently is merged block by block: a block is one list item with its wrapped lines (a nested
+item is its own block), one table row, one line of a fenced block, one paragraph, or one blank
+line. It merges when the two sides changed different blocks, next to each other or not; both
+sides' changes then stand in the merged declaration, which no promotion produces. When both sides
+changed the same block (on the same line of it or not), added blocks at the same place, or one
+added a block directly before a block the other changed, or a gap changed
 differently on both sides, a declaration was deleted on one side and changed on the other, the file
 can't be cut per declaration (no declarations, a carriage return, kept declarations reordered), or
 the merged file doesn't read back as the declarations it was merged from, the driver writes Git's
-own line merge with its conflict markers, so both sides' prose stays in the file, and Git reports
-the file as conflicted; its refusal (`claims-conflict`) then gives §tools.spec/conflict-recovery's
+own line merge with its conflict markers, so both sides' prose stays in the file (a declaration
+merged block by block shows its markers around whole blocks), and Git reports the file as
+conflicted; its refusal (`claims-conflict`) then gives §tools.spec/conflict-recovery's
 recovery in the same words, with the project's default branch.
 
 A record's place in `manifest.json` doesn't depend on the order changes landed in. Promotion and
@@ -360,8 +389,13 @@ graph does not load (`current-invalid`).
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
-A behavior or surface record may carry `agreed: {by, at}`: who made the decision it records, and
-when (an ISO date, optionally with a time). It names who decided and when, not that they read the
+A behavior or surface record may carry `agreed: {by, at, source}`: who made the decision it records,
+when (an ISO date, optionally with a time), and where that go-ahead can be found (`source`: a
+non-empty, single-line reference of at most 200 characters, such as a transcript and message id, a
+review comment's address or a meeting note, which no tool resolves). A promotion that gives a record
+an `agreed` current doesn't have, or replaces current's, is refused (`agreed-unsourced`) when the new
+`agreed` has no `source`, or a `source` that is a description rather than a reference in the form
+`agree` takes (§tools.spec/agree-command); an `agreed` current already has, kept as it is, needs none. It names who decided and when, not that they read the
 record's current words; no tool checks what the prose means. A later promotion may reword the prose
 and keep `agreed`. A change of meaning needs a new agreement: the go-ahead of the task that changes it
 is that agreement, with `by` set to whoever gave it, and it replaces `agreed`: a promotion may replace the `agreed` of a record current already has only when
@@ -373,7 +407,8 @@ promoted on doc-only evidence, as notes and sections are: that records the decis
 anything was built. A record reads as built only when it has `code` and the `evidence` label
 `reviewed` or `verified`, so doc-only evidence for an agreed record that declares either one is
 refused, and an agreed record that maps code still needs commit or snapshot evidence of that code.
-An `agreed` that is not an object with a non-empty `by` and a valid date `at`, or that sits on a
+An `agreed` that is not an object with a non-empty `by`, a valid date `at` and, when present, a
+valid `source` and no other key, or that sits on a
 note or section, is refused at evidence and at promotion. `agreed` is a record field, not a label
 value, so a core that predates it still loads a manifest carrying it.
 When a promotion changes an agreed record's prose but keeps the `agreed` current has, and a number
@@ -385,12 +420,22 @@ rewording that changes no number or token gets no note.
 ## §tools.spec/agree-command — One command agrees, and lands what isn't built
 
 `agree <draft> --id '<§id>'… --by <who> --verification <text>` writes the decision into the draft:
-on each named behavior or surface it sets `agreed: {by, at}`, with `at` the current UTC time to the
-minute unless `--at` gives an ISO date or time, and `authority: "accepted"`. A promise with prose in
+on each named behavior or surface it sets `agreed: {by, at, source}`, with `at` the current UTC time
+to the minute unless `--at` gives an ISO date or time, and `authority: "accepted"`. `source` is
+the environment variable `SPEC_AGREE_SOURCE`, set by whatever runs the agent to the message that
+holds the person's go-ahead, or else `--source <ref>`; with neither, `agree` refuses
+(`agree-unsourced`, exit 1) and writes nothing, so a stamp always says where its agreement was given
+and an agent cannot attest an agreement it can't point to. While `SPEC_AGREE_SOURCE` is set, a
+`--source` other than that same reference is refused (`agree-source-mismatch`, exit 1, naming the
+reference and saying to omit `--source`). A source, from either place, must be a reference, never a
+description: a scheme, a colon and a locator with no spaces (`pi-session:<session id>#<entry id>`,
+which needs both ids, a URL, `chat:c1#m3`); anything else is refused (`agree-source-not-reference`,
+exit 1). Both refusals write nothing. No tool resolves the reference. Its output names each record's source. A promise with prose in
 the draft but no record gets one (an H1 is a surface, an H2 a behavior). An `agreed` this draft
 already gave, by the same person, is kept, so a second run changes nothing. It refuses what
 promotion would: a note or section, an id with no prose in the draft, a record current already has
-agreed whose prose the draft leaves unchanged, and an `at` earlier than current's.
+agreed whose prose the draft leaves unchanged, and an `at` earlier than current's. An `agreed` this
+draft already gave is kept only when its `by` and `source` both match.
 
 For each record that maps no code and is not labelled built, the same call records doc-only
 evidence with `--by` and `--verification` as given, then runs promotion's own plan for those
@@ -414,6 +459,19 @@ agent resolves what it lists and promotes. A changed claim that already maps cod
 `agreed` in the draft and lands with the build, and the build updates those same records. With
 spec off, or align off, nothing is added, and neither mode's prompt block carries this step: it
 rides only that one result. What the align tool records is unchanged.
+
+## §tools.spec/agree-source-relay — In pi, the go-ahead's message is handed to `agree`, and workers relay it
+
+While the spec minor mode is on in a session that is not a worker, every command its bash tool runs
+sees `SPEC_AGREE_SOURCE` set to `pi-session:<session id>#<entry id>` of the latest user message on the
+session's branch at that call, so an `agree` it runs records the message the person typed. A
+code-writing worker that a spec-on session spawns gets `SPEC_AGREE_SOURCE` in its environment: from a
+session that is not a worker, its own latest user message at the spawn; from a worker, the reference
+it was given, unchanged. A worker never derives one from its own messages, which are its spawner's
+brief, not the person's go-ahead; one given none runs `agree` only to be refused (`agree-unsourced`)
+and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's text
+says where the reference comes from, that with `SPEC_AGREE_SOURCE` set the agent passes no `--source`,
+that a source is a reference, never a description, and that an agreement nobody can point to is never stamped.
 
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
 
@@ -575,12 +633,18 @@ an absent count never reads as zero.
 Each area whose record carries `notOwned` (§tools.spec/record-fields) shows, under its what line, a
 "doesn't own" line: each owner, in record order, or "nothing declared" for `[]`. The overview's text names
 each owner by its § id alone, and its JSON leaves the owners out, keeping the count and a note
-(`not-owned-per-area`) that points at `map '§ns/area'`, so the whole map keeps fitting one page in
+(`not-owned-per-area`) that points at `map '<area §id>'`, so the whole map keeps fitting one page in
 either form; the one-area view gives each owner's § id and heading title. Every view counts the areas in
 view that carry the field, as "doesn't own: written for <k> of <n> area(s)"; when at least one does,
 each area without it shows "doesn't own: (not written)", so a missing line never reads as owning
 everything. When no area in view carries it, that line says so instead, no area shows a "doesn't
 own" line, and the JSON has no count.
+
+The JSON keeps each overview line short so the whole map fits one page with room to spare: a label
+count is one flat object of label value to count (the authority and evidence values never share a
+name), with `unlabelled` only when some claim has neither label; an area line carries no namespace
+(its id names it; `counts.namespaces` keeps each namespace's totals), and its `whatSource` only when
+the what is not prose.
 
 `map`, `where` and `impact --near` are bounded and stateless like the contents view: compact JSON
 with `--json` and readable text without, explicit budgets from 1,024 to 32,768 bytes (`map` defaults

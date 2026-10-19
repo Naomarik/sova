@@ -14574,6 +14574,7 @@
     "§tools.spec/agree-command": {
       "kind": "behavior",
       "authority": "accepted",
+      "evidence": "verified",
       "requires": [
         "§tools.spec/agreed-promotion"
       ],
@@ -14583,7 +14584,34 @@
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md",
         "pi-config/extensions/spec/README.md"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
+    },
+    "§tools.spec/agree-source-relay": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/agree-command"
+      ],
+      "code": [
+        "pi-config/extensions/mode/spec-agree.ts",
+        "pi-config/extensions/mode/spec-agree.test.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/spec/docs/MODE.md"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/align-agree": {
       "kind": "behavior",
@@ -14599,6 +14627,22 @@
         "pi-config/extensions/mode/tests/agree-turn.mjs",
         "pi-config/extensions/spec/docs/MODE.md"
       ]
+    },
+    "§tools.spec/census-ignored": {
+      "kind": "behavior",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/census-ignored.test.mjs"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/census-note": {
       "kind": "behavior",
@@ -15512,7 +15556,12 @@
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/tests/census-rank.test.mjs",
         "pi-config/extensions/spec/tests/core.test.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/draft-hygiene": {
       "kind": "behavior",
@@ -15544,7 +15593,12 @@
         "pi-config/extensions/spec/PROMOTE.md",
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/README.md"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/inspection-safety": {
       "kind": "behavior",
@@ -18918,7 +18972,12 @@
         "pi-config/extensions/spec/README.md",
         "pi-config/extensions/spec/tests/map-fields.test.mjs",
         "pi-config/extensions/spec/tests/map-not-owned.test.mjs"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/unread-landed": {
       "kind": "behavior",
@@ -18937,7 +18996,12 @@
         "pi-config/extensions/spec/docs/MODE.md",
         "pi-config/extensions/spec/README.md",
         "site/src/content/docs/modes/spec.md"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/where-lookup": {
       "kind": "behavior",
@@ -18970,7 +19034,12 @@
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
       ],
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T15:13Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      }
     },
     "§tools.spec/field-promotion": {
       "kind": "behavior",
@@ -19013,8 +19082,9 @@
         "pi-config/extensions/mode/index.test.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-12T05:16Z"
+        "by": "naomarik",
+        "at": "2026-10-19T15:17Z",
+        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
       }
     },
     "§chat.model-menu/favorites": {

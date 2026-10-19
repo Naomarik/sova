@@ -384,6 +384,8 @@ If the date isn't today, prefix `Mar 4 `. Put the full ISO string in `title`.
 One strip of actions under each delivered message: `<div class="message-actions" role="group"
 aria-label="Actions for your message|this reply">`, holding `button.button-icon.button-ghost.message-action`
 icons. Under a message of yours it is end-aligned like the message head (`.message-actions-end`).
+The strip is Sova's built-in contribution to the reply place (§app.commands/reply-place); what
+extensions add under a reply comes after it, outside the strip, and never changes it.
 
 - **One strip per ENTRY, never per row.** An assistant message renders one row per content block
   (`<entryId>:<n>`), so the strip hangs off the entry's LAST row that shows text — never off a tool
@@ -998,10 +1000,18 @@ unchanged.
 - **Nothing typed or sent is lost, nor sent twice.** A message sent on a connection whose chat then
   fails to open comes back to the composer: the server refuses each message it held for the chat
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
-  the connection ends or reports an internal error before its `hello`. A message sent on an earlier
-  connection, after its `hello`, never comes back this way: that chat may have taken it. A click on
-  an Overseer's card is the one message that never comes back to the composer: its card's buttons
-  come back instead (§app.overseer/confirm). A message
+  the connection ends or reports an internal error before its `hello`. Before any of that, the
+  server tries a failed start once more, about a second later, still holding what the connection
+  sent: when that start works, the messages go to the chat in order and nothing shows, no refusal,
+  toast, banner or announcement. Only when the retry fails too are they refused, and those
+  refusals, before the connection's `hello`, come back to the composer on screen quietly (their
+  rows leave the thread), with no toast or announcement of their own: the "This chat didn't
+  start." banner says it (§chat.transcript/states). So a truly broken chat shows that banner after
+  two failed starts on the server, about 80 s at most when each start hangs until its boot wait
+  gives up, and the tab's own reconnects after it add no second banner. A message sent on an
+  earlier connection, after its `hello`, never comes back this way: that chat may have taken it. A
+  click on an Overseer's card is the one message that never comes back to the composer: its card's
+  buttons come back instead (§app.overseer/confirm). A message
   handed to the server for a chat still starting is the server's to deliver from then on, whether
   or not the tab stays (§chat.transcript/send-while-starting).
 - **A chat closed while its tab is open.** When the chat's process closes for being quiet
@@ -1035,7 +1045,8 @@ unchanged.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
   can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
-  over them. A start that fails for now keeps them and retries.
+  over them. A start that fails for now keeps them and retries: once on the server, quietly; if
+  that fails too, the tab shows "This chat didn't start." and keeps reconnecting.
 
 ## §chat.transcript/send-while-starting — A message sent while its chat starts is the server's to deliver
 
@@ -1069,7 +1080,7 @@ moves to another chat, home or Back, reloads the page or closes the tab.
   connects at once and shows it as `Sending…` (§chat.transcript/a-queued-message) until the
   chat's own rows say where it is.
 - **What can't be delivered comes back quietly.** When the chat can't take the message (it fails
-  to start, or its model has been turned off in Settings → Models) and no tab is there to hear it,
+  to start, the server's one retry included (§chat.transcript/instant-open), or its model has been turned off in Settings → Models) and no tab is there to hear it,
   the server puts the text back as that chat's saved draft, ahead of any draft already saved, so
   the session list shows the chat's draft mark and its composer holds the text when it is opened.
   An Overseer card's click is never put back as a draft, by the server or a tab (§app.overseer/confirm).
@@ -1242,7 +1253,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
-| Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
+| Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." The same failure reported again (a reconnect loop) keeps the one banner. It goes once a newer turn starts: a failed turn whose error is in its own row keeps it there, so the thread then reads as a fresh load of the chat does. What else sits in that place stays when a turn starts: a transcript reload that failed, a model turned off in Settings → Models, a usage limit's row offering another subagent profile (§chat.subagent-profiles/limit-row) |
+| Chat didn't start (an `error` before this connection's `hello`, after the server's own retry, §chat.transcript/instant-open) | `.banner.banner-error` in the same place. Title: "This chat didn't start." Body: "{message}. Your message is back in the composer. Send again to retry." ("Your messages are back…" for more than one; only "{message}." when nothing came back). One banner, however often the start fails again while the tab keeps reconnecting: the newest reason replaces the old. It goes once a newer turn starts; one that gave nothing back also goes at the chat's next `hello`. Never "The turn stopped with an error.": no turn ran |
 
 ## §chat.transcript/setup-card — Setup card
 
@@ -1687,6 +1699,10 @@ Its words are the [copy deck](../design/copy-deck.md)'s §design.copy-deck/workt
     once per error (a reconnect loop's repeat of the same failure announces nothing), and instead
     of that turn's "Reply finished.": an errored turn still settles, and two endings would read
     as two turns.
+  - "This chat didn't start." when a chat's start fails on the server's retry too (States), then
+    "Your message is back in the composer." when one came back: once, however often the start
+    fails again, and nothing else is said for it (no "couldn't be sent"). A start that fails and
+    then works says nothing at all.
   - For watched sessions, "{n} new entries." throttled to at most once every 5s.
 - **Articles.** Each message is an `article` with an `aria-label` like "You, 14:06" or
   "claude-opus-5, 14:07".

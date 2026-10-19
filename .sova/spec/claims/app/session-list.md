@@ -151,7 +151,8 @@
                    <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span>
                    — then the muted readiness badge when there is one ("restart pending", "2
                    follow-ups" — lowercase, the meta's own muted voice, no tone, never wrapped; its
-                   `title` the per-worktree lines), then model, then the context ring. A tagged row's
+                   `title` the per-worktree lines; the place's built-in, §app.extensions/row-chips),
+                   then the chips extensions add there (none without one), then model, then the context ring. A tagged row's
                    `.list-meta` has the `title` "Topic: bug fix (tagged automatically)"; the topic
                    shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
@@ -515,8 +516,10 @@ label a person reads says "sessions pane".
   the row's accessible name carries the words ("2 of 3 worktrees merged, one is ready to merge").
   The muted readiness badge follows it when there is one: "restart pending", or the follow-up count
   ("1 follow-up", "2 follow-ups") — never the word "merged", which the count already says — and a
-  leftover worktree is only in the `title`, never counted. The line truncates from its end, so the
-  model's name gives way first, then the badge, then the count, the time last — at a 280px desktop
+  leftover worktree is only in the `title`, never counted. The chips extensions add come after the
+  badge (§app.extensions/row-chips), and a row has none without such an extension. The line
+  truncates from its end, so the model's name gives way first, then those chips, then the badge,
+  then the count, the time last — at a 280px desktop
   sidebar and on a 390px phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h
   ago", "yesterday", "Mar 4"), then ` · `, then the model in mono. Show only the part after the first
   `/` and put the full

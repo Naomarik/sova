@@ -1,0 +1,15 @@
+{
+  "name": "audit",
+  "about": "Sova keeps a record of who ran what from a script: one row per run naming its command, its route and status, and the caller (a chat's key, a key that names no running chat, or none), never its params. A key never stands in for the token.",
+  "steps": [
+    { "name": "a run with no key", "sova": ["run", "models.list"], "env": { "SOVA_CALLER_KEY": "" } },
+    { "name": "its row", "sova": ["run", "audit.list", "--limit", "1", "--command", "models.list"], "env": { "SOVA_CALLER_KEY": "" }, "json": { "rows": [{ "caller": "no-key", "command": "models.list", "method": "GET", "route": "/api/models", "status": 200, "at": { "$type": "string" } }] } },
+    { "name": "a run with a key that names no running chat", "sova": ["run", "models.list"], "env": { "SOVA_CALLER_KEY": "Zz9-no-such-chat-key-Zz9-no-such-chat-key" } },
+    { "name": "recorded as unattributed", "sova": ["run", "audit.list", "--limit", "1", "--command", "models.list"], "env": { "SOVA_CALLER_KEY": "" }, "json": { "rows": [{ "caller": "unattributed" }] } },
+    { "name": "a new session", "sova": ["run", "session.create", "--cwd", "."], "env": { "SOVA_CALLER_KEY": "" }, "save": "s" },
+    { "name": "rename it", "sova": ["run", "session.title.set", "--session", "{{s.id}}", "--title", "A title the record never keeps"], "env": { "SOVA_CALLER_KEY": "" } },
+    { "name": "the rename's row: its route, never its title or session", "sova": ["run", "audit.list", "--limit", "1", "--command", "session.title.set"], "env": { "SOVA_CALLER_KEY": "" }, "json": { "rows": [{ "command": "session.title.set", "method": "POST", "route": "/api/sessions/title", "status": 200, "title": { "$absent": true }, "path": { "$absent": true } }] } },
+    { "name": "a key without the token is refused like no credential", "sova": ["run", "session.list"], "env": { "SOVA_TOKEN": "wrong-token", "SOVA_CALLER_KEY": "Zz9-no-such-chat-key-Zz9-no-such-chat-key" }, "exit": 2 },
+    { "name": "a limit out of range is refused with a sentence", "sova": ["run", "audit.list", "--limit", "0"], "env": { "SOVA_CALLER_KEY": "" }, "exit": 3, "json": { "error": "limit must be a whole number from 1 to 1000." } }
+  ]
+}

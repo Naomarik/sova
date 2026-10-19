@@ -10,5 +10,22 @@ export const onAttentionChanged = (fn: () => void): void => {
   drop = fn;
 };
 
+/** Who else hears a memo drop (server/events.ts, attention.changed): each on its own, so one that
+    throws is logged and neither the memo nor the rest is affected. */
+const notified = new Set<() => void>();
+export const onAttentionNotified = (fn: () => void): (() => void) => {
+  notified.add(fn);
+  return () => notified.delete(fn);
+};
+
 /** Something the digest lists changed: its next read is fresh. */
-export const attentionChanged = (): void => drop?.();
+export const attentionChanged = (): void => {
+  drop?.();
+  for (const fn of notified) {
+    try {
+      fn();
+    } catch (err) {
+      console.error("[attention] listener failed", err);
+    }
+  }
+};

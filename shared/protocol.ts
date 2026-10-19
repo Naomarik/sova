@@ -1832,8 +1832,39 @@ export interface ProjectMinorInfo {
   changed?: true;
   /** Has tools whose exact set (toolsHash) the user hasn't approved. */
   needsApproval?: true;
-  /** What an approval approves: the declared tools and every file in the mode's folder except MODE.md. Absent: no tools. */
+  /** What an approval approves: the declared tools, commands and hooks and every file in the mode's folder
+      except MODE.md. Absent: the mode runs nothing. */
   toolsHash?: string;
+  /** Its commands (`mode.<id>.<name>`, §chat.mode-menu/project-mode-commands); absent when it declares none. */
+  commands?: ProjectMinorTool[];
+  /** Its hooks (§chat.mode-menu/project-mode-hooks); absent when it declares none. */
+  hooks?: ProjectMinorHook[];
+  /** Approved, but not by you (the Overseer turned it on): its hooks stay inactive until you approve them. */
+  hooksNeedApproval?: true;
+  /** One of its hooks is over its run budget now ("Hooks paused: …"). */
+  hookNote?: string;
+}
+
+/** POST /api/mode/command's answer (§chat.mode-menu/project-mode-commands): how its program ended (it ran, whatever its exit code). */
+export interface ModeCommandResult {
+  id: string;
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  truncated: { stdout: boolean; stderr: boolean };
+  durationMs: number;
+  /** The same text a tool call gives the model. */
+  text: string;
+}
+
+export type ModeCommandOutcome = { ok: true; result: ModeCommandResult } | { ok: false; status: 400 | 404 | 409 | 429; error: string };
+
+/** One hook a project mode declares, as the approval shows it. */
+export interface ProjectMinorHook {
+  on: "turn.started" | "turn.ended";
+  command: string[];
 }
 
 /** A chat's project modes: in its `mode` message and ChatModeResult. Absent from older servers. */
@@ -1851,6 +1882,14 @@ export interface ProjectModeApproval {
   id: string;
   hash: string;
 }
+
+// POST /api/mode?path=… { approveHooks: ProjectModeApproval[] } -> ChatModeResult: your own approval of a mode's
+//                                  hooks (§chat.mode-menu/project-mode-hooks), for the version offered or on now;
+//                                  switches nothing. A stale hash → 409 ProjectModeApprovalNeeded. Refused (403)
+//                                  from the Overseer, a chat's own caller key and any mesh peer.
+// POST /api/mode/command?path=… { mode, name, args? } -> ModeCommandResult (§chat.mode-menu/project-mode-commands):
+//                                  runs a command of a mode on in that chat. 409 a sentence (off, sandbox, not
+//                                  approved, changed), 404 no such command, 429 four already running. Peers: `full`.
 
 /** 409 body of a turn-on that needs approval. */
 export interface ProjectModeApprovalNeeded {
@@ -3783,7 +3822,9 @@ export interface PushPayload {
 }
 /** GET /api/extensions: one entry per valid manifest record (`<state root>/extensions.json`, or
     SOVA_EXTENSIONS_FILE), in manifest order. `status` is a 1.5 s GET `<api>/api/health` (2xx =
-    "ok"), cached 10 s per extension; `error` says why a "down" one is down. ext-contract-v1.2. */
+    "ok"), cached 10 s per extension; `error` says why a "down" one is down. `offers` is what the
+    manifest entry declares it adds to Sova (shared/extension-offers.ts validates and bounds it),
+    absent when it declares nothing valid and on a peer's listed-only entry. ext-contract-v1.15. */
 export interface ExtensionInfo {
   id: string; // [A-Za-z0-9._-]+; the UI is at /ext/<id>/, the app route is #/ext/<id>
   title: string;
@@ -3791,7 +3832,29 @@ export interface ExtensionInfo {
   icon?: string; // a Sova icon name (public/icons/<name>.svg)
   status: "ok" | "down";
   error?: string;
+  offers?: ExtensionOffers;
 }
+/** What an extension offers Sova (ext-contract-v1.15): only the keys it declared something valid
+    under, each non-empty. */
+export interface ExtensionOffers {
+  /** Its own actions, run as POST /ext/<id>/api/commands/<name> (§app.commands/extension-commands). */
+  commands?: ExtensionCommandInfo[];
+  /** The places on Sova's screens it adds to; Sova asks it for each through GET
+      /ext/<id>/api/screens/<place> (shared/extension-offers.ts SCREEN_PLACES). */
+  screens?: ScreenPlace[];
+}
+export interface ExtensionCommandInfo {
+  name: string; // [a-z0-9][a-z0-9-]{0,47}
+  label: string;
+  summary?: string;
+  /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
+      (src/lib/menu-place.ts). Absent: in no menu. */
+  menu?: "session";
+}
+/** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
+    delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
+    "card", the status line of an extension's home card (src/lib/card-place.ts). All ext-contract-v1.16. */
+export type ScreenPlace = "reply" | "row" | "card";
 
 // ---------------------------------------------------------------------------
 // Mesh: other Sova hosts on the tailnet (server/mesh/). The allowlist is `<state root>/peers.json`;

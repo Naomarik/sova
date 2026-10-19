@@ -64,6 +64,8 @@ export class Link {
   compatible = true;
   /** The protocol the peer speaks (its hello's or control's): a proto-1 peer gets no stage-3 frames. */
   peerProto = CHAT_WIRE_PROTO;
+  /** The state the last `hello` this side sent on the link said; null before its first. */
+  saidState: HelloFrame["state"] | null = null;
   private readonly log: (line: string) => void;
 
   constructor(
@@ -125,6 +127,7 @@ export class Link {
       return false;
     }
     this.socket.write(bytes);
+    if (frame.t === "hello") this.saidState = frame.state;
     if (this.socket.writableLength > (this.opts.backlogMax ?? LINK_BACKLOG_MAX_BYTES)) {
       this.log(`the peer stopped reading (${this.socket.writableLength} bytes waiting): dropping the link`);
       this.end({ reason: "backlog" });
@@ -206,8 +209,8 @@ export class Link {
 // ---- the chat process's end ------------------------------------------------------------------------
 
 export interface ServeLinkOptions extends LinkOptions {
-  /** The hello to open each connection with (`link`), as the chat stands now. */
-  hello(link: Link): Omit<HelloFrame, "t" | "proto" | "minProto" | "epoch">;
+  /** The hello to open each connection with, as the chat stands now. */
+  hello(): Omit<HelloFrame, "t" | "proto" | "minProto" | "epoch">;
   /** A server took control on `link` (its `control` frame). The link before it, if any, was closed. */
   onControl(link: Link, control: ControlFrame): void;
   /** How long a connection may take to send `control` before it is closed. */
@@ -235,7 +238,7 @@ export async function serveLink(sockPath: string, opts: ServeLinkOptions): Promi
   const log = opts.log ?? ((l: string) => console.error(`[chat-link] ${l}`));
   const server: Server = createServer((socket) => {
     const link = new Link(socket, opts);
-    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello(link) });
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...opts.hello() });
     const timer = setTimeout(() => link.close({ reason: "closed" }), opts.controlWithinMs ?? 10_000);
     timer.unref?.();
     void link.closed.then(() => clearTimeout(timer));

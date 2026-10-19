@@ -1,0 +1,17 @@
+// expect: {"types":["prompt","abort","set_model","quoted"],"unresolved":["HiddenMessage","Extract<Other, { type: \"x\" }>","{ kind: \"no-type\" }"]}
+// A frame union with every form the scan must read, and the members it must refuse to guess at.
+/** A doc comment: | { type: "in_a_comment" } is no member. */
+export type ChatClientMessage =
+  // a line comment: | { type: "commented_out" }
+  | { type: "prompt"; text: string; images?: Array<{ a: 1 } | { b: 2 }>; note?: "a | b; c" }
+  | { type: "abort" }
+  | {
+      type: "set_model";
+      ref: string; // | { type: "trailing_comment" }
+    }
+  | { type: 'quoted'; done: (x: number) => void }
+  | HiddenMessage
+  | Extract<Other, { type: "x" }>
+  | { kind: "no-type" };
+
+export type After = { type: "not_a_member" };

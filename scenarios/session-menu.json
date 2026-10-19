@@ -1,0 +1,9 @@
+{
+  "name": "session-menu",
+  "about": "An extension adds an entry to the session menu by declaring \"menu\": \"session\" on one of its commands: the extension list carries it on that command, a command with another menu value keeps its place in the list without one, and every command still runs from the command line.",
+  "steps": [
+    { "name": "install an extension with a menu entry", "write": "sova/extensions.json", "json": { "version": 1, "extensions": [ { "id": "tickets", "title": "Tickets", "dist": "{{work}}", "api": "http://127.0.0.1:9", "commands": [ { "name": "file", "label": "File Issue", "summary": "Opens an issue for it", "menu": "session" }, { "name": "odd", "label": "Odd One", "menu": "sidebar" }, { "name": "plain", "label": "Plain One" } ] } ] } },
+    { "name": "the list carries the entry on its command", "sova": ["run", "extensions.list"], "json": { "$some": { "id": "tickets", "offers": { "commands": { "$eq": [ { "name": "file", "label": "File Issue", "summary": "Opens an issue for it", "menu": "session" }, { "name": "odd", "label": "Odd One" }, { "name": "plain", "label": "Plain One" } ] } } } } },
+    { "name": "every command is still the command line's", "sova": ["list", "--json"], "json": { "$all": [ { "$some": { "id": "ext.tickets.file" } }, { "$some": { "id": "ext.tickets.odd" } }, { "$some": { "id": "ext.tickets.plain" } } ] } }
+  ]
+}

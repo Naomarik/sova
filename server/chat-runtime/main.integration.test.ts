@@ -10,7 +10,7 @@ import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { CHAT_WIRE_PROTO, DEFAULT_RUNTIME_SETTINGS } from "../../shared/chat-runtime-wire";
+import { CHAT_WIRE_PROTO, DEFAULT_RUNTIME_SETTINGS, type FrameOf } from "../../shared/chat-runtime-wire";
 import { awaitFrame, connectLink, Link } from "./link";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -157,3 +157,56 @@ test("the failed-start test hook exits before it listens", { timeout: 30_000 }, 
   const p = chatProcess({ SOVA_CHAT_TEST_FAIL_BOOT: "b1" });
   assert.equal((await p.exited).code, 3);
 });
+
+/** Dial as a server would, but hold the `control` back: the test sends it when it chooses. */
+async function dialHeld(sock: string): Promise<{ link: Link; hellos: FrameOf<"hello">[] }> {
+  for (let i = 0; ; i++) {
+    try {
+      const socket = await new Promise<Socket>((resolve, reject) => {
+        const s = createConnection(sock);
+        s.once("connect", () => resolve(s));
+        s.once("error", reject);
+      });
+      const link = new Link(socket, { log: () => {} });
+      const hellos: FrameOf<"hello">[] = [];
+      link.on("hello", (h) => hellos.push(h));
+      return { link, hellos };
+    } catch (err) {
+      if (i > 200) throw err;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+}
+const until = async (what: string, ok: () => boolean, out: () => string, withinMs = 30_000) => {
+  for (const end = Date.now() + withinMs; !ok(); await new Promise((r) => setTimeout(r, 20))) if (Date.now() > end) assert.fail(`no ${what}:\n${out()}`);
+};
+
+for (const order of ["control after the boot ends", "control while it boots"] as const)
+  test(`a link opened while it boots hears exactly one hello saying ready: ${order}`, { timeout: 60_000 }, async () => {
+    // While it boots: the start holds, its code loaded, until the control has come (the early path).
+    const p = chatProcess(order === "control while it boots" ? { SOVA_CHAT_TEST_HOLD_BOOT: "b1" } : {});
+    const { link, hellos } = await dialHeld(p.sock);
+    await until("opening hello", () => hellos.length > 0, p.out);
+    assert.equal(hellos[0]!.state, "booting", "dialed before its boot ended");
+    const control = () => link.send({ t: "control", proto: CHAT_WIRE_PROTO, epoch: 1, serverPid: process.pid, serverStartedAt: 1, build: "b1", since: null, settings: DEFAULT_RUNTIME_SETTINGS });
+    if (order === "control after the boot ends") {
+      // Its start summary is logged once the host is up and ready, after the moment a control was looked for.
+      await until("start summary", () => /\[chat-runtime\] ready in /.test(p.out()), p.out);
+      assert.equal(hellos.length, 1, "no hello before a control");
+      control();
+    } else control();
+    await until("hello saying ready", () => hellos.some((h) => h.state === "ready"), p.out, 20_000);
+    // The start summary names the hold only when the boot waited for this control.
+    if (order === "control while it boots") assert.match(p.out(), /\[chat-runtime\] ready in [^\n]*test hold [\d.]+ s/);
+    else assert.doesNotMatch(p.out(), /test hold/);
+    // A duplicate would follow at once: the open's round trip gives it time to arrive first.
+    link.on("ask", (f) => void (f.method === "reply.timings" && link.send({ t: "answer", id: f.id, ok: true, result: null })));
+    const opened = awaitFrame(link, "opened", 30_000);
+    link.send({ t: "open", id: "o1", path: p.path, force: true, link: null, served: [] });
+    assert.equal((await opened).ok, true, p.out());
+    assert.deepEqual(hellos.map((h) => h.state), ["booting", "ready", "open"], p.out());
+    const exit = awaitFrame(link, "exit", 30_000);
+    link.send({ t: "drain", id: "d1", reason: "idle", force: false });
+    assert.deepEqual(await exit, { t: "exit", cause: "idle" });
+    assert.deepEqual(await p.exited, { code: 0, signal: null });
+  });

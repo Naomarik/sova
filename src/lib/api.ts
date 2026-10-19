@@ -133,6 +133,7 @@ import type {
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
+import type { CommandEntry } from "../../shared/commands-catalog";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
@@ -500,7 +501,7 @@ export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?
  * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
 export const postMode = (
-  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[] },
+  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
   path?: string,
 ) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
@@ -1509,3 +1510,32 @@ export const getProjectPreviews = (projectId: string) => request<PreviewList>(`$
 export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));
+
+/** The running server's command list (GET /api/commands): the command palette reads it at each opening. */
+export const fetchServedCommands = () => request<{ version: number; commands: CommandEntry[] }>("/api/commands", { cache: "no-store" });
+
+/**
+ * One catalogue entry's request, as built by `buildRequest` (the same request `sova run` makes),
+ * with the route's answer as a value: a refusal is what the palette shows, not a throw. Status 0:
+ * the server didn't answer.
+ */
+export async function runCommandRequest(method: string, url: string, body?: Record<string, unknown>, host: string | null = null): Promise<{ status: number; body: unknown }> {
+  const json = body === undefined ? undefined : JSON.stringify(body);
+  let res: Response;
+  try {
+    // `host`: the peer holding the session the command names by id (palette commandHost); else routed as any request.
+    res = await fetch(host ? hostUrl(host, url) : routeUrl(url, json), withJsonType({ method, body: json, cache: "no-store" }));
+  } catch {
+    return { status: 0, body: { error: "The Sova server isn't reachable." } };
+  }
+  const text = await res.text().catch(() => "");
+  let parsed: unknown = text;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    // Not JSON: the text itself.
+  }
+  if (res.status === 401) onUnauthorized(parsed);
+  else if (res.ok) onAuthorized();
+  return { status: res.status, body: parsed };
+}

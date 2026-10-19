@@ -53,7 +53,10 @@ playbooks. A chat stores the on set as `projectModes: [{id, sha}]` on its `mode`
 each mode's text and tools as a `mode-project-snapshot` custom entry at turn-on; while a mode is on it is rebuilt
 from that entry, never re-read from disk. `/mode project:<id> on|off` is the command form Sova sends. A mode with
 tools turns on only when the approval store (`server/project-mode-approvals.ts`, read by the extension too) holds its
-`toolsHash` for that checkout; the tool runner (`project-tools.ts`) checks the hash on disk again at every call. The user-facing page is
+`toolsHash` for that checkout; the tool runner (`project-tools.ts`) checks the hash on disk again at every call. A mode's
+`commands` and `hooks` (§chat.mode-menu/project-mode-commands, …/project-mode-hooks) are parsed here and covered by
+the same hash, but Sova runs them, never this extension: `server/mode-commands.ts`, owned by the chat's ChatSession in
+the chat's own process, from the copy on the branch, re-checking approval (hooks: the user's own) at every run. The user-facing page is
 `site/src/content/docs/modes/project-modes.md`: a change to the format changes its worked example too.
 
 **Settings files** (agent dir), each with one strict parse, a tolerant reader and an atomic writer here, synced by

@@ -25,7 +25,12 @@ import { dirname, join, resolve } from "node:path";
 export const APPROVALS_FILE_NAME = "project-mode-approvals.json";
 export const APPROVALS_KEPT = 8;
 
-export type ApprovalBy = "user" | "overseer";
+/**
+ * Who approved: `user` (the operator, on Sova's own page), `overseer` (an Overseer turn-on, q7), or `caller`
+ * (any other caller of the approval route: a chat's terminal, a script, an extension, a mesh peer). Tools and
+ * commands run on any of them; hooks only on `user` (isApprovedByUser).
+ */
+export type ApprovalBy = "user" | "overseer" | "caller";
 
 export interface ApprovalRecord {
 	hash: string;
@@ -84,7 +89,7 @@ export function readApprovals(file: string = approvalsFile()): ApprovalsData {
 		for (const [id, list] of Object.entries(modes)) {
 			if (!Array.isArray(list)) continue;
 			const records = list.filter(
-				(r): r is ApprovalRecord => isRecord(r) && typeof r.hash === "string" && HASH.test(r.hash) && (r.by === "user" || r.by === "overseer") && typeof r.at === "string",
+				(r): r is ApprovalRecord => isRecord(r) && typeof r.hash === "string" && HASH.test(r.hash) && (r.by === "user" || r.by === "overseer" || r.by === "caller") && typeof r.at === "string",
 			);
 			if (records.length) kept[id] = records.slice(0, APPROVALS_KEPT).map((r) => ({ hash: r.hash, by: r.by, at: r.at }));
 		}
@@ -100,8 +105,19 @@ export function isApproved(root: string, modeId: string, hash: string, file: str
 }
 
 /**
+ * Whether the USER (never the Overseer) approved this exact set of a checkout's mode: what a mode's hooks need
+ * (§chat.mode-menu/project-mode-hooks). Always for a mode that runs nothing ("").
+ */
+export function isApprovedByUser(root: string, modeId: string, hash: string, file: string = approvalsFile()): boolean {
+	if (hash === "") return true;
+	return readApprovals(file).approvals[projectKey(root)]?.[modeId]?.some((r) => r.hash === hash && r.by === "user") ?? false;
+}
+
+/**
  * Record that `by` approved this tool set of a checkout's mode. Idempotent: an approved hash moves to the
- * front with the new `by` and time. Nothing to record for a mode with no tools. Throws on a malformed
+ * front with the new time, and with the new `by`, except that the Overseer (or any other caller) recording a hash the user
+ * already approved keeps it the user's (hooks run only on the user's approval; today's Overseer turn-on records only a
+ * hash not yet approved, so this changes nothing it does). Nothing to record for a mode with no tools. Throws on a malformed
  * hash or a failed write: an approval that wasn't stored must not let the mode go on.
  */
 export function recordApproval(root: string, modeId: string, hash: string, by: ApprovalBy, file: string = approvalsFile(), now: Date = new Date()): void {
@@ -109,8 +125,9 @@ export function recordApproval(root: string, modeId: string, hash: string, by: A
 	if (!HASH.test(hash)) throw new Error(`not a tools hash: ${JSON.stringify(hash)}`);
 	const data = readApprovals(file);
 	const modes = (data.approvals[projectKey(root)] ??= {});
+	const had = (modes[modeId] ?? []).find((r) => r.hash === hash);
 	const rest = (modes[modeId] ?? []).filter((r) => r.hash !== hash);
-	modes[modeId] = [{ hash, by, at: now.toISOString() }, ...rest].slice(0, APPROVALS_KEPT);
+	modes[modeId] = [{ hash, by: had?.by === "user" ? "user" : by, at: now.toISOString() }, ...rest].slice(0, APPROVALS_KEPT);
 	mkdirSync(dirname(file), { recursive: true });
 	const tmp = `${file}.${process.pid}.${now.getTime()}.${Math.random().toString(36).slice(2)}.tmp`;
 	writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });

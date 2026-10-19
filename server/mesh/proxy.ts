@@ -25,7 +25,7 @@ const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-aut
 const OVERSEER_HEADER = "x-sova-overseer";
 /** This host's own credentials (server/auth.ts): never forwarded, so no peer host ever sees the
     token, in a log or otherwise; the peer answers by this host's Tailscale identity. */
-const CREDENTIAL_HEADERS = ["cookie", "authorization", "x-sova-token"];
+const CREDENTIAL_HEADERS = ["cookie", "authorization", "x-sova-token", "x-sova-caller"];
 /** What a relayed request would tell a peer this host restricts (§mesh.peers/grants) about this host
     or the browser: dropped, and X-Forwarded-Host carries SCRUBBED_HOST instead of this host's name. */
 const IDENTITY_HEADERS = ["origin", "referer", "user-agent", "accept-language", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-port", "x-real-ip", "forwarded", "via"];

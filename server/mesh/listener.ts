@@ -4,7 +4,8 @@ import { getRequestListener } from "@hono/node-server";
 import { refuse } from "../extensions";
 import { DENIED } from "../../shared/mesh-access";
 import { REFUSED_HEADER } from "./hello";
-import { classifyRequest, classifyUpgrade, type Need } from "./access";
+import { runPeerCommand } from "../commands-routes";
+import { classifyRequest, classifyUpgrade, type Need, peerCommandId } from "./access";
 import { judgedPath } from "./paths";
 import { callerNode } from "./gate";
 import type { PeerEntry } from "./peers";
@@ -78,7 +79,13 @@ export class PeerGate {
 
   constructor(private readonly deps: GateDeps) {
     this.handle = getRequestListener((req, env) => {
-      const peer = (env.incoming as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer;
+      const incoming = env.incoming as IncomingMessage & { meshPeer?: PeerEntry; meshCommand?: string };
+      const peer = incoming.meshPeer;
+      // A remote command run (§mesh.peers/remote-commands): the door builds the entry's own request
+      // and gates it again before it reaches the app. Its id is the one request() read from the very
+      // URL it classified, so the door and the classifier never read two spellings two ways.
+      const id = incoming.meshCommand;
+      if (id !== undefined && peer) return runPeerCommand(req, id, peer, env, { fetch: deps.fetch, mayReach: peerMayReach, ...(deps.allows ? { allows: deps.allows } : {}) });
       return deps.fetch(req, { ...env, meshPeer: peer });
     });
   }
@@ -128,12 +135,16 @@ export class PeerGate {
       res.end(JSON.stringify({ error: "Not found" }));
       return;
     }
-    if (!this.granted(req, peer, classifyRequest(req.method ?? "GET", url.pathname).need)) {
+    const method = req.method ?? "GET";
+    if (!this.granted(req, peer, classifyRequest(method, url.pathname).need)) {
       res.writeHead(403, { "Content-Type": "application/json", [REFUSED_HEADER]: DENIED });
       res.end(JSON.stringify(DENIAL));
       return;
     }
-    (req as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer = peer;
+    const marked = req as IncomingMessage & { meshPeer?: PeerEntry; meshCommand?: string };
+    marked.meshPeer = peer;
+    const command = peerCommandId(method, url.pathname);
+    if (command !== null) marked.meshCommand = command;
     this.handle(req, res);
   }
 

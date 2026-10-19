@@ -1,0 +1,24 @@
+// expect: ["window","document","window.onkeydown","document","global","window","globalThis","document.body","document"]
+// Every keydown listener on the document or the window, hidden forms included, and look-alikes that aren't.
+window.addEventListener("keydown", onKey);
+document.addEventListener('keydown', onKey, true);
+window.onkeydown = (e) => go(e);
+document.addEventListener(
+  `keydown`,
+  onKey,
+);
+addEventListener("keydown", onKey);
+window?.addEventListener("keydown", onKey);
+globalThis.addEventListener("keydown", onKey);
+document.body.addEventListener("keydown", onKey);
+document . addEventListener ( "keydown" , onKey );
+
+// Not listeners on the document or the window:
+// window.addEventListener("keydown", commentedOut);
+/* document.addEventListener("keydown", blockComment); */
+root.addEventListener("keydown", onKey);
+el.window.addEventListener("keydown", onKey);
+window.addEventListener("keyup", onKey);
+window.addEventListener("keydownish", onKey);
+if (window.onkeydown == null) go();
+myaddEventListener("keydown", onKey);

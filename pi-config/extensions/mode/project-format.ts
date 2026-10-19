@@ -62,12 +62,42 @@ export interface ProjectModeTool {
 	timeoutS: number;
 }
 
+/**
+ * One command a project mode declares (`commands`, §chat.mode-menu/project-mode-commands): run by name by the user,
+ * a script or the chat's agent while the mode is on, never by the model as a tool. Parsed into a tool's shape (MODE.md's
+ * `run` is `command` here), so the one runner and the one argv rule serve both.
+ */
+export type ProjectModeCommand = ProjectModeTool;
+
+/** The events a hook may follow (§chat.mode-menu/project-mode-hooks): S5's names for a chat's own turn start and end. A closed list. */
+export const PROJECT_HOOK_EVENTS = ["turn.started", "turn.ended"] as const;
+export type ProjectHookEvent = (typeof PROJECT_HOOK_EVENTS)[number];
+
+/** One hook a project mode declares: a program run after `on` happened in a chat with the mode on. */
+export interface ProjectModeHook {
+	on: ProjectHookEvent;
+	/** argv, under exactly a tool command's rules (MODE.md's `run`). */
+	command: string[];
+	/** Per-run timeout in seconds, 1–600 (default 30). */
+	timeoutS: number;
+}
+
+/** Most commands, and most hooks, one project mode declares. */
+export const PROJECT_COMMANDS_MAX = 16;
+export const PROJECT_HOOKS_MAX = 8;
+/** Default per-run timeout of a hook, seconds. */
+export const PROJECT_HOOK_TIMEOUT_DEFAULT_S = 30;
+
 /** What MODE.md says, parsed and checked. */
 export interface ProjectModeFile {
 	description: string;
 	/** `workers: yes`: the mode reaches the workers a chat starts (default no). */
 	workers: boolean;
 	tools: ProjectModeTool[];
+	/** Present only when MODE.md declares commands (a file without them parses as it always did). */
+	commands?: ProjectModeCommand[];
+	/** Present only when MODE.md declares hooks. */
+	hooks?: ProjectModeHook[];
 	/** The body after the frontmatter, ends trimmed. */
 	body: string;
 }
@@ -84,14 +114,22 @@ export interface ProjectModeSnapshot {
 	description: string;
 	workers: boolean;
 	tools: ProjectModeTool[];
+	/** Present only when the mode declares commands (so a copy without them is the shape it always was). */
+	commands?: ProjectModeCommand[];
+	/** Present only when the mode declares hooks. */
+	hooks?: ProjectModeHook[];
 	/** The injected block exactly (projectModeBlock). */
 	text: string;
 	/**
-	 * The copy's identity: sha256 hex of snapshotShaInput (text, description, workers, tools, toolsHash), so
+	 * The copy's identity: sha256 hex of snapshotShaInput (text, description, workers, tools, toolsHash, and the
+	 * commands and hooks when it has them), so
 	 * any edit that reaches the chat on off/on gives a new sha. Approval looks at toolsHash alone.
 	 */
 	sha: string;
-	/** sha256 hex over the declared tools and every file in the mode folder but MODE.md (toolsHashInput); "" with no tools. */
+	/**
+	 * The approval hash: sha256 hex over the declared tools, commands and hooks and every file in the mode folder but
+	 * MODE.md (toolsHashInput); "" when the mode declares none of the three.
+	 */
 	toolsHash: string;
 }
 
@@ -159,20 +197,32 @@ export function projectModeBlock(id: string, dir: string, body: string): string 
 }
 
 /** What a snapshot's sha digests: everything the chat keeps of the mode but its folder path. */
-export function snapshotShaInput(snapshot: Pick<ProjectModeSnapshot, "text" | "description" | "workers" | "tools" | "toolsHash">): string {
-	return JSON.stringify(canonical({ text: snapshot.text, description: snapshot.description, workers: snapshot.workers, tools: snapshot.tools, toolsHash: snapshot.toolsHash }));
+export function snapshotShaInput(snapshot: Pick<ProjectModeSnapshot, "text" | "description" | "workers" | "tools" | "toolsHash" | "commands" | "hooks">): string {
+	// Commands and hooks only when declared, so every copy made before they existed keeps its sha.
+	return JSON.stringify(
+		canonical({
+			text: snapshot.text,
+			description: snapshot.description,
+			workers: snapshot.workers,
+			tools: snapshot.tools,
+			toolsHash: snapshot.toolsHash,
+			...(snapshot.commands?.length ? { commands: snapshot.commands } : {}),
+			...(snapshot.hooks?.length ? { hooks: snapshot.hooks } : {}),
+		}),
+	);
 }
 
 /** Thrown by parseModeFile: the message is the user-facing problem line. */
 export class ModeFileError extends Error {}
 
-const KEYS = new Set(["description", "workers", "tools"]);
+const KEYS = new Set(["description", "workers", "tools", "commands", "hooks"]);
 
 /**
  * MODE.md, strictly. A `---` fence on line 1 and a closing `---` line; between them `key: value` lines, where
  * a line starting with whitespace continues the previous key's value (so `tools:` can span lines). Keys:
  * `description` (required, one line), `workers` (`yes`/`no`, default no), `tools` (a JSON array of
- * `{name, description, params?, command, timeoutS?}`). Any other key, a repeated key, an empty body or a bad
+ * `{name, description, params?, command, timeoutS?}`), `commands` (a JSON array of
+ * `{name, description, params?, run, timeoutS?}`) and `hooks` (a JSON array of `{on, run, timeoutS?}`). Any other key, a repeated key, an empty body or a bad
  * tool throws ModeFileError. There is deliberately no key that turns a mode on.
  */
 export function parseModeFile(text: string): ProjectModeFile {
@@ -192,7 +242,7 @@ export function parseModeFile(text: string): ProjectModeFile {
 		const m = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/.exec(line);
 		if (!m) throw new ModeFileError(`MODE.md line ${i + 2}: expected "key: value"`);
 		const key = m[1]!;
-		if (!KEYS.has(key)) throw new ModeFileError(`MODE.md line ${i + 2}: unknown key "${key}" (keys: description, workers, tools)`);
+		if (!KEYS.has(key)) throw new ModeFileError(`MODE.md line ${i + 2}: unknown key "${key}" (keys: description, workers, tools, commands, hooks)`);
 		if (fields.has(key)) throw new ModeFileError(`MODE.md line ${i + 2}: "${key}" given twice`);
 		fields.set(key, m[2]!.trim());
 		last = key;
@@ -203,51 +253,88 @@ export function parseModeFile(text: string): ProjectModeFile {
 	const workersRaw = fields.get("workers");
 	if (workersRaw !== undefined && workersRaw !== "yes" && workersRaw !== "no") throw new ModeFileError(`MODE.md workers must be yes or no, not "${workersRaw}"`);
 	const tools = parseTools(fields.get("tools"));
+	const commands = parseCommands(fields.get("commands"));
+	const hooks = parseHooks(fields.get("hooks"));
 	const body = lines.slice(close + 1).join("\n").trim();
 	if (body === "") throw new ModeFileError("MODE.md has no instructions after the frontmatter");
-	return { description, workers: workersRaw === "yes", tools, body };
+	return { description, workers: workersRaw === "yes", tools, ...(commands.length > 0 ? { commands } : {}), ...(hooks.length > 0 ? { hooks } : {}), body };
 }
 
 function unquote(value: string): string {
 	return value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0] ? value.slice(1, -1) : value;
 }
 
-function parseTools(raw: string | undefined): ProjectModeTool[] {
+function jsonArray(raw: string | undefined, key: string, max: number, noun: string): unknown[] {
 	if (raw === undefined || raw.trim() === "") return [];
 	let value: unknown;
 	try {
 		value = JSON.parse(raw);
 	} catch (error) {
-		throw new ModeFileError(`MODE.md tools is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+		throw new ModeFileError(`MODE.md ${key} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
 	}
-	if (!Array.isArray(value)) throw new ModeFileError("MODE.md tools must be a JSON array");
-	if (value.length > PROJECT_TOOLS_MAX) throw new ModeFileError(`MODE.md declares ${value.length} tools; at most ${PROJECT_TOOLS_MAX}`);
+	if (!Array.isArray(value)) throw new ModeFileError(`MODE.md ${key} must be a JSON array`);
+	if (value.length > max) throw new ModeFileError(`MODE.md declares ${value.length} ${noun}; at most ${max}`);
+	return value;
+}
+
+/** A tool's `command`, a command's or a hook's `run`: one argv rule for all three. */
+function checkArgv(command: unknown, label: string, field: string): string[] {
+	if (!Array.isArray(command) || command.length === 0 || !command.every((arg) => typeof arg === "string")) throw new ModeFileError(`${label}: ${field} must be a non-empty array of strings`);
+	const program = command[0] as string;
+	if (!program.startsWith("./") && !/^[A-Za-z0-9._+-]+$/.test(program)) throw new ModeFileError(`${label}: ${field}[0] must be a program name or a ./path in the mode folder`);
+	// A tool runs only code from its own folder (covered by approval) or a program of the machine (a bare name):
+	// any argument naming a path must be a `./` path inside the mode folder.
+	for (const arg of command as string[]) if (arg.includes("/") && !isFolderPath(arg)) throw new ModeFileError(`${label}: "${arg}" must be a ./path inside the mode folder (a tool can't run files from elsewhere in the project)`);
+	return [...(command as string[])];
+}
+
+function checkTimeout(timeoutS: unknown, label: string, fallback: number): number {
+	if (timeoutS !== undefined && (typeof timeoutS !== "number" || !Number.isInteger(timeoutS) || timeoutS < 1 || timeoutS > PROJECT_TOOL_TIMEOUT_MAX_S)) throw new ModeFileError(`${label}: timeoutS must be a whole number from 1 to ${PROJECT_TOOL_TIMEOUT_MAX_S}`);
+	return (timeoutS as number | undefined) ?? fallback;
+}
+
+/** Tools (`command`) and commands (`run`) share their shape and rules but the argv field's name. */
+function parseNamed(raw: string | undefined, key: "tools" | "commands", argvField: "command" | "run", max: number): ProjectModeTool[] {
+	const value = jsonArray(raw, key, max, key);
+	const noun = key === "tools" ? "tool" : "command";
 	const seen = new Set<string>();
 	return value.map((tool, i) => {
-		const where = `MODE.md tool ${i + 1}`;
+		const where = `MODE.md ${noun} ${i + 1}`;
 		if (!isRecord(tool)) throw new ModeFileError(`${where} must be an object`);
-		for (const key of Object.keys(tool)) if (!["name", "description", "params", "command", "timeoutS"].includes(key)) throw new ModeFileError(`${where}: unknown field "${key}"`);
-		const { name, description, params, command, timeoutS } = tool;
+		for (const k of Object.keys(tool)) if (!["name", "description", "params", argvField, "timeoutS"].includes(k)) throw new ModeFileError(`${where}: unknown field "${k}"`);
+		const { name, description, params, timeoutS } = tool;
 		if (typeof name !== "string" || name.length > PROJECT_TOOL_NAME_MAX || !TOOL_NAME_RE.test(name)) throw new ModeFileError(`${where}: name must be lowercase letters, digits and single underscores, at most ${PROJECT_TOOL_NAME_MAX} characters`);
 		if (seen.has(name)) throw new ModeFileError(`${where}: name "${name}" given twice`);
 		seen.add(name);
-		const label = `MODE.md tool "${name}"`;
+		const label = `MODE.md ${noun} "${name}"`;
 		if (typeof description !== "string" || description.trim() === "") throw new ModeFileError(`${label} needs a description`);
 		if (params !== undefined && (!isRecord(params) || params.type !== "object")) throw new ModeFileError(`${label}: params must be a JSON schema with "type": "object"`);
-		if (!Array.isArray(command) || command.length === 0 || !command.every((arg) => typeof arg === "string")) throw new ModeFileError(`${label}: command must be a non-empty array of strings`);
-		const program = command[0] as string;
-		if (!program.startsWith("./") && !/^[A-Za-z0-9._+-]+$/.test(program)) throw new ModeFileError(`${label}: command[0] must be a program name or a ./path in the mode folder`);
-		// A tool runs only code from its own folder (covered by approval) or a program of the machine (a bare name):
-		// any argument naming a path must be a `./` path inside the mode folder.
-		for (const arg of command as string[]) if (arg.includes("/") && !isFolderPath(arg)) throw new ModeFileError(`${label}: "${arg}" must be a ./path inside the mode folder (a tool can't run files from elsewhere in the project)`);
-		if (timeoutS !== undefined && (typeof timeoutS !== "number" || !Number.isInteger(timeoutS) || timeoutS < 1 || timeoutS > PROJECT_TOOL_TIMEOUT_MAX_S)) throw new ModeFileError(`${label}: timeoutS must be a whole number from 1 to ${PROJECT_TOOL_TIMEOUT_MAX_S}`);
+		const command = checkArgv(tool[argvField], label, argvField);
 		return {
 			name,
 			description: description.trim(),
 			params: (params as Record<string, unknown> | undefined) ?? { type: "object", properties: {} },
-			command: [...(command as string[])],
-			timeoutS: (timeoutS as number | undefined) ?? PROJECT_TOOL_TIMEOUT_DEFAULT_S,
+			command,
+			timeoutS: checkTimeout(timeoutS, label, PROJECT_TOOL_TIMEOUT_DEFAULT_S),
 		};
+	});
+}
+
+function parseTools(raw: string | undefined): ProjectModeTool[] {
+	return parseNamed(raw, "tools", "command", PROJECT_TOOLS_MAX);
+}
+
+function parseCommands(raw: string | undefined): ProjectModeCommand[] {
+	return parseNamed(raw, "commands", "run", PROJECT_COMMANDS_MAX);
+}
+
+function parseHooks(raw: string | undefined): ProjectModeHook[] {
+	return jsonArray(raw, "hooks", PROJECT_HOOKS_MAX, "hooks").map((hook, i) => {
+		const label = `MODE.md hook ${i + 1}`;
+		if (!isRecord(hook)) throw new ModeFileError(`${label} must be an object`);
+		for (const k of Object.keys(hook)) if (!["on", "run", "timeoutS"].includes(k)) throw new ModeFileError(`${label}: unknown field "${k}"`);
+		if (typeof hook.on !== "string" || !(PROJECT_HOOK_EVENTS as readonly string[]).includes(hook.on)) throw new ModeFileError(`${label}: on must be one of ${PROJECT_HOOK_EVENTS.join(", ")}`);
+		return { on: hook.on as ProjectHookEvent, command: checkArgv(hook.run, label, "run"), timeoutS: checkTimeout(hook.timeoutS, label, PROJECT_HOOK_TIMEOUT_DEFAULT_S) };
 	});
 }
 
@@ -258,9 +345,19 @@ export function isFolderPath(arg: string): boolean {
 	return segments.length > 0 && segments.every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 
-/** The `./…` files a tool list names (sorted, deduped): each must exist in the mode folder. */
-export function toolFiles(tools: readonly ProjectModeTool[]): string[] {
-	return [...new Set(tools.flatMap((tool) => tool.command.filter((arg) => arg.startsWith("./"))))].sort();
+/** What a mode runs besides its tools: its commands and hooks (each list may be absent or empty). */
+export interface ModeActions {
+	commands?: readonly ProjectModeCommand[];
+	hooks?: readonly ProjectModeHook[];
+}
+
+/** Whether a mode declares any command or hook. */
+export const hasActions = (actions: ModeActions | undefined): boolean => (actions?.commands?.length ?? 0) > 0 || (actions?.hooks?.length ?? 0) > 0;
+
+/** The `./…` files a tool list (and the mode's commands and hooks) names (sorted, deduped): each must exist in the mode folder. */
+export function toolFiles(tools: readonly ProjectModeTool[], actions?: ModeActions): string[] {
+	const argvs = [...tools, ...(actions?.commands ?? []), ...(actions?.hooks ?? [])].map((t) => t.command);
+	return [...new Set(argvs.flatMap((command) => command.filter((arg) => arg.startsWith("./"))))].sort();
 }
 
 /** Most files, and most bytes in all, a mode folder with tools may hold: past either it is broken. */
@@ -275,8 +372,12 @@ export const PROJECT_MODE_BYTES_MAX = 50 * 1024 * 1024;
  * `folderShas` comes from project-discovery.ts folderFileShas. Both halves (discovery, the call-time check) hash
  * through here.
  */
-export function toolsHashInput(tools: readonly ProjectModeTool[], folderShas: Readonly<Record<string, string>>): string {
-	const declared = JSON.stringify(tools.map((tool) => canonical(tool)));
+export function toolsHashInput(tools: readonly ProjectModeTool[], folderShas: Readonly<Record<string, string>>, actions?: ModeActions): string {
+	// A mode with commands or hooks: its first line is the three lists as one object (never equal to a tools-only
+	// array line); a mode with neither hashes byte for byte as it did before they existed.
+	const declared = hasActions(actions)
+		? JSON.stringify(canonical({ tools, commands: actions?.commands ?? [], hooks: actions?.hooks ?? [] }))
+		: JSON.stringify(tools.map((tool) => canonical(tool)));
 	return [declared, ...Object.keys(folderShas).sort().map((file) => `${file} ${folderShas[file]}`)].join("\n");
 }
 
@@ -311,6 +412,8 @@ export function isProjectModeSnapshot(value: unknown): value is ProjectModeSnaps
 		typeof value.description === "string" &&
 		typeof value.workers === "boolean" &&
 		Array.isArray(value.tools) &&
+		(value.commands === undefined || Array.isArray(value.commands)) &&
+		(value.hooks === undefined || Array.isArray(value.hooks)) &&
 		typeof value.text === "string" &&
 		typeof value.sha === "string" &&
 		typeof value.toolsHash === "string"

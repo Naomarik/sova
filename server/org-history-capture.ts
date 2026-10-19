@@ -392,6 +392,14 @@ export const ACTS: Record<string, ActRow> = {
       return { entities: [...person, ...(pv ? [{ type: "preview" as const, id: pv }] : [])], ...(pv ? { relationKeys: [toKey("named-target", `preview:${pv}`, { type: "preview", id: pv })] } : {}) };
     },
   },
+  // The owner's page link sent to them (§app.owner-page/send): the person by id and the outcome, never the link,
+  // the token, the number or the note.
+  "owner/send-link": {
+    kind: "outreach.sent",
+    outcome: "started",
+    on: ["org"],
+    pick: (_s, d) => (isObj(d.target) && str(d.target.id) ? { entities: [{ type: "person", id: str(d.target.id)! }] } : undefined),
+  },
   // A preview link asked for: the coding session it serves, or the running copy shared, by id. Never its purpose,
   // its address, its endpoint's link or anything the effect mints.
   "preview/start": {
@@ -453,6 +461,7 @@ const EFFECT_RESULTS: Record<string, HistoryKind> = {
   merge: "merge.observed",
   promote: "promotion.made",
   "outreach-send": "outreach.sent",
+  "owner-link-send": "outreach.sent",
   conform: "validation.observed",
   "make-worktree": "build.started",
   preview: "preview.made",

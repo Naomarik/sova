@@ -141,7 +141,12 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   });
 
   try {
-    chat = await acquireChatHandle(path, force);
+    chat = await acquireWithRetry(
+      () => acquireChatHandle(path, force),
+      // Nobody left to hear and nothing to deliver: no reason to start it again.
+      () => gone && early.length === 0 && held.size === 0,
+      (err) => console.warn(`[ws/chat] ${id}: the chat didn't start (${err instanceof Error ? err.message : String(err)}); trying once more`),
+    );
   } catch (err) {
     // Three outcomes, three close codes, because the client's retry policy keys off them:
     // 4409 busy (another process owns it), 4422 config (permanent — do NOT reconnect), 4500
@@ -167,6 +172,28 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   chat.attach(client);
   for (const msg of early.splice(0)) chat.clientMessage(client, msg);
   if (gone) stayToHear();
+}
+
+/** The pause before a chat socket's one retry of a failed start (tests set it to 0). */
+export const openRetry = { ms: 1000 };
+
+/**
+ * Opens a chat, trying a failed start once more (§chat.transcript/instant-open): a start that fails
+ * for now (a process that hung at boot, a crash) usually works a second later, and the socket keeps
+ * holding what the pane sent meanwhile, so the messages then go through with nothing shown. This is
+ * the one quiet retry: when it fails too, the pane is told at once and shows "This chat didn't
+ * start." (src/lib/error-feed.ts), and its own reconnects add no second quiet round. A refusal no
+ * retry can change (busy, config) is not retried; nor is one `giveUp` says nobody needs.
+ */
+export async function acquireWithRetry<T>(acquire: () => Promise<T>, giveUp: () => boolean, onRetry?: (err: unknown) => void): Promise<T> {
+  try {
+    return await acquire();
+  } catch (err) {
+    if (err instanceof BusyError || err instanceof ConfigError || giveUp()) throw err;
+    onRetry?.(err);
+    if (openRetry.ms > 0) await new Promise((r) => setTimeout(r, openRetry.ms));
+    return acquire();
+  }
 }
 
 /** At most this many frames in one POST /api/chat/frames. */

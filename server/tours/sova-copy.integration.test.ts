@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createServer, request, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
@@ -161,7 +162,10 @@ test("recording a managed Sova copy leaves its install token nowhere and never m
   const script = (views: ReturnType<typeof page>[]): TourScriptRequest => ({ v: 1, title: "The test copy at rest", summary: "What an idle test copy shows.", audience: "A new reviewer", outcome: "Know the copy's idle views.", source, chapters: [{ id: "idle", title: "Idle" }], steps: [{ id: "idle-views", chapter: "idle", title: "Idle views", summary: "The views the copy loads at rest.", views }] });
   // The idle UI itself (the built app: its own load-time requests come from the page), then the
   // load-time API set as plain pages.
-  assert.ok(existsSync(resolve(import.meta.dirname, "../../dist/index.html")), "The idle UI's load-time requests come from the built app: run `pnpm run build` first.");
+  // A run that comes before `pnpm run build` (the merge round runs test:int first) builds the app here.
+  const repo = resolve(import.meta.dirname, "../..");
+  if (!existsSync(join(repo, "dist/index.html"))) execFileSync(join(repo, "node_modules/.bin/vite"), ["build"], { cwd: repo, stdio: "ignore", timeout: 240_000 });
+  assert.ok(existsSync(join(repo, "dist/index.html")), "The idle UI's load-time requests come from the built app, and building it here failed: run `pnpm run build`.");
   const idle = script([
     page("ui", "/"),
     // Two hash routes of the app in a row: each loads fresh (a fragment-only change would otherwise

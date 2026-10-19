@@ -318,9 +318,9 @@ corrected 10-09 baseline (the 10-09 method had counted every pi worker as spec-o
   text (census notes were over-counted once).
 
 
-### The audit #2 lanes (2026-10-18, branch `feat/spec-x-integration`, not on master yet)
+### The audit #2 lanes (2026-10-18, branch `feat/spec-x-integration`, landed on master at a82af2c8 (fast-forward, base f14dbab0))
 
-**P4, what an area does not own (2026-10-18, branch `feat/spec-x-notowned`, not on master yet).** Audit
+**P4, what an area does not own (2026-10-18, branch `feat/spec-x-notowned`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** Audit
 #2 found 0/87 areas saying what they don't own (Goal 3's first measure). An area record now carries
 `notOwned: [§id]` and `map` prints it: 0/87 → 87/87 on Sova's spec (L0, `map` text, master 9c3f949b
 against the branch). The first shape, `{what, owner}` with a phrase in the manifest, was dropped
@@ -339,12 +339,12 @@ moved each arm's correct count on them by 3-5 of 20. Most wrong not-own statemen
 prose that contradicts code, in every arm. Lesson: a view no agent opens measures as nothing, so
 put a fact on the path the mode text sends agents down, and count both text and JSON when checking
 who saw it.
-On 2026-10-19 (branch `feat/spec-x-integration`, not on master yet) the overview's JSON was 271 B under the page
+On 2026-10-19 (branch `feat/spec-x-integration`, landed on master at a82af2c8 (fast-forward, base f14dbab0)) the overview's JSON was 271 B under the page
 (32,497 of 32,768 B). Trimming derivable and default fields, not the `notOwned` count or note, took it to 25,449 B
 (22.3% headroom): no `namespace` on area lines (the id names it), `whatSource` only when not prose, and flat label
 counts with no zero `unlabelled`. The text form is unchanged at 29,808 B.
 
-**P8, claim-file merges (2026-10-18, branch `feat/spec-x-merge`, not on master yet).** `merge-claims`
+**P8, claim-file merges (2026-10-18, branch `feat/spec-x-merge`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** `merge-claims`
 merges a declaration both sides changed block by block (CHANGELOG 2026-10-18 has the numbers). Dropped
 before commit, a block merge where neighbouring blocks conflict: the first block-by-block `merge-claims`
 gave Git's line merge the blocks as lines, so changes to two neighbouring blocks conflicted, as Git does
@@ -352,7 +352,7 @@ with neighbouring lines. On the merge replay it left 10 / 56 claim files conflic
 7 / 56 for the kept version, which puts an unchanged line between blocks. The 3 it added were neighbouring
 bullets of one declaration, each a different promise.
 
-**P2, agree traceability (2026-10-18, branch `feat/spec-x-agree`, not on master yet).** Audit #2 found that 195 agreed stamps had been written by workers as `--by user`, and no session showed the
+**P2, agree traceability (2026-10-18, branch `feat/spec-x-agree`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** Audit #2 found that 195 agreed stamps had been written by workers as `--by user`, and no session showed the
 user agreeing. Two changes, each measured on the L2 agent arm (claude-opus-5-5 medium, 7 tasks × 2 reps, the
 parent holding a pre-agreed typed turn):
 
@@ -368,7 +368,7 @@ Not measured: the worker relay, and team-injected turns.
 Phase 2 measured the relay: workers held the right reference in `SPEC_AGREE_SOURCE` yet typed a description in
 `--source`, and 4 of 42 stamps (2 of 3 relay runs) traced to no typed user turn. The lane had dropped refusing a
 `--source` that differs from the variable, so a parent could cite an earlier turn; that freedom was what the
-workers used. Fixed on 2026-10-19 (branch `feat/spec-x-integration`, not on master yet): a set variable is the
+workers used. Fixed on 2026-10-19 (branch `feat/spec-x-integration`, landed on master at a82af2c8 (fast-forward, base f14dbab0)): a set variable is the
 source, a different `--source` is refused, and a source must be a `scheme:locator` reference, never a
 description. L0: 4 new cases fail at 196989b0 and pass after. The L2 relay arm has not been re-run.
 An independent review then found two holes, both closed the same day. The relay mistook a session's own
@@ -377,7 +377,7 @@ only the spawn path writes (`SPEC_AGREE_GIVEN`). The shape check let an invented
 such a reference must now resolve to a user message in pi's session files (other schemes stay form-checked
 for projects outside pi). L0: 6 new cases fail at 7a5c32d8 and pass after.
 
-**P1, the unread line (2026-10-18, branch `feat/spec-x-unread`, not on master yet).** Audit #2 found the unread line unreadable: 5 § marked read first, then "+N more" with a median near 100, and
+**P1, the unread line (2026-10-18, branch `feat/spec-x-unread`, landed on master at a82af2c8 (fast-forward, base f14dbab0)).** Audit #2 found the unread line unreadable: 5 § marked read first, then "+N more" with a median near 100, and
 Claude workers read 17% of the marked ones. A lane measured candidate rules on an L1 replay of the audit's 99
 worker sessions (93 replayed, census re-run on reconstructed trees; bash-written edits can't be replayed, so
 the replayed lists run shorter than the recorded ones) against Opus labels of which landed § mattered (the change

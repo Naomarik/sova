@@ -62,8 +62,8 @@
             eff (last (filter #(= "owner-link-send" (:kind %)) (h/outbox z osid)))]
         (is (= {:person-id "p1" :by "operator-via-overseer" :note "Hi Omar"} (select-keys eff [:person-id :by :note])))
         (is (h/in? z osid :owner-set) "it changes no state"))
-      (is (some? (h/refusal y osid :owner/send-link {:by "overseer" :target omar})) "a project overseer's own run")
-      (is (some? (h/refusal y osid :owner/send-link {:by "assistant" :target omar})) "the Project Assistant's own run")
+      (doseq [by ["overseer" "assistant" "statechart"]]
+        (is (= "Only the operator sends an owner their page link." (h/refusal y osid :owner/send-link {:by by :attended true :target omar})) by))
       (testing "a card raised before the owner changed sends nothing"
         (let [w (h/send! y osid :owner/set (assoc op :person-id "p2" :target {:status "active"}))]
           (is (= "Omar isn't Acme's owner. Nothing was sent."

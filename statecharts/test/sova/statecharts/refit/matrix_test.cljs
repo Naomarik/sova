@@ -64,6 +64,8 @@
      "^A correction needs a reason: say why\\.$" "^No held act has that id\\.$" "^That can't be done now\\.$"
      ;; org, residence, person
      "^name must be 1–80 characters$" "^Only an active person on the roster can be the owner\\.$"
+     "^Only the operator sends an owner their page link\\.$" "^.* has no owner, so there is no owner page to send\\. Nothing was sent\\.$"
+     "^.* isn't .*'s owner\\. Nothing was sent\\.$" "^.* is not active\\. Nothing was sent\\.$"
      "^That organization is already attached here\\.$" "^Unknown organization$"
      "^.* is not waiting for approval\\.$" "^.* is (active|left|proposed), not proposed\\.$"
      "^A \\w+ change may not (write \\w+|approve or decline people)\\.$" "^A referral may only create a proposed person\\.$"

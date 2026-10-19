@@ -319,6 +319,7 @@ export class WebQueue {
     baton?: WebQueueItem["baton"];
     session?: WebQueueItem["session"];
     byPerson?: true;
+    confirm?: WebQueueItem["confirm"];
   }): string {
     const item: WebQueueItem = {
       id: input.id || randomUUID(),
@@ -330,6 +331,8 @@ export class WebQueue {
       ...(input.baton ? { baton: input.baton } : {}),
       ...(input.session ? { session: input.session } : {}),
       ...(input.byPerson ? { byPerson: true as const } : {}),
+      // A confirm card's click keeps its mark while it waits (§app.overseer/org-people-facing).
+      ...(input.confirm ? { confirm: input.confirm } : {}),
     };
     this.held.push(item);
     this.deps.onChange(this.snapshot());

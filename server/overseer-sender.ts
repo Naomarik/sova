@@ -65,3 +65,7 @@ export const confirmRefusal = (what: string, lead = "This reaches people or ends
   `${lead}: ask with sova_card, listing ${what} in its items, and act in the turn the user's click starts.`;
 /** The lead of an add's refusal (§app.overseer/org-project-add). */
 export const ADD_LEAD = "This adds a project";
+/** An add's refusal when no click on a card opened the turn at all (§app.overseer/org-project-add):
+    `what` names the folder with the org the call asked for. */
+export const addNoClickRefusal = (what: string) =>
+  `${ADD_LEAD}, and this turn wasn't opened by a click on a card: reopen the card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing ${what} in its items, so the user can click it again, and act in the turn that click starts.`;

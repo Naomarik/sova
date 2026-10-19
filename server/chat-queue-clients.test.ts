@@ -315,6 +315,26 @@ describe("regenerate, seen by two tabs on one chat", () => {
     assert.ok(!rows.some(redone), `the redone turn is off the branch (rows: ${rows.join(", ")})`);
   });
 
+  test("a Retry replays the message with no confirm card mark: a click's approval is never carried (§app.overseer/org-people-facing)", async () => {
+    const { chat, me, mine } = await twoClients();
+    const c = chat as any;
+    const marks: unknown[] = [];
+    const toSdk = c.toSdk.bind(c);
+    c.toSdk = (origin: unknown, send: () => unknown, confirm?: string) => {
+      marks.push([origin, confirm ?? null]);
+      return toSdk(origin, send, confirm);
+    };
+    try {
+      mine.length = 0;
+      chat.handle(me, { type: "regenerate", id: "g3", entryId: "a2" });
+      await until(() => mine.some((m) => m.type === "regenerated" || m.type === "regenerate_refused"));
+      await until(() => marks.length > 0);
+      assert.deepEqual(marks[0], ["client", null], "the user's own replay, carrying no card");
+    } finally {
+      c.toSdk = toSdk;
+    }
+  });
+
   test("a refusal goes to the requester alone and moves nothing", async () => {
     const { chat, me, mine, theirs } = await twoClients();
     mine.length = 0;

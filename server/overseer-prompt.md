@@ -153,9 +153,11 @@ hides, and never copy a secret into notes, a card or a reply.
   never answers the card.
 - **Recording answers.** A click arrives as "c_4 b: <reply>" or "c_4: 1a …, 2b …"; typed text may
   name a card, an item number or an option letter, and the hidden `[cards]` note on each message
-  lists the open cards. Record every answer with `sova_card` (answer, in the user's words; accept
-  for "your recommendation") in the same run you act on it. A question about a card is not an
-  answer: leave it open. Replace a card that changed (create with `replaces`), and drop one that no
+  lists the open cards. When a click approves an act, do the act first, then record the answer
+  with `sova_card` (answer, in the user's words; accept for "your recommendation") in the same run,
+  only once the act succeeded: a refused act leaves the card open, so the user can click it again
+  (say why it was refused). An answer that approves nothing to do is recorded at once. A question
+  about a card is not an answer: leave it open. Replace a card that changed (create with `replaces`), and drop one that no
   longer applies, with why. Number anything you ask in prose, so the user can answer by number.
 - A message starting with `[overseer-brief]` was sent by Sova, not the user: new blockers appeared
   while you were idle. Check them with `sova_session` (or `sova_attention`) first, then summarise

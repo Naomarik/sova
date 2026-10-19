@@ -371,6 +371,11 @@ Phase 2 measured the relay: workers held the right reference in `SPEC_AGREE_SOUR
 workers used. Fixed on 2026-10-19 (branch `feat/spec-x-integration`, not on master yet): a set variable is the
 source, a different `--source` is refused, and a source must be a `scheme:locator` reference, never a
 description. L0: 4 new cases fail at 196989b0 and pass after. The L2 relay arm has not been re-run.
+An independent review then found two holes, both closed the same day. The relay mistook a session's own
+`SPEC_AGREE_SOURCE` for a given reference after an in-process `/reload`; workers are now marked by a variable
+only the spawn path writes (`SPEC_AGREE_GIVEN`). The shape check let an invented `pi-session:` reference pass;
+such a reference must now resolve to a user message in pi's session files (other schemes stay form-checked
+for projects outside pi). L0: 6 new cases fail at 7a5c32d8 and pass after.
 
 **P1, the unread line (2026-10-18, branch `feat/spec-x-unread`, not on master yet).** Audit #2 found the unread line unreadable: 5 § marked read first, then "+N more" with a median near 100, and
 Claude workers read 17% of the marked ones. A lane measured candidate rules on an L1 replay of the audit's 99

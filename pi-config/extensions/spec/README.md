@@ -209,7 +209,9 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    never a refusal.
    **`agree`** stamps `agreed: {by, at, source}` on draft records the person agreed to
    (`source`: `SPEC_AGREE_SOURCE`, else `--source`, a reference never a description;
-   a `--source` other than a set variable is refused; with neither it stamps nothing),
+   a `--source` other than a set variable is refused; a `pi-session:` reference must
+   resolve to a user message in pi's session files, other schemes are checked for form only;
+   with neither it stamps nothing),
    and, for those that map no code, records `--doc-only` evidence and promotes
    them when promote's plan is clean ([PROMOTE.md](PROMOTE.md)).
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every

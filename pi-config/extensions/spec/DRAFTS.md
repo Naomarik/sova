@@ -148,6 +148,8 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `agree-unsourced` / `agreed-unsourced` | `agree` got no `--source` and `SPEC_AGREE_SOURCE` is unset or blank, so it stamped nothing (exit 1); or a promotion gives a record a new or replaced `agreed` with no `source` (a hand-written stamp). Get the reference to the person's go-ahead from whoever holds it; a worker without one reports the records ready to agree. An `agreed` current already has, kept as it is, needs no source. A hand-written `source` that is a description, not a reference, is refused the same way. |
 | `agree-source-mismatch` | `SPEC_AGREE_SOURCE` is set and `--source` names something else (exit 1, nothing stamped). Omit `--source`: `agree` uses the variable, the go-ahead the runtime recorded. |
 | `agree-source-not-reference` | The source (`--source`, or the variable) is a description, not a reference: a scheme, a colon and a locator with no spaces, such as `pi-session:<session id>#<entry id>` (both ids), a URL or `chat:c1#m3` (exit 1, nothing stamped). Pass the reference, or omit `--source` when the variable is set. |
+| `agree-source-unresolved` / `agreed-source-unresolved` | A `pi-session:<session id>#<entry id>` source doesn't resolve: no session file under `$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`) is named `…_<session id>.jsonl` or carries that id in its header, or the entry isn't there, or it isn't a `message` by the `user` (exit 1, nothing stamped; at promotion, a hand-written stamp). Pass the reference of the user message that holds the go-ahead, or report the records ready to agree. Only `pi-session:` is resolved: any other scheme (a URL, `chat:…`) is checked for its form alone, for projects whose go-ahead lives outside pi. |
+| `agree-source-not-given` | The process is a worker (its runtime set `SPEC_AGREE_GIVEN`) that was given no reference, and `--source` names one (exit 1, nothing stamped). A worker can't name the go-ahead itself: report the records ready to agree. |
 | `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
@@ -210,7 +212,9 @@ is now, in UTC to the minute, unless `--at` gives an ISO date or time; `source` 
 `SPEC_AGREE_SOURCE`, which the agent's runtime sets to the message holding the person's go-ahead, else
 `--source`; with neither it refuses, `agree-unsourced`, and stamps nothing; while the variable is set, a
 different `--source` is refused, `agree-source-mismatch`; a source is a reference, never a description,
-else `agree-source-not-reference`) and `authority: "accepted"`;
+else `agree-source-not-reference`; a `pi-session:` reference must resolve to a user message in pi's session
+files, else `agree-source-unresolved`, while other schemes are checked for their form only; a worker given no
+reference refuses any `--source`, `agree-source-not-given`) and `authority: "accepted"`;
 a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
 one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
 with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it

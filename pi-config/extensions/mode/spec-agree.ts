@@ -4,14 +4,19 @@
  *
  * A session that is not a worker points at its own latest user message: `pi-session:<session id>#<entry id>`.
  * The mode extension sets it for the session's bash before each tool call while spec is on; the subagents spawn
- * path hands it to each worker in its environment. A process that was started with the variable already set
- * (a worker) relays that value and never derives one from its own messages, which are its spawner's brief.
- * Node builtins only; no pi imports.
+ * path hands it to each worker in its environment, and marks the worker with SPEC_AGREE_GIVEN (the same value,
+ * or empty when it had none). Only that marker makes a process a worker: the session writes SPEC_AGREE_SOURCE
+ * itself, so after an in-process reload (pi re-runs this module) that variable holds its own earlier reference,
+ * never one it was given. A worker relays what it was given and never derives one from its own messages, which
+ * are its spawner's brief. Node builtins only; no pi imports.
  */
 export const AGREE_SOURCE_ENV = "SPEC_AGREE_SOURCE";
+/** Set only by the spawn path, never by a session for itself: the reference a worker was given ("" for none). */
+export const AGREE_GIVEN_ENV = "SPEC_AGREE_GIVEN";
 
-/** What whoever started this process gave it: read at load, before this session sets its own. */
-const GIVEN: string | undefined = process.env[AGREE_SOURCE_ENV]?.trim() || undefined;
+/** Whether this process is a worker, and the reference it was given: read at load from the spawn path's marker. */
+const IS_WORKER = process.env[AGREE_GIVEN_ENV] !== undefined;
+const GIVEN: string | undefined = process.env[AGREE_GIVEN_ENV]?.trim() || undefined;
 
 /** The slice of pi's session manager this needs; a host's may lack either method (then there is no reference). */
 export interface BranchSource {
@@ -30,10 +35,10 @@ export function latestUserEntry(branch: readonly unknown[]): string | undefined 
 
 /**
  * The go-ahead reference this session hands to `agree` and to its workers: the one it was given, else its own
- * latest user message. `given` is for tests.
+ * latest user message. `given` and `worker` are for tests.
  */
-export function goAheadRef(session: BranchSource, given: string | undefined = GIVEN): string | undefined {
-	if (given !== undefined) return given;
+export function goAheadRef(session: BranchSource, given: string | undefined = GIVEN, worker: boolean = IS_WORKER || given !== undefined): string | undefined {
+	if (worker) return given;
 	const entry = latestUserEntry(session.getBranch?.() ?? []);
 	const id = session.getSessionId?.();
 	return entry && id ? `pi-session:${id}#${entry}` : undefined;
@@ -43,8 +48,13 @@ export function goAheadRef(session: BranchSource, given: string | undefined = GI
  * Before a tool call of a session that is not a worker: SPEC_AGREE_SOURCE as its bash should see it (spec on: its
  * go-ahead reference; spec off: what the process was given, usually nothing).
  */
-export function setAgreeSource(session: BranchSource, specOn: boolean, env: NodeJS.ProcessEnv = process.env, given: string | undefined = GIVEN): void {
-	const ref = specOn ? goAheadRef(session, given) : given;
+export function setAgreeSource(session: BranchSource, specOn: boolean, env: NodeJS.ProcessEnv = process.env, given: string | undefined = GIVEN, worker: boolean = IS_WORKER || given !== undefined): void {
+	const ref = specOn ? goAheadRef(session, given, worker) : given;
 	if (ref === undefined) delete env[AGREE_SOURCE_ENV];
 	else env[AGREE_SOURCE_ENV] = ref;
+}
+
+/** A spawned worker's environment: the reference in both variables, or the worker marker alone when there is none. */
+export function workerAgreeEnv(ref: string | undefined): Record<string, string> {
+	return ref === undefined ? { [AGREE_GIVEN_ENV]: "" } : { [AGREE_SOURCE_ENV]: ref, [AGREE_GIVEN_ENV]: ref };
 }

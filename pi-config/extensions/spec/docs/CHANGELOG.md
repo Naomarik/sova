@@ -725,6 +725,30 @@ would list master's changes instead.
     1.6 KB, `whatSource: "prose"` 1.7 KB, flat labels with no zero `unlabelled` the rest.
   - Upgrade: see UPGRADING step 10, "`map --json` area lines".
 
+- **A pi-session go-ahead must be a real user message, and only the spawn path makes a worker (review blockers B1, B2 of the agree fix).**
+  - Commit: on branch `feat/spec-x-integration`; not on master yet.
+  - Changed:
+    - B1: `mode/spec-agree.ts` took whatever `SPEC_AGREE_SOURCE` held at module load as a reference it was
+      given. The session writes that variable itself before each tool call, and pi re-runs extension modules
+      on `/reload` in the same process, so after a reload a top-level session stamped every later `agree`, and
+      every worker it spawned, with its old message. The spawn path now also sets `SPEC_AGREE_GIVEN` (the
+      reference, or empty for none), which no session writes for itself, and only that makes a process a worker.
+    - B2: `agree` checked a reference's shape only. A `pi-session:<session id>#<entry id>` source must now
+      resolve: a session file under `$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`) named
+      `…_<session id>.jsonl` or carrying the id in its header, holding that entry as a `message` by the `user`;
+      else `agree-source-unresolved` (exit 1), and `agreed-source-unresolved` at the promotion of a
+      hand-written stamp. Other schemes stay form-checked, for projects whose go-ahead lives outside pi. A
+      worker given no reference (`SPEC_AGREE_GIVEN` empty) refuses any `--source` (`agree-source-not-given`).
+    - DRAFTS.md (two refusal rows), PROMOTE.md, README.md and docs/MODE.md say the same. The mode text is unchanged.
+  - §: §tools.spec/agree-command, §tools.spec/agreed-promotion and §tools.spec/agree-source-relay reworded (draft `agree-resolve`).
+  - Numbers: L0. `mode/spec-agree.test.ts`: 2 new tests fail at 7a5c32d8 (after a cache-busted re-import with
+    `SPEC_AGREE_SOURCE=pi-session:s-1#u1` and no `SPEC_AGREE_GIVEN`, `setAgreeSource` over [u1, u2] gave u1, now u2;
+    the spawn env helper). `tests/agree-command.test.mjs`: 4 new tests fail at 7a5c32d8 (unresolved
+    pi-session refs from `--source` and the variable, among them `pi-session:nope#nope`; resolution by file
+    name, header and `PI_CODING_AGENT_DIR`; the worker marker; promotion of an unresolved hand stamp).
+    The existing stamps' source on this branch resolves to a user message.
+  - Upgrade: see UPGRADING step 10, "`agree` resolves pi-session references".
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -879,6 +903,11 @@ The tools are Node standard library only. Nothing is installed.
       description is refused (`agree-source-not-reference`), at promotion too for a hand-written stamp. While
       `SPEC_AGREE_SOURCE` is set, omit `--source`: a different one is refused (`agree-source-mismatch`).
       Scripts passing a free-text `--source` change it to a reference.
+    - **`agree` resolves pi-session references** (`feat/spec-x-integration`, 2026-10-19). A
+      `pi-session:` source must name a user message in a session file under `$PI_CODING_AGENT_DIR/sessions`
+      (`agree-source-unresolved`, `agreed-source-unresolved`); other schemes are form-checked only. A runtime
+      that spawns workers sets `SPEC_AGREE_GIVEN` beside `SPEC_AGREE_SOURCE` (empty for none); a worker given
+      none refuses `--source` (`agree-source-not-given`).
     - **`map --json` area lines** (`feat/spec-x-integration`, 2026-10-19). `labels` counts are flat
       (`{accepted: 6, reviewed: 4, verified: 2}`; `unlabelled` only when non-zero), area lines drop
       `namespace` (take it from the id) and carry `whatSource` only when it isn't `prose`. A script reading

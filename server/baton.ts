@@ -660,6 +660,9 @@ export async function handTo(sessionId: string, person: string, question: string
 
 /** goal_done: the goal is met; the conversation ends and its wrap-up starts. */
 export async function markDone(sessionId: string, summary = "Done."): Promise<BatonSession> {
+  // Requirements agreed here and not locked in: the person confirms them first (§app.requirements/lock-in).
+  const refusal = (await import("./conversation-draft-tools")).goalDoneRefusal(sessionId);
+  if (refusal) throw new Error(refusal);
   await batonAct(sessionId, "baton/goal-done", { summary }, actorOn("model"), { settle: true });
   return batonById(sessionId)!.row;
 }

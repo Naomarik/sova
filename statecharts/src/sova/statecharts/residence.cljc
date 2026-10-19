@@ -177,9 +177,9 @@
               (script {:expr (fn [_ d] [(ops/assign :last-git-error (:detail (b/evt d)))])}))))))))
 
 (def acts
-  {:attach/confirm {:needs nil}
-   :org/detach     {:needs nil}
-   :commit/now     {:needs nil}})
+  {:attach/confirm {:power nil}
+   :org/detach     {:power nil}
+   :commit/now     {:power nil}})
 
 (defn not-here [event config _data]
   (cond

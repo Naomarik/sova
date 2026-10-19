@@ -241,6 +241,9 @@ export const sharesOverview = (host: string | null) => call<SharesOverview>(host
 /** Delete Link for an org link, through the routes that already exist for it. */
 export const revokeHandoff = (host: string | null, sessionId: string) => send<unknown>(host, "POST", `/api/baton/${encodeURIComponent(sessionId)}/revoke`);
 export const revokeOwnerLink = (host: string | null, orgId: string) => send<unknown>(host, "POST", `/api/orgs/${encodeURIComponent(orgId)}/owner/revoke`);
+/** Delete Link for a standalone tour link (`/t/`): the tour's own revoke route. */
+export const revokeTourLink = (host: string | null, l: { sessionId: string; tourId: string; editionId: string; id: string }) =>
+  call<unknown>(host, `/api/tours/${encodeURIComponent(l.sessionId)}/${encodeURIComponent(l.tourId)}/editions/${encodeURIComponent(l.editionId)}/shares/${encodeURIComponent(l.id)}`, { method: "DELETE" });
 
 // ---- every host at once: the Shares page and the overview's Shares card -------------------------
 
@@ -285,6 +288,8 @@ export interface SharesCounts {
   sessionShares: number;
   orgLinks: number;
   previewLinks: number;
+  /** Live standalone tour links (`/t/`). */
+  tourLinks: number;
   viewing: number;
   /** Every live public link: the chip. */
   total: number;
@@ -298,7 +303,8 @@ export function sharesCounts(r: SharesRead): SharesCounts | null {
   const orgLinks = up.flatMap((o) => o.orgLinks ?? []);
   const sessionShares = shares.filter(shareLive).length;
   const previewLinks = (r.previews ?? []).filter((v) => v.state === "active").length;
-  return { sessionShares, orgLinks: orgLinks.length, previewLinks, viewing: linksViewingNow(shares, orgLinks), total: sessionShares + orgLinks.length + previewLinks };
+  const tourLinks = up.reduce((n, o) => n + (o.tourLinks?.length ?? 0), 0);
+  return { sessionShares, orgLinks: orgLinks.length, previewLinks, tourLinks, viewing: linksViewingNow(shares, orgLinks), total: sessionShares + orgLinks.length + previewLinks + tourLinks };
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -306,6 +312,6 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 /** The card's one line: the three counts and who is viewing, or the empty line. */
 export function sharesCardLine(c: SharesCounts): string {
   if (c.total === 0) return "No public links are open.";
-  const line = `${count(c.sessionShares, "session share", "session shares")} · ${count(c.orgLinks, "organization link", "organization links")} · ${count(c.previewLinks, "preview link", "preview links")}`;
+  const line = `${count(c.sessionShares, "session share", "session shares")} · ${count(c.orgLinks, "organization link", "organization links")} · ${count(c.previewLinks, "preview link", "preview links")}${c.tourLinks > 0 ? ` · ${count(c.tourLinks, "tour link", "tour links")}` : ""}`;
   return c.viewing > 0 ? `${line} · ${c.viewing} viewing now` : line;
 }

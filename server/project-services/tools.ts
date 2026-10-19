@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
@@ -21,44 +21,40 @@ import { registerInstanceNote, resultNote, sessionNote } from "./note";
 
 type Tool = ToolSpec;
 
-const PARAMS = {
-  type: "object",
-  properties: {
-    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS], description: "The verb." },
-    project: { type: "string", description: "The project: an absolute path inside it (default: this session's project)." },
-    instance: { type: "string", description: "An instance id (from status)." },
-    checkout: { type: "string", description: "create/up: an existing worktree (absolute path) to run as an instance." },
-    branch: { type: "string", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)." },
-    from: { type: "string", description: "create/up with a new branch: the commit it starts at (default the main checkout's HEAD)." },
-    services: { type: "array", items: { type: "string" }, description: "up/down/apply/logs: only these services." },
-    restart: { type: "boolean", description: "apply: restart instead of each service's reload." },
-    lines: { type: "integer", minimum: 1, maximum: 500, description: "logs: how many lines (default 100)." },
-    keep_data: { type: "boolean", description: "teardown: keep the data resources." },
-    resources: { type: "array", items: { type: "string" }, description: "reset: only these data resources." },
-    ref: { type: "string", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." },
-    select: { type: "array", items: { type: "string" }, maxItems: 50, description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite." },
-    endpoint: { type: "string", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' },
-    days: { type: "integer", minimum: 1, maximum: 7, description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays)." },
-    link: { type: "string", description: "revoke: one share link, by its id (pv_…)." },
-    target: { type: "string", description: "deploy.*: the deploy target, by name (deploy.status lists them)." },
-    commit: { type: "string", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)." },
-    plan: { type: "string", description: "deploy.run: a plan's id (pl_…); only the operator runs one." },
-    deploy: { type: "string", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." },
-    why: { type: "string", description: "deploy.request (and onboard): why, one line for the operator." },
-  },
-  required: ["verb"],
-  additionalProperties: false,
-} as const;
+/** The rows of the contract's param table the tools take, in its order. */
+const TOOL_PARAMS = VERB_PARAMS.filter((p) => p.tool);
+
+/** A tool's JSON schema for one row of the contract's param table. */
+function toolSchema(p: VerbParam, overseer: boolean): Record<string, unknown> {
+  const t = p.tool!;
+  const type = p.type === "path" ? "string" : p.type === "list" ? "array" : p.type;
+  return {
+    type,
+    ...(p.type === "list" ? { items: { type: "string" } } : {}),
+    ...(t.minimum !== undefined ? { minimum: t.minimum } : {}),
+    ...(t.maximum !== undefined ? { maximum: t.maximum } : {}),
+    ...(t.maxItems !== undefined ? { maxItems: t.maxItems } : {}),
+    description: overseer && t.overseerDescription ? t.overseerDescription : t.description,
+  };
+}
+
+/** The tools' params, from the contract's table (§app.project-commands/verb-params): the verb, then each param the tools take. */
+function paramsOf(verbs: readonly string[], overseer: boolean) {
+  return {
+    type: "object",
+    properties: {
+      verb: { type: "string", enum: verbs, description: "The verb." },
+      ...Object.fromEntries(TOOL_PARAMS.map((p) => [p.tool!.name, toolSchema(p, overseer)])),
+    },
+    required: ["verb"],
+    additionalProperties: false,
+  };
+}
+
+const PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS], false);
 
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
-const OVERSEER_PARAMS = {
-  ...PARAMS,
-  properties: {
-    ...PARAMS.properties,
-    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS, "onboard"], description: "The verb." },
-    why: { type: "string", description: "onboard: why the playbook runs now; deploy.request: why to ship now (one line, for the operator)." },
-  },
-} as const;
+const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);
 
 const ONBOARD_HELP =
   " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.";
@@ -73,14 +69,23 @@ const VERB_HELP =
   "test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). " +
   "share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). " +
   "Error busy: another verb is running on that instance; try again later. " +
-  "Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). " +
-  "Shipping is the operator's alone: deploy.run and deploy.rollback answer forbidden to every tool; deploy.plan is the operator's (the global Overseer's in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator.";
+  "Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing).";
+
+/** Who ships, per tool (§app.project-services/deploy-callers): appended to VERB_HELP. */
+const DEPLOY_HELP = {
+  overseer:
+    " Shipping is the operator's: deploy.run and deploy.rollback answer forbidden to this tool; deploy.plan is the operator's (yours in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator.",
+  session: " You never ship and never ask for a deploy: deploy.plan, deploy.run, deploy.rollback and deploy.request answer forbidden; say it in your report.",
+  projectOverseer:
+    " To ship, deploy.run {target?, commit?, why} (deploy.plan is the same call) sets off the project's own deploy act: it needs the deploy power On, waits out the hold like any held act (the operator may cancel it), then the project's own recipe plans and runs it and decides whether it ships; there are no overrides (failing tests or a dirty tree refuse it). To leave it to the operator instead (or with the power Off), deploy.request {target, commit?, why} raises it for them. deploy.rollback is the operator's alone.",
+} as const;
 
 /** The request body the engine takes, from the tool's params. */
 function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select", "endpoint", "days", "link", "target", "commit", "plan", "deploy", "why"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
-  if (p.keep_data !== undefined) out.keepData = p.keep_data;
+  // A param whose tool name is its wire key is sent when it has a value; a renamed one (keep_data) whenever it is given.
+  for (const { wire, tool } of TOOL_PARAMS) if (tool!.name === wire && p[wire] !== undefined && p[wire] !== null && p[wire] !== "") out[wire] = p[wire];
+  for (const { wire, tool } of TOOL_PARAMS) if (tool!.name !== wire && p[tool!.name] !== undefined) out[wire] = p[tool!.name];
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
 }
@@ -132,13 +137,15 @@ export interface VerbToolOptions {
   redactor?: () => Redactor;
   /** The Overseers' verb `onboard` (absent: the verb is not offered). */
   onboard?: OnboardRun;
+  /** Who ships through this tool, in its words. */
+  deploy: keyof typeof DEPLOY_HELP;
 }
 
 export function projectVerbsTool(o: VerbToolOptions): Tool {
   const tool: Tool = {
     name: o.name,
     label: o.label,
-    description: `${o.description} ${VERB_HELP}${o.onboard ? ONBOARD_HELP : ""}`,
+    description: `${o.description} ${VERB_HELP}${DEPLOY_HELP[o.deploy]}${o.onboard ? ONBOARD_HELP : ""}`,
     promptSnippet: o.promptSnippet,
     parameters: (o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
     async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: ToolCtx) {
@@ -212,6 +219,7 @@ export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
       "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data.",
     promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
     engine,
+    deploy: "session",
     defaultProject: async (ctx) => {
       const cwd = ctx?.cwd;
       return cwd ? projectRootOf(cwd) : null;
@@ -237,6 +245,7 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
       "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply, test and conform in a turn the user started; revoke a copy's share links. Reset and teardown of an instance you did not create, stopping a shared service, stopping a copy with an active share link, and share itself, are the operator's (needs-confirm): tell them.",
     promptSnippet: "status, logs and lifecycle (create/up/down/apply/reset/teardown/conform) of a project's running instances",
     engine,
+    deploy: "overseer",
     defaultProject: async () => null,
     caller: async () => ({ kind: "overseer", id: overseerId() }),
     ...(onboard ? { onboard } : {}),
@@ -249,15 +258,16 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
 }
 
 /** The project overseer's `sova_project_verbs`: its own project only; every verb but the reads is its project
-    statechart's act (`act`), which holds the level and throws the statechart's refusal. */
+    statechart's act (`act`), which checks its power and throws the statechart's refusal. */
 export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; act: VerbAct; onboard?: OnboardRun }): Tool {
   return projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, share from L1 (people-facing: held for the operator like a preview), create/up/apply/test/reset/teardown/conform at L3 (in a run the operator started, at any level); revoke at any level, never held. Reset and teardown only of instances you created; stopping a shared service or a copy with an active share link is the operator's (needs-confirm). You never see a share link's URL: send it to a person with sova_send_to_person and its preview id, or the operator has it.",
-    promptSnippet: "status, logs and lifecycle of the project's running instances (down from L0; create/up/apply/conform at L3)",
+      "Run this project's instances (one running copy per worktree): status/logs/doctor, down and revoke always (revoke never held); create/up/apply/test/conform need the power to create, start and update running copies, reset/teardown the power to reset or tear them down, share the power to share a version to try (people-facing: held like a preview); in a turn the operator started, every verb whatever the switches say. Reset and teardown only of instances you created; stopping a shared service or a copy with an active share link is the operator's (needs-confirm). You never see a share link's URL: send it to a person with sova_send_to_person and its preview id, or the operator has it.",
+    promptSnippet: "status, logs and lifecycle of the project's running instances, and its deploy act (each verb as its power allows)",
     engine,
+    deploy: "projectOverseer",
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),
     caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), act: who.act }),
     ...(who.onboard ? { onboard: who.onboard } : {}),

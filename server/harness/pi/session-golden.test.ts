@@ -26,8 +26,9 @@
 // server's app built in-process (server/app.ts, no listener) with the Overseer's dispatch wired as
 // server/index.ts wires it, so the Overseer and the baton are wired. ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import type { ChatClientMessage } from "../../../shared/protocol";
 import { Canonicalizer, firstDifference } from "./testing/canonical-jsonl";
@@ -43,9 +44,57 @@ const REPO = resolve(import.meta.dirname, "../../..");
 const GOLDEN = join(import.meta.dirname, "golden/session");
 const RECORD = process.env.SOVA_GOLDEN_RECORD;
 
-// A fixed base, not tmpdir(): the goldens' token estimate counts this path's length, so it must not move with TMPDIR.
-const root = realpathSync(mkdtempSync("/tmp/sova-session-golden-"));
+// Hermetic: pi reads every AGENTS.md/CLAUDE.md from the cwd up to /, and skills from $HOME/.agents/skills, and
+// both reach the system prompt the compaction's token estimate counts (S7, S8). The root sits where no ancestor
+// holds a context file, HOME is inside it, and a recording that names a real home path, a context file or a
+// skill fails (the repo is public: a re-record must never carry the host's files).
+const REAL_HOME = homedir();
+const CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
+function contextAbove(dir: string): string | null {
+  for (let d = dir; ; d = dirname(d)) {
+    for (const f of CONTEXT_FILES) if (existsSync(join(d, f))) return join(d, f);
+    if (dirname(d) === d) return null;
+  }
+}
+// A fixed length, not tmpdir(): the goldens' token estimate counts this path's length, so it must not move with
+// TMPDIR. /tmp first; where /tmp is not writable, /dev/shm with a shorter prefix, so the root is as long.
+const ROOT_LENGTH = "/tmp/sova-session-golden-".length;
+function goldenRoot(): string {
+  const tried: string[] = [];
+  for (const base of ["/tmp", "/dev/shm"]) {
+    const above = existsSync(base) ? contextAbove(base) : null;
+    if (above) {
+      tried.push(`${base} (${above})`);
+      continue;
+    }
+    try {
+      return realpathSync(mkdtempSync(`${base}/${"sova-session-golden-".slice(0, ROOT_LENGTH - base.length - 1)}`));
+    } catch {
+      tried.push(`${base} (not writable)`);
+    }
+  }
+  throw new Error(`session-golden: no hermetic root (none writable without a context file above it): ${tried.join("; ")}`);
+}
+const root = goldenRoot();
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
+// HOME inside the root: pi's ~/.agents/skills and any homedir() read stay in it.
+process.env.HOME = join(root, "home");
+mkdirSync(process.env.HOME, { recursive: true });
+
+/** What a recording must never hold: a real home path, a context file's or skill's block. */
+function hostLeaks(text: string): string[] {
+  const out: string[] = [];
+  for (const [what, hit] of [
+    ["the real home dir", REAL_HOME.length > 1 && text.includes(REAL_HOME)],
+    ["a /home/ path", text.includes("/home/")],
+    ["a /Users/ path", text.includes("/Users/")],
+    ["a context file (project_instructions)", text.includes("<project_instructions")],
+    ["a skill list (available_skills)", text.includes("<available_skills>")],
+    ["~/.agents", text.includes(".agents/skills")],
+  ] as const)
+    if (hit) out.push(what);
+  return out;
+}
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--golden--");
@@ -275,6 +324,7 @@ function golden(name: string, paths: string[], trace: Trace, literals: Record<st
   let text = trace.lines.join("\n") + "\n";
   for (const [re, to] of TRACE_LITERALS) text = text.replace(re, to);
   const got = { jsonl: files, trace: c.jsonl(text) };
+  for (const ext of ["jsonl", "trace"] as const) assert.deepEqual(hostLeaks(got[ext]), [], `${name}.${ext} read something of the host's`);
   for (const ext of ["jsonl", "trace"] as const) {
     const file = join(GOLDEN, `${name}.${ext}`);
     if (RECORD && (RECORD === "overwrite" || !existsSync(file))) {
@@ -721,4 +771,8 @@ test("S11: the Overseer: the user's message is attended, a server brief is not",
   chat.detach(b);
   await disposeHeldChat(ov.path, "golden");
   golden("S11-overseer", [ov.path], trace);
+});
+
+test("the recorded goldens hold nothing of the host: no home path, context file or skill", () => {
+  for (const f of readdirSync(GOLDEN)) if (/\.(jsonl|trace)$/.test(f)) assert.deepEqual(hostLeaks(readFileSync(join(GOLDEN, f), "utf8")), [], f);
 });

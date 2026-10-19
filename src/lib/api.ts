@@ -1,3 +1,5 @@
+import type { AssistantInfo, AssistantView } from "../../shared/project-assistant";
+import type { WorkModels } from "../../shared/powers";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -131,6 +133,7 @@ import type {
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
+import type { CommandEntry } from "../../shared/commands-catalog";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
@@ -498,7 +501,7 @@ export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?
  * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
 export const postMode = (
-  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[] },
+  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
   path?: string,
 ) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
@@ -1253,6 +1256,18 @@ export const previewOwnerPage = (id: string, at?: { project?: string; c?: string
   request<OwnerHome | OwnerProject | OwnerConversation>(
     `/api/orgs/${encodeURIComponent(id)}/owner/preview${at?.project ? `?project=${encodeURIComponent(at.project)}` : at?.c ? `?c=${encodeURIComponent(at.c)}` : ""}`,
   );
+// ---- the Project Assistant (§app/project-assistant): the Owner card's part ----
+const assistantUrl = (id: string, rest = "") => `/api/orgs/${encodeURIComponent(id)}/owner/${rest}`;
+export const assistantInfo = (id: string) => request<AssistantInfo>(assistantUrl(id, "assistant"));
+/** Set the org's models per kind of work; null clears one. */
+export const setAssistantModels = (id: string, models: WorkModels) => request<AssistantInfo>(assistantUrl(id, "assistant"), jsonInit("PUT", { models }));
+/** Mark Done or Decline an owner request. */
+export const setOwnerRequest = (id: string, rid: string, status: "done" | "declined") => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { status }));
+/** Open Assistant Chat: the owner's conversation (made when there is none). */
+export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
+/** The assistant's conversation as the owner sees it (the preview); no token, no use. */
+export const previewAssistant = (id: string) => request<AssistantView>(assistantUrl(id, "preview?assistant=1"));
+
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { ownerHidden }));
@@ -1495,3 +1510,32 @@ export const getProjectPreviews = (projectId: string) => request<PreviewList>(`$
 export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));
+
+/** The running server's command list (GET /api/commands): the command palette reads it at each opening. */
+export const fetchServedCommands = () => request<{ version: number; commands: CommandEntry[] }>("/api/commands", { cache: "no-store" });
+
+/**
+ * One catalogue entry's request, as built by `buildRequest` (the same request `sova run` makes),
+ * with the route's answer as a value: a refusal is what the palette shows, not a throw. Status 0:
+ * the server didn't answer.
+ */
+export async function runCommandRequest(method: string, url: string, body?: Record<string, unknown>, host: string | null = null): Promise<{ status: number; body: unknown }> {
+  const json = body === undefined ? undefined : JSON.stringify(body);
+  let res: Response;
+  try {
+    // `host`: the peer holding the session the command names by id (palette commandHost); else routed as any request.
+    res = await fetch(host ? hostUrl(host, url) : routeUrl(url, json), withJsonType({ method, body: json, cache: "no-store" }));
+  } catch {
+    return { status: 0, body: { error: "The Sova server isn't reachable." } };
+  }
+  const text = await res.text().catch(() => "");
+  let parsed: unknown = text;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    // Not JSON: the text itself.
+  }
+  if (res.status === 401) onUnauthorized(parsed);
+  else if (res.ok) onAuthorized();
+  return { status: res.status, body: parsed };
+}

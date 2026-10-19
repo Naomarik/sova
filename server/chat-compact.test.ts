@@ -302,6 +302,34 @@ describe("/compact through a real chat runtime", () => {
     assert.ok(t.mine.some((m) => m.type === "queue" && m.items.some((i) => i.id === "r1")), "held under the sender's own id");
   });
 
+  test("a held click keeps its confirm card, and a person's message stays theirs, through the compaction hold (direct, then queued)", async () => {
+    const t = await open();
+    const session = piSession(t.chat) as any;
+    const chat = t.chat as any;
+    // What each hand-over to the SDK carried: the card mark (toSdk's confirm) and the input source.
+    const marks: (string | undefined)[] = [];
+    const toSdk = chat.toSdk.bind(chat);
+    chat.toSdk = (origin: unknown, send: () => unknown, confirm?: string) => {
+      marks.push(confirm);
+      return toSdk(origin, send, confirm);
+    };
+    const sources: unknown[] = [];
+    let calls = 0;
+    session.prompt = async (text: string, opts?: { source?: unknown }) => {
+      calls++;
+      sources.push(opts?.source);
+      // The first two hand-overs are refused: the direct send, then its re-queued item at the queue's hand-off.
+      if (calls <= 2) throw new Error("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.");
+      t.prompts.push(text);
+    };
+    t.chat.acceptPrompt("c_9 a: Register it.", undefined, "server", "r1", { confirm: "c_9", byPerson: true });
+    await t.until(() => t.prompts.length === 1);
+    assert.deepEqual(t.prompts, ["c_9 a: Register it."]);
+    assert.deepEqual(marks, ["c_9", "c_9", "c_9"], "held twice (direct, then queued), its card every time");
+    assert.equal(sources.length, 3);
+    assert.ok(sources.every((x) => x === sources[0]), `still a person's input: ${JSON.stringify(sources)}`);
+  });
+
   test("/compact with an image is refused, not sent to the model and not compacted without it", async () => {
     const t = await open();
     t.chat.handle(t.me, { type: "prompt", text: "/compact", images: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }] as any, clientId: "i1" });

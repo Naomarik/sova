@@ -126,12 +126,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Rewind armed | note "This message and every reply after it leave the branch. The session file keeps them." · buttons `Rewind Here` · `Cancel` |
 | Regenerate armed | note "The message that started this reply, and everything after it, leave the branch. The session file keeps them." — "this REPLY", never "this turn": the server rewinds to the nearest user message, and a MID-TURN STEER is one, and the leaf moves to that message's PARENT: in `u1 → a1 → tool → s1 → a2`, regenerating a2 drops s1 and a2 while u1/a1/the tool call stay, and regenerating a1 drops a1, the tool call, s1 and a2 · buttons `Regenerate Here` · `Cancel` |
 | Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §chat/timeline's) |
-| Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
+| Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · a reply to a tour's sign-in notice: "That reply answered a tour's sign-in notice, not a message you sent, so there's nothing to send again." (permanent the same way; the server refuses it too, reason "wake", naming the notice) · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
 | Blocked Share (`title`) | Sova is still reading this session's details. Share enables itself once they load. |
 | Queued message head | `Sending…` (nothing holds it yet) · `Queued` (the server says it does), each a dot AND the word · the author is `You`, `Overseer` (eye icon) for a message the Overseer sent (`sova_send`), or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
 | Remove blocked (`title`) | Not queued yet. This can be removed once the server has it. · Already sent. It can't be removed now. · Removing… · Only a chat open in Sova can remove a queued message. |
 | Remove landed | SR "Removed from the queue." in every tab, including the one that asked. Delete is a DISCARD: the message does NOT come back to the composer (that is Stop's job, §chat/composer "Stop"), so no sentence claims it did |
-| A queued message that will never be sent (`queue_item_gone`) | dropped (an extension handled it instead): SR "That message was handled without being sent. It's back in the composer." · failed (the hand-off was refused): SR "That message couldn't be sent. It's back in the composer." — both only in the tab that sent it, which is the only one with a composer to put it in |
+| A queued message that will never be sent (`queue_item_gone`) | dropped (an extension handled it instead): SR "That message was handled without being sent. It's back in the composer." · failed (the hand-off was refused): SR "That message couldn't be sent. It's back in the composer." — both only in the tab that sent it, which is the only one with a composer to put it in · an Overseer card's click, here or wherever an unsent message would come back: toast and SR "Your click didn't reach the Overseer. Click again.", its card's buttons back, nothing in the composer (§app.overseer/confirm) |
 | Remove refused | Already sent. It can't be removed now. · That message isn't in the queue anymore. · "pi queued work of its own alongside this message, so it can't be taken back on its own. Press Stop to clear the queue." (NOT transient: that row's Remove stays off from then on, so the copy never invites a retry that cannot succeed) · The session is busy right now. Try again in a moment. · unknown code: "Couldn't remove it from the queue. {server message}" |
 | Fork landed | SR "Opened a fork. The original conversation is unchanged."; opens the independent session, with no model prompt |
 | Blocked Fork (`title`) | Open this session as a chat in Sova to fork it. · This session is open in a terminal. Fork it from an idle chat in Sova. · A session action is already in progress. · Stop the current turn first. · Wait for the compaction to finish. · the composer's own reason while paused; server refusals stay on the selected reply |
@@ -169,14 +169,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Reason: busy (server `code:"busy"`) | the session reopens read only: Read only while this session is open in the TUI. |
 | Reason: connecting / reconnecting / gave up | see Connection above |
 | Busy fallback, when the message was already typed and rejected | the draft stays in the textarea (not cleared), plus the busy reason. No banner |
-| Turn error banner (in thread; goes once a newer turn starts) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
-| Start failure banner (in thread, §chat.transcript/states) | **This chat didn't start.** {message}. Your message is back in the composer. Send again to retry. · more than one: Your messages are back in the composer. · none came back: {message}. |
+| Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
 | Mic (§chat/voice) | `aria-label`/`title`: Dictate · recording: Stop Recording · transcribing: Transcribing · setting up: `Dictate — setting up voice, {n}%` · not set up: `title` "Dictate · Voice isn't set up on this host yet" · unsupported: `title` "Voice needs HTTPS or localhost." (no microphone API: "This browser can't record audio.") |
 | Dictation strip | Starting the mic… · `Recording {m:ss}` · `Recording {m:ss} · {s} s left` · `Transcribing {m:ss}…` · Cancel Recording · group label "Dictation" |
 | Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
 | Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
 | Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
-| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) |
+| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
 
@@ -210,7 +209,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row `title`, Off | Off: nothing is confined, neither this session's tools nor its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
 | Row `title`, Subagents only | Subagents only: this session's tools run unconfined; subagents in its worktrees write only there. Applies from the next tool call, and to subagents started or resumed from now. |
 | Row `title`, On | On: this session and its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
-| Composer shield word | (On with full enforcement, Subagents only, Off: none) · Partial · Unavailable · Not enforced |
+| Composer shield word | (On with full enforcement, Subagents only, Off: none) · Partial · Unavailable · Not enforced · Turning on… (On while it is still starting) |
+| Status line while turning on | Sandbox turning on… |
 | Composer shield `title` / accessible name | {status}: the extension's status line (below, TUI `/sandbox`) |
 | Toast and announcement on a change | {status}. Running subagents keep theirs until resumed. |
 | Toast when the state did not change | {status} (the extension's own line) |
@@ -316,9 +316,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
 | Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Subagents |
-| Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. |
+| Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). (with commands or hooks, what it runs: it runs 1 tool, 1 command and 1 hook.) · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. · on, hooks waiting for you (§chat.mode-menu/project-mode-hooks): Hooks need your approval. Its tools and commands run; its hooks wait for you. · on, hooks over their budget: Hooks paused: a hook ran 10 times in 10 minutes. |
 | Trigger with project modes | {mode} · {built-in minors} · {project modes}, e.g. delegate · spec · deploy-notes |
 | Approval panel | Back · title: Turn on {id}? · {id} comes from {project}'s files. Turning it on lets the model run this tool / these {n} tools in this chat's folder. · one card per tool: {name} (mono), {description}, {command argv as one line} (mono) · foot: Runs from {dir}. Approval covers its tools and every file in this folder. We ask again when any of them changes. · when a tool starts a bare program: {node} is this machine's own program, so the approval doesn't cover it. (two: {node and sh}; three or more, with the serial comma: {node, python3, and sh} are this machine's own programs, so the approval doesn't cover them.) · buttons: Approve and Turn On (primary; while saving: Turning On…) · Cancel |
+| Approval panel, a mode with commands or hooks | lead: {id} comes from {project}'s files. Turning it on lets the model run {n} tool(s), you and scripts run {n} command(s), and {n} hook(s) run after things happen in this chat, in this chat's folder. (each part only when it has some) · a command card: mode.{id}.{name} (mono), {description}, {command argv} (mono) · a hook card: After each reply / When a reply starts, {command argv} (mono) · foot: Runs from {dir}. Approval covers what it runs and every file in this folder. We ask again when any of them changes. |
+| Approve Hooks chevron | icon only; `aria-label`/`title`: Approve Hooks (opens the hooks panel; switches nothing) |
+| Hooks panel | Back · title: Approve {id}'s hooks? · {id}'s hooks run these programs after things happen in this chat, without asking. The Overseer turned it on, and only you can approve its hooks. · one card per hook · buttons: Approve Hooks (primary; while saving: Approving…) · Cancel · announced: {id}'s hooks approved. · refused: **Couldn't approve the hooks.** {reason}. Nothing was approved. |
+| Mode command refused (to the caller) | mode.{id}.{name} wasn't run: project mode {id} is off in this chat. · …: project mode programs don't run while the sandbox is on. Turn the sandbox off to use {id}'s commands. · …: this version of {id} isn't approved. Approve it in the mode menu. · …: the files of {id} changed since it was approved. Approve {id} again in the mode menu. · …: 4 mode commands of this chat are already running. Try again when one finishes. · {id} has no command {name}. |
 | Approval out of date (warn banner in the panel) | Its tools changed while this was open. These are the tools it has now. Check them again before you approve. |
 | Project tool refused (to the model) | {tool} wasn't run: the files of {id} changed since it was approved. Ask the user to approve {id} again in the mode menu. |
 | Project tool refused under the sandbox (to the model) | {tool} wasn't run: project mode tools don't run while the sandbox is on. Ask the user to turn the sandbox off to use {id}'s tools. |
@@ -805,6 +809,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Mode line (read-only, beside the coding sessions' model and thinking) | label `Coding sessions' mode` · no picker · hint (`.field-hint`): "Coding sessions start in {mode}, with the {profile} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them." · with no default profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any chat's mode menu changes it." — `{mode}` in mono, the mode ids in lower case joined by " · " (`vis` said as "visuals") |
+| Mode menu of a project coding session, a switch leaving spec out (409) | "Spec is always on for coding sessions; it can't be turned off." |
 | …a PATCH naming `codingMode` (400) | "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
@@ -824,7 +829,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
-| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec, vis or codemode." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec, vis or codemode." · "Spec is always on for coding sessions; it can't be turned off. Name spec among minor_modes." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
 
 ## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
 
@@ -906,6 +911,28 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Refusals (activity list; the operator's sentence only) | "Today's allowance is used: {n} of {max} {what} on its own. It looks again at midnight." · "This message's allowance is used: {n} of {max} {what} per message you send." · "{n} of its gathering sessions are open, and the limit is {max} at once." · "{n} of its coding sessions are running, and the limit is {max} at once." |
 | Reasons it gets back (the model reads them; "Waiting to look at:" shows them) | "Today's allowance is back: it may start {what} again (refused {time})." · "Today's looks are back (refused {time})." · "The operator's last message reached its limit on {what}; it may go on within today's allowance." · "You raised the limit on {what}." |
 
+## §design.copy-deck/project-powers — Project page · What may happen without you
+
+The Settings tab's switches, in place of the old level picker and approval checklist; the overseer's
+chat head draws the same rows in its menu (§design.copy-deck/project-overseer-head). There is no
+level (`L0`–`L3`), no Approve or Decline and no "Waits for the overseer's approval" anywhere on
+either. The switches show what is set; while a brake holds them all Off, the Paused banner says so.
+
+| Where | Copy |
+|---|---|
+| Section | heading `What may happen without you` · under it: "Anything you tell it yourself always runs. These switches cover only what happens without you." |
+| Always allowed (above the switches) | one line: "Some acts are always allowed, whatever the switches say." · under it a disclosure, `What it can always do` (closed on every open), that opens the full list, one item per row, as the server names them (reading the project and its sessions, keeping notes and ideas, asking you with a card, …) |
+| Column headers | `Overseer on its own` · `Project Assistant from a client` (only while an organization places the project; a standalone project shows the first column alone) · where the grid is narrower than 480px: `On its own` · `From a client` |
+| Groups, in order | `People` · `Spec` · `Code` · `Running copies` · `Release`, each with its acts under it, labelled as the server's power table names them · a standalone project lists no act only an organization has (gatherings, WhatsApp, owner updates, the roster), so it has no People group |
+| Group row | a chevron, the group's name and "{n} acts" (1: "1 act"; hidden below 480px), then one switch per column · the name is a button (`aria-expanded`), `aria-label` "Show the {n} acts in {group}" / "Hide the {n} acts in {group}" · opened: one row per act, each with its own switches |
+| Switch | Sova's standard switch, drawn as on Settings > General · its state as a word before the box: `On` · `Off` · a group whose acts differ in that column: `Mixed` (the standard switch's mixed state: the knob in the middle of the track with a dash in it; the input is indeterminate, so it reads as mixed) · `aria-label` "{group or act}, on its own" / "{group or act}, from a client", + ", mixed" while Mixed · pressing a group's switch while Off or Mixed turns On every act in it that the column can set; while On, Off · a group's Project Assistant switch counts only the acts the assistant can set |
+| A cell the Project Assistant can't set | `—` (muted, no switch) · on hover, keyboard focus and tap, a tooltip: "Not available to the client" · hidden: "{act}, from a client: not available to the client" |
+| Saved (toast and announce) | "{group}, on its own: all on." / "…: all off." · one act: "{act}, from a client: on." / "…: off." · refused: the server's sentence, the switch as it was |
+| Paused (a warn banner above the switches while a brake holds every switch Off) | title `Paused` · body: the server's reason, then "Until you resume, every switch acts as Off. What you set is kept." · `Resume` (secondary), for either brake (an attach on this host, an empty roster) · done: "Resumed. The switches are in force again." · meanwhile every switch is drawn greyed, still showing what is set, and still changes it when pressed |
+| One-time note (an info banner until dismissed) | carried over from a level: title "Levels are now switches." · body "What level {level} let it do on its own is On; everything else is Off. One thing is looser: the overseer no longer approves its own waiting acts, so an act that is On goes ahead after the waiting period unless you cancel it in Needs you." · re-derived after an older Sova changed the level: title "The switches were set again from level {level}." · body "A computer on an older Sova changed this project's level to {level}, so what that level lets it do on its own is On and everything else is Off. The Project Assistant's switches are as they were." · `Dismiss` (ghost; done: "Note dismissed.") |
+| The Project Assistant's switches on the owner page card (§app.owner-page/controls) | one block per project of the organization: the project's name, then the `From a client` column alone, listing only the acts the assistant can ever set · saved: "{project}: {group or act}, from a client: …" · while braked: "Paused: {reason}" (Resume stays on the project page) and the switches drawn greyed, as above · unread: "Couldn't read {project}'s switches." with `Retry` |
+| Needs you and the Pipeline, an act in its waiting period | `Cancel` only; no line says it waits for the overseer's review |
+
 ## §design.copy-deck/project-costs — Project page · Cost card, org page · totals (§app/project-costs)
 
 | Where | Copy |
@@ -947,15 +974,15 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Title | `Overseer` · an earlier conversation: `Earlier Overseer Conversation`, meta "{title} · {age}", back link `aria-label` "Back to the overseer" |
 | Meta line | {project} (a link to its page) · {org} · `Watching` / `Not watching` · "{n} started" (a menu; `aria-label` "{n} sessions it started, show list"; rows "{kind} · {state}") |
-| State chip | `Working` (accent, live dot) · `L0 in force` (warn, dot and word; `title`: the server's reason) |
-| Level button | the chosen level, `L1` · `aria-label` "Level {level}, {meaning}" + " In force now: L0." while forced + " Change level." · rows `L0`–`L3`, each with its meaning (the project page's), the chosen one checked · done (toast): "Level: {level}." |
+| State chip | `Working` (accent, live dot) · `Paused` (warn, dot and word; `title`: the server's reason) while a brake holds every switch Off |
+| Without-you button | the `sliders` icon and `Without you` · `aria-label` "What may happen without you: on its own {n} of {m} on, from a client {n} of {m} on." + " Paused: {reason}." while paused + " Change." · opens the same grid as the Settings tab (§design.copy-deck/project-powers): the always-allowed line, the two columns, the groups and their acts · each switch saves at once, with that section's toasts |
 | Project page's Open Overseer / Start Overseer | the `eye` icon (was `chat`) |
 | Run Now | `Run Now` (ghost) · disabled reason: "Working now" · done (toast): "The overseer is looking now." |
-| ⋯ menu | `aria-label` "Overseer actions · {project}" · `Stop Watching` / `Start Watching` (toasts "Not watching." / "Watching.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." · `Project Page` · below 480px also `Run Now` and `Level…` (note: the chosen level) |
+| ⋯ menu | `aria-label` "Overseer actions · {project}" · `Stop Watching` / `Start Watching` (toasts "Not watching." / "Watching.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." · `Project Page` · below 480px also `Run Now` and `Without You…` (the same grid) |
 | Meta line, below 480px | {project} only: the org and the watch word go |
 | History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |
 | Clear / `/clear` | done (announced): "Cleared. The previous conversation is in History." · failed (toast): "Couldn't clear the overseer. {why}" |
-| Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · paused by an attach: the reason, then `Resume at {level}` · empty roster: the reason |
+| Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · while a brake holds every switch Off, either brake: "Paused until you resume." then `Resume` (secondary) and, below 480px, `Details`, all on one row; the full reason is in the Without-you menu's Paused banner and the chip's `title` |
 | Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
 | Read-only line (earlier conversation) | "An earlier conversation. Read only." |
 
@@ -1051,7 +1078,11 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 |---|---|
 | Browser tab title | `{org}` |
 | Greeting | "Hi {first}. Here's how your projects are going." |
-| Read-only line | "You can read everything here. Nothing you do on this page changes anything." |
+| Project Assistant button | `Project Assistant` (primary) · line under it: "Ask about your projects, report a problem or ask for something new." |
+| Your requests, heading | "Your requests" |
+| …row | "{title}" · "{kind} · {status} · {time}" · kinds: `Problem` (bug), `App down` (outage), `Question`, `New feature`, `Fix`, `Release` (deploy) · statuses: `With the team` (info), `Being worked on` (info), `Done` (success), `Not planned` (neutral) |
+| Versions you can try, heading | "Versions you can try" · line: "Open a version to try it. These links work as long as this page does." |
+| …row | "Current version" / "Fix: {title}" / "Fix {n} · started {date}" · "{project}" · `Open` (secondary) · not running: "Not running right now" |
 | Freshness | "Updated just now" · "Updated {time}" |
 | Waiting on you, heading | "Waiting on you" |
 | …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
@@ -1086,10 +1117,18 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Conversation, line | "You can read this conversation. You can't write here." |
 | …when it's the owner's turn | "It's your turn in this conversation. Answer it using the link {op} sent you." |
 | Footer | "Only people with this link can open this page. If someone else gets it, tell {op} and they'll turn it off." |
-| Link expired (410) | "This link has expired." / "These links last 90 days. Ask the person who sent it for a new one." |
+| Link turned off unused (410) | "This link turned off after a week without use." / "It turns itself off so nobody else can use it later. You can ask for a new one." · `Ask for a New Link` (primary) · asked: "You asked for a new link. It will come the same way this one did." · failed: "That didn't go through. Try again in a minute." |
 | Link no longer active (410) | "This link is no longer active." / "Ask the person who sent it for a new one." |
 | Unknown link (404) | "This link doesn't open anything." / "Check that you copied all of it." |
 | A project or conversation not on the page (404) | "This isn't on your page." / "Go back to all your projects to see what is." · "← All projects" |
+| Assistant, title | "Project Assistant" · back "← All projects" |
+| …empty | "Hi {first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new." |
+| …senders | owner: "You" · operator: "{op}" · assistant: "Project Assistant" |
+| …composer | placeholder "Write a message" · `Send` (primary) · while it writes: "Writing…" |
+| …not ready | "The Project Assistant isn't ready yet. {op} has to finish setting it up." |
+| …busy | "Wait for the answer first." |
+| …too many | "Too many messages. Wait a minute." |
+| …failed | "Your message didn't go through. Try again." |
 | Couldn't load | "We couldn't load this page. Your link still works. Try again in a minute." · `Try Again` |
 | Too many requests | "Too many requests from this network. Wait a minute, then reload." |
 
@@ -1108,12 +1147,20 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …refused (`.field-error`) | "Only an active person on the roster can be the owner." |
 | …latest change | "Set by you {relative time}." |
 | …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
-| …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
+| …link line | "Owner link made {relative time} · last used {relative time} · turns off {relative time} if unused · opened {n} times" (before its first use: "not used yet" for the second part) · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · turned off unused (warn): "The owner link turned off {relative time}: nobody used it for a week." · the owner asked (warn): "{first} asked for a new link {relative time}." |
 | …buttons | `Copy Owner Link` (secondary; toast "Link copied.") while the live link is kept, else `Get Owner Link` (secondary) · `Get New Owner Link` (secondary, while one is live) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
 | Get New Owner Link (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get New Owner Link` · `Cancel` |
 | Get Owner Link, no owner | "Pick an owner first." |
 | Delete, confirm | "{first}'s owner link stops working for good. The conversations and updates stay." · `Delete Owner Link?` · `Cancel` · done (toast) "Owner link deleted." |
 | A new link | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
+| …hint (with the assistant) | "The owner follows every project on one page: the overseer's updates, who was asked, what was decided, each conversation, the versions they can try, and their own Project Assistant." |
+| Project Assistant part, title | "Project Assistant" · line: "{first}'s own chat on their page. It answers, reports problems and outages to you, and notes new requirements for you to review; anything its switches leave off comes to you as a request." |
+| …requests | heading "Requests from {first}" · row "{title}" · "{Kind} · {project} · {status} · {relative time}" · the owner's text · `Mark Done` (secondary) · `Decline` (ghost) · none: "No open requests." · statuses `With the team`, `Being worked on`, `Done`, `Declined` |
+| …chat | `Open Assistant Chat` · before the first message: `Start Assistant Chat` |
+| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
+| …switches | heading "What it may set off on its own" · per project, the Project Assistant column (§design.copy-deck/project-powers) |
+| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." |
+| Phone notification | kind word "App down" |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
 | Project page card title | "Owner Page" |
@@ -1201,9 +1248,9 @@ host, person or recipient.
 |---|---|
 | Tab | "Sharing" · a count chip while someone is viewing; accessible name "Sharing, {n} viewing now" |
 | Section | eyebrow "Sharing" · `All Shares` · none: "Not shared with anyone." · `Share Session` · `Manage` · an older host: "This host can't share sessions yet. It needs an update." · failed: "Couldn't read this session's shares. {reason}" |
-| Overview card | eyebrow "Shares" · title "Shares" · chip `{n}` · "{n} session shares · {n} organization links · {n} preview links" (+ " · {n} viewing now") · none: "No public links are open." · before the first read: "Reading shares…" |
-| Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
-| Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
+| Overview card | eyebrow "Shares" · title "Shares" · chip `{n}` · "{n} session shares · {n} organization links · {n} preview links" (+ " · {n} tour links", "1 tour link", only when there are any; + " · {n} viewing now") · none: "No public links are open." · before the first read: "Reading shares…" |
+| Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} tour links", "1 tour link", only when there are any; + " · {n} viewing now") · `Refresh Shares` |
+| Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") · "Tour links" (row: the tour's title, a link to its chat · "Edition checked {time} · Expires in {n} days" · the opened line; `Copy Link` titled "Copy the link to {title}"; `Delete Link` armed "Delete This Link?" with "The link stops working for good." under it; done "Link deleted.") |
 | Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |
 | Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
 

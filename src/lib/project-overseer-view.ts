@@ -2,14 +2,14 @@
 // under tsx --test.
 
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
+import type { Brake } from "../../shared/powers";
+import { stateChip } from "./powers-view";
 import {
-  autonomyMeaning,
   capProblem,
   GAP_TAG,
   PER_DAY,
   PO_LIMIT_KINDS,
   type AllowanceUse,
-  type Autonomy,
   type HeldItem,
   type ItemSendInput,
   type LastRunOutcome,
@@ -162,37 +162,6 @@ export const holdHint = (min: number): string =>
   min === 0
     ? "What it starts on its own that reaches a person or the code goes ahead at once."
     : `What it starts on its own that reaches a person or the code waits ${gapWords(min)} in Needs you, where you can cancel it.`;
-/** The confirm list's rows (r8, q14): each act kind that, held, waits for the overseer's approval. */
-export const CONFIRM_KIND_LABEL: Record<string, string> = {
-  gather: "Starting a gathering",
-  offer: "Offering a gathering",
-  close: "Closing a gathering",
-  promote: "Promoting decisions",
-  build: "Starting a coding session",
-  prompt: "Prompting a coding session",
-  "owner-update": "Owner updates",
-  send: "Messaging a person on WhatsApp",
-  "roster-approve": "Approving a proposed person",
-  "roster-decline": "Declining a proposed person",
-  preview: "Publishing a preview link",
-};
-/** The kinds only an organization's tools take (gatherings, promotion, owner updates, WhatsApp, the
-    roster): a standalone project's approval list leaves them out. */
-const ORG_CONFIRM_KINDS: ReadonlySet<string> = new Set(["gather", "offer", "close", "promote", "owner-update", "send", "roster-approve", "roster-decline"]);
-/** The approval list's kinds for a project: all of them while an organization places it, else its own. */
-export const confirmKindsFor = <K extends string>(all: readonly K[], placed: boolean): K[] => all.filter((k) => placed || !ORG_CONFIRM_KINDS.has(k));
-/** A kind's row label; one this table lacks reads as its id. */
-export const confirmKindLabel = (kind: string): string => CONFIRM_KIND_LABEL[kind] ?? kind;
-/** The list after ticking or unticking one kind, in the server's order. */
-export function toggleConfirmKind<K extends string>(all: readonly K[], on: readonly K[], kind: K, checked: boolean): K[] {
-  const set = new Set(on);
-  if (checked) set.add(kind);
-  else set.delete(kind);
-  return all.filter((k) => set.has(k));
-}
-/** Said after a tick is saved. */
-export const confirmKindDone = (kind: string, checked: boolean): string =>
-  `${confirmKindLabel(kind)}: ${checked ? "waits for the overseer's approval once its hold ends." : "goes ahead when its hold ends."}`;
 /** A delay in seconds: "30 s", "1 min". */
 export const soonWords = (sec: number): string => (sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`);
 
@@ -224,23 +193,10 @@ export function waitingLines(held: readonly HeldItem[], s: { caps: ProjectOverse
 
 // ---- its chat head (§app.project-overseer/page, §design.copy-deck/project-overseer-head) ----
 
-type LevelInfo = { settings: { autonomy: Autonomy }; effective: { autonomy: Autonomy; reason?: string }; paused?: string | null };
+type BrakeInfo = { settings: { powers: { brake: Brake | null } } };
 
-/** The level in force differs from the chosen one, or an attach paused it (shown even with L0 chosen). */
-export const levelForced = (i: LevelInfo): boolean => !!i.paused || i.effective.autonomy !== i.settings.autonomy;
-
-/** The head's one state chip: Working while its turn runs, else "L0 in force" while forced, else none. */
-export function headState(i: LevelInfo, busy: boolean): { tone: "accent" | "warn"; text: string; title?: string } | null {
-  if (busy) return { tone: "accent", text: "Working" };
-  if (levelForced(i)) return { tone: "warn", text: `${i.effective.autonomy} in force`, title: i.effective.reason };
-  return null;
-}
-
-/** The level button's name: the chosen level and its meaning, what is in force while forced, and what it does. */
-export function levelName(i: LevelInfo, placed = true): string {
-  const l = i.settings.autonomy;
-  return `Level ${l}, ${autonomyMeaning(l, placed)}${levelForced(i) ? ` In force now: ${i.effective.autonomy}.` : ""} Change level.`;
-}
+/** The head's one state chip: Working while its turn runs, else Paused (its reason in the title) while a brake holds every switch Off, else none. */
+export const headState = (i: BrakeInfo, busy: boolean): { tone: "accent" | "warn"; text: string; title?: string } | null => stateChip(busy, i.settings.powers.brake);
 
 /** Status line 1's run sentence, the project page's words: "Last looked on its own {when}{tail}." */
 export function lastRunLine(run: ProjectOverseerInfo["lastRun"], when: string): string {
@@ -250,22 +206,25 @@ export function lastRunLine(run: ProjectOverseerInfo["lastRun"], when: string): 
 /** How many reasons wait for its next look; never when (the loop's timing can't be promised here). */
 export const waitingToLook = (n: number): string => (n <= 0 ? "" : `Waiting to look at ${n} ${n === 1 ? "thing" : "things"}.`);
 
+/** Status line 1 while a brake holds every switch Off: short, with Resume beside it; the reason is in the Without-you menu's Paused banner and the chip's title. */
+export const PAUSED_LINE = "Paused until you resume.";
+
 /**
- * The strip under the head: at most 3 lines, each only with something to say. Forced to L0, the
- * reason leads (with the level to resume at when an attach paused it: a level change ends that, and
- * nothing the operator sets fixes an empty roster).
+ * The strip under the head: at most 3 lines, each only with something to say. While a brake holds
+ * every switch Off, "Paused until you resume." leads, with Resume (for either brake: Resume lifts
+ * both); the reason itself is the menu's, never repeated here.
  */
 export function statusLines(
-  i: LevelInfo & Pick<ProjectOverseerInfo, "lastRun"> & { settings: { caps: ProjectOverseerCaps }; usage: Pick<ProjectOverseerInfo["usage"], "pending" | "held"> & { allowance: { today: AllowanceUse } } },
+  i: BrakeInfo & Pick<ProjectOverseerInfo, "lastRun"> & { settings: { caps: ProjectOverseerCaps }; usage: Pick<ProjectOverseerInfo["usage"], "pending" | "held"> & { allowance: { today: AllowanceUse } } },
   when: string,
-): { lines: string[]; resume: Autonomy | null; pendingTitle: string } {
+): { lines: string[]; resume: boolean; pendingTitle: string } {
   const run = [lastRunLine(i.lastRun, when), waitingToLook(i.usage.pending.length)].filter(Boolean).join(" ");
   const waits = waitingLines(i.usage.held, i.settings).join(" ");
   const rest = [run, allowanceLine("Today on its own", i.usage.allowance.today), waits].filter((l): l is string => !!l);
-  const forced = levelForced(i) && i.effective.reason;
+  const brake = i.settings.powers.brake;
   return {
-    lines: (forced ? [i.effective.reason!, ...rest] : rest).slice(0, 3),
-    resume: forced && i.paused ? i.settings.autonomy : null,
+    lines: (brake ? [PAUSED_LINE, ...rest] : rest).slice(0, 3),
+    resume: !!brake,
     pendingTitle: pendingLine(i.usage.pending),
   };
 }

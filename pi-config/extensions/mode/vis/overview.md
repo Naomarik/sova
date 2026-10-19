@@ -26,3 +26,4 @@ Every kind has its own syntax, and none can be guessed from another kind: before
 - matrix: options against criteria, or capabilities by role
 - code: a snippet with marked lines: settings and `mark`s, a `---` line, then the code (a plain code fence when nothing is marked)
 - html / svg: only when no kind fits; something to play with, or a drawing no kind covers
+- tour: explain a real interface or UI/UX experiment with checked desktop + phone recordings; call `vis_guide` with `tour` for authoring and `record_tour` / `show_tour`, never a `vis tour` fence; parts on demand: `tour-signin` (sign-in), `tour-sites` (sources, approval), `tour-sova` (Sova itself), `tour-sharing` (links, hand-offs)

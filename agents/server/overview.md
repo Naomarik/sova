@@ -19,6 +19,8 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
   [AGENTS.md](../../AGENTS.md#live-server-restart).
 - Spec: `§app/server-runtime`.
+- The command catalogue, the `scripts/sova.mjs` command line and what extensions may add:
+  [commands/overview.md](commands/overview.md).
 - What the server imports from `pi-config/` and `src/`: [agents/extensions/overview.md](../extensions/overview.md)
   and [agents/frontend/overview.md](../frontend/overview.md).
 

@@ -249,6 +249,12 @@ found so far (pi 1.0.3).
   Claude Code chats (off: nowhere in the loadout; a toggle restarts the CLI). Its scripts run in a
   `node:worker_threads` Worker with QuickJS; nested calls carry `parentToolCallId` (`HarnessEvent`
   `nested`, `SovaEvent` `parentCallId`) and are no rows or live tools.
+- **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`
+  from its cwd up to `/` and skills from `~/.agents/skills`, so a golden recorded under a scratch dir
+  inside `$HOME` (or with the real `HOME`) captures the operator's private files. Record goldens from a
+  scratch dir with no context file above it and `HOME` inside it, with every `SOVA_*` variable unset;
+  `server/harness/pi/special-model-view.test.ts` fails a golden that names a real home path, a context
+  file or a skill.
 
 ## When you change X, also update Y
 

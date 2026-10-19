@@ -131,6 +131,10 @@ textarea.
 | `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
 | Mouse down on a row | Inserts, the same as `Enter`. Use `mousedown` + `preventDefault()` so the textarea keeps focus. Hover makes a row active |
 
+The command palette's **This chat** rows (§app.command-palette/picking) put the same `/{name} ` in an
+empty textarea, with the caret after the space, and focus it; the menu stays closed, and nothing is sent
+until the composer's own `Enter`.
+
 ## §chat.slash-commands/commands-row — Commands row
 
 A tap target for the same menu, for phones (where nobody types `/` from habit) and for

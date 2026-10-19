@@ -114,7 +114,7 @@ export function projectGroupLabel(name: string | undefined): string {
 export interface ProjectRowState {
   /** broken: can't be turned on · removed: on, its folder gone · changed: on, its files edited since ·
       approval: off, turning it on asks first · tools-changed: on, its tools changed since approval · ok. */
-  kind: "broken" | "removed" | "changed" | "approval" | "tools-changed" | "ok";
+  kind: "broken" | "removed" | "changed" | "approval" | "tools-changed" | "hooks" | "ok";
   /** The second line under the description, or null. A word first, so the state never rests on tint. */
   note: string | null;
   /** Whether a press does anything: turning a broken mode on doesn't, turning any mode off always does. */
@@ -124,18 +124,24 @@ export interface ProjectRowState {
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** A row's state, from the server's facts about it and whether it is on in this chat. */
-export function projectRowState(m: Pick<ProjectMinorInfo, "problem" | "removed" | "changed" | "needsApproval" | "tools">, on: boolean): ProjectRowState {
+export function projectRowState(
+  m: Pick<ProjectMinorInfo, "problem" | "removed" | "changed" | "needsApproval" | "tools"> & Partial<Pick<ProjectMinorInfo, "commands" | "hooks" | "hooksNeedApproval" | "hookNote">>,
+  on: boolean,
+): ProjectRowState {
   if (on) {
     // On: every state still lets the user turn it off, which is how a change or a removal is taken.
     if (m.removed) return { kind: "removed", note: "Removed from the project. This chat keeps it until you turn it off.", canToggle: true };
     if (m.needsApproval) return { kind: "tools-changed", note: "Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again.", canToggle: true };
     if (m.changed) return { kind: "changed", note: "Changed since you turned it on. Turn it off and on to load the changes.", canToggle: true };
     if (m.problem) return { kind: "changed", note: `Its files have a problem now: ${m.problem}. This chat keeps the version it turned on.`, canToggle: true };
+    // The Overseer turned it on: its tools and commands run, its hooks wait for you (§chat.mode-menu/project-mode-hooks).
+    if (m.hooksNeedApproval) return { kind: "hooks", note: HOOKS_NEED_NOTE, canToggle: true };
+    if (m.hookNote) return { kind: "ok", note: m.hookNote, canToggle: true };
     return { kind: "ok", note: null, canToggle: true };
   }
   if (m.problem) return { kind: "broken", note: `Can't turn on: ${m.problem}`, canToggle: false };
   if (m.removed) return { kind: "broken", note: "Removed from the project.", canToggle: false };
-  if (m.needsApproval) return { kind: "approval", note: `Asks before turning on: it runs ${count(m.tools.length, "tool")}.`, canToggle: true };
+  if (m.needsApproval) return { kind: "approval", note: `Asks before turning on: it runs ${runsCount(m)}.`, canToggle: true };
   return { kind: "ok", note: null, canToggle: true };
 }
 
@@ -149,6 +155,46 @@ export function commandLine(argv: readonly string[]): string {
   return argv.map((a) => (a === "" || /[\s"'\\$`]/.test(a) ? `'${a.replace(/'/g, `'\\''`)}'` : a)).join(" ");
 }
 
+/** What a mode runs, counted: "2 tools", or with commands and hooks "1 tool, 1 command and 1 hook". */
+export function runsCount(m: Pick<ProjectMinorInfo, "tools"> & Partial<Pick<ProjectMinorInfo, "commands" | "hooks">>): string {
+  const parts = [
+    ...(m.tools.length || (!m.commands?.length && !m.hooks?.length) ? [count(m.tools.length, "tool")] : []),
+    ...(m.commands?.length ? [count(m.commands.length, "command")] : []),
+    ...(m.hooks?.length ? [count(m.hooks.length, "hook")] : []),
+  ];
+  return parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** When a hook runs, as its row in the approval says it. */
+export function hookWhen(on: string): string {
+  return on === "turn.started" ? "When a reply starts" : "After each reply";
+}
+
+/** The approval's sentence above the lists: a mode with only tools reads as it always did. */
+export function approvalLeadFor(id: string, project: string | undefined, m: Pick<ProjectMinorInfo, "tools"> & Partial<Pick<ProjectMinorInfo, "commands" | "hooks">>): string {
+  if (!m.commands?.length && !m.hooks?.length) return approvalLead(id, project, m.tools);
+  const lets = [
+    ...(m.tools.length ? [`the model run ${m.tools.length === 1 ? "1 tool" : `${m.tools.length} tools`}`] : []),
+    ...(m.commands?.length ? [`you and scripts run ${count(m.commands.length, "command")}`] : []),
+    ...(m.hooks?.length ? [`${count(m.hooks.length, "hook")} run after things happen in this chat`] : []),
+  ];
+  const list = lets.length === 1 ? lets[0]! : `${lets.slice(0, -1).join(", ")}${lets.length > 2 ? "," : ""} and ${lets[lets.length - 1]}`;
+  return `${id} comes from ${project ?? "this project"}'s files. Turning it on lets ${list}, in this chat's folder.`;
+}
+
+/** The foot line: a mode with commands or hooks says approval covers all it runs. */
+export function approvalFootFor(m: Partial<Pick<ProjectMinorInfo, "commands" | "hooks">>): string {
+  return m.commands?.length || m.hooks?.length ? "Approval covers what it runs and every file in this folder. We ask again when any of them changes." : APPROVAL_FOOT;
+}
+
+/** The row's note while the Overseer's approval leaves its hooks waiting. */
+export const HOOKS_NEED_NOTE = "Hooks need your approval. Its tools and commands run; its hooks wait for you.";
+/** The hooks panel's sentence: what you approve, and why it's asked of you. */
+export function hooksLead(id: string): string {
+  return `${id}'s hooks run these programs after things happen in this chat, without asking. The Overseer turned it on, and only you can approve its hooks.`;
+}
+export const APPROVE_HOOKS_LABEL = "Approve Hooks";
+
 /** The approval's sentence above the tool list. */
 export function approvalLead(id: string, project: string | undefined, tools: readonly ProjectMinorTool[]): string {
   return `${id} comes from ${project ?? "this project"}'s files. Turning it on lets the model run ${tools.length === 1 ? "this tool" : `these ${tools.length} tools`} in this chat's folder.`;
@@ -157,12 +203,12 @@ export function approvalLead(id: string, project: string | undefined, tools: rea
 export const APPROVAL_FOOT = "Approval covers its tools and every file in this folder. We ask again when any of them changes.";
 
 /** The programs its tools start by bare name (node, python3, sh): this machine's own, outside the approval. */
-export function barePrograms(tools: readonly ProjectMinorTool[]): string[] {
+export function barePrograms(tools: readonly Pick<ProjectMinorTool, "command">[]): string[] {
   return [...new Set(tools.map((t) => t.command[0] ?? "").filter((c) => c !== "" && !c.includes("/")))];
 }
 
 /** The sentence naming those programs, or null when every tool runs a file from the folder. */
-export function bareProgramsNote(tools: readonly ProjectMinorTool[]): string | null {
+export function bareProgramsNote(tools: readonly Pick<ProjectMinorTool, "command">[]): string | null {
   const names = barePrograms(tools);
   if (names.length === 0) return null;
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")}${names.length > 2 ? "," : ""} and ${names[names.length - 1]}`;

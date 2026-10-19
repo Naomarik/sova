@@ -65,6 +65,8 @@ const GLOBS = [
   "scripts/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
+  "server/tours/*.test.ts",
+  "server/share/*.test.ts",
   "server/chat-runtime/*.test.ts",
   "server/projects/*.test.ts",
   "server/mesh/*.test.ts",
@@ -78,6 +80,7 @@ const GLOBS = [
   "server/updates/*.test.ts",
   "server/harness/**/*.test.ts",
   "src/lib/*.test.ts",
+  "src/commands/*.test.ts",
   "src/lib/voice/*.test.ts",
   "src/vis/**/*.test.ts",
   // The model-levels core (builtins only) that Sova's pi adapter imports.

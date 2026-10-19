@@ -8,18 +8,19 @@ const DAY = 86_400_000;
 const at = (d: number) => new Date(NOW + d * DAY).toISOString();
 const kim = { id: "p_kim00001", name: "Kim Lee" };
 
-test("the link line says each state once, and warns when it is running out or gone", () => {
+test("the link line says each state once, and warns when it turned off unused or the owner asked", () => {
   assert.equal(ownerLinkLine(undefined, NOW), null);
   assert.equal(ownerLinkLine({ person: null, link: null, opened: 0 }, NOW), null);
   assert.deepEqual(ownerLinkLine({ person: kim, link: null, opened: 0 }, NOW), { text: "No owner link yet.", warn: false });
   const live = (created: number, expires: number, opened = 4): OwnerPageInfo => ({ person: kim, link: { state: "live", createdAt: at(created), expiresAt: at(expires) }, opened });
-  assert.deepEqual(ownerLinkLine(live(-3, 87), NOW), { text: "Owner link made 3d ago · expires in 87d · opened 4 times", warn: false });
-  assert.equal(ownerLinkLine(live(-3, 87, 1), NOW)!.text.endsWith("opened 1 time"), true);
-  assert.deepEqual(ownerLinkLine(live(-80, 10), NOW), { text: "Owner link expires in 10d.", warn: true });
-  // A live record past its expiry (the page read between expiry and the next sweep) reads expired.
-  assert.deepEqual(ownerLinkLine(live(-91, -1), NOW), { text: "The owner link expired yesterday.", warn: true });
-  assert.deepEqual(ownerLinkLine({ person: kim, link: { state: "expired", createdAt: at(-92), expiresAt: at(-2) }, opened: 9 }, NOW), { text: "The owner link expired 2d ago.", warn: true });
-  assert.deepEqual(ownerLinkLine({ person: kim, link: { state: "off", createdAt: at(-5), expiresAt: at(85) }, opened: 9 }, NOW), { text: "The owner link is turned off.", warn: false });
+  assert.deepEqual(ownerLinkLine(live(-3, 6), NOW), { text: "Owner link made 3d ago · last used yesterday · turns off in 6d if unused · opened 4 times", warn: false });
+  assert.deepEqual(ownerLinkLine(live(0, 7, 0), NOW), { text: "Owner link made just now · not used yet · turns off in 7d if unused · opened 0 times", warn: false });
+  assert.equal(ownerLinkLine(live(-3, 6, 1), NOW)!.text.endsWith("opened 1 time"), true);
+  // A live record past its deadline (read before anything swept it) reads as turned off.
+  assert.deepEqual(ownerLinkLine(live(-9, -1), NOW), { text: "The owner link turned off yesterday: nobody used it for a week.", warn: true });
+  assert.deepEqual(ownerLinkLine({ person: kim, link: { state: "expired", createdAt: at(-12), expiresAt: at(-2) }, opened: 9 }, NOW), { text: "The owner link turned off 2d ago: nobody used it for a week.", warn: true });
+  assert.deepEqual(ownerLinkLine({ person: kim, link: { state: "expired", createdAt: at(-12), expiresAt: at(-2), askedAt: at(-1) }, opened: 9 }, NOW), { text: "Kim asked for a new link yesterday.", warn: true });
+  assert.deepEqual(ownerLinkLine({ person: kim, link: { state: "off", createdAt: at(-5), expiresAt: at(2) }, opened: 9 }, NOW), { text: "The owner link is turned off.", warn: false });
 });
 
 test("the latest change is said only when the operator made it", () => {

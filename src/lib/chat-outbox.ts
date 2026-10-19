@@ -16,7 +16,7 @@
 // A view that closes with sends still unanswered on an open connection hands that connection to
 // `courier` too, so the answer still has someone to hear it.
 
-import { HeldSends } from "../../shared/held-sends";
+import { draftTexts, HeldSends } from "../../shared/held-sends";
 
 export type Frame = Record<string, unknown>;
 
@@ -111,6 +111,12 @@ export function sendsOf(frames: readonly Frame[]): Map<string, string> {
   for (const f of frames)
     if ((f.type === "prompt" || f.type === "steer") && typeof f.clientId === "string" && f.clientId) out.set(f.clientId, typeof f.text === "string" ? f.text : "");
   return out;
+}
+
+/** The typed sends among some frames, by client id, oldest first: a confirm card's click is never put
+    back into a draft, where sending it again would approve nothing (lib/hand-back, §app.overseer/confirm). */
+export function typedSendsOf(frames: readonly Frame[]): Map<string, string> {
+  return sendsOf(frames.filter((f) => !f.confirm));
 }
 
 let parcelSeq = 0;
@@ -311,11 +317,12 @@ export function courier(path: string, frames: Frame[], held: Map<string, string>
   };
   sock.onmessage = (ev) => {
     if (typeof ev.data !== "string") return;
-    const back = sends.heardJson(ev.data);
+    // A card click is delivered as any send, never put back (draftTexts).
+    const back = sends.heardJson(ev.data).filter((u) => u.card === undefined);
     if (back.length)
       putBack(
         path,
-        back.map((u) => u.text),
+        draftTexts(back),
         back.map((u) => u.id),
       );
     if (!sends.size) finish();
@@ -324,7 +331,7 @@ export function courier(path: string, frames: Frame[], held: Map<string, string>
     if (done) return;
     // Never opened: nothing reached the server, so what is still held here comes back now.
     if (!opened) {
-      const back = sendsOf(kept.take());
+      const back = typedSendsOf(kept.take());
       putBack(path, [...back.values()], [...back.keys()]);
     }
     finish();
@@ -341,7 +348,7 @@ export function deliverStranded(deps: CourierDeps, store = deps.store === undefi
   const { taken, held } = takeStranded(store, now, page);
   for (const p of taken) {
     if (now - p.at > PARCEL_TTL_MS) {
-      const sends = sendsOf(p.frames);
+      const sends = typedSendsOf(p.frames);
       putBack(p.path, [...sends.values()], [...sends.keys()]);
       continue;
     }

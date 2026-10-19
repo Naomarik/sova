@@ -69,7 +69,7 @@ describe("the prompt and the tool set stay in step", () => {
     const tools = buildOverseerTools();
     const registered = new Set(tools.map((t) => t.name));
     const prompt = renderOverseerPrompt(tools, readOverseerSettings());
-    const mentioned = new Set([...prompt.matchAll(/`(sova_[a-z_]+)`/g)].map((m) => m[1]!));
+    const mentioned = new Set([...prompt.matchAll(/`(sova_[a-z_]+|spec_lookup)`/g)].map((m) => m[1]!));
     assert.deepEqual([...mentioned].sort(), [...registered].sort());
     assert.ok(!/\{\{[A-Z]+\}\}/.test(prompt), "every placeholder is filled");
   });
@@ -87,7 +87,7 @@ describe("the prompt and the tool set stay in step", () => {
 
   test("the allowlist is the sova_* tools plus the file built-ins (write and edit guarded) and wake_nudge: no bash or subagents", () => {
     const names = [...buildOverseerTools().map((t) => t.name), ...BUILTIN_ALLOWED];
-    assert.ok(names.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"].includes(n)));
+    assert.ok(names.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge", "spec_lookup"].includes(n)));
     for (const want of ["write", "edit"]) assert.ok(names.includes(want));
     for (const banned of ["bash", "agent_spawn", "team_create"]) assert.ok(!names.includes(banned));
   });

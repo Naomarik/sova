@@ -232,13 +232,26 @@ export class ChatRuntimeHost {
     if (this.state === s) return;
     this.state = s;
     // Kernel: a hello again on every change of state (a rollout waits for "ready" on its link).
-    this.link?.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: this.epoch, ...this.hello() });
+    if (this.link) this.sayHello(this.link, this.epoch);
   }
 
   // ---- the controller -----------------------------------------------------------------------------
 
   /** A server took control (link.ts serveLink's onControl). */
   onControl(link: Link, control: ControlFrame): void {
+    try {
+      this.takeControl(link, control);
+    } finally {
+      // The link's opening hello said another state (it came while the process booted, or before a
+      // change no controller heard): say the state now, once (kernel hello), even when taking control
+      // threw, or the server waiting for "ready" refuses the chat. setState says each later change on
+      // this link and records it, so the server hears "ready" exactly once, whether the boot ended
+      // before this control arrived or after.
+      if (link.isOpen && link.saidState !== null && link.saidState !== this.state) this.sayHello(link, control.epoch);
+    }
+  }
+
+  private takeControl(link: Link, control: ControlFrame): void {
     const before = this.link;
     if (before && before !== link) this.lostLink();
     this.link = link;
@@ -287,6 +300,10 @@ export class ChatRuntimeHost {
         this.orphanTimer.unref?.();
       }
     }
+  }
+
+  private sayHello(link: Link, epoch: number): void {
+    link.send({ t: "hello", proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch, ...this.hello() });
   }
 
   /** The controller's link ended: its panes become orphans (open dialogs wait), asks read as nothing. */

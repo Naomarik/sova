@@ -68,7 +68,10 @@ a {
   text-decoration-thickness: 1px;
   transition: color var(--dur-fast) var(--ease-standard);
 }
-a:hover { color: var(--color-accent-hover); }
+/* Not on a link that wears `.button`: this rule (0,1,1) outranks every variant's colour (0,1,0), so
+   an <a class="button button-primary"> turned its text accent-hover on an accent-hover fill (blank
+   on hover) and a plain <a class="button"> turned indigo. `:where` keeps the old specificity. */
+a:where(:not(.button)):hover { color: var(--color-accent-hover); }
 
 button, input, textarea, select {
   font: inherit;
@@ -877,6 +880,55 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .popover-sep { height: var(--stroke-thin); margin: var(--space-1) 0; background: var(--color-border); }
 
 
+/* ---- TOOLTIP. The skill's Tooltip, ported (no `.tip-static`, a demo helper): one sentence on a
+   term or a mark, shown on hover and on focus. The bubble is a child, so no script positions it and
+   `:focus-within` opens it for a focusable trigger (a tap focuses it). Never the only place a fact
+   lives. Not ported: the skill's folded rule (a fixed strip above its bottom bar). Sova has no bottom
+   bar, and inside a size container (layout containment) `fixed` resolves to the container; the bubble
+   stays beside its trigger at every width, so a trigger near an edge takes `.tip-start` / `.tip-end`. */
+
+.tip {
+  position: relative;
+  display: inline-block;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--color-border-strong);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.tip-bubble {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  bottom: calc(100% + var(--space-2));
+  transform: translate(-50%, 2px);
+  width: max-content;
+  max-width: 32ch;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--color-ink);
+  color: var(--color-bg);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-regular);
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.tip:hover > .tip-bubble,
+.tip:focus-visible > .tip-bubble,
+.tip:focus-within > .tip-bubble { opacity: 1; transform: translate(-50%, 0); }
+.tip-start > .tip-bubble { left: 0; transform: translate(0, 2px); }
+.tip-end > .tip-bubble { left: auto; right: 0; transform: translate(0, 2px); }
+.tip-start:hover > .tip-bubble, .tip-start:focus-visible > .tip-bubble, .tip-start:focus-within > .tip-bubble,
+.tip-end:hover > .tip-bubble, .tip-end:focus-visible > .tip-bubble, .tip-end:focus-within > .tip-bubble { transform: translate(0, 0); }
+
+
 /* ---- TOGGLE (switch). The skill's Toggle, switch variant only: a native input
    hidden inside its label row, so the whole 44px row is the target and keyboard
    and screen readers come free. The box may sit after the row's text, hence `~`. */
@@ -899,32 +951,65 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   border-radius: var(--r-xs);
   background: var(--color-surface);
 }
+/* The switch's geometry, from one set of numbers: a 40×24 track and a 16px knob, the same inset on
+   every side, Off, On and Mixed: (24 − 16) / 2 = 4px, whole pixels at any scale. The travel keeps
+   that inset at the far end: 40 − 24 = 16px. The track draws its edge as an inset ring, not a
+   border: a border takes layout room, and the browser rounds its width (1.5px computes as 1px in
+   Chromium), so a knob placed from the border's nominal width sat half a pixel high and the On and
+   Off insets differed. The ring is the control border (1.5px border-strong): a sunken track alone
+   sits within a few percent of a surface card and vanishes; the ring is the 3:1 a control needs. */
 .toggle-switch .toggle-box {
-  width: 40px;
-  height: 24px;
+  --switch-w: 40px;
+  --switch-h: 24px;
+  --switch-knob: 16px;
+  --switch-inset: calc((var(--switch-h) - var(--switch-knob)) / 2);
+  --switch-travel: calc(var(--switch-w) - var(--switch-h));
+  width: var(--switch-w);
+  height: var(--switch-h);
+  border: 0;
   border-radius: var(--r-full);
   background: var(--color-sunken);
-  border-color: transparent;
+  box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-border-strong);
   position: relative;
-  transition: background-color var(--dur-fast) var(--ease-standard);
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
 }
 .toggle-switch .toggle-box::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
+  top: var(--switch-inset);
+  left: var(--switch-inset);
+  width: var(--switch-knob);
+  height: var(--switch-knob);
   border-radius: var(--r-full);
   background: var(--color-ink-muted);
   transition: transform var(--dur-fast) var(--ease-standard),
               background-color var(--dur-fast) var(--ease-standard);
 }
 .toggle input:checked ~ .toggle-box { background: var(--color-accent); border-color: var(--color-accent); }
-.toggle-switch input:checked ~ .toggle-box { background: var(--color-accent); border-color: transparent; }
-.toggle-switch input:checked ~ .toggle-box::after { transform: translateX(16px); background: var(--color-on-accent); }
+.toggle-switch input:checked ~ .toggle-box { background: var(--color-accent); box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-accent); }
+.toggle-switch input:checked ~ .toggle-box::after { transform: translateX(var(--switch-travel)); background: var(--color-on-accent); }
+/* Mixed (an indeterminate input: a switch over several settings that differ). The Off track, the
+   knob halfway, in ink, with a dash cut into it, so it reads as neither end in shape, not only in
+   hue. It wins over :checked. */
+.toggle-switch input:indeterminate ~ .toggle-box { background: var(--color-sunken); box-shadow: inset 0 0 0 var(--stroke-icon) var(--color-border-strong); }
+.toggle-switch input:indeterminate ~ .toggle-box::after { transform: translateX(calc(var(--switch-travel) / 2)); background: var(--color-ink-2); }
+.toggle-switch input:indeterminate ~ .toggle-box::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: calc(var(--switch-inset) + var(--switch-knob) / 2 - 1px);
+  left: calc(var(--switch-inset) + var(--switch-travel) / 2 + var(--switch-knob) / 2 - 4px);
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-surface);
+}
 .toggle input:focus-visible ~ .toggle-box { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.toggle input:disabled ~ .toggle-box { opacity: .42; }
+/* Held (`.toggle-held`): set but not in force, as when a brake holds every switch Off. Drawn as
+   disabled, still pressable, so the knob keeps showing what a press changes. */
+.toggle input:disabled ~ .toggle-box,
+.toggle-held .toggle-box { opacity: .42; }
 .toggle input:disabled ~ * { cursor: default; }
 
 

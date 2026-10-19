@@ -10,12 +10,13 @@
  * contacts, goals, briefings to others, the project overseer's notes or conversation, coding
  * titles or paths, costs, tokens, visits, link states.
  *
- * Share listener (read-only; no POST, no socket):
+ * Share listener (reads; the Project Assistant's routes are in shared/project-assistant.ts):
  * GET /i/<token>                        the share build's shell (it routes /i/ to the Owner page)
  * GET /api/i/<token>                    -> OwnerHome
  * GET /api/i/<token>/p/<q_…>            -> OwnerProject (404: unknown or not shown)
  * GET /api/i/<token>/c/<k_…>            -> OwnerConversation (404: unknown or hidden)
- * Dead links: 410 { error, code: "gone", why?: "expired" } with no names; unknown: 404 { error, code: "not-found" }.
+ * Dead links: 410 { error, code: "gone", why?: "expired", asked?: true } with no names (`expired`: it
+ * turned off after 7 days unused, and may ask for a new one); unknown: 404 { error, code: "not-found" }.
  *
  * Operator routes (main listener only):
  * PUT  /api/orgs/:id/owner                    body { personId: string | null } -> OrgDetail (null: no owner)
@@ -32,6 +33,7 @@
  */
 
 import type { BatonView } from "./baton";
+import type { OwnerRequestRow, OwnerVersionRow } from "./project-assistant";
 import type { LinkWarningCode } from "./public-links";
 
 /** A project's chip, derived, never typed: the first that applies. */
@@ -39,8 +41,8 @@ export type OwnerStatus = "waiting-on-you" | "asking" | "building" | "quiet";
 
 /** The most characters of one update. */
 export const OWNER_UPDATE_MAX = 2000;
-/** How long an owner link lasts from minting (absolute; no renewal). */
-export const OWNER_LINK_DAYS = 90;
+/** How long an owner link lasts unused (§app.owner-page/link): 7 days after its last use, no other expiry. */
+export const OWNER_LINK_DAYS = 7;
 
 /** A person as the page names them: the whole name and the first name. Never a role or an id. */
 export interface OwnerName {
@@ -98,6 +100,12 @@ export interface OwnerHome {
   updatedAt: string;
   waiting: OwnerWaiting[];
   projects: OwnerProjectCard[];
+  /** The owner's requests, newest first (§app.project-assistant/requests). */
+  requests?: OwnerRequestRow[];
+  /** Versions you can try (§app.project-assistant/versions). */
+  versions?: OwnerVersionRow[];
+  /** The Project Assistant: whether it takes messages (a reply model is set). */
+  assistant?: { ready: boolean };
 }
 
 /** Someone asked in the project's conversations. */

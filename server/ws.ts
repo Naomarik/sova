@@ -17,6 +17,8 @@ import { idOf } from "./sessions-index";
 import { sessionsChanged } from "./list-generation";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
+import { EVENTS_PATH } from "../shared/events";
+import { upgradeEventsSocket } from "./events-ws";
 import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
@@ -24,7 +26,7 @@ import { wireOf } from "./wire-rows";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
 import { HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } from "../shared/protocol";
 import { unsentRefusal } from "../shared/chat-runtime";
-import { HeldSends, type Unsent } from "../shared/held-sends";
+import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
 
 /** How long a chat socket that closed stays in its chat to hear what became of the messages it
@@ -62,14 +64,21 @@ export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefine
   return ask.tail && ask.pull && have && have.length <= HAVE_MAX_CHARS ? have : undefined;
 }
 
-async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string): Promise<void> {
+/** `viewer: false`: a script's action (server/chat-actions.ts), not a pane on screen: the session
+    is not stamped seen and its marks are not nudged. Every other caller leaves it out. */
+interface ChatSocketOpts {
+  viewer?: boolean;
+}
+
+async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
   const id = idOf(path);
+  const viewer = opts.viewer !== false;
   // What this socket sent and the chat hasn't answered yet (§chat.transcript/send-while-starting).
   // Once the socket is gone, a refusal can't reach any tab: its text goes back as the draft.
   const held = new HeldSends();
   let gone = false;
   const heard = (back: Unsent[]) => {
-    if (gone && back.length) putBackDraft(id, back.map((u) => u.text));
+    if (gone && back.length) putBackDraft(id, draftTexts(back));
     if (gone && held.size === 0) leave();
   };
   const client: ChatClient = {
@@ -121,11 +130,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   });
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
   // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
-  trackViewer(id, 1);
-  nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
+  if (viewer) {
+    trackViewer(id, 1);
+    nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
+  }
   ws.on("close", () => {
     gone = true;
-    trackViewer(id, -1);
+    if (viewer) trackViewer(id, -1);
     if (chat) stayToHear();
   });
 
@@ -146,7 +157,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     // What the pane sent meanwhile never reached a chat: each prompt goes back to its composer,
     // or, with no tab left to hear it, to the session's saved draft.
     const refusals = heldRefusals(early.splice(0));
-    if (gone) putBackDraft(id, held.takeAll().map((u) => u.text));
+    if (gone) putBackDraft(id, draftTexts(held.takeAll()));
     else for (const refusal of refusals) client.send(refusal);
     client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
     ws.close(busy ? 4409 : config ? 4422 : 4500, busy ? "busy" : config ? "config" : "open failed");
@@ -200,6 +211,68 @@ export function deliverFrames(path: string, frames: readonly ChatClientMessage[]
   handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2).catch((err) => console.error("[chat/frames]", err));
   for (const f of frames) gone.emit("message", JSON.stringify(f));
   gone.emit("close");
+}
+
+/** What recordFrame hands back: `close()` leaves the chat (idempotent); `emit()` hands the one
+    frame over, once (a second call does nothing), and says whether it did. */
+export interface RecordedChat {
+  /** Hand the frame over, once: false (and `before` never called) when the socket is closed or it
+      went already. `before` runs just before it goes, since a chat may answer from inside. */
+  emit(before?: () => void): boolean;
+  close(): void;
+}
+
+/**
+ * One action from a script (POST /api/chat/action, server/chat-actions.ts): a chat socket's own path
+ * (handleChat) on a recording socket that is open, so every frame the chat sends it reaches
+ * `onFrame`, parsed. Nothing is sent until `emit()`; the caller emits once it has the hello.
+ * Never a viewer (no seen stamp); never forced.
+ */
+export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void): RecordedChat {
+  let open = true;
+  let sent = false;
+  const rec = Object.assign(new EventEmitter(), {
+    readyState: 1,
+    OPEN: 1,
+    send(json: string) {
+      if (!open) return;
+      let msg: unknown;
+      try {
+        msg = JSON.parse(json);
+      } catch {
+        return;
+      }
+      if (msg && typeof msg === "object") onFrame(msg as Record<string, unknown>);
+    },
+    close() {
+      // The chat closed its client (4409 busy, 4422, 4500, closed): it is gone from this socket.
+      if (!open) return;
+      open = false;
+      rec.readyState = 3;
+      rec.emit("close");
+      onClose();
+    },
+  });
+  const ws = rec as unknown as WebSocket;
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false }).catch((err) => {
+    console.error("[chat/action]", err);
+    rec.close();
+  });
+  return {
+    emit: (before?: () => void) => {
+      if (sent || !open) return false;
+      sent = true;
+      before?.();
+      rec.emit("message", JSON.stringify(frame));
+      return true;
+    },
+    close: () => {
+      if (!open) return;
+      open = false;
+      rec.readyState = 3;
+      rec.emit("close");
+    },
+  };
 }
 
 /** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. */
@@ -369,6 +442,8 @@ export function attachWebSockets(server: Server): void {
     // that directly, and a peer is answered by its Tailscale identity.
     if (refuseUpgrade(req, socket)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
+    // Sova's event stream (server/events-ws.ts): this listener only, never the peer's.
+    if (url.pathname === EVENTS_PATH) return upgradeEventsSocket(req, socket, head);
     // An extension's own socket, forwarded to its backend (server/extensions.ts).
     const ext = extensionSocketRoute(url.pathname);
     if (ext) {

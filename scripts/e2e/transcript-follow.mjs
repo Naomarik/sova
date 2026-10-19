@@ -13,7 +13,12 @@
 // Live rows count as read: a chat left at the end while a turn ran, or with a message queued,
 // comes back at the end with no Jump to Latest (the running turn's rows and the queued message were
 // drawn when the reader left), while a turn that started and ended while away still stops at the
-// last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs (the Claude Code
+// last row read with "· 2 new". Any scroll up by the reader stops following, however small: a
+// switch back caught between its rows and its chat's hello (the hello held with routeWebSocket) is
+// scrolled up 40px, or 300px in 10px trackpad steps with the hello landing mid-gesture, and the view
+// stays where the reader put it with Jump to Latest; so does a 30px scroll up while a reply streams.
+// A change in the rows that adds no height never moves a following view short of the end, while
+// growth below it still takes it there. These run real turns, on scripts/fake-claude.mjs (the Claude Code
 // provider is always on; agents/extensions/claude-code/overview.md, "Testing Claude logins without
 // Anthropic").
 //
@@ -220,10 +225,11 @@ const RECORDER = () => {
 };
 
 const paths = new Map();
-async function newPage() {
+async function newPage({ before } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   await ctx.setExtraHTTPHeaders(tokenHeaders(AGENT));
   await ctx.addInitScript(RECORDER);
+  await before?.(ctx);
   const page = await ctx.newPage();
   if (!paths.size) {
     for (const [id, s] of await whenListed(api, SESSIONS)) paths.set(id, s.path);
@@ -352,6 +358,9 @@ try {
     "a queued message: six switches back with a turn running and a message queued each open at the end, the queued message in view, no Jump to Latest",
     "left mid-turn, back after the turn ended: at the end, no Jump to Latest",
     "a turn started and ended while away: it stops at the last row read with Jump to Latest · 2 new",
+    "a small scroll up while the chat connects stops following; its hello lands and the view stays where the reader put it",
+    "a slow trackpad scroll up while the chat connects ends where the reader scrolled, the hello landing mid-gesture",
+    "a small scroll up while a reply streams stops following; the reply's end doesn't pull the view back",
   ];
   if (!/fake/i.test(fake.version ?? "")) {
     const why = `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)})`;
@@ -419,6 +428,21 @@ try {
       await page.keyboard.press("Enter");
       await page.locator("textarea").first().blur().catch(() => {});
     };
+    /** Sends, pressing Enter again while the composer still holds the text (a busy machine can
+        take the first press before the composer is ready). */
+    const sendSure = async (page, text) => {
+      await sendText(page, text);
+      for (let k = 0; k < 6; k++) {
+        const left = await page.evaluate(() => document.querySelector("textarea")?.value ?? "");
+        if (!left) return;
+        await sleep(2000);
+        if (await page.evaluate(() => document.querySelector("textarea")?.value ?? "")) {
+          await page.locator("textarea").first().focus();
+          await page.keyboard.press("Enter");
+        }
+      }
+      throw new Error(`the composer kept ${JSON.stringify(text.slice(0, 40))}: never sent`);
+    };
     const lines = (n, tag) => Array.from({ length: n }, (_, i) => `${tag} line ${i}: ${words(9, i)}`).join("\n");
     /** The view against the end, the pill, and where the row holding `mark` (if any) sits. */
     const view = (page, mark) =>
@@ -435,6 +459,123 @@ try {
         };
       }, mark);
     const stop = (page) => page.locator('button[aria-label="Stop"]').first().click({ timeout: 3000 }).catch(() => {});
+
+    /** A tab whose chat sockets' server frames can be held (`gate.holding`) and let through later
+        (`gate.release()`), so a switch back is caught between its rows and its chat's hello. */
+    const heldPage = async () => {
+      const gate = { holding: false, held: [], sockets: 0 };
+      gate.release = () => {
+        gate.holding = false;
+        for (const send of gate.held.splice(0)) send();
+      };
+      const { ctx, page } = await newPage({
+        before: (ctx) =>
+          ctx.routeWebSocket(/\/ws\/chat/, (ws) => {
+            gate.sockets++;
+            const server = ws.connectToServer();
+            ws.onMessage((m) => server.send(m));
+            server.onMessage((m) => (gate.holding ? gate.held.push(() => ws.send(m)) : ws.send(m)));
+            ws.onClose(() => server.close().catch(() => {}));
+            server.onClose(() => ws.close().catch(() => {}));
+          }),
+      });
+      return { ctx, page, gate };
+    };
+    /** A running chat (one fake turn done), shown, then left for another and come back to with its
+        chat's frames held: the rows kept from the visit show at the end, following, its hello held. */
+    const connecting = async () => {
+      const { ctx, page, gate } = await heldPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await sendSure(page, "wake the chat");
+      // A chat's first start can be slow on a busy machine.
+      await page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Fake answer from login"), null, { timeout: 45000 });
+      await still(page);
+      await toEnd(page);
+      await sleep(300);
+      await openPath(page, other);
+      await still(page);
+      const sockets = gate.sockets;
+      gate.holding = true;
+      await openPath(page, mine);
+      for (let k = 0; k < 50 && !(gate.sockets > sockets && gate.held.length); k++) await sleep(200);
+      assert(gate.sockets > sockets && gate.held.length > 0, `no chat frame came to hold (sockets ${gate.sockets - sockets}, frames ${gate.held.length}): the check would compare nothing`);
+      await sleep(400);
+      const s = await view(page);
+      assert(s.gap < 2 && !s.pill, `before the scroll, not at the end following: ${JSON.stringify(s)}`);
+      // Every change the hello makes in the transcript from here on.
+      await page.evaluate(() => {
+        window.__mut = 0;
+        new MutationObserver((r) => (window.__mut += r.length)).observe(document.getElementById("transcript"), { childList: true, subtree: true, characterData: true });
+      });
+      const box = await page.locator("#transcript").boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      return { ctx, page, gate };
+    };
+
+    await check(LIVE[3], async () => {
+      const { ctx, page, gate } = await connecting();
+      try {
+        await page.mouse.wheel(0, -40);
+        await sleep(300);
+        const before = await view(page);
+        gate.release();
+        await sleep(1500);
+        const after = await view(page);
+        const mutations = await page.evaluate(() => window.__mut);
+        assert(mutations > 0, `the hello changed nothing in the transcript (${mutations} mutations): the check compared nothing`);
+        assert(before.pill && Math.abs(before.gap - 40) <= 3, `a 40px scroll up didn't stop following: ${JSON.stringify({ before, afterHello: after, mutations })}`);
+        assert(after.pill && Math.abs(after.gap - before.gap) <= 1, `the hello moved the view (${mutations} mutations): ${JSON.stringify({ before, after })}`);
+      } finally {
+        gate.release();
+        await ctx.close();
+      }
+    });
+
+    await check(LIVE[4], async () => {
+      const { ctx, page, gate } = await connecting();
+      try {
+        for (let k = 0; k < 30; k++) {
+          await page.mouse.wheel(0, -10);
+          if (k === 4) gate.release();
+          await sleep(30);
+        }
+        await sleep(1500);
+        const s = await view(page);
+        const mutations = await page.evaluate(() => window.__mut);
+        assert(mutations > 0, `the hello changed nothing in the transcript (${mutations} mutations): the check compared nothing`);
+        assert(s.pill && Math.abs(s.gap - 300) <= 5, `wanted 300px from the end with Jump to Latest: ${JSON.stringify(s)}`);
+      } finally {
+        gate.release();
+        await ctx.close();
+      }
+    });
+
+    await check(LIVE[5], async () => {
+      const { ctx, page } = await newPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await sendSure(page, `[fake-slow 6000] ${lines(4, "streaming")}`);
+      await page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Working…"), null, { timeout: 45000 });
+      await sleep(300);
+      const at = await view(page);
+      assert(at.gap < 2 && !at.pill, `while it streams, not at the end following: ${JSON.stringify(at)}`);
+      const box = await page.locator("#transcript").boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, -30);
+      await sleep(300);
+      const before = await view(page);
+      await page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Fake answer from login"), null, { timeout: 45000 });
+      await still(page);
+      const after = await view(page);
+      await ctx.close();
+      assert(before.pill && Math.abs(before.gap - 30) <= 3, `a 30px scroll up while it streams didn't stop following: ${JSON.stringify(before)}`);
+      assert(after.pill && after.gap >= before.gap - 1, `the reply's end pulled the view back: ${JSON.stringify({ before, after })}`);
+    });
 
     await check(LIVE[0], async () => {
       const { ctx, page } = await newPage();
@@ -631,6 +772,56 @@ try {
     s = await now(page);
     assert(s.gap < 2 && !s.pill, `a wheel down at the end follows again: ${JSON.stringify(s)}`);
     await page.evaluate(() => document.querySelectorAll(".e2e-grow").forEach((d) => d.remove()));
+    await sleep(300);
+  });
+
+  await check("a following view off the very end moves only when something below grows, never for a change that adds nothing", async () => {
+    await toEnd(page);
+    await sleep(300);
+    const box = await page.locator("#transcript").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -300);
+    await sleep(600);
+    let s = await now(page);
+    assert(s.pill && Math.abs(s.gap - 300) <= 3, `after the wheel up: ${JSON.stringify(s)}`);
+    // The reader's own scroll back to within 80px of the end follows again, short of the end.
+    await page.mouse.wheel(0, 260);
+    await sleep(600);
+    const at = await now(page);
+    assert(!at.pill && at.gap >= 20 && at.gap < 80, `the wheel back down didn't follow again short of the end: ${JSON.stringify(at)}`);
+    // A change that adds no height (what a hello does to the rows' action buttons), then growth.
+    const r = await page.evaluate(async () => {
+      const t = document.getElementById("transcript");
+      const frames = async (n) => {
+        for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r));
+        await new Promise((r) => setTimeout(r, 0));
+      };
+      const read = () => ({ gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight), pill: t.parentElement.querySelector(".jump-latest").hasAttribute("data-shown") });
+      // A drawn row's own button (a row that draws nothing would grow by what it is given).
+      const rows = [...t.querySelectorAll(".thread > .entry")].filter((r) => r.getBoundingClientRect().height > 0);
+      const host = rows.findLast((r) => r.querySelector("button"))?.querySelector("button");
+      if (!host) return null;
+      const span = document.createElement("span");
+      span.className = "visually-hidden";
+      span.textContent = "Waiting for the chat to connect";
+      host.append(span);
+      await frames(4);
+      span.remove();
+      await frames(4);
+      const same = read();
+      const d = document.createElement("div");
+      d.style.height = "200px";
+      rows.at(-1).append(d);
+      await frames(4);
+      const grown = read();
+      d.remove();
+      await frames(4);
+      return { same, grown };
+    });
+    assert(r, "no drawn row with a button: the check compared nothing");
+    assert(!r.same.pill && Math.abs(r.same.gap - at.gap) <= 1, `a change that adds nothing moved the view: ${JSON.stringify({ at, ...r })}`);
+    assert(!r.grown.pill && r.grown.gap < 2, `growth below a following view didn't take it to the end: ${JSON.stringify({ at, ...r })}`);
+    await toEnd(page);
     await sleep(300);
   });
 

@@ -1,0 +1,18 @@
+// expect: ["plain","spread_in_array","from_const","<computed: `${prefix}_x`>","<computed: o.name>","factory_opts","spread_base","after_regex","<computed: shorthand name>"]
+// Tool specs in every written form, and objects that only look like them.
+const NAMED = "from_const";
+const plain: ToolSpec = { name: "plain", label: "Plain", description: "d", parameters: {}, async execute() { return ok(); } };
+export const tools = [...baseTools, { name: 'spread_in_array', label: "L", description: "d", parameters: { type: "object" }, execute }];
+const viaConst = { name: NAMED, label: "C", description: "d", parameters: {}, execute };
+const computed = { name: `${prefix}_x`, label: "X", description: "d", parameters: {}, execute };
+function make(o: Opts) { return { name: o.name, label: o.label, description: o.description, parameters: P, execute }; }
+const opts = make({ name: "factory_opts", label: "Project verbs", description: "Run verbs." });
+const wrapped = { ...plain, name: "spread_base", execute: wrappedExec };
+const re = /[{]+/g; const afterRe = { name: "after_regex", label: "R", description: "a } inside a string", parameters: {} };
+function short(name: string) { return { name, label: "S", description: "d", parameters: {} }; }
+
+// Not tool specs:
+// const commented = { name: "in_a_comment", label: "L", description: "d", parameters: {} };
+const person = { name: "bob", age: 3 };
+const labelled = { name: "only_label", label: "L" };
+const s = "{ name: \"in_a_string\", label: \"L\", description: \"d\", parameters: {} }";

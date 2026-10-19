@@ -3,7 +3,7 @@
   (:require
     [cljs.test :refer [deftest is testing]]
     [sova.statecharts.registry :as registry]
-    [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.engine.core :as core]))
 
 (def t0 1000000)
@@ -15,7 +15,7 @@
 
 (deftest the-watch-sees-its-projects-overseer
   ;; server-3's replay: the watch never watched its project, so has-overseer was never set
-  (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})]
+  (let [eng (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true})]
     (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
     (is (in? eng wsid :no-overseer) "the project spawned its watch, which sees no overseer yet")
     (is (= "Site" (:project-name (core/data eng wsid))) "the first link/moved came at once")
@@ -30,11 +30,11 @@
 (deftest F14-a-clone-attached-on-a-fresh-host-gets-its-watch
   ;; the project is portable, its watch host-local: a clone carries project/o1/pr1 (with the old
   ;; host's watch as its watcher) and no watch. Attach starts the watch, paused (EVENTS.md, watch).
-  (let [a     (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
+  (let [a     (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true})
         _     (core/start! a psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
         _     (core/send! a psid :overseer/start (assoc op :conversation-id "c1") {:now (+ t0 1)})
         store {psid (core/dump a psid)}
-        b     (core/new-engine registry/statecharts {:level-check lv/level-check :load-cold #(get store %)})]
+        b     (core/new-engine registry/statecharts {:level-check pw/power-check :load-cold #(get store %)})]
     (testing "before attach, a project step on the fresh host drops the missing watcher, never throws"
       (is (some? (core/send! b psid :project/edit (assoc op :name "Site 2") {:now (+ t0 2)}))))
     (core/start! b wsid "watch" {:project-id "pr1" :paused true} (+ t0 3))
@@ -46,7 +46,7 @@
       (is (true? (:archived (core/data b wsid)))))))
 
 (deftest server-3-4-a-held-offer-refuses-others-with-todays-sentences
-  (let [e   (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
+  (let [e   (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true})
         sid "baton/o1/s1"
         msg (fn [from active] (core/send! e sid :baton/message {:by "person" :from from :active active} {:now (+ t0 1)}))
         why (fn [r] (:sentence (:refused (first (filter #(= :baton/message (:event %)) (:steps r))))))]
@@ -60,7 +60,7 @@
     (is (= "Ana holds the baton. Take it back to write." (why (core/send! e sid :baton/message {:by "operator" :from "operator"} {:now (+ t0 1)}))))))
 
 (deftest F-133-on-the-engine-a-folded-reason-never-pushes-the-soon-look-back
-  (let [e       (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
+  (let [e       (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true})
         settled {:by "system" :kind "coding/settled" :params {:title "Pay" :session-id "c1"} :key "coding/settled:c1:ok"}
         t       (+ t0 3600000)]
     (core/start! e psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
@@ -78,7 +78,7 @@
       (is (<= (core/next-due-at e) (+ t 80000)) "the look is due on the first tick after t+60 s"))))
 
 (deftest server-3-p3-1-reconcile-off-answers-its-sentence
-  (let [e   (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
+  (let [e   (core/new-engine registry/statecharts {:level-check pw/power-check :absorb-unknown true})
         sid "reconciler/o1/pr1"]
     (core/start! e sid "reconciler" {:org-id "o1" :project-id "pr1"} t0)
     (core/send! e sid :settings/reconcile {:on false} {:now t0})

@@ -15,7 +15,7 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, autonomyMeaning, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
+import { type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
 import type { SessionSummary } from "../../shared/protocol";
 import {
   addProjectOverseerIdea,
@@ -44,12 +44,14 @@ import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, projectHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll, type Poll } from "../lib/poll";
-import { ACTIVITY_SHOWN, confirmSummary, levelWords, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
-import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, confirmKindsFor, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
+import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon, Placeholder } from "./ui";
+import { PowersPanel } from "./PowersGrid";
+import { brakeDone } from "../lib/powers-view";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
@@ -137,7 +139,7 @@ export function createProjectOverseer(props: {
   return { projectId: p, host, info, worktrees, listed, actions, ideas, todos, error, links, setLinks, busy, run };
 }
 
-const setAutonomy = (po: ProjectOverseer, autonomy: Autonomy) => void po.run(() => patchProjectOverseer(po.projectId(), { autonomy }), `Autonomy: ${autonomy}.`);
+const resume = (po: ProjectOverseer) => void po.run(() => patchProjectOverseer(po.projectId(), { resume: true }), brakeDone);
 
 /**
  * The summary's overseer line (§app.organizations/project-page): the level in force, watching, the
@@ -214,16 +216,16 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
         {(x) => (
           <>
             <StatusMore info={x()} />
-            {/* Attached on its host from a clone (a restore or a move): nothing runs on its own until the operator says so there. */}
-            <Show when={x().paused}>
-              {(since) => (
+            {/* A brake (an attach on this host, an empty roster): every switch acts as Off until Resume. */}
+            <Show when={x().settings.powers.brake}>
+              {(b) => (
                 <Banner
                   tone="warn"
-                  title={`Paused at L0 on ${po().host() ? hostLabel(po().host()!) : "this host"}`}
-                  body={`${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
+                  title={b().kind === "paused" ? `Paused on ${po().host() ? hostLabel(po().host()!) : "this host"}` : "Paused"}
+                  body={b().kind === "paused" && x().paused ? `${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(x().paused!)}. Until you resume, every switch acts as Off: the overseer only proposes and its watch loop waits.` : b().reason}
                   action={
-                    <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => setAutonomy(po(), x().settings.autonomy)}>
-                      Resume at {x().settings.autonomy}
+                    <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => !po().busy() && resume(po())}>
+                      Resume
                     </button>
                   }
                 />
@@ -236,17 +238,23 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
   );
 }
 
-/** "L3 Build · Watching · Last looked on its own 2h ago, after …. 0 runs today." */
+/** "Paused · Watching · Last looked on its own 2h ago, after …. 0 runs today." */
 function StatusWords(props: { info: ProjectOverseerInfo; placed: boolean }) {
   const i = () => props.info;
   const u = () => i().usage;
-  const eff = () => i().effective.autonomy;
+  const brake = () => i().settings.powers.brake;
   return (
     <>
-      <span class="project-level" title={autonomyMeaning(eff(), props.placed)}>
-        {levelWords(eff())}
-      </span>
-      {" · "}
+      <Show when={brake()}>
+        {(b) => (
+          <>
+            <span class="project-level" title={b().reason}>
+              Paused
+            </span>
+            {" · "}
+          </>
+        )}
+      </Show>
       {i().settings.watch ? "Watching" : "Not watching"}
       {" · "}
       <Show when={i().lastRun} fallback="It hasn't looked on its own yet.">
@@ -280,8 +288,8 @@ function StatusMore(props: { info: ProjectOverseerInfo }) {
 }
 
 /**
- * The Settings tab's overseer settings (§app.organizations/project-page): watch, the level, what
- * waits for its approval, the sessions it starts, extra instructions and limits. Every control
+ * The Settings tab's overseer settings (§app.organizations/project-page): watch, what may happen
+ * without you (§design.copy-deck/project-powers), the sessions it starts, extra instructions and limits. Every control
  * saves as it always has: a pick, tick or switch at once; Extra instructions and Limits on Save.
  */
 export function OverseerSettings(props: { po: ProjectOverseer; /** An organization places the project: its gathering sessions and limits show. */ placed: boolean }) {
@@ -330,13 +338,12 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
                 {watchHint(i().settings.watchGapMin, i().settings.soonLookSec, props.placed)}
               </p>
             </div>
-            <AutonomyPicker info={i()} placed={props.placed} busy={po().busy()} onPick={(a) => setAutonomy(po(), a)} />
-            <ConfirmKindsPicker
-              info={i()}
-              kinds={confirmKindsFor(CONFIRM_KINDS, props.placed)}
-              busy={po().busy()}
-              onPick={(kind, checked) => void po().run(() => patch({ confirmKinds: toggleConfirmKind(CONFIRM_KINDS, i().settings.confirmKinds, kind, checked) }), confirmKindDone(kind, checked))}
-            />
+          </section>
+          <section class="card orgs-section" aria-labelledby="project-settings-powers">
+            <h2 class="orgs-h2" id="project-settings-powers">
+              What may happen without you
+            </h2>
+            <PowersPanel info={i()} busy={po().busy()} idPrefix="project-powers" save={(x, done) => void po().run(() => patch(x), done)} />
           </section>
           <section class="card orgs-section" aria-labelledby="project-settings-sessions">
             <h2 class="orgs-h2" id="project-settings-sessions">
@@ -374,77 +381,11 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
   );
 }
 
-/** The level as a segmented control: one radio per level, the chosen level's sentence under it. Saves on pick. */
-function AutonomyPicker(props: { info: ProjectOverseerInfo; placed: boolean; busy: boolean; onPick(a: Autonomy): void }) {
-  const chosen = () => props.info.settings.autonomy;
-  const eff = () => props.info.effective;
-  return (
-    <fieldset class="project-autonomy">
-      <legend class="field-label">On its own, it may</legend>
-      <div class="project-segments" role="radiogroup" aria-label="Autonomy level">
-        <For each={AUTONOMY_LEVELS}>
-          {(level) => (
-            <label class="project-segment" classList={{ "project-segment-on": chosen() === level }} title={autonomyMeaning(level, props.placed)}>
-              <input type="radio" name="project-autonomy" value={level} checked={chosen() === level} disabled={props.busy} onChange={() => props.onPick(level)} />
-              <span class="orgs-mono">{level}</span>
-            </label>
-          )}
-        </For>
-      </div>
-      <p class="project-autonomy-meaning">
-        <span class="orgs-mono">{chosen()}</span> {autonomyMeaning(chosen(), props.placed)}
-      </p>
-      <Show when={eff().autonomy !== chosen() || props.info.paused}>
-        <p class="field-hint project-autonomy-note">
-          In force now: {eff().autonomy}. {eff().reason ?? ""}
-        </p>
-      </Show>
-      <p class="field-hint">Your own messages to it can always use every tool.</p>
-    </fieldset>
-  );
-}
-
-/**
- * The confirm list (r8, q14): the act kinds that, once held, wait for the overseer to approve
- * them. The rest go ahead when their hold ends. A summary line until Edit; each tick saves at once, like the level.
- */
-function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; /** The kinds this project offers (a standalone one: none of an organization's). */ kinds: readonly ConfirmKind[]; busy: boolean; onPick(kind: ConfirmKind, checked: boolean): void }) {
-  const on = () => new Set<string>(props.info.settings.confirmKinds ?? []);
-  const [editing, setEditing] = createSignal(false);
-  return (
-    <fieldset class="project-confirm">
-      <legend class="field-label">Waits for the overseer's approval</legend>
-      <div class="project-confirm-summary">
-        <span>{confirmSummary(props.info.settings.confirmKinds ?? [], props.kinds, confirmKindLabel)}</span>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={editing()} aria-controls="project-confirm-list" onClick={() => setEditing(!editing())}>
-          {editing() ? "Done" : "Edit"}
-        </button>
-      </div>
-      <Show when={editing()}>
-        <p class="field-hint project-confirm-hint">
-          When one of these is held, it goes ahead only once the overseer approves it; you can cancel it in Needs you. The rest go ahead when their hold ends.
-        </p>
-        <div class="project-confirm-list" id="project-confirm-list">
-          <For each={props.kinds}>
-            {(kind) => (
-              <label class="toggle project-confirm-row">
-                <input type="checkbox" checked={on().has(kind)} disabled={props.busy} onChange={(e) => props.onPick(kind, e.currentTarget.checked)} />
-                <span class="toggle-box" />
-                <span>{confirmKindLabel(kind)}</span>
-              </label>
-            )}
-          </For>
-        </div>
-      </Show>
-    </fieldset>
-  );
-}
-
 const SAME = "";
 
 /**
  * The model and thinking level of the sessions it starts: gathering (the model a roster person
- * talks to) or coding (L3). Empty = the overseer's own (null in the settings). A level the model
+ * talks to) or coding. Empty = the overseer's own (null in the settings). A level the model
  * doesn't offer is refused under the select (§app.project-overseer/identity); a model change that
  * leaves the saved level unsupported moves it to the level pi would run, and says so.
  */

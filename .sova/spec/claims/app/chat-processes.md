@@ -76,8 +76,10 @@ death: nothing is reported and nothing is resumed.
 
 ## §app.chat-processes/server-actions — Server actions from a chat process
 
+An ordinary chat receives `record_tour` and `show_tour` only while vis is on; align's Visuals alone does not enable either tool. A hand-off's already-reviewed, scoped `show_tour` is separate baseline context, never recording access (§app.tours/authoring).
+
 A few tools act on the server's own state: an ordinary chat's `project_verbs` (a project's running
-instances) and `queue_push` (a topic's queue); every tool of the Overseer, a project overseer and a
+instances), `queue_push` (a topic's queue) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
 baton session, their file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) included; and a
 powers chat's `queue_open`. Some of what a chat does without a tool acts on it too: a baton
 composer's message (who sent it, and the statechart's note of it), saving the model or thinking a

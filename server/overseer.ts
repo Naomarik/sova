@@ -108,6 +108,7 @@ import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { overseerMemoryOf } from "./memory/settings";
 import { playbookReviews } from "./projects/playbook-review";
+import { tourSignInWaits } from "./tours/sign-in-notice";
 import { deployAttentionItems } from "./project-services/deploy-attention";
 
 /**
@@ -334,6 +335,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const aliases = readAliases();
     // Proposed verb playbook runs (§app.project-runtime/review), by their session file.
     const reviews = playbookReviews();
+    // Tour recordings waiting for a sign-in (§app.tours/sites), by session id, from the server's memory.
+    const signIns = tourSignInWaits();
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = chatHandle(s.path)?.mirror;
       const live = byPath.get(s.path);
@@ -350,6 +353,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
+        ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator

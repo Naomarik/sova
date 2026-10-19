@@ -453,6 +453,7 @@ same Sandbox group as the `plus` menu (§chat.composer/composer-flyout); clickin
   | `full` | `composer-sandbox-ok` | the glyph in `--color-ink-2`, no word |
   | `partial` | `composer-sandbox-warn` | warning color, the word "Partial" |
   | `unavailable` | `composer-sandbox-error` | error color, the word "Unavailable" |
+  | `unavailable` with reason `starting` (turning on, §chat.sandbox/states) | `composer-sandbox-warn` | warning color, the word "Turning on…", never the error look; its status line reads "Sandbox turning on…" |
   | anything else, e.g. a remote session | `composer-sandbox-warn` | warning color, the word "Not enforced" |
 
   Subagents only is `composer-sandbox-ok` and Off `composer-sandbox-off`, each with no word.

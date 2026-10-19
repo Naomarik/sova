@@ -107,6 +107,8 @@ Defaults:
   only, and the Mesh page shows the error.
 - An older build ignores the file, so moving a host back to one drops its grants.
 
+For guided tours, reading an owning chat's checked edition manifest or listed pictures and reading or saving its reader position use the sessions grant, as does listing a hand-off conversation's attached tours. That list shows only what that grant can already read in the transcript. Share previews, link creation and hand-off binding previews, binding and detachment require admin, like the existing share-link and organization-sharing writes: sessions access alone never authorizes exposing a tour to another audience. The share capability used for peer gateway transport is not link-minting or binding authority. Recording requests and recording-runtime controls (Revoke Site and Remove Account included) remain behind full authority, as do unknown tour operations or routes; a broad tour prefix never silently gives sessions access to those stronger actions. The host's own authenticated browser remains the operator, not a peer (§app.access/gate).
+
 Every route and socket on the peer listener belongs to exactly one capability, and a route the
 listener doesn't classify needs `full`. A request the grant doesn't cover is refused with 403 and
 `X-Sova-Mesh: denied` ("refused" keeps meaning "not a peer"). Lowering a grant ends that peer's open

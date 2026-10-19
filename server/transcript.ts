@@ -12,6 +12,7 @@ import {
   type TranscriptItem,
 } from "../shared/protocol";
 import type { HEntry } from "../shared/harness";
+import { normalizeTourCardDetails, redactTourToolArgs, TOUR_TOOLS, tourCardArgs } from "../shared/tour";
 import { joinedText, rawOf, toHEntry, typedText } from "./harness/pi/reader";
 import { metaOf, withoutSignatures } from "./harness/pi/wire";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
@@ -198,14 +199,18 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
     const name = it.text ?? "tool";
     const args = callBlock(h, it.toolCallId)?.arguments;
     const tool: ToolRowInfo = {};
-    const summary = argsSummary(args, name);
+    const summary = argsSummary(TOUR_TOOLS.has(name) ? tourCardArgs(args) : args, name);
     // Whole: the folded line's tooltip shows all of it (a heredoc's, at times, many KB).
     if (summary) tool.summary = summary;
     if (SPAWN_TOOLS.has(name)) {
       const spawn = spawnName(args);
       if (spawn) tool.spawn = spawn;
     }
-    if (EAGER_TOOLS.has(name)) {
+    if (TOUR_TOOLS.has(name)) {
+      tool.args = tourCardArgs(args);
+      tool.lazy = true;
+      tool.bytes = sizeOf(args);
+    } else if (EAGER_TOOLS.has(name)) {
       if (args !== undefined) tool.args = args;
     } else {
       tool.lazy = true;
@@ -226,7 +231,17 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
   if (stats) tool.stats = stats;
   const script = name === CODEMODE_TOOL ? codemodeDetails(details) : null;
   if (script) tool.calls = codemodeTally(script.calls);
-  if (EAGER_TOOLS.has(name)) {
+  if (TOUR_TOOLS.has(name)) {
+    const card = r?.isError ? undefined : normalizeTourCardDetails(details);
+    tool.lazy = true;
+    tool.bytes = output.length + sizeOf(details);
+    if (card) {
+      tool.details = card;
+      tool.output = `${card.title} · ${card.steps} steps · ${card.status}`;
+    } else tool.output = "This tour result is unavailable. Open the tool report to check what happened.";
+    delete it.text;
+    delete it.images;
+  } else if (EAGER_TOOLS.has(name)) {
     tool.output = output;
     if (details !== undefined) tool.details = details;
   } else {
@@ -272,6 +287,10 @@ export function toolContents(rows: readonly TranscriptItem[], ids: readonly stri
     const t = resultEntry(h);
     const out: NonNullable<ToolContent["result"]> = { output: resultOutput(h, r.text ?? fullCut(h)), isError: t?.isError === true };
     if (t && t.details !== undefined) out.details = t.details;
+    if (t && TOUR_TOOLS.has(t.tool ?? "")) {
+      const images = contentImages(t.blocks);
+      if (images) out.images = images;
+    }
     // A pi entry that recorded its edit as Claude Code's own `toolUseResult` beside the message (the
     // Changes viewer's fallback when the message has no details object).
     const raw = h && rawOf(h);
@@ -284,7 +303,7 @@ export function toolContents(rows: readonly TranscriptItem[], ids: readonly stri
     if (it.kind === "tool-call") {
       const c: ToolContent = {};
       const args = callBlock(sources.get(it), it.toolCallId)?.arguments;
-      if (args !== undefined) c.args = args;
+      if (args !== undefined) c.args = redactTourToolArgs(it.text, args);
       const r = it.toolCallId ? results.get(it.toolCallId) : undefined;
       if (r) c.result = resultOf(r);
       out[it.id] = c;

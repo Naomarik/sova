@@ -77,6 +77,8 @@ sessions.
 
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 
+The page's catalogue includes tool-backed Tours (§app.tours/authoring), distinct from drawing fences: ask in chat, clarify audience and intended understanding, approve sources, dry-run, record desktop and phone, inspect the overview and suspicious captures, and present only a complete checked edition. It explains reviewed expiring edition-pinned links and hand-off availability; ordinary tour tools require vis on, not align's Visuals alone, while hand-off scoped presentation remains baseline context. Opening a message never records.
+
 The vis minor mode: the drawings the agent can put in a reply, where they render, and what is never
 trusted from the model. An Examples section at the end, which the kinds section points to, shows
 one example of each kind (§site.docs/vis-examples).

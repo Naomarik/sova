@@ -283,12 +283,26 @@ const READ_PREFIXES = [
 // operator's private review, §app.requirements/draft-specs).
 // `commands`: the catalogue a script reads (server/commands-routes.ts), this machine's own door only.
 // `audit`: the record of who ran what (server/command-audit.ts): the operator's, never below `full`.
-const FULL_PREFIXES = ["auth", "h", "i", "s", "updates", "commands", "audit", "draft-specs"];
+const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.
 const MODE_COMMAND_PATH = "/api/mode/command";
 /** A project's conversation drafts (approve, build): `full`, ahead of the `projects` read rule. */
 const PROJECT_DRAFT_SPECS_RE = /^\/api\/projects\/[^/]+\/draft-specs(?:\/|$)/;
+
+function tourRequest(method: string, path: string): Classified {
+  const read = method === "GET" || method === "HEAD";
+  const edition = /^\/api\/tours\/[^/]+\/[^/]+\/editions\/[^/]+(.*)$/.exec(path);
+  const tail = edition?.[1];
+  if (tail !== undefined) {
+    if (read && (tail === "" || tail === "/progress" || /^\/assets\/[^/]+$/.test(tail)) || method === "PUT" && tail === "/progress") return { need: "sessions", rule: "tour:checked-reader" };
+    if (method === "POST" && ["/share-preview", "/shares", "/binding-preview", "/bindings"].includes(tail)
+      || read && ["/bindings", "/binding-destinations"].includes(tail)
+      || method === "DELETE" && /^\/(?:shares|bindings)\/[^/]+$/.test(tail)) return { need: "admin", rule: "tour:outside-sharing" };
+  }
+  // Recording, runtime controls and unknown operations never inherit reader authority.
+  return { need: "full", rule: "tour:full" };
+}
 
 const prefixRe = (list: string[]) => new RegExp(`^/api/(${list.map((p) => p.replace(/[-]/g, "\\-")).join("|")})(?:/|$)`);
 const SESSION_RE = prefixRe(SESSION_PREFIXES);
@@ -349,6 +363,7 @@ export function classifyRequest(method: string, pathname: string): Classified {
     return { need: "full", rule: "default" };
   }
   if (path === MODE_COMMAND_PATH) return { need: "full", rule: "full:mode-command" };
+  if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
   const read = method === "GET" || method === "HEAD";
   if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };
   let m = SESSION_RE.exec(path);

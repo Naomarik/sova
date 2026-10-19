@@ -7,12 +7,16 @@ answer, the model hands the baton to someone else on the roster (or back to the 
 question and a briefing, and Sova mints that person a link. People outside the operator's tailnet
 reach it only through the **share listener** and see only the conversation.
 
+An approved checked tour can be attached as conversation context (§app.tours/handoffs). Its readers are everyone allowed to read that part of the conversation, without new access to the recorded application.
+
 Vocabulary: **owner** (who started it: the operator, or a project's overseer), **holder** (who has
 the baton now: a roster person, or the operator; nobody while an offer waits in its pool),
 **hand-off** (one move of the baton, numbered from 1), **offer** (a hand-off to several people at
 once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/goal-and-loadout — Start, goal and runtime
+
+Scoped `show_tour` presents only checked, operator-reviewed editions already bound to this session/project. The model receives public tour explanations and opaque handles, never scripts, private sources or account data. No `record_tour` or arbitrary browser access is added; new coverage waits for an authorized operator/builder (§app.tours/handoffs).
 
 - The operator starts one from an org's project on the org page: the first holder (an active
   person, or the operator), a **public title** (all an outsider sees of the goal), the **goal**
@@ -65,8 +69,8 @@ once), **lease** (an offer's lock on its first taker).
   extension is Sova's inline baton extension. The SDK tool list is exactly `hand_to`, `goal_done`,
   `record_decision`, `propose_roster_edit`, `read_link`, `inspect_files`, `confirm_file`,
   `spec_lookup`, `code_read` (§app.spec-lookup/who-gets-what), `requirement_drop`,
-  `requirements_summary`, `requirements_confirm` (§app.requirements/lock-in) and
-  `write_profile_updates`: no built-in tool, no file access beyond the session's own received files
+  `requirements_summary`, `requirements_confirm` (§app.requirements/lock-in),
+  `write_profile_updates` and scoped `show_tour`: no built-in tool, no file access beyond the session's own received files
   (§app.baton/files) and reading the project's code without changing it (§app.spec-lookup/code-read),
   no shell, no subagents. `spec_lookup`, `code_read` and the three requirement tools are active in
   every run but the wrap-up turn, whatever the session's abilities. `read_link` is active only while the session can
@@ -192,7 +196,9 @@ once), **lease** (an offer's lock on its first taker).
   after it, then `Read links` (§app.baton/abilities). Interactive drawings counts only with Draw: while
   Draw is off its box is disabled and its label muted with it. Each box is a 44 px target, and the
   boxes wrap as their own group beside "It can:", so a wrapped box lines up under Draw.
-- **Below**: after Why and goal and the hidden-from-owner line, the rows keep one order: the error
+- **Below**: after Why and goal, the **Tours ({n})** fold (only while a reviewed tour is attached;
+  folded each time the session opens; each tour with Detach and its confirm, §app.tours/handoffs)
+  and the hidden-from-owner line, the rows keep one order: the error
   banner, the links banner, the message limit, the public-links warning, the Send on WhatsApp
   fallback, the offer's invitees' links, their Send on WhatsApp row and the invitees not reached
   yet, the Hand On form, proposed people,
@@ -426,9 +432,11 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/outsider-view — What the share page shows
 
+Tour pictures and public explanation follow the same active-branch, offer cut and wrap-up visibility as the filtered conversation. Every token-scoped asset read rechecks current link access; a guessed handle cannot reveal a later attachment. An operator-detached tour disappears immediately for every reader, including an offer-cut reader; current active-branch detachment revokes its old handles with missing 404 before tour file access, without revealing an entry beyond that reader's cut. Ask About This Step appears only while the link can write, preserves and prefills its controlled draft, and never sends. An optional Request More Coverage control uses the same turn-authorized controlled-draft access, identifies the current tour, edition, step and view, and explains that an authorized builder must record it; it never sends or grants access. Requests for more coverage never widen access (§app.tours/requests).
+
 - Only: the public title; user messages with their sender's name and their photos
   (§app.baton/images) and files, each a name and a size (§app.baton/files); the model's reply text, with
-  its drawings (below);
+  its drawings (below); reviewed checked tour attachments (§app.tours/handoffs), each as an explicitly allowlisted neutral item with opaque handles, not generic tool results or markdown images; when the model shows an attachment visible above in that view, the same item appears again at that point, copied from the attachment, never from the tool result's own data;
   hand-off cards (from and to names, the question, and the briefing only when the viewer is its
   addressee); the done card; the decision cards ("Noted", the area and the statement); and who
   holds the baton now ("Waiting on <name>", "Your turn, <name>.", or done/closed); on a holder's
@@ -573,6 +581,8 @@ once), **lease** (an offer's lock on its first taker).
   invited" while it waits, then the holder's name.
 
 ## §app.baton/share-listener — The public entry point
+
+The allowed public paths also include token-scoped reads for visible bound tour manifests and their exact listed pictures under `/api/h/<token>/tours/<opaque-handle>/…`, plus standalone read-only `/t/<token>` and narrowly scoped `/api/t/<token>/…` (§app.tours/sharing), and read-only owner-page tour reads under `/api/i/<token>/c/<conversation>/tours/<handle>` with current owner access and the already-exposed conversation cut (§app.tours/handoffs). These receive the same private response headers and raw-path rejection; operator `/api/tours` remains unreachable. Tour picture reads have a separate bounded rate bucket and byte cap, and final authorization is rechecked after asynchronous reads. Missing share builds refuse the tour shell like other public pages.
 
 - A second HTTP server, bound from the Public links setting (§mesh.public/setting): on
   `127.0.0.1:<sharePort>` while this host is the public gateway, rebound without a restart when
@@ -860,6 +870,8 @@ once), **lease** (an offer's lock on its first taker).
 - **Committing link hashes with the workspace** (rejected): see §app.organizations/decisions.
 
 ## §app.baton/abilities — What a gathering session can do
+
+Reviewed tour attachments are baseline conversation presentation (§app.tours/handoffs), not an extra ability and not gated by Draw, Interactive drawings or Read links. Scoped `show_tour` presents bound checked editions only; it grants no recording or browsing power.
 
 - **Three abilities.** **Draw**: the prompt carries a guide to the drawings the share page draws
   (§app.baton/outsider-view). **Interactive drawings** (`drawHtml`): with Draw, the guide also

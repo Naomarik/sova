@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { lowerPriority, parseNice, WORKER_NICE, withPriorityPrefix } from "../pi-config/extensions/subagents/priority.ts";
+import { lowerPriority, parseNice, reniceLine, WORKER_NICE, withPriorityPrefix } from "../pi-config/extensions/subagents/priority.ts";
 import { stateRoot } from "./state-root";
 
 /**
@@ -24,6 +24,18 @@ export function readWorkerNice(env: NodeJS.ProcessEnv = process.env): number {
   } catch {
     return DEFAULT_WORKER_NICE;
   }
+}
+
+/** Lower the controller before it can spawn a browser. Arguments never become shell source. */
+export function recordingPriorityCommand(
+  argv: readonly string[],
+  nice = readWorkerNice(),
+  platform: NodeJS.Platform = process.platform,
+  own?: number,
+): string[] {
+  if (!argv.length) throw new Error("A recording command is required.");
+  const line = reniceLine(nice, platform, own);
+  return line ? ["/bin/sh", "-c", `${line}\nexec \"$@\"`, "sova-tour", ...argv] : [...argv];
 }
 
 /** The hooks the claude-code and sandbox extensions call, which import nothing outside their own directory. */

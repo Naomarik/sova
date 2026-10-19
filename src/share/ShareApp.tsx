@@ -6,6 +6,7 @@ import { PhotoFormatError, processPhoto, sizeLabel, uploadPhoto, type UploadRefu
 import { filesWord, uploadFile } from "./files";
 import { batonKinds } from "./markdown";
 import { Item, LinkedText, MessageFiles, MessagePhotos, Reply } from "./thread";
+import { prefillTourDraft, TOUR_PREFILL_LINES, tourPrefillMessage } from "../lib/tour-draft";
 import { visitTab } from "./visit-tab";
 
 /**
@@ -281,6 +282,29 @@ export function ShareApp() {
   };
   createEffect(on(draft, () => queueMicrotask(fit)));
 
+  const prefillTour = async (question: string) => {
+    const outcome = await prefillTourDraft(question, {
+      canWrite: () => !!TOKEN && view()?.viewer?.canWrite === true,
+      // A click must not reuse a turn that ended since the last socket view.
+      recheck: async () => {
+        const response = await fetch(`/api/h/${TOKEN}`, { cache: "no-store" }).catch(() => null);
+        if (!response?.ok) return null;
+        const latest = (await response.json()) as BatonView;
+        apply(latest);
+        return { canWrite: latest.viewer?.canWrite === true };
+      },
+      draft,
+    });
+    if (outcome.status !== "ready") {
+      if (outcome.status === "failed") console.warn(`[tours] Ask not added (${outcome.reason}).`);
+      setSendError(tourPrefillMessage(outcome));
+      return;
+    }
+    setSendError((e) => (e !== null && TOUR_PREFILL_LINES.includes(e) ? null : e));
+    setDraft(outcome.draft);
+    queueMicrotask(() => { fit(); input?.focus(); input?.setSelectionRange(outcome.draft.length, outcome.draft.length); });
+  };
+
   const send = async (e?: Event) => {
     e?.preventDefault();
     const text = draft().trim();
@@ -378,7 +402,7 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} drawings={view()?.drawings} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} drawings={view()?.drawings} tour={{ base: handle => `/api/h/${TOKEN}/tours/${encodeURIComponent(handle)}`, progress: true, onAsk: view()?.viewer?.canWrite ? question => void prefillTour(question) : undefined, onRequestCoverage: view()?.viewer?.canWrite ? question => void prefillTour(question) : undefined }} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">

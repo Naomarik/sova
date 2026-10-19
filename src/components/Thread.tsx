@@ -17,7 +17,7 @@ import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
-import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
@@ -45,6 +45,8 @@ import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
+import { TourCard } from "./TourCard";
+import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
@@ -581,6 +583,10 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
   };
+  const tourOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeTourCardDetails(detailsOf(r)) : undefined;
+  };
   const calls = createMemo(() => {
     const ids = new Set<string>();
     for (const it of props.items) if (it.kind === "tool-call" && it.toolCallId) ids.add(it.toolCallId);
@@ -612,6 +618,7 @@ export function HistoryItems(props: {
   const asCard = (it: TranscriptItem): boolean => {
     if (it.kind !== "tool-call") return false;
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
+    if (TOUR_TOOLS.has(it.text ?? "")) return true;
     return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
   };
 
@@ -626,7 +633,7 @@ export function HistoryItems(props: {
       (it) =>
         it.kind === "thinking" ||
         (it.kind === "tool-call" && !asCard(it)) ||
-        (it.kind === "tool-result" && !(it.toolCallId && callIds.has(it.toolCallId))),
+        (it.kind === "tool-result" && !isTourResult(it) && !(it.toolCallId && callIds.has(it.toolCallId))),
     );
     const skip = list.map((it) => it.kind === "tool-result" && !!it.toolCallId && callIds.has(it.toolCallId));
     const runs = chainRuns(working, skip, compressWork());
@@ -958,6 +965,9 @@ export function HistoryItems(props: {
               </Match>
               {/* A show_changes result whose details check out reads as a card that opens the
                   changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
+              <Match when={item.kind === "tool-call" && TOUR_TOOLS.has(item.text ?? "") && tourOf(item.toolCallId)}>
+                {(details) => <TourCard details={details()} />}
+              </Match>
               <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
                 {(details) => <ShowChangesCard details={details()} />}
               </Match>
@@ -1134,7 +1144,9 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
           const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
+          const tour = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
           return (
+            <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
             <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
             <Show
@@ -1162,6 +1174,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
             </Show>
             </Show>
             </Show>
@@ -1226,6 +1239,7 @@ export function LiveEntries(props: {
         const tool = props.live.tools[b.id];
         return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
       }
+      if (TOUR_TOOLS.has(b.name)) return false;
       return !CARD_RENDER_NAMES.has(b.name);
     });
     const skip = blocks.map((b) => b !== null && !shows(b));

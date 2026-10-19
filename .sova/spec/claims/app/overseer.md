@@ -1009,9 +1009,14 @@ itself.
   failed: …", "… was interrupted: …"; "Rollback of …" for a rollback), until a later deploy of that
   target; and `deploy-request`, one per overseer's open request to deploy, "Deploy {commit7} to
   {target}? {why}", until the operator plans that target or dismisses it. Never a phone notification.
+- **Needs you, a tour sign-in** (§app.tours/sites): `tour-sign-in` on the owning chat while one of its tour
+  recordings waits for a sign-in, "Sign in to {origin} on the tour card." (for a one-time code: "Enter the
+  sign-in code for {origin} on the tour card."), dated by when it began waiting. It comes from the server's
+  memory of waiting recordings, so it ends when the recording stops waiting, and with a restart, which
+  interrupts it. Never a phone notification.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A guess (a
+  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:

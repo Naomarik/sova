@@ -32,6 +32,9 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { registerConversationDraftRoutes } from "./conversation-draft-routes";
 import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
+import { mountTourRoutes } from "./tour-routes";
+import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/runtime";
+import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
 import { mountPublicLinks } from "./public-links-routes";
@@ -40,7 +43,7 @@ import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
 import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
 import { mountChatActions } from "./chat-actions";
-import { acquireChatHandle, type ChatHandle, chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
@@ -404,6 +407,30 @@ export function buildApp(deps: AppDeps) {
   // Session share links: the operator's routes and Follow live (server/session-shares-routes.ts;
   // §app/session-share). The recipients' routes are the share listener's (server/share/session-routes.ts).
   registerSessionShareRoutes(app);
+  mountTourRoutes(app);
+  // A tour recording waiting for a sign-in marks its chat as needing you and tells its agent once, through
+  // Sova's own prompt, so a chat Sova can't write to gets only the mark (§app.tours/sites). No secret goes either way.
+  // The notice is held while the chat is busy (never queued behind its turn) and dropped once that wait has ended.
+  setTourNeedsYou(tourSignInNotifier({
+    pathOf: pathOfId,
+    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    busy: (path) => { const m = chatHandle(path)?.mirror; return !!m && !m.closed && (m.running || m.compacting || m.starting); },
+    stillWaiting: (jobId, since) => ensureTourToolRuntime().stillWaitingSignIn(jobId, since),
+    log: (line) => console.warn(line),
+  }));
+  // The user answered a recording's sign-in or site approval and it continued: an idle chat is told once to call
+  // status (it waits), so a chat that ended its turn at the card doesn't sit idle (§app.tours/sites). Held while
+  // the chat is busy; dropped if it started working meanwhile or the job no longer continues from that answer.
+  const chatBusy = (m: { closed: boolean; running: boolean; compacting: boolean; starting: boolean } | undefined) => !!m && !m.closed && (m.running || m.compacting || m.starting);
+  setTourResumed(tourResumedNotifier({
+    pathOf: pathOfId,
+    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    busy: (path) => chatBusy(chatHandle(path)?.mirror),
+    busyOf: (sessionId) => chatBusy(chatHandleById(sessionId)?.mirror),
+    stillContinuing: (jobId, at) => ensureTourToolRuntime().stillContinuing(jobId, at),
+    log: (line) => console.warn(line),
+  }));
+  setTourSignInWaits(() => ensureTourToolRuntime().waitingSignIns().map((w) => ({ sessionId: w.sessionId, origin: w.origin, fields: w.fields, since: Date.parse(w.since) || 0 })));
   // Fork a conversation through a delivered reply (server/session-fork-routes.ts): POST /api/sessions/fork
   // makes a new web-owned session from the source's active branch, read-only on the source.
   registerSessionForkRoutes(app);

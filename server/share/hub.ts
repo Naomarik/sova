@@ -14,7 +14,7 @@ const orgName = (orgId: string): string => {
 };
 import { hashToken } from "../baton-links";
 import { serverRedactor } from "../overseer-redact";
-import { readBranch } from "../harness/pi/reader";
+import { branchOf, parsePi, readBranch, readPi } from "../harness/pi/reader";
 import { photosFor } from "../baton-images";
 import { filesFor } from "../baton-files";
 import { readLedger } from "../project-files";
@@ -51,6 +51,14 @@ const saidWith =
 const streamPhrases = new Map<string, string[]>();
 /** Sessions whose streaming text already left a drawing out (logged once). */
 const streamWithheld = new Set<string>();
+
+/** Trusted backup's uncached neutral history, including while the organization is detaching.
+ * No org lookup, filtered reader cut, live chat acquisition or model invocation. */
+export async function readStoredConversation(source: string | { text: string }): Promise<{ id: string; branch: HEntry[] }> {
+  const file = typeof source === "string" ? await readPi(source) : parsePi(source.text);
+  if (!file.header?.id || typeof file.header.id !== "string") throw new Error("The conversation's identity could not be read.");
+  return { id: file.header.id, branch: branchOf(file.entries) };
+}
 
 /** The filtered view of a baton session for `viewer` (a person id), or with no viewer (the project
     overseer's reads: every briefing). */

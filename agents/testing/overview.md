@@ -89,6 +89,23 @@ environment every runner starts in, and the hermetic dev server.
   (§app.server-runtime/test-repo-fence). A test that needs a plain folder makes its temp root with
   `scratchRoot` (`server/test-scratch.ts`); one that needs a repository runs `git init` under it.
 
+### Tour recording tests (real Chrome)
+
+- `server/tours/*.integration.test.ts` drive a real Chrome or Chromium through `playwright-core`: one
+  found on PATH (`chromium`, `google-chrome-stable`, …) or named by `SOVA_TOUR_BROWSER`; nothing is
+  ever downloaded. They don't skip when none is installed: they fail.
+- Chrome puts named Unix sockets under `TMPDIR`, and `assertTourBrowserTempPath`
+  (`server/tours/browser.ts`) refuses a base whose socket path would pass 100 bytes. Run them with a
+  short temp dir outside any repository, e.g. `TMPDIR=/dev/shm/q` (create it first); a sandboxed
+  session's long `TMPDIR` fails them.
+- The runner kills any one file after 300 s (`TEST_FILE_LIMIT_MS`), the per-file cap, under the
+  integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
+  scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.
+- Shared stand-in sites and probes are `*.integration.fixture.ts` beside the tests (not test files, so
+  no glob matches them). Test credentials are short fakes (`fake-pw-01`): the merge round's leak scan
+  flags any `password`/`token`/`secret`/`apiKey` assigned a literal of 16+ characters with no space. A test that needs
+  a long value builds it at runtime (`"x".repeat(17)`, `"fake-copy-token".padEnd(48, "x")`).
+
 ### The hermetic dev server (`pnpm run dev:hermetic`)
 
 - Once `.agent` holds copies of real sessions (or `--copied-sessions` announces them), the script

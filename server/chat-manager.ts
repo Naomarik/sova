@@ -88,7 +88,9 @@ import { applyMemoryPatch, overseerMemoryOf, type OverseerMemorySetting, parseOv
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
-import { servedToolsExtension } from "./served-tools";
+import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { TOUR_TOOLS } from "../shared/tour";
+import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
@@ -826,8 +828,10 @@ export function resolveRegenerate(branch: readonly HEntry[], entryId: string): R
     // (kind "wake"). Replaying it would put the "[wake_nudge …] Scheduled wakeup fired (set 4m17s
     // ago)" preamble back on the branch as if the user had typed it, with an elapsed time that is
     // now a lie. Nothing here is the user's message, so there is nothing to send again.
-    if (parseWakeNudge(text))
-      return { ok: false, reason: "wake", message: "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
+    // A tour's sign-in notice (`[tour_sign_in tN]`, §app.tours/sites) parses as a wake too, under its own name.
+    const wake = parseWakeNudge(text);
+    if (wake)
+      return { ok: false, reason: "wake", message: wake.tour ? "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again." : "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
     // A partner's message over a link (kind "link", §mesh.links/transcript) is not the user's
     // either; replaying it would redeliver the partner's words as a fresh message.
     if (isLinkMessage(text))
@@ -2473,12 +2477,12 @@ class ChatSession {
    */
   private syncVisCheckTool(): void {
     if (this.disposed || this.harness.isRunning()) return;
-    if (!this.harness.registeredTools().includes(VIS_CHECK_TOOL)) return;
-    const want = this.visToolsOn();
+    const registered = this.harness.registeredTools();
+    const names = [VIS_CHECK_TOOL, ...TOUR_TOOLS].filter(n => registered.includes(n));
+    const wanted = names.filter(n => n === VIS_CHECK_TOOL ? this.visToolsOn() : this.modeState.minorModes.includes("vis"));
     const current = this.harness.activeTools();
-    const has = current.includes(VIS_CHECK_TOOL);
-    if (want && !has) this.harness.setActiveTools([...current, VIS_CHECK_TOOL]);
-    else if (!want && has) this.harness.setActiveTools(current.filter((t) => t !== VIS_CHECK_TOOL));
+    const next = [...current.filter(n => !names.includes(n) || wanted.includes(n)), ...wanted.filter(n => !current.includes(n))];
+    if (next.length !== current.length) this.harness.setActiveTools(next);
   }
 
   /**
@@ -4339,8 +4343,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
+              servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
               ...powers,
             ],
             ...overrides,

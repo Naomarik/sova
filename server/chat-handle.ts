@@ -69,6 +69,7 @@ import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools"
 import { stateRoot } from "./state-root";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
+import { tourTools } from "./tours/tools";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
@@ -652,7 +653,7 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) })];
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId)];
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   // A powers profile's queue_open (its own extension registers it, from this declaration) and its
   // sends, a server action (§app.chat-processes/server-actions).

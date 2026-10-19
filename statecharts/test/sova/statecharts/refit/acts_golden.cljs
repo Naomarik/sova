@@ -49,7 +49,7 @@
    ["org" ":org/hours"] {}
    ["org" ":org/rename"] {}
    ["org" ":owner/set"] {}
-   ["org" ":owner/send-link"] {:card? true, :people-facing true}
+   ["org" ":owner/send-link"] {:card? true, :people-facing true, :power "operator"}
    ["org" ":person/add"] {}
    ["org" ":project/place"] {}
    ["person" ":hold/cancel"] {:correction true, :power "always"}

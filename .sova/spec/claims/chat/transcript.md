@@ -510,6 +510,10 @@ removal. The five reasons:
   this signal the row would sit on "Sending…" for the life of the pane over text the user has
   lost: the row goes and the text comes back.
 
+A click on an Overseer's card is the exception wherever text would come back (cleared, failed,
+dropped): the row goes, its text never reaches the composer, and its card's buttons come back with
+the note "Your click didn't reach the Overseer. Click again." (§app.overseer/confirm).
+
 A removal the server refuses because the agent already took the message says "Already sent. It
 can't be removed now.", and the row becomes the delivered message it turned out to be.
 
@@ -986,7 +990,9 @@ unchanged.
   fails to open comes back to the composer: the server refuses each message it held for the chat
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
   the connection ends or reports an internal error before its `hello`. A message sent on an earlier
-  connection, after its `hello`, never comes back this way: that chat may have taken it. A message
+  connection, after its `hello`, never comes back this way: that chat may have taken it. A click on
+  an Overseer's card is the one message that never comes back to the composer: its card's buttons
+  come back instead (§app.overseer/confirm). A message
   handed to the server for a chat still starting is the server's to deliver from then on, whether
   or not the tab stays (§chat.transcript/send-while-starting).
 - **A chat closed while its tab is open.** When the chat's process closes for being quiet
@@ -1057,6 +1063,7 @@ moves to another chat, home or Back, reloads the page or closes the tab.
   to start, or its model has been turned off in Settings → Models) and no tab is there to hear it,
   the server puts the text back as that chat's saved draft, ahead of any draft already saved, so
   the session list shows the chat's draft mark and its composer holds the text when it is opened.
+  An Overseer card's click is never put back as a draft, by the server or a tab (§app.overseer/confirm).
   No toast or notice says so. A tab still on the chat gets it back through the usual refusal
   (§chat.transcript/instant-open, "Nothing typed or sent is lost, nor sent twice"); a tab that
   moved elsewhere in the app puts it back into that chat's draft itself.

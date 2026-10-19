@@ -2731,14 +2731,18 @@
     "§chat.transcript/a-queued-message": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/queue.ts",
         "src/lib/live.ts",
         "src/components/Thread.tsx",
         "src/lib/live.test.ts",
         "server/chat-manager.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:14Z"
+      }
     },
     "§chat.transcript/accessibility": {
       "kind": "behavior",
@@ -2808,9 +2812,9 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-18T20:32Z"
+        "at": "2026-10-19T08:09Z"
       },
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
@@ -2929,9 +2933,10 @@
         "server/mesh/access.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T08:50Z"
-      }
+        "by": "naomarik",
+        "at": "2026-10-19T08:09Z"
+      },
+      "evidence": "reviewed"
     },
     "§chat.transcript/states": {
       "kind": "behavior",
@@ -3169,7 +3174,7 @@
     "§design.copy-deck/message-actions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "about": [
         "§chat.transcript/message-actions"
       ]
@@ -4832,7 +4837,7 @@
     "§app.overseer/confirm": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-confirm.ts",
         "server/overseer-tools.ts",
@@ -4866,13 +4871,21 @@
         "src/lib/session-links.ts",
         "src/lib/card-refs.ts",
         "server/overseer-org-tools.ts",
-        "server/overseer-folders.ts"
+        "server/overseer-folders.ts",
+        "src/lib/hand-back.ts",
+        "src/lib/hand-back.test.ts",
+        "src/lib/unacked-sends.ts",
+        "src/lib/chat-outbox.ts"
       ],
       "requires": [
         "§app.overseer/tools",
         "§app.overseer/links",
         "§app.overseer/ideas"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:01Z"
+      }
     },
     "§app.overseer/dialog-answers": {
       "kind": "behavior",
@@ -9474,7 +9487,10 @@
         "src/components/Thread.tsx",
         "server/org-routes.ts",
         "server/orgs.ts",
-        "server/overseer-sender.ts"
+        "server/overseer-sender.ts",
+        "server/chat-compact.test.ts",
+        "server/queue.test.ts",
+        "server/chat-queue-clients.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -9483,7 +9499,11 @@
         "§app.baton/links",
         "§app.baton/needs-you",
         "§app.organizations/roster"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:01Z"
+      }
     },
     "§app.overseer/org-project-overseers": {
       "kind": "behavior",
@@ -13224,7 +13244,7 @@
     "§app.overseer/project-card-clicks": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/OverseerCards.tsx"
@@ -13232,7 +13252,11 @@
       "requires": [
         "§app.overseer/confirm",
         "§app/project-overseer"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:08Z"
+      }
     },
     "§app.organizations/statechart-migration": {
       "kind": "behavior",
@@ -16317,7 +16341,11 @@
         "§app.overseer/org-attribution",
         "§app.overseer/caps",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T08:01Z"
+      }
     },
     "§app.claude-logins/macos-keychain": {
       "kind": "behavior",

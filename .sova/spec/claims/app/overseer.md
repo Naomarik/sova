@@ -467,6 +467,11 @@ idea, todo, person or project a card about specific things acts on (archive, tic
 with a **note**: what it is, then why the action fits it, in at most 2 short sentences ("Push
 notifications for Overseer briefs. Merged to master yesterday, nothing running."). That rule is the
 prompt's; the server cannot tell such a card from any other, so it never requires `items` or notes.
+The prompt, the tool's description and the hidden note also tell it, when a click approves an act,
+to do the act first and record the card's answer only after the act succeeds: a refused act leaves
+the card open, so the user can click it again. An answer recorded before the act in the same run
+still approves it, since a click is judged against the card as it stood when the click arrived
+(§app.overseer/org-people-facing).
 When a button also acts on an idea or a todo, that item's note says the effect ("Covered by the
 push session's final report. Ticking marks it done."), and every option's `reply` says exactly what
 it does to which items, never just its label. These too are the prompt's and the tool description's,
@@ -590,7 +595,12 @@ jumps to it (§app.overseer/links).
   op, the buttons come back and the note keeps the card in front of the model. While the card is
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
   or ends something, the global Overseer's card listing a person, a project, an org, a folder or a
-  gathering session (`clickOnly`), has no such hint: only its click approves that act.
+  gathering session (`clickOnly`), has no such hint: only its click approves that act. A click that
+  doesn't reach the Overseer (the chat refuses it, is restarting, reloads or closes before taking
+  it, its connection ends before the chat opens, or the queued click leaves undelivered) never goes
+  into the composer, where sending it again would be typed text that approves nothing: its card's
+  "Sent" mark clears, so its buttons come back at once, and the pane says "Your click didn't reach
+  the Overseer. Click again."
 - **Approve-later and rule options.** An answer option may carry `at` (and `until`), which makes its
   click an approval for later, or `rule`, which makes its click adopt a standing rule; the button
   says so under its label, and the card shows the approval's state (§app.overseer/approvals).
@@ -683,6 +693,8 @@ session is on which branch survives a compaction and a restart:
   message, the card shows "Sent: b" while that turn runs and its buttons come back when the turn
   ends, and "Or type your answer." follows the buttons. The click is only that message: it approves
   nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
+  A click that doesn't reach it comes back as the global Overseer's does (§app.overseer/confirm):
+  its buttons, never the composer, with the same note.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
 
 ## §app.overseer/transcript-window — Only the rows shown or jumped to
@@ -1751,8 +1763,13 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   (§app.overseer/confirm) listing a **folder** row with that folder's checkout root and the same org,
   or none for standalone (and, when the row names one, the same name); anywhere else it refuses with
   the card sentence before any other refusal: "This adds a project: ask with sova_card, listing
-  {what} in its items, and act in the turn the user's click starts." The route checks the same
-  row on the card the call carries (403 without it). A folder the Overseer's file guard denies
+  {what} in its items, and act in the turn the user's click starts." When no click on a card opened
+  the turn at all, that first refusal names the folder with the org the call asked for (its id when
+  it resolves, else the org as the call wrote it; "(standalone)" only when the call names no org)
+  and says why: "This adds a project, and this turn wasn't opened by a click on a card: reopen the
+  card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing {what} in
+  its items, so the user can click it again, and act in the turn that click starts." The route
+  checks the same row on the card the call carries (403 without it). A folder the Overseer's file guard denies
   (credentials, an org workspace; §app.overseer/tools) is refused by the tool, the card and the
   route; otherwise it is refused where the page refuses (§app.projects/registration). The result:
   "Added {name} ({id})[ in {org}]: {root}[, the checkout root of {folder}]."
@@ -1837,13 +1854,17 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   turn the user opened by clicking a card (§app.overseer/confirm) that lists every person, project,
   session, folder and org the call acts on: the run's opening message is a click on that card, its text exactly
   the message the click composes, and the card was open when it arrived. A card-level option approves
-  every item on the card; a per-item Apply approves only the items it gave a choice. The ops: `sova_gather` `start`, `offer`,
+  every item on the card; a per-item Apply approves only the items it gave a choice. The click's mark
+  travels with it: a click the chat holds before handing it to the model (queued behind a running
+  turn, or put back in the queue because a compaction was starting) keeps its mark, and that it was
+  typed by a person, until it is handed over. A Retry (regenerate) of the click's message carries no
+  mark: the turn it starts approves nothing. The ops: `sova_gather` `start`, `offer`,
   `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_roster` `leave`, and a `revert` that sets
   `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`, `import` and `add` of a
   folder or a session's folder (never a clone); `sova_org` `detach` (§app.overseer/org-project-add).
   Anywhere else (a typed
-  "yes", a card that didn't list the target, a card already answered, superseded or dropped, a
-  later turn, a card from before card ids) the op refuses without doing anything, before any other
+  "yes", the click's text typed or pasted, a card that didn't list the target, a card already answered,
+  superseded or dropped, a later turn, a Retry of the click, a card from before card ids) the op refuses without doing anything, before any other
   refusal it could get (an archive with no card gets this, not "Stop these first"). The statecharts check
   it (§app.project-overseer/statecharts): the Overseer's calls to the routes carry its turn's card
   beside its sender mark:

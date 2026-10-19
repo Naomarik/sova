@@ -78,6 +78,8 @@ is.
 
 ## §app.resource-monitor/attribution — Attribution
 
+A server-orchestrated tour's recording controller and browser process tree are explicitly charged to the requesting session and worker (§app.tours/resources), rather than appearing as an unnamed server task. Their attribution survives the server launching them on the chat's behalf.
+
 Who is burning the machine is the question; every number on the screen is charged to someone, or
 says that it isn't.
 

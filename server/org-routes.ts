@@ -67,6 +67,8 @@ import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
 import { registerOrgHistoryRoutes } from "./org-history-routes";
+import { mountTourPreviewRoutes } from "./tours/bindings-routes";
+import { mountTourDestinationRoutes } from "./tours/bindings-destination-routes";
 import { registerOrgHistoryAnnotationRoutes } from "./org-history-annotations";
 
 /**
@@ -641,6 +643,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json(await orgPage(id));
     }),
   );
+  mountTourPreviewRoutes(app);
+  mountTourDestinationRoutes(app);
   // Preview Owner Page: the same function the owner's link calls; no token, no visit.
   app.get(
     "/api/orgs/:id/owner/preview",

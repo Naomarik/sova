@@ -18,7 +18,7 @@ delete process.env.SOVA_AUTH;
 delete process.env.HOST;
 delete process.env.SOVA_ALLOWED_HOSTS;
 
-const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed, pair, revealToken, setLinkForTest } = await import("./auth");
+const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, tourRecorderCookieName, unlock, upgradeAllowed, pair, revealToken, setLinkForTest } = await import("./auth");
 const { mintCode, consumeCode } = await import("./auth-devices");
 setAuthPort(4800);
 
@@ -724,5 +724,36 @@ describe("socket upgrades", () => {
     assert.equal(upgradeAllowed(upgrade({}, "/ext/x/ws/live")), false);
     assert.equal(upgradeAllowed(upgrade({}, "/peer/p/ws/chat")), false);
     assert.equal(upgradeAllowed(upgrade({}, "/")), false);
+  });
+});
+
+describe("a guided-tour recorder's sockets (§app.access/gate)", () => {
+  const upgrade = (headers: Record<string, string | undefined>, url: string) => ({ url, headers: { host: HOST, ...headers } }) as unknown as IncomingMessage;
+  test("a recorder may only watch: /ws/chat and every other socket are refused with one fixed line, /ws/watch still opens", (t) => {
+    const warned = t.mock.method(console, "warn", () => {});
+    const recorder = { ...cookie(), "x-sova-tour-recorder": "1" };
+    // Positive controls: the same signed-in requests without the header open both sockets.
+    assert.equal(upgradeAllowed(upgrade(cookie(), "/ws/chat?path=x")), true);
+    assert.equal(upgradeAllowed(upgrade(cookie(), "/ws/watch?feed=sessions")), true);
+    assert.equal(upgradeAllowed(upgrade(recorder, "/ws/chat?path=x")), false, "opening /ws/chat would start the chat's process");
+    assert.equal(upgradeAllowed(upgrade(recorder, "/ext/stub/ws/x")), false);
+    assert.equal(upgradeAllowed(upgrade(recorder, "/ws/watch?feed=sessions")), true, "a recorder may watch");
+    assert.equal(upgradeAllowed(upgrade({ "x-sova-tour-recorder": "1" }, "/ws/watch?feed=sessions")), false, "and still needs the token");
+    assert.ok(warned.mock.calls.length >= 2);
+    for (const call of warned.mock.calls) assert.equal(String(call.arguments[0]), "[auth] refused a guided-tour recorder's socket");
+  });
+
+  test("the recorder marker cookie alone (a socket handshake carries no added header) is held to the same rule", (t) => {
+    const warned = t.mock.method(console, "warn", () => {});
+    const marked = (name: string) => ({ cookie: `${AUTH_COOKIE}=${sovaToken()}; ${name}=1` });
+    const mine = tourRecorderCookieName(agentDir);
+    assert.notEqual(mine, AUTH_COOKIE);
+    assert.equal(upgradeAllowed(upgrade(marked(mine), "/ws/chat?path=x")), false, "no chat socket");
+    assert.equal(upgradeAllowed(upgrade(marked(mine), "/ws/other")), false, "no other socket");
+    assert.equal(upgradeAllowed(upgrade(marked(mine), "/ws/watch?feed=sessions")), true, "positive control: it may watch");
+    assert.equal(upgradeAllowed(upgrade({ cookie: `${mine}=1` }, "/ws/watch?feed=sessions")), false, "and still needs the token");
+    // Only this install's own marker name counts: another copy's (another state directory) is an ordinary cookie.
+    assert.equal(upgradeAllowed(upgrade(marked(tourRecorderCookieName("/made-up/other/.agent")), "/ws/chat?path=x")), true);
+    assert.equal(warned.mock.callCount(), 2);
   });
 });

@@ -4,6 +4,8 @@ import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
 import type { Person, PersonInput, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
 import { ApiError, approvePerson, batonLink, declinePerson, getOrg, getPersonPage, inviteeLink, patchPerson, previewAsPerson, revertPersonChange, revokeOwnerLink, revokePersonLinks } from "../lib/api";
+import { TourReadCard } from "./TourReadCard";
+import { loadScopedTour, scopedTourAssetUrl } from "../lib/tour-api";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { DECISION_STATE } from "../lib/decisions-view";
 import { relativeIn, relativeTime, stampTime } from "../lib/format";
@@ -826,7 +828,7 @@ function Preview(props: { data: PersonPageData; row: PersonSessionRow; onClose()
             <Banner tone="error" title="Couldn't load the preview." body={errText(view.error)} />
           </Show>
           <Show when={view()} fallback={<Show when={!view.error}><p class="orgs-empty">Loading the conversation.</p></Show>}>
-            {(v) => <PreviewView view={v()} />}
+            {(v) => <PreviewView view={v()} tourBase={(handle) => `/api/orgs/${encodeURIComponent(props.data.org.id)}/people/${encodeURIComponent(props.data.person.id)}/preview/tours/${encodeURIComponent(props.row.sessionId)}/${encodeURIComponent(handle)}`} />}
           </Show>
         </div>
         <div class="modal-foot">
@@ -851,18 +853,22 @@ function viewStatus(v: BatonView): string {
   return v.holder ? `Waiting on ${v.holder}.` : "Waiting.";
 }
 
-function PreviewView(props: { view: BatonView }) {
+function PreviewView(props: { view: BatonView; tourBase(handle: string): string }) {
   return (
     <div class="person-preview-thread">
       <p class="orgs-line">{viewStatus(props.view)}</p>
-      <For each={props.view.items}>{(it) => <PreviewItem item={it} />}</For>
+      <For each={props.view.items}>{(it) => <PreviewItem item={it} tourBase={props.tourBase} />}</For>
     </div>
   );
 }
 
-function PreviewItem(props: { item: BatonViewItem }) {
+function PreviewItem(props: { item: BatonViewItem; tourBase(handle: string): string }) {
   const it = props.item;
   switch (it.kind) {
+    case "tour": {
+      const base = () => props.tourBase(it.handle);
+      return <TourReadCard title={it.title} summary={it.summary} steps={it.steps} loadManifest={() => loadScopedTour(base())} assetUrl={file => scopedTourAssetUrl(base(), file)} />;
+    }
     case "message":
       return (
         <article class="person-preview-msg" classList={{ "person-preview-own": it.by === "you" }}>

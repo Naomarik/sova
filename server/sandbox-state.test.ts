@@ -2,7 +2,7 @@
 // The sandbox adapter against fake runtimes: no pi runtime, no session file.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describeActive } from "../pi-config/extensions/sandbox/state.ts";
+import { describeActive, SANDBOX_STARTING } from "../pi-config/extensions/sandbox/state.ts";
 import type { ChatServerMessage } from "../shared/protocol";
 import { applySandbox, onSandboxAppend, parseSandboxBody, sandboxInfo, type SandboxHost } from "./sandbox-state";
 import { sandboxCommandOf } from "./harness/pi/commands";
@@ -143,4 +143,14 @@ test("the POST body is { state }, or the older { on }; both together must agree"
   assert.deepEqual(parseSandboxBody({ state: "off", on: true }), { error: "state and on disagree" });
   assert.deepEqual(parseSandboxBody({ state: "subagents", on: true }), { error: "state and on disagree" });
   for (const bad of [undefined, null, [], {}, { on: "on" }, { on: 1 }, { state: "none" }, { state: true }, { state: "on", on: "yes" }]) assert.ok("error" in parseSandboxBody(bad), JSON.stringify(bad));
+});
+test("turning on: the provisional entry reads as starting, never as unavailable or broken; the real state clears it", () => {
+  const starting = sandboxInfo([entry({ on: true, backend: "linux-bwrap", enforcement: "unavailable", reasons: [SANDBOX_STARTING] })]);
+  assert.deepEqual(starting, { on: true, state: "on", enforcement: "unavailable", status: "Sandbox turning on…", starting: true });
+  assert.doesNotMatch(starting.status, /unavailable|refuse/i);
+  // Positive controls: a real unavailable On keeps its own words and no flag; the final On has none either.
+  const broken = sandboxInfo([entry({ on: true, backend: "linux-bwrap", enforcement: "unavailable", reasons: ["bwrap is not installed"] })]);
+  assert.equal(broken.starting, undefined);
+  assert.match(broken.status, /unavailable/);
+  assert.equal(sandboxInfo([entry({ on: true, backend: "linux-bwrap", enforcement: "unavailable", reasons: [SANDBOX_STARTING] }), entry({ on: true, backend: "linux-bwrap", enforcement: "full" })]).starting, undefined);
 });

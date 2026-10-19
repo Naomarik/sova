@@ -330,5 +330,4 @@ writer, so the entry is announced as before; the Overseer's approvals' uses) and
 subagent tools, by calls back to the chat, as Sova tools. The extension factories of these loadouts are typed from the adapter's extension types
 (`server/harness/pi/extension-types.ts`), and so are Sova's other inline extensions (the vis check,
 topics, the resource monitor, the project services), the loadout's skills override and the context
-windows read off the model runtime. Nothing a client, a session file, an extension or a model sees
-changes: the session goldens compare byte for byte.
+windows read off the model runtime. The harness migration itself changes nothing a client, a session file, an extension or a model sees: session goldens compare byte for byte against the approved product baseline. That baseline deliberately includes the reviewed-tour guide and bound-only scoped `show_tour` in baton loadouts (§app.tours/handoffs); no recording or arbitrary browser tools are added to them.

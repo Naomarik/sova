@@ -87,6 +87,23 @@ export interface ProxyOptions {
 	onDecision?: (d: ProxyDecision) => void;
 	/** Test seam: resolve a host name. Defaults to the system resolver. */
 	resolve?: (host: string) => Promise<string>;
+	/**
+	 * Off by default. More addresses to refuse, on top of forbiddenAddress, checked on the address
+	 * the proxy then connects to. A recording attempt refuses every non-public one. Names are
+	 * resolved only after they pass the allowlist, as always.
+	 */
+	forbid?: (address: string) => boolean;
+	/**
+	 * Off by default. One exact loopback host:port this proxy may reach outside the allowlist,
+	 * for as long as it runs: a recording attempt's own verified running copy. `admit` re-checks it
+	 * on every contact; false or a throw refuses that contact.
+	 */
+	local?: { host: string; port: number; admit(): Promise<boolean> };
+	/**
+	 * Off by default. A recording attempt's own admission: asked for every host:port before any
+	 * lookup, allowlist answer or dial; false, a throw or a rejection refuses that contact.
+	 */
+	admit?: (host: string, port: number) => boolean | Promise<boolean>;
 }
 
 export interface ProxyHandle {
@@ -117,13 +134,33 @@ export async function startProxy(opts: ProxyOptions): Promise<ProxyHandle> {
 	const decide = async (host: string, port: number, method: string): Promise<{ address: string } | { status: number; reason: string }> => {
 		const h = normalizeHost(host);
 		let verdict: { address: string } | { status: number; reason: string };
-		if (!hostAllowed(h, allow)) verdict = { status: 403, reason: `sova sandbox: ${h} is ${PROXY_DENY_TEXT}` };
+		const local = opts.local;
+		let tourAdmitted = true;
+		if (opts.admit) {
+			try {
+				tourAdmitted = (await opts.admit(h, port)) === true;
+			} catch {
+				tourAdmitted = false;
+			}
+		}
+		if (!tourAdmitted) verdict = { status: 403, reason: `sova sandbox: ${h}:${port} is not admitted for this recording` };
+		else if (local && h === normalizeHost(local.host) && port === local.port) {
+			let admitted = false;
+			try {
+				admitted = (await local.admit()) === true;
+			} catch {
+				admitted = false;
+			}
+			verdict = admitted ? { address: h } : { status: 403, reason: `sova sandbox: ${h}:${port} is no longer this attempt's own running copy` };
+		} else if (!hostAllowed(h, allow)) verdict = { status: 403, reason: `sova sandbox: ${h} is ${PROXY_DENY_TEXT}` };
 		else if (!ports.has(port)) verdict = { status: 403, reason: `sova sandbox: port ${port} is ${PROXY_DENY_TEXT}` };
 		else {
 			try {
 				const address = isIP(h) ? h : await resolveHost(h);
 				verdict = forbiddenAddress(address)
 					? { status: 403, reason: `sova sandbox: ${h} resolves to ${address}, a local address, which is ${PROXY_DENY_TEXT}` }
+					: opts.forbid?.(address) === true
+					? { status: 403, reason: `sova sandbox: ${h} resolves to ${address}, a private address, which is ${PROXY_DENY_TEXT}` }
 					: { address };
 			} catch (err) {
 				verdict = { status: 502, reason: `sova sandbox proxy: cannot resolve ${h}: ${(err as Error).message}` };

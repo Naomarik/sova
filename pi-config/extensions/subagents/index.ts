@@ -96,7 +96,7 @@ import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, ty
 /** The modes a worker's chip lists: its built-in minor modes, then the project modes it carries (by id). */
 const givenModesOf = (modes: ModeWorkerEvent): string[] => [...modes.minorModes, ...(modes.projectModes ?? []).map((p) => p.id)];
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
-import { AGREE_SOURCE_ENV, goAheadRef } from "../mode/spec-agree.ts";
+import { goAheadRef, workerAgreeEnv } from "../mode/spec-agree.ts";
 import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
@@ -1471,9 +1471,9 @@ export function registerSubagents(
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					// Spec on: the worker's `agree` records this session's go-ahead (spec-agree.ts), relayed, never its own brief.
-					const agreeSource = specOn && !remote ? goAheadRef(ctx.sessionManager) : undefined;
-					const specEnv = specOn && !remote ? { ...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv, ...(agreeSource ? { [AGREE_SOURCE_ENV]: agreeSource } : {}) } : baseEnv;
+					// Spec on: the worker's `agree` records this session's go-ahead (spec-agree.ts), relayed, never its own brief;
+					// SPEC_AGREE_GIVEN marks it a worker (empty when there is no reference to give).
+					const specEnv = specOn && !remote ? { ...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv, ...workerAgreeEnv(goAheadRef(ctx.sessionManager)) } : baseEnv;
 					// A code-writing worker's census state, where its settle's landed line is read: its own file (named in its env).
 					const landedFile = landed && !backend ? path.join(agentDir(), SPEC_HOOK_STATE, "landed", `${workerKey(id)}.json`) : undefined;
 					if (landedFile) landedSources.set(id, { file: landedFile });

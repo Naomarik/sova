@@ -33,8 +33,8 @@ import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix, relative } from "node:path";
-import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir, hostname } from "node:os";
+import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, openSync, readSync, closeSync } from "node:fs";
+import { tmpdir, hostname, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInspection, declarationSpans } from "./sova-spec.mjs";
 
@@ -582,6 +582,57 @@ function refProblem(v) {
   if (typeof v === "string" && REF_RE.test(v) && (!v.startsWith("pi-session:") || PI_REF_RE.test(v))) return null;
   return `${JSON.stringify(v)} is not a reference: a source is scheme:locator with no spaces (pi-session:<session id>#<entry id>, a URL, chat:c1#m3), never a description of where the go-ahead was given`;
 }
+// A `pi-session:<session id>#<entry id>` source must point back at a real user message: a session file under
+// ${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions, at any depth, named `…_<session id>.jsonl` or whose header line carries
+// that id, holding an entry with that id of type `message` and role `user`. Only this scheme is resolved: every other
+// one (a URL, chat:…) is checked for its form alone, for projects whose go-ahead lives outside pi. → null | what is wrong
+const resolvedSources = new Map();
+function piSourceProblem(v) {
+  const m = /^pi-session:([^\s#]+)#([^\s#]+)$/.exec(v);
+  if (!m) return null;
+  if (!resolvedSources.has(v)) resolvedSources.set(v, resolvePiSource(m[1], m[2]));
+  return resolvedSources.get(v);
+}
+function piSessionsDir() {
+  const raw = process.env.PI_CODING_AGENT_DIR?.trim(), home = homedir();
+  const dir = !raw ? join(home, ".pi", "agent") : raw === "~" ? home : raw.startsWith("~/") ? join(home, raw.slice(2)) : raw;
+  return join(dir, "sessions");
+}
+function resolvePiSource(sessionId, entryId) {
+  const dir = piSessionsDir(), files = [];
+  const walk = (d, depth) => {
+    let list;
+    try { list = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of list) {
+      if (e.isDirectory() && depth < 8) walk(join(d, e.name), depth + 1);
+      else if (e.isFile() && e.name.endsWith(".jsonl")) files.push(join(d, e.name));
+    }
+  };
+  walk(dir, 0);
+  const headerId = (f) => {
+    let fd;
+    try {
+      fd = openSync(f, "r");
+      const buf = Buffer.alloc(4096), n = readSync(fd, buf, 0, buf.length, 0);
+      const h = JSON.parse(buf.subarray(0, n).toString("utf8").split("\n")[0]);
+      return h?.type === "session" ? h.id : undefined;
+    } catch { return undefined; } finally { if (fd !== undefined) closeSync(fd); }
+  };
+  const file = files.find((f) => f.endsWith(`_${sessionId}.jsonl`)) ?? files.find((f) => headerId(f) === sessionId);
+  const need = `it needs pi-session:<session id>#<entry id> of a user message in a session under ${dir}`;
+  if (!file) return `pi-session:${sessionId}#${entryId} does not resolve: no session ${sessionId} under ${dir}; ${need}`;
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch { return `pi-session:${sessionId}#${entryId} does not resolve: its session file can't be read; ${need}`; }
+  for (const line of text.split("\n")) {
+    if (!line.includes(`"${entryId}"`)) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e?.id !== entryId) continue;
+    if (e.type === "message" && e.message?.role === "user") return null;
+    return `pi-session:${sessionId}#${entryId} does not resolve: entry ${entryId} is ${e.type === "message" ? `a message by ${e.message?.role ?? "no role"}` : `a ${e.type} entry`}, not a user message; ${need}`;
+  }
+  return `pi-session:${sessionId}#${entryId} does not resolve: session ${sessionId} has no entry ${entryId}; ${need}`;
+}
 // A record's `agreed: {by, at, source?}`: who made the decision, when, and where. → null (absent or well-formed) | what is wrong
 function agreedProblem(rec) {
   if (rec?.agreed === undefined) return null;
@@ -1062,6 +1113,8 @@ async function cmdEvidence(root, o) {
 // the current spec as it was and points to the ordinary path. A record that maps code is only stamped.
 const AGREE_NEXT = "evidence --commit (or --snapshot), then promote --id … to preview, then promote … --plan SHA --write";
 const SOURCE_ENV = "SPEC_AGREE_SOURCE";
+// Set by the agent's runtime only in a process it started as a worker: the reference it was given, empty for none.
+const GIVEN_ENV = "SPEC_AGREE_GIVEN";
 async function cmdAgree(root, o) {
   const at = o.at ?? `${new Date().toISOString().slice(0, 16)}Z`;
   // Where the go-ahead was given: what the agent's runtime put in SPEC_AGREE_SOURCE, else --source; --source may only
@@ -1069,10 +1122,13 @@ async function cmdAgree(root, o) {
   const env = process.env[SOURCE_ENV]?.trim() || undefined;
   if (env !== undefined && o.source !== undefined && o.source !== env)
     throw new Fail(1, "agree-source-mismatch", `${SOURCE_ENV} is set to ${JSON.stringify(env)}, the go-ahead your runtime recorded, and --source ${JSON.stringify(o.source)} differs; omit --source: agree uses ${SOURCE_ENV}. Nothing was stamped`);
+  if (process.env[GIVEN_ENV] !== undefined && env === undefined && o.source !== undefined)
+    throw new Fail(1, "agree-source-not-given", `this process is a worker, and its runtime gave it no go-ahead reference (${GIVEN_ENV} is set, ${SOURCE_ENV} is not), so --source ${JSON.stringify(o.source)} is refused: a worker can't name the go-ahead itself. Nothing was stamped; report the records ready to agree to whoever holds the go-ahead`);
   const source = env ?? o.source;
   if (source === undefined) throw new Fail(1, "agree-unsourced", `agree needs where the go-ahead was given: ${SOURCE_ENV}, set by the agent's runtime, or --source <ref>, a reference to the message, comment or note the person's agreement is in; nothing was stamped. Without one, report the records ready to agree to whoever holds the go-ahead`);
   if (sourceProblem(source)) throw new Fail(1, "agree-unsourced", `${SOURCE_ENV} ${sourceProblem(source)}`);
   if (refProblem(source)) throw new Fail(1, "agree-source-not-reference", `${env !== undefined ? SOURCE_ENV : "--source"} ${refProblem(source)}; nothing was stamped. ${env !== undefined ? "Report the records ready to agree to whoever holds the go-ahead" : `Pass the go-ahead's reference, or omit --source when ${SOURCE_ENV} is set`}`);
+  if (piSourceProblem(source)) throw new Fail(1, "agree-source-unresolved", `${env !== undefined ? SOURCE_ENV : "--source"} ${piSourceProblem(source)}. Nothing was stamped. ${env !== undefined ? "Report the records ready to agree to whoever holds the go-ahead" : "Pass the reference of the user message that holds the go-ahead, or report the records ready to agree"}`);
   const build = async () => {
     const a = await analyze(root, o.name);
     const ids = uniqSorted(o.id).map((id) => {
@@ -1196,6 +1252,8 @@ async function plan(root, o) {
     // A new or replaced `agreed` says where its go-ahead was given; one current already has, kept as it is, needs nothing.
     if (!bad && obj(now) && (now.source === undefined || refProblem(now.source)) && canon(now) !== canon(was))
       refuse("agreed-unsourced", `${id}: the agreed this promotion gives (${JSON.stringify(now)}) has ${now.source === undefined ? "no source" : "a description, not a reference, as its source"}; stamp it with \`agree\`, whose ${SOURCE_ENV} (or --source <ref>) says where the go-ahead was given`);
+    else if (!bad && obj(now) && canon(now) !== canon(was) && piSourceProblem(now.source))
+      refuse("agreed-source-unresolved", `${id}: the agreed this promotion gives has a source that ${piSourceProblem(now.source)}; stamp it with \`agree\` from the session that holds the go-ahead`);
     // Reworded under the `agreed` current has: a number or code token that changed may be a new decision nobody agreed to.
     if (was !== undefined && canon(now) === canon(was) && a.changed.get(id).text) {
       const n = agreedKeptOnChange(a, id, was, curDecls);

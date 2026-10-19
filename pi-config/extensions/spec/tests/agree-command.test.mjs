@@ -11,8 +11,10 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, "../core/sova-spec-draft.mjs");
-// The runtime's SPEC_AGREE_SOURCE is dropped too: a test says where its go-ahead came from, or that there is none.
-const fixtureEnv = (root, extra = {}) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && k !== "SPEC_AGREE_SOURCE")), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home"), ...extra });
+// The runtime's SPEC_AGREE_SOURCE, SPEC_AGREE_GIVEN and PI_CODING_AGENT_DIR are dropped too: a test says where its
+// go-ahead came from (or that there is none), and pi's sessions are the fixture's own, under its HOME.
+const DROPPED = new Set(["SPEC_AGREE_SOURCE", "SPEC_AGREE_GIVEN", "PI_CODING_AGENT_DIR"]);
+const fixtureEnv = (root, extra = {}) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && !DROPPED.has(k))), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home"), ...extra });
 
 const roots = [];
 process.on("exit", () => { for (const r of roots) rmSync(r, { recursive: true, force: true }); });
@@ -28,9 +30,24 @@ const TOP = "# §app/list\n\nThe session list.\n";
 const promise = (sentence) => `${TOP}\n## ${ID}\n\n${sentence}\n`;
 const SIXTY = "A session title shows at most 60 characters, then an ellipsis.";
 
+/** A pi session file under agentDir/sessions: a header, then entries [id, type, role?]. */
+function piSession(agentDir, file, id, entries) {
+  write(agentDir, `sessions/--proj--/${file}`, [{ type: "session", version: 3, id, timestamp: "2026-10-19T00:00:00.000Z", cwd: "/p" },
+    ...entries.map(([eid, type, role]) => ({ type, id: eid, parentId: null, timestamp: "2026-10-19T00:00:01.000Z", ...(role ? { message: { role, content: [{ type: "text", text: "t" }] } } : { customType: "x" }) }))]
+    .map((e) => JSON.stringify(e)).join("\n") + "\n");
+}
+// The fixture's pi sessions, at pi's default agent dir under the fixture's HOME: s1 named by its file, and 01a1-5137
+// found by its header alone.
+function piSessions(root) {
+  const agentDir = join(root, "home", ".pi", "agent");
+  piSession(agentDir, "2026-10-19T00-00-00-000Z_s1.jsonl", "s1", [["e3", "message", "user"], ["a1", "message", "assistant"], ["c1", "custom_message"], ["e7", "message", "user"]]);
+  piSession(agentDir, "renamed.jsonl", "01a1-5137", [["e9f2", "message", "user"]]);
+}
+
 function project() {
   const root = mkdtempSync(join(tmpdir(), "sova-agree-"));
   roots.push(root);
+  piSessions(root);
   write(root, MANIFEST, JSON.stringify({ formatVersion: 1, boundary: { include: ["src"], exclude: [] }, claims: { "§app/list": { kind: "surface", authority: "accepted" } } }, null, 2) + "\n");
   write(root, FILE, TOP);
   write(root, "src/list.js", "export const MAX = 60;\n");
@@ -234,4 +251,68 @@ test("promote refuses a hand-written agreed whose source is a description, as ag
   assert.equal(run(root, "evidence", "hand", "--id", ID, "--by", "t", "--verification", "v", "--doc-only", "--write").exit, 0);
   const p = run(root, "promote", "hand", "--id", ID);
   assert.ok(codes(p).includes("agreed-unsourced"), JSON.stringify(p));
+});
+
+// A pi-session reference must point back at a real user message: the session file under
+// ${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions (by its name, else its header), and in it a message entry by the user.
+test("a pi-session source that resolves to no user message is refused (agree-source-unresolved), from --source or the variable", () => {
+  for (const [env, more, why] of [
+    [{}, ["--source", "pi-session:nope#nope"], "no such session"],
+    [{}, ["--source", "pi-session:s1#zz"], "no such entry"],
+    [{}, ["--source", "pi-session:s1#a1"], "an assistant message"],
+    [{}, ["--source", "pi-session:s1#c1"], "a custom entry"],
+    [{ SPEC_AGREE_SOURCE: "pi-session:nope#nope" }, [], "the variable's"],
+  ]) {
+    const root = project();
+    decided(root, "talk");
+    const before = unchanged(root);
+    const a = agreeEnv(root, env, ...more);
+    assert.equal(a.exit, 1, `${why}: ${JSON.stringify(a)}`);
+    assert.deepEqual(codes(a), ["agree-source-unresolved"], why);
+    assert.match(JSON.stringify(a), /user message/, "the refusal says what it needs");
+    assert.equal(unchanged(root), before, `nothing written (${why})`);
+  }
+});
+
+test("a pi-session source resolves by file name or header, under PI_CODING_AGENT_DIR when it is set", () => {
+  const root = project();
+  decided(root, "talk");
+  const other = join(root, "elsewhere");
+  piSession(other, "2026-10-19T00-00-00-000Z_s9.jsonl", "s9", [["u1", "message", "user"]]);
+  // the variable moves the sessions: s1 (under HOME) is not there
+  assert.deepEqual(codes(agreeEnv(root, { PI_CODING_AGENT_DIR: other }, "--source", "pi-session:s1#e7")), ["agree-source-unresolved"]);
+  const a = agreeEnv(root, { PI_CODING_AGENT_DIR: other }, "--source", "pi-session:s9#u1");
+  assert.equal(a.exit, 0, JSON.stringify(a));
+  const root2 = project();
+  decided(root2, "talk");
+  const b = agreeEnv(root2, {}, "--source", "pi-session:01a1-5137#e9f2");
+  assert.equal(b.exit, 0, `found by its header: ${JSON.stringify(b)}`);
+});
+
+test("a worker (SPEC_AGREE_GIVEN set by the spawn path) given no reference refuses any --source; given one, it stamps that", () => {
+  const root = project();
+  decided(root, "talk");
+  const before = unchanged(root);
+  for (const ref of ["chat:c1#m3", "pi-session:s1#e7"]) {
+    const a = agreeEnv(root, { SPEC_AGREE_GIVEN: "" }, "--source", ref);
+    assert.equal(a.exit, 1, JSON.stringify(a));
+    assert.deepEqual(codes(a), ["agree-source-not-given"], ref);
+    assert.match(JSON.stringify(a), /report the records ready/);
+  }
+  assert.equal(unchanged(root), before);
+  const b = agreeEnv(root, { SPEC_AGREE_GIVEN: ENV_REF, SPEC_AGREE_SOURCE: ENV_REF });
+  assert.equal(b.exit, 0, JSON.stringify(b));
+  assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, ENV_REF);
+});
+
+test("promote refuses a hand-written pi-session source that resolves to no user message, and takes one that does", () => {
+  const root = project();
+  decided(root, "hand", { authority: "accepted", agreed: { by: "user", at: "2026-10-05", source: "pi-session:nope#nope" } });
+  assert.equal(run(root, "evidence", "hand", "--id", ID, "--by", "t", "--verification", "v", "--doc-only", "--write").exit, 0);
+  assert.ok(codes(run(root, "promote", "hand", "--id", ID)).includes("agreed-source-unresolved"));
+  const root2 = project();
+  decided(root2, "hand", { authority: "accepted", agreed: { by: "user", at: "2026-10-05", source: "pi-session:s1#e7" } });
+  assert.equal(run(root2, "evidence", "hand", "--id", ID, "--by", "t", "--verification", "v", "--doc-only", "--write").exit, 0);
+  const p = run(root2, "promote", "hand", "--id", ID);
+  assert.equal(p.exit, 0, JSON.stringify(p));
 });

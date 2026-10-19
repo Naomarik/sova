@@ -140,7 +140,8 @@ of its tools.
 
 Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
 it, its triggers (times, intervals, `claude-limit-reset`, `merge-ready`) and their limits, how a
-`merge-ready` fire waits and collects branches, and approving or revoking it. Then the Merge round
+`merge-ready` fire waits and collects branches, and approving or revoking it (in the Playbooks
+dialog, or in the Overseer's Approvals & Schedules). Then the Merge round
 as the worked example: its schedule, the merge board, asking the owner, what comes to the user
 (branches with no live owner, once each) and the one-line quiet round. A schedule never turns on a
 project mode.

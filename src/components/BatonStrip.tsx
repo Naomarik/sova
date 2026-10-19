@@ -20,6 +20,7 @@ import { openMarkdown } from "../lib/markdown-viewer";
 import { relativeTime } from "../lib/format";
 import { DELETE_ASK, DELETE_LINK, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, newLinkFor } from "../lib/link-delete";
 import { ActionMenu } from "./ActionMenu";
+import { BatonTours } from "./BatonTours";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
 import "../orgs.css";
 
@@ -423,6 +424,7 @@ export function BatonStrip(props: {
                 </div>
               </div>
             </details>
+            <BatonTours orgId={i().session.orgId} sessionId={i().session.sessionId} version={key().v} />
             <Show when={i().owner && i().session.hiddenFromOwner}>
               <p class="baton-strip-areas">Hidden from {firstName(i().owner!.name)}'s owner page.</p>
             </Show>

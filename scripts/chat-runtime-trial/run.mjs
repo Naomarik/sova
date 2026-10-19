@@ -263,18 +263,42 @@ let base = "";
 let shareBase = "";
 let c = null;
 let n = 0;
+/** The server could not listen on its port (taken between freePort and its bind): its log says so. */
+const listenFailed = (log) => {
+  try {
+    return /\[server\] listen failed: (.*)/.exec(readFileSync(log, "utf8"))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+};
 async function boot(o = {}) {
-  const port = o.agent ? await freePort() : (fixedPort ?? (await freePort()));
-  const url = `http://127.0.0.1:${port}`;
-  // A fixed build unless the check sets one: the worktree is edited while the trial runs, and a build
-  // taken from the dirty tree would move between restarts and reload chats mid-check.
-  // A share listener of its own on loopback, so a trial can post as a baton's participant.
-  const sharePort = await freePort();
-  const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
-  const env = serverEnv({ agent: o.agent ?? agent, port, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
-  const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`), root: o.root, liveLike });
-  s.up();
-  await healthy(url);
+  // freePort's ports are released before the server binds them, so another process (any outgoing
+  // connection's source port) may take one first: the server then exits, and it boots again on others.
+  for (let attempt = 1; ; attempt++) {
+    const port = o.agent ? await freePort() : (fixedPort ?? (await freePort()));
+    const url = `http://127.0.0.1:${port}`;
+    // A fixed build unless the check sets one: the worktree is edited while the trial runs, and a build
+    // taken from the dirty tree would move between restarts and reload chats mid-check.
+    // A share listener of its own on loopback, so a trial can post as a baton's participant.
+    const sharePort = await freePort();
+    const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
+    const env = serverEnv({ agent: o.agent ?? agent, port, driver, liveLike, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: "build" in o ? o.build : "trial-fixed", failBoot: o.failBoot, claude: { claudeBin, claudeLogin }, extra });
+    const log = join(scratch, `server-${n + 1}.log`);
+    const s = server({ tag: `${tag}-${++n}`, env, mode, log, root: o.root, liveLike });
+    s.up();
+    try {
+      await healthy(url, undefined, () => listenFailed(log));
+    } catch (err) {
+      const why = listenFailed(log);
+      if (!why || attempt >= 3 || (fixedPort && !o.agent)) throw err;
+      R.note(`the server could not listen (${why}); booting it again on other ports`);
+      await s.down();
+      continue;
+    }
+    return booted(o, s, url, sharePort);
+  }
+}
+async function booted(o, s, url, sharePort) {
   if (liveLike && !o.agent) {
     // No switch: chats run in processes of their own, on systemd user units where the user manager
     // answers (the stand-in unit's), else detached (darwin).
@@ -561,11 +585,17 @@ async function t2() {
   R.check(deaths(path).length === 1, `t2: one death recorded in chats/deaths.jsonl (${deaths(path).length})`);
   // The resume reopens the chat in a new process and sends the crash text once.
   for (let i = 0; i < 60 && !mockLog(mock.log).slice(m0).some((e) => e.tag === "resume"); i++) await sleep(500);
+  // The model request comes before the session file holds the user entry (pi writes it on its own
+  // schedule), so wait for the entry with a deadline; the count is still checked as exactly 1 here
+  // and again after the second kill, so a missing or doubled continue fails.
+  await waitFor(() => userEntriesWith(path, CRASH_RESUME_TEXT) >= 1, 20000, 200);
   const pid2 = chatPid(path);
   R.check(pid2 && pid2 !== pid1, `t2: a new process hosts the chat (pid ${pid1} → ${pid2 || "none"})`);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1 && userEntriesWith(path, RESUME_TEXT) === 0, `t2: the crash "continue" was sent once (${userEntriesWith(path, CRASH_RESUME_TEXT)}), never the restart text`);
   // A second kill while the resume runs: never resumed again.
   await sleep(2000);
+  // Under load the wait above can eat the resume's ~10 s reply; a kill of an idle chat would test nothing.
+  R.check(!mockLog(mock.log).slice(m0).some((e) => e.event === "done" && e.tag === "resume"), "t2: the second kill lands while the resume runs");
   if (pid2) process.kill(pid2, "SIGKILL");
   R.note(`t2: killed the resuming process ${pid2}`);
   await sleep(15000);
@@ -1685,6 +1715,8 @@ async function t18b() {
   R.note(`t18b: killed the parent's process ${ppid}`);
   // The parent's crash resume, from its new process (an earlier check's resumes are older lines).
   await waitFor(() => mockLog(mock.log).slice(asked0).some((e) => e.tag === "resume" && e.pid && e.pid !== ppid && e.pid !== wpid), 60000);
+  // The model request comes before pi writes the user entry: wait for the entry (bounded).
+  await waitFor(() => userEntriesWith(path, CRASH_RESUME_TEXT) >= 1, 20000, 200);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1, `t18b: the parent's crash "continue" was sent once (${userEntriesWith(path, CRASH_RESUME_TEXT)})`);
   R.check(chatPid(w.path) === wpid && alive(wpid), `t18b: the worker kept its process through the parent's crash (pid ${wpid} → ${chatPid(w.path) || "none"})`);
   R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 0, "t18b: the worker was sent no continue");
@@ -1692,6 +1724,8 @@ async function t18b() {
   const done = await workerDone(s2, "trial-t18k");
   R.check(done?.outcome === "success", `t18b: the worker finished (outcome ${done?.outcome})`);
   await sleep(6000);
+  R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1, `t18b: the parent's crash "continue" is still in its file once after the run settled (${userEntriesWith(path, CRASH_RESUME_TEXT)})`);
+  R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 0, `t18b: the worker was still sent no continue after the run settled (${userEntriesWith(w.path, CRASH_RESUME_TEXT)})`);
   R.check(completions(path, w.path) === 1, `t18b: the worker's completion was announced to the parent once (${completions(path, w.path)})`);
   noRpc("t18b");
   s2.close();
@@ -1821,10 +1855,12 @@ async function t20() {
   await waitFor(() => mockLog(mock.log).some((e) => e.tag === "resume" && e.pid && e.pid !== pid1 && e.pid === chatPid(w.path)), 60000);
   const pid2 = chatPid(w.path);
   R.check(pid2 && pid2 !== pid1, `t20: the worker reopened in a new process (pid ${pid1} → ${pid2 || "none"})`);
+  await waitFor(() => userEntriesWith(w.path, CRASH_RESUME_TEXT) >= 1, 20000, 200);
   R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 1, `t20: the crash "continue" went to the worker once (${userEntriesWith(w.path, CRASH_RESUME_TEXT)})`);
   const done = await workerDone(s, "trial-t20a");
   R.check(done?.outcome === "success", `t20: the resumed run finished (outcome ${done?.outcome}${done?.error ? `: ${done.error}` : ""})`);
   await sleep(5000);
+  R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 1, `t20: the worker's crash "continue" is still in its file once after its run finished (${userEntriesWith(w.path, CRASH_RESUME_TEXT)})`);
   R.check(completions(path, w.path) === 1, `t20: the parent got one completion (${completions(path, w.path)})`);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 0, "t20: the parent was sent no continue");
   R.check(resumeDecisions(w.path).length === 1, `t20: one auto_resume decision about the worker (${fmtDecisions(resumeDecisions(w.path))})`);

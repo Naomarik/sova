@@ -1,8 +1,8 @@
 (ns sova.statecharts.registry
   "The refit's statecharts, as the engine registers them (engine/API.md §1): one entry per statechart, with
-   its version, storage, exported keys, act metadata (level, tool, people-/code-facing, what it
+   its version, storage, exported keys, act metadata (power, tool, people-/code-facing, what it
    counts, the checks run before the state), the refusal when an act has no transition here, and
-   the log's privacy rules. `options` gives the engine the level check."
+   the log's privacy rules. `options` gives the engine the power check."
   (:require
     [sova.statecharts.baton :as baton]
     [sova.statecharts.build :as build]
@@ -19,7 +19,8 @@
     [sova.statecharts.watch :as watch]
     [clojure.string :as str]
     [sova.statecharts.base :as b]
-    [sova.statecharts.rules.levels :as lv]))
+    [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]))
 
 (defn card-what
   "What a people-facing act acts on, in the confirm refusal's words (overseer-org-tools requireConfirm)."
@@ -58,4 +59,5 @@
 (def statecharts (into {} (for [[k v] statecharts*] [k (with-card-checks v)])))
 
 (def options
-  {:level-check lv/level-check})
+  "The engine's act check: the powers (rules/powers.cljc), under the engine's `:level-check` option name."
+  {:level-check pw/power-check})

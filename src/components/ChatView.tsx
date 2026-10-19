@@ -19,6 +19,7 @@ import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { UnackedSends } from "../lib/unacked-sends";
+import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } from "../lib/hand-back";
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
@@ -139,7 +140,9 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { TourSessionContext } from "./TourCard";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -645,8 +648,7 @@ export function ChatView(props: {
     const rows = unsentRows(live, handedBack);
     if (rows.length === 0) return;
     for (const r of rows) if (r.id) handedBack.add(r.id);
-    const current = drafts.get(props.path);
-    setDraftText(props.path, [...rows.map((r) => r.text), ...(current ? [current] : [])].join("\n\n"));
+    handBackSends(rows);
   };
 
   /** Ids a `queue_item_gone` has spoken for, so a later snapshot can't be read as evidence about
@@ -660,25 +662,38 @@ export function ChatView(props: {
   const handedBack = new Set<string>();
   /** Sends the server hasn't acknowledged: back in the draft when the chat goes from under the pane. */
   const unacked = new UnackedSends();
-  /** Texts the pane got back (a refusal, a reconnect) go to the top of the draft: the composer on
-      screen shows them now (it reads the stored draft only when it mounts), and the stored draft
-      holds them for one that mounts later. */
-  const putBack = (texts: string[]) => {
-    if (!texts.length) return;
-    const current = drafts.get(props.path);
-    setDraftText(props.path, [...texts, ...(current ? [current] : [])].join("\n\n"));
-    setRestored({ text: texts.join("\n\n") });
-  };
+  /** The confirm card clicks this pane sent, by client id: one handed back goes to its card, never the draft. */
+  const clicks = new CardClicks();
   const UNSENT_WORDS = "That message couldn't be sent. It's back in the composer.";
-  /** The sends made on connection `conn` it never acknowledged, back to the composer: it ended
-      before its chat's hello, so no chat took them. Earlier connections' sends stay. How many. */
-  const takeBackUnsent = (conn: number): number => {
-    const back = unacked.takeFrom(conn, handedBack);
-    putBack(back);
-    return back.length;
+  /**
+   * Every send the pane gets back (a refusal, a reload or close, a connection that ended before its
+   * chat's hello, a queued one that left undelivered) goes through here (lib/hand-back): typed texts
+   * to the top of the draft, announced with `said`; a card click never: its card's "Sent" mark
+   * clears, so the buttons come back, and the pane says so (§app.overseer/confirm). The composer on
+   * screen shows the typed texts now (it reads the stored draft only when it mounts), and the stored
+   * draft holds them for one that mounts later. Returns the typed texts handed back.
+   */
+  const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
+    if (!back.length) return [];
+    const r = handBack({ draft: drafts.get(props.path), cardSent: untrack(cardSent) }, back, clicks);
+    if (r.texts.length) {
+      setDraftText(props.path, r.draft ?? "");
+      setRestored({ text: r.texts.join("\n\n") });
+      if (said) announce(said);
+    }
+    if (r.note) {
+      setCardSent(r.cardSent);
+      toast(r.note);
+      announce(r.note);
+    }
+    return r.texts;
   };
+  /** The sends made on connection `conn` it never acknowledged come back: it ended before its
+      chat's hello, so no chat took them. Earlier connections' sends stay. How many typed texts came
+      back (a click goes to its card and is said there). */
+  const takeBackUnsent = (conn: number): number => handBackSends(unacked.takeFrom(conn, handedBack)).length;
   const handBackUnsent = (conn: number) => {
-    if (takeBackUnsent(conn)) announce(UNSENT_WORDS);
+    handBackSends(unacked.takeFrom(conn, handedBack), UNSENT_WORDS);
   };
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
@@ -821,11 +836,7 @@ export function ChatView(props: {
           sawGone = !props.summary?.()?.chat;
           socket.close();
           // Sends it never took can't be refused back on this socket any more: they come back now.
-          const back = unacked.takeAll(handedBack);
-          if (back.length) {
-            putBack(back);
-            announce("That message couldn't be sent. It's back in the composer.");
-          }
+          handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
           return;
         }
         case "workers":
@@ -843,7 +854,22 @@ export function ChatView(props: {
           break;
         // Stop drained what was still queued; it goes back to the draft, not behind the next prompt.
         case "queue_cleared": {
-          const text = takeBackQueued(setLive, [...msg.steering, ...msg.followUp]);
+          const drained = [...msg.steering, ...msg.followUp];
+          // A queued card click never goes to the composer: its buttons come back (lib/hand-back).
+          const cards: string[] = [];
+          const typed = drained.filter((t) => {
+            const card = clicks.takeByText(t);
+            if (card !== undefined) cards.push(card);
+            return card === undefined;
+          });
+          if (cards.length) {
+            setCardSent(reopenCards(untrack(cardSent), cards));
+            toast(CLICK_NOT_DELIVERED);
+            announce(CLICK_NOT_DELIVERED);
+          }
+          // Every drained row goes; only typed text comes back.
+          takeBackQueued(setLive, drained);
+          const text = typed.filter((t) => t.trim()).join("\n\n");
           if (text) {
             setRestored({ text });
             announce("Queued message returned to the composer.");
@@ -904,7 +930,12 @@ export function ChatView(props: {
           claimed.add(msg.itemId);
           if (effect.row === "delivered") markDelivered(setLive, msg.itemId);
           else markRemoved(setLive, msg.itemId);
-          if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
+          if (effect.row === "delivered") clicks.forget(msg.itemId);
+          // A card click that left undelivered: its buttons come back, never the composer (lib/hand-back).
+          if (first && effect.restore && clicks.cardOf(msg.itemId) !== undefined && !handedBack.has(msg.itemId)) {
+            handedBack.add(msg.itemId);
+            handBackSends([{ id: msg.itemId, text }]);
+          } else if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
             handedBack.add(msg.itemId);
             setRestored({ text });
             announce(
@@ -1072,9 +1103,8 @@ export function ChatView(props: {
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
             {
-              // A command it names makes no user row: its text comes back from here.
-              const taken = [unacked.take(msg.clientId, handedBack)].filter((t): t is string => t !== null);
-              putBack(taken);
+              // A command it names makes no user row: its text comes back from here (a click: its card).
+              const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
               // Refused before the hello, the chat never had it: its row goes, as the text is back.
               const unopened = errorHandsBack(untrack(wait)) !== null;
               if (unopened && msg.clientId) {
@@ -1096,11 +1126,7 @@ export function ChatView(props: {
               setCode(null);
               // The chat is going (a reload, a stop): this socket's sends the server never took can't
               // be refused back to it any more (the pane reconnects under a new id), so they come back now.
-              const back = unacked.takeAll(handedBack);
-              if (back.length) {
-                putBack(back);
-                announce("That message couldn't be sent. It's back in the composer.");
-              }
+              handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
               // The Overseer's runtime can be replaced by a clear in another tab: its route may now
               // name a new file, and reconnecting here would reopen the old one.
               if (props.overseer) {
@@ -1245,7 +1271,8 @@ export function ChatView(props: {
     stopTakingBack();
     const frames = outbox.take();
     const w = untrack(wait);
-    const held = w.open ? unacked.of(w.conn) : new Map<string, string>();
+    // A card click is never put back by the courier (lib/hand-back): only typed sends are held for it.
+    const held = new Map([...(w.open ? unacked.of(w.conn) : new Map<string, string>())].filter(([id]) => clicks.cardOf(id) === undefined));
     if (!frames.length && !held.size) return;
     courier(props.path, frames, held, chatCourier, socket.release() ?? undefined);
   });
@@ -1441,7 +1468,7 @@ export function ChatView(props: {
 
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
-  const actionState = (wake = false, link = false, topic = false): ActionState => ({
+  const actionState = (wake = false, link = false, topic = false, tourNotice = false): ActionState => ({
     chat: true,
     live: false, // a ChatView only exists for a session Sova may write to
     streaming: live.running,
@@ -1451,6 +1478,7 @@ export function ChatView(props: {
     pending: forking() || pending().rewind + pending().regenerate > 0,
     paused: blocked()?.text ?? null,
     wake,
+    tourNotice,
     link,
     topic,
   });
@@ -1485,10 +1513,14 @@ export function ChatView(props: {
   /** The session's id, for Share. A memo: the summary is a new object on every list read, and every
       strip's items read this. */
   const shareId = createMemo(() => props.summary?.()?.id);
-  /** What each delivered message offers here. Copy is ours alone; the rest are requests with a
-      reason when they can't act, never a button that quietly does nothing. */
-  const chatActions: MessageActionsProvider = {
-    items(strip) {
+  /** What extensions add under this chat's replies: asked once when it opens and once when a run
+      ends, only of extensions that add to replies (lib/reply-place). */
+  const additions = useReplyAdditions({ session: shareId, local: createMemo(() => !hostOf(props.path)), running: () => live.running });
+  /** What each delivered message offers here: the reply place. Sova's own built-in first: Copy is
+      ours alone; the rest are requests with a reason when they can't act, never a button that
+      quietly does nothing. What extensions add comes after it. */
+  const chatActions: ReplyPlace = {
+    builtIns: [{ id: "sova.message-actions", items(strip) {
       return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
@@ -1504,13 +1536,15 @@ export function ChatView(props: {
           case "regenerate":
             return {
               kind,
-              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)),
+              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)),
               run: () => regenerate(strip.entryId),
             };
         }
       });
-    },
+    } }],
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
+    added: additions.added,
+    runChip: additions.runChip,
   };
 
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.
@@ -1898,6 +1932,8 @@ export function ChatView(props: {
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
     const frame = steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) };
+    // A click is known as one wherever it is handed back (lib/hand-back).
+    if (confirm && !steer) clicks.note(clientId, confirm, text);
     if (holding()) hold(frame);
     else {
       if (!socket.send(frame)) return false;
@@ -2201,6 +2237,16 @@ export function ChatView(props: {
             <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
+              <TourSessionContext.Provider value={{
+                sessionId: () => props.summary?.()?.id,
+                host: () => hostOf(props.path),
+                canAsk: () => !blocked(),
+                ask: (question) => {
+                  if (blocked()) return;
+                  setRestored({ text: question });
+                  focusComposer();
+                },
+              }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -2223,6 +2269,7 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              </TourSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (

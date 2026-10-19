@@ -259,9 +259,7 @@ one tap: **Switch This Chat to <profile>**, naming the first profile (in list or
 chat's current one, excluding Off since it promises no provider choice) whose footprint uses no
 model of the exhausted provider. Pressing
 it switches this chat only, as a pick in the menu does. With no such profile the row links to
-Settings → Subagents instead. A failure with no thread row of its own (its error drawn at the
-thread's end, §chat.transcript/states) keeps this row when a newer turn starts and its error
-banner goes. Nothing switches automatically, and there is no near-limit hint.
+Settings → Subagents instead. Nothing switches automatically, and there is no near-limit hint.
 
 ## §chat.subagent-profiles/overseer — The Overseer
 

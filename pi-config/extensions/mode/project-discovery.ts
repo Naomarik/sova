@@ -19,8 +19,10 @@ import {
 	PROJECT_MODES_DIR,
 	projectModeBlock,
 	snapshotShaInput,
+	hasActions,
 	toolFiles,
 	toolsHashInput,
+	type ModeActions,
 	type ProjectModeListing,
 	type ProjectModeProblem,
 	type ProjectModeSnapshot,
@@ -102,14 +104,14 @@ export function folderFileShas(dir: string): Record<string, string> {
 }
 
 /**
- * The approval hash of a mode's tools as they are on disk now: the declared tools and every file in the mode
- * folder (toolsHashInput); "" for a mode with no tools. A folder past the caps hashes as "too-large", which no
- * approval ever matches.
+ * The approval hash of what a mode runs as it is on disk now: the declared tools (and its commands and hooks, when
+ * it has them) and every file in the mode folder (toolsHashInput); "" for a mode that declares none of them. A
+ * folder past the caps hashes as "too-large", which no approval ever matches.
  */
-export function toolsHashOf(dir: string, tools: readonly ProjectModeTool[]): string {
-	if (tools.length === 0) return "";
+export function toolsHashOf(dir: string, tools: readonly ProjectModeTool[], actions?: ModeActions): string {
+	if (tools.length === 0 && !hasActions(actions)) return "";
 	try {
-		return sha256(toolsHashInput(tools, folderFileShas(dir)));
+		return sha256(toolsHashInput(tools, folderFileShas(dir), actions));
 	} catch (error) {
 		if (error instanceof ModeFolderTooLarge) return "too-large";
 		throw error;
@@ -132,7 +134,9 @@ export function readProjectMode(modesDir: string, id: string): ProjectModeSnapsh
 	}
 	try {
 		const parsed = parseModeFile(text);
-		const missing = toolFiles(parsed.tools).find((rel) => {
+		const actions: ModeActions = { commands: parsed.commands, hooks: parsed.hooks };
+		const runs = parsed.tools.length > 0 || hasActions(actions);
+		const missing = toolFiles(parsed.tools, actions).find((rel) => {
 			try {
 				return !statSync(join(dir, rel.slice(2))).isFile();
 			} catch {
@@ -141,7 +145,7 @@ export function readProjectMode(modesDir: string, id: string): ProjectModeSnapsh
 		});
 		if (missing) return { id, kind: "parse", path: file, error: `tool file ${missing} is not a file in the mode folder` };
 		let shas: Record<string, string> = {};
-		if (parsed.tools.length > 0) {
+		if (runs) {
 			try {
 				shas = folderFileShas(dir);
 			} catch (error) {
@@ -153,8 +157,11 @@ export function readProjectMode(modesDir: string, id: string): ProjectModeSnapsh
 			description: parsed.description,
 			workers: parsed.workers,
 			tools: parsed.tools,
+			// Only when declared: a mode without them keeps the copy (and sha) it always had.
+			...(parsed.commands ? { commands: parsed.commands } : {}),
+			...(parsed.hooks ? { hooks: parsed.hooks } : {}),
 			text: projectModeBlock(id, dir, parsed.body),
-			toolsHash: parsed.tools.length === 0 ? "" : sha256(toolsHashInput(parsed.tools, shas)),
+			toolsHash: runs ? sha256(toolsHashInput(parsed.tools, shas, actions)) : "",
 		};
 		return { v: 1, id, dir, ...kept, sha: sha256(snapshotShaInput(kept)) };
 	} catch (error) {

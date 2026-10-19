@@ -60,7 +60,9 @@ import {
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
-import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
+import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
+import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
+import { RowPlaceView } from "./RowPlace";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
@@ -71,7 +73,7 @@ import { reuseUnchanged } from "../lib/summary-diff";
 import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
-import { isTextEntry } from "../lib/text-entry";
+import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { sessionWorking } from "../lib/workers";
@@ -264,7 +266,7 @@ function OverseerEye(props: { session: SessionSummary; project: string; selected
  * out of the tab order on purpose (a long list must not add two tab stops per row), so the link
  * keeps the same state in its accessible name that the old right-hand chips exposed.
  */
-function SessionRow(props: {
+export function SessionRow(props: {
   session: SessionSummary;
   selected: string | null;
   now: number;
@@ -296,8 +298,6 @@ function SessionRow(props: {
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy(), stalled: stalled().has(s().path) }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
-  /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
-  const badge = () => readinessBadge(s().readiness);
   /** Line 3's worktree count, "2 of 3", after the time: muted, lit while one is ready to merge. */
   const trees = () => readinessCount(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
@@ -628,17 +628,9 @@ function SessionRow(props: {
                   </>
                 )}
               </Show>
-              {/* The merge-readiness badge, between the count and the model. The topic is search-only. */}
-              <Show when={badge()}>
-                {(w) => (
-                  <>
-                    {" · "}
-                    <span class="session-readiness" title={readinessTitle(s().readiness) ?? undefined}>
-                      {w()}
-                    </span>
-                  </>
-                )}
-              </Show>
+              {/* The row place (lib/row-place): its built-in, the merge-readiness badge, between the
+                  count and the model, then the chips extensions add. The topic is search-only. */}
+              <RowPlaceView session={s()} builtIns={ROW_BUILT_INS} />
               {/* The region's Needs you says where the row lives in the model's place. */}
               <Show
                 when={props.place}
@@ -1335,23 +1327,20 @@ export function Sidebar(props: {
   };
 
   // "/" anywhere outside a text field focuses search; Ctrl/⌘+B collapses or expands the pane.
-  const onKey = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
-      if (!props.unfolded) return; // collapse is a desktop affordance
-      e.preventDefault();
-      setCollapsed(!spine());
-      return;
-    }
-    if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-    // Typing, not merely focused on a control: a checkbox or a button is no place for a "/".
-    if (isTextEntry(e.target as HTMLElement | null)) return;
-    e.preventDefault();
+  // (commands/keys holds both chords and their scope: "/" never fires while typing in a field.)
+  const offToggleKey = bindKey("sidebar.toggle", () => {
+    if (!props.unfolded) return false; // collapse is a desktop affordance
+    setCollapsed(!spine());
+    return true;
+  });
+  const offSearchKey = bindKey("sidebar.search", () => {
     if (collapsed()) expandToSearch();
     else search.focus();
-  };
-  document.addEventListener("keydown", onKey);
+    return true;
+  });
   onCleanup(() => {
-    document.removeEventListener("keydown", onKey);
+    offToggleKey();
+    offSearchKey();
     clearTimeout(skeletonTimer);
   });
 
@@ -2419,7 +2408,11 @@ export function Sidebar(props: {
     );
   };
 
+  /** Line 3's place: what extensions add to rows, asked per list (never per row), handed to every row. */
+  const rowChips = useRowAdditions({ sessions: () => props.sessions });
+
   return (
+    <RowPlaceContext.Provider value={rowChips}>
     <aside ref={aside} class="app-sidebar" aria-label="Sessions">
       {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
       <Show when={!collapsed()} fallback={<Spine />}>
@@ -2994,5 +2987,6 @@ export function Sidebar(props: {
         </Show>
       </Show>
     </aside>
+    </RowPlaceContext.Provider>
   );
 }

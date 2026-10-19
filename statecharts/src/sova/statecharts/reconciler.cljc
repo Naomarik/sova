@@ -28,6 +28,7 @@
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [sova.statecharts.base :as b]
     [sova.statecharts.rules.levels :as lv]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.rules.refusal :as r]
     [sova.statecharts.engine.dsl :as dsl]))
 
@@ -124,11 +125,18 @@
            (for [c (:resolved res)]
              {:target (b/conflict-sid (:org-id d) (:project-id d) (:id c)) :event :conflict/resolved :data c})))))
 
+(defn request-promotes? [d]
+  (if-let [rp (:request-powers d)]
+    (true? (:promote rp))
+    (lv/level-at-least? (:request-autonomy d) "L2")))
+
 (defn auto-promoted?
-  "r14 `:unless-auto-promoted`: the statechart promotes these drafted decisions itself (its L2 drive): the
-   level in force when the run was asked for is L2 or more, and each is in its author's own area."
+  "r14 `:unless-auto-promoted`: the statechart promotes these drafted decisions itself (its promote drive):
+   when the run was asked for, the requester's column had `promote` On and no brake (`:request-powers`; a
+   snapshot from before switches carries `:request-autonomy`, read as its carry-over), and each is in its
+   author's own area."
   [d ids]
-  (and (lv/level-at-least? (:request-autonomy d) "L2")
+  (and (request-promotes? d)
        (every? #(true? (get-in d [:index (str %) :author-owns-area])) ids)))
 
 (def finished-asks
@@ -160,14 +168,14 @@
   (let [ev (e d)]
     [(ops/assign :by (or (some-> (:by ev) name) "operator"))
      (ops/assign :owner (or (:owner ev) (:owner d) "operator"))
-     ;; r14: the level in force when it was asked for (did the statechart promote the drafted ones itself?)
-     (ops/assign :request-autonomy (some-> (:autonomy ev) name))]))
+     ;; r14: did the requester's column have promote On, with no brake, when it was asked for (does the
+     ;; statechart promote the drafted ones itself?)
+     (ops/assign :request-powers {:promote (and (nil? (pw/brake ev)) (pw/on? (pw/column ev) "promote"))})]))
 
 (def statechart
   (chart/statechart {:initial :reconciler}
     (state {:id :reconciler :initial :born}
       (dsl/hold-cancel-correction)
-      (b/hold-review)
 
       ;; the index of the project's decisions
       (transition {:sova/feed :quiet :event :decision/recorded}
@@ -260,13 +268,12 @@
           (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error "The server restarted during the run."})])}))))))
 
 (def acts
-  {:reconcile/request    {:needs "L1" :tool "sova_reconcile"}
-   :decision/promote     {:needs "L2" :tool "sova_promote" :code-facing true :counts "promote" :hold true :confirm-kind "promote"
+  {:reconcile/request    {:power "always" :tool "sova_reconcile"}
+   :decision/promote     {:power "promote" :tool "sova_promote" :code-facing true :counts "promote" :hold true
                           :what (fn [d] (let [n (count (promote-ids d))] (str "Promoting " n " decision" (when (not= 1 n) "s"))))}
-   :draft/rewrite        {:needs nil}
-   :correct/clear-failed {:needs "L1" :correction true :tool "sova_correct"}
-   :hold/cancel          {:needs "L0" :correction true}
-   :hold/approve         {:needs "L0" :correction true}})
+   :draft/rewrite        {:power nil}
+   :correct/clear-failed {:power "bookkeeping" :correction true :tool "sova_correct"}
+   :hold/cancel          {:power "always" :correction true}})
 
 (defn not-here [event config _]
   (case event

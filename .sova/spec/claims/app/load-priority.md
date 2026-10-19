@@ -13,7 +13,8 @@ In a session the server hosts, these start at the worker niceness, 10 unless con
 everything they start inherits it:
 
 - every worker the subagents extension starts, pi or Claude Code, and every hidden chat (`/explain`, `/compact-handoff`, `/btw`): its chat process starts at the worker niceness, as a unit of its own (`Nice=`) or a detached session started at that niceness, and so does every later start of the same worker (a resume, a reopen after its idle stop, a crash continue, a code reload, a move to another login, a failover);
-- every tool command: the agent's `bash` calls, sandboxed or not, and the user's own `!` commands.
+- every tool command: the agent's `bash` calls, sandboxed or not, and the user's own `!` commands;
+- server-orchestrated recording controllers for a tour and their browser descendants (§app.tours/resources), which read the same worker niceness setting at launch.
 
 The server itself, and the commands it runs for its own views and bookkeeping (git, listings,
 titles), keep the server's priority. Priority is only ever lowered: a process that already runs

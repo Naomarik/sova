@@ -1,0 +1,19 @@
+{
+  "name": "projects",
+  "about": "A script adds a project, renames it, puts it away and brings it back, turns off a preview link that isn't there, and reads its worktrees and files, each through the route the web app's own control uses; the refusals are the routes' own.",
+  "steps": [
+    { "name": "no project yet at the sessions' folder", "sova": ["run", "project.list"], "json": { "projects": { "$none": { "name": "Named by a script" } } } },
+    { "name": "add the folder as a project", "sova": ["run", "project.create", "--root", "{{work}}"], "save": "p", "json": { "project": { "id": { "$match": "^prj_" }, "archived": { "$absent": true } } } },
+    { "name": "the same folder again is the route's own refusal", "sova": ["run", "project.create", "--root", "{{work}}"], "exit": 2, "json": { "error": { "$match": "is already the project" } }, "stderr": "answered 409" },
+    { "name": "rename it", "sova": ["run", "project.update", "--pid", "{{p.project.id}}", "--name", "Named by a script"], "json": { "id": "{{p.project.id}}", "name": "Named by a script" } },
+    { "name": "it is listed by its new name", "sova": ["run", "project.list"], "json": { "projects": { "$some": { "id": "{{p.project.id}}", "name": "Named by a script" } } } },
+    { "name": "archive it", "sova": ["run", "project.archive", "--pid", "{{p.project.id}}"], "json": { "archived": { "$type": "object" } } },
+    { "name": "it reads archived", "sova": ["run", "project.get", "--pid", "{{p.project.id}}"], "json": { "archived": { "$type": "object" } } },
+    { "name": "unarchive it", "sova": ["run", "project.unarchive", "--pid", "{{p.project.id}}"], "json": { "archived": { "$absent": true } } },
+    { "name": "no such preview to turn off", "sova": ["run", "project.preview.off", "--id", "pv_missing"], "exit": 3, "stderr": "answered 404" },
+    { "name": "no coding sessions' worktrees", "sova": ["run", "project.worktree.list", "--pid", "{{p.project.id}}"], "json": { "sessions": [] } },
+    { "name": "no such coding session to merge", "sova": ["run", "project.worktree.merge", "--pid", "{{p.project.id}}", "--session-id", "no-such-session"], "exit": 3, "json": { "error": "Unknown coding session of this project" } },
+    { "name": "no kept files", "sova": ["run", "project.files.list", "--pid", "{{p.project.id}}"], "json": { "files": [] } },
+    { "name": "an unknown project", "sova": ["run", "project.get", "--pid", "prj_missing0"], "exit": 3, "stderr": "answered 404" }
+  ]
+}

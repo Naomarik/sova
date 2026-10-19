@@ -151,7 +151,8 @@
                    <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span>
                    — then the muted readiness badge when there is one ("restart pending", "2
                    follow-ups" — lowercase, the meta's own muted voice, no tone, never wrapped; its
-                   `title` the per-worktree lines), then model, then the context ring. A tagged row's
+                   `title` the per-worktree lines; the place's built-in, §app.extensions/row-chips),
+                   then the chips extensions add there (none without one), then model, then the context ring. A tagged row's
                    `.list-meta` has the `title` "Topic: bug fix (tagged automatically)"; the topic
                    shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
@@ -515,8 +516,10 @@ label a person reads says "sessions pane".
   the row's accessible name carries the words ("2 of 3 worktrees merged, one is ready to merge").
   The muted readiness badge follows it when there is one: "restart pending", or the follow-up count
   ("1 follow-up", "2 follow-ups") — never the word "merged", which the count already says — and a
-  leftover worktree is only in the `title`, never counted. The line truncates from its end, so the
-  model's name gives way first, then the badge, then the count, the time last — at a 280px desktop
+  leftover worktree is only in the `title`, never counted. The chips extensions add come after the
+  badge (§app.extensions/row-chips), and a row has none without such an extension. The line
+  truncates from its end, so the model's name gives way first, then those chips, then the badge,
+  then the count, the time last — at a 280px desktop
   sidebar and on a 390px phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h
   ago", "yesterday", "Mar 4"), then ` · `, then the model in mono. Show only the part after the first
   `/` and put the full
@@ -686,8 +689,8 @@ label a person reads says "sessions pane".
 
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
-whose branch is not merged (§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
+whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
+their link, §app.baton/needs-you), and a tour recording waiting for you to sign in (§app.tours/sites); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
 a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
 never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
 worktree count, lit (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
@@ -2110,6 +2113,7 @@ after).
   and a refusal the body says "Nothing was deleted."
 - **After.** The list refreshes like the bulk path, and the open session's deletion navigates to
   `#/` for the same reason (a transcript that can no longer load).
+- **Recorded tours.** Only a transcript actually deleted by cleanup triggers its tour cleanup (§app.tours/storage): standalone source links and previews are revoked first, then the runtime is durably tombstoned in the same synchronous turn before any await to refuse new work and cancel attempts; recording children settle before host-local jobs, private state and source editions are removed. Dry runs and refused or skipped deletions leave these alone. A successful irreversible transcript deletion remains reported as deleted if later tour cleanup fails; missing-chat tour routes remain missing 404, and startup plus a cheap periodic sweep finish residual cleanup with bounded secret-free diagnostics. The sweep starts once every session root is registered. A shutdown waits (at most 5 s) for a pass already running and starts none. The pending-cleanup diagnostic is logged once, and again only after a clean pass. A chat whose remembered transcript is still in place is confirmed without listing any session folder. With no deletion marker, a chat's tours are cleaned only when its owner is confirmed absent on two sweeps at least a minute apart that see the same session folders; the first sweep after a start never cleans on absence alone, and a chat that reappears in between keeps its tours. A chat moved by hand outside Sova's known folders is therefore treated as deleted. A leftover whose deletion Sova itself recorded is finished on the first sweep. An access refusal caused only by permission, containment, symlink, header or index uncertainty never authorizes destructive tour cleanup; a confirmed absent owner or concrete regular contained deletion marker is required. Already-reviewed destination-owned hand-off snapshots and installation-wide reusable site approvals and test-account credentials are retained.
 
 ## §app.session-list/cleanup-org-guard — Cleanup never deletes organization sessions
 
@@ -2144,6 +2148,7 @@ record whose transcript is gone.
   stay as they were.
 - **Which folder.** The same mapping as §app.session-list/cleanup-org-guard decides membership.
   Ordinary husks, and a folder no longer attached, are still deleted on archive.
+- **Recorded tours.** Retaining the transcript on archive retains its tour pictures; the real deletion of an ordinary husk instead triggers the same source-link revocation, recording cancellation and settled artifact cleanup as other actual transcript deletions (§app.tours/storage). Independent destination-owned checked hand-off snapshots and installation-wide reusable site/account state survive. A later tour-cleanup failure does not reverse or misreport the actual husk deletion; missing-chat tour reads stay missing 404 while startup and periodic cleanup retry residual state. Permission, containment, symlink, header or index uncertainty can deny access but never alone authorize destructive tour cleanup; that requires confirmed owner absence or a concrete regular contained deletion marker.
 
 ## §app.session-list/search — Search
 

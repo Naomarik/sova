@@ -150,3 +150,21 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
 
 .owner-problem { margin: auto; padding: var(--space-7) var(--space-4); }
 .owner-skeleton { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* The Project Assistant (§app.project-assistant/chat): its door on Home, the conversation, its composer. */
+.owner-assistant-door { display: flex; flex-direction: column; gap: var(--space-2); align-items: stretch; }
+/* Unfolded, the door is a button, not a 720px bar of accent: the 5% of indigo is the action, not a band. */
+@media (min-width: 768px) {
+  .owner-assistant-door { align-items: flex-start; }
+  .owner-assistant-button { min-width: 12rem; }
+}
+.owner-assistant { gap: var(--space-3); }
+/* The owner's own bubbles keep a cap on the right, as on a conversation (thread.css): uncapped, a long
+   one filled the column and no longer read as theirs. Replies take the column (.share-msg-reply). */
+.owner-assistant .share-msg-own { max-width: min(85%, 60ch); }
+.owner-asked { color: var(--color-ink); }
+.owner-assistant-composer { margin-top: auto; }
+/* Requests and versions: rows that are not links. */
+.owner-row-static { align-items: center; }
+/* Open: the standard (medium, 44px) button, kept at its own width beside the row's text. */
+.owner-version-open { flex: none; }

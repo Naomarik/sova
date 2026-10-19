@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { carryOver, readStoredPowers } from "../shared/powers";
 import { DEFAULT_PO_CAPS, type ProjectOverseerCaps } from "../shared/project-overseer";
+
+const powersAt = (l: "L0" | "L1" | "L2" | "L3") => readStoredPowers({ autonomy: l });
 import { atOnceCounts, buildEnvelope, type EnvelopeInput, type SessionRead } from "./org-envelope";
 
 const caps: ProjectOverseerCaps = { ...DEFAULT_PO_CAPS, gatherPerTurn: 3, gatherPerDay: 6, promotePerTurn: null, promotePerDay: 60, unattendedPerDay: 12, gatheringsOpen: 5, codingRunning: 2 };
 const base = (over: Partial<EnvelopeInput> = {}): EnvelopeInput => ({
   by: "overseer",
   attended: false,
-  settings: { autonomy: "L2", caps, holdMin: 10, confirmKinds: ["gather", "promote"] },
+  settings: { powers: powersAt("L2"), caps, holdMin: 10 },
   paused: false,
   ceiling: null,
   archived: false,
@@ -33,16 +36,32 @@ describe("buildEnvelope (design §4.1)", () => {
     assert.deepEqual(e.allowance.promote, { used: 4, max: null });
   });
 
-  test("looks, at-once counts and caps, the level chosen and the hold in ms", () => {
+  test("looks, at-once counts and caps, the caller's column of powers, its derived level and the hold in ms", () => {
     const e = buildEnvelope(base());
     assert.deepEqual(e.looks, { used: 3, max: 12 });
     assert.deepEqual(e.atOnce, { gatheringsOpen: 2, gatheringsCap: 5, codingRunning: 1, codingCap: 2 });
+    assert.equal(e.column, "overseer");
+    assert.deepEqual(e.powers, carryOver("L2"));
     assert.equal(e.autonomy, "L2");
     assert.equal(e.holdMs, 600_000);
-    assert.equal(buildEnvelope(base({ settings: { autonomy: "L2", caps, holdMin: 0, confirmKinds: [] } })).holdMs, 0);
-    // r8(4): the project's confirmation checklist, as overseer.json has it.
-    assert.deepEqual(buildEnvelope(base()).confirmKinds, ["gather", "promote"]);
-    assert.deepEqual(buildEnvelope(base({ settings: { autonomy: "L2", caps, holdMin: 0, confirmKinds: [] } })).confirmKinds, []);
+    assert.equal(buildEnvelope(base({ settings: { powers: powersAt("L2"), caps, holdMin: 0 } })).holdMs, 0);
+    // al_3 q2: no held act waits for the overseer's confirmation any more.
+    assert.deepEqual(buildEnvelope(base()).confirmKinds, []);
+  });
+
+  test("the Project Assistant's acts carry its own column, never the overseer's", () => {
+    const powers = { ...powersAt("L3"), assistant: { ...carryOver("L0"), codingStart: true } };
+    const e = buildEnvelope(base({ by: "assistant", settings: { powers, caps, holdMin: 10 } }));
+    assert.equal(e.column, "assistant");
+    assert.equal(e.powers.codingStart, true);
+    assert.equal(e.powers.promote, false, "On for the overseer, Off for the assistant");
+  });
+
+  test("Resume on the empty-roster brake drops the ceiling until the roster has someone again; the pause stays", () => {
+    const powers = { ...powersAt("L1"), emptyRosterResumedAt: "2026-10-17T00:00:00.000Z" };
+    const e = buildEnvelope(base({ paused: true, ceiling: { autonomy: "L0", reason: "r" }, settings: { powers, caps, holdMin: 10 } }));
+    assert.equal(e.ceiling, null);
+    assert.equal(e.paused, true);
   });
 
   test("the facts pass through as given; optional fields only when set", () => {

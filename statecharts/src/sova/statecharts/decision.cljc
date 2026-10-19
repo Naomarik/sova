@@ -168,9 +168,9 @@
         (same-result "superseded")))))
 
 (def acts
-  {:decision/owner-area  {:needs nil}
-   :decision/settle-text {:needs nil}
-   :hold/cancel          {:needs "L0" :correction true}})
+  {:decision/owner-area  {:power nil}
+   :decision/settle-text {:power nil}
+   :hold/cancel          {:power "always" :correction true}})
 
 (defn not-here [event config _data]
   (case event

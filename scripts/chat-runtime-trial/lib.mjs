@@ -335,13 +335,16 @@ export function userBus() {
 /** Waits for GET /api/health to answer. */
 // 150 s: under `test:int` several trial files boot servers at once, and a boot (bun, the take-back of
 // the chats an earlier check left) has taken more than 60 s there.
-export async function healthy(base, ms = 150000) {
+// `gaveUp`: a reason the server will never answer (it could not listen), checked between tries.
+export async function healthy(base, ms = 150000, gaveUp = () => null) {
   const end = Date.now() + ms;
   for (;;) {
     try {
       const r = await fetch(`${base}/api/health`);
       if (r.ok) return await r.json();
     } catch {}
+    const why = gaveUp();
+    if (why) throw new Error(`${base}: ${why}`);
     if (Date.now() > end) throw new Error(`${base}: no health answer within ${ms} ms`);
     await sleep(300);
   }

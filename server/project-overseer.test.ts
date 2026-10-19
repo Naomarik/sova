@@ -26,7 +26,7 @@ const po = await import("./project-overseer");
 // The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
 (await import("./spec-draft-writer")).setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const store = await import("./project-overseer-store");
-const { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, TOOL_NEEDS } = await import("./project-overseer-tools");
+const { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, TOOL_POWER } = await import("./project-overseer-tools");
 const { acquireChat, disposeAllChats, ModeRefusedError, BusyError } = await import("./chat-manager");
 const { promptSession } = await import("./session-prompt");
 const { canonicalPath } = await import("./paths");
@@ -90,7 +90,7 @@ describe("a project overseer", async () => {
     // A placed project: the org part's reads (no statechart act names them) come with its tools, and so do the
     // org history's (sova_history, sova_decide).
     // Its memory is on by default: the recall tools come with it.
-    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", ...PO_BUILTINS, ...MEMORY_TOOLS])].sort();
+    const want = [...new Set([...Object.keys(TOOL_POWER), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", "spec_lookup", "sova_draft_specs", "sova_draft_approve", "sova_draft_build", ...PO_BUILTINS, ...MEMORY_TOOLS])].sort();
     assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), want);
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash or extension tool");
     for (const t of ["write", "edit"]) assert.ok(want.includes(t), t);
@@ -888,7 +888,7 @@ describe("the watch loop's decision, on its watch statechart", async () => {
     await to(t + 3 * 60_000);
     const text = looks.at(-1)!.text;
     assert.ok(text.startsWith("[project watch]"));
-    assert.match(text, /within your autonomy \(L1\)/);
+    assert.match(text, /within what you may do on your own \(Start, offer and close gatherings; Message people on WhatsApp; Post owner updates; Fix the pipeline.s bookkeeping; Share a version to try\)/);
   });
 });
 

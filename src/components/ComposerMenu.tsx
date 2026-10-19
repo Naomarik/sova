@@ -10,6 +10,7 @@ import type { ContextState } from "../lib/context";
 import type { ChatClaudeLogin, ClaudeAccountsInfo, SandboxInfo } from "../../shared/protocol";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { usePaneId } from "../lib/pane-scope";
+import { bindKey } from "../commands/keys";
 import { Icon, type IconName } from "./ui";
 
 /** What the chat view exposes so the flyout can show and change this session's thinking level. */
@@ -430,24 +431,21 @@ export function ComposerMenu(props: {
   );
 
   // Ctrl/⌘+P opens the flyout straight on the picker while a chat session is open, not print.
-  const onKey = (e: KeyboardEvent) => {
-    if (!props.model) return;
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p") {
-      e.preventDefault();
-      if (open() && panel() === "picker") close();
-      else openMenu("picker");
-    }
-  };
+  const offPickerKey = bindKey("model.picker", () => {
+    if (!props.model) return false;
+    if (open() && panel() === "picker") close();
+    else openMenu("picker");
+    return true;
+  });
   // A resize (a phone's keyboard opening included) only re-anchors it; it closes only when the
   // trigger itself is gone from the layout.
   const onResize = () => {
     if (open() && !place()) close();
   };
-  document.addEventListener("keydown", onKey);
   window.addEventListener("resize", onResize);
   window.visualViewport?.addEventListener("resize", onResize);
   onCleanup(() => {
-    document.removeEventListener("keydown", onKey);
+    offPickerKey();
     window.removeEventListener("resize", onResize);
     window.visualViewport?.removeEventListener("resize", onResize);
   });

@@ -4,7 +4,7 @@
 // workspace and PI_CODING_AGENT_DIR; no model is called.
 // sova_project_verbs against a real served project (up, down, share over a real port): project-overseer-tools-statecharts.integration.test.ts.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -78,14 +78,14 @@ const clearHolds = async () => {
   }
 };
 
-describe("the level is the statecharts' (§app.project-overseer/autonomy-levels)", () => {
-  test("unattended below a tool's level: the statechart's refusal, logged as refused; nothing starts", async () => {
-    await settings({ autonomy: "L0", holdMin: 10 });
+describe("the powers are the statecharts' (§app.project-overseer/autonomy-levels)", () => {
+  test("unattended with its power Off: the statechart's refusal, logged as refused; nothing starts", async () => {
+    await settings({ autonomy: "L1", holdMin: 10 });
+    await settings({ powers: { overseer: { gather: false } } });
     const before = baton.allBatons().length;
-    await assert.rejects(() => run("sova_start_gathering", gather("Hosting")), /^Error: This run was not started by the operator, and your autonomy here is L0; sova_start_gathering needs L1\. Do not retry it\./);
-    await assert.rejects(() => run("sova_reconcile", {}), /sova_reconcile needs L1/);
+    await assert.rejects(() => run("sova_start_gathering", gather("Hosting")), /^Error: Start, offer and close gatherings is off for the overseer on its own\. Do not retry it\./);
     assert.equal(baton.allBatons().length, before, "no gathering started");
-    assert.deepEqual(actions().slice(-2).map((a) => [a.tool, a.outcome]), [["sova_start_gathering", "refused"], ["sova_reconcile", "refused"]]);
+    assert.deepEqual(actions().slice(-1).map((a) => [a.tool, a.outcome]), [["sova_start_gathering", "refused"]]);
   });
 
   test("at the level: it goes ahead, unattended into a hold the operator may cancel (q10/r4)", async () => {
@@ -98,7 +98,7 @@ describe("the level is the statecharts' (§app.project-overseer/autonomy-levels)
 
   test("an autonomy change applies at the next tool call", async () => {
     await settings({ autonomy: "L0" });
-    await assert.rejects(() => run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: "Nobody has said this yet.", public_title: "Pay day", goal: "g", question: "q?" }), /sova_offer needs L1|sova_start_gathering needs L1/);
+    await assert.rejects(() => run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: "Nobody has said this yet.", public_title: "Pay day", goal: "g", question: "q?" }), /Start, offer and close gatherings is off for the overseer on its own/);
     await settings({ autonomy: "L1" });
     assert.match(textOf(await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: "Nobody has said this yet.", public_title: "Pay day", goal: "g", question: "q?" })), /^Held: starting "Pay day" as an offer to Tony Reyes, Toni Diaz/);
     await clearHolds();
@@ -111,11 +111,11 @@ describe("the level is the statecharts' (§app.project-overseer/autonomy-levels)
     assert.equal(holdsOf().length, 0, "the operator's turn is never held");
   });
 
-  test("sova_roster: approve needs L2 unattended (the person statechart's person/approve), then it is held (r6)", async () => {
+  test("sova_roster: approve needs roster On unattended (the person statechart's person/approve), then it is held (r6)", async () => {
     await settings({ autonomy: "L1", holdMin: 10 });
     await orgs.addPerson(org.id, { name: "Bob Smith", role: "IT lead", contact: { email: "bob@example.test" }, status: "proposed", referral: { referredBy: tony.id, why: "runs the bank portal", quote: "ask Bob" } }, { kind: "referral", sessionId: "s-ref" } as never);
     assert.equal(orgs.readRoster(org.id).find((p) => p.name === "Bob Smith")?.status, "proposed");
-    await assert.rejects(() => run("sova_roster", { op: "approve", person: "Bob Smith" }), /sova_roster needs L2/);
+    await assert.rejects(() => run("sova_roster", { op: "approve", person: "Bob Smith" }), /Approve or decline proposed people is off for the overseer on its own/);
     await settings({ autonomy: "L2" });
     assert.match(textOf(await run("sova_roster", { op: "approve", person: "Bob Smith" })), /^Held: approving Bob Smith waits until /);
     assert.equal(orgs.readRoster(org.id).find((p) => p.name === "Bob Smith")?.status, "proposed", "not before the hold ends");
@@ -174,7 +174,7 @@ describe("the allowances are the watch statechart's ledgers (§app.project-overs
 
   test("one ledger (r5): a statechart act released from its hold counts on it; a statechart-refused call counts nothing", async () => {
     // Not on the confirm list: it goes ahead when its hold ends, with no review (r8).
-    await settings({ autonomy: "L1", holdMin: 10, confirmKinds: [], caps: { gatherPerDay: null, gatheringsOpen: 20 } });
+    await settings({ autonomy: "L1", holdMin: 10, caps: { gatherPerDay: null, gatheringsOpen: 20 } });
     const today = () => po.allowanceUse(project.id, store.readPoSettings(store.projectOverseerPaths(project.id)).caps).today.gather.used;
     const t0 = Date.now() + 9 * 86_400_000;
     setOrgClockForTest(() => t0);
@@ -189,9 +189,9 @@ describe("the allowances are the watch statechart's ledgers (§app.project-overs
       assert.ok(baton.allBatons().some((b) => b.publicTitle === "Released"), "the hold ended: it went ahead");
       assert.equal(today(), before + 1, "the statechart's own act counted on the watch's day ledger");
       await settings({ autonomy: "L0" });
-      await assert.rejects(() => run("sova_start_gathering", gather("Refused")), /needs L1/);
+      await assert.rejects(() => run("sova_start_gathering", gather("Refused")), /is off for the overseer on its own/);
       assert.equal(today(), before + 1, "a refused call is not counted");
-      await settings({ autonomy: "L1", confirmKinds: ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline"] });
+      await settings({ autonomy: "L1" });
     } finally {
       setOrgClockForTest(null);
     }
@@ -291,7 +291,7 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     await clearHolds();
   });
 
-  test("the overseer's sova_pipeline lists the gap, the held act and the feed; sova_hold cancels or approves early, with a reason", async () => {
+  test("the overseer's sova_pipeline lists the gap, the held act and the feed; sova_hold cancels, with a reason; nothing approves early", async () => {
     await run("sova_start_gathering", gather("Review me"));
     const listed = textOf(await run("sova_pipeline", {}));
     assert.match(listed, new RegExp(`- ${itemSid} · §gap/hosting .* · open since `));
@@ -301,16 +301,16 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     const one = textOf(await run("sova_pipeline", { session: itemSid }));
     assert.match(one, /Corrections it declares: .*correct\/reopen/);
     await assert.rejects(() => run("sova_hold", { op: "cancel", id: "h_nope", reason: "x" }), /No held act h_nope in this project/);
-    await run("sova_hold", { op: "approve", id, reason: "Tony is waiting for it" });
-    assert.equal(holdsOf().length, 0, "approved: it went ahead now");
-    assert.ok(baton.allBatons().some((b) => b.publicTitle === "Review me"));
+    await assert.rejects(() => run("sova_hold", { op: "approve", id, reason: "Tony is waiting for it" }), /op is cancel: nothing approves a held act/);
+    assert.equal(holdsOf().length, 1, "still held: it goes ahead when its hold ends");
+    await clearHolds();
     await run("sova_start_gathering", gather("Cancel me"));
     const id2 = holdsOf()[0]!.id;
     await run("sova_hold", { op: "cancel", id: id2, reason: "covered by Review me" });
     assert.equal(holdsOf().length, 0);
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Cancel me"), "cancelled: it never started");
     const rows = hostOf(org.id).log.rows({ newestFirst: true }).filter((r) => r.event === "hold/cancel" || r.event === "hold/approve");
-    assert.deepEqual(rows.slice(0, 2).map((r) => [r.event, r.reason]), [["hold/cancel", "covered by Review me"], ["hold/approve", "Tony is waiting for it"]]);
+    assert.deepEqual(rows.slice(0, 1).map((r) => [r.event, r.reason]), [["hold/cancel", "covered by Review me"]]);
   });
 
   test("F19: two held acts with the same hold id in different sessions stay apart: distinct ids, and cancelling one leaves the other", async () => {
@@ -334,26 +334,23 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     const r = await app.request(`/api/projects/${project.id}/held/${encodeURIComponent(rent.id)}/cancel`, { method: "POST" });
     assert.equal(r.status, 200, await r.text());
     assert.deepEqual((await pipeline()).held.map((h) => h.id), [lease.id], "the other act is still held");
-    await run("sova_hold", { op: "approve", id: raw[0]!.id, reason: "Tony is ready" });
-    assert.ok(baton.allBatons().some((b) => b.publicTitle === "Lease"), "approved by the bare id, now the only one: it went ahead");
+    await run("sova_hold", { op: "cancel", id: raw[0]!.id, reason: "Tony is away" });
+    assert.deepEqual((await pipeline()).held.map((h) => h.id), [], "cancelled by the bare id, now the only one");
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Rent"), "cancelled: it never started");
   });
 
-  test("r8: an act on the confirm list waits past its hold for the overseer's review, shown with its stall clock, until approved", async () => {
+  test("al_3 q2: no act waits for the overseer's review: once its hold ends, it goes ahead unapproved", async () => {
     await clearHolds();
     const t0 = Date.now() + 20 * 86_400_000;
     setOrgClockForTest(() => t0);
     try {
-      await run("sova_start_gathering", gather("Needs review"));
+      await run("sova_start_gathering", gather("No review step"));
       const h = holdsOf()[0]!;
+      assert.ok(!baton.allBatons().some((b) => b.publicTitle === "No review step"), "held first");
       setOrgClockForTest(() => h.until + 60_000);
       hostOf(org.id).fireDue();
-      const held = (await pipeline()).held.find((x) => x.id === h.id)!;
-      assert.equal(held.reviewSince, new Date(h.until).toISOString(), "it waits, the stall clock from its hold's end");
-      assert.equal(heldAttention().find((i) => i.held?.id === h.id)?.held?.reviewSince, h.until);
-      assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Needs review"), "not gone ahead unreviewed");
-      await run("sova_hold", { op: "approve", id: h.id, reason: "reviewed: Tony is the right person" });
-      assert.ok(baton.allBatons().some((b) => b.publicTitle === "Needs review"));
+      for (let i = 0; i < 50 && !baton.allBatons().some((b) => b.publicTitle === "No review step"); i++) await new Promise((r) => setTimeout(r, 20));
+      assert.ok(baton.allBatons().some((b) => b.publicTitle === "No review step"), "gone ahead with no approval");
     } finally {
       setOrgClockForTest(null);
     }
@@ -498,5 +495,69 @@ describe("the operator's own gap ideas (the project page's Ideas)", async () => 
       const r = await send("POST", path, { sessionId: "not-a-build" });
       assert.equal(r.status, 404, `${path}: ${await r.text()}`);
     }
+  });
+});
+
+describe("al_3: the Project Assistant's column, the brakes and an older Sova's level", () => {
+  test("assistantAct build/start: Off in its column refused with its code; On held for the waiting period; the overseer's column never counts", async () => {
+    await clearHolds();
+    await settings({ holdMin: 10, powers: { overseer: { codingStart: true }, assistant: { codingStart: false } } });
+    const fix = { act: "build/start" as const, basis: { kind: "owner-request" as const, id: "or_1" }, prompt: "The contact form fails on submit." };
+    const off = await po.assistantAct(project.id, fix, { attended: false });
+    assert.deepEqual(off.taken ? off : [off.code, off.sentence], ["power-off", "Start coding sessions is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request."]);
+    assert.equal(holdsOf().length, 0, "nothing held");
+    await settings({ powers: { assistant: { codingStart: true } } });
+    const on = await po.assistantAct(project.id, fix, { attended: false });
+    assert.ok(on.taken && on.held && on.holdRef, JSON.stringify(on));
+    const h = holdsOf().find((x) => x.id === (on as { holdRef: string }).holdRef)!;
+    assert.equal(h.by, "assistant");
+    await clearHolds();
+  });
+
+  test("assistantAct deploy/run: Off by every carry-over; On, held", async () => {
+    await clearHolds();
+    await settings({ autonomy: "L3" });
+    const off = await po.assistantAct(project.id, { act: "deploy/run", target: "prod" }, { attended: false });
+    assert.equal(off.taken ? "taken" : off.code, "power-off");
+    await settings({ powers: { assistant: { deploy: true } } });
+    const on = await po.assistantAct(project.id, { act: "deploy/run", target: "prod" }, { attended: false });
+    assert.ok(on.taken && on.held, JSON.stringify(on));
+    assert.match(holdsOf().at(-1)!.what ?? "", /^A deploy to prod through the project's own recipe$/);
+    await clearHolds();
+    await settings({ autonomy: "L1" });
+  });
+
+  test("the attach brake: every power of both columns acts as Off, with its reason; a switch alone doesn't lift it, Resume does", async () => {
+    await clearHolds();
+    await settings({ autonomy: "L1", powers: { assistant: { gather: true } } });
+    await hostOf(org.id).act(sids.watchSid(project.id), "org/attached-here", {}, { by: "system" } as never);
+    const info = await po.projectOverseerInfo(project.id);
+    assert.equal(info.settings.powers.brake?.kind, "paused");
+    assert.equal(info.settings.powers.effective.overseer.gather, false);
+    await assert.rejects(() => run("sova_start_gathering", gather("Braked")), /Nothing happens on its own right now: Paused: this organization was attached on this host\. Press Resume/);
+    await settings({ powers: { overseer: { gather: true } } });
+    assert.equal((await po.projectOverseerInfo(project.id)).settings.powers.brake?.kind, "paused", "a switch alone never ends the pause");
+    await settings({ resume: true });
+    assert.equal((await po.projectOverseerInfo(project.id)).settings.powers.brake, null);
+    assert.match(textOf(await run("sova_start_gathering", gather("Unbraked"))), /^Held: /);
+    await clearHolds();
+  });
+
+  test("an older client's level (PATCH {autonomy}) re-derives the overseer column by the carry-over and resumes; the file keeps a never-looser level", async () => {
+    await settings({ powers: { overseer: { codingStart: true, share: false }, assistant: { gather: true } } });
+    const p = store.projectOverseerPaths(project.id);
+    assert.equal(JSON.parse(readFileSync(p.settings, "utf8")).autonomy, "L0", "share Off: never looser than L0");
+    const info = await settings({ autonomy: "L2" });
+    const on = Object.entries(info.settings.powers.overseer).filter(([, v]) => v).map(([k]) => k).sort();
+    assert.deepEqual(on, ["bookkeeping", "gather", "markMerged", "ownerUpdates", "promote", "roster", "share", "whatsapp"]);
+    assert.equal(info.settings.powers.assistant.gather, true, "the assistant column is kept");
+    const file = JSON.parse(readFileSync(p.settings, "utf8"));
+    assert.deepEqual([file.autonomy, file.powers.derivedAutonomy, "confirmKinds" in file], ["L2", "L2", false]);
+    // An older Sova that keeps unknown keys writes L3 beside them: the next read re-derives, with a note.
+    writeFileSync(p.settings, JSON.stringify({ ...file, autonomy: "L3" }));
+    const again = await po.projectOverseerInfo(project.id);
+    assert.equal(again.settings.powers.overseer.codingStart, true);
+    assert.deepEqual([again.settings.powers.note?.kind, again.settings.powers.note?.from], ["rederived", "L3"]);
+    await settings({ autonomy: "L1" });
   });
 });

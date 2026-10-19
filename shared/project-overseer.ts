@@ -43,6 +43,7 @@
  */
 
 import type { GatheringAbilities } from "./baton";
+import type { PowersPatch, PowersView, StoredPowers } from "./powers";
 
 /** `customType` of the marker a project overseer's file carries (data `ProjectOverseerMarkerData`). */
 export const PROJECT_OVERSEER_ENTRY = "sova-project-overseer";
@@ -238,7 +239,10 @@ export const codingModeWords = (m: Pick<ProjectCodingMode, "mode" | "minorModes"
 
 export interface ProjectOverseerSettings {
   version: 1;
+  /** Always the never-looser level derived from `powers.overseer` (for an older Sova that reads only the level). */
   autonomy: Autonomy;
+  /** What may happen without the operator (shared/powers.ts, §app.project-overseer/autonomy-levels). */
+  powers: StoredPowers;
   /** "provider/model"; null = the new-session default. */
   model: string | null;
   thinking: string | null;
@@ -263,17 +267,25 @@ export interface ProjectOverseerSettings {
   /** An act that reaches a person or the client's code waits this many minutes in its hold, where
       the operator (Needs you) or the overseer may cancel it (0–1440; 0 = no hold). */
   holdMin: number;
-  /** The act kinds that, held, wait for the overseer's confirmation (CONFIRM_KINDS; default all). */
-  confirmKinds: ConfirmKind[];
+  /** Gone (al_3 q2): read and ignored, never written. Kept optional so older readers' shapes still type. */
+  confirmKinds?: ConfirmKind[];
   extraSystemPrompt: string;
   /** Its memory switch, written only by PUT …/overseer/memory.
       Absent = no choice made: on, UniiChat at 128 KB. */
   memory?: { on: boolean; type: "uniichat" | "zoomable"; size: number };
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "confirmKinds" | "extraSystemPrompt">> & {
-  caps?: Partial<ProjectOverseerCaps>;
-};
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "extraSystemPrompt">> &
+  PowersPatch & {
+    caps?: Partial<ProjectOverseerCaps>;
+    /** One release only: the overseer column becomes the carry-over of this level, and the attach pause ends. */
+    autonomy?: Autonomy;
+    /** One release only: accepted and ignored (the confirmation checklist is gone). */
+    confirmKinds?: unknown;
+  };
+
+/** The settings as GET answers them: `powers` is the view, not the stored shape. */
+export type ProjectOverseerSettingsView = Omit<ProjectOverseerSettings, "powers"> & { powers: PowersView };
 
 /** How the last unattended run went; `started` means it is running now. */
 export type LastRunOutcome = "started" | "finished" | "stopped" | "cut-off" | "skipped";
@@ -288,7 +300,8 @@ export interface ProjectOverseerInfo {
   id: string | null;
   /** Earlier conversations, newest first (read-only). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
-  settings: ProjectOverseerSettings;
+  /** As saved, but `powers` is the view (PowersView): both columns as set and after the brake, the brake, the one-time note. */
+  settings: ProjectOverseerSettingsView;
   /** What a coding session started now gets: this computer's default mode and subagent profile. */
   codingModeNow: CodingModeNow;
   /** What a gathering session started now gets (`settings.gatheringAbilities`, or Automatic). */
@@ -297,7 +310,7 @@ export interface ProjectOverseerInfo {
       read (§app.project-overseer/coding-worktrees, Read in two steps). Git's facts are
       `GET …/overseer/worktrees` (ProjectWorktrees), merged in by `sessionId`. */
   coding: CodingSession[];
-  /** The level in force now: `settings.autonomy`, or L0 with a reason ("The roster has no active people yet."). */
+  /** For older clients, one release: the level derived from the overseer column after the brake, and the brake's reason. */
   effective: { autonomy: Autonomy; reason?: string };
   /** When an attach on this host paused it at L0 (ISO): unattended runs wait and the level in force
       is L0 until the operator sets its level here. Null or absent: not paused. */

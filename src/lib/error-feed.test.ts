@@ -34,8 +34,8 @@ function pane() {
     },
     /** The server's refusal of a send it held for a chat that didn't open (`code: "refused"`). */
     refused(clientId: string, message = "The chat was restarting; your message wasn't sent.") {
-      const text = unacked.take(clientId, handedBack);
-      if (text !== null) p.draft.push(text);
+      const sent = unacked.take(clientId, handedBack);
+      if (sent !== null) p.draft.push(sent.text);
       const step = feedOnRefused(feed, { message, beforeHello: errorHandsBack(w) !== null });
       feed = step.feed;
       p.said.push(...step.says);
@@ -44,7 +44,7 @@ function pane() {
     error(message: string) {
       const conn = errorHandsBack(w);
       const back = conn !== null ? unacked.takeFrom(conn, handedBack) : [];
-      p.draft.push(...back);
+      p.draft.push(...back.map((u) => u.text));
       const step = feedOnFailure(feed, { message, beforeHello: conn !== null, back: back.length });
       feed = step.feed;
       p.said.push(...step.says);
@@ -54,7 +54,7 @@ function pane() {
       const r = waitOnStatus(w, s, true);
       if (r.handBack !== null) {
         const back = unacked.takeFrom(r.handBack, handedBack);
-        p.draft.push(...back);
+        p.draft.push(...back.map((u) => u.text));
         if (back.length) p.said.push({ say: "unsent" });
       }
       w = r.next;

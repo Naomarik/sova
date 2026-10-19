@@ -21,7 +21,7 @@ mkdirSync(join(tmp, "agent", "sessions", "live"), { recursive: true });
 
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
-const { AUTH_COOKIE, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken } = await import("./auth");
+const { AUTH_COOKIE, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tourRecorderCookieName } = await import("./auth");
 const { meshApi } = await import("./mesh");
 /** The port this listener would be bound to: no socket is opened. */
 const port = 47_913;
@@ -481,5 +481,85 @@ describe("SOVA_AUTH=off (a test rig's switch)", () => {
     process.env.SOVA_AUTH = "off";
     assert.equal((await get(PROTECTED, { Host: "evil.example" })).status, 403);
     assert.equal((await get(PROTECTED, { Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" })).status, 403);
+  });
+});
+
+describe("a guided-tour recorder never gets an install's identity and never changes a Sova (§app.access/gate)", () => {
+  const RECORDER = { "X-Sova-Tour-Recorder": "1" };
+  const sameNav = { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document" };
+
+  test("silent local sign-in: the keyboard's navigation earns the cookie, the recorder's identical one doesn't", async () => {
+    const person = await get(PROTECTED, sameNav);
+    assert.equal(person.status, 200, "positive control: this machine's own navigation is answered");
+    assert.ok(person.headers["set-cookie"]?.[0]?.startsWith(`${cookie(token)};`), "and handed the cookie");
+    for (const header of [RECORDER, { "x-sova-tour-recorder": "anything" }]) {
+      const recorder = await get(PROTECTED, { ...sameNav, ...header });
+      assert.equal(recorder.status, 401);
+      assert.equal(recorder.headers["set-cookie"], undefined, "no Set-Cookie");
+      assert.equal(recorder.body.includes(token), false);
+    }
+  });
+
+  test("the token route, pairing and unlock refuse the recorder; the same requests without it work", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    const recovered = await get("/api/auth/token", browser());
+    assert.equal(recovered.status, 200, "positive control");
+    const refused = await get("/api/auth/token", browser(RECORDER));
+    assert.notEqual(refused.status, 200);
+    assert.equal(refused.body.includes(token), false, "no token for a recorder, even one that already holds the cookie");
+    assert.equal((await send("POST", "/api/auth/pair", browser())).status, 200, "positive control");
+    const pairing = await send("POST", "/api/auth/pair", browser(RECORDER));
+    assert.equal(pairing.status, 403);
+    assert.equal(pairing.body.includes("code"), false);
+    const unlock = (extra: Record<string, string>) => send("POST", "/api/auth/unlock", { "Content-Type": "application/json", ...extra }, JSON.stringify({ token }));
+    const unlocked = await unlock({});
+    assert.equal(unlocked.status, 200, "positive control");
+    const recorderUnlock = await unlock(RECORDER);
+    assert.equal(recorderUnlock.status, 403);
+    assert.equal(recorderUnlock.headers["set-cookie"], undefined, "unlock never signs a recorder in, even with the right token");
+  });
+
+  test("every recorder write is refused before it runs, the store byte-identical; the operator's same write works", async (t) => {
+    const warned = t.mock.method(console, "warn", () => {});
+    const { topicOutlineFile } = await import("./topic-outline-settings");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const bytes = () => existsSync(topicOutlineFile()) ? readFileSync(topicOutlineFile()) : null;
+    const body = (model: string) => JSON.stringify({ primary: { backend: "claude-code", model }, fallback: null });
+    const before = bytes();
+    const refused = await send("PUT", "/api/settings/summarizer", browser({ ...RECORDER, "Content-Type": "application/json" }), body("fixture-recorder-model"));
+    assert.equal(refused.status, 403);
+    assert.deepEqual(bytes(), before, "nothing was written");
+    assert.equal(warned.mock.callCount(), 1);
+    assert.equal(String(warned.mock.calls[0]!.arguments[0]), "[auth] refused a guided-tour recorder's write", "one fixed line: no path, body or credential");
+    // The cookie-holding recorder gets the same answer for any non-GET, including unlock and a malformed body.
+    for (const [method, path] of [["POST", "/api/auth/unlock"], ["DELETE", "/api/settings"], ["PATCH", PROTECTED]]) assert.equal((await send(method!, path!, browser(RECORDER), "{bad")).status, 403, `${method} ${path}`);
+    // Positive control: the operator's same write changes the store.
+    const operator = await send("PUT", "/api/settings/summarizer", browser({ "Content-Type": "application/json" }), body("fixture-operator-model"));
+    assert.equal(operator.status, 200, operator.body);
+    assert.notDeepEqual(bytes(), before);
+    assert.ok(bytes()!.toString().includes("fixture-operator-model"));
+  });
+
+  test("the recorder marker cookie alone gets the recorder's treatment; neither marker, the person's", async (t) => {
+    const warned = t.mock.method(console, "warn", () => {});
+    const marker = `${tourRecorderCookieName(join(tmp, "agent"))}=1`;
+    // A navigation from this machine with only the marker: no silent sign-in.
+    const person = await get(PROTECTED, sameNav);
+    assert.equal(person.status, 200, "positive control: the same navigation with neither marker is signed in");
+    assert.ok(person.headers["set-cookie"]?.[0]?.startsWith(`${cookie(token)};`));
+    const marked = await get(PROTECTED, { ...sameNav, Cookie: marker });
+    assert.equal(marked.status, 401);
+    assert.equal(marked.headers["set-cookie"], undefined, "no Set-Cookie");
+    assert.equal(marked.body.includes(token), false);
+    // A write with the copy's cookie and the marker, no header: refused before it runs.
+    const write = await send("PUT", "/api/settings/summarizer", browser({ Cookie: `${cookie(token)}; ${marker}`, "Content-Type": "application/json" }), JSON.stringify({ primary: { backend: "claude-code", model: "fixture-marker-model" }, fallback: null }));
+    assert.equal(write.status, 403);
+    assert.equal(String(warned.mock.calls.at(-1)?.arguments[0]), "[auth] refused a guided-tour recorder's write");
+    // The token route refuses it too; the same request with neither marker is answered.
+    assert.notEqual((await get("/api/auth/token", browser({ Cookie: `${cookie(token)}; ${marker}` }))).status, 200);
+    assert.equal((await get("/api/auth/token", browser())).status, 200, "positive control");
+    // Another install's marker name is an ordinary cookie here.
+    const other = await get(PROTECTED, { ...sameNav, Cookie: `${tourRecorderCookieName("/made-up/other/.agent")}=1` });
+    assert.equal(other.status, 200);
   });
 });

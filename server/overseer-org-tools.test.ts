@@ -43,7 +43,7 @@ const { watchUserMessages } = await import("./harness/pi/turns");
 const { historyOf } = await import("./harness/pi/reader");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
-const { applyCardCall, cardLines } = await import("../shared/overseer-card");
+const { applyCardCall, cardLines, optionClick } = await import("../shared/overseer-card");
 const { DEFAULT_CAPS, overseerActionsFile, writeOverseerState } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
@@ -67,7 +67,7 @@ const { readOverseerState } = await import("./overseer-store");
 
 after(async () => {
   await disposeAllChats();
-  for (const ws of ["ws", "ws2", "ws3", "ws4"]) await settled(join(root, ws)).catch(() => {});
+  for (const ws of ["ws", "ws2", "ws3", "ws4", "ws5", "ws6"]) await settled(join(root, ws)).catch(() => {});
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -138,6 +138,8 @@ async function until(cond: () => boolean, ms = 30_000): Promise<void> {
 
 let attended = true;
 let card: SovaConfirmItem[] | null = null;
+/** When set, the turn's card is computed from a real turn and branch (the click-through tests), not `card`. */
+let confirmedNow: (() => SovaConfirmItem[] | null) | null = null;
 let caps = { ...DEFAULT_CAPS };
 const limits = new tools.TurnLimits();
 const host = {
@@ -162,7 +164,7 @@ const host = {
   runningStarted: () => 0,
   counted: () => false,
   attended: () => attended,
-  confirmed: () => card,
+  confirmed: () => (confirmedNow ? confirmedNow() : card),
   peer: async () => null,
   peerIds: () => [],
   peerSession: async () => null,
@@ -497,12 +499,12 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const unknownProfile = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", subagent_profile: "nope" });
     assert.match(unknownProfile.text, /Unknown subagent profile: nope\. sova_list_subagent_profiles lists them\./);
     assert.equal(limits.count("create"), 1, "no session counted for a refusal");
-    const named = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Draw the flow", title: "Flow", mode: "delegate", minor_modes: ["vis", "align"] });
+    const named = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Draw the flow", title: "Flow", mode: "delegate", minor_modes: ["vis", "align", "spec"] });
     assert.ok(named.ok, named.text);
-    assert.match(named.text, /, mode delegate · align · visuals/);
+    assert.match(named.text, /, mode delegate · align · spec · visuals/);
     const path = readBuilds(project.id).find((r) => r.sessionId === (named.details as { session: string }).session)!.path!;
     const pin = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.type === "custom" && e.customType === "mode").at(-1);
-    assert.deepEqual(pin?.data.active.minorModes, ["align", "vis"]);
+    assert.deepEqual(pin?.data.active.minorModes, ["align", "spec", "vis"]);
     assert.equal(pin?.data.active.mode, "delegate");
     await piSession(await acquireChat(path)).waitForIdle();
   });
@@ -861,8 +863,15 @@ describe("adding projects and attaching organizations for the user (§app.overse
     const before = listProjects().length;
     const bare = await call("sova_org_project", { op: "add", root: join(base, "plain") });
     assert.equal(bare.ok, false);
-    assert.equal(bare.text, `This adds a project: ask with sova_card, listing the folder ${join(base, "plain")} (standalone) in its items, and act in the turn the user's click starts.`);
+    assert.equal(
+      bare.text,
+      `This adds a project, and this turn wasn't opened by a click on a card: reopen the card (sova_card reopen, if you recorded its answer) or ask again with sova_card, listing the folder ${join(base, "plain")} (standalone) in its items, so the user can click it again, and act in the turn that click starts.`,
+    );
+    // With an org: the org asked for, resolved to its id, else as the call wrote it; never a refusal of its own.
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain"), org: "Addco" })).text, new RegExp(`^This adds a project, and this turn wasn't opened by a click on a card: .* listing the folder ${join(base, "plain")} \\(into the organization ${org.id}\\) in its items`));
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain"), org: "No Such Org" })).text, /listing the folder .* \(into the organization No Such Org\) in its items/);
     card = items(folderItem(join(base, "other")));
+    // A click opened the turn, but its card lists another folder: the card sentence, as before.
     assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project: ask with sova_card/);
     card = items(folderItem(join(base, "plain"), org.id));
     assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project/, "a row into an org approves no standalone add");
@@ -1126,5 +1135,159 @@ describe("adding projects and attaching organizations for the user (§app.overse
     assert.ok(mine.length > 20, `${mine.length}`);
     for (const o of mine) assert.equal(leaksContact(o.text), null, o.label);
     for (const o of mine) assert.ok(!o.text.includes("ABOUT-MARKER") && !o.text.includes("/h/") && !o.text.includes("/i/"), o.label);
+  });
+});
+
+// ---- the click's whole path: UserTurns → confirmedItems on a real branch → sova_org_project add ----------------------------
+
+describe("a card click through the real turn: UserTurns, confirmedItems on the branch, then add (§app.overseer/org-project-add)", async () => {
+  const org = await orgs.createOrg({ name: "Rakco", dir: join(root, "ws5") });
+  const other = await orgs.createOrg({ name: "Otherco", dir: join(root, "ws6") });
+  const base = join(root, "clicks");
+  const folder = (name: string) => {
+    const p = join(base, name);
+    mkdirSync(p, { recursive: true });
+    return p;
+  };
+  const lookup = { session: async () => null, isSelf: () => false, idea: () => null, todo: () => null, ...addLookup };
+  const NOW = "2026-10-19T09:00:00.000Z";
+  const user = (text: string) => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
+  const result = (details: unknown, id: string) => ({ type: "message", message: { role: "toolResult", toolCallId: id, toolName: "sova_card", details } });
+  type Card = NonNullable<ReturnType<typeof applyCardCall>["details"]["card"]>;
+
+  /** A conversation whose ninth card, c_9, asks to register `dir` (into `orgRef` when given, as `name`), its
+      rows resolved as sova_card resolves them. */
+  async function conversation(dir: string, orgRef: string | null, name: string) {
+    const entries: unknown[] = [user("register my folders")];
+    let cards: Card[] = [];
+    for (let i = 1; i <= 8; i++) {
+      const d = applyCardCall(cards, { ops: [{ op: "create", title: `Earlier ${i}`, options: [{ label: "Ok" }] }] }, { now: NOW, prepared: { items: [], hrefs: [] } }).details;
+      cards = [...cards, d.card!];
+      entries.push(result(d, `k${i}`));
+    }
+    const rows = await confirm.resolveConfirmItems({ folders: [{ root: dir, ...(orgRef ? { org: orgRef } : {}), name }] }, lookup, (m) => new Error(m));
+    const created = applyCardCall(
+      cards,
+      { ops: [{ op: "create", title: "Register it?", options: [{ label: "Register", reply: `Register ${dir} as ${name}.` }, { label: "Not now" }] }] },
+      { now: NOW, prepared: { items: rows, hrefs: [], clickOnly: true } },
+    ).details;
+    assert.equal(created.card!.id, "c_9");
+    entries.push(result(created, "k9"));
+    return { entries, cards: [...cards, created.card!], click: optionClick(created.card!, "a")! };
+  }
+
+  /** The Overseer's chat as UserTurns sees it: the user's message handed to the agent inside `send`
+      (with the click's card id, or none: typed text, a Retry's replay), then its run starting. */
+  function chat() {
+    const turns = new UserTurns();
+    const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
+    turns.watch({ onUserMessage: (claim) => watchUserMessages(agent, claim) });
+    const message = (text: string, cardId?: string) => {
+      const msg = { role: "user", content: text };
+      turns.send(() => agent.prompt(msg as never), cardId);
+      turns.observe(harnessEventOf({ type: "agent_start" }));
+      turns.observe(harnessEventOf({ type: "message_start", message: msg }));
+    };
+    return { turns, message };
+  }
+
+  /** The add, in that turn: confirmed() computed from the turn's card and the branch, as the host does. */
+  async function add(turns: InstanceType<typeof UserTurns>, entries: unknown[], params: Record<string, unknown>) {
+    const branch = historyOf(entries as never);
+    confirmedNow = () => overseer.confirmedItems(turns.confirmedCard(), branch);
+    attended = turns.attended();
+    limits.reset();
+    try {
+      return await call("sova_org_project", { op: "add", ...params }, "sova_org_project add (click)");
+    } finally {
+      confirmedNow = null;
+      attended = true;
+    }
+  }
+  const NO_CLICK = /^This adds a project, and this turn wasn't opened by a click on a card: /;
+  const NOT_LISTED = /^This adds a project: ask with sova_card, listing /;
+
+  test("the incident: option a of c_9 registers the folder into its org, named as the row names it", async () => {
+    const dir = folder("rakibadesigns");
+    const c = await conversation(dir, org.id, "RakibaDesigns");
+    const { turns, message } = chat();
+    message(c.click, "c_9");
+    assert.equal(turns.confirmedCard(), "c_9", "control: the click's card reached the turn");
+    const r = await add(turns, [...c.entries, user(c.click)], { org: org.id, name: "RakibaDesigns", root: dir });
+    assert.ok(r.ok, r.text);
+    const made = projectByRoot(dir)!;
+    assert.equal(made.name, "RakibaDesigns");
+    assert.equal(orgs.orgOfProject(made.id), org.id);
+    assert.equal(r.text, `Added RakibaDesigns (${made.id}) in Rakco: ${dir}.`);
+  });
+
+  test("a standalone row registers a standalone project", async () => {
+    const dir = folder("solo-click");
+    const c = await conversation(dir, null, "Solo Click");
+    const { turns, message } = chat();
+    message(c.click, "c_9");
+    const r = await add(turns, [...c.entries, user(c.click)], { root: dir, name: "Solo Click" });
+    assert.ok(r.ok, r.text);
+    assert.equal(orgs.orgOfProject(projectByRoot(dir)!.id), null);
+  });
+
+  test("answer recorded before the act in the same turn still approves it (judged against the card as the click found it)", async () => {
+    const dir = folder("answer-first");
+    const c = await conversation(dir, org.id, "Answer First");
+    const answered = applyCardCall(c.cards, { card: "c_9", ops: [{ op: "answer", text: "Register", option: "a" }] }, { now: NOW }).details;
+    assert.equal(answered.card!.phase, "answered", "control: the card is answered on the branch");
+    const { turns, message } = chat();
+    message(c.click, "c_9");
+    const r = await add(turns, [...c.entries, user(c.click), result(answered, "k10")], { org: "Rakco", name: "Answer First", root: dir });
+    assert.ok(r.ok, r.text);
+    assert.equal(orgs.orgOfProject(projectByRoot(dir)!.id), org.id);
+  });
+
+  test("refused, adding nothing: another org, another folder, another name", async () => {
+    const dir = folder("negatives");
+    const elsewhere = folder("elsewhere");
+    const c = await conversation(dir, org.id, "RakibaDesigns");
+    const { turns, message } = chat();
+    message(c.click, "c_9");
+    const branch = [...c.entries, user(c.click)];
+    for (const [why, params] of [
+      ["another org", { org: other.id, name: "RakibaDesigns", root: dir }],
+      ["standalone instead of the row's org", { name: "RakibaDesigns", root: dir }],
+      ["another folder", { org: org.id, name: "RakibaDesigns", root: elsewhere }],
+      ["another name", { org: org.id, name: "Rakiba", root: dir }],
+    ] as const) {
+      const r = await add(turns, branch, params);
+      assert.equal(r.ok, false, why);
+      assert.match(r.text, NOT_LISTED, why);
+    }
+    assert.equal(projectByRoot(dir), undefined);
+    assert.equal(projectByRoot(elsewhere), undefined);
+  });
+
+  test("refused, adding nothing: the click's text typed, a later turn, and a Retry's replay", async () => {
+    const dir = folder("no-click");
+    const c = await conversation(dir, org.id, "RakibaDesigns");
+    const params = { org: org.id, name: "RakibaDesigns", root: dir };
+    // Identical text, typed: no card mark.
+    const typed = chat();
+    typed.message(c.click);
+    assert.equal(typed.turns.attended(), true, "control: still the user's turn");
+    const t = await add(typed.turns, [...c.entries, user(c.click)], params);
+    assert.match(t.text, NO_CLICK);
+    assert.match(t.text, new RegExp(`listing the folder ${dir} \\(into the organization ${org.id}\\) in its items`), "names the org asked for");
+    // A later turn: the click opened the run before; this one is opened by another message.
+    const later = chat();
+    later.message(c.click, "c_9");
+    later.message("and the other one?");
+    assert.equal(later.turns.confirmedCard(), null);
+    const l = await add(later.turns, [...c.entries, user(c.click), user("and the other one?")], params);
+    assert.match(l.text, NO_CLICK);
+    // A Retry: the branch rewound to before the click and the same text sent again, with no card mark
+    // (chat-queue-clients.test.ts pins that the replay carries none).
+    const retry = chat();
+    retry.message(c.click);
+    const rr = await add(retry.turns, [...c.entries, user(c.click)], params);
+    assert.match(rr.text, NO_CLICK);
+    assert.equal(projectByRoot(dir), undefined);
   });
 });

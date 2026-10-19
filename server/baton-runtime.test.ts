@@ -46,8 +46,9 @@ describe("a baton session's runtime", async () => {
     const chat = await acquireChat(c.path);
     assert.equal(chat.special, "baton");
     assert.equal(chat.overseer, false);
-    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
-    assert.deepEqual([...BATON_TOOLS].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
+    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["code_read", "goal_done", "hand_to", "propose_roster_edit", "record_decision", "requirement_drop", "requirements_confirm", "requirements_summary", "show_tour", "spec_lookup"], "spec look-up, code reading and the draft tools with no switch (§app.spec-lookup/who-gets-what); presentation of an already-bound reviewed tour is baseline; no recording or attachment power");
+    assert.deepEqual([...BATON_TOOLS].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision", "show_tour"]);
+    for (const forbidden of ["record_tour", "bash", "read", "browser", "agent_spawn"]) assert.ok(!LOADOUT_TOOLS.includes(forbidden as never), `${forbidden} never joins the hand-off loadout`);
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), [...LOADOUT_TOOLS].sort(), "no built-in, no extension tool");
     assert.ok(!piSession(chat).getActiveToolNames().includes("write_profile_updates"), "the wrap-up tool is never active in the conversation");
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);

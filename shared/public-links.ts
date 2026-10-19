@@ -224,11 +224,12 @@ export interface GatewayInfo {
 
 /** A link's kind, which binds the routes its row may serve: `h` hand-off (/h/, /api/h/, /ws/h),
     `i` owner page (/i/, /api/i/), `s` session share (/s/, /api/s/, /ws/s, §app/session-share),
+    `t` checked tour (/t/, /api/t/, no websocket),
     `x` reserved for exposures (phase 2; never a share route), `p` a preview link (its own host
     `<label>.<zone>`, every path on it, §mesh.public/preview). */
-export type RegistryLinkKind = "h" | "i" | "s" | "x" | "p";
+export type RegistryLinkKind = "h" | "i" | "s" | "x" | "p" | "t";
 /** Every kind this build's gateway accepts, in GatewayInfo.kinds. */
-export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x", "p"];
+export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x", "p", "t"];
 
 export interface RegistryLink {
   /** Lowercase 64-hex sha256 of the token: the gateway never sees a token. */

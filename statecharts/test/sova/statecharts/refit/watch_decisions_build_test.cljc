@@ -5,6 +5,7 @@
     [sova.statecharts.build :as bld]
     [sova.statecharts.reasons :as rs]
     [sova.statecharts.refit.host :as h]
+    [sova.statecharts.rules.powers :as pw]
     [sova.statecharts.watch :as w]))
 
 (def op {:by "operator"})
@@ -34,12 +35,15 @@
       (let [busy (h/send! x wsid :turn/started {:look false})]
         (is (h/in? (h/send! busy wsid :reason/noted {:kind "reconcile/drafted" :params {:ids ["d1"]} :by "overseer" :key "k"}) wsid :quiet))
         (is (h/in? (h/send! busy wsid :reason/noted {:kind "reconcile/drafted" :params {:ids ["d1"]} :by "operator" :key "k"}) wsid :waiting))))
-    (testing "paused by an attach: L0 in force, looks wait; a level set resumes"
+    (testing "paused by an attach: every power Off, looks wait; Resume resumes, a switch alone doesn't"
       (let [p (-> x (h/send! wsid :org/attached-here {}) (h/send! wsid :reason/noted done-reason) (h/advance! 120000))]
         (is (h/in? p wsid :due))
-        (is (h/in? (h/send! p wsid :operator/level-set (assoc op :resume-at "L2")) wsid :running))
-        (is (= "L2" (get-in (h/data (h/send! p wsid :operator/level-set (assoc op :autonomy "L0" :resume-at "L2")) wsid) [:settings :autonomy]))
-          "the envelope's autonomy (the level in force, L0 while paused) never overrides the level chosen")))
+        (is (= "paused" (:kind (w/brake (h/data p wsid)))))
+        (is (h/in? (h/send! p wsid :operator/powers-set (assoc op :powers {:overseer (assoc (pw/carry-over "L1") :promote true)})) wsid :due)
+          "a switch alone never ends the pause")
+        (is (h/in? (h/send! p wsid :operator/powers-set (assoc op :resume true)) wsid :running) "Resume ends it")
+        (is (= (pw/carry-over "L2") (get-in (h/data (h/send! p wsid :operator/level-set (assoc op :autonomy "L0" :resume-at "L2")) wsid) [:settings :powers :overseer]))
+          "an older host's level set resumes, the overseer column its carry-over")))
     (testing "the looks per day hold at the limit, and midnight gives them back"
       (let [y (-> x (h/send! wsid :settings/changed {:settings {:caps {:unattended-per-day 0}}}) (h/send! wsid :reason/noted done-reason) (h/advance! 60000))]
         (is (h/in? y wsid :held))

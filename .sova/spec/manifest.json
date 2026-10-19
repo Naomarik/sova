@@ -14587,7 +14587,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T15:13Z",
+        "at": "2026-10-19T15:37Z",
         "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
       }
     },
@@ -14609,7 +14609,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T15:13Z",
+        "at": "2026-10-19T15:37Z",
         "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
       }
     },
@@ -19032,12 +19032,13 @@
         "pi-config/extensions/spec/tests/agreed.test.mjs",
         "pi-config/extensions/spec/tests/agreed-kept.test.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/PROMOTE.md"
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/tests/agree-command.test.mjs"
       ],
       "evidence": "verified",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T15:13Z",
+        "at": "2026-10-19T15:37Z",
         "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
       }
     },

@@ -392,10 +392,11 @@ graph does not load (`current-invalid`).
 A behavior or surface record may carry `agreed: {by, at, source}`: who made the decision it records,
 when (an ISO date, optionally with a time), and where that go-ahead can be found (`source`: a
 non-empty, single-line reference of at most 200 characters, such as a transcript and message id, a
-review comment's address or a meeting note, which no tool resolves). A promotion that gives a record
+review comment's address or a meeting note). A promotion that gives a record
 an `agreed` current doesn't have, or replaces current's, is refused (`agreed-unsourced`) when the new
 `agreed` has no `source`, or a `source` that is a description rather than a reference in the form
-`agree` takes (§tools.spec/agree-command); an `agreed` current already has, kept as it is, needs none. It names who decided and when, not that they read the
+`agree` takes (§tools.spec/agree-command), and refused (`agreed-source-unresolved`) when that source is
+a `pi-session:` reference that does not resolve to a user message as `agree` checks it; an `agreed` current already has, kept as it is, needs none. It names who decided and when, not that they read the
 record's current words; no tool checks what the prose means. A later promotion may reword the prose
 and keep `agreed`. A change of meaning needs a new agreement: the go-ahead of the task that changes it
 is that agreement, with `by` set to whoever gave it, and it replaces `agreed`: a promotion may replace the `agreed` of a record current already has only when
@@ -430,7 +431,15 @@ and an agent cannot attest an agreement it can't point to. While `SPEC_AGREE_SOU
 reference and saying to omit `--source`). A source, from either place, must be a reference, never a
 description: a scheme, a colon and a locator with no spaces (`pi-session:<session id>#<entry id>`,
 which needs both ids, a URL, `chat:c1#m3`); anything else is refused (`agree-source-not-reference`,
-exit 1). Both refusals write nothing. No tool resolves the reference. Its output names each record's source. A promise with prose in
+exit 1). A `pi-session:<session id>#<entry id>` source must resolve: a session file under
+`$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`), at any depth, whose name ends
+`_<session id>.jsonl` or whose header line carries that id, holding an entry with that id of type
+`message` whose role is `user`; otherwise `agree` refuses (`agree-source-unresolved`, exit 1, saying
+it needs the id of a user message in that session). Every other scheme is checked for its form only,
+for projects whose go-ahead lives outside pi. A process the agent's runtime started as a worker (it
+sets `SPEC_AGREE_GIVEN`, empty when it had no reference to give) refuses any `--source` when it was
+given none (`agree-source-not-given`, exit 1): it reports the records ready to agree instead. These
+refusals write nothing. Its output names each record's source. A promise with prose in
 the draft but no record gets one (an H1 is a surface, an H2 a behavior). An `agreed` this draft
 already gave, by the same person, is kept, so a second run changes nothing. It refuses what
 promotion would: a note or section, an id with no prose in the draft, a record current already has
@@ -465,11 +474,15 @@ rides only that one result. What the align tool records is unchanged.
 While the spec minor mode is on in a session that is not a worker, every command its bash tool runs
 sees `SPEC_AGREE_SOURCE` set to `pi-session:<session id>#<entry id>` of the latest user message on the
 session's branch at that call, so an `agree` it runs records the message the person typed. A
-code-writing worker that a spec-on session spawns gets `SPEC_AGREE_SOURCE` in its environment: from a
-session that is not a worker, its own latest user message at the spawn; from a worker, the reference
-it was given, unchanged. A worker never derives one from its own messages, which are its spawner's
-brief, not the person's go-ahead; one given none runs `agree` only to be refused (`agree-unsourced`)
-and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's text
+code-writing worker that a spec-on session spawns gets the reference in `SPEC_AGREE_SOURCE` and in
+`SPEC_AGREE_GIVEN`: from a session that is not a worker, its own latest user message at the spawn;
+from a worker, the reference it was given, unchanged; with none, `SPEC_AGREE_GIVEN` is set empty. A
+process is a worker only when it starts with `SPEC_AGREE_GIVEN` set, a variable no session writes for
+itself, so a session whose extensions reload in the same process still follows its latest user
+message rather than taking its own earlier `SPEC_AGREE_SOURCE` for a given reference. A worker never
+derives one from its own messages, which are its spawner's brief, not the person's go-ahead; one given
+none runs `agree` only to be refused (`agree-unsourced`, or `agree-source-not-given` for a
+`--source`) and reports the records ready to agree instead. With spec off, nothing is set. The spec mode's text
 says where the reference comes from, that with `SPEC_AGREE_SOURCE` set the agent passes no `--source`,
 that a source is a reference, never a description, and that an agreement nobody can point to is never stamped.
 

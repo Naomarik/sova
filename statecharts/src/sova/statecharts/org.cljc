@@ -106,7 +106,8 @@
 (def note-max 500)
 
 (defn owner-send-check
-  "owner/send-link: the host stamps the person (`target {id name status}`) and the note's leak check
+  "owner/send-link: the operator's act only (the global Overseer's for them included: its envelope is
+   the operator's); the host stamps the person (`target {id name status}`) and the note's leak check
    (`leak`); only the org's current owner, active; a note of at most 500 characters."
   [data]
   (let [e    (b/evt data)
@@ -114,6 +115,7 @@
         org  (:name data)
         note (str/trim (or (:note e) ""))]
     (cond
+      (not (b/operator-act? data)) (r/refuse 403 "Only the operator sends an owner their page link.")
       (nil? (:owner data)) (r/refuse 409 (str org " has no owner, so there is no owner page to send. Nothing was sent."))
       (nil? (:id t)) (r/refuse 400 "person must be a roster person's id")
       (not= (:id t) (:owner data)) (r/refuse 409 (str (:name t) " isn't " org "'s owner. Nothing was sent."))
@@ -224,8 +226,8 @@
    :person/add   {:power nil}
    :owner/set    {:power nil}
    ;; the operator's (and the global Overseer's for them, only with a card listing the owner: registry
-   ;; with-card-checks); no overseer's or assistant's own run. No `:tool`: no project overseer's tool makes it.
-   :owner/send-link {:power "operator" :people-facing true
+   ;; with-card-checks); owner-send-check refuses any other caller. No `:tool`: no project overseer's tool makes it.
+   :owner/send-link {:power nil :people-facing true
                      :card (fn [d] {:people [(get-in (b/evt d) [:target :id])]})}
    :hold/cancel  {:power "always" :correction true}})
 

@@ -6595,17 +6595,17 @@ a.subagent-row { text-decoration: none; }
 .overseer-card-grant { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
 .overseer-card-permit { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
 
-/* The composer's "3 of 10 running" (§app.overseer/caps; a button to Settings → Overseer → Limits)
-   and the approvals chip's panel (§app.overseer/approvals): the shared popover, one section per
-   live approval or rule. */
-.run-status > .run-status-running { margin-left: auto; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The composer's "3 of 10 running" (§app.overseer/caps; a button to Settings → Overseer → Limits),
+   first in the row's right-hand cluster, and the Approvals & Schedules body (§app.overseer/approvals):
+   the shared popover, one section per live approval, rule or schedule. */
+.run-status > .run-status-running { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .run-status > .run-status-running:hover,
 .run-status > .run-status-running:active { color: var(--color-ink); }
 .run-status-running + .run-status-link { margin-left: 0; }
 @media (min-width: 768px) {
-  .model-menu.action-menu.permits-panel { width: 380px; max-width: calc(100vw - var(--space-6)); }
+  .model-menu.action-menu:has(> .permits-body) { width: 380px; max-width: calc(100vw - var(--space-6)); }
 }
-.permits-panel { padding: var(--space-2) 0; }
+.permits-body { padding: var(--space-2) 0; }
 .permits-lede { margin: 0; padding: var(--space-1) var(--space-3) var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .permit-row { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
 .permit-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }

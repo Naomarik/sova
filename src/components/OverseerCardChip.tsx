@@ -15,7 +15,7 @@ export const cardChipText = (n: number): string => `${n} open ${n === 1 ? "card"
  * title), newest touched first; choosing one jumps to that card. The panel is the shared
  * `.model-menu.action-menu` popover, placed above or below the trigger, whichever fits.
  */
-export function OverseerCardChip(props: { cards: OverseerCard[]; onJump(card: OverseerCard): void }) {
+export function OverseerCardChip(props: { cards: OverseerCard[]; onJump(card: OverseerCard): void; /** More classes on the trigger (the run-status row's lead). */ class?: string }) {
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   const [open, setOpen] = createSignal(false);
@@ -44,7 +44,7 @@ export function OverseerCardChip(props: { cards: OverseerCard[]; onJump(card: Ov
       <button
         ref={trigger}
         type="button"
-        class="run-status-link run-status-align run-status-cards"
+        class={`run-status-link run-status-align run-status-cards${props.class ?? ""}`}
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-label={cardChipText(props.cards.length)}

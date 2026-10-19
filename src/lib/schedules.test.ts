@@ -1,4 +1,4 @@
-// The schedule's one line in the Playbooks dialog and the permits panel (§chat.schedules/where-shown).
+// The schedule's one line in the Playbooks dialog and the Overseer's Approvals & Schedules (§chat.schedules/where-shown).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canApprove, canRevoke, eventsText, scheduleLine } from "./schedules";

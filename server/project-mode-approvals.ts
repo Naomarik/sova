@@ -9,6 +9,7 @@
 import {
   approvalsFile as storeFile,
   isApproved as storeIsApproved,
+  isApprovedByUser as storeIsApprovedByUser,
   projectKey,
   recordApproval as storeRecord,
   readApprovals,
@@ -25,6 +26,11 @@ export const approvalsFile = (): string => storeFile(process.env, agentRoot());
 /** Whether this exact tool set of a checkout's mode is approved; always for a mode with no tools (""). */
 export function isApproved(checkoutRoot: string, modeId: string, toolsHash: string): boolean {
   return storeIsApproved(checkoutRoot, modeId, toolsHash, approvalsFile());
+}
+
+/** Whether the user (not the Overseer) approved this exact set: what a mode's hooks need. */
+export function isApprovedByUser(checkoutRoot: string, modeId: string, toolsHash: string): boolean {
+  return storeIsApprovedByUser(checkoutRoot, modeId, toolsHash, approvalsFile());
 }
 
 /** Record an approval (the user's, or an Overseer turn-on's). Throws when it can't be stored. */

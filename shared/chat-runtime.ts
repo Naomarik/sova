@@ -20,6 +20,7 @@ import type {
   HeldChatState,
   MemoryOpen,
   MemoryOutline,
+  ModeCommandOutcome,
   ModeInfo,
   ProjectModeApproval,
   ProjectModeApprovalNeeded,
@@ -95,7 +96,7 @@ export interface ChatModePatch {
   /** The chat's project minor modes, whole on set (server/mode-state.ts ModePatch). */
   projectModes?: string[];
   approve?: ProjectModeApproval[];
-  approvedBy?: "overseer";
+  approvedBy?: "overseer" | "user" | "caller";
 }
 
 /**
@@ -302,6 +303,11 @@ export interface ChatMethods {
   switchMode: { args: { patch: ChatModePatch }; result: ChatModeResult & Partial<ProjectModeApprovalNeeded> };
   /** Merge `patch` into the chat's mode and apply it (the /mode handler, no prompt). */
   applyMode: { args: { patch: ChatModePatch }; result: "skip" | "unsupported" | "command" };
+  /** Your approval of project modes' hooks (POST /api/mode?path= { approveHooks }); a stale hash answers like
+      switchMode's needsApproval. */
+  approveHooks: { args: { approvals: ProjectModeApproval[] }; result: ChatModeResult & Partial<ProjectModeApprovalNeeded> };
+  /** Run a command of a project mode on in the chat (POST /api/mode/command). */
+  runModeCommand: { args: { mode: string; name: string; args?: unknown }; result: ModeCommandOutcome };
   /** The chat's mode with its project rows read now (GET /api/mode?path=). */
   modeResult: { args: Record<string, never>; result: ChatModeResult };
   pinMode: { args: Record<string, never>; result: boolean };

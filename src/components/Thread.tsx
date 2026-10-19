@@ -53,23 +53,13 @@ import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, N
 import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
-import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
+import type { ReplyPlace } from "../lib/reply-place";
+import { ReplyPlaceView } from "./ReplyPlace";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
 export const ToolSourceContext = createContext<ToolSource | null>(null);
-
-/**
- * What a view hangs under each delivered message. The thread decides
- * WHERE a strip goes — once per entry, never once per rendered block — and the view decides what
- * it holds: a chat offers Copy · Rewind/Regenerate, a watch offers Copy with the others'
- * reasons, and a transcript rendered with no provider (a subagent's) shows no strip at all.
- */
-export interface MessageActionsProvider {
-  items(strip: MessageStrip): MessageActionItem[];
-  /** The last refusal for that entry, kept on its row after the announcement. */
-  note?(entryId: string): string | null;
-}
 
 /** "1:43 PM · 5m ago": the clock in mono, then its age, kept current by the one minute clock
     every head shares. The age drops once it would only repeat the date (past 7 days). */
@@ -544,9 +534,11 @@ export function HistoryItems(props: {
   limitPath?: string;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
-  /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
-      disclosure) — an action is about the chat you are in, not about every transcript on screen. */
-  actions?: MessageActionsProvider;
+  /** What hangs under each delivered message: the reply place (src/lib/reply-place.ts). The
+      thread decides WHERE it goes (once per entry, never once per rendered block) and the view
+      what it holds. Absent: no strips at all (a subagent transcript, the hidden-rows disclosure)
+      — an action is about the chat you are in, not about every transcript on screen. */
+  actions?: ReplyPlace;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
   /** Rows above the list that the view doesn't hold yet (lib/older-rows): fetched as the reader
@@ -1074,17 +1066,8 @@ export function HistoryItems(props: {
                 </Show>
               </Match>
             </Switch>
-            {/* Under the bubble, once per entry (see `strips`). */}
-            <Show when={strip()}>
-              {(strip) => (
-                <MessageActions
-                  label={stripLabel(strip().role)}
-                  align={strip().role === "user" ? "end" : "start"}
-                  items={props.actions!.items(strip())}
-                  note={props.actions!.note?.(strip().entryId) ?? null}
-                />
-              )}
-            </Show>
+            {/* Under the bubble, once per entry (see `strips`): the reply place. */}
+            <Show when={strip()}>{(strip) => <ReplyPlaceView place={props.actions!} strip={strip()} />}</Show>
           </div>
           </Show>
           )

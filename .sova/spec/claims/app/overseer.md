@@ -151,7 +151,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (the same for `sova_set_session`). Both tools also take `project_modes`, the ids of the session's
   own project modes to have on (§chat.mode-menu/project-modes: from the checkout the session runs
   in; `minor_modes` names built-in modes only). The Overseer turning a project mode on counts as the
-  user's approval of its tools: nothing waits, and the approval is recorded. `project_modes` is the
+  user's approval of its tools and commands: nothing waits, and the approval is recorded as the
+  Overseer's. It never approves the mode's hooks, which stay inactive until the user approves them
+  (§chat.mode-menu/project-mode-hooks). `project_modes` is the
   whole set to have on (`[]` turns them all off); `sova_create_session` refuses it with `host`
   ("project_modes can't be given with host. No session was created."). An unknown mode, minor
   mode or project mode, or a broken project mode, refuses
@@ -268,7 +270,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   rate-limit tier) and `~/.claude.json`'s `primaryApiKey`, the literal `apiKey` and header values
   in both `models.json` files (the literal parts of a `$NAME` template; a `!command` is never run
   and never taken as a value), Sova's access token (`sova/auth-token` in `~/.pi/agent` and in the
-  active agent dir, the whole file), and the server's environment variables whose name contains `KEY`,
+  active agent dir, the whole file), every extension backend's key (each file in `sova/extension-keys/`
+  in both, the whole file; §app.extensions/backend-key), and the server's environment variables whose name contains `KEY`,
   `TOKEN`, `SECRET`, `PASSWORD` or `AUTH` (not `AUTHOR`/`AUTHORITY`). A value counts only when it
   is at least 12 characters and not a boolean, a number, a path or a URL without credentials. A
   secret cut short at either end (a truncated transcript row, `sk-…`) is redacted from 16 of its
@@ -1079,7 +1082,9 @@ itself.
 
 - `seen.json` maps a session id to when a Sova chat or watch socket last **attached to or
   detached from** it. A view mounts only while it's on screen, so an open socket is the proxy for
-  "the user had it in front of them". This is imperfect for background tabs.
+  "the user had it in front of them". This is imperfect for background tabs. A script's in-chat
+  action (§app/chat-actions) is no pane: it stamps nothing, so a reply it stops or a rewind it makes
+  leaves the session's dot as it was.
 - **The last finished reply** is read from the end of the session file (at most its last 256 KB),
   in file order, not along the active branch: after a rewind it can be a reply the head no longer
   shows. A reply that leaves the turn open — pi's `stopReason` `toolUse`, `pending` or `deferred` —

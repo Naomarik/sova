@@ -106,9 +106,11 @@ switch applies, and where it is available.
 
 Writing a project's own minor mode: the `.sova/minor-modes/<id>/` folder and its `MODE.md`, which
 checkout a chat reads it from, the instructions and reference files, declaring a tool and the
-program it runs, approval and when it is asked again, the copy a chat keeps once a mode is on, what
+program it runs, declaring a command (`sova run mode.<id>.<name>`) and a hook (what runs after a
+reply, its event and environment, its bounds), approval and when it is asked again, who approves
+hooks, the copy a chat keeps once a mode is on, what
 workers get, the menu's states, turning one on from a terminal, what makes a folder broken, and
-one worked example of a mode with a tool.
+one worked example of a mode with a tool, a command and a hook.
 
 ## §site.docs/worktrees-and-changes — Worktrees and changes (`/docs/worktrees-and-changes/`)
 

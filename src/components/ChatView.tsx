@@ -139,7 +139,8 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -1476,10 +1477,14 @@ export function ChatView(props: {
   /** The session's id, for Share. A memo: the summary is a new object on every list read, and every
       strip's items read this. */
   const shareId = createMemo(() => props.summary?.()?.id);
-  /** What each delivered message offers here. Copy is ours alone; the rest are requests with a
-      reason when they can't act, never a button that quietly does nothing. */
-  const chatActions: MessageActionsProvider = {
-    items(strip) {
+  /** What extensions add under this chat's replies: asked once when it opens and once when a run
+      ends, only of extensions that add to replies (lib/reply-place). */
+  const additions = useReplyAdditions({ session: shareId, local: createMemo(() => !hostOf(props.path)), running: () => live.running });
+  /** What each delivered message offers here: the reply place. Sova's own built-in first: Copy is
+      ours alone; the rest are requests with a reason when they can't act, never a button that
+      quietly does nothing. What extensions add comes after it. */
+  const chatActions: ReplyPlace = {
+    builtIns: [{ id: "sova.message-actions", items(strip) {
       return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
@@ -1500,8 +1505,10 @@ export function ChatView(props: {
             };
         }
       });
-    },
+    } }],
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
+    added: additions.added,
+    runChip: additions.runChip,
   };
 
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.

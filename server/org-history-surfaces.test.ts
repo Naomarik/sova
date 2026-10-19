@@ -175,6 +175,9 @@ describe("an org's history reaches its readers and none of the surfaces that nev
   const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
   await owner.setOwner(org.id, maria.id);
   await po.ensureProjectOverseer(project.id);
+  // No unattended looks: a never-run watch looks at the next 20 s wall-clock tick, and that look's turn
+  // makes the overseer's memory summarize it through a real `claude -p` (a spawn the unit tier refuses).
+  await po.patchProjectOverseer(project.id, { watch: false });
   const host = hostOf(org.id);
 
   /** A person's decision recorded with its private words (the history's own record, as a capture writes it). */

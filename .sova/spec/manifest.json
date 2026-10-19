@@ -8,6 +8,90 @@
     ]
   },
   "claims": {
+    "§app.chat-actions/catalogue": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "shared/commands/chat.ts",
+        "shared/commands/other.ts",
+        "shared/commands-ids.json",
+        "server/commands-fuzz.test.ts",
+        "server/commands-inventory/baseline.json",
+        "docs/commands.md",
+        "agents/server/commands/overview.md",
+        "scenarios/chat-actions.json"
+      ],
+      "requires": [
+        "§app/chat-actions"
+      ],
+      "evidence": "verified"
+    },
+    "§app.chat-actions/cold": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-actions.ts",
+        "server/chat-actions.test.ts",
+        "server/chat-actions.integration.test.ts",
+        "scenarios/chat-actions.json",
+        "server/chat-handle.ts",
+        "server/chat-host.ts"
+      ],
+      "requires": [
+        "§app/chat-actions"
+      ],
+      "evidence": "verified"
+    },
+    "§app.chat-actions/never-replay": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-actions.ts",
+        "server/chat-actions.test.ts",
+        "server/chat-actions.integration.test.ts",
+        "scripts/sova.mjs",
+        "scripts/sova-unknown.integration.test.ts",
+        "server/testing/hermetic-server.ts",
+        "scripts/harness-wire-e2e-mock-llm.mjs",
+        "scripts/sova-not-sent.test.ts",
+        "server/ws.ts"
+      ],
+      "requires": [
+        "§app/chat-actions"
+      ],
+      "evidence": "verified"
+    },
+    "§app.chat-actions/route": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-actions.ts",
+        "server/chat-actions.test.ts",
+        "server/chat-actions.integration.test.ts",
+        "server/ws.ts",
+        "server/app.ts",
+        "scenarios/chat-actions.json"
+      ],
+      "requires": [
+        "§app/chat-actions",
+        "§chat.transcript/send-while-starting"
+      ],
+      "evidence": "verified"
+    },
+    "§app.chat-actions/terminal-open": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-actions.ts",
+        "server/chat-actions.integration.test.ts",
+        "server/chat-actions.test.ts",
+        "scenarios/chat-actions.json"
+      ],
+      "requires": [
+        "§app/chat-actions"
+      ],
+      "evidence": "verified"
+    },
     "§app.chat-processes/boot-log": {
       "kind": "behavior",
       "authority": "accepted",
@@ -234,7 +318,8 @@
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-13T03:59Z"
-      }
+      },
+      "evidence": "verified"
     },
     "§app.chat-processes/server-messages": {
       "kind": "behavior",
@@ -314,7 +399,8 @@
         "server/index.ts",
         "server/chat-runtime/gc-timer.ts",
         "server/chat-runtime/gc-timer.test.ts",
-        "server/chat-runtime/main.ts"
+        "server/chat-runtime/main.ts",
+        "server/caller-keys.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -322,8 +408,9 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-14T09:38Z"
-      }
+        "at": "2026-10-19T02:40Z"
+      },
+      "evidence": "verified"
     },
     "§app.chat-processes/survives-restart": {
       "kind": "behavior",
@@ -361,11 +448,15 @@
         "server/chat-runtime/supervisor.ts",
         "server/chat-runtime/supervisor.test.ts",
         "server/chat-host.ts",
-        "server/chat-host.test.ts"
+        "server/chat-host.test.ts",
+        "server/chat-runtime/host.ts",
+        "server/chat-runtime/host.test.ts",
+        "server/chat-runtime/main.integration.test.ts"
       ],
       "requires": [
         "§app/chat-processes"
-      ]
+      ],
+      "evidence": "verified"
     },
     "§app.chat-processes/worker-crash": {
       "kind": "behavior",
@@ -439,6 +530,381 @@
         "by": "naomarik",
         "at": "2026-10-13T12:56Z"
       },
+      "evidence": "verified"
+    },
+    "§app.command-audit/attribution": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.access/gate",
+        "§app.access/token",
+        "§app.command-audit/keys"
+      ],
+      "code": [
+        "server/auth.ts",
+        "scripts/sova-token.mjs",
+        "server/caller-auth.test.ts",
+        "scripts/sova-token-caller.test.ts",
+        "server/sova-caller.integration.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.command-audit/census": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [],
+      "code": [
+        "scripts/chat-key-census.mjs",
+        "scripts/chat-key-census.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.command-audit/keys": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.chat-processes/supervision",
+        "§app.chat-processes/survives-restart"
+      ],
+      "code": [
+        "server/caller-keys.ts",
+        "server/chat-host.ts",
+        "server/chat-runtime/supervisor.ts",
+        "server/extensions.ts",
+        "server/mesh/proxy.ts",
+        "server/caller-keys.test.ts",
+        "server/chat-host-caller-key.test.ts",
+        "server/mesh/proxy-caller.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.command-audit/list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.command-audit/record",
+        "§mesh.peers/grants"
+      ],
+      "code": [
+        "server/command-audit.ts",
+        "shared/commands/other.ts",
+        "shared/commands-ids.json",
+        "server/command-audit.test.ts",
+        "server/mesh/access.ts",
+        "server/commands-fuzz.test.ts",
+        "server/commands-inventory/baseline.json",
+        "docs/commands.md",
+        "scenarios/audit.json"
+      ],
+      "evidence": "verified"
+    },
+    "§app.command-audit/record": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.command-audit/attribution"
+      ],
+      "code": [
+        "server/command-audit.ts",
+        "server/app.ts",
+        "server/auth.ts",
+        "shared/events.ts",
+        "scripts/sova.mjs",
+        "server/command-audit.test.ts",
+        "server/events.ts",
+        "server/events-ws.ts",
+        "server/command-audit-events.test.ts",
+        "server/sova-caller.integration.test.ts",
+        "scenarios/audit.json",
+        "server/caller-auth.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.command-palette/command-panel": {
+      "kind": "behavior",
+      "code": [
+        "src/lib/palette.ts",
+        "src/components/CommandPalette.tsx",
+        "src/lib/api.ts",
+        "src/lib/palette.test.ts",
+        "src/commands/view.test.ts",
+        "src/commands/view.ts",
+        "src/lib/palette-arm.ts",
+        "src/lib/palette-arm.browser.test.ts",
+        "src/lib/palette-host.test.ts"
+      ],
+      "requires": [
+        "§app/new-session-dialog",
+        "§app/settings-dialog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.command-palette/disabled": {
+      "kind": "behavior",
+      "code": [
+        "src/lib/palette.ts",
+        "src/commands/view.ts",
+        "src/commands/composers.ts",
+        "src/lib/palette.test.ts",
+        "src/commands/view.test.ts"
+      ],
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.command-palette/opening": {
+      "kind": "behavior",
+      "code": [
+        "src/commands/keys.ts",
+        "src/App.tsx",
+        "src/components/CommandPalette.tsx",
+        "src/command-palette.css",
+        "src/commands/keys.test.ts",
+        "src/commands/palette-lazy.test.ts",
+        "src/commands/palette-key.test.ts"
+      ],
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.command-palette/picking": {
+      "kind": "behavior",
+      "code": [
+        "src/lib/palette.ts",
+        "src/components/CommandPalette.tsx",
+        "src/commands/composers.ts",
+        "src/components/Composer.tsx",
+        "src/lib/palette.test.ts"
+      ],
+      "requires": [
+        "§chat.slash-commands/keyboard-and-mouse"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.command-palette/rows": {
+      "kind": "behavior",
+      "code": [
+        "src/lib/palette.ts",
+        "src/commands/view.ts",
+        "src/components/CommandPalette.tsx",
+        "src/commands/composers.ts",
+        "src/components/Composer.tsx",
+        "src/lib/api.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/palette.test.ts",
+        "src/commands/view.test.ts"
+      ],
+      "requires": [
+        "§chat/slash-commands"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.command-palette/shortcut-sheet": {
+      "kind": "behavior",
+      "code": [
+        "src/commands/keys.ts",
+        "src/components/ShortcutSheet.tsx",
+        "src/App.tsx",
+        "src/commands/keys.test.ts",
+        "src/command-palette.css"
+      ],
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.commands/catalogue": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.peers/grants",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "shared/commands-catalog.ts",
+        "shared/commands-catalog.test.ts",
+        "shared/commands-ids.json",
+        "server/commands-catalog.test.ts",
+        "shared/commands-path-dots.test.ts",
+        "server/commands-routes.ts",
+        "server/commands-fuzz.test.ts",
+        "shared/commands-retired.test.ts"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T09:45Z"
+      },
+      "evidence": "verified"
+    },
+    "§app.commands/cli": {
+      "kind": "behavior",
+      "requires": [
+        "§app.commands/catalogue",
+        "§app.access/callers",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "scripts/sova.mjs",
+        "scripts/sova.test.ts",
+        "server/sova-cli.integration.test.ts"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T17:59Z"
+      },
+      "evidence": "verified"
+    },
+    "§app.commands/extension-commands": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/manifest",
+        "§app.extensions/serving",
+        "§app.commands/cli"
+      ],
+      "code": [
+        "shared/commands-ext.ts",
+        "shared/commands-ext.test.ts",
+        "scripts/sova.mjs",
+        "server/sova-cli.integration.test.ts",
+        "docs/customization.md"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T17:59Z"
+      },
+      "evidence": "verified"
+    },
+    "§app.commands/reply-place": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/message-actions",
+        "§app.extensions/offers",
+        "§app.commands/reply-slot"
+      ],
+      "code": [
+        "src/lib/reply-place.ts",
+        "src/components/ReplyPlace.tsx",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/App.tsx",
+        "src/lib/reply-place.browser.test.ts",
+        "src/lib/reply-place-rule.test.ts"
+      ],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.commands/reply-slot": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/message-actions",
+        "§chat.markdown/visuals",
+        "§app.extensions/offers"
+      ],
+      "code": [
+        "src/lib/reply-slot.ts",
+        "src/lib/reply-slot.test.ts",
+        "src/lib/reply-slot-answers.test.ts",
+        "src/components/ReplySlot.tsx",
+        "src/extensions.css",
+        "docs/customization.md",
+        "src/lib/reply-place.ts",
+        "src/lib/reply-chip-timeout.browser.test.ts"
+      ],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.commands/watch": {
+      "kind": "behavior",
+      "requires": [
+        "§app.commands/cli"
+      ],
+      "code": [
+        "shared/commands-watch.ts",
+        "shared/commands-watch.test.ts",
+        "scripts/sova.mjs",
+        "server/sova-cli.integration.test.ts"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T17:59Z"
+      },
+      "evidence": "verified"
+    },
+    "§app.events/backpressure": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/events-ws.ts",
+        "server/events-ws.test.ts",
+        "server/events.integration.test.ts"
+      ],
+      "requires": [],
+      "evidence": "verified"
+    },
+    "§app.events/idle": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/events.ts",
+        "server/index.ts",
+        "server/events.test.ts",
+        "scripts/perf-events.mjs"
+      ],
+      "requires": [
+        "§app.decisions/push"
+      ],
+      "evidence": "verified"
+    },
+    "§app.events/listeners": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/ws.ts",
+        "server/mesh/access.ts",
+        "server/events-access.test.ts",
+        "server/events.integration.test.ts"
+      ],
+      "requires": [
+        "§mesh.peers/grants"
+      ],
+      "evidence": "verified"
+    },
+    "§app.events/names": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "shared/events.ts",
+        "server/events.ts",
+        "server/events-ws.ts",
+        "server/index.ts",
+        "server/attention-memo.ts",
+        "server/events.test.ts",
+        "server/events-hermetic.integration.test.ts",
+        "server/events.integration.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/push"
+      ],
+      "evidence": "verified"
+    },
+    "§app.events/resume": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "shared/events.ts",
+        "server/events.ts",
+        "server/events-ws.ts",
+        "server/events.test.ts",
+        "server/events-ws.test.ts",
+        "server/events.integration.test.ts"
+      ],
+      "requires": [],
       "evidence": "verified"
     },
     "§app.insights/aggregate-chips-live-vs-working": {
@@ -670,7 +1136,10 @@
         "src/lib/agents-board.test.ts",
         "src/components/AgentsView.tsx",
         "src/agents-board.css",
-        "src/components/TitleField.tsx"
+        "src/components/TitleField.tsx",
+        "src/components/SessionRowMenu.tsx",
+        "src/lib/session-row-menu.test.ts",
+        "src/lib/session-row-menu.snapshot.json"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -737,6 +1206,23 @@
         "pi-config/extensions/remote/channel.test.ts",
         "pi-config/extensions/remote/connection.ts",
         "pi-config/extensions/remote/connection.test.ts"
+      ]
+    },
+    "§app.overseer-commands/overseer-sweep": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/overseer-commands",
+        "§app.overseer/ideas"
+      ],
+      "code": [
+        "shared/commands/overseer.ts",
+        "shared/commands/projects.ts",
+        "shared/commands-ids.json",
+        "server/commands-overseer.test.ts",
+        "server/commands-fuzz.test.ts",
+        "server/commands-inventory/baseline.json"
       ]
     },
     "§app.project-assistant/chat": {
@@ -865,6 +1351,107 @@
         "server/owner-versions.test.ts"
       ]
     },
+    "§app.project-commands/projects-sweep": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/project-commands"
+      ],
+      "code": [
+        "shared/commands/projects.ts",
+        "shared/commands-ids.json",
+        "server/commands-projects.test.ts",
+        "server/commands-fuzz.test.ts",
+        "server/commands-inventory/baseline.json",
+        "docs/commands.md",
+        "scenarios/projects.json"
+      ]
+    },
+    "§app.project-commands/verb-params": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/project-commands",
+        "§app.project-services/callers"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "server/project-services/tools.ts",
+        "shared/commands/projects.ts",
+        "server/project-verb-params.test.ts"
+      ]
+    },
+    "§app.served-commands/list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/sova.mjs",
+        "server/commands-served.integration.test.ts",
+        "scenarios/served.json"
+      ],
+      "requires": [
+        "§app.served-commands/route"
+      ],
+      "evidence": "verified"
+    },
+    "§app.served-commands/route": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/commands-routes.ts",
+        "server/app.ts",
+        "server/extensions.ts",
+        "server/mesh/access.ts",
+        "server/commands-inventory/scan.ts",
+        "server/commands-inventory/baseline.json",
+        "docs/commands.md",
+        "docs/customization.md",
+        "agents/server/commands/overview.md",
+        "server/commands-routes.test.ts",
+        "server/commands-served.integration.test.ts",
+        "server/commands-inventory/render.ts",
+        "server/commands-inventory.test.ts",
+        "server/commands-inventory/fixtures/frames.ts.txt",
+        "server/commands-inventory/fixtures/keydown.ts.txt",
+        "server/commands-inventory/fixtures/tools.ts.txt"
+      ],
+      "requires": [
+        "§app.extensions/manifest",
+        "§mesh.peers/grants"
+      ],
+      "evidence": "verified"
+    },
+    "§app.served-commands/watch": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/sova.mjs",
+        "shared/commands-watch.ts",
+        "server/commands-routes.test.ts",
+        "server/commands-served.integration.test.ts",
+        "scenarios/served.json"
+      ],
+      "requires": [],
+      "evidence": "verified"
+    },
+    "§app.session-commands/sessions-sweep": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/session-commands"
+      ],
+      "code": [
+        "shared/commands/sessions.ts",
+        "shared/commands-ids.json",
+        "server/commands-sessions.test.ts",
+        "server/commands-fuzz.test.ts",
+        "server/commands-fuzz/known-500.json",
+        "server/commands-inventory/baseline.json"
+      ]
+    },
     "§app.session-list/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
@@ -881,7 +1468,11 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/readiness.ts",
-        "src/lib/readiness.test.ts"
+        "src/lib/readiness.test.ts",
+        "src/components/RowPlace.tsx",
+        "src/lib/row-place.ts",
+        "src/lib/session-row.test.ts",
+        "src/lib/session-row.snapshot.json"
       ],
       "agreed": {
         "by": "omar",
@@ -924,7 +1515,8 @@
         "src/components/Sidebar.tsx",
         "shared/protocol.ts",
         "src/lib/readiness.ts",
-        "src/lib/readiness.test.ts"
+        "src/lib/readiness.test.ts",
+        "src/components/RowPlace.tsx"
       ]
     },
     "§app.session-list/groups": {
@@ -1428,6 +2020,15 @@
         "shared/usage/wire.ts"
       ]
     },
+    "§app/chat-actions": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/chat-actions.ts",
+        "server/app.ts"
+      ],
+      "evidence": "reviewed"
+    },
     "§app/chat-processes": {
       "kind": "surface",
       "authority": "accepted",
@@ -1449,6 +2050,52 @@
         "at": "2026-10-13T12:56Z"
       },
       "evidence": "verified"
+    },
+    "§app/command-audit": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/caller-keys.ts",
+        "server/command-audit.ts",
+        "server/auth.ts",
+        "agents/server/commands/overview.md"
+      ],
+      "evidence": "reviewed"
+    },
+    "§app/command-palette": {
+      "kind": "surface",
+      "code": [
+        "src/commands/keys.ts",
+        "src/App.tsx"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app/commands": {
+      "kind": "surface",
+      "code": [
+        "shared/commands-catalog.ts",
+        "scripts/sova.mjs",
+        "AGENTS.md",
+        "agents/server/commands/overview.md"
+      ],
+      "authority": "accepted",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T17:59Z"
+      },
+      "evidence": "verified"
+    },
+    "§app/events": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "shared/events.ts",
+        "server/events.ts",
+        "server/events-ws.ts",
+        "server/ws.ts"
+      ],
+      "evidence": "reviewed"
     },
     "§app/extension-dialogs": {
       "kind": "surface",
@@ -1488,6 +2135,14 @@
         "at": "2026-10-15T19:32Z"
       }
     },
+    "§app/overseer-commands": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/commands/overseer.ts"
+      ]
+    },
     "§app/project-assistant": {
       "kind": "surface",
       "authority": "accepted",
@@ -1500,10 +2155,53 @@
         "server/project-assistant.integration.test.ts"
       ]
     },
+    "§app/project-commands": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/commands/projects.ts"
+      ]
+    },
+    "§app/served-commands": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/commands-routes.ts",
+        "scripts/sova.mjs"
+      ],
+      "evidence": "reviewed"
+    },
+    "§app/session-commands": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/commands-catalog.ts",
+        "shared/commands/types.ts",
+        "shared/commands/sessions.ts",
+        "shared/commands/projects.ts",
+        "shared/commands/overseer.ts",
+        "shared/commands/other.ts"
+      ]
+    },
     "§app/session-list": {
       "kind": "surface",
       "authority": "accepted",
       "evidence": "unreviewed"
+    },
+    "§app/settings-commands": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/commands/other.ts",
+        "shared/commands-ids.json",
+        "server/commands-settings.test.ts"
+      ],
+      "requires": [
+        "§app.commands/catalogue"
+      ]
     },
     "§app/settings-dialog": {
       "kind": "surface",
@@ -2323,9 +3021,78 @@
         "server/chat-manager.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T09:48Z"
+        "by": "naomarik",
+        "at": "2026-10-19T02:40Z"
       }
+    },
+    "§chat.mode-menu/project-mode-commands": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/project-modes",
+        "§chat.sandbox/states"
+      ],
+      "authority": "accepted",
+      "code": [
+        "server/mode-commands.ts",
+        "pi-config/extensions/mode/project-format.ts",
+        "pi-config/extensions/mode/project-discovery.ts",
+        "pi-config/extensions/mode/project-tools.ts",
+        "server/chat-manager.ts",
+        "server/app.ts",
+        "server/mesh/access.ts",
+        "shared/commands/chat.ts",
+        "shared/chat-runtime.ts",
+        "server/chat-runtime/methods.ts",
+        "scripts/sova.mjs",
+        "shared/protocol.ts",
+        "server/command-audit.ts",
+        "shared/commands/sessions.ts",
+        "shared/commands-ids.json",
+        "server/commands-inventory/baseline.json",
+        "server/chat-handle.ts",
+        "server/mode-commands.test.ts",
+        "server/mode-commands-routes.test.ts",
+        "server/mode-commands.integration.test.ts",
+        "scripts/sova-mode.test.ts",
+        "server/commands-fuzz.test.ts",
+        "server/project-mode-menu.ts",
+        "server/mode-commands-worker.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§chat.mode-menu/project-mode-hooks": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/project-modes",
+        "§chat.sandbox/states"
+      ],
+      "authority": "accepted",
+      "code": [
+        "server/mode-commands.ts",
+        "pi-config/extensions/mode/project-format.ts",
+        "pi-config/extensions/mode/project-tools-approval.ts",
+        "server/project-mode-menu.ts",
+        "server/chat-manager.ts",
+        "server/app.ts",
+        "server/mode-state.ts",
+        "shared/protocol.ts",
+        "src/components/ModeMenu.tsx",
+        "src/lib/mode-menu.ts",
+        "pi-config/extensions/mode/project-tools.ts",
+        "pi-config/extensions/mode/project-discovery.ts",
+        "server/project-mode-approvals.ts",
+        "src/lib/api.ts",
+        "shared/chat-runtime.ts",
+        "server/chat-runtime/methods.ts",
+        "server/chat-handle.ts",
+        "server/mode-commands.test.ts",
+        "server/mode-commands-routes.test.ts",
+        "server/mode-commands.integration.test.ts",
+        "src/lib/mode-menu-actions.test.ts",
+        "pi-config/extensions/mode/project-actions.test.ts",
+        "server/mode-commands-worker.test.ts"
+      ],
+      "evidence": "verified"
     },
     "§chat.mode-menu/project-modes": {
       "kind": "behavior",
@@ -2342,8 +3109,8 @@
       ],
       "authority": "accepted",
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T09:48Z"
+        "by": "naomarik",
+        "at": "2026-10-19T02:40Z"
       },
       "code": [
         "pi-config/extensions/mode/project-tools.ts",
@@ -2378,7 +3145,8 @@
         "pi-config/extensions/mode/project-mode-extension.test.ts",
         "pi-config/extensions/mode/project-tools.test.ts",
         "pi-config/extensions/subagents/index.test.ts",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "server/mode-commands.ts"
       ],
       "evidence": "verified"
     },
@@ -2602,10 +3370,11 @@
     "§chat.slash-commands/keyboard-and-mouse": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/Composer.tsx",
-        "src/lib/input-mode.ts"
+        "src/lib/input-mode.ts",
+        "src/components/CommandPalette.tsx"
       ]
     },
     "§chat.slash-commands/markup": {
@@ -2873,16 +3642,17 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/MessageActions.tsx",
-        "src/lib/message-reveal.ts",
-        "src/components/Thread.tsx",
-        "src/design/base.css",
-        "src/app.css",
-        "src/lib/message-actions.ts",
-        "src/lib/message-actions.test.ts",
         "server/chat-regenerate.test.ts",
+        "src/app.css",
         "src/components/ChatView.tsx",
-        "src/components/WatchView.tsx"
+        "src/components/MessageActions.tsx",
+        "src/components/ReplyPlace.tsx",
+        "src/components/Thread.tsx",
+        "src/components/WatchView.tsx",
+        "src/design/base.css",
+        "src/lib/message-actions.test.ts",
+        "src/lib/message-actions.ts",
+        "src/lib/message-reveal.ts"
       ]
     },
     "§chat.transcript/open-questions": {
@@ -4627,6 +5397,49 @@
         "at": "2026-10-14T15:54Z"
       }
     },
+    "§app.extensions/backend-key": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/manifest",
+        "§app.extensions/serving",
+        "§app.access/gate"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/extension-keys.ts",
+        "server/auth.ts",
+        "server/command-audit.ts",
+        "server/caller-keys.ts",
+        "server/extensions.ts",
+        "server/overseer-redact.ts",
+        "server/app.ts",
+        "server/index.ts",
+        "docs/customization.md",
+        "server/extension-keys.test.ts",
+        "server/extension-key-auth.integration.test.ts",
+        "server/extension-keys.integration.test.ts",
+        "server/command-audit.test.ts",
+        "scenarios/extension-key.json",
+        "server/extension-keys-idle.test.ts"
+      ]
+    },
+    "§app.extensions/card-status": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/cards",
+        "§app.extensions/page"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/card-place.ts",
+        "src/components/ExtensionView.tsx",
+        "shared/extension-offers.ts",
+        "src/extensions.css",
+        "src/lib/card-place.browser.test.ts"
+      ]
+    },
     "§app.extensions/cards": {
       "kind": "behavior",
       "requires": [
@@ -4663,9 +5476,10 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "server/app.ts",
+        "server/extension-offers.integration.test.ts",
         "server/extensions.ts",
         "server/index.ts",
-        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/api.ts"
       ]
@@ -4679,7 +5493,11 @@
         "server/extensions.ts",
         "server/extensions.test.ts",
         "server/extensions.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-17T17:59Z"
+      }
     },
     "§app.extensions/maximize": {
       "kind": "behavior",
@@ -4696,6 +5514,25 @@
         "src/App.tsx"
       ]
     },
+    "§app.extensions/offers": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/manifest",
+        "§app.extensions/list",
+        "§app.commands/extension-commands"
+      ],
+      "code": [
+        "shared/extension-offers.ts",
+        "shared/protocol.ts",
+        "server/extensions.ts",
+        "shared/commands-ext.ts",
+        "server/extension-offers.test.ts",
+        "server/extension-offers.integration.test.ts",
+        "docs/customization.md"
+      ],
+      "authority": "accepted",
+      "evidence": "verified"
+    },
     "§app.extensions/page": {
       "kind": "behavior",
       "requires": [
@@ -4708,10 +5545,40 @@
       "evidence": "verified",
       "code": [
         "src/App.tsx",
-        "src/lib/ext-route.ts",
-        "src/lib/ext-route.test.ts",
         "src/components/ExtensionView.tsx",
-        "src/extensions.css"
+        "src/extensions.css",
+        "src/lib/ext-route.test.ts",
+        "src/lib/ext-route.ts",
+        "src/lib/reply-place.ts"
+      ]
+    },
+    "§app.extensions/row-chips": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/list",
+        "§app.extensions/serving",
+        "§app.session-list/anatomy",
+        "§chat.worktrees/readiness"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/extension-offers.ts",
+        "shared/protocol.ts",
+        "src/lib/row-place.ts",
+        "src/components/RowPlace.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/ExtensionView.tsx",
+        "src/lib/reply-slot.ts",
+        "src/extensions.css",
+        "docs/customization.md",
+        "src/lib/row-place.test.ts",
+        "src/lib/row-place.browser.test.ts",
+        "src/lib/row-place-rule.test.ts",
+        "src/lib/session-row.test.ts",
+        "src/lib/session-row.snapshot.json",
+        "server/extension-offers-row.test.ts",
+        "scenarios/row-place.json"
       ]
     },
     "§app.extensions/serving": {
@@ -4729,7 +5596,33 @@
         "public/sw.js",
         "vite.config.ts",
         "server/extensions.test.ts",
-        "server/extensions.integration.test.ts"
+        "server/extensions.integration.test.ts",
+        "server/extension-keys.ts"
+      ]
+    },
+    "§app.extensions/session-menu": {
+      "kind": "behavior",
+      "requires": [
+        "§app.extensions/list",
+        "§app.extensions/serving",
+        "§app.insights/team-cards"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/extension-offers.ts",
+        "shared/protocol.ts",
+        "server/extensions.ts",
+        "src/lib/menu-place.ts",
+        "src/components/MenuPlace.tsx",
+        "src/components/SessionRowMenu.tsx",
+        "docs/customization.md",
+        "server/extension-offers-menu.test.ts",
+        "src/lib/menu-place.test.ts",
+        "src/lib/menu-place-rule.test.ts",
+        "src/lib/session-row-menu.test.ts",
+        "src/lib/session-row-menu.snapshot.json",
+        "scenarios/session-menu.json"
       ]
     },
     "§app.extensions/trust": {
@@ -4740,7 +5633,8 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/ExtensionView.tsx"
+        "src/components/ExtensionView.tsx",
+        "server/extension-keys.ts"
       ]
     },
     "§app/extensions": {
@@ -4749,7 +5643,9 @@
       "evidence": "verified",
       "code": [
         "server/extensions.ts",
-        "src/components/ExtensionView.tsx"
+        "src/components/ExtensionView.tsx",
+        "shared/extension-offers.ts",
+        "server/extension-keys.ts"
       ]
     },
     "§app.subagents-pane/context-fill": {
@@ -5104,7 +6000,8 @@
         "server/unread-replies.test.ts",
         "server/project-overseer-unread.ts",
         "server/project-overseer.ts",
-        "server/project-overseer-unread.integration.test.ts"
+        "server/project-overseer-unread.integration.test.ts",
+        "server/chat-actions.test.ts"
       ],
       "requires": [],
       "agreed": {
@@ -5185,7 +6082,9 @@
         "server/archive-worktrees.test.ts",
         "server/project-services/tools.ts",
         "server/project-services/checkout-teardown.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/agent-loadouts.test.ts",
+        "server/agent-loadouts.snapshot.json"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -5194,8 +6093,8 @@
         "§mesh.peers/listener"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "by": "naomarik",
+        "at": "2026-10-19T09:45Z"
       }
     },
     "§app.settings-dialog/overseer": {
@@ -5457,7 +6356,9 @@
         "src/lib/summary-diff.test.ts",
         "shared/protocol.ts",
         "src/lib/signals.ts",
-        "src/lib/signals.test.ts"
+        "src/lib/signals.test.ts",
+        "server/events.ts",
+        "server/index.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
@@ -6933,7 +7834,9 @@
         "server/org-history-tools.ts",
         "server/project-overseer.test.ts",
         "server/baton.ts",
-        "server/org-history-preview.test.ts"
+        "server/org-history-preview.test.ts",
+        "server/agent-loadouts.test.ts",
+        "server/agent-loadouts.snapshot.json"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -10446,6 +11349,24 @@
         "server/claude-pool/agent.integration.test.ts",
         "src/lib/claude-pool.test.ts"
       ]
+    },
+    "§mesh.peers/remote-commands": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§mesh.peers/grants",
+        "§mesh.peers/listener"
+      ],
+      "code": [
+        "server/mesh/access.ts",
+        "server/mesh/listener.ts",
+        "server/commands-routes.ts",
+        "scripts/sova.mjs",
+        "server/mesh/remote-commands.test.ts",
+        "server/mesh/remote-commands.integration.test.ts",
+        "scripts/sova-host.integration.test.ts"
+      ],
+      "evidence": "verified"
     },
     "§mesh.peers/resync": {
       "kind": "behavior",
@@ -14173,11 +15094,12 @@
         "docs/customization.md",
         "docs/public-links.md",
         "README.md",
-        "vite.config.ts"
+        "vite.config.ts",
+        "scripts/sova.mjs"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-11T11:27Z"
+        "by": "user",
+        "at": "2026-10-17T17:59Z"
       }
     },
     "§app.access/gate": {
@@ -14195,7 +15117,10 @@
         "server/app.ts",
         "server/auth.test.ts",
         "server/auth-gate.test.ts",
-        "server/auth-gate.integration.test.ts"
+        "server/auth-gate.integration.test.ts",
+        "server/extension-keys.ts",
+        "server/mesh/proxy.ts",
+        "server/caller-keys.ts"
       ]
     },
     "§app.access/token": {
@@ -19134,8 +20059,8 @@
         "site/src/content/docs/modes/project-modes.md"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
+        "by": "naomarik",
+        "at": "2026-10-19T02:40Z"
       },
       "evidence": "reviewed"
     },

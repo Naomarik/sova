@@ -402,15 +402,18 @@
         "server/chat-runtime/gc-timer.ts",
         "server/chat-runtime/gc-timer.test.ts",
         "server/chat-runtime/main.ts",
-        "server/caller-keys.ts"
+        "server/caller-keys.ts",
+        "server/chat-runtime/link.integration.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
-        "§app.claude-code-provider/continuity"
+        "§app.claude-code-provider/continuity",
+        "§app.chat-processes/code-pickup"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-19T02:40Z"
+        "by": "omar (al_2 go-ahead)",
+        "at": "2026-10-19T22:18Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#a09c9175"
       },
       "evidence": "verified"
     },

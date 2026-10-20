@@ -142,6 +142,26 @@ describe("start_version (§app.project-assistant/tools)", () => {
     assert.ok(!view.messages.some((m) => m.versions?.length), "no Open button without a start");
   });
 
+  test("the operator starts the copy from Branches: once it is seen running, the open `try` request is done and leaves Needs you", async () => {
+    const open = tryRequests().filter((x) => x.status === "with-team");
+    assert.equal(open.length, 1, "the Off test's request is open");
+    const up = await projectEngine().run("up", { instance }, { kind: "operator" });
+    assert.equal(up.ok, true, JSON.stringify(up.error));
+    try {
+      const [v] = await versions.projectVersions(org.id, project);
+      assert.equal(v!.state, "running");
+      assert.deepEqual(store.orgRequests(org.id).filter((x) => x.id === open[0]!.id).map((x) => x.status), ["done"], "the request is closed");
+      assert.ok(!ownerAttention().some((i) => i.kind === "owner-version-request"), "no owner-version-request in Needs you");
+    } finally {
+      const down = await projectEngine().run("down", { instance, confirm: true }, { kind: "operator" });
+      assert.equal(down.ok, true, JSON.stringify(down.error));
+    }
+    // A new ask while it's stopped files a new request (the done one is no longer open).
+    await po.patchProjectOverseer(project.id, { powers: { assistant: { copiesRun: false } } });
+    await ask("Can I try it again?", { name: "start_version", arguments: {} }, "I've asked the team.");
+    assert.deepEqual(tryRequests().map((x) => x.status).sort(), ["done", "with-team"]);
+  });
+
   test("On: the project's services/run act by the assistant, then up of exactly that copy; the chat's row opens it through the owner link", async () => {
     await po.patchProjectOverseer(project.id, { powers: { assistant: { copiesRun: true } } });
     const acts = runActs().length;

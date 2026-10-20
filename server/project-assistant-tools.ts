@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { HEntry, ToolSpec } from "../shared/harness";
-import type { ModelPick } from "../shared/powers";
-import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequestKind } from "../shared/project-assistant";
+import { powerOffSentence, type ModelPick } from "../shared/powers";
+import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequest, type OwnerRequestKind } from "../shared/project-assistant";
+import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, type OwnerVersion } from "./owner-versions";
 import { agreeRequirement, changeOfRef, conversationDraftTools } from "./conversation-draft-tools";
 import type { ConversationRef } from "./conversation-draft-store";
 import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
@@ -33,11 +34,15 @@ export interface AssistantToolCtx {
 
 /** An act's outcome, as the powers engine answers it. */
 export type ActOutcome = { taken: true; held: boolean; sessionId?: string } | { taken: false; code: string; sentence: string };
+/** A copy's start, as start_version's act answers it: `done` follows the `up` that goes on after the answer. */
+export type CopyStartOutcome = { taken: true; done: Promise<{ ok: true } | { ok: false; code: string; message: string }> } | { taken: false; code: string; sentence: string };
 
 /** The acts the tools set off: server/project-overseer.ts's assistantAct (the client column decides); tests stand in. */
 export interface AssistantActs {
   buildStart(projectId: string, a: { requestId: string; title: string; text: string; model: ModelPick }, o: { attended: boolean; sessionId: string }): Promise<ActOutcome>;
   deployRun(projectId: string, a: { requestId: string; why: string }, o: { attended: boolean; sessionId: string }): Promise<ActOutcome>;
+  /** The project's services/run act, then the engine's up of exactly that instance (§app.project-services/callers). */
+  copyStart(projectId: string, a: { instance: string; root: string }, o: { attended: boolean; sessionId: string }): Promise<CopyStartOutcome>;
 }
 
 let actsForTest: AssistantActs | null = null;
@@ -52,6 +57,11 @@ async function acts(): Promise<AssistantActs> {
   return {
     buildStart: (pid, a, o) => assistantAct(pid, { act: "build/start", basis: { kind: "owner-request", id: a.requestId }, prompt: `${a.title}\n\n${a.text}`, title: `Fix: ${a.title}`, model: a.model ? { model: a.model.model, thinking: a.model.thinking ?? null } : null }, o),
     deployRun: (pid, a, o) => assistantAct(pid, { act: "deploy/run", basis: { kind: "owner-request", id: a.requestId }, ...(a.why ? { why: a.why.slice(0, 300) } : {}) }, o),
+    copyStart: async (pid, a, o) => {
+      const out = await assistantAct(pid, { act: "services/run", instance: a.instance, root: a.root }, o);
+      if (!out.taken) return out;
+      return { taken: true, done: out.done ?? Promise.resolve({ ok: true as const }) };
+    },
   };
 }
 
@@ -113,6 +123,48 @@ function columnOf(projectId: string) {
   } catch {
     return { assistant: null, models: null };
   }
+}
+
+// ---- versions to try (§app.project-assistant/versions) ------------------------------------------------------
+
+const VERSION_STATE_WORDS: Record<OwnerVersion["state"], string> = { running: "running", starting: "starting", failed: "didn't start (the team knows)", "not-running": "not running" };
+
+/** A shown project's versions (its root read now); none when it has no root or none are listed. */
+async function versionsOf(orgId: string, projectId: string): Promise<OwnerVersion[]> {
+  const p = readProjects(orgId).find((x) => x.id === projectId);
+  if (!p) return [];
+  return await projectVersions(orgId, p).catch((): OwnerVersion[] => []);
+}
+
+/** The open `try` request for this version, or a new one (a second ask files none, §app.project-assistant/requests). */
+function tryRequest(orgId: string, projectId: string, label: string, text: string): OwnerRequest {
+  const open = orgRequests(orgId).find((r) => r.projectId === projectId && r.kind === "try" && r.title === label.slice(0, OWNER_REQUEST_TITLE_MAX) && r.status === "with-team");
+  return open ?? fileRequest(orgId, { projectId, kind: "try", title: label.slice(0, OWNER_REQUEST_TITLE_MAX), text: text.slice(0, OWNER_REQUEST_TEXT_MAX) });
+}
+
+/** After the answer: the up that goes on, and the start timeout. A failure files the `try` request once (the team knows). */
+function followStart(orgId: string, projectId: string, v: OwnerVersion, done: Promise<{ ok: true } | { ok: false; code: string; message: string }>): void {
+  let filed = false;
+  const fail = (why: string) => {
+    if (filed) return;
+    filed = true;
+    noteVersionFailed(v.rec.id);
+    try {
+      tryRequest(orgId, projectId, v.label, `The owner asked to try it; it didn't start: ${why}`);
+    } catch (err) {
+      console.warn(`[project-assistant] filing a version that didn't start: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  void done.then((r) => {
+    if (!r.ok) fail(`${r.code}: ${r.message}`);
+    else closeTryRequests(orgId, projectId, v.label);
+  });
+  const t = setTimeout(() => {
+    void versionsOf(orgId, projectId).then((vs) => {
+      if (vs.find((x) => x.rec.id === v.rec.id)?.state === "failed") fail(`it hadn't answered ${START_TIMEOUT_MS / 60_000} minutes after the start`);
+    });
+  }, START_TIMEOUT_MS + 1000);
+  t.unref?.();
 }
 
 const STATUS_WORDS: Record<string, string> = { "with-team": "with the team", started: "being worked on", done: "done", declined: "not planned" };
@@ -220,6 +272,72 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
     },
   };
 
+  const ownerVersions: ToolSpec = {
+    name: "owner_versions",
+    label: "Versions to try",
+    description:
+      "The versions of each project the owner can try (the current version, each fix's copy), and whether each is running, starting, didn't start or not running. Use it before you answer \"can I try it?\"; start one with start_version.",
+    promptSnippet: "owner_versions: the versions the owner can try, and whether each is running",
+    parameters: obj({}, []),
+    async execute() {
+      const lines: string[] = [];
+      for (const p of assistantProjects(orgId)) {
+        const vs = await versionsOf(orgId, p.id);
+        if (!vs.length) {
+          lines.push(`- ${p.name}: no versions to try.`);
+          continue;
+        }
+        for (const v of vs) lines.push(`- ${p.name}: ${v.label}: ${v.endpoint === null ? "can't be shown outside the team" : VERSION_STATE_WORDS[v.state]}`);
+      }
+      return say(lines.length ? lines.join("\n") : "There is no project yet.");
+    },
+  };
+
+  const startVersion: ToolSpec = {
+    name: "start_version",
+    label: "Start a version",
+    description:
+      "Start a version the owner wants to try: one owner_versions lists, by its label. When it starts (or already runs), its Open button shows in this chat and on the owner's home page; never write a link yourself. When starting it on its own isn't allowed here, it goes to the team. Say back to the owner what the answer says.",
+    promptSnippet: "start_version: start a version the owner wants to try (or ask the team to)",
+    parameters: obj(
+      {
+        ...projectParam(orgId),
+        version: str("The version's label, as owner_versions gives it (e.g. \"Current version\"); optional when the project has only one."),
+      },
+      needsProject(orgId),
+    ),
+    async execute(_id, params, _signal, _update, call) {
+      const p = projectOf(orgId, params.project);
+      const vs = await versionsOf(orgId, p.id);
+      if (!vs.length) return say(`${p.name} has no versions to try.`);
+      const asked = typeof params.version === "string" ? params.version.trim().toLowerCase() : "";
+      const v = asked ? vs.find((x) => x.label.toLowerCase() === asked) : vs.length === 1 ? vs[0] : undefined;
+      if (!v) throw new Error(`Say which version: one of ${vs.map((x) => `"${x.label}"`).join(", ")}.`);
+      if (v.endpoint === null) return say(`${p.name}'s versions can't be shown outside the team.`);
+      const ready = `${v.label} of ${p.name}`;
+      if (v.state === "running") return say(`${ready} is running. Its Open button is in this chat and on the home page.`, { version: v.handle });
+      if (v.state === "starting") return say(`${ready} is starting. Its Open button is in this chat and on the home page.`, { version: v.handle });
+      const attended = attendedNow(call);
+      const col = columnOf(p.id);
+      const team = (sentence: string) => {
+        const r = tryRequest(orgId, p.id, v.label, `The owner asked to try it. ${sentence}`);
+        return say(sentence, { request: r.id, started: false });
+      };
+      const failed = (why: string) => {
+        noteVersionFailed(v.rec.id);
+        const r = tryRequest(orgId, p.id, v.label, `The owner asked to try it; it didn't start: ${why}`);
+        return say("It didn't start; the team knows.", { request: r.id, started: false });
+      };
+      if (!attended && col.assistant && !col.assistant.copiesRun) return team(powerOffSentence("copiesRun", "assistant"));
+      const a = await acts();
+      const out = await a.copyStart(p.id, { instance: v.rec.id, root: v.rec.project }, { attended, sessionId: ctx.sessionId });
+      if (!out.taken) return out.code === "power-off" || out.code === "brake" ? team(out.sentence) : failed(`${out.code}: ${out.sentence}`);
+      noteVersionStarting(v.rec.id);
+      followStart(orgId, p.id, v, out.done);
+      return say(`${ready} is starting. Its Open button is in this chat and on the home page.`, { version: v.handle, started: true });
+    },
+  };
+
   const agree: ToolSpec = {
     name: "requirement_agree",
     label: "Note a requirement",
@@ -255,11 +373,11 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
 
   const drafts = conversationDraftTools({ sessionId: ctx.sessionId, conversation, projects: () => assistantProjects(orgId).map((p) => ({ projectId: p.id, name: p.name })) });
   const lookups = specLookupTools({ sessionId: ctx.sessionId, projects: () => assistantProjects(orgId), view: "outsider" });
-  return [...lookups, agree, ...drafts, reportIssue, ownerRequests, startFix, deploy];
+  return [...lookups, agree, ...drafts, reportIssue, ownerRequests, startFix, deploy, ownerVersions, startVersion];
 }
 
 /** The tool names, in loadout order (the allowlist). */
-export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "start_fix", "deploy"] as const;
+export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "start_fix", "deploy", "owner_versions", "start_version"] as const;
 
 /** The owner's display name now (the tools' ctx). */
 export function ownerNow(orgId: string, personId: string): { id: string; name: string } | null {

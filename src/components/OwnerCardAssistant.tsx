@@ -114,6 +114,9 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
                       </For>
                     </select>
                     <span class="field-hint">{priceLine(i().models[kind])}</span>
+                    <Show when={kind === "reply" && i().seesPhotos === false}>
+                      <span class="field-hint">This model can't see photos: {first()} won't get an attach button.</span>
+                    </Show>
                   </label>
                 )}
               </For>

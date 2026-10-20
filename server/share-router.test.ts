@@ -53,6 +53,8 @@ test("every address the edge's strict routes admit for a kind routes to that kin
     ["POST", `/i/${t}/ask-link`, "i"],
     ["GET", `/api/i/${t}/assistant`, "i"],
     ["POST", `/api/i/${t}/assistant`, "i"],
+    ["POST", `/api/i/${t}/assistant/image`, "i"],
+    ["GET", `/api/i/${t}/assistant/img/7`, "i"],
     ["GET", `/i/${t}/v/v_abcdefgh`, "i"],
     ["GET", `/api/h/${t}/tours/tr_${"b".repeat(16)}/assets/one-1.png`, "h"],
     ["PUT", `/api/h/${t}/tours/tr_${"b".repeat(16)}/progress`, "h"],

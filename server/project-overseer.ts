@@ -1489,8 +1489,12 @@ export async function startDraftBuild(
 
 export type AssistantActInput =
   | { act: "build/start"; basis: { kind: "owner-request"; id: string }; prompt: string; title?: string; model?: { model: string; thinking?: string | null } | null }
-  | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string };
-export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string } | { taken: false; code: string; sentence: string };
+  | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string }
+  /** start_version: `up` of one copy the owner's versions list holds (its instance id; start_version checked it). */
+  | { act: "services/run"; instance: string; root: string; waitMs?: number };
+/** `services/run` taken: `up` goes on; `done` settles once it ends (ok, or the engine's failure code). */
+export type CopyStart = Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string; done?: CopyStart } | { taken: false; code: string; sentence: string };
 
 /**
  * An act the client's Project Assistant sets off from an owner's message: the project statechart's `build/start`
@@ -1506,6 +1510,7 @@ export async function assistantAct(projectId: string, a: AssistantActInput, o: {
     throw err;
   };
   try {
+    if (a.act === "services/run") return await assistantCopyStart(projectId, a, envelope);
     if (a.act === "build/start") {
       const prompt = a.prompt.trim();
       if (!prompt) return { taken: false, code: "invalid", sentence: "Say what the fix is for." };
@@ -1530,6 +1535,40 @@ export async function assistantAct(projectId: string, a: AssistantActInput, o: {
   } catch (err) {
     return refused(err);
   }
+}
+
+/**
+ * start_version's start (§app.project-services/callers): the engine's `up` of exactly that instance as the `assistant`
+ * caller, whose act is the project statechart's `services/run` (copiesRun in the assistant column, never held), taken
+ * only after the engine's own checks. Answers within `waitMs`: a refusal (the act's, or the engine's before or during
+ * a quick up) as `{taken: false}`; the act taken, with `done` following the up that goes on.
+ */
+async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
+  let wasTaken = false;
+  let taken!: () => void;
+  const actTaken = new Promise<"taken">((r) => (taken = () => r("taken")));
+  const act = async (verb: string, instance: string | null) => {
+    await actOrThrow(engineOrThrow(projectId), projectSid(projectId), "services/run", { verb, ...(instance ? { instance } : {}) }, envelope, { settle: true });
+    wasTaken = true;
+    taken();
+  };
+  const { projectEngine } = await import("./project-services/routes");
+  const ran = projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
+  const done: CopyStart = ran.then(
+    (r) => (r.error ? { ok: false as const, code: r.error.code, message: r.error.message } : { ok: true as const }),
+    (err) => ({ ok: false as const, code: err instanceof OrgError ? (err.code ?? "refused") : "start-failed", message: err instanceof Error ? err.message : String(err) }),
+  );
+  // A refused act rejects the run with the statechart's refusal, as thrown (assistantAct answers it `{taken: false}`).
+  await Promise.race([actTaken, ran]);
+  if (!wasTaken) {
+    // The engine refused before the act (forbidden, refused-slot0, busy, …): nothing was set off.
+    const r = await done;
+    return r.ok ? { taken: true, held: false, done } : { taken: false, code: r.code, sentence: r.message };
+  }
+  // Taken: a quick up's failure is part of the answer; a slow up goes on after it.
+  const waited = await Promise.race([done, new Promise<null>((r) => setTimeout(() => r(null), a.waitMs ?? 3000).unref?.())]);
+  if (waited && !waited.ok) return { taken: false, code: waited.code, sentence: waited.message };
+  return { taken: true, held: false, done };
 }
 
 type FixStarted = { projectId: string; orgId: string; basisId: string; sessionId: string };

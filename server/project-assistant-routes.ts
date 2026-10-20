@@ -3,7 +3,7 @@ import type { AssistantInfo } from "../shared/project-assistant";
 import { WORK_KINDS } from "../shared/powers";
 import { attentionChanged } from "./attention-memo";
 import { OrgError, readOrgOrPlaceholder } from "./orgs";
-import { currentAssistantPath, ensureAssistant, refreshAssistant } from "./project-assistant";
+import { assistantSeesImages, currentAssistantPath, ensureAssistant, refreshAssistant } from "./project-assistant";
 import { pricedPick } from "./project-assistant-prices";
 import { assistantModelFor, orgRequests, readAssistantStore, setAssistantModels, setRequestStatus } from "./project-assistant-store";
 import { assistantProjects } from "./project-assistant-tools";
@@ -59,7 +59,7 @@ export async function assistantInfo(orgId: string): Promise<AssistantInfo> {
     return { projectId: pr.id, name: pr.name, coding: { pick: pricedPick(coding.pick), source: coding.source }, gathering: { pick: pricedPick(gathering.pick), source: gathering.source } };
   });
   const path = await currentAssistantPath(orgId);
-  return { models, projects, sessionId: path ? sessionIdOfFile(path) : null, requests: await withChats(orgRequests(orgId)) };
+  return { models, projects, sessionId: path ? sessionIdOfFile(path) : null, requests: await withChats(orgRequests(orgId)), seesPhotos: await assistantSeesImages(orgId).catch(() => false) };
 }
 
 export function registerAssistantRoutes(app: Hono<any>): void {

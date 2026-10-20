@@ -295,6 +295,28 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     }
   });
 
+  test("what the assistant can do reaches the owner as outcome words only: no power id, label, level or brake reason (§app.owner-page/never)", async () => {
+    const { POWER_INFO, POWERS, PAUSED_BRAKE_REASON, EMPTY_ROSTER_BRAKE_REASON } = await import("../shared/powers");
+    const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;
+    // Control: the card's answers are there (the assistant is ready), as enum words only.
+    assert.ok(home.abilities, "control: abilities on Home");
+    assert.deepEqual(Object.keys(home.abilities!).sort(), ["photos", "projects"]);
+    for (const a of home.abilities!.projects) {
+      assert.deepEqual(Object.keys(a).sort(), ["fix", "project", "release", "version"]);
+      for (const k of ["fix", "release"] as const) assert.ok(["now", "held", "team"].includes(a[k]), `${k}: ${a[k]}`);
+      assert.ok(["now", "held", "team", "none"].includes(a.version));
+    }
+    // Control: the operator's own view of the switches carries the ids and labels.
+    const powers = await (await app.request(`/api/projects/${pa.id}/overseer`)).text();
+    const op = powers + everyFile();
+    assert.ok(op.includes("codingStart") && op.includes("copiesRun"), "control: the power ids are in the operator's records");
+    const banned = [...POWERS.filter((p) => p !== "deploy" && p !== "share" && p !== "gather" && p !== "promote" && p !== "roster"), ...POWERS.map((p) => POWER_INFO[p].label), PAUSED_BRAKE_REASON, EMPTY_ROSTER_BRAKE_REASON, "L0", "L1", "L2", "L3"];
+    for (const [label, body] of answers) {
+      if (label.includes(" GET /i/")) continue; // the static shell (the share build's own code)
+      for (const w of banned) assert.ok(!body.includes(w), `${w} in ${label}`);
+    }
+  });
+
   test("who started it and why stay on the operator's strip: never the session list's baton field or the org page's rows (§app.baton/told)", async () => {
     const strip = await (await app.request(`/api/baton?path=${encodeURIComponent(s5.path)}`)).text();
     assert.ok(strip.includes(M.why) && strip.includes(M.overseerId), "control: the operator's strip carries them");

@@ -8,6 +8,8 @@ import type { UploadRefusal } from "./photos";
 import { ShareComposer, type Attachment, type SendOutcome, type Upload } from "./ShareComposer";
 import { LinkedText, MessagePhotos, Reply } from "./thread";
 import { VersionRows, versionsStarting } from "./versions";
+import type { AbilityLine } from "../lib/owner-abilities";
+import { AbilityList } from "./owner-abilities-view";
 
 /**
  * The Project Assistant on the owner page (§app.project-assistant/chat, §app.owner-page/content):
@@ -56,7 +58,16 @@ export function AssistantChat(props: {
   api: AssistantApi;
   /** A version's Open address; absent in the preview: Open shows, never a link. */
   versionHref?(handle: string): string;
-  back: { href: string; onClick(e: MouseEvent): void };
+  /** What it can do for the owner (§app.project-assistant/abilities): suggestions before the first
+      message, then the What Can I Ask? sheet. Empty while it isn't ready. */
+  lines?: AbilityLine[];
+  /** The photos note under the sheet's list. */
+  photos?: boolean;
+  /** A tapped suggestion: the page sets the prefill. */
+  pick?(l: AbilityLine): void;
+  /** Words a tapped line starts the message box with; `takePrefill` once the box has them. */
+  prefill?(): { text: string } | null;
+  takePrefill?(): void;
   /** The chat's read failed on the link itself (turned off, unknown, too many requests): the page's
       own dead-link screen takes over. */
   onDeadLink?(err: OwnerLoadError): void;
@@ -72,6 +83,11 @@ export function AssistantChat(props: {
   let offlineDelay: number = RECONNECT_BACKOFF_MS.first;
   let list: HTMLElement | undefined;
   let box: { input: HTMLTextAreaElement; fit(): void } | undefined;
+  const [boxReady, setBoxReady] = createSignal(false);
+  let sheet: HTMLDialogElement | undefined;
+  let sheetOpener: HTMLElement | null = null;
+  /** A touch-only screen: putting the cursor in the box would raise the keyboard over the conversation. */
+  const touchOnly = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
 
   // The owner's page scrolls to its end, so the newest message ends just above the pinned composer
   // (scrollIntoView on the thread's end would tuck it under it), but only while the owner is at the
@@ -169,6 +185,30 @@ export function AssistantChat(props: {
       if (!b && error() === sendRefusal("busy", props.op)) setError("");
     }),
   );
+  // A tapped line (Home's card, a suggestion, the sheet): the box starts with its words, the cursor at
+  // their end (not on a touch screen). Nothing is sent until Send.
+  createEffect(() => {
+    const p = props.prefill?.();
+    if (!p || !boxReady() || !box) return;
+    setDraft(p.text);
+    props.takePrefill?.();
+    const input = box.input;
+    queueMicrotask(() => {
+      box?.fit();
+      if (touchOnly()) return;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(p.text.length, p.text.length);
+    });
+  });
+  const suggest = (l: AbilityLine) => {
+    if (sheet?.open) sheet.close();
+    props.pick?.(l);
+  };
+  const openSheet = (e: MouseEvent) => {
+    sheetOpener = e.currentTarget as HTMLElement;
+    sheet?.showModal();
+  };
+  const hasLines = () => !!props.lines?.length;
   const send = async (text: string, photos: Attachment[], _files: Attachment[], again: boolean): Promise<SendOutcome> => {
     if (sending() || !props.api.send) return "kept";
     // While an answer is being written nothing is sent (§app.project-assistant/chat).
@@ -201,11 +241,13 @@ export function AssistantChat(props: {
 
   return (
     <>
-      <a class="owner-back" href={props.back.href} onClick={(e) => props.back.onClick(e)}>
-        ← All projects
-      </a>
-      <header class="owner-head">
+      <header class="owner-head owner-chat-head">
         <h1 class="owner-org">Project Assistant</h1>
+        <Show when={hasLines() && view()?.messages.length}>
+          <button type="button" class="button button-ghost owner-ask-what" onClick={openSheet}>
+            What Can I Ask?
+          </button>
+        </Show>
       </header>
       <Show when={view()?.ready === false}>
         <div class="banner banner-warn owner-banner" role="status">
@@ -237,6 +279,19 @@ export function AssistantChat(props: {
             <span class="share-who">Project Assistant</span>
             <p class="share-text">Hi {props.first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new.</p>
           </article>
+          <Show when={hasLines() && !view()!.messages.length && !busy()}>
+            <ul class="owner-suggestions" aria-label="Suggestions">
+              <For each={props.lines}>
+                {(l) => (
+                  <li>
+                    <button type="button" class="button owner-suggestion" onClick={() => suggest(l)}>
+                      {l.name}
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
         </Show>
         <For each={view()?.messages ?? []}>
           {(m) => (
@@ -286,6 +341,8 @@ export function AssistantChat(props: {
             send={send}
             ref={(b) => {
               box = b;
+              setBoxReady(true);
+              onCleanup(() => setBoxReady(false));
               // The composer growing (an error line, the photo strip, a longer text) would cover the
               // newest message: while following, the page keeps its end in view.
               const form = b.input.closest("form");
@@ -299,6 +356,48 @@ export function AssistantChat(props: {
               if (!matchMedia("(hover: none) and (pointer: coarse)").matches) requestAnimationFrame(() => b.input.focus({ preventScroll: true }));
             }}
           />
+      </Show>
+      <Show when={hasLines()}>
+        <dialog
+          ref={(el) => {
+            sheet = el;
+            // Native, not Solid's delegated keydown: Esc closes the sheet and stops here, so a modal
+            // around the page (the operator's preview) stays open.
+            const onKey = (e: KeyboardEvent) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              e.stopPropagation();
+              el.close();
+            };
+            el.addEventListener("keydown", onKey);
+            onCleanup(() => el.removeEventListener("keydown", onKey));
+          }}
+          class="modal owner-sheet"
+          aria-labelledby="owner-sheet-title"
+          onClose={() => {
+            if (sheetOpener?.isConnected && !props.prefill?.()) sheetOpener.focus();
+            sheetOpener = null;
+          }}
+          onClick={(e) => {
+            // The backdrop is the dialog itself.
+            if (e.target === e.currentTarget) sheet?.close();
+          }}
+        >
+          <div class="sheet-grip" aria-hidden="true" />
+          <div class="modal-head">
+            <h2 class="modal-title" id="owner-sheet-title">
+              What it can do for you
+            </h2>
+          </div>
+          <div class="modal-body">
+            <AbilityList lines={props.lines!} photos={props.photos} pick={suggest} />
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="button" onClick={() => sheet?.close()}>
+              Close
+            </button>
+          </div>
+        </dialog>
       </Show>
     </>
   );

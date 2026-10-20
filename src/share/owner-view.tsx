@@ -11,7 +11,10 @@ import {
   factsLine,
   type OwnerChipWord,
   type OwnerRoute,
+  type OwnerTab,
+  ownerTab,
   personLine,
+  readsHome,
   plainAgo,
   plainDate,
   projectChip,
@@ -24,6 +27,8 @@ import { AssistantChat, type AssistantApi } from "./assistant-view";
 import { VersionRows, versionsStarting } from "./versions";
 import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assistant";
 import { isDeadLink, OwnerLoadError, type OwnerProblemKind } from "../lib/owner-problem";
+import { type AbilityLine, abilityLines, openCount, requestsLine } from "../lib/owner-abilities";
+import { AbilityList, Chevron } from "./owner-abilities-view";
 
 /**
  * The Owner page (§app.owner-page/page): Home, a project, a conversation. Read-only. It renders
@@ -79,6 +84,12 @@ export function OwnerPage(props: {
     setAsking((await props.ask().catch(() => false)) ? "asked" : "failed");
   };
   const [now, setNow] = createSignal(Date.now());
+  /** The newest Home answer: the tabs' count and the chat's suggestions, on every route. */
+  const [home, setHome] = createSignal<OwnerHome | null>(null);
+  /** What a tapped line starts in the chat's message box; taken once the box has it. In memory, never in the address. */
+  const [prefill, setPrefill] = createSignal<{ text: string } | null>(null);
+  /** The owner is typing in the chat on a touch screen: the tab bar steps aside for the keyboard. */
+  const [typing, setTyping] = createSignal(false);
   let seq = 0;
   let offlineRetry: ReturnType<typeof setTimeout> | undefined;
   let offlineDelay: number = RECONNECT_BACKOFF_MS.first;
@@ -90,6 +101,7 @@ export function OwnerPage(props: {
       const d = await props.load(route);
       if (mine !== seq) return;
       setAnswer(d);
+      if ("projects" in d) setHome(d);
       setProblem(null);
       setNow(Date.now());
       offlineDelay = RECONNECT_BACKOFF_MS.first;
@@ -142,15 +154,15 @@ export function OwnerPage(props: {
     const d = answer();
     if (!d) return undefined;
     const r = props.route;
-    if ((r.kind === "home" || r.kind === "assistant") && "projects" in d) return d;
+    if (readsHome(r) && "projects" in d) return d;
     if (r.kind === "project" && "people" in d && d.id === r.id) return d;
     if (r.kind === "conversation" && "items" in d && d.id === r.id) return d;
     return undefined;
   };
-  // A version on Home is starting: read again every 3 s until it runs or failed.
+  // A version on Home is starting: every tab of Home's family reads again every 3 s until it runs or failed.
   createEffect(
     on(
-      () => !props.preview && props.route.kind === "home" && versionsStarting((current() as OwnerHome | undefined)?.versions),
+      () => !props.preview && readsHome(props.route) && versionsStarting((current() as OwnerHome | undefined)?.versions),
       (starting) => {
         if (!starting) return;
         const t = setInterval(() => {
@@ -169,6 +181,23 @@ export function OwnerPage(props: {
     const d = current();
     if (d) props.onTitle?.(d.org.name);
   });
+  /** Follow a route from a control that isn't a link (a tapped line). */
+  const navigate = (r: OwnerRoute) => {
+    if (props.go) props.go(r);
+    else location.hash = props.href(r);
+  };
+  /** A tapped line or suggestion: the chat, its message box started with the line's words. */
+  const pick = (l: AbilityLine) => {
+    setPrefill({ text: l.prefill });
+    if (props.route.kind !== "assistant") navigate({ kind: "assistant" });
+  };
+  const lines = createMemo(() => {
+    const h = home();
+    return h && h.assistant?.ready !== false ? abilityLines(h.projects, h.abilities) : [];
+  });
+  const tabs = () => !!props.assistant && !deadLink();
+  const touchOnly = () => typeof matchMedia === "function" && matchMedia("(hover: none) and (pointer: coarse)").matches;
+  const isComposer = (t: EventTarget | null) => t instanceof HTMLTextAreaElement && !!t.closest(".owner-assistant-composer");
   const tryAgain = (
     <button type="button" class="button empty-action" onClick={() => void read()}>
       Try Again
@@ -177,7 +206,18 @@ export function OwnerPage(props: {
 
   return (
     // The chat (#a) fills the window's height, its composer pinned at the bottom; never in the preview's modal.
-    <Dynamic component={props.preview ? "div" : "main"} class="owner" classList={{ "owner-chat": props.route.kind === "assistant" && !props.preview }}>
+    <Dynamic
+      component={props.preview ? "div" : "main"}
+      class="owner-page"
+      classList={{ "owner-page-tabs": tabs() && !props.preview, "owner-page-preview": !!props.preview, "owner-typing": typing() }}
+      onFocusIn={(e: FocusEvent) => isComposer(e.target) && touchOnly() && setTyping(true)}
+      onFocusOut={(e: FocusEvent) => isComposer(e.target) && setTyping(false)}
+    >
+      <div class="owner-shell">
+      <Show when={tabs() && props.preview}>
+        <OwnerTabs tab={ownerTab(props.route)} open={openCount(home()?.requests)} link={link} preview />
+      </Show>
+      <div class="owner" classList={{ "owner-chat": props.route.kind === "assistant" && !props.preview }}>
       <Show
         when={!deadLink()}
         fallback={
@@ -223,7 +263,7 @@ export function OwnerPage(props: {
           when={problem() !== "missing" && current()}
           fallback={
             <Show when={problem()} fallback={<Loading />}>
-              <Show when={props.route.kind !== "home"}>
+              <Show when={!readsHome(props.route)}>
                 <a class="owner-back" {...link({ kind: "home" })}>
                   ← All projects
                 </a>
@@ -265,7 +305,11 @@ export function OwnerPage(props: {
                     op={(d() as OwnerHome).operator.first}
                     api={api()}
                     versionHref={props.versionHref}
-                    back={link({ kind: "home" })}
+                    lines={lines()}
+                    photos={!!(d() as OwnerHome).abilities?.photos}
+                    pick={pick}
+                    prefill={prefill}
+                    takePrefill={() => setPrefill(null)}
                     onDeadLink={(err) => {
                       // The link itself failed on the chat's read: the page's own dead-link screen.
                       if (err.asked) setAsking("asked");
@@ -274,8 +318,11 @@ export function OwnerPage(props: {
                   />
                 )}
               </Match>
+              <Match when={"projects" in d() && props.route.kind === "requests"}>
+                <RequestsView home={d() as OwnerHome} now={now()} link={link} />
+              </Match>
               <Match when={"projects" in d()}>
-                <HomeView home={d() as OwnerHome} now={now()} link={link} preview={props.preview} versionHref={props.versionHref} assistant={!!props.assistant} />
+                <HomeView home={d() as OwnerHome} now={now()} link={link} preview={props.preview} versionHref={props.versionHref} assistant={!!props.assistant} lines={lines()} pick={pick} />
               </Match>
               <Match when={"people" in d()}>
                 <ProjectView project={d() as OwnerProject} now={now()} link={link} />
@@ -287,11 +334,80 @@ export function OwnerPage(props: {
           )}
         </Show>
       </Show>
+      </div>
+      <Show when={tabs() && !props.preview}>
+        <OwnerTabs tab={ownerTab(props.route)} open={openCount(home()?.requests)} link={link} />
+      </Show>
+      </div>
     </Dynamic>
   );
 }
 
 type Link = (r: OwnerRoute) => { href: string; onClick(e: MouseEvent): void };
+
+/** Each tab's icon (the design system's home, chat and file), drawn fresh for each use. */
+const TAB_ICON: Record<OwnerTab, () => JSX.Element> = {
+  home: () => <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" />,
+  assistant: () => <path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.5A7 7 0 0 1 8 5h5a7 7 0 0 1 7 7z" />,
+  requests: () => (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+    </>
+  ),
+};
+const TABS: readonly { id: OwnerTab; label: string; route: OwnerRoute }[] = [
+  { id: "home", label: "Home", route: { kind: "home" } },
+  { id: "assistant", label: "Assistant", route: { kind: "assistant" } },
+  { id: "requests", label: "Requests", route: { kind: "requests" } },
+];
+
+/** The page's three tabs (§app.owner-page/content): a bar at the bottom on a phone, a sidebar on a
+    computer; in the operator's preview, a row of tabs at the top of the modal. */
+function OwnerTabs(props: { tab: OwnerTab; open: number; link: Link; preview?: boolean }) {
+  const label = (t: (typeof TABS)[number]) => (t.id === "requests" && props.open ? `Requests, ${props.open} open` : t.label);
+  return (
+    <Show
+      when={!props.preview}
+      fallback={
+        <nav class="tabs owner-preview-tabs" aria-label="Page">
+          <For each={TABS}>
+            {(t) => (
+              <a class="tab" classList={{ "tab-active": props.tab === t.id }} aria-current={props.tab === t.id ? "page" : undefined} aria-label={label(t)} {...props.link(t.route)}>
+                {t.label}
+                <Show when={t.id === "requests" && props.open}>
+                  <span class="owner-badge" aria-hidden="true">{props.open}</span>
+                </Show>
+              </a>
+            )}
+          </For>
+        </nav>
+      }
+    >
+      <nav class="owner-nav" aria-label="Page">
+        <For each={TABS}>
+          {(t) => (
+            <a class="navitem" aria-current={props.tab === t.id ? "page" : undefined} aria-label={label(t)} {...props.link(t.route)}>
+              <span class="owner-nav-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  {TAB_ICON[t.id]()}
+                </svg>
+                <Show when={t.id === "requests" && props.open}>
+                  <span class="owner-badge" aria-hidden="true">{props.open}</span>
+                </Show>
+              </span>
+              <span class="navitem-label">{t.label}</span>
+              <Show when={t.id === "requests" && props.open}>
+                <span class="owner-badge owner-badge-end" aria-hidden="true">{props.open}</span>
+              </Show>
+            </a>
+          )}
+        </For>
+      </nav>
+    </Show>
+  );
+}
+
 
 function Loading() {
   return (
@@ -317,13 +433,13 @@ function Ago(props: { at: string; now: number }) {
   return <time title={stampTime(props.at, props.now)}>{plainAgo(props.at, props.now)}</time>;
 }
 
-function Section(props: { id: string; title: string; line?: JSX.Element; attention?: boolean; children: JSX.Element }) {
+function Section(props: { id: string; title: string; line?: JSX.Element; attention?: boolean; h1?: boolean; children: JSX.Element }) {
   return (
     <section class="owner-section" classList={{ "owner-attention": props.attention }} aria-labelledby={props.id}>
       <div class="owner-section-head">
-        <h2 class="owner-h2" id={props.id}>
+        <Dynamic component={props.h1 ? "h1" : "h2"} class="owner-h2" id={props.id}>
           {props.title}
-        </h2>
+        </Dynamic>
         <Show when={props.line}>
           <p class="owner-note">{props.line}</p>
         </Show>
@@ -333,13 +449,6 @@ function Section(props: { id: string; title: string; line?: JSX.Element; attenti
   );
 }
 
-function Chevron() {
-  return (
-    <svg class="owner-row-go" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  );
-}
 
 /** Rows waiting on the owner. Read-only in v1: they answer through the link the operator sent. */
 function WaitingSection(props: { waiting: OwnerWaiting[]; op: string; now: number; link: Link; withProject: boolean }) {
@@ -375,9 +484,9 @@ const REQUEST_STATUS: Record<OwnerRequestRow["status"], OwnerChipWord> = {
   declined: { word: "Not planned", tone: undefined },
 };
 
-function RequestsSection(props: { requests: OwnerRequestRow[]; now: number }) {
+function RequestsSection(props: { requests: OwnerRequestRow[]; now: number; heading?: boolean }) {
   return (
-    <Section id="owner-requests" title="Your requests">
+    <Section id="owner-requests" title="Your requests" h1={props.heading}>
       <ul class="owner-list">
         <For each={props.requests}>
           {(r) => (
@@ -405,30 +514,48 @@ function VersionsSection(props: { versions: OwnerVersionRow[]; href?: (handle: s
   );
 }
 
-function HomeView(props: { home: OwnerHome; now: number; link: Link; preview?: boolean; versionHref?: (handle: string) => string; assistant?: boolean }) {
+function HomeView(props: {
+  home: OwnerHome;
+  now: number;
+  link: Link;
+  preview?: boolean;
+  versionHref?: (handle: string) => string;
+  assistant?: boolean;
+  lines: AbilityLine[];
+  pick(l: AbilityLine): void;
+}) {
   const h = () => props.home;
   return (
     <>
       <header class="owner-head">
-        <h1 class="owner-org">{h().org.name}</h1>
-        <p class="owner-lead">Hi {h().owner.first}. Here's how your projects are going.</p>
+        <h1 class="owner-greeting">Hi {h().owner.first}. Here's how your projects are going.</h1>
         <p class="owner-meta">
           Updated <Ago at={h().updatedAt} now={props.now} />
         </p>
       </header>
-      <Show when={props.assistant}>
-        <div class="owner-assistant-door">
-          <a class="button button-primary owner-assistant-button" {...props.link({ kind: "assistant" })}>
-            Project Assistant
-          </a>
-          <p class="owner-meta">Ask about your projects, report a problem or ask for something new.</p>
-        </div>
-      </Show>
       <Show when={h().waiting.length}>
         <WaitingSection waiting={h().waiting} op={h().operator.first} now={props.now} link={props.link} withProject />
       </Show>
-      <Show when={h().requests?.length}>
-        <RequestsSection requests={h().requests!} now={props.now} />
+      <Show when={props.assistant}>
+        <section class="owner-assistant-card" aria-labelledby="owner-assistant-h">
+          <h2 class="owner-h2" id="owner-assistant-h">
+            What it can do for you
+          </h2>
+          <Show
+            when={h().assistant?.ready !== false}
+            fallback={<p class="owner-note">The Project Assistant isn't ready yet. {h().operator.first} has to finish setting it up.</p>}
+          >
+            <AbilityList lines={props.lines} photos={h().abilities?.photos} pick={props.pick} />
+          </Show>
+          <a class="button button-primary owner-assistant-button" {...props.link({ kind: "assistant" })}>
+            Open the Chat
+          </a>
+        </section>
+      </Show>
+      <Show when={props.assistant && h().requests?.length}>
+        <a class="owner-requests-line" {...props.link({ kind: "requests" })}>
+          {requestsLine(h().requests!)}
+        </a>
       </Show>
       <Show when={h().versions?.length}>
         <VersionsSection versions={h().versions!} href={props.versionHref} />
@@ -470,6 +597,31 @@ function HomeView(props: { home: OwnerHome; now: number; link: Link; preview?: b
         <p class="owner-foot">Only people with this link can open this page. If someone else gets it, tell {h().operator.first} and they'll turn it off.</p>
       </Show>
     </>
+  );
+}
+
+/** The Requests tab (#r): every one of the owner's requests, newest first. */
+function RequestsView(props: { home: OwnerHome; now: number; link: Link }) {
+  const rs = () => props.home.requests ?? [];
+  return (
+    <Show
+      when={rs().length}
+      fallback={
+        <>
+          <header class="owner-head">
+            <h1 class="owner-greeting">Your requests</h1>
+          </header>
+          <div class="empty owner-requests-empty">
+            <p class="empty-body">Nothing asked yet. Ask the Project Assistant for a fix, a new feature or a release.</p>
+            <a class="button button-primary empty-action" {...props.link({ kind: "assistant" })}>
+              Open the Chat
+            </a>
+          </div>
+        </>
+      }
+    >
+      <RequestsSection requests={rs()} now={props.now} heading />
+    </Show>
   );
 }
 

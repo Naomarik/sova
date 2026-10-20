@@ -7,7 +7,7 @@ import { OwnerCardAssistant } from "./OwnerCardAssistant";
 import { useMinuteNow } from "../lib/minute-clock";
 import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_ASK, OWNER_LINK_DELETED } from "../lib/link-delete";
 import { deleteOwnerLine, ownerChangeLine, ownerLinkActions, ownerLinkLine, rotateLine } from "../lib/owner-card";
-import { ownerHash, type OwnerRoute } from "../lib/owner-words";
+import { ownerHash, type OwnerRoute, readsHome } from "../lib/owner-words";
 import { firstName } from "../lib/person-page";
 import { announce, copyText } from "../lib/ui-state";
 import { type OwnerAnswer, OwnerLoadError, OwnerPage } from "../share/owner-view";
@@ -218,7 +218,7 @@ export function OwnerPreview(props: { orgId: string; orgName: string; ownerName:
     try {
       return await previewOwnerPage(props.orgId, r.kind === "project" ? { project: r.id } : r.kind === "conversation" ? { c: r.id } : undefined);
     } catch (x) {
-      throw new OwnerLoadError(x instanceof ApiError && x.status === 404 ? (r.kind === "home" ? "failed" : "missing") : "failed");
+      throw new OwnerLoadError(x instanceof ApiError && x.status === 404 ? (readsHome(r) ? "failed" : "missing") : "failed");
     }
   };
   return (

@@ -7,12 +7,13 @@ import { orgRequests } from "./project-assistant-store";
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
  * each opening the org's People tab (its Owner card): every open owner request
  * (`owner-request`; an outage `owner-outage`, which a phone notification also tells), and an owner
- * who asked for a new link (`owner-link-request`). No session: `path` "".
+ * who asked for a new link (`owner-link-request`); an open `try` request is an `owner-version-request`, opening the
+ * project's Branches tab. No session: `path` "".
  */
 
 const clip = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t);
 
-const KIND_WORD: Record<string, string> = { bug: "a problem", outage: "that the app is down", question: "a question", feature: "a new feature", fix: "a fix", deploy: "a release" };
+const KIND_WORD: Record<string, string> = { bug: "a problem", outage: "that the app is down", question: "a question", feature: "a new feature", fix: "a fix", deploy: "a release", try: "a version to try" };
 
 export function ownerAttention(): AttentionItem[] {
   const out: AttentionItem[] = [];
@@ -51,6 +52,22 @@ export function ownerAttention(): AttentionItem[] {
     for (const r of requests) {
       if (r.status !== "with-team") continue;
       const project = projects.find((p) => p.id === r.projectId);
+      // A version the owner asked to try (§app.project-assistant/requests): opens the project's Branches tab.
+      if (r.kind === "try") {
+        out.push({
+          id: `owner-request:${r.id}`,
+          path: "",
+          title: r.title,
+          where: orgName,
+          tier: "act",
+          kind: "owner-version-request",
+          since: Date.parse(r.createdAt) || 0,
+          detail: clip(`${ownerName} asks to try ${project?.name ?? "a project"}: ${r.title}`, 200),
+          href: project ? `#/projects/${encodeURIComponent(project.id)}/branches` : `#/orgs/${encodeURIComponent(o.id)}/people`,
+          org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
+        });
+        continue;
+      }
       out.push({
         id: `owner-request:${r.id}`,
         path: "",

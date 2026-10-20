@@ -75,14 +75,16 @@ export function MessageFiles(props: { files: readonly BatonViewFile[] }) {
 /**
  * A message's photos (§app.baton/images): one fitted in 320 × 240, more as 96 px tiles, and a
  * lightbox (a native <dialog>) that steps through this message's photos only. `src` is each
- * photo's address; `from` names the sender for the alt text ("you" for the viewer's own).
+ * photo's address; `from` names the sender for the alt text ("you" for the viewer's own). `own`:
+ * the owner's own photos in their Project Assistant chat, "Your photo" (§design.copy-deck/owner-page).
  */
-export function MessagePhotos(props: { srcs: string[]; from: string }) {
+export function MessagePhotos(props: { srcs: string[]; from: string; own?: boolean }) {
   let dialog!: HTMLDialogElement;
   let opener: HTMLElement | null = null;
   const [at, setAt] = createSignal(0);
   const n = () => props.srcs.length;
-  const alt = (i: number) => (n() === 1 ? `Photo from ${props.from}` : `Photo ${i + 1} of ${n()} from ${props.from}`);
+  const alt = (i: number) =>
+    props.own ? (n() === 1 ? "Your photo" : `Your photo ${i + 1} of ${n()}`) : n() === 1 ? `Photo from ${props.from}` : `Photo ${i + 1} of ${n()} from ${props.from}`;
   const open = (i: number, e: MouseEvent) => {
     opener = e.currentTarget as HTMLElement;
     setAt(i);

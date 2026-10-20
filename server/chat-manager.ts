@@ -4292,6 +4292,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       ? specialLoadout(path, special.spec, special.port, {
           tool: (decl) => toPiTool(serverToolSpec(path, decl)) as PiToolDefinition,
           memory,
+          // The vis retry with no mode to ask: always on for a spec that wants it; its tool never in the loadout.
+          visRetry: () =>
+            visCheckExtension(() => {
+              const h = visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null;
+              return h ? { ...h, visOn: () => true, visToolsOn: () => false } : null;
+            }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
         })
       : null;

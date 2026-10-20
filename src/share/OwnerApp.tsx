@@ -4,8 +4,9 @@ import { ownerHash, parseOwnerHash } from "../lib/owner-words";
 import { type OwnerAnswer, OwnerPage } from "./owner-view";
 import { OwnerLoadError, ownerProblemOf } from "../lib/owner-problem";
 import type { AssistantApi } from "./assistant-view";
-import type { AssistantServerMessage, AssistantView } from "../../shared/project-assistant";
+import type { AssistantSend, AssistantServerMessage, AssistantView } from "../../shared/project-assistant";
 import { visitTab } from "./visit-tab";
+import { uploadPhoto } from "./photos";
 
 /**
  * The Owner page from its link (§app.owner-page/link): `/i/<token>`, the view in the hash
@@ -62,12 +63,16 @@ const assistant: AssistantApi = {
     if (problem) throw problem;
     return (await res.json()) as AssistantView;
   },
-  async send(text) {
-    const res = await fetch(`/api/i/${TOKEN}/assistant`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) }).catch(() => null);
+  async send(text, images) {
+    const body: AssistantSend = { text, ...(images?.length ? { images } : {}) };
+    const res = await fetch(`/api/i/${TOKEN}/assistant`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (res?.status === 202) return { ok: true };
-    const body = (await res?.json().catch(() => ({}))) as { code?: string; error?: string } | undefined;
-    return { ok: false, code: body?.code ?? (res?.status === 429 ? "rate-limited" : "failed"), message: body?.error ?? "" };
+    const refusal = (await res?.json().catch(() => ({}))) as { code?: string; error?: string } | undefined;
+    return { ok: false, code: refusal?.code ?? (res?.status === 429 ? "rate-limited" : "failed"), message: refusal?.error ?? "" };
   },
+  // The owner's photos (§app.project-assistant/photos): staged at attach, read back by their number in the view.
+  uploadPhoto: (blob, progress) => uploadPhoto(`/api/i/${TOKEN}/assistant/image`, blob, progress),
+  photo: (n) => `/api/i/${TOKEN}/assistant/img/${n}`,
   subscribe(on) {
     let ws: WebSocket | null = null;
     let stop = false;

@@ -4,6 +4,10 @@
 import type { RewindRefusal, TranscriptItem } from "../../shared/protocol";
 import { isInput } from "./turn";
 import { wakeTitle } from "../../shared/wake";
+import { isBriefText, messageBody, rowSender, sendersOf, type Sender } from "../../shared/senders";
+import { stripSessionHeader } from "../../shared/profiles";
+
+export type { Sender };
 
 export type { RewindRefusal };
 
@@ -29,28 +33,50 @@ export interface InputRow {
   id: string;
   /** The first line, whitespace collapsed; "" when the message is images only. */
   preview: string;
-  /** The whole text, for the row's title. */
+  /** The whole body, for the row's title: another session's header line and a brief's tag left off. */
   text: string;
   images: number;
   at: string | undefined;
+  /** Who sent it, when not the user (shared/senders.ts): kept on the row, so a row a rewind left
+      behind still knows, and Inputs Only never brings it back. */
+  sender?: Sender;
+  /** A fired wake nudge: an input, never one the user typed. */
+  wake?: boolean;
 }
 
+/** Whether the user typed the row: not a wake nudge, and no sender. For an input row it is
+    shared/senders.ts `isOwnInput`, the rule the composer's count uses, so Inputs Only lists what it
+    counts. */
+export const typedByUser = (row: Pick<InputRow, "sender" | "wake">): boolean => !row.sender && !row.wake;
+
 /** The user rows of a transcript, oldest first: ordinary inputs and fired wake nudges alike
-    (isInput) — a wake nudge is a real user message; a link message is never an input. `text`
-    stays the row's raw text (what a rewind hands back) unchanged; `preview` is what the row shows, which for a wake nudge is its
-    reason, else "Wake nudge n1", never the tagged message's first line. */
+    (isInput) — a wake nudge is a real user message; a link message is never an input — and the
+    messages another session, the Overseer or a teammate sent, each with its `sender`. `text` is the
+    body (shared/senders.ts `messageBody`; a rewind's hand-back is the server's, stripped by the
+    chat); `preview` is what the row shows, which for a wake nudge is its reason, else "Wake nudge
+    n1", never the tagged message's first line. */
 export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
+  const senders = sendersOf(items);
   return items
     .filter(isInput)
     .map((it) => {
-      const text = it.text ?? "";
+      const sender = it.kind === "user" ? rowSender(it, senders) : undefined;
+      const text = messageBody(it.text ?? "", sender, it.kind === "user" && isBriefText(it.text));
       const preview =
         it.kind === "wake" && it.wake
           ? (it.wake.reason ?? wakeTitle(it.wake))
           : (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim();
-      return { id: it.id, preview, text, images: it.images?.length ?? 0, at: it.at };
+      const row: InputRow = { id: it.id, preview, text, images: it.images?.length ?? 0, at: it.at };
+      if (sender) row.sender = sender;
+      if (it.kind === "wake") row.wake = true;
+      return row;
     });
 }
+
+/** The text a rewind hands back to the composer (the server's `rewound` reply): a message another
+    session sent comes back as its body, without the header line the model read
+    (§chat.timeline/rewind). The transcript's Rewind and the Timeline's both land here. */
+export const handBackText = (editorText: string): string => stripSessionHeader(editorText);
 
 /** What a row shows besides its text: images-only messages say so. */
 export function inputPreview(row: InputRow): string {

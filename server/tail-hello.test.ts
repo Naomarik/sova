@@ -136,9 +136,31 @@ describe("pullFields: the alignments open above the cut", () => {
   });
 
   test("no open alignment above the cut: no key at all, the summary as before", () => {
-    assert.deepEqual(pullFields([row("u1"), row("a1:0", "assistant-text"), row("u2")], 2, false).olderSummary, { inputs: ["u1"], messages: 2, replies: true });
+    assert.deepEqual(pullFields([row("u1"), row("a1:0", "assistant-text"), row("u2")], 2, false).olderSummary, { inputs: ["u1"], ownInputs: ["u1"], messages: 2, replies: true });
     const closed = pullFields([align("a1", doc("al_1", 1)), align("a2", doc("al_1", 2, "done")), row("u2")], 2, false).olderSummary;
     assert.equal("aligns" in closed, false);
+  });
+});
+
+describe("pullFields: the inputs the user typed above the cut", () => {
+  const row = (id: string, kind: TranscriptItem["kind"] = "user", extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, text: "x", ...extra });
+  test("ownInputs leaves out a wake and the rows a sender marker above the cut names; `inputs` still lists them all", () => {
+    const items = [
+      row("u1"),
+      row("s1"),
+      row("m1", "info", { sessionMark: { kind: "sent", targetId: "s1", from: { sessionId: "x", title: "X" }, hop: 1 } }),
+      row("w1", "wake"),
+      row("o1"),
+      row("m2", "info", { overseerMark: { kind: "sent", targetId: "o1" } }),
+      row("t1"),
+      row("m3", "info", { batonMark: { kind: "sent", targetId: "t1", by: "operator" } }),
+      row("k1"), // its marker is below the cut: the summary can't know, the client's held marker does
+      row("u2"),
+      row("m4", "info", { batonMark: { kind: "sent", targetId: "k1", by: "p_kim" } }),
+    ];
+    const { olderSummary } = pullFields(items, 10, false);
+    assert.deepEqual(olderSummary.inputs, ["u1", "s1", "w1", "o1", "t1", "k1", "u2"], "Undo last turn's list is unchanged");
+    assert.deepEqual(olderSummary.ownInputs, ["u1", "t1", "k1", "u2"]);
   });
 });
 

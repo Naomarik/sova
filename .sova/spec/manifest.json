@@ -3465,20 +3465,39 @@
     "§chat.timeline/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/lib/timeline.ts"
-      ]
+        "src/lib/timeline.ts",
+        "src/components/SessionTimeline.tsx"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§chat.timeline/class-table": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§chat.timeline/inputs-only": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      },
+      "code": [
+        "src/lib/timeline.ts",
+        "src/lib/inputs.ts",
+        "shared/senders.ts",
+        "shared/senders.test.ts",
+        "src/components/SessionTimeline.tsx",
+        "src/lib/timeline.test.ts"
+      ]
     },
     "§chat.timeline/jumping": {
       "kind": "behavior",
@@ -3516,7 +3535,7 @@
     "§chat.timeline/opening-it": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -3525,18 +3544,23 @@
         "src/lib/transcript-cache.ts",
         "src/lib/transcript-cache.test.ts",
         "src/lib/known-before-mount.ts",
-        "src/lib/known-before-mount.test.ts"
+        "src/lib/known-before-mount.test.ts",
+        "src/lib/input-count.ts",
+        "src/lib/input-count.test.ts",
+        "shared/senders.ts",
+        "src/lib/older-rows.test.ts",
+        "shared/protocol.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T18:53Z",
-        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
       }
     },
     "§chat.timeline/rejected": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§chat.timeline/rewind": {
       "kind": "behavior",
@@ -3544,12 +3568,20 @@
         "§chat.transcript/message-actions"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/chat-manager.ts",
         "src/components/ChatView.tsx",
-        "src/components/ComposerMenu.tsx"
-      ]
+        "src/components/ComposerMenu.tsx",
+        "src/lib/inputs.ts",
+        "src/lib/inputs.test.ts",
+        "src/lib/timeline.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§chat.timeline/rows": {
       "kind": "behavior",
@@ -3557,8 +3589,18 @@
       "evidence": "verified",
       "code": [
         "server/insights.ts",
-        "src/lib/timeline.ts"
-      ]
+        "src/lib/timeline.ts",
+        "src/components/SessionTimeline.tsx",
+        "src/app.css",
+        "shared/senders.ts",
+        "src/lib/inputs.ts",
+        "src/lib/timeline.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§chat.timeline/watch-mode": {
       "kind": "behavior",
@@ -3734,8 +3776,14 @@
         "src/design/base.css",
         "src/lib/message-actions.test.ts",
         "src/lib/message-actions.ts",
-        "src/lib/message-reveal.ts"
-      ]
+        "src/lib/message-reveal.ts",
+        "src/lib/inputs.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§chat.transcript/open-questions": {
       "kind": "note",
@@ -3845,11 +3893,13 @@
         "src/components/ExplainCard.tsx",
         "pi-config/extensions/explain/store.ts",
         "src/lib/hidden-rows.ts",
-        "src/lib/hidden-rows.test.ts"
+        "src/lib/hidden-rows.test.ts",
+        "src/lib/input-count.ts"
       ],
       "agreed": {
-        "by": "user (guided-tours go-ahead: al_6 recorder sign-in decisions)",
-        "at": "2026-10-19T08:08Z"
+        "by": "naomarik",
+        "at": "2026-10-19T21:36Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
       }
     },
     "§chat/composer": {
@@ -3984,11 +4034,20 @@
     "§chat/timeline": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "notOwned": [
         "§chat/transcript",
         "§app/subagents-pane",
         "§app.insights/summary-sections"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      },
+      "code": [
+        "src/components/SessionTimeline.tsx",
+        "src/lib/timeline.ts"
       ]
     },
     "§chat/transcript": {
@@ -4185,7 +4244,7 @@
     "§design.copy-deck/timeline-tab": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§design.copy-deck/workspace": {
       "kind": "note",
@@ -6266,11 +6325,18 @@
         "server/test-wait.ts",
         "server/project-overseer-routes.ts",
         "server/session-prompt.ts",
-        "server/build-loadout.ts"
+        "server/build-loadout.ts",
+        "src/lib/overseer.ts",
+        "shared/senders.ts"
       ],
       "requires": [
         "§chat.transcript/message-actions"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§app.overseer/standing-notes": {
       "kind": "behavior",
@@ -7314,11 +7380,18 @@
         "server/baton-prompt.md",
         "server/baton-handoff.test.ts",
         "server/baton-guards.test.ts",
-        "server/share-message.integration.test.ts"
+        "server/share-message.integration.test.ts",
+        "shared/senders.ts",
+        "src/components/SessionTimeline.tsx"
       ],
       "requires": [
         "§app.overseer/sent-marker"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
@@ -10018,11 +10091,37 @@
         "src/lib/scroll-anchor.ts",
         "src/lib/scroll-anchor.test.ts",
         "scripts/e2e/transcript-jitter.mjs",
-        "package.json"
+        "package.json",
+        "server/harness/pi/golden/expected/faux/abort/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/compact/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/error-retry/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/image-resize/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/plain/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/steer-followup/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/thinking/transcript-rows.json",
+        "server/harness/pi/golden/expected/faux/tool-read/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/align-merge/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/all-types/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/baton/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/broken-cycle/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/broken-dangling/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/broken-dup/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/compaction-end/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/compaction-mid/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/fork/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/legacy-v1/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/rewind/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/tail-0.86-0.87/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/torn/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/unknown-noid/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/unknown/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/user-kinds/transcript-rows.json",
+        "server/harness/pi/golden/expected/synthetic/workers/transcript-rows.json"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T23:24Z"
+        "by": "naomarik",
+        "at": "2026-10-19T21:36Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
       }
     },
     "§app.subagents-pane/hidden-workers": {
@@ -13807,12 +13906,19 @@
         "shared/protocol.ts",
         "src/components/Thread.tsx",
         "src/lib/live.ts",
-        "src/components/ProfileCards.tsx"
+        "src/components/ProfileCards.tsx",
+        "src/components/SessionTimeline.tsx",
+        "shared/senders.ts"
       ],
       "requires": [
         "§chat.profiles/session-tools",
         "§app.overseer/sent-marker"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:32Z",
+        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      }
     },
     "§chat.profiles/enforcement": {
       "kind": "behavior",

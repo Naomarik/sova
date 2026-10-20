@@ -9,6 +9,7 @@
 
 import { HAVE_MAX_CHARS, HAVE_PARAM, type OlderSummary, type TranscriptItem, type TranscriptRows } from "../../shared/protocol";
 import { entryOfRow, isInput, isReplyRow, messageCount } from "../../shared/row-counts";
+import { isOwnInput, otherSender, sendersOf } from "../../shared/senders";
 import type { RowsAsk } from "./api";
 import { reconcileItems } from "./transcript-cache";
 
@@ -83,6 +84,9 @@ function keepAbove(prev: readonly TranscriptItem[], j: number, items: Transcript
   const inputs = kept.filter(isInput).map((r) => r.id);
   const at = s.inputs.length - inputs.length;
   if (at < 0 || !inputs.every((id, i) => s.inputs[at + i] === id)) return null;
+  // The rows the user typed above the kept ones: what the summary said of those still above.
+  const above = new Set(s.inputs.slice(0, at));
+  const ownInputs = s.ownInputs?.filter((id) => above.has(id));
   // An alignment whose newest revision is a kept row is now the list's to count.
   const keptIds = new Set(kept.map((it) => it.id));
   const aligns = s.aligns?.filter((a) => !keptIds.has(a.rowId));
@@ -94,6 +98,7 @@ function keepAbove(prev: readonly TranscriptItem[], j: number, items: Transcript
       left: older - j,
       summary: {
         inputs: s.inputs.slice(0, at),
+        ...(ownInputs ? { ownInputs } : {}),
         messages: Math.max(0, s.messages - messageCount(kept)),
         replies: s.replies,
         ...(aligns?.length ? { aligns } : {}),
@@ -115,6 +120,15 @@ export function prependRows(list: readonly TranscriptItem[], older: Older, r: Tr
 // ---- The complete-list readers: the list the view holds, plus the summary of the rest ---------
 
 export const inputTotal = (list: readonly TranscriptItem[], older: Older): number => list.filter(isInput).length + older.summary.inputs.length;
+/** The messages the user typed on the branch: the composer's input count, exactly the rows the
+    Timeline's Inputs Only lists (shared/senders.ts `isOwnInput`). Above the list, the summary's own
+    inputs (an older server's summary has none: its every input), less any a sender marker the list
+    holds names: a marker always comes after its row, so one for a row above can be in the list. */
+export function ownInputTotal(list: readonly TranscriptItem[], older: Older): number {
+  const senders = sendersOf(list);
+  const above = older.summary.ownInputs ?? older.summary.inputs;
+  return list.filter((r) => isOwnInput(r, senders)).length + above.filter((id) => !otherSender(senders, id)).length;
+}
 export const messageTotal = (list: readonly TranscriptItem[], older: Older): number => messageCount(list) + older.summary.messages;
 export const anyReply = (list: readonly TranscriptItem[], older: Older): boolean => list.some(isReplyRow) || older.summary.replies;
 /** The newest input on the branch: in the list, else the newest of those above it. */

@@ -950,7 +950,9 @@ Three tools let the Overseer make and end links between sessions on different ho
   removed, cleared by Stop, refused at hand-off or handled by an extension instead leaves no marker.
 - While it waits in the queue, its row reads **Overseer** rather than "Sent by Sova" (the queue
   snapshot's `overseer` flag, set only for a message carrying the sender secret).
-- The transcript renders an **Overseer** tag on that user row, on reload and live.
+- The transcript renders an **Overseer** tag on that user row, on reload and live. The Timeline's
+  row for it, and for a brief, carries a "From the Overseer" sender line, and Inputs Only and the
+  composer's input count leave it out (§chat/timeline "Who sent it").
 - **One mechanism, three senders.** Baton sessions attribute every user message the same way, with
   their own `sova-baton-sent` marker (§app.baton/attribution), and so does a session's
   `session_send`, with `sova-session-sent` (§chat.profiles/delivery); the pending-mark list, the

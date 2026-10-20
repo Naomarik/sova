@@ -134,7 +134,7 @@ export function projectRowState(
     if (m.needsApproval) return { kind: "tools-changed", note: "Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again.", canToggle: true };
     if (m.changed) return { kind: "changed", note: "Changed since you turned it on. Turn it off and on to load the changes.", canToggle: true };
     if (m.problem) return { kind: "changed", note: `Its files have a problem now: ${m.problem}. This chat keeps the version it turned on.`, canToggle: true };
-    // The Overseer turned it on: its tools and commands run, its hooks wait for you (§chat.mode-menu/project-mode-hooks).
+    // An approval that isn't yours turned it on: its tools and commands run, its hooks wait for you (§chat.mode-menu/project-mode-hooks).
     if (m.hooksNeedApproval) return { kind: "hooks", note: HOOKS_NEED_NOTE, canToggle: true };
     if (m.hookNote) return { kind: "ok", note: m.hookNote, canToggle: true };
     return { kind: "ok", note: null, canToggle: true };
@@ -187,11 +187,11 @@ export function approvalFootFor(m: Partial<Pick<ProjectMinorInfo, "commands" | "
   return m.commands?.length || m.hooks?.length ? "Approval covers what it runs and every file in this folder. We ask again when any of them changes." : APPROVAL_FOOT;
 }
 
-/** The row's note while the Overseer's approval leaves its hooks waiting. */
+/** The row's note while an approval that isn't yours leaves its hooks waiting. */
 export const HOOKS_NEED_NOTE = "Hooks need your approval. Its tools and commands run; its hooks wait for you.";
 /** The hooks panel's sentence: what you approve, and why it's asked of you. */
 export function hooksLead(id: string): string {
-  return `${id}'s hooks run these programs after things happen in this chat, without asking. The Overseer turned it on, and only you can approve its hooks.`;
+  return `${id}'s hooks run these programs after things happen in this chat, without asking. Someone other than you turned it on, and only you can approve its hooks.`;
 }
 export const APPROVE_HOOKS_LABEL = "Approve Hooks";
 

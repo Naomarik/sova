@@ -42,5 +42,6 @@ test("an on mode whose hooks wait for you says so; one whose hooks are paused sa
   assert.equal(paused.note, "Hooks paused: a hook ran 10 times in 10 minutes.");
   // A change since turn-on or tools changed outranks it: those say what to do first.
   assert.equal(projectRowState(pm({ hooks: [hook], hooksNeedApproval: true, changed: true }), true).kind, "changed");
-  assert.match(hooksLead("rel"), /only you can approve its hooks/);
+  assert.match(hooksLead("rel"), /Someone other than you turned it on, and only you can approve its hooks/);
+  assert.doesNotMatch(hooksLead("rel"), /Overseer/);
 });

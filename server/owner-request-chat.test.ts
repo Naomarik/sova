@@ -185,6 +185,35 @@ describe("the request follows its chat", () => {
   });
 });
 
+describe("review checks", () => {
+  test("B1: a fix's own session is not the request's chat: archiving it changes nothing, after a restart either", async () => {
+    chat.resetRequestChatsForTests(null);
+    await chat.wireRequestChats();
+    const r = file("fix", "Fix the cart");
+    store.setRequestStatus(org.id, r.id, "started", { sessionId: "s_fix" });
+    setArchived("s_fix", true);
+    const before = store.findRequest(org.id, r.id)?.status;
+    assert.equal(before, "started");
+    chat.resetRequestChatsForTests(null);
+    await chat.wireRequestChats(); // the restart's catch-up
+    assert.equal(store.findRequest(org.id, r.id)?.status, before, "a fix chat keeps today's behaviour");
+    assert.equal(chat.noteRequestChatArchived("s_fix", { orgId: org.id, rid: r.id }), false);
+  });
+  test("B2: a note that isn't written: an error, nothing linked, the new chat archived", async () => {
+    const r = file("bug", "Note fails");
+    const s = sessionFile();
+    const archived: string[] = [];
+    await assert.rejects(
+      chat.startRequestChat(org.id, r.id, { start: async () => ({ path: s.path, sessionId: s.id }), note: async () => false, archive: async (path: string) => void archived.push(path) }),
+      (e: { message?: string }) => e.message === "Couldn't start the chat. Try again.",
+    );
+    assert.equal(store.findRequest(org.id, r.id)?.linked, undefined, "nothing linked: Start Chat stays available");
+    assert.deepEqual(archived, [s.path]);
+    await assert.rejects(chat.startRequestChat(org.id, r.id, { start: async () => ({ path: s.path, sessionId: s.id }), note: async () => { throw new Error("chat gone"); }, archive: async () => {} }), /Couldn't start the chat/);
+    assert.equal(store.findRequest(org.id, r.id)?.linked, undefined);
+  });
+});
+
 describe("the org's counts", () => {
   test("OrgDetail carries the Requests tab's counts, and needsYou.requests the requests with the team", async () => {
     const { orgPage } = await import("./org-routes");

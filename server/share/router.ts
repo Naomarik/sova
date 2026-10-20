@@ -162,6 +162,9 @@ export interface GatewayRouter {
   preview: PreviewHooks;
   /** Whether the edge's forward-only tier is on: while this host is a gateway. */
   forward: () => boolean;
+  /** Whether a live, accepted host registered the link (not this host's own): its requests get the
+      gateway's ceiling at the edge (§mesh.public/share-protocol). */
+  registered: (kind: TokenKind, token: string) => boolean;
   /** Close every open hop whose host no longer holds its hash. */
   sweep: () => void;
   /** Close every open hop, stop the timer and listeners, and route nothing from here on (a
@@ -379,7 +382,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     // knows what a newer host's new route takes (§mesh.public/share-protocol).
     const upload = req.method === "POST" && /\/image$/.test(ctx.url.pathname);
     const fileUpload = req.method === "POST" && /\/file$/.test(ctx.url.pathname);
-    const forwardBody = ctx.forwardOnly === true && (req.method === "POST" || req.method === "PUT");
+    const forwardBody = (ctx.forwardOnly === true || ctx.routed === true) && (req.method === "POST" || req.method === "PUT");
     const timer = setTimeout(() => {
       notePeerReach(base, false);
       fail();
@@ -573,7 +576,9 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   };
   /** A request that passed the strict tier is this host's own when it routes nowhere; a
       forward-only one is the unknown-link 404 (the gateway's own app never sees it). */
-  const notRouted = (req: IncomingMessage, res: ServerResponse, ctx: ShareRequestContext): void | Promise<void> => (ctx.forwardOnly ? unknownLink(res) : local.dispatch(req, res, ctx));
+  // A request that had the gateway's ceiling (`routed`: the link was registered at the edge) and no
+  // longer routes is never handed to this host's own app with a body its page never allowed.
+  const notRouted = (req: IncomingMessage, res: ServerResponse, ctx: ShareRequestContext): void | Promise<void> => (ctx.forwardOnly || ctx.routed ? unknownLink(res) : local.dispatch(req, res, ctx));
 
   const dispatch: ShareDispatch = async (req, res, ctx) => {
     const route = routeOf(ctx.url.pathname);
@@ -782,6 +787,11 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     dispatch,
     upgrade,
     forward: () => !disposed && setting() !== null,
+    registered: (kind, token) => {
+      const v = view();
+      if (!v || isLocal(token, kind)) return false;
+      return registry.lookup(hashToken(token), kind, now(), (n) => v.byNode.has(n)) !== null;
+    },
     preview: { match: opts.previewMatch ?? gatewayPreviewMatch, dispatch: previewDispatch, upgrade: previewUpgrade },
     sweep,
     dispose: () => {

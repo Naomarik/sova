@@ -105,6 +105,8 @@ const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/
  */
 const SEG = "[A-Za-z0-9._~-]{1,64}";
 export const FORWARD_SHAPE = new RegExp(`^/(?:api/)?([hist])/(${TOKEN})((?:/${SEG}){1,8})$`);
+/** A judged path's link: its kind and token, whatever follows. */
+const LINK_PATH = new RegExp(`^/(?:api/)?([hist])/(${TOKEN})(?:/|$)`);
 /** A share socket's forward-only shape: `/ws/<kind>` or `/ws/<kind>/<name>`. */
 export const FORWARD_SOCKET = new RegExp(`^/ws/([hist])(?:/(${SEG}))?$`);
 /** The methods the forward-only tier passes. */
@@ -237,6 +239,10 @@ export interface ShareRequestContext {
   /** It passed only the gateway's forward-only tier (FORWARD_SHAPE / FORWARD_SOCKET), never
       the strict ROUTES: only a registered link's host may answer it. */
   forwardOnly?: true;
+  /** A link a host registered at this gateway (§mesh.public/share-protocol): the request had the
+      gateway's one ceiling (FORWARD_BODY_MAX, FORWARD_TIMEOUT_MS) instead of its page's own
+      limits, so only that host may answer it. Set on forward-only requests too. */
+  routed?: true;
 }
 
 /** A `/ws/h` or `/ws/s` upgrade that passed the edge: the path, the token's shape and the address limit. */
@@ -288,6 +294,10 @@ export interface ShareServerOptions {
   /** Whether the forward-only tier is on now (the gateway's router: while this host is a
       gateway). Absent: the strict ROUTES alone, as on a routed host's ingress. */
   forward?: () => boolean;
+  /** While `forward` is on: whether a host registered the link of `kind` with this token, so its
+      requests get the gateway's ceiling instead of their page's own limits (the host enforces
+      those). A throw is "no". */
+  registered?: (kind: ShareSocketKind, token: string) => boolean;
   /** The strict tier. Default: shareMayReach. Tests replace it to stand in for an older build. */
   mayReach?: (method: string, pathname: string) => boolean;
 }
@@ -438,6 +448,16 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       return false;
     }
   };
+  /** Whether a judged path is a link a host registered here (only while the forward tier is on). */
+  const routedLink = (pathname: string): boolean => {
+    const m = LINK_PATH.exec(pathname);
+    if (!m || !opts.registered) return false;
+    try {
+      return opts.registered(m[1] as ShareSocketKind, m[2]!) === true;
+    } catch {
+      return false;
+    }
+  };
   /** The preview a request is for; a throw is the share host's. */
   const previewOf = (req: IncomingMessage): string | null => {
     try {
@@ -525,8 +545,10 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       tooMany(res, PAGE_SHELL.test(url.pathname));
       return;
     }
-    if (forwardOnly) {
-      // A forward-only request: the ceiling of any share route, judged again by the host.
+    // A registered link's request, strict or forward-only: the gateway's one ceiling, never its
+    // page's own limit (a newer host may have raised that); the host's ingress judges the rest.
+    const routed = forwardOnly || (forwardOn() && routedLink(url.pathname));
+    if (routed) {
       if (method === "POST" || method === "PUT") {
         const len = Number(req.headers["content-length"]);
         if (!Number.isFinite(len) || len > FORWARD_BODY_MAX) {
@@ -536,7 +558,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
         }
       }
       // Node's own request timer is fileTimeout, the forward-only one.
-      guarded(() => dispatch(req, res, { url, client, forwardOnly: true }), failed("dispatch"));
+      guarded(() => dispatch(req, res, { url, client, routed: true, ...(forwardOnly ? { forwardOnly: true as const } : {}) }), failed("dispatch"));
       return;
     }
     if (req.method === "POST") {

@@ -115,6 +115,8 @@ interface GatewayOpts {
   previewUrl?: string | null;
   /** The gateway edge's strict tier (an older build's ROUTES); default shareMayReach. */
   mayReach?: (method: string, pathname: string) => boolean;
+  /** Which tokens this gateway minted itself; default the stores'. */
+  isLocal?: (token: string, kind: "h" | "i" | "s" | "t") => boolean;
 }
 
 /** Read on every call: a test changes `o.setting` or `o.peers` to withdraw a host. */
@@ -130,6 +132,7 @@ async function gateway(o: GatewayOpts) {
     setting: () => (o.setting === undefined ? GATEWAY : o.setting),
     publicUrl: () => GATEWAY.publicUrl,
     previewUrl: () => o.previewUrl ?? null,
+    ...(o.isLocal ? { isLocal: o.isLocal } : {}),
     peers: () => o.peers ?? [PEER],
     resolve: async (p) => {
       resolved.push(p.dnsName);
@@ -238,7 +241,9 @@ test("no gateway setting, a removed or unaccepted peer: in-process, no dial", as
 test("the edge's limits apply before a hop", async () => {
   const o = await origin((_q, res) => res.end("{}"));
   const g = await gateway({ port: o.port, links: [row(T("k"))] });
-  const big = await get(`${g.base}/api/h/${T("k")}/message`, { method: "POST", headers: { "Content-Type": "application/json", Connection: "close" }, body: "x".repeat(20_000) });
+  // A link nobody registered keeps its page's 16 KB cap (a registered one has the gateway's ceiling,
+  // §mesh.public/share-protocol), refused before any hop.
+  const big = await get(`${g.base}/api/h/${T("u")}/message`, { method: "POST", headers: { "Content-Type": "application/json", Connection: "close" }, body: "x".repeat(20_000) });
   assert.equal(big.status, 413);
   assert.equal(o.seen.length, 0);
   // The per-address limit counts every request at the gateway (the 413 above included), before any hop.
@@ -1236,4 +1241,22 @@ test("a redirect passes only to a preview host under the gateway's own preview a
   const none = await gateway({ port: o.port, links: [row(T("i"), "i")] });
   location = `https://${label}.preview.example.com/`;
   assert.equal((await get(`${none.base}/i/${T("i")}/v/v_abcdefgh`)).status, 503);
+});
+
+test("a registered link's strict address gets the gateway's ceiling, not its page's limit; the gateway's own and unknown links keep the page's", async () => {
+  const o = await origin((_q, res, body) => res.end(String(body.length)));
+  const own = T("o");
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i"), row(own, "i")], isLocal: (t) => t === own });
+  // 32 KB to the Project Assistant: over the 16 KB a message route has at the edge.
+  const body = JSON.stringify({ text: "x".repeat(32 * 1024) });
+  const post = (token: string) => get(`${g.base}/api/i/${token}/assistant`, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)), Connection: "close" }, body });
+  const routed = await post(T("i"));
+  assert.equal(routed.status, 200, routed.body);
+  assert.equal(routed.body, String(body.length), "the host received the whole body");
+  assert.equal(o.seen.length, 1);
+  for (const token of [own, T("u")]) assert.equal((await post(token)).status, 413, token === own ? "the gateway's own link" : "an unknown link");
+  assert.equal(o.seen.length, 1, "neither was asked of the host");
+  // Not a gateway any more: the strict limit again, for every link.
+  const plain = await gateway({ port: o.port, links: [row(T("i"), "i")], setting: null });
+  assert.equal((await get(`${plain.base}/api/i/${T("i")}/assistant`, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)), Connection: "close" }, body })).status, 413);
 });

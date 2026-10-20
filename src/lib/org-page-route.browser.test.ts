@@ -60,3 +60,21 @@ test("control: the compiled ternary getter, read from a handler, breaks that rou
   assert.throws(() => a.openSession(), /Stale read/);
   assert.equal(a.view(), "org page");
 });
+
+test("the Requests tab's focused row is a memo: a fresh route naming the same request doesn't re-fire it (§app.project-assistant/requests-tab)", () => {
+  let runs = 0;
+  const { page, setRoute, dispose } = solid.createRoot((dispose) => {
+    const [route, setRoute] = solid.createSignal<OrgsRoute>({ kind: "org", id: "org_1", tab: "requests", request: "or_1" });
+    const page = orgPageRoute(route);
+    solid.createRenderEffect(solid.on(page.request, () => runs++));
+    return { page, setRoute, dispose };
+  });
+  assert.deepEqual([page.request(), runs], ["or_1", 1]);
+  setRoute({ kind: "org", id: "org_1", tab: "requests", request: "or_1" });
+  assert.equal(runs, 1, "same request, new route object: no re-run");
+  setRoute({ kind: "org", id: "org_1", tab: "requests", request: "or_2" });
+  assert.deepEqual([page.request(), runs], ["or_2", 2]);
+  setRoute({ kind: "org", id: "org_1", tab: "requests" });
+  assert.deepEqual([page.request(), runs], [undefined, 3]);
+  dispose();
+});

@@ -2589,7 +2589,7 @@ class ChatSession {
    * at once while idle, and it is context from the next turn on. False when this runtime may not
    * write (a foreign writer, the TUI) or is mid-turn.
    */
-  async appendNote(customType: string, text: string): Promise<boolean> {
+  async appendNote(customType: string, text: string, details?: unknown): Promise<boolean> {
     if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.harness.isRunning()) return false;
     try {
       assertNotLive(this.path);
@@ -2597,7 +2597,7 @@ class ChatSession {
       return false;
     }
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
-    await this.harness.appendNote(customType, text);
+    await this.harness.appendNote(customType, text, details);
     markOwned(this.path);
     return true;
   }

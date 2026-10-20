@@ -123,7 +123,10 @@
     "chat.queue.remove",
     "chat.reload-code",
     "audit.list",
-    "chat.mode-command"
+    "chat.mode-command",
+    "org.owner.request.chat",
+    "org.owner.request.done",
+    "org.owner.request.decline"
   ],
   "retired": [
     "settings.agents.get"

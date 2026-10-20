@@ -289,6 +289,8 @@ export interface OrgNeedsYou {
   ownerLink?: number;
   /** Acts waiting in a hold before they reach a person or the code (§app.project-overseer/holds); absent: none, or an older server. */
   held?: number;
+  /** The owner's requests still with the team (§app.project-assistant/requests); absent: an older server. */
+  requests?: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -342,6 +344,9 @@ export interface OrgDetail extends OrgSummary {
   lastOpened?: Record<string, { at?: string; minted: boolean }>;
   /** From the org routes: the owner card (absent: an older server). */
   ownerPage?: OwnerPageInfo;
+  /** From the org routes: the owner's requests (§app.project-assistant/requests-tab): `open` = with the team or
+      being worked on, `withTeam` = with the team, `total` = all of them. Absent: an older server. */
+  ownerRequests?: { open: number; withTeam: number; total: number };
 }
 
 // ---- a person's page (§app.organizations/person-page) -------------------------------------------------

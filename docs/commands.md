@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 464 |
-| Routes a catalogue entry points at | 97 |
-| Catalogue entries | 123 |
+| Routes registered | 465 |
+| Routes a catalogue entry points at | 99 |
+| Catalogue entries | 126 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -25,7 +25,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
 | Class: Middleware and fallbacks | 2 |
-| Pending (not yet a command) | 309 |
+| Pending (not yet a command) | 308 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
 | Hand-written tool specs | 112 |
@@ -150,6 +150,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `settings.align.set` | Save Alignment Settings | changes | `PUT /api/settings/align` | admin |
 | `push.test` | Send Test Notification | changes | `POST /api/push/test` | admin |
 | `audit.list` | List Who Ran What | looks | `GET /api/audit` | full |
+| `org.owner.request.chat` | Start Chat | changes | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin |
+| `org.owner.request.done` | Mark Done | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
+| `org.owner.request.decline` | Decline | changes | `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `chat.stop` | Stop | changes | `POST /api/chat/action` | sessions |
 | `chat.compact` | Compact | changes | `POST /api/chat/action` | sessions |
 | `chat.rewind` | Rewind | changes | `POST /api/chat/action` | sessions |
@@ -268,7 +271,6 @@ class, leaves it, and a new route never joins it.
 | `GET /api/orgs/:id/owner/preview` | sessions |
 | `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle` | sessions |
 | `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle/assets/:file` | sessions |
-| `POST /api/orgs/:id/owner/requests/:rid` | admin |
 | `POST /api/orgs/:id/owner/revoke` | admin |
 | `POST /api/orgs/:id/people` | admin |
 | `GET /api/orgs/:id/people/:pid` | sessions |
@@ -618,6 +620,8 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `POST /api/mode/command` | full | `chat.mode-command` |
 | `GET /api/models` | sessions | `models.list` |
 | `PUT /api/models/favorite` | sessions | `models.favorite` |
+| `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done` |
+| `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |
 | `PATCH /api/overseer/idea` | admin | `overseer.idea.update` |

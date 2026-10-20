@@ -285,6 +285,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "chat.queue.remove": "acquires a chat handle, which starts the chat's process",
   "chat.reload-code": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.mode-command": "acquires a chat handle, which starts the chat's process, and runs a project's program",
+  "org.owner.request.chat": "a valid call starts a coding session in the request's project, which starts its chat process",
 };
 
 /**
@@ -347,11 +348,35 @@ interface Fixture { values: () => Record<string, unknown>; status: number; oracl
 const read = async (method: string, url: string) => (await sendTo(app, method, url)).body as Record<string, unknown>;
 const titleOf = async (id: string) => (await read("GET", `/api/sessions/summary?id=${id}`)).title;
 const pathToId = (p: unknown) => /_(fuzz-\d+)\.jsonl$/.exec(String(p))![1]!;
+/** An org with a project and one owner request, made in-process; the valid call closes it. */
+function ownerRequestFixture(status: "done" | "declined"): Fixture {
+  return {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => {
+        const orgs = await import("./orgs");
+        const store = await import("./project-assistant-store");
+        const d = join(root, `org-project-${++n}`);
+        mkdirSync(d, { recursive: true });
+        const org = await orgs.createOrg({ name: `Fuzz Org ${n}`, dir: join(root, `org-${n}`) });
+        const proj = await orgs.addProject(org.id, { name: "Fuzz project", root: d });
+        v["org-id"] = org.id;
+        v["request-id"] = store.fileRequest(org.id, { projectId: proj.id, kind: "bug", title: "A fuzz request", text: "Filed by the fuzz." }).id;
+      });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await import("./project-assistant-store")).findRequest(String(v["org-id"]), String(v["request-id"]))?.status, status),
+  };
+}
+
 const FIXTURES: Record<string, Fixture> = {
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },
   "project.services.view": { values: () => ({ pid: "no-such-project" }), status: 404 },
+  "org.owner.request.done": ownerRequestFixture("done"),
+  "org.owner.request.decline": ownerRequestFixture("declined"),
   "overseer.attention": { values: () => ({}), status: 200 },
   "overseer.todo.list": { values: () => ({}), status: 200 },
   "models.list": { values: () => ({}), status: 200 },

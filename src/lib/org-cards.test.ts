@@ -34,3 +34,11 @@ test("held acts count and say so (§app.project-overseer/holds)", () => {
   assert.equal(needsYouLabel(n), "2 held acts");
   assert.equal(needsYouLabel({ ...n, held: 1, replies: 1 }), "1 reply · 1 held act");
 });
+
+test("owner requests with the team count and say so (§app.organizations/org-cards)", () => {
+  const n = { replies: 0, links: 0, proposals: 0, conflicts: 0, requests: 2 };
+  assert.equal(needsYouCount(n), 2);
+  assert.equal(needsYouLabel(n), "2 requests to answer");
+  assert.equal(needsYouLabel({ ...n, requests: 1, replies: 1 }), "1 reply · 1 request to answer");
+  assert.equal(needsYouCount({ ...n, requests: undefined }), 0, "an older server says nothing of requests");
+});

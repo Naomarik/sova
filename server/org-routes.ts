@@ -61,6 +61,7 @@ import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
+import { orgRequests } from "./project-assistant-store";
 import { registerAssistantRoutes } from "./project-assistant-routes";
 import { assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
@@ -191,6 +192,8 @@ function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): W
     // Acts waiting in a hold, one each as in Needs you (the same held-act items).
     w.needsYou.held = engineHeldActs(orgId).length;
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
+    // The owner's requests with the team: the same items Needs you raises (only while the org has an owner).
+    w.needsYou.requests = readOrgOrPlaceholder(orgId).owner ? orgRequests(orgId).filter((r) => r.status === "with-team").length : 0;
     for (const project of readProjects(orgId)) {
       if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
       const n = unroutedConflicts(orgId, project.id);
@@ -268,7 +271,19 @@ export async function orgPage(orgId: string): Promise<OrgDetail> {
     projectConflicts: w.projectConflicts,
     ...lastOpenedOf(orgId),
     ownerPage: ownerPageInfo(orgId),
+    ...ownerRequestsOf(orgId),
   };
+}
+
+/** The Requests tab's presence and count (§app.project-assistant/requests-tab): never fails the page. */
+function ownerRequestsOf(orgId: string): { ownerRequests?: { open: number; withTeam: number; total: number } } {
+  try {
+    const all = orgRequests(orgId);
+    const withTeam = all.filter((r) => r.status === "with-team").length;
+    return { ownerRequests: { open: withTeam + all.filter((r) => r.status === "started").length, withTeam, total: all.length } };
+  } catch {
+    return {};
+  }
 }
 
 /** The People cards' "Last opened" (§app.baton/visits): never fails the page. */

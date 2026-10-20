@@ -14,7 +14,11 @@ export interface OrgTabInfo {
   waitingText: string;
 }
 
-type TabSource = Pick<OrgDetail, "batons" | "roster" | "projectList" | "problems" | "git" | "projectConflicts"> & Partial<Pick<OrgDetail, "needsYou">>;
+type TabSource = Pick<OrgDetail, "batons" | "roster" | "projectList" | "problems" | "git" | "projectConflicts"> & Partial<Pick<OrgDetail, "needsYou" | "owner" | "ownerRequests">>;
+
+/** The Requests tab shows while the org has an owner or any owner request (an older server's org,
+    with no request counts, by its owner alone; §app.project-assistant/requests-tab). */
+export const hasRequestsTab = (o: Partial<Pick<OrgDetail, "owner" | "ownerRequests">>): boolean => !!o.owner || (o.ownerRequests?.total ?? 0) > 0;
 
 /** A project whose main stakeholder left the org and has none now: the operator picks a new one. */
 export const stakeholderToPick = (p: Pick<OrgProject, "stakeholder" | "stakeholderCleared">): boolean => !!p.stakeholderCleared && !p.stakeholder;
@@ -30,8 +34,10 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
   // Acts waiting in a hold before they reach a person or the code (§app.project-overseer/holds).
   const held = o.needsYou?.held ?? 0;
   const repo = o.problems.length + (o.git.lastError ? 1 : 0);
+  // Owner requests still with the team: the same ones Needs you raises (none while the org has no owner).
+  const toAnswer = o.needsYou?.requests ?? 0;
   const words = (parts: string[]) => parts.filter(Boolean).join(" · ");
-  return [
+  const tabs: OrgTabInfo[] = [
     {
       id: "projects",
       label: "Projects",
@@ -51,6 +57,7 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
       waiting: replies + links,
       waitingText: words([replies ? `${replies} to answer` : "", links ? `${plural(links, "link")} to send` : ""]),
     },
+    { id: "requests", label: "Requests", count: o.ownerRequests?.open ?? 0, waiting: toAnswer, waitingText: toAnswer ? `${toAnswer} to answer` : "" },
     { id: "people", label: "People", count: o.roster.length, waiting: proposed, waitingText: proposed ? `${plural(proposed, "person", "people")} to approve` : "" },
     // An open-ended record, not a list size: no count, and nothing in it waits.
     { id: "history", label: "History", count: null, waiting: 0, waitingText: "" },
@@ -64,4 +71,5 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
       waitingText: words([o.problems.length ? `${plural(o.problems.length, "file problem")}` : "", o.git.lastError ? "the last commit or push failed" : ""]),
     },
   ];
+  return hasRequestsTab(o) ? tabs : tabs.filter((t) => t.id !== "requests");
 }

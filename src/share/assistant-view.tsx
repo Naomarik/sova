@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "s
 import { ASSISTANT_TEXT_MAX, type AssistantServerMessage, type AssistantView } from "../../shared/project-assistant";
 import { OFFLINE_PAGE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import { assistantProblemText, isDeadLink, OwnerLoadError } from "../lib/owner-problem";
+import { keepUnchanged, nearEnd } from "../lib/share-follow";
 import { batonKinds } from "./markdown";
 import type { UploadRefusal } from "./photos";
 import { ShareComposer, type Attachment, type SendOutcome, type Upload } from "./ShareComposer";
@@ -73,14 +74,37 @@ export function AssistantChat(props: {
   let box: { input: HTMLTextAreaElement; fit(): void } | undefined;
 
   // The owner's page scrolls to its end, so the newest message ends just above the pinned composer
-  // (scrollIntoView on the thread's end would tuck it under it); the read-only preview scrolls its modal.
-  const toBottom = () =>
+  // (scrollIntoView on the thread's end would tuck it under it), but only while the owner is at the
+  // end: one who scrolled up to read is left there until they come back down or send. The read-only
+  // preview scrolls its modal once, at its first read.
+  let following = true;
+  let previewScrolled = false;
+  const toBottom = (force = false) =>
     queueMicrotask(() => {
-      if (props.api.send) window.scrollTo(0, document.documentElement.scrollHeight);
-      else list?.lastElementChild?.scrollIntoView({ block: "end" });
+      if (props.api.send) {
+        if (force) following = true;
+        if (following) window.scrollTo(0, document.documentElement.scrollHeight);
+      } else if (!previewScrolled && list?.lastElementChild) {
+        previewScrolled = true;
+        list.lastElementChild.scrollIntoView({ block: "end" });
+      }
     });
+  if (props.api.send) {
+    const onScroll = () => (following = nearEnd(window.scrollY, window.innerHeight, document.documentElement.scrollHeight));
+    // A wheel up stops following at once, before its scroll event lands under a streamed frame.
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) following = false;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
+    onCleanup(() => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onWheel);
+    });
+  }
   const apply = (v: AssistantView) => {
-    setView(v);
+    // Only what changed is drawn again: a drawing keeps its state through the re-reads.
+    setView({ ...v, messages: keepUnchanged(view()?.messages ?? [], v.messages) });
     setStreaming(v.busy ? (v.streaming ?? "") : "");
     setProblem(null);
     offlineDelay = RECONNECT_BACKOFF_MS.first;
@@ -139,6 +163,12 @@ export function AssistantChat(props: {
   );
 
   const busy = () => !!view()?.busy;
+  // "Wait for the answer first." goes once the answer is done; the box still holds the text.
+  createEffect(
+    on(busy, (b) => {
+      if (!b && error() === sendRefusal("busy", props.op)) setError("");
+    }),
+  );
   const send = async (text: string, photos: Attachment[], _files: Attachment[], again: boolean): Promise<SendOutcome> => {
     if (sending() || !props.api.send) return "kept";
     // While an answer is being written nothing is sent (§app.project-assistant/chat).
@@ -157,6 +187,7 @@ export function AssistantChat(props: {
       setError(sendRefusal(r.code, props.op));
       return "kept";
     }
+    toBottom(true);
     void reload();
     box?.input.focus();
     return "sent";
@@ -253,7 +284,20 @@ export function AssistantChat(props: {
             blocked={() => busy() || view()?.ready === false}
             sending={sending}
             send={send}
-            ref={(b) => (box = b)}
+            ref={(b) => {
+              box = b;
+              // The composer growing (an error line, the photo strip, a longer text) would cover the
+              // newest message: while following, the page keeps its end in view.
+              const form = b.input.closest("form");
+              if (form && typeof ResizeObserver !== "undefined") {
+                const ro = new ResizeObserver(() => toBottom());
+                ro.observe(form);
+                onCleanup(() => ro.disconnect());
+              }
+              // Opened to chat: the box takes focus, except on a touch-only screen, where that would
+              // raise the keyboard over the conversation (as Sova's own composer).
+              if (!matchMedia("(hover: none) and (pointer: coarse)").matches) requestAnimationFrame(() => b.input.focus({ preventScroll: true }));
+            }}
           />
       </Show>
     </>

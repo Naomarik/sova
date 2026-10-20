@@ -140,6 +140,9 @@
 }
 .share-thumb:hover { border-color: var(--color-border-strong); }
 .share-thumb:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Sized by its picture: inside the operator's Preview as, the app's own .share-thumb (shares.css, an
+   88 px box for the share sheet) would otherwise squeeze a fitted photo into a tile. */
+.share-photos .share-thumb { width: auto; height: auto; }
 .share-thumb img { display: block; width: 96px; height: 96px; object-fit: cover; }
 .share-photos-single .share-thumb img { width: auto; height: auto; max-width: min(320px, 100%); max-height: 240px; object-fit: contain; }
 .share-photo-count { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }

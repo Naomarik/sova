@@ -1,4 +1,4 @@
-import { OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
+import { type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { CARD_TOOL, normalizeCard, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
 import { isObj, resultDetails, str, toolResultView } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
@@ -18,10 +18,10 @@ export function overseerHistoryId(hash: string): string | null {
 }
 export const overseerHistoryHref = (id: string) => `${OVERSEER_HASH}/h/${encodeURIComponent(id)}`;
 
-/** A proactive "Brief me" prompt: a machine row, never "You", and never a turn any tab navigates on. */
-export const isBriefText = (text: string | undefined): boolean => !!text && text.trimStart().startsWith(OVERSEER_BRIEF_PREFIX);
-/** The brief's own words, without the prefix. */
-export const briefBody = (text: string): string => text.trimStart().slice(OVERSEER_BRIEF_PREFIX.length).trim();
+/** A proactive "Brief me" prompt: a machine row, never "You", and never a turn any tab navigates on.
+    One rule with the Timeline and the input counts (shared/senders.ts). */
+import { isBriefText } from "../../shared/senders";
+export { briefBody, isBriefText } from "../../shared/senders";
 
 // ---- Tool details -------------------------------------------------------------------------
 

@@ -6,7 +6,7 @@
 // Pure: no reactive state, so the rules are testable (known-before-mount.test.ts).
 
 import type { ExplanationInfo, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
-import { isInput } from "../../shared/row-counts";
+import { isOwnInput, sendersOf } from "../../shared/senders";
 import { tallyWorkers, type WorkerTally } from "./workers";
 
 /** The strip's collapsed row as the session list has it: the newest outline snapshot's lines. */
@@ -65,5 +65,9 @@ export function workersShown(
  * `count` is null until it is known. The rows on screen are this session's own, so an input among
  * them says so too.
  */
-export const inputsPending = (count: number | null, list: readonly TranscriptItem[] | null, known: boolean): boolean =>
-  count === null && (known || (list ?? []).some(isInput));
+export const inputsPending = (count: number | null, list: readonly TranscriptItem[] | null, known: boolean): boolean => {
+  if (count !== null) return false;
+  if (known) return true;
+  const senders = sendersOf(list ?? []);
+  return (list ?? []).some((it) => isOwnInput(it, senders));
+};

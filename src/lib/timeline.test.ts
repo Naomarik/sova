@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
+import { inputCount } from "./input-count";
 import { inputRows, rewoundAt, viewRows } from "./inputs";
 import {
   anchorTime,
@@ -435,4 +436,104 @@ test("inputTurns skips a link-opened turn, and its work never counts toward the 
   assert.deepEqual(turns.map((t) => t.id), ["u1", "u2"]);
   assert.equal(turns[0]!.replies, 1);
   assert.equal(turns[0]!.tools, 0);
+});
+
+// ---- Who sent it ------------------------------------------------------------------------------
+
+const fromSession = (target: string, min: number, title = "Planner"): TranscriptItem => ({
+  id: `mark-${target}`,
+  kind: "info",
+  at: at(min),
+  sessionMark: { kind: "sent", targetId: target, from: { sessionId: "sid-planner", title }, hop: 1 },
+});
+const overseerSent = (target: string, min: number): TranscriptItem => ({ id: `omark-${target}`, kind: "info", at: at(min), overseerMark: { kind: "sent", targetId: target } });
+const batonSent = (target: string, min: number, by: string): TranscriptItem => ({ id: `bmark-${target}`, kind: "info", at: at(min), batonMark: { kind: "sent", targetId: target, by } });
+const header = (title: string) => `[from session "${title}" (sid-planner), hop 1]\n`;
+
+/** One of each sender, the user's own messages between them, all minutes apart. */
+const mixed = (): TranscriptItem[] => [
+  user("u1", 0, "my first message"),
+  say("a1:0", 1),
+  user("s1", 10, `${header("Planner")}please run the tests\nand report`),
+  fromSession("s1", 10),
+  say("a2:0", 11),
+  overseerSent("o1", 19), // the marker may come first: resolved by id
+  user("o1", 20, "check the build"),
+  user("t1", 25, "from Kim"),
+  batonSent("t1", 25, "p_kim"),
+  user("op", 30, "mine, through the baton"),
+  batonSent("op", 30, "operator"),
+  wake("n1", 40, "nightly check"),
+  user("b1", 45, "[overseer-brief] two blockers"),
+  user("u2", 55, "my last message"),
+];
+
+test("a message another session sent keeps its row and density, titled by its body, with its sender", () => {
+  const rows = timelineRows(mixed(), null);
+  const s1 = rows.find((r) => r.entryId === "s1")!;
+  assert.equal(s1.kind, "input");
+  assert.equal(s1.title, "please run the tests", "the header line is not the title");
+  assert.equal(s1.full, "please run the tests\nand report", "nor in the full text");
+  assert.deepEqual(s1.sender, { kind: "session", sessionId: "sid-planner", title: "Planner", hop: 1 });
+  assert.equal(rows[rows.indexOf(s1) + 1]!.kind, "density", "its density line stays under it");
+});
+
+test("each sender is carried: the Overseer (its brief too), a teammate; the operator's own and a wake have none", () => {
+  const rows = timelineRows(mixed(), null).filter((r) => r.kind === "input");
+  const by = new Map(rows.map((r) => [r.entryId, r]));
+  assert.deepEqual(by.get("o1")!.sender, { kind: "overseer" });
+  assert.deepEqual(by.get("b1")!.sender, { kind: "overseer" });
+  assert.equal(by.get("b1")!.title, "two blockers", "a brief's tag is not its title");
+  assert.deepEqual(by.get("t1")!.sender, { kind: "baton", by: "p_kim" });
+  assert.equal(by.get("op")!.sender, undefined, "the operator's own baton message is the user's");
+  assert.equal(by.get("n1")!.sender, undefined);
+  assert.equal(by.get("n1")!.wake, true);
+  assert.equal(by.get("n1")!.title, "nightly check", "a wake keeps its reason as its title");
+});
+
+test("Inputs Only lists only what the user typed, the gaps measured between them", () => {
+  const all = timelineRows(mixed(), null);
+  assert.deepEqual(
+    all.filter((r) => r.kind === "input").map((r) => r.entryId),
+    ["u1", "s1", "o1", "t1", "op", "n1", "b1", "u2"],
+    "off, every message is on the axis",
+  );
+  const only = timelineRows(mixed(), null, [], GAP_MS, { inputsOnly: true });
+  assert.deepEqual(
+    only.map((r) => r.entryId ?? r.title),
+    ["u1", "1 reply · 1m", "idle 30m", "op", "idle 25m", "u2"],
+    "no other sender, no wake; idle recomputed",
+  );
+});
+
+test("the composer's count is exactly the rows Inputs Only lists", () => {
+  const only = timelineRows(mixed(), null, [], GAP_MS, { inputsOnly: true }).filter((r) => r.kind === "input");
+  assert.equal(inputCount(mixed()), only.length);
+});
+
+test("a sender-only session's Inputs Only is empty while the whole axis is not", () => {
+  const items = [user("s1", 0, `${header("Planner")}hello`), fromSession("s1", 0), wake("n1", 5)];
+  assert.deepEqual(timelineRows(items, null, [], GAP_MS, { inputsOnly: true }), []);
+  assert.equal(timelineRows(items, null).length > 0, true);
+});
+
+test("a row a rewind left behind keeps its sender, so Inputs Only never brings it back", () => {
+  const before = [user("u1", 0), user("s1", 2, `${header("Planner")}do it`), fromSession("s1", 2), user("u3", 4)];
+  const shadow = rewoundAt(inputsOf(before), "s1")!;
+  const after = before.slice(0, 1);
+  const view = viewRows(inputsOf(after), shadow);
+  const rows = timelineRows(after, null, [], GAP_MS, { view });
+  const s1 = rows.find((r) => r.entryId === "s1")!;
+  assert.equal(s1.state, "boundary");
+  assert.equal(s1.title, "do it");
+  assert.deepEqual(s1.sender, { kind: "session", sessionId: "sid-planner", title: "Planner", hop: 1 });
+  const filtered = timelineRows(after, null, [], GAP_MS, { view, inputsOnly: true });
+  assert.deepEqual(filtered.map((r) => r.entryId), ["u1", "u3"]);
+});
+
+test("a header line with no marker is the user's own text, untouched", () => {
+  const rows = timelineRows([user("u1", 0, `${header("Planner")}pasted`)], null, [], GAP_MS, { inputsOnly: true });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.sender, undefined);
+  assert.equal(rows[0]!.title, '[from session "Planner" (sid-planner), hop 1]');
 });

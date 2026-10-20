@@ -16,13 +16,14 @@ import { findPersonLink } from "../person-links";
 import { findShareLink } from "../session-shares";
 import { verifiedAddress } from "./destination";
 import { hashLabel, previewHashKnown } from "../preview-links";
-import { FILE_UPLOAD_TIMEOUT_MS, inProcessShare, TOUR_IMAGE_PATH, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
-import { gatewayPreviewMatch, localPreviewOrigin } from "./preview-address";
+import { FILE_UPLOAD_TIMEOUT_MS, FORWARD_TIMEOUT_MS, inProcessShare, type ShareSocketKind, TOUR_IMAGE_PATH, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
+import { refuse } from "../extensions";
+import { gatewayPreviewMatch, localPreviewOrigin, previewLabelOfHost } from "./preview-address";
 import { previewHopHeaders, previewHttpHop, previewUpgradeHop } from "./preview-hop";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { createPreviewProxy, type PreviewProxy, PreviewSlots } from "./preview-proxy";
 import { offlineKind, offlineResponse, offlineUpgrade } from "./offline";
-import { acceptsNode, type GatewayRegistry, gatewayPublicUrl, gatewaySetting, type RegistryHit, shareRegistry } from "./registry";
+import { acceptsNode, type GatewayRegistry, gatewayPreviewUrl, gatewayPublicUrl, gatewaySetting, type RegistryHit, shareRegistry } from "./registry";
 import { shareDist } from "./share-dist";
 import { stripForwarded } from "./security";
 import { onPublicLinksChanged } from "./setting-events";
@@ -49,8 +50,14 @@ import { createWsHop, WS_HOP_WITHDRAW_GRACE_MS, type WsHop } from "./ws-hop";
  * peers.json or acceptFrom, its snapshot withdrawing the row, the row expired), checked on each
  * registry commit, each setting change and every HOP_SWEEP_MS. dispose() closes them all.
  *
+ * A request that passed only the edge's forward-only tier (`ctx.forwardOnly`, §mesh.public/share-protocol)
+ * is forwarded the same way for a registered hash and never served in-process: anything else is
+ * the unknown-link 404 (UNKNOWN_LINK), so the gateway's own, older share app never answers a page
+ * of a newer host's link.
+ *
  * A hop that can't reach its host, has no verified address, is refused by its gate, gets 502/504
- * or a redirect, or has no response headers in time answers the offline 503
+ * or a redirect (but one to this gateway's own preview address, redirectPasses), or has no
+ * response headers in time answers the offline 503
  * (server/share/offline.ts). A hop is tried once: a POST is never retried or replayed. Every hop
  * answer carries no-store, no-referrer and nosniff, and never a cookie. A hashed asset comes from
  * this host's own share build first, else from the live host whose snapshot listed it, streamed
@@ -75,9 +82,31 @@ export const HTTP_HOPS_TOTAL = 256;
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"]);
 /** Never passed back from a hop: the share origin is shared by every routed host (a cookie, a
     worker's widened scope or a wipe of the origin's storage would reach every host's links). */
-const DROPPED_RESPONSE = /^(set-cookie|set-cookie2|x-sova-.*|service-worker-allowed|clear-site-data)$/;
+export const DROPPED_RESPONSE = /^(set-cookie|set-cookie2|x-sova-.*|service-worker-allowed|clear-site-data)$/;
 /** Stamped on every hop answer, whatever the origin sent (an old or misconfigured one included). */
-const SHARE_RESPONSE_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } as const;
+export const SHARE_RESPONSE_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } as const;
+/** What a forward-only request for a link no live host registered answers: the share app's
+    unknown-link 404 (server/share/routes.ts), never the gateway's own share app. */
+export const UNKNOWN_LINK = { error: "This link doesn't open anything.", code: "not-found" } as const;
+
+/**
+ * The one redirect a hop passes back (§mesh.public/routing, share protocol 2): to a preview host
+ * under this gateway's own preview address, `https://<label>.<zone>/…` with a well-formed label
+ * and no login, as a version opened from the owner page is. Any other 3xx (but 304) is the
+ * offline answer: the share origin is every routed host's, so it never sends a visitor elsewhere.
+ */
+export function redirectPasses(location: string | undefined, previewUrl: string | null): boolean {
+  if (!location || !previewUrl || !previewUrl.startsWith("https://")) return false;
+  let url: URL;
+  try {
+    url = new URL(location);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  return previewLabelOfHost(url.host, previewUrl) !== null;
+}
+
 /** On every forwarded asset but the frame host: a script or SVG opened as a page runs nothing on the
     share origin; loaded by the page as a subresource it works as ever. */
 export const ASSET_CSP = "sandbox; default-src 'none'";
@@ -90,6 +119,8 @@ export interface GatewayRouterOptions {
   setting?: () => ShareGatewaySetting | null;
   /** The public URL the hop's X-Forwarded-Host comes from. */
   publicUrl?: () => string | null;
+  /** This gateway's preview address (a hop's redirect may go only under it). */
+  previewUrl?: () => string | null;
   /** peers.json's peers now. */
   peers?: () => PeerEntry[];
   /** The literal address a peer's hop may dial, verified as its StableID's; null refuses. */
@@ -129,6 +160,8 @@ export interface GatewayRouter {
   upgrade: ShareUpgrade;
   /** Preview hosts: the edge's split (§mesh.public/preview-address). */
   preview: PreviewHooks;
+  /** Whether the edge's forward-only tier is on: while this host is a gateway. */
+  forward: () => boolean;
   /** Close every open hop whose host no longer holds its hash. */
   sweep: () => void;
   /** Close every open hop, stop the timer and listeners, and route nothing from here on (a
@@ -145,26 +178,17 @@ type Route = { kind: TokenKind; token: string } | { kind: "asset"; name: string 
 type Standing = "same" | "moved" | "gone";
 
 const TOKEN = "([A-Za-z0-9_-]{43})";
-const TOUR_FILE = "[a-z0-9][a-z0-9-]{0,119}\\.png";
-const TOUR_TAIL = `tours/tr_[A-Za-z0-9_-]{16}(?:/assets/${TOUR_FILE}|/progress)?`;
-const H_ROUTE = new RegExp(`^/(?:api/)?h/${TOKEN}(?:/message|/image|/file|/img/(?:0|[1-9][0-9]{0,3})|/${TOUR_TAIL})?$`);
-const I_ROUTE = new RegExp(`^/(?:api/)?i/${TOKEN}(?:/[pc]/[a-z]_[a-z2-9]{8}(?:/${TOUR_TAIL})?)?$`);
-const S_ROUTE = new RegExp(`^/(?:api/)?s/${TOKEN}(?:/img/(?:0|[1-9][0-9]{0,4}))?$`);
-const T_ROUTE = new RegExp(`^/(?:api/)?t/${TOKEN}(?:/assets/${TOUR_FILE}|/progress|/readers)?$`);
+/** A link's path: its kind is the first segment after `/` or `/api/`, its token the next one,
+    whatever follows (the edge already judged the whole path, strictly or by the forward-only
+    shape): a route list kept here too would drift from the edge's (§mesh.public/routing). */
+const LINK_ROUTE = new RegExp(`^/(?:api/)?([hist])/${TOKEN}(?:/.*)?$`);
 
 /** What a judged share path is for: a token of a kind, or a hashed asset. */
 export function routeOf(pathname: string): Route | null {
   const asset = /^\/h\/assets\/([A-Za-z0-9_-][A-Za-z0-9._-]*)$/.exec(pathname);
   if (asset) return { kind: "asset", name: asset[1]! };
-  const h = H_ROUTE.exec(pathname);
-  if (h) return { kind: "h", token: h[1]! };
-  const i = I_ROUTE.exec(pathname);
-  if (i) return { kind: "i", token: i[1]! };
-  const sh = S_ROUTE.exec(pathname);
-  if (sh) return { kind: "s", token: sh[1]! };
-  const tour = T_ROUTE.exec(pathname);
-  if (tour) return { kind: "t", token: tour[1]! };
-  return null;
+  const link = LINK_ROUTE.exec(pathname);
+  return link ? { kind: link[1] as TokenKind, token: link[2]! } : null;
 }
 
 /** The content type a hashed asset is served with, by its extension, or by its exact name (the
@@ -197,7 +221,9 @@ function passBack(headers: IncomingHttpHeaders): Record<string, string | string[
     address), the token's hash and the socket's kind, so a hop is closed when that node no longer
     holds the hash for that kind at that target, even if the row stays or another host claims it
     later. */
-const hopKey = (nodeId: string, h: string, port: number, address: string, kind: "h" | "s" | "i"): string => `${nodeId} ${h} ${port} ${address} ${kind}`;
+const hopKey = (nodeId: string, h: string, port: number, address: string, kind: ShareSocketKind): string => `${nodeId} ${h} ${port} ${address} ${kind}`;
+/** A hop key's kind, as hopKey wrote it. */
+const keyKind = (kind: string | undefined): TokenKind => (kind === "h" || kind === "i" || kind === "s" || kind === "t" ? kind : "h");
 
 /** Every router not yet disposed, so a shutdown or rebind can close them all. */
 const routers = new Set<GatewayRouter>();
@@ -212,6 +238,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const registry = opts.registry ?? shareRegistry;
   const setting = opts.setting ?? gatewaySetting;
   const publicUrl = opts.publicUrl ?? (() => gatewayPublicUrl());
+  const previewUrl = opts.previewUrl ?? (() => gatewayPreviewUrl());
   // config() re-reads peers.json when it changed on disk (one stat), so a hand edit counts too.
   const peers = opts.peers ?? (() => meshApi.config()?.peers ?? []);
   const resolve = opts.resolve ?? ((peer: PeerEntry) => verifiedAddress(peer, process.env, peers));
@@ -301,7 +328,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     const stands = (): boolean => {
       const now = still();
       if (now === "same") return true;
-      if (now === "gone") void local.dispatch(req, res, ctx);
+      if (now === "gone") void notRouted(req, res, ctx);
       else offlineResponse(res, kind);
       return false;
     };
@@ -348,12 +375,15 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     // The origin answers an upload (a photo's, or a file's, §app.baton/files) only once its whole
     // body is in: that hop waits as long as the edge lets the upload take. Its body was capped at
     // this edge already, at the setting's ceiling: the gateway never knows the origin's setting.
+    // A forward-only request with a body has the slowest share upload's time: the gateway never
+    // knows what a newer host's new route takes (§mesh.public/share-protocol).
     const upload = req.method === "POST" && /\/image$/.test(ctx.url.pathname);
     const fileUpload = req.method === "POST" && /\/file$/.test(ctx.url.pathname);
+    const forwardBody = ctx.forwardOnly === true && (req.method === "POST" || req.method === "PUT");
     const timer = setTimeout(() => {
       notePeerReach(base, false);
       fail();
-    }, upload ? UPLOAD_TIMEOUT_MS + headersMs : fileUpload ? FILE_UPLOAD_TIMEOUT_MS + headersMs : headersMs);
+    }, forwardBody ? FORWARD_TIMEOUT_MS + headersMs : upload ? UPLOAD_TIMEOUT_MS + headersMs : fileUpload ? FILE_UPLOAD_TIMEOUT_MS + headersMs : headersMs);
     res.on("close", () => {
       active.delete(entry);
       clearTimeout(timer);
@@ -372,8 +402,11 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       notePeerReach(base, true);
       const status = r.statusCode ?? 502;
       const refused = status === 403 && r.headers[REFUSED_HEADER.toLowerCase()] === "refused";
-      // A redirect is never followed or passed on: the share origin is every routed host's.
-      if (refused || status === 502 || status === 504 || (status >= 300 && status < 400 && status !== 304)) {
+      // A redirect is never followed, and passed on only to this gateway's own preview address:
+      // the share origin is every routed host's.
+      const redirect = status >= 300 && status < 400 && status !== 304;
+      const location = typeof r.headers.location === "string" ? r.headers.location : undefined;
+      if (refused || status === 502 || status === 504 || (redirect && !redirectPasses(location, previewUrl()))) {
         r.resume();
         return fail();
       }
@@ -532,10 +565,21 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     }
   };
 
+  /** A forward-only request no registered host answers: the unknown-link 404, never in-process. */
+  const unknownLink = (res: ServerResponse): void => {
+    if (res.headersSent || res.destroyed) return;
+    res.writeHead(404, { "Content-Type": "application/json", ...SHARE_RESPONSE_HEADERS });
+    res.end(JSON.stringify(UNKNOWN_LINK));
+  };
+  /** A request that passed the strict tier is this host's own when it routes nowhere; a
+      forward-only one is the unknown-link 404 (the gateway's own app never sees it). */
+  const notRouted = (req: IncomingMessage, res: ServerResponse, ctx: ShareRequestContext): void | Promise<void> => (ctx.forwardOnly ? unknownLink(res) : local.dispatch(req, res, ctx));
+
   const dispatch: ShareDispatch = async (req, res, ctx) => {
     const route = routeOf(ctx.url.pathname);
+    if (ctx.forwardOnly && route?.kind === "asset") return unknownLink(res);
     const v = route ? view() : null;
-    if (!route || !v) return local.dispatch(req, res, ctx);
+    if (!route || !v) return notRouted(req, res, ctx);
     const live = (nodeId: string) => v.byNode.has(nodeId);
     if (route.kind === "asset") {
       const name = route.name;
@@ -549,11 +593,11 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       if (sources.length === 1 || name === FRAME_HOST_NAME) return forwardAsset(req, res, ctx, name, sources[0]!);
       return agreedAsset(req, res, ctx, name, sources);
     }
-    if (isLocal(route.token, route.kind)) return local.dispatch(req, res, ctx);
+    if (isLocal(route.token, route.kind)) return notRouted(req, res, ctx);
     const h = hashToken(route.token);
     const kind = route.kind;
     const hit = registry.lookup(h, kind, now(), live);
-    if (!hit) return local.dispatch(req, res, ctx);
+    if (!hit) return notRouted(req, res, ctx);
     // A session share's image, and a gathering's photo (§app.baton/images), are capped here too,
     // counted while streaming (defense in depth: the origin caps it already, but an older or
     // misconfigured one might not).
@@ -583,16 +627,18 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
 
   const upgrade: ShareUpgrade = async (req, socket, head, ctx) => {
     const v = view();
-    // The socket's kind comes from its path (/ws/h, /ws/s): a token of another kind never hops.
+    // The socket's kind comes from its path (/ws/<kind>…): a token of another kind never hops. A
+    // forward-only socket (/ws/<kind>/<name>) is never this host's own: 404 unless it hops.
     const kind = ctx.kind;
-    if (!v || isLocal(ctx.token, kind)) return local.upgrade(req, socket, head, ctx);
+    const notHopped = (): void => (ctx.forwardOnly ? refuse(socket, 404, { error: "Not found" }) : void local.upgrade(req, socket, head, ctx));
+    if (!v || isLocal(ctx.token, kind)) return notHopped();
     const h = hashToken(ctx.token);
     const hit = registry.lookup(h, kind, now(), (nodeId) => v.byNode.has(nodeId));
-    if (!hit) return local.upgrade(req, socket, head, ctx);
+    if (!hit) return notHopped();
     const still = () => holds(hit.nodeId, h, kind, hit.ingressPort);
     const address = await addressNow(hit.nodeId);
     const standing = still();
-    if (standing === "gone") return local.upgrade(req, socket, head, ctx);
+    if (standing === "gone") return notHopped();
     if (standing === "moved" || !address) return offlineUpgrade(socket);
     // The page's own handshake headers (key, version, extensions) are its socket's with the
     // gateway, never the hop's: the hop's client sets its own.
@@ -710,13 +756,14 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const sweep = (): void => {
     for (const entry of [...active, ...tunnels]) if (entry.still() !== "same") entry.kill();
     // A row its own host withdrew (a newer snapshot without it: revoked or expired there) while
-    // that host is still live and accepted: its /ws/h and /ws/s hops wait for the host's own close
-    // (4410 after a revoke), §mesh.public/withdrawn-hop. Any other lost route closes at once.
+    // that host is still live and accepted: its socket hops, of every kind, wait for the host's own
+    // close (4410 after a revoke), §mesh.public/withdrawn-hop. Any other lost route closes at once.
+    // Each hop is judged by its own kind, the one its key carries.
     const v = view();
     const withdrawn = new Set<string>();
     wsHop.closeWhere((key) => {
       const [nodeId, h, port, , kind] = key.split(" ");
-      const standing = holds(nodeId!, h!, kind === "s" ? "s" : "h", Number(port));
+      const standing = holds(nodeId!, h!, keyKind(kind), Number(port));
       if (standing === "same") return false;
       if (standing === "gone" && v?.byNode.has(nodeId!)) {
         withdrawn.add(key);
@@ -734,6 +781,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const router: GatewayRouter = {
     dispatch,
     upgrade,
+    forward: () => !disposed && setting() !== null,
     preview: { match: opts.previewMatch ?? gatewayPreviewMatch, dispatch: previewDispatch, upgrade: previewUpgrade },
     sweep,
     dispose: () => {

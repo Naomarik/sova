@@ -105,3 +105,23 @@ test("the accept list: order doesn't count as a change; all ↔ a list does", ()
   assert.deepEqual(publicLinksChanges({ ...publicLinksDraftOf(two), acceptFrom: "all" }, two), { gateway: { ...two.gateway!, acceptFrom: "all" } });
   assert.deepEqual(publicLinksChanges({ ...publicLinksDraftOf(two), acceptFrom: ["a"] }, two), { gateway: { ...two.gateway!, acceptFrom: ["a"] } });
 });
+
+test("gateway behind: only once the via gateway answered, and only when it states no number or a lower one", async () => {
+  const { gatewayBehind, gatewayBehindText, gatewayResync } = await import("./public-links");
+  assert.equal(gatewayBehind(undefined), false);
+  assert.equal(gatewayBehind({}), false);
+  assert.equal(gatewayBehind({ gatewayProtocol: { theirs: null, ours: 2 } }), true);
+  assert.equal(gatewayBehind({ gatewayProtocol: { theirs: 1, ours: 2 } }), true);
+  assert.equal(gatewayBehind({ gatewayProtocol: { theirs: 2, ours: 2 } }), false);
+  assert.equal(gatewayBehind({ gatewayProtocol: { theirs: 3, ours: 2 } }), false);
+  assert.deepEqual(gatewayBehindText("VPS"), {
+    title: "VPS runs an older version of public links.",
+    body: "Some pages of this host's links may not open until VPS is updated.",
+  });
+  // Resync: the host menu's button and reason; its line as the reason when it has no button; nothing without a word.
+  assert.equal(gatewayResync(null), null);
+  assert.equal(gatewayResync({ line: null, button: null }), null);
+  assert.deepEqual(gatewayResync({ line: "3 commits behind laptop", button: {} }), {});
+  assert.deepEqual(gatewayResync({ line: "x", button: { reason: "No recipe." } }), { reason: "No recipe." });
+  assert.deepEqual(gatewayResync({ line: "Same commit as laptop", button: null }), { reason: "Same commit as laptop" });
+});

@@ -20,7 +20,7 @@ routes read the engine). The event vocabulary is `EVENTS.md`.
 
 | statechart | file | storage | session id | what |
 |---|---|---|---|---|
-| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, holder record (r1), births of people and of placements (`project/place`) |
+| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, the owner's page link sent to them (`owner/send-link`), holder record (r1), births of people and of placements (`project/place`) |
 | residence | `residence.cljc` | host-local | `residence/<org>` | tenure ‹checking·held-elsewhere·held-here·detached› × commits ‹clean·dirty·committing› |
 | person | `person.cljc` | portable | `person/<org>/<pid>` | ‹born·proposed·active·left›; field authority; one transition per status pair per event; left cascade |
 | project | `proj.cljc` | portable | `project/<p>` | project layer, no org: shelf, overseer; gap-less builds; builds' started list; `last-merged-at` |
@@ -283,7 +283,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-147 | Org statecharts (existing, shadow-only) | statechart | the refit engine + these statecharts replace the spike |
 | F-150 | Org owner | statechart | `org.owner` ‹owner-none·owner-set·owner-cleared› |
 | F-151 | Owner leaves | statechart | watched owner `:left` → `owner-cleared`, `revoke-owner-links` |
-| F-152 | Owner link | host | owner link store; mint needs `org` owner |
+| F-152 | Owner link | host | owner link store; mint needs `org` owner; the global Overseer's send: `org` `owner/send-link` (card: the owner) → effect `owner-link-send` |
 | F-153 | Owner link: off and dead checks | host | validity check reads org owner + person status |
 | F-154 | Owner page content | proj | owner page from statechart data |
 | F-155 | Which conversations the owner reads | statechart | baton `hidden-from-owner`; project `owner-hidden` |

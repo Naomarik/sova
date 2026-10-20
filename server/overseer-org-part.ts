@@ -147,13 +147,27 @@ export function lastBuildFinishedAt(projectId: string): number | null {
 }
 
 /**
+ * An organization's own note (the owner page link's send, §app.owner-page/send): the same check over the
+ * org's About text and roster, and every project's private text (its notes, instructions, goals and
+ * briefings), since no one project frames it.
+ */
+export function orgNoteLeak(orgId: string, text: string): string | null {
+  for (const p of readProjects(orgId)) {
+    const hit = ownerUpdateLeak(orgId, p.id, text);
+    if (hit) return hit;
+  }
+  return ownerUpdateLeak(orgId, null, text);
+}
+
+/**
  * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates). An update is
  * written by this project's overseer, whose prompt holds the org's About text, its notes and the
  * operator's instructions: any run of OWNER_UPDATE_REPEAT characters from those, from a
  * conversation's goal or a hand-off briefing, or from a person's profile, and any contact value,
  * refuses the post. The About text is read here to be kept OUT of the update, never to write it.
+ * `projectId` null: the org's own text only (its About text and roster), for orgNoteLeak.
  */
-export function ownerUpdateLeak(orgId: string, projectId: string, text: string): string | null {
+export function ownerUpdateLeak(orgId: string, projectId: string | null, text: string): string | null {
   // A kept preview link is a secret the operator sends on (§app.project-overseer/previews).
   if (holdsPreviewLink(text)) return PREVIEW_IN_OWNER_UPDATE;
   const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
@@ -163,14 +177,14 @@ export function ownerUpdateLeak(orgId: string, projectId: string, text: string):
     for (let i = 0; i + OWNER_UPDATE_REPEAT <= s.length; i++) if (hay.includes(s.slice(i, i + OWNER_UPDATE_REPEAT))) return true;
     return false;
   };
-  const paths = projectOverseerPaths(projectId);
+  const paths = projectId ? projectOverseerPaths(projectId) : null;
   const roster = readRoster(orgId);
-  const batons = projectBatons(orgId, projectId);
+  const batons = projectId ? projectBatons(orgId, projectId) : [];
   const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
   const OTHER = "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words.";
   const sources: [string, string[]][] = [
-    [PRIVATE, [readOrgAbout(orgId), readNotes(paths.notes)]],
-    [OTHER, [readPoSettings(paths).extraSystemPrompt, ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
+    [PRIVATE, [readOrgAbout(orgId), paths ? readNotes(paths.notes) : ""]],
+    [OTHER, [paths ? readPoSettings(paths).extraSystemPrompt : "", ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
     [OTHER, roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
   ];
   for (const [what, texts] of sources) if (texts.some((t) => t && repeats(t))) return what;
@@ -186,7 +200,7 @@ export interface SendStatusRow {
   id: string;
   personId: string;
   person: string;
-  link?: "handoff" | "preview";
+  link?: "handoff" | "preview" | "owner";
   note: boolean;
   by: "operator" | "operator-via-overseer" | "project-overseer";
   event: "held" | "sent" | "delivered" | "read" | "failed" | "refused" | "unknown";

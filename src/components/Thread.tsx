@@ -57,6 +57,7 @@ import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/ove
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-actions";
+import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
 
@@ -469,6 +470,18 @@ export function TurnError(props: { message: string }) {
       tone="error"
       title="The turn stopped with an error."
       body={`${props.message.replace(/\.$/, "")}. Your messages are kept. Send again to retry.`}
+    />
+  );
+}
+
+/** "This chat didn't start." The chat's start failed, its server-side retry too (§chat.transcript/states):
+    no turn ran, so never "The turn stopped…". `back`: messages that went back to the composer. */
+export function StartError(props: { message: string; back: number }) {
+  return (
+    <Banner
+      tone="error"
+      title="This chat didn't start."
+      body={`${props.message.replace(/\.$/, "")}.${backWords(props.back, " ")}${props.back > 0 ? " Send again to retry." : ""}`}
     />
   );
 }

@@ -611,7 +611,10 @@ jumps to it (§app.overseer/links).
   ("2 open cards") whose menu lists each one (id, title) and jumps to its card. It counts the open
   cards of the whole branch, also those above the rows the view has loaded (the transcript's summary
   of older rows carries each open card's newest snapshot and its row), and a jump to one of those
-  builds the older rows down to it first.
+  builds the older rows down to it first. The run-status row has exactly two ends, whatever it
+  carries: at the left the live dot, the step's icon and the subagents trigger; at the right,
+  together, "3 of 10 running" (§app.overseer/caps), the card chip, then the Inputs trigger last.
+  Nothing sits between the two ends.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
@@ -813,15 +816,29 @@ time. Both kinds of approval come only from the user's click on a card option th
   never only the current branch, so rewinding the conversation never brings a revoked approval back.
   It applies from the next tool call on: an unattended run that starts after it finds nothing to act
   under.
-- **The chip and its panel.** While the Overseer holds a live approval or rule, its composer shows a
-  chip ("2 approvals · 1 rule"). It opens a panel listing each live one: what it allows (any act on
-  the sessions, as links, until the deadline; or the rule's text, its acts and sessions), where it
-  came from (a link to its card and the option letter), when it expires ("Until 6:00 PM", or "Until
-  revoked"), its uses (the last one's time, and each use as a link to the act in the thread), and a
-  **Revoke** button. There is no Settings page for them. The same chip and panel also count and list
-  every playbook schedule, approved or not ("1 approval · 2 schedules"), each with **Approve
-  Schedule** or **Revoke Schedule** (§chat.schedules/where-shown); the chip shows while there is
-  one, even with no live approval or rule.
+- **Approvals & Schedules, in the head.** The Overseer's page head holds them, never its composer:
+  from a 900px head up **Schedules ▾** next to History ▾ opens them as a dropdown, and below that
+  ⋯'s first row, **Approvals & Schedules…**, opens them as a screen of the menu (a bottom sheet on a
+  phone, like every such menu; §app.overseer/head-layout). Both show the same thing: each live one,
+  with what it allows (any act on the sessions, as links, until the deadline; or the rule's text,
+  its acts and sessions), where it came from (a link to its card and the option letter), when it
+  expires ("Until 6:00 PM", or "Until revoked"), its uses (the last one's time, and each use as a
+  link to the act in the thread), and a **Revoke** button; then every playbook schedule, approved
+  or not, each with **Approve Schedule** or **Revoke Schedule** (§chat.schedules/where-shown). A
+  link to a card, an act or a run closes the menu first, then goes there. There is no Settings page
+  for them. The ⋯ row is there on the current conversation whatever the counts, and never on an
+  earlier conversation's read-only head. Its note says the most urgent thing: "1 needs approval"
+  ("2 need approval") while any schedule waits for approval, else the counts ("1 approval · 2
+  schedules"), else "None". With none of either, the screen says "Nothing runs without you: no
+  approvals, rules or schedules."
+- **A dot while a schedule waits.** While any schedule waits for your approval (one that offers
+  Approve Schedule: Needs approval, or paused until you approve it again, as after a change or its
+  own pause; never one that is not valid, and never for an approval or a rule), ⋯ and Schedules ▾
+  carry an attention dot, and their names say it: "Overseer actions, 1 schedule needs approval".
+  It is read with the screen's contents, on open, every 15 s and at each turn's end, and again
+  right after Approve Schedule, so an approval clears it at once.
+- **The composer carries none of them.** The Overseer's run-status row has two ends and nothing
+  between them (§app.overseer/confirm).
 - **The card shows it.** An option whose click wrote one shows its state under the card's answer:
   "Approved until 6:00 PM (g_2)", then "Expired" or "Revoked"; "Rule r_1 adopted", then "Revoked".
 - `GET /api/overseer/autonomy` returns the running count, the cap and every grant and rule of the
@@ -1222,19 +1239,23 @@ head's height, so a width change is no layout shift.
 
 - **Wide, 900px and up.** Back (below a 768px window only, as on every chat head), the title and
   meta line, the context readout (§design.copy-deck/context-window; its ring and "222k / 1M"), the proactivity cycle (a bell and the current mode,
-  §app.overseer/proactivity), **Ideas** and **Todos** with their icons and counts, **History** ▾ and
-  **Clear**. No ⋯.
+  §app.overseer/proactivity), **Ideas** and **Todos** with their icons and counts, **Schedules** ▾
+  (Approvals & Schedules as a dropdown, §app.overseer/approvals), **History** ▾ and **Clear**. No ⋯.
 - **Medium, 660 to 899px** (the Fold's inner screen held upright, about 704px; a desktop window
-  about 1024px wide): History and Clear leave the row for **⋯**. The proactivity cycle keeps its
+  about 1024px wide): Schedules, History and Clear leave the row for **⋯**. The proactivity cycle keeps its
   bell and mode; Ideas and Todos keep their words and counts, without their icons. The context
   readout drops its window below a 720px head ("222k").
 - **Narrow, below 660px** (phones and the Fold's cover screen): the proactivity cycle leaves the
   row too. Ideas and Todos are their icons with the count as a corner badge. The row is back, the
   title and meta, the context readout, Ideas, Todos and ⋯.
-- **⋯** ("Overseer actions") holds the same three items wherever it shows: **Proactivity…** (its
-  note the current mode), **History…** (its note "{n} earlier" while there are any) and **Clear**
-  (its note "Start a new conversation. This one moves to History."). It keeps an 8px gap from the
-  control before it. Proactivity… opens a screen of the three modes, each with its hint and the
+- **⋯** ("Overseer actions") holds the same four items wherever it shows: **Approvals &
+  Schedules…** first (its note the most urgent thing, §app.overseer/approvals), **Proactivity…**
+  (its note the current mode), **History…** (its note "{n} earlier" while there are any) and
+  **Clear** (its note "Start a new conversation. This one moves to History."). It keeps an 8px gap
+  from the control before it. Approvals & Schedules… opens a screen of the approvals, rules and
+  schedules, the one Schedules ▾ opens. While a schedule waits for approval, ⋯ and Schedules ▾
+  carry a dot (§app.overseer/approvals); the dot sits inside the button, so the row's widths stay
+  as they are. Proactivity… opens a screen of the three modes, each with its hint and the
   current one checked; choosing one saves it exactly as the cycle does, and says so. History…
   opens a screen listing the earlier conversations as the History menu does, or "No earlier
   conversations yet.". Clear is the head's Clear action.
@@ -1254,7 +1275,8 @@ head's height, so a width change is no layout shift.
   Below a 360px window (a 320px phone) the row's gaps close to 2px and its side padding to 4px,
   so back, the title in full, the readout, Ideas, Todos and ⋯ still fit without clipping.
 - **An earlier conversation** (`#/overseer/h/<id>`): back, its title and age, and History ▾ at
-  900px and up; below that, ⋯ holding History… only.
+  900px and up; below that, ⋯ holding History… only. Neither Schedules ▾ nor Approvals &
+  Schedules… shows there.
 
 ## §app.overseer/entry-button — Entry button
 

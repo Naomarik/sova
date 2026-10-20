@@ -114,7 +114,8 @@ export interface ProjectSend {
   sentAt: string;
 }
 
-/** A project's sends, newest first by their latest event. */
+/** A project's sends, newest first by their latest event. An organization's own sends (no `projectId`, an owner
+    page link) are no project's. */
 export function projectSends(orgId: string, projectId: string): ProjectSend[] {
   const byId = new Map<string, ProjectSend>();
   for (const l of readSendLog(orgId)) {
@@ -187,7 +188,7 @@ export function personSends(orgId: string, personId: string, titleOf: (sessionId
     else if ((rank[l.event] ?? 0) >= (rank[had.last.event] ?? 0)) had.last = { ...l, sessionId: l.sessionId ?? had.last.sessionId };
   }
   const whatOf = (l: OutreachLogLine): string =>
-    l.link === "preview" ? "A preview" : l.sessionId ? (titleOf(l.sessionId) ?? "A gathering") : l.link ? "A link" : "A message";
+    l.link === "preview" ? "A preview" : l.link === "owner" ? "Their owner page" : l.sessionId ? (titleOf(l.sessionId) ?? "A gathering") : l.link ? "A link" : "A message";
   return [...byId.values()]
     .map(({ first, last }) => ({
       id: first.id,

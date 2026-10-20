@@ -64,6 +64,8 @@
      "^A correction needs a reason: say why\\.$" "^No held act has that id\\.$" "^That can't be done now\\.$"
      ;; org, residence, person
      "^name must be 1–80 characters$" "^Only an active person on the roster can be the owner\\.$"
+     "^Only the operator sends an owner their page link\\.$" "^.* has no owner, so there is no owner page to send\\. Nothing was sent\\.$"
+     "^.* isn't .*'s owner\\. Nothing was sent\\.$" "^.* is not active\\. Nothing was sent\\.$"
      "^That organization is already attached here\\.$" "^Unknown organization$"
      "^.* is not waiting for approval\\.$" "^.* is (active|left|proposed), not proposed\\.$"
      "^A \\w+ change may not (write \\w+|approve or decline people)\\.$" "^A referral may only create a proposed person\\.$"
@@ -180,7 +182,8 @@
        :acts [[:owner/set {:person-id "p1" :target {:status "active"}}] [:owner/set {:person-id nil}] [:owner/set {:person-id "p2" :target {:status "left"}}]
               [:org/rename {:name "New"}] [:org/rename {:name ""}]
               [:org/hours {:tz "UTC" :hours {:days [1 2 3 4 5] :from "09:00" :to "17:00"}}] [:org/hours {:tz "" :hours nil}] [:org/hours {:tz "Mars/Olympus"}] [:project/place {:project-id "pr9" :placed-via "born"}]
-              [:person/add {:person-id "p9" :person {:name "Cy"} :names-taken []}] [:person/add {:person-id "p9" :person {:name "Ana"} :names-taken ["ana"]}]]})))
+              [:person/add {:person-id "p9" :person {:name "Cy"} :names-taken []}] [:person/add {:person-id "p9" :person {:name "Ana"} :names-taken ["ana"]}]
+              [:owner/send-link {:target {:id "p1" :name "Ana" :status "active"} :note "Hi"}] [:owner/send-link {:target {:id "p2" :name "Bob" :status "active"}}]]})))
 
 (deftest residence-matrix
   (clean! "residence"

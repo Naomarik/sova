@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 80092,
+      "bytes": 81059,
       "tools": [
         {
           "name": "sova_attention",
@@ -1968,16 +1968,17 @@
         {
           "name": "sova_owner",
           "label": "Owner",
-          "description": "Set an organization's owner for the user (only in a turn the user started): op set, person (an active roster person's id or exact name) or null for none. Changing it turns the previous owner's owner link off. You never make, show or turn off an owner link: the user does, on the People tab.",
-          "promptSnippet": "set or clear an organization's owner",
+          "description": "An organization's owner, for the user (only in a turn the user started). op set: person (an active roster person's id or exact name) or null for none; changing it turns the previous owner's owner link off. op send_link {org, person, note?}: sends the org's current owner their owner page link on WhatsApp, only in the turn a confirm card's click opened that lists that person in that org, and only when the user asked for it. It sends their working link when Sova holds it, else makes a new one and their current link stops working: sova_orgs {org} says which, and your card must say \"Their current link will stop working.\" when a new one will be made. note: a short note from the user (at most 500 characters), sent instead of the fixed line; never your own words. You never see or show the link, the token or the number, and you never turn an owner link off: the user does, on the People tab. A send that may or may not have gone is never sent again by you.",
+          "promptSnippet": "set or clear an organization's owner; send the owner their page link on WhatsApp (people-facing: confirm first)",
           "parameters": {
             "type": "object",
             "properties": {
               "op": {
                 "type": "string",
-                "description": "set",
+                "description": "set | send_link",
                 "enum": [
-                  "set"
+                  "set",
+                  "send_link"
                 ]
               },
               "org": {
@@ -1989,7 +1990,11 @@
                   "string",
                   "null"
                 ],
-                "description": "A person's id or exact name; null for none."
+                "description": "set: a person's id or exact name; null for none. send_link: the org's current owner (id or exact name)."
+              },
+              "note": {
+                "type": "string",
+                "description": "send_link: a short note from the user (at most 500 characters), sent instead of the fixed line."
               }
             },
             "required": [

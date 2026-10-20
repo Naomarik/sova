@@ -89,7 +89,8 @@ streams changes (§app.commands/watch).
   before a request is made. It sends the token as `x-sova-token`, read as every script reads it
   (§app.access/callers), and in a chat Sova runs the chat's own key beside it as `x-sova-caller`.
   `run` names its command on the entry's request as `x-sova-command: <id>`; both headers only say
-  who ran what (§app.command-audit/attribution). `run --host <peer>` (or `sova --host <peer> run
+  who ran what (§app.command-audit/attribution), except that a request carrying `x-sova-caller`
+  can't approve a project mode's hooks (§chat.mode-menu/project-mode-hooks). `run --host <peer>` (or `sova --host <peer> run
   <id>`) runs the command on a mesh peer through this machine (§mesh.peers/remote-commands).
 - **Sessions by id or path.** `--session` takes either. Where the route takes a path, an id is
   turned into one through `GET /api/sessions/summary?id=`; where it takes an id, a path is turned

@@ -449,6 +449,9 @@ export interface SpecialSpec {
   attribution?: true;
   background?: true;
   replyText?: true;
+  /** A run that settles with a `vis` block that can't be drawn gets the hidden retry note
+      (§chat.markdown/visuals, server/vis-check.ts), as an ordinary chat with vis on does. */
+  visRetry?: true;
   /** The usage kind the chat's requests are noted under (the Overseer, a project overseer). */
   usage?: "overseer";
   /** The hooks the server answers besides runStart (always installed). */

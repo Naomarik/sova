@@ -3401,7 +3401,8 @@ export type AttentionKind =
   // ---- project assistant (al_1) ----
   | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
-  | "owner-link-request"; // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
+  | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
+  | "owner-version-request"; // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
 
 export interface AttentionItem {
   /** Session id. */

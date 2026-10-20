@@ -161,6 +161,45 @@ describe("Versions you can try", () => {
     assert.ok(listPreviews({ projectId: proj.id }).filter((p) => keptPreviews()[p.id]?.owner === a.link.hash).every((p) => p.state === "off"));
   });
 
+  test("starting: a copy start_version started reads starting until it answers, then running; failed past the timeout or when its start failed", async () => {
+    const { createShareApp } = await import("./share/routes");
+    const share = createShareApp();
+    const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1";
+    const get = (path: string) => share.request(path, { headers: { "user-agent": UA } });
+    const { token } = plinks.mintOwnerLink(org.id, alp.id);
+    const fixOf = async () => (await versions.projectVersions(org.id, proj)).find((v) => v.rec.id === "i_fix")!;
+    const rowOf = async () => (await ownerHome(org.id)).versions!.find((v) => v.label === "Fix: The bow page is slow")!;
+    // The fix's port refuses its first dials, as a copy still booting does.
+    let refusals = 2;
+    versions.setVersionDialForTest(async (p) => (p === 23_001 ? refusals-- <= 0 : up.has(p)));
+    try {
+      versions.noteVersionStarting("i_fix");
+      const row = await rowOf();
+      assert.equal(row.state, "starting", "Home shows it starting");
+      const early = await get(`/i/${token}/v/${row.handle}`);
+      assert.equal(early.status, 200, "an early Open is no refusal");
+      assert.equal(early.headers.get("refresh"), "3");
+      assert.match(await early.text(), /Starting this version…[\s\S]*This page opens it as soon as it's ready\./);
+      const late = await get(`/i/${token}/v/${row.handle}`);
+      assert.equal(late.status, 302, "once it answers, on to the copy");
+      assert.equal((await fixOf()).state, "running");
+      // Its mark is gone once it ran: a later stop reads not running, never starting.
+      versions.setVersionDialForTest(async (p) => p !== 23_001 && up.has(p));
+      assert.equal((await fixOf()).state, "not-running");
+      versions.noteVersionStarting("i_fix", Date.now() - versions.START_TIMEOUT_MS - 1);
+      assert.equal((await fixOf()).state, "failed", "no answer 5 minutes after the start");
+      const failed = await get(`/i/${token}/v/${(await rowOf()).handle}`);
+      assert.deepEqual([failed.status, await failed.text()], [409, "This version didn't start. The team knows."]);
+      versions.noteVersionStarting("i_fix");
+      versions.noteVersionFailed("i_fix");
+      assert.equal((await rowOf()).state, "failed", "a start that failed");
+      assert.ok(!JSON.stringify(await ownerHome(org.id)).includes("23001"), "no port on the page");
+    } finally {
+      versions.clearVersionStartsForTest();
+      versions.setVersionDialForTest(async (p) => up.has(p));
+    }
+  });
+
   test("an idle link's versions expire with it", async () => {
     const { token } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 6 * DAY);
     const a = owner.ownerAccess(token);

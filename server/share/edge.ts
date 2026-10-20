@@ -70,6 +70,9 @@ const ROUTES: { method: string; re: RegExp }[] = [
   // The Project Assistant (§app.project-assistant/chat): its view, a message to it; its socket is /ws/i.
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
   { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
+  // The owner's photos (§app.project-assistant/photos): the upload, and one photo of the chat.
+  { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant/image$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant/img/(?:0|[1-9][0-9]{0,4})$`) },
   { method: "GET", re: new RegExp(`^/i/${TOKEN}/v/v_[a-z2-9]{8}$`) },
   // Reviewed tour attachments are scoped to the conversation and its exact checked edition.
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/tours/${TOUR_HANDLE}(?:/assets/${TOUR_FILE}|/progress)?$`) },
@@ -164,9 +167,10 @@ export const UPLOAD_TIMEOUT_MS = 120_000;
 /** A file upload's whole-request timer: 25 MB from a phone on a slow link. */
 export const FILE_UPLOAD_TIMEOUT_MS = 300_000;
 
-const UPLOAD_PATH = new RegExp(`^/api/h/${TOKEN}/image$`);
+/** The photo uploads: a hand-off's and the owner's to their Project Assistant (§app.project-assistant/photos). */
+const UPLOAD_PATH = new RegExp(`^/api/(?:h/${TOKEN}/image|i/${TOKEN}/assistant/image)$`);
 const FILE_PATH = new RegExp(`^/api/h/${TOKEN}/file$`);
-const IMAGE_PATH = new RegExp(`^/api/h/${TOKEN}/img/`);
+const IMAGE_PATH = new RegExp(`^/api/(?:h/${TOKEN}/img/|i/${TOKEN}/assistant/img/)`);
 export const TOUR_IMAGE_PATH = new RegExp(`^/api/(?:t/${TOKEN}|h/${TOKEN}/tours/${TOUR_HANDLE}|i/${TOKEN}/c/k_[a-z2-9]{8}/tours/${TOUR_HANDLE})/assets/${TOUR_FILE}$`);
 /** A forward-only request's body cap and whole-request time: the largest any share route allows
     (the file upload's), since the gateway never knows what a newer host's new route takes. */

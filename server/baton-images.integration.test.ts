@@ -69,6 +69,13 @@ describe("the edge", () => {
       assert.match(await raw(`POST /api/h/${T}/image HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n`), /^HTTP\/1\.1 413/, "a length is still required");
     });
 
+    test("the owner's photo upload to their Project Assistant has the same cap and time (§app.project-assistant/photos)", async () => {
+      assert.match(await raw(post(`/api/i/${T}/assistant/image`, 5 * MB), Buffer.alloc(5 * MB, 1)), /^HTTP\/1\.1 200/);
+      assert.match(await raw(post(`/api/i/${T}/assistant/image`, UPLOAD_BODY_MAX + 1)), /^HTTP\/1\.1 413/);
+      assert.match(await raw(post(`/api/i/${T}/assistant`, 16 * 1024 + 1)), /^HTTP\/1\.1 413/, "the message keeps 16 KB");
+      assert.match(await raw(post(`/api/i/${T}/assistant/image`, 10), Buffer.alloc(10, 1), 700), /^HTTP\/1\.1 200/);
+    });
+
     test("the upload has its own time: a slow photo body is not cut at the page's timer, a slow message body is", async () => {
       assert.match(await raw(post(`/api/h/${T}/image`, 10), Buffer.alloc(10, 1), 700), /^HTTP\/1\.1 200/);
       assert.match(await raw(post(`/api/h/${T}/message`, 10), Buffer.alloc(10, 1), 700), /^HTTP\/1\.1 408/);
@@ -78,6 +85,8 @@ describe("the edge", () => {
       const get = (path: string) => raw(`GET ${path} HTTP/1.1\r\nHost: x\r\n\r\n`);
       for (let i = 0; i < 70; i++) assert.match(await get(`/api/h/${T}/img/${i}`), /^HTTP\/1\.1 200/, `read ${i}`);
       assert.match(await get(`/api/h/${T}`), /^HTTP\/1\.1 200/, "the page's own budget is untouched");
+      for (let i = 0; i < 70; i++) assert.match(await get(`/api/i/${T}/assistant/img/${i}`), /^HTTP\/1\.1 200/, `owner photo read ${i}`);
+      assert.match(await get(`/api/i/${T}`), /^HTTP\/1\.1 200/, "the owner's photo reads spend the photo bucket, not the page's");
     });
   });
 });

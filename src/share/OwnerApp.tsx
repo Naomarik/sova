@@ -1,7 +1,8 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { OwnerRoute } from "../lib/owner-words";
 import { ownerHash, parseOwnerHash } from "../lib/owner-words";
-import { type OwnerAnswer, OwnerLoadError, OwnerPage } from "./owner-view";
+import { type OwnerAnswer, OwnerPage } from "./owner-view";
+import { OwnerLoadError, ownerProblemOf } from "../lib/owner-problem";
 import type { AssistantApi } from "./assistant-view";
 import type { AssistantServerMessage, AssistantView } from "../../shared/project-assistant";
 import { visitTab } from "./visit-tab";
@@ -29,22 +30,18 @@ async function load(r: OwnerRoute): Promise<OwnerAnswer> {
   if (!TOKEN) throw new OwnerLoadError("unknown");
   const res = await fetch(apiPath(r), { cache: "no-store" }).catch(() => null);
   if (!res) throw new OwnerLoadError("failed");
-  if (res.status === 410) {
-    const body = (await res.json().catch(() => ({}))) as { why?: unknown; asked?: unknown };
-    throw new OwnerLoadError(body.why === "expired" ? "expired" : "gone", body.asked === true);
-  }
   // "missing": a project or conversation that isn't on the page (hidden and never-existed answer
-  // alike); anything else is the link itself.
-  if (res.status === 404) {
-    const body = (await res.json().catch(() => ({}))) as { code?: unknown };
-    throw new OwnerLoadError(body.code === "missing" && r.kind !== "home" ? "missing" : "unknown");
-  }
-  if (res.status === 429) throw new OwnerLoadError("busy");
-  // A public gateway's answer for a host that is offline (§mesh.public/offline): the page keeps
-  // what it shows and reads again.
-  if (res.status === 503) throw new OwnerLoadError("offline");
-  if (!res.ok) throw new OwnerLoadError("failed");
+  // alike); a 404 otherwise is the link itself. A 503 is a public gateway's answer for a host that
+  // is offline (§mesh.public/offline): the page keeps what it shows and reads again.
+  const problem = await failure(res, r.kind === "home" ? "home" : "sub");
+  if (problem) throw problem;
   return (await res.json()) as OwnerAnswer;
+}
+
+/** The problem a failed answer means (null: it didn't fail), its body read only when it did. */
+async function failure(res: Response, read: "home" | "sub" | "assistant"): Promise<OwnerLoadError | null> {
+  if (res.ok) return null;
+  return ownerProblemOf(res.status, await res.json().catch(() => ({})), read);
 }
 
 /** Ask for a new link (a link that turned off unused): true once the operator was told. */
@@ -57,8 +54,12 @@ async function ask(): Promise<boolean> {
 /** The Project Assistant's conversation through the link (§app.project-assistant/chat). */
 const assistant: AssistantApi = {
   async load() {
-    const res = await fetch(`/api/i/${TOKEN}/assistant`, { cache: "no-store" });
-    if (!res.ok) throw new Error(String(res.status));
+    if (!TOKEN) throw new OwnerLoadError("unknown");
+    const res = await fetch(`/api/i/${TOKEN}/assistant`, { cache: "no-store" }).catch(() => null);
+    if (!res) throw new OwnerLoadError("failed");
+    // Read as the page's own reads are; a 404 with no code is a gateway that doesn't pass this address yet.
+    const problem = await failure(res, "assistant");
+    if (problem) throw problem;
     return (await res.json()) as AssistantView;
   },
   async send(text) {

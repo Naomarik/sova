@@ -122,7 +122,8 @@ describe("the edge", () => {
   test("the gateway routes the photo paths as the link's own (an `h` row)", () => {
     assert.deepEqual(routeOf(`/api/h/${T}/image`), { kind: "h", token: T });
     assert.deepEqual(routeOf(`/api/h/${T}/img/12`), { kind: "h", token: T });
-    assert.equal(routeOf(`/api/h/${T}/img/01`), null);
+    // The strict edge judged the path already (img/01 never reaches the router); the kind is the prefix's.
+    assert.equal(shareMayReach("GET", `/api/h/${T}/img/01`), false);
   });
 });
 

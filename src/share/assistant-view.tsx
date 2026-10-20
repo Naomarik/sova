@@ -1,5 +1,7 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ASSISTANT_TEXT_MAX, type AssistantServerMessage, type AssistantView } from "../../shared/project-assistant";
+import { OFFLINE_PAGE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
+import { assistantProblemText, isDeadLink, OwnerLoadError } from "../lib/owner-problem";
 import { LinkedText, Reply } from "./thread";
 
 /**
@@ -24,13 +26,24 @@ export function sendRefusal(code: string, op: string): string {
   return "Your message didn't go through. Try again.";
 }
 
-export function AssistantChat(props: { first: string; op: string; api: AssistantApi; back: { href: string; onClick(e: MouseEvent): void } }) {
+export function AssistantChat(props: {
+  first: string;
+  op: string;
+  api: AssistantApi;
+  back: { href: string; onClick(e: MouseEvent): void };
+  /** The chat's read failed on the link itself (turned off, unknown, too many requests): the page's
+      own dead-link screen takes over. */
+  onDeadLink?(err: OwnerLoadError): void;
+}) {
   const [view, setView] = createSignal<AssistantView | null>(null);
   const [streaming, setStreaming] = createSignal("");
   const [draft, setDraft] = createSignal("");
   const [sending, setSending] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [loadFailed, setLoadFailed] = createSignal(false);
+  /** Why the last read failed, while it did; what was shown before stays. */
+  const [problem, setProblem] = createSignal<"offline" | "unavailable" | "failed" | null>(null);
+  let offlineRetry: ReturnType<typeof setTimeout> | undefined;
+  let offlineDelay: number = RECONNECT_BACKOFF_MS.first;
   let list: HTMLElement | undefined;
   let input: HTMLTextAreaElement | undefined;
 
@@ -38,14 +51,28 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
   const apply = (v: AssistantView) => {
     setView(v);
     setStreaming(v.busy ? (v.streaming ?? "") : "");
-    setLoadFailed(false);
+    setProblem(null);
+    offlineDelay = RECONNECT_BACKOFF_MS.first;
     toBottom();
   };
   const reload = () =>
     props.api
       .load()
       .then(apply)
-      .catch(() => setLoadFailed(true));
+      .catch((err: unknown) => {
+        const kind = err instanceof OwnerLoadError ? err.kind : "failed";
+        if (err instanceof OwnerLoadError && isDeadLink(kind)) {
+          props.onDeadLink?.(err);
+          return;
+        }
+        setProblem(kind === "offline" || kind === "unavailable" ? kind : "failed");
+        // Offline: read again from 5 s, backing off to 60 s, until the host answers (as the page does).
+        if (kind === "offline") {
+          clearTimeout(offlineRetry);
+          offlineRetry = setTimeout(() => void reload(), offlineDelay);
+          offlineDelay = Math.min(offlineDelay * 2, RECONNECT_BACKOFF_MS.max);
+        }
+      });
 
   onMount(() => {
     void reload();
@@ -63,6 +90,7 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
     onCleanup(() => {
       off?.();
       clearInterval(poll);
+      clearTimeout(offlineRetry);
     });
   });
 
@@ -102,14 +130,21 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
           </div>
         </div>
       </Show>
-      <Show when={loadFailed() && !view()}>
-        <div class="empty owner-problem" role="alert">
-          <p class="empty-title">We couldn't load this page.</p>
-          <p class="empty-body">Your link still works. Try again in a minute.</p>
-          <button type="button" class="button empty-action" onClick={() => void reload()}>
-            Try Again
-          </button>
-        </div>
+      <Show when={!view() && problem()}>
+        {(p) => {
+          const text = () => (p() === "offline" ? { title: OFFLINE_PAGE.heading, body: OFFLINE_PAGE.body, tryAgain: true } : assistantProblemText(p() as "unavailable" | "failed", props.op));
+          return (
+            <div class="empty owner-problem" role="alert">
+              <p class="empty-title">{text().title}</p>
+              <p class="empty-body">{text().body}</p>
+              <Show when={text().tryAgain}>
+                <button type="button" class="button empty-action" onClick={() => void reload()}>
+                  Try Again
+                </button>
+              </Show>
+            </div>
+          );
+        }}
       </Show>
       <section class="owner-thread owner-assistant" aria-label="Conversation with the Project Assistant" aria-live="polite" ref={list}>
         <Show when={view() && !view()!.messages.length && !streaming()}>
@@ -136,7 +171,8 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
           </article>
         </Show>
       </section>
-      <Show when={props.api.send}>
+      {/* The message box only once the chat's view has loaded: before that, nothing it sends could land. */}
+      <Show when={props.api.send && view()}>
         <form class="share-composer owner-assistant-composer" onSubmit={(e) => void send(e)}>
           <div class="share-field" onClick={(e) => e.target === e.currentTarget && input?.focus()}>
             <label class="visually-hidden" for="assistant-text">

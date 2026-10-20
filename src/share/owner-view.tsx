@@ -22,6 +22,7 @@ import { stampTime } from "../lib/format";
 import { Item, LinkedText } from "./thread";
 import { AssistantChat, type AssistantApi } from "./assistant-view";
 import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assistant";
+import { isDeadLink, OwnerLoadError, type OwnerProblemKind } from "../lib/owner-problem";
 
 /**
  * The Owner page (§app.owner-page/page): Home, a project, a conversation. Read-only. It renders
@@ -29,23 +30,11 @@ import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assi
  * operator's preview (from the preview route) feed it the same answers, so they show the same page.
  */
 
-/** Why a load failed. `unknown`/`gone`/`expired` are about the link (the whole page); `missing` is
-    one project or conversation that isn't on the page; `offline` is a public gateway's 503 (the
-    host it lives on is offline: the page stays and keeps trying); `failed` is anything else. */
-export type OwnerProblemKind = "unknown" | "gone" | "expired" | "busy" | "missing" | "offline" | "failed";
-export class OwnerLoadError extends Error {
-  constructor(
-    readonly kind: OwnerProblemKind,
-    /** On a link that turned off unused: the owner already asked for a new one. */
-    readonly asked = false,
-  ) {
-    super(kind);
-  }
-}
+export { OwnerLoadError, type OwnerProblemKind };
 
 export type OwnerAnswer = OwnerHome | OwnerProject | OwnerConversation;
 
-const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "failed">, { title: string; body: string }> = {
+const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "unavailable" | "failed">, { title: string; body: string }> = {
   expired: { title: "This link turned off after a week without use.", body: "It turns itself off so nobody else can use it later. You can ask for a new one." },
   gone: { title: "This link is no longer active.", body: "Ask the person who sent it for a new one." },
   unknown: { title: "This link doesn't open anything.", body: "Check that you copied all of it." },
@@ -157,7 +146,7 @@ export function OwnerPage(props: {
   /** A dead or unknown link: nothing of the page stays. */
   const deadLink = () => {
     const p = problem();
-    return p === "unknown" || p === "gone" || p === "expired" || p === "busy" ? PROBLEM[p] : null;
+    return isDeadLink(p) ? PROBLEM[p] : null;
   };
   createEffect(() => {
     const d = current();
@@ -252,7 +241,19 @@ export function OwnerPage(props: {
             // Each read reaches the view: the answers are read through `d()` (a non-keyed Show calls this once).
             <Switch>
               <Match when={"projects" in d() && props.route.kind === "assistant" && props.assistant}>
-                {(api) => <AssistantChat first={(d() as OwnerHome).owner.first} op={(d() as OwnerHome).operator.first} api={api()} back={link({ kind: "home" })} />}
+                {(api) => (
+                  <AssistantChat
+                    first={(d() as OwnerHome).owner.first}
+                    op={(d() as OwnerHome).operator.first}
+                    api={api()}
+                    back={link({ kind: "home" })}
+                    onDeadLink={(err) => {
+                      // The link itself failed on the chat's read: the page's own dead-link screen.
+                      if (err.asked) setAsking("asked");
+                      setProblem(err.kind);
+                    }}
+                  />
+                )}
               </Match>
               <Match when={"projects" in d()}>
                 <HomeView home={d() as OwnerHome} now={now()} link={link} preview={props.preview} versionHref={props.versionHref} assistant={!!props.assistant} />

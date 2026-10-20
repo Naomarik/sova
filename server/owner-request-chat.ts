@@ -7,7 +7,7 @@ import { stateView } from "./harness/state-view";
 import { ownerPageInfo } from "./owner";
 import { OrgError, readIndex, readProjects } from "./orgs";
 import { findRequest, linkRequestChat, orgRequests, requestChatSession, setRequestStatus } from "./project-assistant-store";
-import { idOf, indexedSessionPaths, listSessionFiles, onSessionArchived } from "./sessions-index";
+import { archiveSession, idOf, indexedSessionPaths, listSessionFiles, onSessionArchived } from "./sessions-index";
 
 /**
  * Start Chat on an owner request (§app.project-assistant/request-chat): a new project chat with the
@@ -61,6 +61,12 @@ export type WriteNote = (path: string, noteType: string, text: string, details: 
 
 const defaultStart: StartChatSession = async (projectId, body) => (await import("./project-overseer")).startCoding(projectId, body);
 const defaultNote: WriteNote = async (path, noteType, text, details) => (await acquireChatHandle(path)).appendNote(noteType, text, details);
+/** What puts away a chat whose note wasn't written (tests stand one in). */
+export type ArchiveChat = (path: string) => Promise<void>;
+const defaultArchive: ArchiveChat = async (path) => {
+  const out = await archiveSession(path, true);
+  if (!out.ok) throw new Error(out.error);
+};
 
 /** A refusal with the existing chat (409 has-chat). */
 export class HasChatError extends OrgError {
@@ -72,7 +78,7 @@ export class HasChatError extends OrgError {
 const starting = new Set<string>();
 
 /** Start Chat: refuses an unknown request (404), a closed one (409 closed) and one with a live chat (409 has-chat). */
-export async function startRequestChat(orgId: string, rid: string, deps: { start?: StartChatSession; note?: WriteNote } = {}): Promise<{ sessionId: string; path: string }> {
+export async function startRequestChat(orgId: string, rid: string, deps: { start?: StartChatSession; note?: WriteNote; archive?: ArchiveChat } = {}): Promise<{ sessionId: string; path: string }> {
   const r = findRequest(orgId, rid);
   if (!r) throw new OrgError("Unknown request", 404);
   if (r.status === "done" || r.status === "declined") throw new OrgError(`This request is ${r.status === "done" ? "done" : "declined"}: it takes no new chat.`, 409, "closed");
@@ -84,18 +90,27 @@ export async function startRequestChat(orgId: string, rid: string, deps: { start
   try {
     const project = readProjects(orgId).find((p) => p.id === r.projectId);
     const made = await (deps.start ?? defaultStart)(r.projectId, { worktree: "later", title: r.title });
-    linkRequestChat(orgId, rid, made.sessionId);
-    chatIndex()?.set(made.sessionId, { orgId, rid });
     const ownerName = ownerPageInfo(orgId).person?.name ?? "the owner";
     const projectName = project?.name ?? "the project";
     const card: OwnerRequestCard = { orgId, requestId: rid, kind: r.kind, projectId: r.projectId, project: projectName, title: r.title, text: r.text, filedAt: r.createdAt, ownerName };
+    // The note first: the request is linked only to a chat that has it in it.
     let written = false;
     try {
       written = await (deps.note ?? defaultNote)(made.path, OWNER_REQUEST_NOTE, requestNoteText(r, ownerName, projectName), card);
     } catch (err) {
       console.warn(`[owner-request] ${rid}: its note: ${err instanceof Error ? err.message : String(err)}`);
     }
-    if (!written) console.warn(`[owner-request] ${rid}: its note could not be written in ${made.sessionId}`);
+    if (!written) {
+      // A chat without the request is no chat of it: put it away, link nothing, and say so.
+      try {
+        await (deps.archive ?? defaultArchive)(made.path);
+      } catch (err) {
+        console.warn(`[owner-request] ${rid}: the chat its note missed (${made.sessionId}) wasn't archived: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      throw new OrgError("Couldn't start the chat. Try again.", 409, "not-started");
+    }
+    linkRequestChat(orgId, rid, made.sessionId);
+    chatIndex()?.set(made.sessionId, { orgId, rid });
     return { sessionId: made.sessionId, path: made.path };
   } finally {
     starting.delete(key);
@@ -105,7 +120,7 @@ export async function startRequestChat(orgId: string, rid: string, deps: { start
 // ---- the request follows its chat ---------------------------------------------------------------------
 
 type Ref = { orgId: string; rid: string };
-/** Session id → the request whose chat it is (open requests only; rebuilt from the store at wiring). */
+/** Session id of the chat Start Chat linked → its request (open requests only; rebuilt from the store at wiring). */
 let index: Map<string, Ref> | null = null;
 const chatIndex = (): Map<string, Ref> | null => index;
 
@@ -120,7 +135,8 @@ function buildIndex(): Map<string, Ref> {
     }
     for (const r of rows) {
       if (r.status === "done" || r.status === "declined") continue;
-      const id = requestChatSession(r);
+      // Only the chat Start Chat linked: a fix's own session keeps today's behaviour.
+      const id = r.linked?.sessionId;
       if (id) out.set(id, { orgId: o.id, rid: r.id });
     }
   }
@@ -146,12 +162,13 @@ export async function noteRequestChatTurn(path: string, ref?: Ref): Promise<bool
   return true;
 }
 
-/** A request's chat was archived: back to `with-team` unless done or declined (or already with the team). */
+/** The chat Start Chat linked was archived: back to `with-team` unless done or declined (or already with the team).
+    A fix's own session is not that chat: archiving it changes nothing here. */
 export function noteRequestChatArchived(sessionId: string, ref?: Ref): boolean {
   const hit = ref ?? index?.get(sessionId);
   if (!hit) return false;
   const r = findRequest(hit.orgId, hit.rid);
-  if (!r || requestChatSession(r) !== sessionId) return false;
+  if (!r || r.linked?.sessionId !== sessionId) return false;
   if (r.status !== "started") return false;
   setRequestStatus(hit.orgId, hit.rid, "with-team");
   return true;
@@ -163,8 +180,8 @@ const warn = (what: string) => (err: unknown) => console.warn(`[owner-request] $
  * Wire it once at boot: the index from the store, the chats' turns and archives, and what happened while
  * no server listened (a first message sent, a chat archived) caught up.
  */
-export function wireRequestChats(): void {
-  if (index) return;
+export function wireRequestChats(): Promise<void> {
+  if (index) return Promise.resolve();
   try {
     index = buildIndex();
   } catch (err) {
@@ -186,7 +203,7 @@ export function wireRequestChats(): void {
       warn("an archive")(err);
     }
   });
-  void (async () => {
+  return (async () => {
     const entries = [...index!.entries()];
     const paths = await pathsOf(entries.map(([id]) => id));
     for (const [id, ref] of entries) {

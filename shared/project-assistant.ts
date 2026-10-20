@@ -17,7 +17,7 @@
  * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } -> AssistantInfo
  * POST /api/orgs/:id/owner/assistant/open         -> { sessionId, path } (Open Assistant Chat; makes it when none)
  * POST /api/orgs/:id/owner/requests/:rid/chat     -> { sessionId, path } (Start Chat, §app.project-assistant/request-chat)
- *      | 404 unknown | 409 { code: "closed" } | 409 { code: "has-chat", sessionId, path }
+ *      | 404 unknown | 409 { code: "closed" } | 409 { code: "has-chat", sessionId, path } | 409 { code: "not-started" } (its note not written; nothing linked)
  */
 
 import type { ModelPick, WorkKind, WorkModels } from "./powers";

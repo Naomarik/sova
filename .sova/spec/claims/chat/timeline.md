@@ -53,8 +53,9 @@ messages and showed everything, or the reverse, would be lying about where it go
 
 ### The inputs row
 
-The composer's `.run-status` line (§chat/transcript) carries a right-aligned `button.run-status-link` pushed
-over with `margin-left:auto`, beside the subagents trigger (§app/subagents-pane):
+The composer's `.run-status` line (§chat/transcript) carries a right-aligned `button.run-status-link`, last
+at the row's right end, beside the subagents trigger (§app/subagents-pane). The row's right-hand
+parts sit together, and the first of them takes the one `margin-left:auto` (§app.overseer/confirm):
 
 ```html
 <p class="run-status">

@@ -402,15 +402,18 @@
         "server/chat-runtime/gc-timer.ts",
         "server/chat-runtime/gc-timer.test.ts",
         "server/chat-runtime/main.ts",
-        "server/caller-keys.ts"
+        "server/caller-keys.ts",
+        "server/chat-runtime/link.integration.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
-        "§app.claude-code-provider/continuity"
+        "§app.claude-code-provider/continuity",
+        "§app.chat-processes/code-pickup"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-19T02:40Z"
+        "by": "omar (al_2 go-ahead)",
+        "at": "2026-10-19T22:18Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#a09c9175"
       },
       "evidence": "verified"
     },
@@ -3615,7 +3618,17 @@
     "§chat.transcript/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:14Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
+      },
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts"
+      ]
     },
     "§chat.transcript/anatomy": {
       "kind": "behavior",
@@ -3676,11 +3689,15 @@
         "server/archive-quiet-close.test.ts",
         "server/quiet-close-actions.test.ts",
         "server/chat-host.test.ts",
-        "scripts/e2e/transcript-follow.mjs"
+        "scripts/e2e/transcript-follow.mjs",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts",
+        "server/ws-open-retry.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T08:09Z"
+        "at": "2026-10-19T21:14Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
       },
       "evidence": "reviewed"
     },
@@ -3805,11 +3822,13 @@
         "scripts/chat-runtime-trial/run.mjs",
         "scripts/chat-runtime-trial/lib.mjs",
         "server/app.ts",
-        "server/mesh/access.ts"
+        "server/mesh/access.ts",
+        "server/ws-open-retry.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T08:09Z"
+        "at": "2026-10-19T21:14Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
       },
       "evidence": "reviewed"
     },
@@ -3822,11 +3841,14 @@
         "src/components/WatchView.tsx",
         "src/components/Thread.tsx",
         "src/App.tsx",
-        "src/lib/older-rows-view.ts"
+        "src/lib/older-rows-view.ts",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "naomarik",
+        "at": "2026-10-19T21:14Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
       }
     },
     "§chat.transcript/streaming": {
@@ -4040,7 +4062,9 @@
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
-        "src/lib/placeholder-fit.ts"
+        "src/lib/placeholder-fit.ts",
+        "src/components/Thread.tsx",
+        "src/lib/error-feed.ts"
       ],
       "about": [
         "§chat/composer"
@@ -6033,7 +6057,11 @@
         "src/lib/hand-back.ts",
         "src/lib/hand-back.test.ts",
         "src/lib/unacked-sends.ts",
-        "src/lib/chat-outbox.ts"
+        "src/lib/chat-outbox.ts",
+        "src/lib/run-status.ts",
+        "src/lib/run-status.test.ts",
+        "src/app.css",
+        "src/design/align-viewer.css"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -6042,7 +6070,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T08:01Z"
+        "at": "2026-10-19T18:28Z",
+        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
       }
     },
     "§app.overseer/dialog-answers": {
@@ -11087,7 +11116,9 @@
         "src/components/OverseerView.tsx",
         "src/design/base.css",
         "src/overseer-ideas.css",
-        "src/overseer-todos.css"
+        "src/overseer-todos.css",
+        "src/components/OverseerApprovalsPanel.tsx",
+        "src/app.css"
       ],
       "requires": [
         "§app.overseer/identity-and-clear",
@@ -11095,14 +11126,21 @@
         "§app.overseer/ideas-panel",
         "§app.overseer/todos-panel",
         "§app.overseer/attention-digest"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T18:27Z",
+        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+      }
     },
     "§design.copy-deck/overseer-head": {
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/OverseerView.tsx"
+        "src/components/OverseerView.tsx",
+        "src/components/OverseerApprovalsPanel.tsx",
+        "src/lib/overseer-approvals.ts"
       ]
     },
     "§chat.changes/diff-renderer": {
@@ -13496,7 +13534,9 @@
         "server/overseer.ts",
         "server/overseer-tools.ts",
         "shared/protocol.ts",
-        "src/components/OverseerPermitsChip.tsx",
+        "src/components/OverseerApprovalsPanel.tsx",
+        "src/lib/overseer-approvals.ts",
+        "src/lib/overseer-approvals.test.ts",
         "src/components/OverseerCards.tsx",
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -13505,14 +13545,21 @@
         "server/overseer-approvals.test.ts",
         "server/index.ts",
         "server/app.ts",
-        "src/lib/api.ts"
+        "src/lib/api.ts",
+        "src/components/OverseerView.tsx",
+        "scripts/e2e/overseer-schedules-menu.mjs"
       ],
       "requires": [
         "§app.overseer/tools",
         "§app.overseer/confirm",
         "§app.overseer/caps",
         "§app.overseer/org-people-facing"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T18:27Z",
+        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+      }
     },
     "§app.overseer/auto-resume": {
       "kind": "behavior",
@@ -14226,7 +14273,12 @@
         "§chat.profiles/projects",
         "§chat.profiles/trust",
         "§app.overseer/approvals"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T18:28Z",
+        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+      }
     },
     "§chat.schedules/fire": {
       "kind": "behavior",
@@ -14333,7 +14385,9 @@
       "code": [
         "src/components/PlaybooksDialog.tsx",
         "src/components/ScheduleCard.tsx",
-        "src/components/OverseerPermitsChip.tsx",
+        "src/components/OverseerApprovalsPanel.tsx",
+        "src/lib/overseer-approvals.ts",
+        "src/lib/overseer-approvals.test.ts",
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
         "src/lib/schedules.ts",
@@ -14341,7 +14395,8 @@
         "src/app.css",
         "shared/protocol.ts",
         "shared/wake.ts",
-        "server/overseer.ts"
+        "server/overseer.ts",
+        "src/components/OverseerView.tsx"
       ],
       "requires": [
         "§chat.playbooks/the-modal",
@@ -14350,8 +14405,9 @@
         "§app.overseer/proactivity"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "by": "naomarik",
+        "at": "2026-10-19T18:27Z",
+        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
       }
     },
     "§chat/schedules": {
@@ -16417,8 +16473,15 @@
         "server/transcript.ts",
         "server/sessions-index.ts",
         "server/turn-error.test.ts",
-        "shared/protocol.ts"
-      ]
+        "shared/protocol.ts",
+        "src/lib/error-feed.ts",
+        "src/lib/error-feed.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T21:14Z",
+        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
+      }
     },
     "§chat.subagent-profiles/members-default": {
       "kind": "behavior",
@@ -20766,8 +20829,9 @@
         "site/src/content/docs/playbooks-and-schedules.md"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T12:38Z"
+        "by": "naomarik",
+        "at": "2026-10-19T18:28Z",
+        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
       }
     },
     "§site.docs/project-modes": {

@@ -23,6 +23,7 @@ import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } f
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
 import { CardJumpContext } from "../lib/card-refs";
@@ -81,6 +82,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
+import { backWords, EMPTY_FEED, feedOnFailure, feedOnHello, feedOnNote, feedOnOpen, feedOnRefused, feedOnReset, feedOnTurnStart, feedBanner, type ErrorFeed, type FeedSay } from "../lib/error-feed";
 import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
@@ -140,7 +142,7 @@ import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
 import { TourSessionContext } from "./TourCard";
-import { HistoryItems, holdReaderAcrossSwap, LiveEntries, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
@@ -166,6 +168,9 @@ export interface OverseerChat {
       Ideas panel) sends an ordinary user message, as a quick action does. Returns the unbind the
       chat calls when it unmounts. */
   bindSender?(sender: OverseerSender): () => void;
+  /** Hands the page head this chat's one autonomy reading and its acts while mounted, for the
+      head's Approvals & Schedules (§app.overseer/approvals); returns the unbind. */
+  bindApprovals?(approvals: OverseerApprovals): () => void;
 }
 
 /** A user message into the Overseer's chat, through the composer's own send. */
@@ -396,6 +401,17 @@ export function ChatView(props: {
     if (rows.some((row) => jumpToEntry(row.id, props.path))) return;
     toast("That act isn't in the transcript on screen.");
   };
+  if (props.overseer?.bindApprovals) {
+    const unbind = props.overseer.bindApprovals({
+      autonomy,
+      revokePermit,
+      approveSchedule: approveScheduleFromPanel,
+      revokeSchedule: revokeScheduleFromPanel,
+      jumpCard: jumpToCardId,
+      jumpUse: jumpToToolCall,
+    });
+    onCleanup(unbind);
+  }
   const jumpToAlign = (entry: AlignEntry) => {
     if (entry.rowId && jumpToEntry(entry.rowId, props.path)) return;
     // A revision above the rows held: fetch down to it, then land.
@@ -409,18 +425,17 @@ export function ChatView(props: {
     else toast("That alignment isn't in the transcript on screen.");
   };
   const [syncing, setSyncing] = createSignal(false);
-  /** The thread's turn-error rows: the message, and the FAILED TURN'S own model provider when the
-      server said it (live error event only — a worker's failure in the thread never carries one,
-      so the limit row never guesses it from this chat's model). */
-  const [errors, setErrors] = createSignal<{ message: string; provider?: string }[]>([]);
-  /** The pane's turn-error STATE (≠ `errors`, the thread's permanent record): the last turn ended
-      in an error and no newer turn has started. Cleared by `agent_start` — a fresh turn supersedes
-      the old failure — and by a rewind. Announced when it lands, reported to the workspace's
-      roll-up (`onTurnError`), and consulted before "replied.": an errored turn still settles (the
-      SDK's `finally` emits `agent_settled` whatever happened), and two endings for one turn would
-      read as two turns. A transcript-reload failure (`resync`) never sets it — that turn did not
-      fail, the read after it did. */
-  const [turnError, setTurnError] = createSignal<string | null>(null);
+  /** The thread's error feed (lib/error-feed): its banners, each with the FAILED TURN'S own model
+      provider when the server said it (live error event only — a worker's failure in the thread
+      never carries one, so the limit row never guesses it from this chat's model), and the pane's
+      turn-error STATE: the last turn ended in an error and no newer turn has started. Cleared by
+      `agent_start` — a fresh turn supersedes the old failure — and by a rewind. Announced when it
+      lands, reported to the workspace's roll-up (`onTurnError`), and consulted before "replied.":
+      an errored turn still settles (the SDK's `finally` emits `agent_settled` whatever happened),
+      and two endings for one turn would read as two turns. A transcript-reload failure (`resync`)
+      never sets it — that turn did not fail, the read after it did. */
+  const [feed, setFeed] = createSignal<ErrorFeed>(EMPTY_FEED);
+  const turnError = () => feed().turnError;
   /** A permanent open failure (code "config"): shown once, never retried, never appended to. */
   const [configError, setConfigError] = createSignal<string | null>(null);
   /** The open-failure banner's action state: an Archive in flight. */
@@ -589,7 +604,7 @@ export function ChatView(props: {
       if (!cleared) batch(clearLive);
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
-      setErrors((e) => [...e, { message: `Couldn't reload the transcript after this run: ${(err as Error).message}` }]);
+      setFeed((f) => feedOnNote(f, `Couldn't reload the transcript after this run: ${(err as Error).message}`));
     } finally {
       setSyncing(false);
     }
@@ -608,7 +623,7 @@ export function ChatView(props: {
       for (const ev of events) {
         // What the event does besides the live store (lib/live-effects): run in the order given.
         for (const effect of applyEvent(setLive, ev, { overseer: !!props.overseer, mine: owner.mine() })) {
-          if (effect === "clearTurnError") setTurnError(null);
+          if (effect === "clearTurnError") setFeed(feedOnTurnStart);
           else if (effect === "announceWorking") announce(turnWord("working.", "Working."));
           else if (effect === "compacting") setCompacting(true);
           else if (effect === "compactingDone") setCompacting(false);
@@ -664,18 +679,21 @@ export function ChatView(props: {
   const unacked = new UnackedSends();
   /** The confirm card clicks this pane sent, by client id: one handed back goes to its card, never the draft. */
   const clicks = new CardClicks();
+  const UNSENT_WORDS = "That message couldn't be sent. It's back in the composer.";
   /**
    * Every send the pane gets back (a refusal, a reload or close, a connection that ended before its
    * chat's hello, a queued one that left undelivered) goes through here (lib/hand-back): typed texts
    * to the top of the draft, announced with `said`; a card click never: its card's "Sent" mark
-   * clears, so the buttons come back, and the pane says so (§app.overseer/confirm). Returns the
-   * typed texts handed back.
+   * clears, so the buttons come back, and the pane says so (§app.overseer/confirm). The composer on
+   * screen shows the typed texts now (it reads the stored draft only when it mounts), and the stored
+   * draft holds them for one that mounts later. Returns the typed texts handed back.
    */
   const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
     if (!back.length) return [];
     const r = handBack({ draft: drafts.get(props.path), cardSent: untrack(cardSent) }, back, clicks);
     if (r.texts.length) {
       setDraftText(props.path, r.draft ?? "");
+      setRestored({ text: r.texts.join("\n\n") });
       if (said) announce(said);
     }
     if (r.note) {
@@ -686,25 +704,34 @@ export function ChatView(props: {
     return r.texts;
   };
   /** The sends made on connection `conn` it never acknowledged come back: it ended before its
-      chat's hello, so no chat took them. Earlier connections' sends stay. */
+      chat's hello, so no chat took them. Earlier connections' sends stay. How many typed texts came
+      back (a click goes to its card and is said there). */
+  const takeBackUnsent = (conn: number): number => handBackSends(unacked.takeFrom(conn, handedBack)).length;
   const handBackUnsent = (conn: number) => {
-    handBackSends(unacked.takeFrom(conn, handedBack), "That message couldn't be sent. It's back in the composer.");
+    handBackSends(unacked.takeFrom(conn, handedBack), UNSENT_WORDS);
   };
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
-  const turnFailed = (message: string, provider?: string) => {
-    const seen = errors();
-    // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
-    // and say nothing, because an announcement per retry would read as N new errors.
-    // The first landing is announced like every other turn boundary: a member whose turn
-    // died reads the same as one that
-    // replied, in its own pane's voice, without panning to find the banner.
-    if (seen[seen.length - 1]?.message !== message) {
-      setErrors([...seen, { message, ...(provider ? { provider } : {}) }]);
-      setTurnError(message);
-      announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+  /** What a step of the error feed says. The first landing of a failure is announced like every
+      other turn boundary: a member whose turn died reads the same as one that replied, in its own
+      pane's voice, without panning to find the banner. */
+  const sayFeed = (says: FeedSay[]) => {
+    for (const s of says) {
+      if (s.say === "turnStopped") announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+      else if (s.say === "startFailed") announce(`${turnWord("didn't start.", "This chat didn't start.")}${backWords(s.back, " ")}`);
+      else if (s.say === "unsent") announce(UNSENT_WORDS);
+      else {
+        toast(s.message);
+        announce(s.message);
+      }
     }
+  };
+  /** The server's failure `error`: `beforeHello` and `back` as lib/error-feed's feedOnFailure. */
+  const turnFailed = (message: string, provider?: string, beforeHello = false, back = 0) => {
+    const step = feedOnFailure(untrack(feed), { message, ...(provider ? { provider } : {}), beforeHello, back });
+    setFeed(step.feed);
+    sayFeed(step.says);
     // A prompt that failed before the agent started leaves nothing running.
     if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
   };
@@ -748,6 +775,7 @@ export function ChatView(props: {
     afterMs: FILE_READ_WAIT_MS,
     onOpen(isReconnect) {
       setEverOpened(true);
+      setFeed(feedOnOpen);
       setWait(waitOnOpen(untrack(wait)));
       // hello follows and replaces everything; dialogs belonged to the old connection.
       if (isReconnect) setDialogs([]);
@@ -780,6 +808,7 @@ export function ChatView(props: {
             setNewFrom(msg.after !== undefined ? firstHeld : (msg.items[0]?.id ?? null));
             setHelloed(true);
             setWait(waitOnHello(untrack(wait)));
+            setFeed(feedOnHello);
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
@@ -867,8 +896,7 @@ export function ChatView(props: {
         // is not touched at all.
         case "regenerated":
           batch(() => {
-            setErrors([]); // they belonged to the turns just abandoned
-            setTurnError(null);
+            setFeed(feedOnReset()); // they belonged to the turns just abandoned
             setCommandRows([]);
           });
           setActionNote(null);
@@ -968,8 +996,7 @@ export function ChatView(props: {
           // model's, not words to send again (§chat.timeline/rewind).
           const editorText = msg.editorText ? handBackText(msg.editorText) : msg.editorText;
           batch(() => {
-            setErrors([]); // they belonged to the turns just abandoned
-            setTurnError(null);
+            setFeed(feedOnReset()); // they belonged to the turns just abandoned
             setCommandRows([]);
             if (editorText) setRestored({ text: editorText });
           });
@@ -1093,14 +1120,25 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
+            {
               // A command it names makes no user row: its text comes back from here (a click: its card).
-              handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
+              const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
+              // Refused before the hello, the chat never had it: its row goes, as the text is back.
+              const unopened = errorHandsBack(untrack(wait)) !== null;
+              if (unopened && msg.clientId) {
+                const id = msg.clientId;
+                setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id === id)))));
+              }
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
-              toast(msg.message);
-              announce(msg.message);
+              // Before this connection's hello it is the chat failing to open (its retry included,
+              // server/ws.ts): quiet here, said by the start failure that follows (lib/error-feed).
+              const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: unopened, back: taken.length });
+              setFeed(step.feed);
+              sayFeed(step.says);
               return;
+            }
             case "reloaded": {
               // Its code state was that process's: the next hello says the new one's (never a stale "Reloading").
               setCode(null);
@@ -1133,13 +1171,23 @@ export function ChatView(props: {
               setLive("running", false);
               return;
             default: {
-              // Before this connection's hello the chat didn't open (it failed to start): what the
-              // server never acknowledged goes back to the composer; the socket retries.
+              // Before this connection's hello the chat didn't open (it failed to start, the
+              // server's one retry included): what the server never acknowledged goes back to the
+              // composer, "This chat didn't start." says so (lib/error-feed), and the socket retries.
               const failed = errorHandsBack(untrack(wait));
-              if (failed !== null) handBackUnsent(failed);
-              if (modelError() || thinkingError()) break; // shown as the switch's banner
+              const back = failed !== null ? takeBackUnsent(failed) : 0;
+              // Not a start failure after all: what came back (here or by a quiet refusal) is said as before.
+              const sayBack = () => {
+                if (back + (untrack(feed).heldBack ?? 0) > 0) announce(UNSENT_WORDS);
+                setFeed((f) => (f.heldBack ? { ...f, heldBack: 0 } : f));
+              };
+              if (modelError() || thinkingError()) {
+                sayBack();
+                break; // shown as the switch's banner
+              }
               // A refused switch of Claude login is its own banner, never a turn failure.
               if (msg.message.startsWith(LOGIN_UNCHANGED)) {
+                sayBack();
                 setLoginError(msg.message.slice(LOGIN_UNCHANGED.length).trim());
                 announce(msg.message);
                 break;
@@ -1148,10 +1196,11 @@ export function ChatView(props: {
               // the reconnect's "not found" is no turn error then. Ask for the host check now and
               // keep "Reconnecting"; the view is replaced when the change is confirmed.
               if (mayBeHostMove(msg, everOpened(), !hostOf(props.path), meshOn())) {
+                sayBack();
                 holdNotFound(msg.message);
                 break;
               }
-              turnFailed(msg.message, msg.provider);
+              turnFailed(msg.message, msg.provider, failed !== null, back);
             }
           }
           break;
@@ -1889,7 +1938,7 @@ export function ChatView(props: {
     // spending it on a refusal, and never picks another model for you.
     const offModel = offNow();
     if (offModel) {
-      setErrors((e) => (e[e.length - 1]?.message === offModel ? e : [...e, { message: offModel }]));
+      setFeed((f) => feedOnNote(f, offModel, true));
       announce(offModel);
       return false;
     }
@@ -2312,7 +2361,7 @@ export function ChatView(props: {
         {/* One failure, one row: a failure with its own errored turn row in the thread carries the
             limit switch there (with that row's provider); the error feed's mount is for failures
             that never made a thread row (a refusal before any turn, a host move). */}
-        <For each={errors()}>{(m) => <><TurnError message={m.message} /><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
+        <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
       <FlyoutSession.Provider value={() => props.path}>
@@ -2373,11 +2422,6 @@ export function ChatView(props: {
         cards={openCards(cards())}
         onJumpCard={jumpToCard}
         autonomy={props.overseer ? autonomy() : undefined}
-        onRevokePermit={props.overseer ? revokePermit : undefined}
-        onApproveSchedule={props.overseer ? approveScheduleFromPanel : undefined}
-        onRevokeSchedule={props.overseer ? revokeScheduleFromPanel : undefined}
-        onJumpCardId={jumpToCardId}
-        onJumpToolCall={jumpToToolCall}
         autofocus={props.autofocus}
         model={modelControl}
         claudeLogin={claudeLogin}

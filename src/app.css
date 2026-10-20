@@ -1256,3 +1256,27 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .settings-updates-steps li.now::before { content: "● "; }
 .settings-updates-form { display: flex; flex-direction: column; gap: var(--space-2); }
 .settings-updates-toggle { align-self: flex-start; width: fit-content; }
+
+/* ── The run-status row's two ends (§app.overseer/confirm, §chat.alignment/chip) ─────────────────
+   The right-hand cluster ("3 of 10 running", the card chip, the alignment chip, the inputs trigger
+   last; lib/run-status) is pushed to the row's end by ONE auto margin, on its first part. Compound,
+   so it outweighs the triggers' own -8px offset (.run-status > .run-status-link) at any order. */
+.run-status > .run-status-link.run-status-lead { margin-left: auto; margin-right: 0; }
+.run-status > .run-status-inputs { margin-right: 0; }
+
+/* ── The Overseer head's Approvals & Schedules (§app.overseer/approvals) ──────────────────────────
+   ⋯ and Schedules ▾ carry an accent dot while a schedule waits for approval, said in words by
+   their names; it sits inside the button, so the head's widths don't move. */
+.overseer-page-head > .overseer-more,
+.overseer-page-head > .overseer-schedules { position: relative; }
+.overseer-attention-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  pointer-events: none;
+}
+.overseer-schedules > .overseer-attention-dot { top: 5px; right: 5px; }

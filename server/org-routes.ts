@@ -62,7 +62,7 @@ import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
 import { registerAssistantRoutes } from "./project-assistant-routes";
-import { assistantView } from "./project-assistant";
+import { assistantPhoto, assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
@@ -652,7 +652,16 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const project = c.req.query("project");
       const conversation = c.req.query("c");
       // The Project Assistant's conversation as the owner sees it (§app.project-assistant/chat).
-      if (c.req.query("assistant") === "1") return c.json(await assistantView(p(c, "id")));
+      if (c.req.query("assistant") === "1") {
+        // One of the owner's photos in it, as Preview as shows them (§app.project-assistant/photos).
+        const img = c.req.query("img");
+        if (img !== undefined) {
+          const got = /^(?:0|[1-9][0-9]{0,4})$/.test(img) ? await assistantPhoto(p(c, "id"), Number(img)) : null;
+          if (!got || !/^image\/(?:jpeg|png|webp|gif)$/.test(got.mimeType)) throw new OrgError("No such photo.", 404);
+          return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "no-store" });
+        }
+        return c.json(await assistantView(p(c, "id")));
+      }
       return c.json(await ownerView(p(c, "id"), { ...(project !== undefined ? { project } : {}), ...(conversation !== undefined ? { conversation } : {}) }));
     }),
   );

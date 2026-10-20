@@ -37,6 +37,52 @@ export interface OwnerVersion {
   /** The serve a static endpoint runs as, or null. */
   serve: string | null;
   running: boolean;
+  /** Its state on the owner page: running, or the start mark's starting / failed, else not running. */
+  state: OwnerVersionRow["state"];
+}
+
+// ---- starting and failed (a copy start_version started; in memory, a restart forgets it) ----------------
+
+/** How long a started copy may take to answer before it reads failed. */
+export const START_TIMEOUT_MS = 5 * 60_000;
+type StartMark = { at: number; failed: boolean };
+const starts = new Map<string, StartMark>();
+
+/** start_version started this instance now: it reads starting until it answers, failed past the timeout. */
+export function noteVersionStarting(instanceId: string, now = Date.now()): void {
+  starts.set(instanceId, { at: now, failed: false });
+}
+/** The start failed (the engine's up refused or failed). */
+export function noteVersionFailed(instanceId: string): void {
+  const m = starts.get(instanceId);
+  starts.set(instanceId, { at: m?.at ?? Date.now(), failed: true });
+}
+/** Whether the instance's start mark reads failed now. */
+export function versionStartFailed(instanceId: string, now = Date.now()): boolean {
+  const m = starts.get(instanceId);
+  return !!m && (m.failed || now - m.at >= START_TIMEOUT_MS);
+}
+/** Tests: forget every mark. */
+export function clearVersionStartsForTest(): void {
+  starts.clear();
+}
+
+/** `/i/<token>/v/<handle>` of a starting copy: reloads itself every 3 seconds (meta refresh and the route's `Refresh`
+    header; no script), so an early Open lands on the copy once it answers. */
+export const STARTING_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="3"><meta name="robots" content="noindex"><title>Starting this version…</title></head>
+<body><main><h1>Starting this version…</h1><p>This page opens it as soon as it's ready.</p></main></body></html>
+`;
+
+/** The owner-page state of a copy that does or doesn't answer now. A running copy clears its mark. */
+function stateOf(instanceId: string, running: boolean, now: number): OwnerVersionRow["state"] {
+  const m = starts.get(instanceId);
+  if (running) {
+    if (m) starts.delete(instanceId);
+    return "running";
+  }
+  if (!m) return "not-running";
+  return m.failed || now - m.at >= START_TIMEOUT_MS ? "failed" : "starting";
 }
 
 /** Tests: a stand-in for "does this port answer now". */
@@ -119,7 +165,9 @@ export async function projectVersions(orgId: string, project: { id: string; name
     const ep = endpoint && def ? endpointOf(def, rec, endpoint) : null;
     const serve = ep && ep.service.static !== undefined ? (staticServes().find((s) => s.port === ep.port)?.id ?? null) : null;
     const running = !!ep && rec.desired[ep.service.name] === "running" && (ep.service.static !== undefined ? serve !== null : await answers(ep.port));
-    out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running });
+    // A copy whose copies can't be shown never reads starting or failed: it is not openable at all.
+    const state = ep ? stateOf(rec.id, running, Date.now()) : "not-running";
+    out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running, state });
   }
   return out;
 }
@@ -129,7 +177,7 @@ export async function projectVersions(orgId: string, project: { id: string; name
     model wrote, through the outsider filter too. Never the project's name through `said`: its phrases hold the
     org's name, so a project named after its org read `[redacted]`. */
 export const versionRows = (vs: OwnerVersion[], r: { redact: (t: string) => string; said: (t: string) => string }): OwnerVersionRow[] =>
-  vs.map((v) => ({ handle: v.handle, project: r.redact(v.projectName), label: r.redact(r.said(v.label)), state: v.running ? "running" : "not-running" }));
+  vs.map((v) => ({ handle: v.handle, project: r.redact(v.projectName), label: r.redact(r.said(v.label)), state: v.state }));
 
 /** The owner-bound preview of a version for this owner link, kept or made now; its URL, or null when it can't be opened. */
 export async function openVersion(v: OwnerVersion, link: { hash: string; expiresAt: string }, now = Date.now()): Promise<string | null> {

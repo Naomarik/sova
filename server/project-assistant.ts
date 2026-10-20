@@ -1,10 +1,16 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { WebSocket } from "ws";
 import { OPERATOR } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
-import { ASSISTANT_TEXT_MAX, type AssistantMessage, type AssistantServerMessage, type AssistantView } from "../shared/project-assistant";
-import { acquireChatHandle, isSessionBusy } from "./chat-handle";
+import { ASSISTANT_TEXT_MAX, type AssistantMessage, type AssistantServerMessage, type AssistantView, type OwnerVersionRow } from "../shared/project-assistant";
+import type { BatonPhotoSettings } from "../shared/baton";
+import { acquireChatHandle, chatHandle, getModelRuntime, isSessionBusy } from "./chat-handle";
+import { dropStaged, PhotoRefusal, takeStaged, type SdkImage } from "./baton-images";
+import { readBatonSettings } from "./baton-settings";
+import { ownerVersionOf } from "./owner-page";
+import { versionRows } from "./owner-versions";
 import { createSessionFile } from "./harness/pi/state";
 import { joinedText, readBranch } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
@@ -108,59 +114,154 @@ export function operatorStarted(branch: readonly HEntry[]): boolean {
   return false;
 }
 
-/** The conversation as the owner reads it: owner, operator and assistant messages, text only, each passed through the outsider redaction. */
-export function assistantMessages(orgId: string, branch: readonly HEntry[]): AssistantMessage[] {
+/** The start_version tool's name, and the key of its details naming the version it started (or found running). */
+const START_VERSION = "start_version";
+const versionOfDetails = (d: unknown): string | null => {
+  const v = d && typeof d === "object" ? (d as { version?: unknown }).version : undefined;
+  return typeof v === "string" && /^v_[a-z0-9]{1,32}$/i.test(v) ? v : null;
+};
+
+/** The owner's own photos, in conversation order (§app.project-assistant/photos): what `/img/<n>` serves. */
+export function assistantPhotos(branch: readonly HEntry[]): { data: string; mimeType: string }[] {
+  const marks = stateView(branch);
+  const out: { data: string; mimeType: string }[] = [];
+  for (const e of branch)
+    if (e.kind === "user" && authorOf(marks, e) !== OPERATOR) for (const b of e.blocks) if (b?.type === "image") out.push({ data: b.data, mimeType: b.mimeType });
+  return out;
+}
+
+/**
+ * The conversation as the owner reads it: owner, operator and assistant messages, text only, each
+ * passed through the outsider redaction. The owner's own photos ride as `{n, mime}` (`n` numbering
+ * them in conversation order, as assistantPhotos does), never bytes; an assistant message after a
+ * start_version that named a version carries `versionHandles`, resolved to rows by assistantView.
+ */
+export function assistantMessages(orgId: string, branch: readonly HEntry[]): (AssistantMessage & { versionHandles?: string[] })[] {
   const marks = stateView(branch);
   const r = outsiderRedactor(orgId);
   const op = firstOf(operatorName());
-  const out: AssistantMessage[] = [];
+  const out: (AssistantMessage & { versionHandles?: string[] })[] = [];
   let n = 0;
+  let photo = 0;
+  let started: string[] = [];
   for (const e of branch) {
     if (e.kind === "user") {
       const text = joinedText(e, { images: false }).trim();
-      if (!text) continue;
       const by = authorOf(marks, e);
-      out.push(by === OPERATOR ? { n: ++n, role: "operator", name: r.redact(op), text: r.redact(r.said(text)), at: e.at ?? "" } : { n: ++n, role: "owner", text: r.redact(text), at: e.at ?? "" });
+      const own = by !== OPERATOR;
+      const images = own ? e.blocks.filter((b) => b?.type === "image").map((b) => ({ n: photo++, mime: (b as { mimeType: string }).mimeType })) : [];
+      if (!text && !images.length) continue;
+      out.push(!own ? { n: ++n, role: "operator", name: r.redact(op), text: r.redact(r.said(text)), at: e.at ?? "" } : { n: ++n, role: "owner", text: r.redact(text), at: e.at ?? "", ...(images.length ? { images } : {}) });
+    } else if (e.kind === "tool-result") {
+      const v = e.tool === START_VERSION && !e.isError ? versionOfDetails(e.details) : null;
+      if (v && !started.includes(v)) started.push(v);
     } else if (e.kind === "assistant") {
       const text = joinedText(e, { images: false }).trim();
       if (!text) continue;
-      out.push({ n: ++n, role: "assistant", text: r.redact(r.said(text)), at: e.at ?? "" });
+      out.push({ n: ++n, role: "assistant", text: r.redact(r.said(text)), at: e.at ?? "", ...(started.length ? { versionHandles: started } : {}) });
+      started = [];
     }
   }
   return out.slice(-VIEW_MESSAGES);
 }
 
+/** Each message's version handles as rows, resolved now (state included); a version no longer listed is dropped. */
+async function withVersions(orgId: string, msgs: (AssistantMessage & { versionHandles?: string[] })[]): Promise<AssistantMessage[]> {
+  const r = outsiderRedactor(orgId);
+  const rows = new Map<string, OwnerVersionRow | null>();
+  for (const m of msgs)
+    for (const h of m.versionHandles ?? [])
+      if (!rows.has(h)) {
+        const v = await ownerVersionOf(orgId, h).catch(() => null);
+        rows.set(h, v ? (versionRows([v], r)[0] ?? null) : null);
+      }
+  return msgs.map(({ versionHandles, ...m }) => {
+    const versions = (versionHandles ?? []).map((h) => rows.get(h)).filter((x): x is OwnerVersionRow => !!x);
+    return versions.length ? { ...m, versions } : m;
+  });
+}
+
+/** Whether the assistant's reply model sees images: the open chat's model, else the org's reply pick in the catalog. Unknown is no. */
+export async function assistantSeesImages(orgId: string): Promise<boolean | null> {
+  const reply = readAssistantStore(orgId).models.reply;
+  if (!reply) return null;
+  const path = await currentAssistantPath(orgId);
+  const live = path ? chatHandle(path)?.mirror.model : undefined;
+  if (live && live.ref === reply.model) return live.images;
+  const slash = reply.model.indexOf("/");
+  if (slash <= 0) return false;
+  try {
+    const m = (await getModelRuntime()).getModel(reply.model.slice(0, slash), reply.model.slice(slash + 1));
+    return !!m && Array.isArray(m.input) && m.input.includes("image");
+  } catch {
+    return false;
+  }
+}
+
+/** What the owner may send now: the outsider photo limits, or null (photos off, no reply model, or one without vision). */
+export async function assistantPhotoLimits(orgId: string, settings: BatonPhotoSettings = readBatonSettings().photos): Promise<BatonPhotoSettings | null> {
+  if (!settings.enabled) return null;
+  return (await assistantSeesImages(orgId)) === true ? settings : null;
+}
+
+/** The staging key of the owner's photos (§app.project-assistant/photos): per org and owner, before any conversation exists. */
+export const assistantStagingKey = (orgId: string, personId: string): string => `pa-${createHash("sha256").update(`${orgId}\0${personId}`).digest("hex").slice(0, 24)}`;
+
 /** The view for the owner page (or the operator's preview): empty before the first message. */
 export async function assistantView(orgId: string): Promise<AssistantView> {
   const ready = !!readAssistantStore(orgId).models.reply;
   const path = await currentAssistantPath(orgId);
-  if (!path) return { ready, busy: false, messages: [] };
+  const limits = ready ? await assistantPhotoLimits(orgId).catch(() => null) : null;
+  const photos = limits ? { photos: { perMessage: limits.perMessage, maxBytes: limits.maxBytes } } : {};
+  if (!path) return { ready, busy: false, messages: [], ...photos };
   const branch = await readBranch(path).catch((): HEntry[] => []);
   const busy = isSessionBusy(path);
   const streaming = busy ? streams.get(path) : undefined;
-  return { ready, busy, messages: assistantMessages(orgId, branch), ...(streaming ? { streaming } : {}) };
+  return { ready, busy, messages: await withVersions(orgId, assistantMessages(orgId, branch)), ...(streaming ? { streaming } : {}), ...photos };
+}
+
+/** The owner's n-th photo (assistantPhotos order), or null. */
+export async function assistantPhoto(orgId: string, n: number): Promise<{ data: string; mimeType: string } | null> {
+  if (!Number.isInteger(n) || n < 0) return null;
+  const path = await currentAssistantPath(orgId);
+  if (!path) return null;
+  return assistantPhotos(await readBranch(path).catch((): HEntry[] => []))[n] ?? null;
 }
 
 // ---- the owner's messages -------------------------------------------------------------------------
 
 export class AssistantRefusal extends Error {
   constructor(
-    readonly code: "not-ready" | "busy" | "bad-request",
+    readonly code: string,
     message: string,
-    readonly status: 400 | 409 | 503 = 409,
+    readonly status: 400 | 409 | 413 | 429 | 503 | 507 = 409,
   ) {
     super(message);
   }
 }
 
-/** The owner sends a message: refused while no reply model is set or a reply is being written. */
-export async function sendOwnerMessage(orgId: string, raw: unknown): Promise<void> {
+/** The owner sends a message, with photos they staged (ids): refused while no reply model is set or a reply is being written. */
+export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: readonly string[] = []): Promise<void> {
   const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
-  if (!text) throw new AssistantRefusal("bad-request", "Write something first.", 400);
+  if (!text && !imageIds.length) throw new AssistantRefusal("bad-request", "Write something first.", 400);
   if (text.length > ASSISTANT_TEXT_MAX) throw new AssistantRefusal("bad-request", `Messages are limited to ${ASSISTANT_TEXT_MAX} characters.`, 400);
   if (text.startsWith("/")) throw new AssistantRefusal("bad-request", "Messages can't start with /.", 400);
   const reply = readAssistantStore(orgId).models.reply;
   if (!reply) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
+  const limits = imageIds.length ? await assistantPhotoLimits(orgId).catch(() => null) : null;
+  if (imageIds.length && !limits) throw new AssistantRefusal("no-photos", "Photos can't be sent here.");
+  if (limits && imageIds.length > limits.perMessage) throw new AssistantRefusal("too-many", `Up to ${limits.perMessage} photos per message.`, 400);
+  const owner = ownerOf(orgId);
+  const key = owner ? assistantStagingKey(orgId, owner.id) : "";
+  // The photos, read before anything is sent: an expired one sends the page back to upload it.
+  let images: SdkImage[] | undefined;
+  if (imageIds.length)
+    try {
+      images = takeStaged(key, owner!.id, imageIds);
+    } catch (err) {
+      if (err instanceof PhotoRefusal) throw new AssistantRefusal(err.code, err.message, err.status);
+      throw err;
+    }
   const conv = await ensureAssistant(orgId);
   if (isSessionBusy(conv.path)) throw new AssistantRefusal("busy", "Wait for the answer first.");
   let chat;
@@ -180,7 +281,9 @@ export async function sendOwnerMessage(orgId: string, raw: unknown): Promise<voi
     throw new AssistantRefusal("not-ready", `The Project Assistant isn't ready yet (${err instanceof Error ? err.message : String(err)}).`);
   }
   // The sender IS the link's owner: never the operator, whatever the text says.
-  await chat.send({ text, origin: "server", sentByBaton: { by: conv.personId } });
+  await chat.send({ text, ...(images ? { images } : {}), origin: "server", sentByBaton: { by: conv.personId } });
+  // In the transcript now, inline: the staged copies go (a refused message keeps them for the retry).
+  if (images) dropStaged(key, imageIds);
   refreshAssistant(orgId);
 }
 

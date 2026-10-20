@@ -158,7 +158,15 @@ a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var
   .owner-assistant-door { align-items: flex-start; }
   .owner-assistant-button { min-width: 12rem; }
 }
+/* The chat screen (#a, §app.owner-page/content) fills the window's height: back and title at the top,
+   the conversation takes the middle, and the composer (share.css, sticky) stays at the bottom while
+   the page scrolls. Only on the owner's page: the preview's modal (.owner-preview) is a plain block. */
+.owner.owner-chat { min-height: 100dvh; padding-bottom: 0; }
+.owner-chat .owner-assistant { flex: 1; }
 .owner-assistant { gap: var(--space-3); }
+/* A version the assistant started, as a row inside its bubble. */
+.owner-assistant .owner-versions { margin-top: var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); overflow: hidden; }
+.owner-assistant .owner-versions > .owner-row:first-child { border-top: 0; }
 /* The owner's own bubbles keep a cap on the right, as on a conversation (thread.css): uncapped, a long
    one filled the column and no longer read as theirs. Replies take the column (.share-msg-reply). */
 .owner-assistant .share-msg-own { max-width: min(85%, 60ch); }

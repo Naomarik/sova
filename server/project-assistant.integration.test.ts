@@ -127,6 +127,7 @@ describe("the Project Assistant", () => {
         return o.attended ? { taken: true, held: false, sessionId: "s_coding_1" } : { taken: false, code: "power-off", sentence: "off" };
       },
       deployRun: async () => ({ taken: false, code: "power-off", sentence: "off" }),
+      copyStart: async () => ({ taken: false, code: "power-off", sentence: "off" }),
     });
     model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix the blank page", text: "It should show the home page." } } }, { text: "It's with the team." });
     assert.equal((await post(`/api/i/${token}/assistant`, { text: "Please fix it" })).status, 202);

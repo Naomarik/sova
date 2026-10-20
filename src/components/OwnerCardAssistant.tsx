@@ -19,7 +19,7 @@ import "./OwnerCardAssistant.css";
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
 export const WORK_LABEL: Record<WorkKind, string> = { reply: "Its replies", coding: "Fixes it starts", gathering: "Gatherings it starts" };
-const KIND_WORD: Record<OwnerRequest["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release" };
+const KIND_WORD: Record<OwnerRequest["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release", try: "Version to try" };
 const STATUS_WORD: Record<OwnerRequest["status"], string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined" };
 
 /** "$3 in / $15 out per million tokens", or that the price isn't known. */
@@ -139,6 +139,9 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
                       </For>
                     </select>
                     <span class="field-hint">{priceLine(i().models[kind])}</span>
+                    <Show when={kind === "reply" && i().seesPhotos === false}>
+                      <span class="field-hint">This model can't see photos: {first()} won't get an attach button.</span>
+                    </Show>
                   </label>
                 )}
               </For>

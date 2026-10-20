@@ -21,6 +21,7 @@ import { Dynamic } from "solid-js/web";
 import { stampTime } from "../lib/format";
 import { Item, LinkedText } from "./thread";
 import { AssistantChat, type AssistantApi } from "./assistant-view";
+import { VersionRows, versionsStarting } from "./versions";
 import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assistant";
 import { isDeadLink, OwnerLoadError, type OwnerProblemKind } from "../lib/owner-problem";
 
@@ -43,6 +44,8 @@ const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "unavail
 
 /** How often the page reads again while it is visible. */
 const REFRESH_MS = 60_000;
+/** How often Home reads again while a version on it is starting (§app.project-assistant/versions). */
+const STARTING_MS = 3000;
 const FIRST = 5;
 
 export function OwnerPage(props: {
@@ -124,6 +127,7 @@ export function OwnerPage(props: {
       document.removeEventListener("visibilitychange", onVisible);
     });
   });
+
   const link = (r: OwnerRoute) => ({
     href: props.href(r),
     onClick: (e: MouseEvent) => {
@@ -143,6 +147,19 @@ export function OwnerPage(props: {
     if (r.kind === "conversation" && "items" in d && d.id === r.id) return d;
     return undefined;
   };
+  // A version on Home is starting: read again every 3 s until it runs or failed.
+  createEffect(
+    on(
+      () => !props.preview && props.route.kind === "home" && versionsStarting((current() as OwnerHome | undefined)?.versions),
+      (starting) => {
+        if (!starting) return;
+        const t = setInterval(() => {
+          if (document.visibilityState === "visible") void read();
+        }, STARTING_MS);
+        onCleanup(() => clearInterval(t));
+      },
+    ),
+  );
   /** A dead or unknown link: nothing of the page stays. */
   const deadLink = () => {
     const p = problem();
@@ -159,7 +176,8 @@ export function OwnerPage(props: {
   );
 
   return (
-    <Dynamic component={props.preview ? "div" : "main"} class="owner">
+    // The chat (#a) fills the window's height, its composer pinned at the bottom; never in the preview's modal.
+    <Dynamic component={props.preview ? "div" : "main"} class="owner" classList={{ "owner-chat": props.route.kind === "assistant" && !props.preview }}>
       <Show
         when={!deadLink()}
         fallback={
@@ -246,6 +264,7 @@ export function OwnerPage(props: {
                     first={(d() as OwnerHome).owner.first}
                     op={(d() as OwnerHome).operator.first}
                     api={api()}
+                    versionHref={props.versionHref}
                     back={link({ kind: "home" })}
                     onDeadLink={(err) => {
                       // The link itself failed on the chat's read: the page's own dead-link screen.
@@ -348,7 +367,7 @@ function WaitingSection(props: { waiting: OwnerWaiting[]; op: string; now: numbe
 }
 
 /** The kind and status words of a request (§design.copy-deck/owner-page). */
-const REQUEST_KIND: Record<OwnerRequestRow["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release" };
+const REQUEST_KIND: Record<OwnerRequestRow["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release", try: "Version to try" };
 const REQUEST_STATUS: Record<OwnerRequestRow["status"], OwnerChipWord> = {
   "with-team": { word: "With the team", tone: "info" },
   started: { word: "Being worked on", tone: "info" },
@@ -381,27 +400,7 @@ function RequestsSection(props: { requests: OwnerRequestRow[]; now: number }) {
 function VersionsSection(props: { versions: OwnerVersionRow[]; href?: (handle: string) => string }) {
   return (
     <Section id="owner-versions" title="Versions you can try" line="Open a version to try it. These links work as long as this page does.">
-      <ul class="owner-list">
-        <For each={props.versions}>
-          {(v) => (
-            <li class="owner-row owner-row-static">
-              <span class="owner-row-main">
-                <span class="owner-row-title">{v.label}</span>
-                <span class="owner-meta">{v.state === "running" ? v.project : `${v.project} · Not running right now`}</span>
-              </span>
-              <Show when={v.state === "running"}>
-                <Show when={props.href} fallback={<span class="button owner-version-open" aria-disabled="true">Open</span>}>
-                  {(href) => (
-                    <a class="button owner-version-open" href={href()(v.handle)} target="_blank" rel="noopener noreferrer">
-                      Open
-                    </a>
-                  )}
-                </Show>
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
+      <VersionRows versions={props.versions} href={props.href} />
     </Section>
   );
 }

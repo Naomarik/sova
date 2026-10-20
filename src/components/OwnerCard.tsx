@@ -254,7 +254,7 @@ export function OwnerPreview(props: { orgId: string; orgName: string; ownerName:
               body.scrollTop = 0;
             }}
             preview
-            assistant={{ load: () => previewAssistant(props.orgId) }}
+            assistant={{ load: () => previewAssistant(props.orgId), photo: (n) => `/api/orgs/${encodeURIComponent(props.orgId)}/owner/preview?assistant=1&img=${n}` }}
           />
         </div>
         <div class="modal-foot">

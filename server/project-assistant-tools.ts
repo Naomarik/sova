@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { HEntry, ToolSpec } from "../shared/harness";
 import { powerOffSentence, type ModelPick } from "../shared/powers";
 import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequest, type OwnerRequestKind } from "../shared/project-assistant";
-import { noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, type OwnerVersion } from "./owner-versions";
+import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, type OwnerVersion } from "./owner-versions";
 import { agreeRequirement, changeOfRef, conversationDraftTools } from "./conversation-draft-tools";
 import type { ConversationRef } from "./conversation-draft-store";
 import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
@@ -157,6 +157,7 @@ function followStart(orgId: string, projectId: string, v: OwnerVersion, done: Pr
   };
   void done.then((r) => {
     if (!r.ok) fail(`${r.code}: ${r.message}`);
+    else closeTryRequests(orgId, projectId, v.label);
   });
   const t = setTimeout(() => {
     void versionsOf(orgId, projectId).then((vs) => {

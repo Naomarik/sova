@@ -13,7 +13,8 @@ import { realGit } from "./project-services/engine";
 import { readRegistry, type InstanceRecord } from "./project-services/store";
 import { previewAddress, previewOrigin } from "./share/preview-address";
 import { awaitShareLinks } from "./share/links-events";
-import { orgRequests } from "./project-assistant-store";
+import { orgRequests, setRequestStatus } from "./project-assistant-store";
+import { OWNER_REQUEST_TITLE_MAX, type OwnerRequest } from "../shared/project-assistant";
 
 /**
  * Versions you can try (§app.project-assistant/versions): each shown project's running copies the
@@ -145,7 +146,8 @@ export async function projectVersions(orgId: string, project: { id: string; name
   if (!recs.length) return [];
   const trees = await (treesForTest ?? projectTrees)(project.id).catch((): CodingTree[] => []);
   const fixTitle = new Map<string, string>();
-  for (const r of orgRequests(orgId)) if (r.projectId === project.id && r.kind === "fix" && r.sessionId) fixTitle.set(r.sessionId, r.title);
+  const requests = orgRequests(orgId);
+  for (const r of requests) if (r.projectId === project.id && r.kind === "fix" && r.sessionId) fixTitle.set(r.sessionId, r.title);
   const out: OwnerVersion[] = [];
   let n = 0;
   const mainOnMaster = await onMaster(project.root);
@@ -167,9 +169,22 @@ export async function projectVersions(orgId: string, project: { id: string; name
     const running = !!ep && rec.desired[ep.service.name] === "running" && (ep.service.static !== undefined ? serve !== null : await answers(ep.port));
     // A copy whose copies can't be shown never reads starting or failed: it is not openable at all.
     const state = ep ? stateOf(rec.id, running, Date.now()) : "not-running";
+    if (state === "running") closeTryRequests(orgId, project.id, label, requests);
     out.push({ handle: handleOf("v", rec.id), projectId: project.id, projectName: project.name, label, rec, endpoint: ep ? endpoint : null, port: ep?.port ?? null, serve, running, state });
   }
   return out;
+}
+
+/** A version's copy runs (whoever started it): the owner's open `try` requests for it are done (§app.project-assistant/requests). */
+export function closeTryRequests(orgId: string, projectId: string, label: string, requests: readonly OwnerRequest[] = orgRequests(orgId)): void {
+  const title = label.slice(0, OWNER_REQUEST_TITLE_MAX);
+  for (const r of requests)
+    if (r.projectId === projectId && r.kind === "try" && r.status === "with-team" && r.title === title)
+      try {
+        setRequestStatus(orgId, r.id, "done");
+      } catch (err) {
+        console.warn(`[owner-versions] closing a version request failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
 }
 
 /** The rows the owner page shows (§app.owner-page/never): the project's name, the operator's text, through

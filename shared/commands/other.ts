@@ -2,8 +2,48 @@
  * Everything else: models, extensions, settings, usage, insights and health. Part of the command catalogue, assembled by shared/commands-catalog.ts
  * (rules: agents/server/commands/overview.md). Pure, erasable syntax only.
  */
-import type { CommandEntry } from "./types.ts";
+import type { CommandEntry, CommandParam } from "./types.ts";
 import { CHAT_ENTRIES } from "./chat.ts";
+
+const orgId: CommandParam = { type: "string", description: "The organization's id", in: "path", required: true };
+const requestId: CommandParam = { type: "string", description: "The owner request's id (or_…)", in: "path", required: true };
+
+/** An owner request's answers on the org's Requests tab (§app.project-assistant/request-chat). */
+const ORG_OWNER_REQUEST_ENTRIES: CommandEntry[] = [
+  {
+    id: "org.owner.request.chat",
+    label: "Start Chat",
+    summary: "Open a new chat in an owner request's project with the request in it as a note; nothing is sent until you write.",
+    effect: "changes",
+    params: { "org-id": { ...orgId, key: "id" }, "request-id": { ...requestId, key: "rid" } },
+    route: { method: "POST", path: "/api/orgs/:id/owner/requests/:rid/chat" },
+    sessionKey: null,
+    sessionFile: "new",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.owner.request.done",
+    label: "Mark Done",
+    summary: "Mark an owner request done.",
+    effect: "changes",
+    params: { "org-id": { ...orgId, key: "id" }, "request-id": { ...requestId, key: "rid" } },
+    route: { method: "POST", path: "/api/orgs/:id/owner/requests/:rid", fixed: { status: "done" } },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "org.owner.request.decline",
+    label: "Decline",
+    summary: "Decline an owner request.",
+    effect: "changes",
+    params: { "org-id": { ...orgId, key: "id" }, "request-id": { ...requestId, key: "rid" } },
+    route: { method: "POST", path: "/api/orgs/:id/owner/requests/:rid", fixed: { status: "declined" } },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
 
 export const OTHER_ENTRIES: CommandEntry[] = [
   {
@@ -418,5 +458,6 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "full",
   },
+  ...ORG_OWNER_REQUEST_ENTRIES,
   ...CHAT_ENTRIES,
 ];

@@ -7,11 +7,13 @@ import { currentAssistantPath, ensureAssistant, refreshAssistant } from "./proje
 import { pricedPick } from "./project-assistant-prices";
 import { assistantModelFor, orgRequests, readAssistantStore, setAssistantModels, setRequestStatus } from "./project-assistant-store";
 import { assistantProjects } from "./project-assistant-tools";
+import { HasChatError, startRequestChat, withChats } from "./owner-request-chat";
 import { projectOverseerPaths, readPoSettings, sessionIdOfFile } from "./project-overseer-store";
 
 /**
- * The operator's side of the Project Assistant (§app.project-assistant/models, /requests, /chat), main
- * listener only: the Owner card's data, its models, closing a request, and opening the conversation.
+ * The operator's side of the Project Assistant (§app.project-assistant/models, /requests, /chat,
+ * /request-chat), main listener only: the Owner card's data, its models, closing a request, a
+ * request's Start Chat, and opening the conversation.
  */
 
 const p = (c: Context, name: string): string => c.req.param(name) ?? "";
@@ -57,7 +59,7 @@ export async function assistantInfo(orgId: string): Promise<AssistantInfo> {
     return { projectId: pr.id, name: pr.name, coding: { pick: pricedPick(coding.pick), source: coding.source }, gathering: { pick: pricedPick(gathering.pick), source: gathering.source } };
   });
   const path = await currentAssistantPath(orgId);
-  return { models, projects, sessionId: path ? sessionIdOfFile(path) : null, requests: orgRequests(orgId) };
+  return { models, projects, sessionId: path ? sessionIdOfFile(path) : null, requests: await withChats(orgRequests(orgId)) };
 }
 
 export function registerAssistantRoutes(app: Hono<any>): void {
@@ -84,6 +86,18 @@ export function registerAssistantRoutes(app: Hono<any>): void {
       return c.json(await assistantInfo(id));
     }),
   );
+  // Start Chat (§app.project-assistant/request-chat): a project chat with the request as a note; 409 with the chat it has.
+  app.post("/api/orgs/:id/owner/requests/:rid/chat", async (c) => {
+    try {
+      const out = await startRequestChat(p(c, "id"), p(c, "rid"));
+      attentionChanged();
+      return c.json(out);
+    } catch (err) {
+      if (err instanceof HasChatError) return c.json({ error: err.message, code: err.code, sessionId: err.chat.sessionId, path: err.chat.path }, 409);
+      if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
+      throw err;
+    }
+  });
   // Open Assistant Chat: the owner's conversation, made when there is none yet.
   app.post(
     "/api/orgs/:id/owner/assistant/open",

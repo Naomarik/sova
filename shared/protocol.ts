@@ -11,6 +11,7 @@ import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
+import type { OwnerRequestCard } from "./project-assistant";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -403,6 +404,9 @@ export interface TranscriptItem {
   /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
       `text` is the one line the model read ("Merged feat/x into master at abc1234, 5 commits, +120 −30"). */
   worktreeMerge?: WorktreeMergeInfo;
+  /** kind "info" only: an owner request Start Chat put in the chat as a note (§app.project-assistant/request-chat),
+      drawn as its card; `text` is the note the model read. */
+  ownerRequest?: OwnerRequestCard;
   /** kind "align" only: the `align` tool result's `details`, checked by the extension's own
       `normalizeAlignDetails` (pi-config/extensions/mode/align.ts, §chat.alignment/state): the
       touched document's snapshot after the call, or an exemption. `toolCallId` pairs it with its

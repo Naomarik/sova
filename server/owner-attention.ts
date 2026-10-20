@@ -5,9 +5,9 @@ import { orgRequests } from "./project-assistant-store";
 
 /**
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
- * each opening the org's People tab (its Owner card): every open owner request
- * (`owner-request`; an outage `owner-outage`, which a phone notification also tells), and an owner
- * who asked for a new link (`owner-link-request`). No session: `path` "".
+ * every open owner request (`owner-request`; an outage `owner-outage`, which a phone notification also
+ * tells), each opening the org's Requests tab at that request, and an owner who asked for a new link
+ * (`owner-link-request`), opening the People tab (its Owner card). No session: `path` "".
  */
 
 const clip = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t);
@@ -60,7 +60,7 @@ export function ownerAttention(): AttentionItem[] {
         kind: r.kind === "outage" ? "owner-outage" : "owner-request",
         since: Date.parse(r.createdAt) || 0,
         detail: clip(`${ownerName} reports ${KIND_WORD[r.kind] ?? "something"}${project ? ` on ${project.name}` : ""}: ${r.title}`, 200),
-        href: `#/orgs/${encodeURIComponent(o.id)}/people`,
+        href: `#/orgs/${encodeURIComponent(o.id)}/requests/${encodeURIComponent(r.id)}`,
         org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
       });
     }

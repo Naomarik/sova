@@ -207,7 +207,8 @@ Every caller keeps working with no new step for the person:
   the same way on its requests and on its `/ws/watch` upgrade); a rig that starts its own servers pins one token for
   them with `SOVA_TOKEN`, or reads each server's file. From a chat Sova runs, the same helper also
   sends the chat's key in `x-sova-caller`, beside the token and never instead of it: the key only
-  says which chat called (§app.command-audit/attribution).
+  says which chat called (§app.command-audit/attribution), and a request carrying it can't approve
+  a project mode's hooks (§chat.mode-menu/project-mode-hooks).
 - **`sova token` and `sova open`** are the installed launcher's: `token` prints the token from the
   agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and before the server ever
   minted a token says to start it once and exits nonzero; it never starts the server. `open` is

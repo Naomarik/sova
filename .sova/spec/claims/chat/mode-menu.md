@@ -141,7 +141,8 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   project · {name}" (the checkout's name; "This project" when there is none), one
   `menuitemcheckbox` row each with the id (mono) and the mode file's description, in the same
   roving focus, with no gear, except that a mode that is on and whose hooks wait for your approval
-  (the Overseer turned it on, §chat.mode-menu/project-mode-hooks) has an **Approve Hooks** chevron
+  (it was turned on with an approval that isn't yours: the Overseer's, a script's, a chat agent's or an
+  extension's, §chat.mode-menu/project-mode-hooks) has an **Approve Hooks** chevron
   beside its row, which opens the approval panel for its hooks only: Back, "Approve {id}'s hooks?",
   why only you can, one card per hook with when it runs and its command line, and **Approve Hooks**
   and **Cancel**; it switches nothing. The trigger names the project modes that are on after the built-in
@@ -150,9 +151,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   opened again. Under the description a row says its state in words,
   never by tint alone (copy in §design.copy-deck/mode-menu): broken (off, `aria-disabled`, can't be
   turned on), removed from the project (on; turning it off removes the row), changed since turned
-  on, its files broken now while it is on, asks before turning on (it has tools not approved), or
+  on, its files broken now while it is on, asks before turning on (it has tools, commands or hooks not approved), or
   its tools changed since approval (on, its tools won't run), its hooks need your approval (on,
-  the Overseer's approval doesn't cover them), or its hooks are paused (on, a hook ran 10 times in 10
+  an approval that isn't yours doesn't cover them), or its hooks are paused (on, a hook ran 10 times in 10
   minutes). Turning on a mode that asks opens the
   **approval panel** in the same popover, like the Memory type panel: Back, "Turn on {id}?", what it
   lets the model do (and, for a mode with commands or hooks, what you and scripts can run and what
@@ -496,7 +497,7 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   reference files beside them. Every other file in the folder is the mode's own to use.
 - **Broken folders.** Sova lists a folder as **broken**, with its path and what is wrong, when its
   id is invalid, its `MODE.md` is missing or doesn't parse (its tool declarations included, and a
-  `./` file a tool names that is missing, and a mode with tools whose folder holds more than 1000
+  `./` file a tool names that is missing, and a mode with tools, commands or hooks whose folder holds more than 1000
   files or 50 MB: such a mode is approved as its whole folder, so it is kept small), or its
   id is a built-in minor mode's (`align`, `spec`, `vis`, `codemode`, `memory`, or any added
   later). A broken mode can't be turned on. A name clash never replaces the built-in: the two live
@@ -508,15 +509,16 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   stores one and `mode.json` never holds one. A profile, an automation, a project's coding session
   (§app.project-overseer/coding-mode) and `pi --minor` can't name one. Settings shows none.
 - **The chat keeps the version it turned on.** Turning a mode on saves a copy of its `MODE.md`
-  (description, `workers`, instructions and tool declarations) and, for a mode with tools, the
+  (description, `workers`, instructions and its tool, command and hook declarations) and, for a mode with tools,
+  commands or hooks, the
   fingerprint of every other file in its folder into that chat's own history. From then on the chat works from that copy and never
   reads `MODE.md` again for it, across a reload, a resume, a server restart and a compaction.
   An edit to `MODE.md` reaches the chat only when the mode is turned off and on again; until then
   its row says it changed since you turned it on (when the menu next opens). The other files are
   not copied: the agent reads them from the folder when it needs them, so an edit to one reaches the
-  chat at once. In a mode without tools that marks nothing changed; in a mode with tools any edit to
+  chat at once. In a mode without tools, commands or hooks that marks nothing changed; in one with them any edit to
   a file in its folder (other than `MODE.md`) changes its fingerprint, so the row says it changed
-  and its tools stop running until it is approved again (below). A mode whose folder is deleted
+  and its tools, commands and hooks stop running until it is approved again (below). A mode whose folder is deleted
   stays on, its row saying it was removed from the project, until it is turned off; then its row is
   gone. One whose files turn broken while it is on stays on too, from its copy, and its row says so.
 - **Tools.** A mode may declare up to 16 tools, each with a name (`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`,
@@ -642,7 +644,8 @@ answer anything, and they never send a message into a chat.
   can still read Sova's operator token file from disk under `HOME`, and a program that sends that
   token as Sova's cookie is taken for your own page, so it could approve hooks.
 - **Approval.** Hooks are part of what you approve (§chat.mode-menu/project-modes), and they need
-  your own approval: when the Overseer turned the mode on, its tools and commands work but its hooks
+  your own approval: when it was turned on with an approval that isn't yours (the Overseer's, a script's, a chat
+  agent's or an extension's), its tools and commands work but its hooks
   stay inactive, and the mode's row says "Hooks need your approval" with **Approve Hooks**, which
   approves that exact version (refused, like a stale approval, when it changed since the row was
   drawn). Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by

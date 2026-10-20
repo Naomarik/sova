@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { OwnerRoute } from "../lib/owner-words";
-import { ownerHash, parseOwnerHash } from "../lib/owner-words";
+import { ownerHash, parseOwnerHash, readsHome } from "../lib/owner-words";
 import { type OwnerAnswer, OwnerPage } from "./owner-view";
 import { OwnerLoadError, ownerProblemOf } from "../lib/owner-problem";
 import type { AssistantApi } from "./assistant-view";
@@ -34,7 +34,8 @@ async function load(r: OwnerRoute): Promise<OwnerAnswer> {
   // "missing": a project or conversation that isn't on the page (hidden and never-existed answer
   // alike); a 404 otherwise is the link itself. A 503 is a public gateway's answer for a host that
   // is offline (§mesh.public/offline): the page keeps what it shows and reads again.
-  const problem = await failure(res, r.kind === "home" ? "home" : "sub");
+  // Home, the Assistant and Requests read the Home answer: a 404 there is the link itself.
+  const problem = await failure(res, readsHome(r) ? "home" : "sub");
   if (problem) throw problem;
   return (await res.json()) as OwnerAnswer;
 }

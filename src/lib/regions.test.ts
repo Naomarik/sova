@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
-import { foldersOpen, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isProjectOwned, isTopSession, listedWithLocalProject, sidebarRegion, storedFoldersOpen } from "./regions";
+import { archiveDateOpen, archiveOpen, foldersOpen, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isProjectOwned, isTopSession, listedWithLocalProject, sidebarRegion, storedFoldersOpen } from "./regions";
 import { groupSections } from "./session-groups";
 import { groupByCreation } from "./session-order";
 import { FOLDERS_KEY } from "./storage-keys";
@@ -113,17 +113,34 @@ test("Folders leaves out a session this computer's project lists, standalone or 
   assert.equal(sidebarRegion(standalone), "top");
 });
 
-test("Folders: open by default, a collapse kept for the tab, forced open by a search with hits in it or the open session", () => {
+test("Folders: open by default, a collapse kept for the tab, forced open by a search with hits in it, opened for the open session", () => {
   assert.equal(FOLDERS_KEY, "sova:top-open");
   assert.equal(storedFoldersOpen(null), true, "open by default");
   assert.equal(storedFoldersOpen("1"), true);
   assert.equal(storedFoldersOpen("0"), false, "the user collapsed it");
-  const closed = { stored: false, searching: false, hits: 3, holdsSelected: false };
+  const closed = { stored: false, searching: false, hits: 3, holdsSelected: false, dismissed: false };
   assert.equal(foldersOpen(closed), false);
   assert.equal(foldersOpen({ ...closed, searching: true }), true, "a search with matches in it");
   assert.equal(foldersOpen({ ...closed, searching: true, hits: 0 }), false, "a search with none here leaves it as chosen");
-  assert.equal(foldersOpen({ ...closed, holdsSelected: true }), true, "it holds the open session");
+  assert.equal(foldersOpen({ ...closed, holdsSelected: true }), true, "moved to a session inside it: it opens for it");
+  assert.equal(foldersOpen({ ...closed, holdsSelected: true, dismissed: true }), false, "collapsed on this visit: it stays shut");
+  assert.equal(foldersOpen({ ...closed, holdsSelected: true, dismissed: true, searching: true }), true, "a search still opens it");
   assert.equal(foldersOpen({ ...closed, stored: true }), true);
+});
+
+test("Archive and its date sections: opened for the open session once, a collapse on that visit sticks", () => {
+  const closed = { stored: false, searching: false, topEmpty: false, holdsSelected: false, dismissed: false };
+  assert.equal(archiveOpen(closed), false, "collapsed by default");
+  assert.equal(archiveOpen({ ...closed, searching: true }), true);
+  assert.equal(archiveOpen({ ...closed, topEmpty: true }), true, "Folders empty (case 1)");
+  assert.equal(archiveOpen({ ...closed, holdsSelected: true }), true, "moved to an archived session (case 2)");
+  assert.equal(archiveOpen({ ...closed, holdsSelected: true, dismissed: true }), false, "collapsed on this visit: it stays shut");
+  assert.equal(archiveOpen({ ...closed, stored: true, holdsSelected: true, dismissed: true }), true, "opened again by hand");
+  const date = { stored: false, searching: false, holdsSelected: false, dismissed: false };
+  assert.equal(archiveDateOpen(date), false);
+  assert.equal(archiveDateOpen({ ...date, holdsSelected: true }), true);
+  assert.equal(archiveDateOpen({ ...date, holdsSelected: true, dismissed: true }), false);
+  assert.equal(archiveDateOpen({ ...date, holdsSelected: true, dismissed: true, searching: true }), true);
 });
 
 test("Folders counts folders: a folder that only held this computer's project sessions is gone, a peer's stays", () => {

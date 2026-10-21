@@ -1041,6 +1041,7 @@ page never names a host or a person.
 | Verify reasons (server) | Timed out · Couldn't connect · It redirects; the front must forward, not redirect · Got {status}, not Sova's answer · Something else answered, not Sova · The public address must start with https:// · The public address must have no path, query or login · No public address is set. |
 | Routed hosts | heading "Hosts sending links here" · row `{n} links` (`1 link`) · `Last push {time}` / `Never pushed` · `Up` / `Down` / `Not accepted` · none: "No other host sends its links here yet." |
 | Through | "Links open only while {gateway} is on. Keep a client's organization on an always-on host." · Ingress port |
+| Gateway behind (warn banner, §mesh.public/share-protocol) | **{gateway} runs an older version of public links.** Some pages of this host's links may not open until {gateway} is updated. · `Resync` (the host menu's, §mesh.peers/resync; disabled with its reason) |
 | Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port is a whole number from 1 to 65535. · Pick the gateway. · The ingress port is a whole number from 1 to 65535. (the save bar: "Public links: {error}") |
 | Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
 | Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
@@ -1135,6 +1136,8 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | …busy | "Wait for the answer first." |
 | …too many | "Too many messages. Wait a minute." |
 | …failed | "Your message didn't go through. Try again." |
+| …can't open on this link yet (a 404 with no code) | "The Project Assistant can't open on this link yet." / "{op} has to update the server your link goes through. Your projects still open." · "← All projects" |
+| …couldn't load | "We couldn't load the Project Assistant." / "Try again in a minute." · `Try Again` |
 | Couldn't load | "We couldn't load this page. Your link still works. Try again in a minute." · `Try Again` |
 | Too many requests | "Too many requests from this network. Wait a minute, then reload." |
 

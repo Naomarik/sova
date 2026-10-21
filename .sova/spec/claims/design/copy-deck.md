@@ -1087,9 +1087,11 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Greeting | "Hi {first}. Here's how your projects are going." |
 | Project Assistant button | `Project Assistant` (primary) · line under it: "Ask about your projects, report a problem or ask for something new." |
 | Your requests, heading | "Your requests" |
-| …row | "{title}" · "{kind} · {status} · {time}" · kinds: `Problem` (bug), `App down` (outage), `Question`, `New feature`, `Fix`, `Release` (deploy) · statuses: `With the team` (info), `Being worked on` (info), `Done` (success), `Not planned` (neutral) |
+| …row | "{title}" · "{kind} · {status} · {time}" · kinds: `Problem` (bug), `App down` (outage), `Question`, `New feature`, `Fix`, `Release` (deploy), `Version to try` (try) · statuses: `With the team` (info), `Being worked on` (info), `Done` (success), `Not planned` (neutral) |
 | Versions you can try, heading | "Versions you can try" · line: "Open a version to try it. These links work as long as this page does." |
-| …row | "Current version" / "Fix: {title}" / "Fix {n} · started {date}" · "{project}" · `Open` (secondary) · not running: "Not running right now" |
+| …row | "Current version" / "Fix: {title}" / "Fix {n} · started {date}" · "{project}" · `Open` (secondary) · starting: `Starting…` (secondary, disabled) · failed: "It didn't start. The team knows." · not running: "Not running right now" |
+| A version, opened while it starts (`/i/…/v/…`) | "Starting this version…" / "This page opens it as soon as it's ready." |
+| A version that didn't start (409) | "This version didn't start. The team knows." |
 | Freshness | "Updated just now" · "Updated {time}" |
 | Waiting on you, heading | "Waiting on you" |
 | …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
@@ -1129,9 +1131,12 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Unknown link (404) | "This link doesn't open anything." / "Check that you copied all of it." |
 | A project or conversation not on the page (404) | "This isn't on your page." / "Go back to all your projects to see what is." · "← All projects" |
 | Assistant, title | "Project Assistant" · back "← All projects" |
-| …empty | "Hi {first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new." |
+| …greeting (the first bubble, from "Project Assistant") | "Hi {first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new." |
 | …senders | owner: "You" · operator: "{op}" · assistant: "Project Assistant" |
-| …composer | placeholder "Write a message" · `Send` (primary) · while it writes: "Writing…" |
+| …composer | placeholder "Write a message. Enter sends" while Enter sends, "Write a message" after a touch · `Send` (primary) · while it writes: "Writing…" |
+| …photos | paperclip `Attach Photos` (icon only, its label) · while an upload runs: "Waiting for photos to finish." · the pending strip and its refusals as on a hand-off page (§design.copy-deck/gathering-images) · a picture pasted or dropped while photos are off: "Photos can't be sent here." · photo alt: "Your photo" / "Your photo {i} of {n}" |
+| …a version in an answer | the Versions row above, inside the assistant's bubble |
+| …a drawing that can't be shown | "A drawing couldn't be shown here." |
 | …not ready | "The Project Assistant isn't ready yet. {op} has to finish setting it up." |
 | …busy | "Wait for the answer first." |
 | …too many | "Too many messages. Wait a minute." |
@@ -1166,9 +1171,10 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | Project Assistant part, title | "Project Assistant" · line: "{first}'s own chat on their page. It answers, reports problems and outages to you, and notes new requirements for you to review; anything its switches leave off comes to you as a request." |
 | …requests | heading "Requests from {first}" · row "{title}" · "{Kind} · {project} · {status} · {relative time}" · the owner's text · `Mark Done` (secondary) · `Decline` (ghost) · none: "No open requests." · statuses `With the team`, `Being worked on`, `Done`, `Declined` |
 | …chat | `Open Assistant Chat` · before the first message: `Start Assistant Chat` |
-| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
+| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · under "Its replies", when its model can't see images: "This model can't see photos: {first} won't get an attach button." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
 | …switches | heading "What it may set off on its own" · per project, the Project Assistant column (§design.copy-deck/project-powers) |
-| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." |
+| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." · `owner-version-request`: "{owner} asks to try {project}: {version}" (opens the project's Branches tab) |
+| `start_version` answers (the model reads them and says them in its own words) | started: "{version} of {project} is starting. Its Open button is in this chat and on the home page." · running: "{version} of {project} is running. Its Open button is in this chat and on the home page." · switch off: the power refusal ("Create, start and update running copies is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.") · can't be shown: "{project}'s versions can't be shown outside the team." · none: "{project} has no versions to try." · failed: "It didn't start; the team knows." |
 | Phone notification | kind word "App down" |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |

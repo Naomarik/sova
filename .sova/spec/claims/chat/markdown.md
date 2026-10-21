@@ -233,7 +233,8 @@ broken block's source (§app.baton/outsider-view).
   for a hard error. Only a hard error is a block that failed.
 - **Feedback to the model** (`server/vis-check.ts`). The model learns of a block that didn't draw
   through a hidden retry note, not through the reader's error line. In a chat Sova hosts (not the
-  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, when a run is
+  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, and in the
+  Project Assistant's chat always (§app.project-assistant/drawings), when a run is
   about to settle, Sova parses every `vis` fence in that run's assistant text with the same
   `parseVis`, finding fences as the reader's view does (per text block). If any block has a hard
   error, Sova adds one hidden note (a `sova-vis-retry` custom message, `display: false`: never in

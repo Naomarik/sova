@@ -599,8 +599,10 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`,
   `GET` and `POST /api/i/<token>/assistant`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
   and the WebSocket `/ws/i?token=` (§app.owner-page/page, §app/project-assistant); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
-  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
-  answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
+  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). A new socket
+  of a link's own is named `/ws/<kind>/<name>` (§mesh.public/share-protocol). Every other path
+  answers 404 before any routing, except on a gateway, whose edge also passes the forward-only
+  shapes of §mesh.public/share-protocol for the links routed hosts registered (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. A request carrying a `Service-Worker` header (a browser fetching a
   service-worker script) answers 404 on every share path and socket, so no script served on the share
@@ -608,7 +610,9 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   listener never serves the share page. A request whose `Host` is a
   preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
   (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
-- Limits: request bodies over 16 KB (or without a length) are refused (413), except a photo
+- Limits (at a gateway, a link a routed host registered has the one ceiling of
+  §mesh.public/share-protocol instead of the body and time limits here, and its host's ingress
+  applies these): request bodies over 16 KB (or without a length) are refused (413), except a photo
   upload's, whose cap at the edge is the setting's ceiling (10 MB) plus 64 KB, and past this host's
   own largest photo setting the upload route answers 413, and a file upload's (§app.baton/files),
   whose cap at the edge is the file setting's ceiling (25 MB) plus 64 KB, past this host's own

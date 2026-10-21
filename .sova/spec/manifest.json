@@ -7794,7 +7794,12 @@
         "§app.baton/links",
         "§app.baton/outsider-view",
         "§app/tours"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§app.organizations/decisions": {
       "kind": "note",
@@ -9963,8 +9968,16 @@
         "server/tour-routes.ts",
         "src/share/thread.tsx",
         "server/share/edge.ts",
-        "server/tours/bindings-app.integration.test.ts"
-      ]
+        "server/tours/bindings-app.integration.test.ts",
+        "src/lib/owner-problem.ts",
+        "src/lib/owner-problem.test.ts",
+        "src/share/assistant-view.tsx"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§app.owner-page/rejected": {
       "kind": "note",
@@ -12304,7 +12317,12 @@
         "shared/public-links.ts",
         "server/share/registry-push.ts",
         "server/share/tour-transport.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§mesh.public/ingress": {
       "kind": "behavior",
@@ -12324,7 +12342,12 @@
         "server/share-ingress.integration.test.ts",
         "server/share-security.test.ts",
         "server/share-security.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§mesh.public/offline": {
       "kind": "behavior",
@@ -12346,7 +12369,12 @@
         "server/share-router.test.ts",
         "server/share-router.integration.test.ts",
         "server/share/tour-transport.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§mesh.public/panel": {
       "kind": "behavior",
@@ -12362,8 +12390,14 @@
         "src/lib/public-links.ts",
         "src/lib/public-links.test.ts",
         "src/components/SettingsDialog.tsx",
-        "src/components/MeshView.tsx"
-      ]
+        "src/components/MeshView.tsx",
+        "server/public-links-routes.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§mesh.public/registry": {
       "kind": "behavior",
@@ -12425,8 +12459,14 @@
         "server/share-ws-hop.integration.test.ts",
         "server/share-offline.integration.test.ts",
         "server/share/tour-transport.test.ts",
-        "server/share/tour-transport.integration.test.ts"
-      ]
+        "server/share/tour-transport.integration.test.ts",
+        "server/share-contract.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§mesh.public/setting": {
       "kind": "behavior",
@@ -12725,6 +12765,41 @@
         "server/mesh-termux-share.test.ts"
       ]
     },
+    "§mesh.public/share-protocol": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/routing",
+        "§mesh.public/registry",
+        "§mesh.public/gateway",
+        "§app.baton/share-listener",
+        "§mesh.public/ingress",
+        "§mesh.public/withdrawn-hop"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/edge.ts",
+        "server/share/router.ts",
+        "server/share/ws-hop.ts",
+        "server/share/gateway-client.ts",
+        "server/share/gateway-routes.ts",
+        "shared/public-links.ts",
+        "server/share-contract.test.ts",
+        "docs/public-links.md",
+        "server/share/registry-validation.ts",
+        "server/public-links-routes.ts",
+        "server/share-router.test.ts",
+        "server/share-router.integration.test.ts",
+        "server/share-ingress.test.ts",
+        "server/share-registry.test.ts",
+        "server/share-ingress.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
+    },
     "§mesh.public/via-answer": {
       "kind": "behavior",
       "requires": [
@@ -12754,7 +12829,12 @@
         "server/share-ws-hop.integration.test.ts",
         "server/share-router.test.ts",
         "server/share-router.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:13Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      }
     },
     "§app.decisions/asks-user": {
       "kind": "behavior",

@@ -259,6 +259,15 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
 - **Errors.** When a read fails for any reason but a dead link, the page says it couldn't load,
   that the link still works, and offers `Try Again`; what it showed before stays.
+- **The Project Assistant's errors** read its answer's status as the page's own read does: a
+  turned-off or replaced link (410) is the page's dead-link screen (`Ask for a New Link` where
+  that applies), an unknown link (404 `not-found`) the unknown-link screen, too many requests
+  (429) the busy screen, an offline host (503) the offline answer, read again with backoff. A 404
+  with no `code` (an older gateway refusing the address) says the Project Assistant can't open on
+  this link yet, that {op} has to update the server the link goes through, and that the projects
+  still open, with `← All projects` and no `Try Again`. Any other failure says it couldn't load
+  the Project Assistant and offers `Try Again`, never that the link still works. The message box
+  shows only once the chat's view has loaded.
 
 ## §app.owner-page/controls — The operator's side
 

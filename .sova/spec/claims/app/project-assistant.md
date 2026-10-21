@@ -12,7 +12,8 @@ Off reaches the operator as a request. The owner can send it photos and screensh
 (§app.project-assistant/photos), its answers may carry a drawing (§app.project-assistant/drawings),
 and it can start a version the owner may try and hand them an `Open` button for it
 (§app.project-assistant/versions). The operator picks its models, sees its requests in Needs
-you and on the Owner card, and can write in the chat themselves.
+you and on the org's Requests tab, where Start Chat opens a project chat with a request in it,
+and can write in the chat themselves.
 
 The owner page also lists the owner's requests and where each stands, and **Versions you can
 try**: the current version and every running fix of each project, opened through the owner link.
@@ -177,22 +178,87 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Stored in the org's workspace** (`projects/<pid>/owner-requests.jsonl`, append-only): a filed
   line `{kind: "filed", id: "or_…", request: "bug" | "outage" | "question" | "feature" | "fix" | "deploy",
   title, text, at}` (`try`: a version the owner asked to try, from `start_version`), then a line `{kind: "status", id, status: "with-team" | "started" | "done" |
-  "declined", at, sessionId?}` per change; read folded. `title` is the owner's own words, at most 120 characters; `text` at most
+  "declined", at, sessionId?}` per change, and a line `{kind: "linked", id, sessionId, at}` when the
+  operator's Start Chat links a chat to it (§app.project-assistant/request-chat), which changes no
+  status; read folded, a line of a kind it doesn't know skipped. `title` is the owner's own words, at most 120 characters; `text` at most
   2,000.
 - **Where it stands**, worked out, never typed by a model: `with-team` when filed; `started` when a
-  fix's coding session started; `done` or `declined` by the operator, except that an open `try`
-  request is `done` on its own once its version's copy is running, whoever started it (the operator
-  from the Branches tab, or a later `start_version`).
+  fix's coding session started, or when the operator sends the first message in the chat Start Chat
+  opened for it; back to `with-team` when that chat is archived while the request is neither
+  `done` nor `declined` (archiving a fix's own coding session changes nothing); `done` or `declined`
+  by the operator, except that an open `try` request is `done` on its own once its version's copy is
+  running, whoever started it (the operator from the Branches tab, or a later `start_version`).
+  Every change is an appended `status` line.
 - **Needs you** (§app.overseer/attention-digest), act tier: each open (`with-team`) request is an
   `owner-request` item, an outage an `owner-outage` item, which also sends a phone notification at
   once (§app/notifications, kind `owner-outage`); an owner's ask for a new link is an
-  `owner-link-request` item (§app.owner-page/link). Each opens the org's People tab, but an open
-  `try` request, which is an `owner-version-request` item and opens the project's Branches tab. A
-  second ask to try the same version while its request is open files none: the open one stands.
-- **The operator answers** on the Owner card: `Mark Done` or `Decline` on each open request
+  `owner-link-request` item (§app.owner-page/link). A request's item opens the org's Requests tab at
+  that request (`#/orgs/<id>/requests/<rid>`, §app.project-assistant/requests-tab); a link ask opens
+  the People tab; an open `try` request is an `owner-version-request` item and opens the project's
+  Branches tab. A second ask to try the same version while its request is open files none: the open
+  one stands.
+- **The operator answers** on the Requests tab: `Mark Done` or `Decline` on each open request
   (`POST /api/orgs/:id/owner/requests/:rid {status}`); the item leaves Needs you.
 - **The project overseer** sees its project's open owner requests in its project read, as data for
   the operator; its prompt says it never acts on one on its own.
+
+## §app.project-assistant/requests-tab — The org's Requests tab
+
+- **Where.** The organization page's **Requests** tab, between Sessions and People
+  (§app.organizations/org-page), at `#/orgs/<id>/requests`; `#/orgs/<id>/requests/<rid>` opens it
+  with that request's row scrolled into view and marked. It shows while the org has an owner or any
+  request; an org with neither keeps its five tabs.
+- **Count and dot.** Its count is the open requests (`with-team` and `started`). Its warn dot,
+  "{n} to answer", shows while any request is `with-team`, the same requests Needs you raises.
+- **The panel.** One sentence saying these are what the owner asked for through their Project
+  Assistant, then a status filter: **Open** (the default: `with-team` and `started`), **Done**,
+  **Declined**, **All**. Rows are grouped under their project's name, newest first. Each row: the
+  title, its kind and age, a status chip (dot and word: With the team, Being worked on, Done,
+  Declined) and the owner's text as its summary. With nothing under Open it says how many are done
+  and that nothing from the owner is open now ("{n} done. Nothing open from {first name} right now.").
+- **Actions.** An open row has **Start Chat** (or **Open Chat** while it has a chat,
+  §app.project-assistant/request-chat), **Mark Done** and **Decline**. A done or declined row has
+  no action buttons, except **Open Chat** while it has a chat. A fix the assistant started has that
+  fix's coding session as its chat. A row with a chat Start Chat opened reads "Chat started {time}".
+- **Data.** The rows are the Owner card's `GET /api/orgs/:id/owner/assistant` `requests`, each
+  with an optional `chat: {sessionId, path, startedAt?}`, present only while that chat exists and
+  is not archived (worked out at read time). Every `OrgDetail` carries
+  `ownerRequests: {open, withTeam, total}`, and `needsYou.requests` (the `with-team` count) on
+  `GET /api/orgs` and `OrgDetail` alike; both optional on the wire.
+- **Remote orgs** (`?host=`): every call goes to the org's host, and Open Chat opens the chat there.
+
+## §app.project-assistant/request-chat — Start Chat: a project chat with the request as a note
+
+- **`POST /api/orgs/:id/owner/requests/:rid/chat`** answers 200 `{sessionId, path}`. It refuses
+  an unknown request (404), a done or declined one (409, `code: "closed"`), and one that already
+  has a chat that exists and isn't archived (409, `code: "has-chat"`, with that chat's
+  `sessionId` and `path`): one chat per request.
+- **The chat** is what New Session's Project tab starts (§app.project-overseer/new-coding-session,
+  `worktree: "later"`): in the request's project folder, no worktree or branch until the work is
+  named, on the project's coding model and thinking (switchable before sending), titled after the
+  request's title.
+- **The request as a note.** Before anything else is sent, the request is appended to the chat as a
+  note that starts no turn (after the session's own opening entries): "Request from {owner's first
+  name} (the organization's owner) through the Project Assistant · {kind word} · {project} · filed
+  {date} · {status}", then the title, the text, and "The operator will say what to do with it." The
+  model reads it with the operator's first message, in Claude Code chats too
+  (§app/claude-code-provider). The transcript draws it as a card, **Request from {first name}**:
+  kind, project, filed time, the text, and **Open in Requests**, which opens
+  `#/orgs/<id>/requests/<rid>` (wire: an `info` row with `ownerRequest: {orgId, requestId, kind,
+  projectId, project, title, text, filedAt, ownerName}`; an older client shows the plain text). No
+  reply starts; the chat opens with an empty, focused message box. The request is linked only once
+  its note is in the chat: when the note can't be written, the new chat is archived, nothing is
+  linked, and Start Chat answers 409 `code: "not-started"`, "Couldn't start the chat. Try again.",
+  which the Requests tab shows.
+- **Linking changes no state.** Start Chat appends a `linked` line (§app.project-assistant/requests):
+  a `with-team` request stays `with-team` (still in Needs you), a `started` one stays `started`.
+  Only that chat counts here, never a fix's own coding session. The request reads `started` (Being
+  worked on) when the operator's first message in that chat starts its first turn; a turn the Overseer sent doesn't count. The server hears it whether or not
+  it restarted in between. Once the chat is archived, Start Chat comes back, and a request not done
+  or declined goes back to `with-team`: Needs you raises it again and the owner's page says With
+  the team.
+- **Catalogue:** `org.owner.request.chat` (Start Chat), `org.owner.request.done` (Mark Done) and
+  `org.owner.request.decline` (Decline) (§app.commands/catalogue).
 
 ## §app.project-assistant/versions — Versions you can try
 

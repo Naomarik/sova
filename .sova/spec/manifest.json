@@ -1377,6 +1377,48 @@
         "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
       }
     },
+    "§app.project-assistant/request-chat": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-assistant/requests",
+        "§app.project-overseer/new-coding-session",
+        "§app/claude-code-provider",
+        "§app.commands/catalogue"
+      ],
+      "code": [
+        "server/owner-request-chat.ts",
+        "server/project-assistant-store.ts",
+        "server/project-assistant-routes.ts",
+        "server/transcript.ts",
+        "shared/project-assistant.ts",
+        "shared/protocol.ts",
+        "shared/commands-catalog.ts",
+        "shared/commands-ids.json",
+        "server/owner-request-chat.test.ts",
+        "server/index.ts",
+        "shared/commands/other.ts",
+        "docs/commands.md",
+        "server/commands-inventory/baseline.json",
+        "server/commands-fuzz.test.ts",
+        "shared/harness-session.ts",
+        "server/harness/pi/session.ts",
+        "server/chat-manager.ts",
+        "server/chat-handle.ts",
+        "server/chat-runtime/methods.ts",
+        "shared/chat-runtime.ts",
+        "src/components/OwnerRequestNote.tsx",
+        "src/components/Thread.tsx",
+        "src/components/OrgRequests.css",
+        "src/lib/api.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T12:11Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#a4bb40c3"
+      }
+    },
     "§app.project-assistant/requests": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1399,12 +1441,52 @@
         "src/components/PushSettings.tsx",
         "src/share/owner-view.tsx",
         "server/project-assistant.integration.test.ts",
-        "server/project-assistant-tools.ts"
+        "server/project-assistant-tools.ts",
+        "server/owner-request-chat.ts",
+        "server/owner-request-chat.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
         "at": "2026-10-20T12:19Z",
         "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+      }
+    },
+    "§app.project-assistant/requests-tab": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-assistant/requests",
+        "§app.organizations/org-page"
+      ],
+      "code": [
+        "server/org-routes.ts",
+        "shared/orgs.ts",
+        "server/owner-attention.ts",
+        "server/project-assistant-routes.ts",
+        "shared/project-assistant.ts",
+        "server/owner-request-chat.test.ts",
+        "server/org-list.test.ts",
+        "src/components/OrgsView.tsx",
+        "src/components/OrgRequests.tsx",
+        "src/components/OrgRequests.css",
+        "src/lib/owner-requests.ts",
+        "src/lib/owner-requests.test.ts",
+        "src/lib/orgs-route.ts",
+        "src/lib/orgs-route.test.ts",
+        "src/lib/org-page-route.ts",
+        "src/lib/org-page-route.browser.test.ts",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts",
+        "src/lib/org-cards.ts",
+        "src/lib/org-cards.test.ts",
+        "src/lib/api.ts",
+        "src/orgs.css"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T12:11Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#a4bb40c3"
       }
     },
     "§app.project-assistant/tools": {

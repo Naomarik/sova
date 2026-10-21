@@ -213,3 +213,27 @@ names its extension.
   its page (§app.extensions/page), and the page remembers it; they leave every reply at once. An
   extension whose answers are dropped, or have a part dropped, 3 times in a row, or whose frame
   navigated, is muted: no longer asked, and nothing of it drawn, until the page reloads.
+
+## §app.commands/opted-out — Areas left as is, by choice
+
+Every route the main listener registers is a catalogue entry's, in a class that is not a command,
+or pending: not yet a command, on a list that only shrinks, so a new route that arrives pending
+fails the inventory test. One of those classes is the areas the user chose not to make scriptable,
+"Left as is, by choice": every route under `/api/` in `orgs`, `outreach`, `mesh`, `session-shares`,
+`public-links`, `previews`, `shares-overview`, `tours`, `voice`, `settings`, `claude`, `profiles`,
+`push`, `updates`, `themes`, `visitor-logging`, `baton`, `monitor`, `provider-limits` and
+`services`. They are named in one list, `OPTED_OUT` in `server/commands-inventory/scan.ts`.
+
+- **A route there is never pending**, and a new route there needs no catalogue entry.
+- **An entry still wins.** A route there that a catalogue entry points at stays a command (the
+  `settings.*` entries, `push.test`, `project.preview.off` and the `org.owner.request.*` ones), and
+  that is no error there, while an entry on any other class's route is one.
+- **It overlaps no other class.** A route that matches it and another class is an error.
+- **The core areas keep the default.** Sessions, projects, the Overseer with its to-dos and ideas,
+  and chats are not on the list: a new user-visible action there still gets a catalogue entry, and
+  their routes not yet converted stay pending.
+- **Taking an area back** is removing its name from the list. Its routes not yet converted then turn
+  pending and fail the inventory test by design, so the same change converts them, or lists each
+  one still left as is on the list as a single `METHOD /path`.
+- **Adding an area is the user's decision.** The inventory test's failure names the list as a way
+  out only for an area already on it, never as a fix for a new one.

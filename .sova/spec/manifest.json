@@ -784,6 +784,27 @@
       },
       "evidence": "verified"
     },
+    "§app.commands/opted-out": {
+      "kind": "behavior",
+      "requires": [
+        "§app.commands/catalogue"
+      ],
+      "code": [
+        "server/commands-inventory/scan.ts",
+        "server/commands-inventory.test.ts",
+        "server/commands-inventory/baseline.json",
+        "docs/commands.md",
+        "agents/server/commands/overview.md",
+        "AGENTS.md"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T22:07Z",
+        "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#11037810"
+      }
+    },
     "§app.commands/reply-place": {
       "kind": "behavior",
       "requires": [

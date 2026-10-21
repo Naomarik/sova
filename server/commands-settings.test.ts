@@ -63,7 +63,7 @@ describe("the area", () => {
     for (const c of OTHER_ENTRIES) assert.ok(COMMANDS.includes(c), c.id);
     const writes = OTHER_ENTRIES.filter((c) => c.id.startsWith("settings.") && c.effect === "changes").map((c) => c.id).sort();
     assert.deepEqual(writes, ["settings.align.set"]);
-    const forbidden = /\/api\/(profiles|schedules|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
+    const forbidden = /\/api\/(profiles|schedules\/(?:approve|revoke)|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
     for (const c of COMMANDS) assert.doesNotMatch(c.route.path, forbidden, c.id);
   });
 });

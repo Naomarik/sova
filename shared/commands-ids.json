@@ -135,7 +135,16 @@
     "session.tags.backfill.cancel",
     "session.worktree.summary",
     "session.worktree.cleanup",
-    "session.diff.summary"
+    "session.diff.summary",
+    "overseer.get",
+    "overseer.memory.get",
+    "project.overseer.get",
+    "project.overseer.actions",
+    "project.overseer.memory.get",
+    "insights.usage.refresh",
+    "schedule.list",
+    "playbook.list",
+    "draft-spec.list"
   ],
   "retired": [
     "settings.agents.get"

@@ -291,6 +291,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.tags.backfill": "a valid call classifies sessions through the decision model; session tags don't run in-process here, so the route answers 409",
   "session.tags.backfill.cancel": "with no tagging running it writes nothing, so no oracle can read it back; a running one needs the decision model",
   "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
+  "insights.usage.refresh": "asks every provider for its usage over the network, which the unit tier may not",
 };
 
 /**
@@ -340,6 +341,8 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "session.cleanup") return [{ anchor: { mode: "no-such-mode" }, refuse: true, kind: "refused" }];
   // A missing session is refused before the body's checks; the route takes a non-boolean dryRun as false (a finding), so no real or live anchor.
   if (c.id === "session.worktree.cleanup") return [{ anchor: { session: missingPath }, refuse: true, kind: "refused" }];
+  // It takes no input, and every call asks each provider over the network, which the unit tier may not: no cases.
+  if (c.id === "insights.usage.refresh") return [];
   const out: Anchor[] = [];
   // Tags are kept by id, for any id: a missing session is no refusal there (a finding, reported).
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
@@ -641,6 +644,15 @@ const FIXTURES: Record<string, Fixture> = {
     },
     status: 200,
   },
+  // Its first read makes the Overseer's file; done in the set-up, so the valid call only reads.
+  "overseer.get": { values: () => { pendingSetup.push(async () => void (await sendTo(app, "GET", "/api/overseer"))); return {}; }, status: 200 },
+  "overseer.memory.get": { values: () => ({}), status: 200 },
+  "project.overseer.get": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); }); return v; }, status: 200 },
+  "project.overseer.actions": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); }); return v; }, status: 200 },
+  "project.overseer.memory.get": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); }); return v; }, status: 200 },
+  "schedule.list": { values: () => ({}), status: 200 },
+  "playbook.list": { values: () => ({}), status: 200 },
+  "draft-spec.list": { values: () => ({}), status: 200 },
 };
 // Set-up a fixture needs before its hash is taken, done by the fixture's own `values`.
 const pendingSetup: (() => Promise<void>)[] = [];

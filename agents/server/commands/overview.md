@@ -147,6 +147,16 @@ When a rule changes, change its test in the same change; a rule without a test i
 - For the Overseer and the project overseers the catalogue only reads. Routes that start, message,
   run, code or clear an overseer, or turn its memory on, spend model time: they stay pending ("not
   yet"), never a class, so adding one is a decision of its own.
+- The other core routes left pending, on purpose, unclassified: `GET /api/sessions/by-id/:id` runs
+  the same `summaryById` as `session.get` (a duplicate); `POST /api/projects/:pid/services/:verb`
+  runs the same verbs as `project.verb.*`. Undecided: `GET /api/diff/patch` (one file's patch, maybe
+  only the viewer's page content); `GET /api/memory` and `/api/memory/open` (the Session tab's
+  read-only Memory section, not a picker); `GET /api/sessions/git` (the setup card's repository
+  read); `POST /api/sessions/connect` (starts a connection chat); `POST /api/subagents` (switches a
+  held chat's subagent profile); `GET`/`DELETE /api/projects/:pid/files/:id` (a download, and a
+  delete no one asked for yet); `GET /api/projects/:pid/runtime` and `POST …/runtime/merge`;
+  `POST /api/projects/:pid/held/:holdId/cancel` (cancels a held act, releases nothing);
+  `POST …/draft-specs/:sid/build` and `POST …/verbs/onboard` (both start model work).
 - **The areas left as is, by choice** (`§app.commands/opted-out`): every route under `/api/` in
   `OPTED_OUT` (`server/commands-inventory/scan.ts`): orgs, outreach, mesh, session-shares,
   public-links, previews, shares-overview, tours, voice, settings, claude, profiles, push, updates,

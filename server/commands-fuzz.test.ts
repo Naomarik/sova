@@ -337,10 +337,6 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id.startsWith("usage.")) return pendingSetup.push(async () => { const { setUsageAsker } = await import("./usage-helper/client"); const { BadRequest, createService } = await import("./usage-helper/service"); const svc = createService({ usageRoot: join(agentDir, "usage", "v1"), stateDir: join(agentDir, "sova", "usage-ledger"), pricesPath: join(agentDir, "sova", "model-prices.json"), log: () => {}, prices: { enabled: false } }); setUsageAsker(async (op, params) => { try { return { status: 200, body: Buffer.from(JSON.stringify(await svc.answer({ ...params, op }))) }; } catch (err) { return err instanceof BadRequest ? { status: 400, body: Buffer.from(JSON.stringify({ error: err.message })) } : { status: 500, body: Buffer.from(JSON.stringify({ error: "usage-helper-failed" })) }; } }); after(() => setUsageAsker(null)); }), [...(c.params.range ? [{ anchor: { range: "bogus" }, refuse: true, kind: "refused" as const }] : []), { anchor: {}, refuse: false, kind: "real" }];
   // In-chat actions: a missing session, and a real file a terminal holds, whose 409 comes after the body and wait checks, so each wrong-typed value is refused for itself.
   if (c.id.startsWith("chat.")) return [{ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" }, { anchor: { session: sessionArg(c, liveSession()) }, refuse: true, kind: "live" }];
-  // Every mode refuses an unknown mode before it reads the rest; the route takes non-boolean dryRun and minAgeDays as false and unset (a finding), so no real anchor.
-  if (c.id === "session.cleanup") return [{ anchor: { mode: "no-such-mode" }, refuse: true, kind: "refused" }];
-  // A missing session is refused before the body's checks; the route takes a non-boolean dryRun as false (a finding), so no real or live anchor.
-  if (c.id === "session.worktree.cleanup") return [{ anchor: { session: missingPath }, refuse: true, kind: "refused" }];
   // It takes no input, and every call asks each provider over the network, which the unit tier may not: no cases.
   if (c.id === "insights.usage.refresh") return [];
   const out: Anchor[] = [];

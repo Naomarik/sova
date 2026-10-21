@@ -2,8 +2,9 @@
 // §app.session-list/search, Keys), in a real Chrome: the app's own build, served from a scratch build with every
 // request answered here (no server, no network), with enough organization sections to scroll. A click on a row
 // at the bottom, then a refresh; a session arriving above; Needs you appearing and clearing above; a section above
-// opening and closing on its own; the user's own toggle; Escape out of the search; and a phone's width. Each one
-// holds the list where it was: its scrollTop, the row on screen at the same place, the same row node, its focus.
+// opening and closing on its own; the user's own toggle; Escape out of the search; the row at the top of the view
+// moving into a state group below or re-sorted in its own list (never followed: the row under it holds); and a phone's
+// width. Each one holds the list where it was: its scrollTop, the row on screen at the same place, the same row node, its focus.
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -286,6 +287,61 @@ test("Escape out of the search: the list stays where it was, and focus lands on 
     return r.bottom > l.top && r.top < l.bottom;
   });
   assert.equal(onScreen, true, "focus is on a row on screen");
+  await page.context().close();
+});
+
+/** Puts the row titled `anchor` at the very top of the list's view and marks the row titled `under` (on screen below it). */
+async function rowAtTop(page: Page, anchor: string, under: string) {
+  const ok = await page.evaluate(
+    ([anchor, under]: string[]) => {
+      const l = document.querySelector(".sidebar-list")!;
+      const find = (t: string | undefined) => [...l.querySelectorAll("a.session-row")].find((x) => x.querySelector(".list-title")?.textContent?.trim() === t);
+      const a = find(anchor)?.closest("li");
+      if (!a) return false;
+      l.scrollTop += a.getBoundingClientRect().top - l.getBoundingClientRect().top;
+      const b = find(under);
+      b?.setAttribute("data-probe", "1");
+      const lr = l.getBoundingClientRect();
+      return !!b && Math.abs(a.getBoundingClientRect().top - lr.top) < 1 && b.getBoundingClientRect().bottom < lr.bottom && l.scrollTop > 300;
+    },
+    [anchor, under],
+  );
+  assert.ok(ok, `${anchor} sits at the top of the view, ${under} on screen under it`);
+  await page.waitForTimeout(300);
+}
+
+/** The marked row's top, unrounded: scrollTop moves in whole pixels and a row's top needn't sit on one, so held still
+    is within a pixel. */
+const probeTop = (page: Page) => page.evaluate(() => document.querySelector("[data-probe]")?.getBoundingClientRect().top ?? null);
+async function heldStill(page: Page, was: number | null) {
+  const now = await probeTop(page);
+  assert.ok(was !== null && now !== null && Math.abs(now - was) < 1, `the row under it stayed at ${was}px, now at ${now}px`);
+}
+
+test("the row at the top of the view moving to a state group below it: the row under it holds still", async () => {
+  const w = world();
+  // Globex's first project gets three conversations nobody has written in yet, then three in progress.
+  const org = { orgId: "org_globex", orgName: "Globex", projectId: "prj_globex0", projectName: "GlobexDesigns", kind: "gathering" };
+  for (let i = 0; i < 6; i++) w.sessions.push(row(`conv${i}`, "/w/projects/globex-0", `Conversation ${i}`, 5 + i, { org, baton: { state: "open", written: i >= 3 } } as unknown as Partial<SessionSummary>));
+  const page = await open(w, 1280);
+  await rowAtTop(page, "Conversation 0", "Conversation 1");
+  const before = await probeTop(page);
+  // Someone writes in Conversation 0: it moves from Not started down to the head of In progress.
+  w.sessions = w.sessions.map((s) => (s.id === "conv0" ? ({ ...s, baton: { state: "open", written: true } } as unknown as SessionSummary) : { ...s }));
+  await refresh(page, async () => (await page.locator(".org-state-label", { hasText: "In progress" }).first().textContent())?.includes("4") ?? false);
+  await heldStill(page, before);
+  await page.context().close();
+});
+
+test("the row at the top of the view re-sorted to the end of its own list: the row under it holds still", async () => {
+  const w = world();
+  const page = await open(w, 1280);
+  await rowAtTop(page, "Acme 0 job 0", "Acme 0 job 1");
+  const before = await probeTop(page);
+  // Acme 0 job 0 goes quiet for longest: the same row moves to the end of its Sessions list.
+  w.sessions = w.sessions.map((s) => (s.id === "acme0-0" ? { ...s, title: "Acme 0 job 0 quiet", lastActiveAt: iso(60 * 24 * 10) } : { ...s }));
+  await refresh(page, titled(page, "Acme 0 job 0 quiet"));
+  await heldStill(page, before);
   await page.context().close();
 });
 

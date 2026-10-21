@@ -176,24 +176,19 @@ messages and `§workspace.groups/decisions`):
 - Every reach into pi's internals is a quirk row in `server/harness/pi/QUIRKS.md`, with its canary and
   sites, in the same change.
 
-## Commands and extensibility (detail: [agents/server/commands/overview.md](agents/server/commands/overview.md))
+## Commands and extensibility (detail and the tests: [agents/server/commands/overview.md](agents/server/commands/overview.md))
 
-- **New user-visible actions go on the catalogue by default** (`shared/commands-catalog.ts`), so Sova
-  stays extensible: a script, a later server list or an extension reaches them with no new code.
-  When you add or change a user-visible action, also update the catalogue and `shared/commands-ids.json`.
-- An entry points at the existing route and never re-implements it. Additions only add: nothing
-  intercepts, vetoes or rewrites one of Sova's actions.
-- Agents get an action only when it is opened to them on purpose; being listed opens nothing.
-- Each entry's `meshNeed` equals what `server/mesh/access.ts` `classifyRequest` gives its route.
-  Entries never point at the peer, share, auth or extension-proxy routes. Ids are append-only.
-- Extension content on Sova's screens is data Sova draws, or a walled-off frame; never markup in the page.
-- **Sova's own features use the same places on its screens as extensions**, so new work is extensible
-  from day one: a place draws Sova's built-ins first (trusted, interactive), then what extensions add
-  (walled). A new action under a message is a built-in of the reply place (`src/lib/reply-place.ts`),
-  never a strip of its own. A place asks only the extensions whose `offers` name it, never per item.
-  Held by `src/lib/reply-place-rule.test.ts` and `src/lib/reply-place.browser.test.ts`.
-- The ratchet: each rule has a test that fails when it breaks (the guide names them, and lists what
-  is not a command). Change a rule and its test together.
+- **A new user-visible action gets a catalogue entry** (`shared/commands-catalog.ts`, its id in
+  `shared/commands-ids.json`) pointing at its existing route, in sessions, projects, the Overseer,
+  to-dos and ideas, and chats. The areas left as is by choice (`OPTED_OUT` in
+  `server/commands-inventory/scan.ts`: settings, orgs, mesh, voice, tours, shares…) need none;
+  adding an area there is the user's call.
+- An entry's `meshNeed` is `classifyRequest`'s for its route; never the peer, auth, share or `/ext`
+  routes; ids are append-only. Additions only add; listing an action never opens it to agents.
+- Extension content is data Sova draws, or a walled-off frame. Sova's own features use the same
+  places on its screens as extensions, built-ins first (an action under a message is a reply-place
+  built-in); a place asks only the extensions whose `offers` name it.
+- Each rule has a test; change them together.
 
 ## Conventions
 

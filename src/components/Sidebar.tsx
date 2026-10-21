@@ -13,7 +13,7 @@ import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../l
 import { type ArchiveGroupId, foldersWord, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { modelLabel, relativeTime, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
-import { foldersOpen as foldersOpenRule, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
+import { archiveDateOpen as archiveDateOpenRule, archiveOpen as archiveOpenRule, foldersOpen as foldersOpenRule, inFolders, isMainThread, isOrdinarySession, isOrgSession, isOwnedSession, isTopSession, listedWithLocalProject, storedFoldersOpen } from "../lib/regions";
 import {
   eyeLabel,
   doneOpen as doneOpenRule,
@@ -76,6 +76,7 @@ import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, typ
 import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
+import { createDismissals, createSectionReveal } from "../lib/section-reveal";
 import { sessionWorking } from "../lib/workers";
 import {
   columnAtX,
@@ -153,6 +154,9 @@ const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
 const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
 /** Which standalone projects (by id) the user folded or unfolded in the Projects region: memory only, as above. */
 const [openProjects, setOpenProjects] = createSignal<Record<string, boolean>>({});
+/** The visit (lib/section-reveal) on which the user collapsed a section that held the open session, by section key:
+    while it is the current visit that section stays shut over the open session. Memory only, module state as above. */
+const dismissals = createDismissals();
 
 /** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
     holds the user's choice for as long as the page lives, and a reload starts closed again. */
@@ -1499,6 +1503,9 @@ export function Sidebar(props: {
   // group can hold a TUI-live session and an archived one — so they read the whole search-hit list,
   // not one region's slice.
   const searching = () => !!query().trim();
+  /** One stay on the open session (lib/section-reveal): a new number each time the open session changes, never on a
+      refresh. A section holding the open session opens for it until the user collapses it on this visit. */
+  const { dismissed, noteToggle } = createSectionReveal(() => props.selected, dismissals);
   // Org sessions are never grouped, so an assignment made before that rule is kept but not drawn.
   const sections = createMemo(() => groupSections(ordinaryHits(), sessionGroups(), searching()));
   /** A group's rows, from the same hit list the sections were built from. */
@@ -1539,23 +1546,26 @@ export function Sidebar(props: {
   // Collapsed by default; the user's own choice persists for the tab.
   const [storedOpen, setStoredOpen] = createSignal(readKey(sessionStorage, ARCHIVE_KEY) === "1");
   /** Forced open while searching, when the top is empty, or when the open session is archived. */
-  const forcedOpen = () =>
-    !!query().trim() || topHits().length === 0 || archiveHits().some((s) => s.path === props.selected);
-  const archiveOpen = () => forcedOpen() || storedOpen();
+  const archiveHolds = () => archiveHits().some((s) => s.path === props.selected);
+  const archiveOpen = () =>
+    archiveOpenRule({ stored: storedOpen(), searching: searching(), topEmpty: topHits().length === 0, holdsSelected: archiveHolds(), dismissed: dismissed("archive") });
   const onArchiveToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === archiveOpen()) return; // our own `open` update, not the user's
+    noteToggle("archive", open, archiveHolds());
     setStoredOpen(open);
     writeKey(sessionStorage, ARCHIVE_KEY, open ? "1" : "0");
   };
   // Folders: OPEN by default, like Projects; a collapse is remembered for the tab. Forced open, the stored choice left alone,
   // while a search has matches in it or it holds the open session.
   const [foldersStored, setFoldersStored] = createSignal(storedFoldersOpen(readKey(sessionStorage, FOLDERS_KEY)));
+  const foldersHold = () => topHits().some((s) => s.path === props.selected);
   const foldersOpen = () =>
-    foldersOpenRule({ stored: foldersStored(), searching: searching(), hits: topHits().length, holdsSelected: topHits().some((s) => s.path === props.selected) });
+    foldersOpenRule({ stored: foldersStored(), searching: searching(), hits: topHits().length, holdsSelected: foldersHold(), dismissed: dismissed("folders") });
   const onFoldersToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === foldersOpen()) return; // our own `open` update, not the user's
+    noteToggle("folders", open, foldersHold());
     setFoldersStored(open);
     writeKey(sessionStorage, FOLDERS_KEY, open ? "1" : "0");
   };
@@ -1634,10 +1644,12 @@ export function Sidebar(props: {
       stored: orgsStored(),
       searching: searching(),
       holdsSelected: holds(orgHits()),
+      dismissed: dismissed("orgs"),
     });
   const onOrgsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === orgsOpen()) return; // our own `open` update, not the user's
+    noteToggle("orgs", open, holds(orgHits()));
     setOrgsStored(open);
     writeKey(sessionStorage, ORGS_KEY, open ? "1" : "0");
   };
@@ -1645,18 +1657,22 @@ export function Sidebar(props: {
       with its project too; one Folders still lists (a peer's, an archived one) forces nothing open. */
   const holds = (rows: readonly SessionSummary[]) =>
     rows.some((r) => r.path === props.selected && (r.project?.kind !== "folder" || listedWithLocalProject(r, here(r))));
-  const orgOpen = (o: OrgSection) => orgSectionOpenRule({ chosen: openOrgs()[o.id], searching: searching(), holdsSelected: holds(orgRows(o)) });
+  const orgOpen = (o: OrgSection) =>
+    orgSectionOpenRule({ chosen: openOrgs()[o.id], searching: searching(), holdsSelected: holds(orgRows(o)), dismissed: dismissed(`org\n${o.id}`) });
   const onOrgToggle = (o: OrgSection, e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === orgOpen(o)) return;
+    noteToggle(`org\n${o.id}`, open, holds(orgRows(o)));
     setOpenOrgs((m) => ({ ...m, [o.id]: open }));
   };
-  /** A group's Done tail, keyed by org, project and group: collapsed by default, forced open by a search or the open session. */
+  /** A group's Done tail, keyed by org, project and group: collapsed by default, forced open by a search, opened for the
+      open session inside unless collapsed on this visit. */
   const groupDoneOpen = (key: string, rows: readonly SessionSummary[]) =>
-    doneOpenRule({ chosen: openDone()[key], searching: searching(), holdsSelected: holds(rows) });
+    doneOpenRule({ chosen: openDone()[key], searching: searching(), holdsSelected: holds(rows), dismissed: dismissed(`done\n${key}`) });
   const onGroupDoneToggle = (key: string, rows: readonly SessionSummary[], e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === groupDoneOpen(key, rows)) return;
+    noteToggle(`done\n${key}`, open, holds(rows));
     setOpenDone((m) => ({ ...m, [key]: open }));
   };
   /**
@@ -1677,14 +1693,23 @@ export function Sidebar(props: {
   });
   /** The head counts projects; while searching, "of" every project the region lists with no query. */
   const projTotal = createMemo(() => projectBlocks(hostPool().filter((s) => inLocalProjectsRegion(s, here(s))), projectList()?.projects ?? undefined).length);
-  /** A project's fold in the Projects region: open by default, the user's choice kept in memory; forced open by a search
-      or the open session among its rows (a folder session's too: Folders no longer lists it). */
-  const projectFoldOpen = (id: string, rows: readonly SessionSummary[]) => orgSectionOpenRule({ chosen: openProjects()[id], searching: searching(), holdsSelected: holds(rows) });
+  /** A project's fold in the Projects region: open by default, the user's choice kept in memory; forced open by a search,
+      opened for the open session among its rows (a folder session's too: Folders no longer lists it) unless folded on
+      this visit. */
+  const projectFoldOpen = (id: string, rows: readonly SessionSummary[]) =>
+    orgSectionOpenRule({ chosen: openProjects()[id], searching: searching(), holdsSelected: holds(rows), dismissed: dismissed(`project\n${id}`) });
+  const onProjectFold = (id: string, rows: readonly SessionSummary[]) => {
+    const open = !projectFoldOpen(id, rows);
+    noteToggle(`project\n${id}`, open, holds(rows));
+    setOpenProjects((m) => ({ ...m, [id]: open }));
+  };
   const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
-  const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: holds(projectHits()) });
+  const projectsOpen = () =>
+    orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: holds(projectHits()), dismissed: dismissed("projects") });
   const onProjectsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === projectsOpen()) return; // our own `open` update, not the user's
+    noteToggle("projects", open, holds(projectHits()));
     setProjectsStored(open);
     writeKey(sessionStorage, PROJECTS_KEY, open ? "1" : "0");
   };
@@ -1744,12 +1769,14 @@ export function Sidebar(props: {
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
   const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? readKey(sessionStorage, archiveDateKey(id)) === "1";
-  /** Forced open while searching, or when it holds the open session. */
+  /** Forced open while searching; opened for the open session inside it unless collapsed on this visit. */
+  const dateHolds = (d: { items: SessionSummary[] }) => d.items.some((s) => s.path === props.selected);
   const dateOpen = (d: { id: ArchiveGroupId; items: SessionSummary[] }) =>
-    !!query().trim() || d.items.some((s) => s.path === props.selected) || dateStored(d.id);
+    archiveDateOpenRule({ stored: dateStored(d.id), searching: searching(), holdsSelected: dateHolds(d), dismissed: dismissed(`date\n${d.id}`) });
   const onDateToggle = (d: { id: ArchiveGroupId; items: SessionSummary[] }, e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === dateOpen(d)) return; // our own `open` update, not the user's
+    noteToggle(`date\n${d.id}`, open, dateHolds(d));
     setStoredDateOpen((m) => ({ ...m, [d.id]: open }));
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
@@ -2706,7 +2733,7 @@ export function Sidebar(props: {
                                 aria-controls={`proj-rows-${p.id}`}
                                 aria-label={fold()}
                                 title={fold()}
-                                onClick={() => setOpenProjects((m) => ({ ...m, [p.id]: !open() }))}
+                                onClick={() => onProjectFold(p.id, [...p.builds.active, ...p.builds.done])}
                               >
                                 <Icon name="chevron-right" small class="icon-twist" />
                               </button>

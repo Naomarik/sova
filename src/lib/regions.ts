@@ -72,10 +72,21 @@ export const inFolders = (s: Pick<SessionSummary, "workerSession" | "overseer" |
 /** Folders' stored choice (`sova:top-open`): open by default, only "0" (the user collapsed it) closes it. */
 export const storedFoldersOpen = (raw: string | null): boolean => raw !== "0";
 
-/** Whether Folders is open: forced open, the stored choice left alone, while a search has matches in it and while it holds
-    the open session; otherwise the tab's choice (the Projects region's rule). */
-export const foldersOpen = (input: { stored: boolean; searching: boolean; hits: number; holdsSelected: boolean }): boolean =>
-  (input.searching && input.hits > 0) || input.holdsSelected || input.stored;
+/** Whether Folders is open: forced open, the stored choice left alone, while a search has matches in it; opened for the
+    open session inside it unless the user collapsed it on this visit (`dismissed`, lib/section-reveal); otherwise the
+    tab's choice (the Projects region's rule). */
+export const foldersOpen = (input: { stored: boolean; searching: boolean; hits: number; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  (input.searching && input.hits > 0) || (input.holdsSelected && !input.dismissed) || input.stored;
+
+/** Whether the Archive is open: collapsed by default; forced open while searching or while Folders is empty; opened for
+    the open session inside it unless the user collapsed it on this visit; otherwise the tab's choice. */
+export const archiveOpen = (input: { stored: boolean; searching: boolean; topEmpty: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || input.topEmpty || (input.holdsSelected && !input.dismissed) || input.stored;
+
+/** Whether an Archive date section is open: forced open while searching; opened for the open session inside it unless
+    the user collapsed it on this visit; otherwise its stored choice. */
+export const archiveDateOpen = (input: { stored: boolean; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || input.stored;
 
 /** Which of the pane's places a main thread lives in (the overview's live count reads "top": every open session, whether
     Folders or its project's block lists it): org, then a project's (§app.projects/list), win over live, web and archived. A folder session's, and an archived standalone build's, is its ordinary place. */

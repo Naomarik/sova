@@ -301,19 +301,22 @@ export const orgSearchText = (s: Pick<SessionSummary, "org" | "baton">): string 
 export const storedOrgsOpen = (raw: string | null): boolean => raw !== "0";
 
 /**
- * Whether the region is open: forced open (the stored choice left alone) while searching and while
- * the open session is inside it. Otherwise the tab's choice.
+ * Whether the region is open: forced open (the stored choice left alone) while searching, and opened for the open
+ * session inside it unless the user collapsed it on this visit (`dismissed`, lib/section-reveal). Otherwise the tab's
+ * choice.
  */
-export const orgsRegionOpen = (input: { stored: boolean; searching: boolean; holdsSelected: boolean }): boolean =>
-  input.searching || input.holdsSelected || input.stored;
+export const orgsRegionOpen = (input: { stored: boolean; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || input.stored;
 
-/** An org section: open by default (memory only), forced open by a search or the open session inside. */
-export const orgSectionOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
-  input.searching || input.holdsSelected || (input.chosen ?? true);
+/** An org section: open by default (memory only), forced open by a search, opened for the open session inside unless
+    collapsed on this visit. */
+export const orgSectionOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || (input.chosen ?? true);
 
-/** A group's Done tail: collapsed by default (memory only), forced open by a search or the open session inside. */
-export const doneOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
-  input.searching || input.holdsSelected || (input.chosen ?? false);
+/** A group's Done tail: collapsed by default (memory only), forced open by a search, opened for the open session inside
+    unless collapsed on this visit. */
+export const doneOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean; dismissed: boolean }): boolean =>
+  input.searching || (input.holdsSelected && !input.dismissed) || (input.chosen ?? false);
 
 /** The org head's title: its count, and who is waiting. */
 export const orgTitle = (name: string, n: number, waiting: number): string =>

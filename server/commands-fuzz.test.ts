@@ -640,7 +640,7 @@ const FIXTURES: Record<string, Fixture> = {
       const id = `fuzz-${++n}`;
       const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
       writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
-      return { kind: "dirty", session: canonicalPath(path), path: d };
+      return { kind: "dirty", "session-path": canonicalPath(path), path: d };
     },
     status: 200,
   },

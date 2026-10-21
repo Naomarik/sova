@@ -467,7 +467,7 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     effect: "looks",
     params: {
       kind: { type: "string", description: "What to compare", in: "query", enum: ["dirty", "worktree", "commit", "merge"], required: true },
-      session: { type: "path", description: "The session's path; the folder must be one it knows", in: "query", required: true },
+      "session-path": { type: "path", description: "The session's path; the folder must be one it knows", in: "query", key: "session", required: true },
       path: { type: "path", description: "The folder: the worktree, the repository, or the dirty folder", in: "query", required: true },
       sha: { type: "string", description: "With commit or merge: the commit", in: "query" },
     },

@@ -126,7 +126,16 @@
     "chat.mode-command",
     "org.owner.request.chat",
     "org.owner.request.done",
-    "org.owner.request.decline"
+    "org.owner.request.decline",
+    "session.cleanup",
+    "session.title.auto",
+    "session.title.shorten",
+    "session.tags.backfill",
+    "session.tags.backfill.status",
+    "session.tags.backfill.cancel",
+    "session.worktree.summary",
+    "session.worktree.cleanup",
+    "session.diff.summary"
   ],
   "retired": [
     "settings.agents.get"

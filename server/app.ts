@@ -679,6 +679,7 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
     }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
     const dryRun = body.dryRun === true;
     if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
       return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));

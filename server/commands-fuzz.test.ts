@@ -286,6 +286,11 @@ const VALIDATE_ONLY: Record<string, string> = {
   "chat.reload-code": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.mode-command": "acquires a chat handle, which starts the chat's process, and runs a project's program",
   "org.owner.request.chat": "a valid call starts a coding session in the request's project, which starts its chat process",
+  "session.title.auto": "a valid call names sessions with the title model, a model call",
+  "session.title.shorten": "a valid call renames long titles with the title model, a model call",
+  "session.tags.backfill": "a valid call classifies sessions through the decision model; session tags don't run in-process here, so the route answers 409",
+  "session.tags.backfill.cancel": "with no tagging running it writes nothing, so no oracle can read it back; a running one needs the decision model",
+  "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
 };
 
 /**
@@ -331,6 +336,10 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id.startsWith("usage.")) return pendingSetup.push(async () => { const { setUsageAsker } = await import("./usage-helper/client"); const { BadRequest, createService } = await import("./usage-helper/service"); const svc = createService({ usageRoot: join(agentDir, "usage", "v1"), stateDir: join(agentDir, "sova", "usage-ledger"), pricesPath: join(agentDir, "sova", "model-prices.json"), log: () => {}, prices: { enabled: false } }); setUsageAsker(async (op, params) => { try { return { status: 200, body: Buffer.from(JSON.stringify(await svc.answer({ ...params, op }))) }; } catch (err) { return err instanceof BadRequest ? { status: 400, body: Buffer.from(JSON.stringify({ error: err.message })) } : { status: 500, body: Buffer.from(JSON.stringify({ error: "usage-helper-failed" })) }; } }); after(() => setUsageAsker(null)); }), [...(c.params.range ? [{ anchor: { range: "bogus" }, refuse: true, kind: "refused" as const }] : []), { anchor: {}, refuse: false, kind: "real" }];
   // In-chat actions: a missing session, and a real file a terminal holds, whose 409 comes after the body and wait checks, so each wrong-typed value is refused for itself.
   if (c.id.startsWith("chat.")) return [{ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" }, { anchor: { session: sessionArg(c, liveSession()) }, refuse: true, kind: "live" }];
+  // Every mode refuses an unknown mode before it reads the rest; the route takes non-boolean dryRun and minAgeDays as false and unset (a finding), so no real anchor.
+  if (c.id === "session.cleanup") return [{ anchor: { mode: "no-such-mode" }, refuse: true, kind: "refused" }];
+  // A missing session is refused before the body's checks; the route takes a non-boolean dryRun as false (a finding), so no real or live anchor.
+  if (c.id === "session.worktree.cleanup") return [{ anchor: { session: missingPath }, refuse: true, kind: "refused" }];
   const out: Anchor[] = [];
   // Tags are kept by id, for any id: a missing session is no refusal there (a finding, reported).
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
@@ -610,6 +619,28 @@ const FIXTURES: Record<string, Fixture> = {
   "sova.health": { values: () => ({}), status: 200 },
   ...Object.fromEntries(["sova", "models", "provider-limits", "align", "delegate", "spec", "team", "summarizer", "overseer", "memory", "subagents"].map((d) => [`settings.${d}.get`, { values: () => ({}), status: 200 }])),
   "settings.align.set": { values: () => ({ style: "default", visuals: true }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/settings/align")).settings as { visuals: boolean }).visuals, true) },
+  "session.tags.backfill.status": { values: () => ({}), status: 200 },
+  "session.worktree.summary": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.cleanup": {
+    // An archived session last written an hour ago, past the guard on files a process may still be writing.
+    values: () => { const s = session(true); archived.push(s[0]); const then = new Date(Date.now() - 3_600_000); process.getBuiltinModule("node:fs").utimesSync(s[0], then, then); return { mode: "paths", paths: [s[0]] }; },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(existsSync(String((v.paths as string[])[0])), false),
+  },
+  "session.diff.summary": {
+    // A git repository with one commit, and a session whose folder it is.
+    values: () => {
+      const d = join(root, `diff-repo-${++n}`);
+      mkdirSync(d, { recursive: true });
+      execFileSync("git", ["init", "-q"], { cwd: d });
+      execFileSync("git", ["-c", "user.name=fuzz", "-c", "user.email=fuzz@example.invalid", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: d });
+      const id = `fuzz-${++n}`;
+      const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+      writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+      return { kind: "dirty", session: canonicalPath(path), path: d };
+    },
+    status: 200,
+  },
 };
 // Set-up a fixture needs before its hash is taken, done by the fixture's own `values`.
 const pendingSetup: (() => Promise<void>)[] = [];

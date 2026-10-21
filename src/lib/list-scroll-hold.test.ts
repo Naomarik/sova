@@ -3,7 +3,7 @@
 // server/sidebar-scroll.integration.test.ts.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { holdCorrection } from "./list-scroll-hold";
+import { holdCorrection, keptPlace } from "./list-scroll-hold";
 
 const at = { offset: 120, savedScrollTop: 3000, scrollTop: 3000, maxScrollTop: 5000, userScrolling: false };
 
@@ -43,4 +43,27 @@ test("the browser clamping a shortened list at its end is not a scroll of the us
 
 test("a list at its very top stays at its top: what arrives there shows", () => {
   assert.equal(holdCorrection({ ...at, savedScrollTop: 0, scrollTop: 0, now: 120 + 300 }), 0);
+});
+
+// A row's place among its siblings (keptPlace): what decides whether it may hold the list. A row that moved is never
+// followed, or the hold itself would carry everything else on screen along by however far it went.
+test("rows arriving or leaving around a row leave it in its place", () => {
+  // A, B, C, D, E; B was under A, A leaves (into another state group, a closed Done, the archive).
+  assert.equal(keptPlace({ before: ["A", "X"], after: ["C", "D"] }, ["X", "B", "C", "D"], 1), true, "the row under the one that left");
+  // A search ending puts rows back on both sides.
+  assert.equal(keptPlace({ before: ["X"], after: ["C"] }, ["W", "X", "n1", "B", "n2", "C"], 3), true);
+  // A sole row, or one whose neighbours all left: nothing says it moved.
+  assert.equal(keptPlace({ before: [], after: [] }, ["B"], 0), true);
+  assert.equal(keptPlace({ before: ["A"], after: ["C"] }, ["B"], 0), true);
+});
+
+test("a row re-sorted past its neighbours has moved", () => {
+  // A was first, ahead of B, C, D; now it is last.
+  assert.equal(keptPlace({ before: [], after: ["B", "C", "D"] }, ["B", "C", "D", "A"], 3), false);
+  // A and B swap: both moved; C, under them, did not.
+  assert.equal(keptPlace({ before: ["X"], after: ["B", "C"] }, ["X", "B", "A", "C"], 2), false, "A");
+  assert.equal(keptPlace({ before: ["A", "X"], after: ["C"] }, ["X", "B", "A", "C"], 1), false, "B");
+  assert.equal(keptPlace({ before: ["B", "A", "X"], after: ["D"] }, ["X", "B", "A", "C", "D"], 3), true, "C");
+  // A moved up past what was before it.
+  assert.equal(keptPlace({ before: ["Y", "X"], after: ["B"] }, ["A", "Y", "X", "B"], 0), false);
 });

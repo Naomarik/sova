@@ -261,6 +261,11 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 - **Hidden panes stay mounted and keep streaming.** They are `hidden` (not removed), their sockets
   stay open, and their transcripts keep appending. Coming back to a tab shows the turn that
   happened while you were away, already scrolled to the end if you had not scrolled up.
+- **Every pane connects on mount**, hidden ones included, which starts each pane's chat
+  (§chat.transcript/instant-open). A hidden pane whose chat then closes for being quiet
+  (§app.chat-processes/idle-stop) sleeps like any open view; selecting its tab brings it to the
+  front, which starts its chat again, as a send would. Moving focus between panes in split mode
+  starts nothing.
 - **A hidden pane that finishes a turn** still announces, through the shared live region and with
   its member prefix, and its tab's `.live-dot` goes out. That is the whole point of keeping it
   mounted.

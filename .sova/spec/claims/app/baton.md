@@ -460,7 +460,8 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
 - **Where it sits.** On open and after each change (a view, a sending echo, streamed text) the
   page scrolls so the newest item ends above the composer, never under it. Below 768 px the
   composer stays at the bottom of the screen; from 768 px it follows the conversation directly
-  and pins to the bottom only once the conversation is taller than the window.
+  and pins to the bottom only once the conversation is taller than the window. An on-screen
+  keyboard shrinks the page (`interactive-widget=resizes-content`), so the composer stays above it.
 - Never: thinking, tool calls or results, the system prompt, the model, session id, path or cwd,
   the project or org beyond the public title, the goal, any profile field, any roster person's id,
   other sessions, or any other Sova UI. A message row's sender is its name plus a label, `you` (the
@@ -597,10 +598,13 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   `GET /api/h/<token>/img/<n>` (§app.baton/images), `POST /api/h/<token>/file` (§app.baton/files) and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`,
-  `GET` and `POST /api/i/<token>/assistant`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
+  `GET` and `POST /api/i/<token>/assistant`, `POST /api/i/<token>/assistant/image` and `GET
+  /api/i/<token>/assistant/img/<n>` (§app.project-assistant/photos), `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
   and the WebSocket `/ws/i?token=` (§app.owner-page/page, §app/project-assistant); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
-  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
-  answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
+  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). A new socket
+  of a link's own is named `/ws/<kind>/<name>` (§mesh.public/share-protocol). Every other path
+  answers 404 before any routing, except on a gateway, whose edge also passes the forward-only
+  shapes of §mesh.public/share-protocol for the links routed hosts registered (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. A request carrying a `Service-Worker` header (a browser fetching a
   service-worker script) answers 404 on every share path and socket, so no script served on the share
@@ -608,13 +612,16 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   listener never serves the share page. A request whose `Host` is a
   preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
   (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
-- Limits: request bodies over 16 KB (or without a length) are refused (413), except a photo
-  upload's, whose cap at the edge is the setting's ceiling (10 MB) plus 64 KB, and past this host's
+- Limits (at a gateway, a link a routed host registered has the one ceiling of
+  §mesh.public/share-protocol instead of the body and time limits here, and its host's ingress
+  applies these): request bodies over 16 KB (or without a length) are refused (413), except a photo
+  upload's (a hand-off's `/api/h/<token>/image` and the owner's `/api/i/<token>/assistant/image`
+  alike), whose cap at the edge is the setting's ceiling (10 MB) plus 64 KB, and past this host's
   own largest photo setting the upload route answers 413, and a file upload's (§app.baton/files),
   whose cap at the edge is the file setting's ceiling (25 MB) plus 64 KB, past this host's own
   largest file 413 the same way; a request's headers
   must arrive within 10 seconds and the whole request within 15 (408), except a photo upload,
-  which has 120, and a file upload, which has 300; photo reads (`/img/`) count in a bucket of their own, 240 a minute per client
+  which has 120, and a file upload, which has 300; photo reads (`/api/h/<token>/img/` and `/api/i/<token>/assistant/img/`) count in a bucket of their own, 240 a minute per client
   address and 240 a minute per token, never the 60 below; per token 10 messages
   a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened
   elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
@@ -693,12 +700,14 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   {name}"), fetched from `GET /api/h/<token>/img/<n>`, `n` numbering the photos of that viewer's
   view in order; and the operator's transcript, as thumbnails (§chat.images/thread-thumbnails).
   The owner page, the operator's Preview as and the project overseer's reads show a count instead
-  ("2 photos"). Pixels never ride the view or its socket.
+  ("2 photos"); only the owner's own photos in their Project Assistant chat show as pictures
+  (§app.project-assistant/photos). Pixels never ride the view or its socket.
 - **The model** sees each photo as an image in the person's message. While photos can be sent, its
   prompt says people may attach photos and screenshots, that it may ask for one when that helps
   the goal, to talk only about what in it matters to the goal, and never to describe a face or read
   a document's personal numbers back to anyone; otherwise it says photos can't be sent here.
-- **The operator's images** in a baton session reach the model the same way: an image the operator
+- **The operator's images** in a baton session (and in the Project Assistant's chat,
+  §app.project-assistant/photos) reach the model the same way: an image the operator
   attached (a path in that session's attachments folder, one of the four types) is sent inline as
   image content and its path line is removed from the text, so no local path reaches the share
   page.

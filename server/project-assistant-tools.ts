@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { HEntry, ToolSpec } from "../shared/harness";
-import { powerOffSentence, type ModelPick } from "../shared/powers";
+import type { ModelPick } from "../shared/powers";
+import { assistantWouldAct, deployTargetOf } from "./assistant-would-act";
 import { OWNER_REQUEST_TEXT_MAX, OWNER_REQUEST_TITLE_MAX, type OwnerRequest, type OwnerRequestKind } from "../shared/project-assistant";
 import { closeTryRequests, noteVersionFailed, noteVersionStarting, projectVersions, START_TIMEOUT_MS, type OwnerVersion } from "./owner-versions";
 import { agreeRequirement, changeOfRef, conversationDraftTools } from "./conversation-draft-tools";
@@ -70,16 +71,11 @@ async function acts(): Promise<AssistantActs> {
     reaches Needs you either way. Returns whether the ask was filed. */
 export async function askOperatorToDeploy(projectId: string, why: string): Promise<boolean> {
   try {
+    const target = await deployTargetOf(projectId);
+    if (!target) return false;
     const { listProjects } = await import("./projects/spaces");
     const root = listProjects().find((p) => p.id === projectId)?.root;
     if (!root) return false;
-    const { existsSync, readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const { CONTRACT_FILE, parseDefinition } = await import("../shared/project-contract");
-    const file = join(root, CONTRACT_FILE);
-    if (!existsSync(file)) return false;
-    const target = parseDefinition(readFileSync(file, "utf8")).deploy?.targets[0]?.name;
-    if (!target) return false;
     const { projectEngine } = await import("./project-services/routes");
     const r = await projectEngine().run("deploy.request", { target, why: why.slice(0, 300) }, { kind: "assistant", id: "project-assistant", root });
     return !r.error;
@@ -238,8 +234,11 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const col = columnOf(p.id);
       const model = assistantModelFor(orgId, "coding", col.models).pick;
       const team = (why: string) => say(`Filed with the team (${why}). Tell the owner it's with the team; they can follow it under Your requests.`, { request: r.id, started: false });
-      if (!model) return team("no model is set for fixes");
-      if (!attended && col.assistant && !col.assistant.codingStart) return team("starting fixes on its own is off here");
+      // The owner page's question (§app.project-assistant/abilities): on `team`, nothing is set off.
+      const would = await assistantWouldAct(orgId, p.id, "fix", { attended });
+      const why = { "no-model": "no model is set for fixes", "power-off": "starting fixes on its own is off here" } as Record<string, string>;
+      if (would.outcome === "team") return team(why[would.reason] ?? "the team has to start it");
+      if (!model) return team(why["no-model"]!);
       const a = await acts();
       const out = await a.buildStart(p.id, { requestId: r.id, title: r.title, text: r.text, model }, { attended, sessionId: ctx.sessionId });
       if (!out.taken) return team(out.code === "power-off" ? "starting fixes on its own is off here" : "the team has to start it");
@@ -258,12 +257,11 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const p = projectOf(orgId, params.project);
       const r = fileRequest(orgId, { projectId: p.id, kind: "deploy", title: `Release ${p.name}`, text: String(params.why ?? "") || "The owner asked for a release." });
       const attended = attendedNow(call);
-      const col = columnOf(p.id);
       const team = async () => {
         await askOperatorToDeploy(p.id, `The owner asked for a release: ${r.text}`);
         return say("Asked the team to release it. Tell the owner the team will release it.", { request: r.id, started: false });
       };
-      if (!attended && col.assistant && !col.assistant.deploy) return await team();
+      if ((await assistantWouldAct(orgId, p.id, "release", { attended })).outcome === "team") return await team();
       const a = await acts();
       const out = await a.deployRun(p.id, { requestId: r.id, why: r.text }, { attended, sessionId: ctx.sessionId });
       if (!out.taken) return await team();
@@ -318,7 +316,6 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       if (v.state === "running") return say(`${ready} is running. Its Open button is in this chat and on the home page.`, { version: v.handle });
       if (v.state === "starting") return say(`${ready} is starting. Its Open button is in this chat and on the home page.`, { version: v.handle });
       const attended = attendedNow(call);
-      const col = columnOf(p.id);
       const team = (sentence: string) => {
         const r = tryRequest(orgId, p.id, v.label, `The owner asked to try it. ${sentence}`);
         return say(sentence, { request: r.id, started: false });
@@ -328,7 +325,8 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
         const r = tryRequest(orgId, p.id, v.label, `The owner asked to try it; it didn't start: ${why}`);
         return say("It didn't start; the team knows.", { request: r.id, started: false });
       };
-      if (!attended && col.assistant && !col.assistant.copiesRun) return team(powerOffSentence("copiesRun", "assistant"));
+      const would = await assistantWouldAct(orgId, p.id, "version", { attended });
+      if (would.outcome === "team") return team(would.sentence ?? "It went to the team.");
       const a = await acts();
       const out = await a.copyStart(p.id, { instance: v.rec.id, root: v.rec.project }, { attended, sessionId: ctx.sessionId });
       if (!out.taken) return out.code === "power-off" || out.code === "brake" ? team(out.sentence) : failed(`${out.code}: ${out.sentence}`);

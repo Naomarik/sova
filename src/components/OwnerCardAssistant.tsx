@@ -134,6 +134,7 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
             <div class="orgs-assistant-powers">
               <h4 class="orgs-h4">What it may set off on its own</h4>
               <AssistantPowers projects={i().projects.map((p) => ({ id: p.projectId, name: p.name }))} />
+              <p class="orgs-line project-muted">{first()} sees what these let the assistant do, in plain words, on their page.</p>
             </div>
           </>
         )}

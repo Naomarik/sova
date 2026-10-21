@@ -1,12 +1,15 @@
 import type { OwnerRequestRow, OwnerVersionRow } from "../shared/project-assistant";
 import { orgRequests, readAssistantStore } from "./project-assistant-store";
 import { projectVersions, versionRows, type OwnerVersion } from "./owner-versions";
+import { assistantWouldAct } from "./assistant-would-act";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { OPERATOR, POOL, type BatonSession } from "../shared/baton";
 import type { DecisionRow } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
 import type {
+  OwnerAbilities,
+  OwnerAbilityOutcome,
   OwnerConversation,
   OwnerConversationRow,
   OwnerConversationStatus,
@@ -19,6 +22,7 @@ import type {
   OwnerNews,
   OwnerPerson,
   OwnerProject,
+  OwnerProjectAbilities,
   OwnerProjectCard,
   OwnerStatus,
   OwnerWaiting,
@@ -316,17 +320,38 @@ function rowOf(ctx: Ctx, f: RowFacts): OwnerConversationRow {
 export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerHome> {
   const ctx = contextOf(orgId, now);
   const all = await Promise.all(ctx.projects.map((p) => assemble(ctx, p)));
+  const cards = all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name));
+  const ready = assistantReady(orgId);
   return {
     org: { name: ctx.orgName },
     owner: nameOf(ctx, ctx.owner.id),
     operator: ctx.operator,
     updatedAt: new Date(now).toISOString(),
     waiting: all.flatMap((a) => a.waiting).sort((a, b) => b.askedAt.localeCompare(a.askedAt)),
-    projects: all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name)),
+    projects: cards,
     requests: requestRows(ctx),
     versions: await versionsOf(ctx),
-    assistant: { ready: assistantReady(orgId) },
+    assistant: { ready },
+    ...(ready ? { abilities: await abilitiesOf(ctx, cards) } : {}),
   };
+}
+
+/** What the assistant can do for the owner, per shown project, in the cards' order (§app.project-assistant/abilities):
+    the tools' own question, asked without doing anything; outcome words only. */
+async function abilitiesOf(ctx: Ctx, cards: OwnerProjectCard[]): Promise<OwnerAbilities> {
+  const byHandle = new Map(ctx.projects.map((p) => [handleOf("q", p.id), p.id]));
+  const word = (a: { outcome: OwnerAbilityOutcome | "none" }): OwnerAbilityOutcome => (a.outcome === "none" ? "team" : a.outcome);
+  const projects = await Promise.all(
+    cards.map(async (c): Promise<OwnerProjectAbilities> => {
+      const id = byHandle.get(c.id)!;
+      const [fix, version, release] = await Promise.all((["fix", "version", "release"] as const).map((k) => assistantWouldAct(ctx.orgId, id, k).catch(() => ({ outcome: "team" as const }))));
+      return { project: c.id, fix: word(fix!), version: version!.outcome, release: word(release!) };
+    }),
+  );
+  // Imported late: server/project-assistant.ts imports this module.
+  const { assistantPhotoLimits } = await import("./project-assistant");
+  const photos = !!(await assistantPhotoLimits(ctx.orgId).catch(() => null));
+  return { photos, projects };
 }
 
 /** The owner's requests of the shown projects (§app.project-assistant/requests): handles, names, the words the model wrote passed through `said`. */

@@ -118,12 +118,21 @@ export function byTopic<T extends { topic: string }>(rows: T[]): { topic: string
 }
 
 /** A page's route: the URL hash on the share page, a signal in the operator's preview. */
-export type OwnerRoute = { kind: "home" } | { kind: "project"; id: string } | { kind: "conversation"; id: string } | { kind: "assistant" };
+export type OwnerRoute = { kind: "home" } | { kind: "project"; id: string } | { kind: "conversation"; id: string } | { kind: "assistant" } | { kind: "requests" };
+
+/** The page's three tabs (§app.owner-page/content). */
+export type OwnerTab = "home" | "assistant" | "requests";
+/** The tab a route highlights: a project and a conversation open inside Home. */
+export const ownerTab = (r: OwnerRoute): OwnerTab => (r.kind === "assistant" || r.kind === "requests" ? r.kind : "home");
+/** Home, the Assistant and Requests read the same Home answer, and keep it current the same way. */
+export const readsHome = (r: OwnerRoute): boolean => r.kind === "home" || r.kind === "assistant" || r.kind === "requests";
 
 const HANDLE = /^[a-z2-9]{8}$/;
-/** `#p/q_xxxxxxxx` → a project, `#c/k_xxxxxxxx` → a conversation, `#a` → the Project Assistant; anything else → home. */
+/** `#p/q_xxxxxxxx` → a project, `#c/k_xxxxxxxx` → a conversation, `#a` → the Project Assistant,
+    `#r` → the owner's requests; anything else → home. */
 export function parseOwnerHash(hash: string): OwnerRoute {
   if (hash === "#a") return { kind: "assistant" };
+  if (hash === "#r") return { kind: "requests" };
   const m = /^#?([pc])\/((?:q|k)_[a-z2-9]+)$/.exec(hash);
   if (!m) return { kind: "home" };
   const [, kind, id] = m;
@@ -131,4 +140,5 @@ export function parseOwnerHash(hash: string): OwnerRoute {
   if (kind === "c" && id!.startsWith("k_") && HANDLE.test(id!.slice(2))) return { kind: "conversation", id: id! };
   return { kind: "home" };
 }
-export const ownerHash = (r: OwnerRoute): string => (r.kind === "home" ? "#" : r.kind === "assistant" ? "#a" : r.kind === "project" ? `#p/${r.id}` : `#c/${r.id}`);
+export const ownerHash = (r: OwnerRoute): string =>
+  r.kind === "home" ? "#" : r.kind === "assistant" ? "#a" : r.kind === "requests" ? "#r" : r.kind === "project" ? `#p/${r.id}` : `#c/${r.id}`;

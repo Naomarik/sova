@@ -77,6 +77,8 @@ import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { createDismissals, createSectionReveal } from "../lib/section-reveal";
+import { ForKey } from "../lib/for-key";
+import { holdListScroll, rowOnScreen } from "../lib/list-scroll-hold";
 import { sessionWorking } from "../lib/workers";
 import {
   columnAtX,
@@ -672,24 +674,6 @@ export function SessionRow(props: {
         <Show when={hostOf(s().path)}>{(h) => <span class="visually-hidden">{hostClause(h())}</span>}</Show>
       </a>
     </li>
-  );
-}
-
-/** `<For>` keyed by a string the caller names rather than by object identity. Folder sections,
-    date sections and rows are rebuilt as new objects on every poll, so a plain `<For>` over them
-    tore down and rebuilt every node each time; keyed by cwd, id or path, each one is built once
-    and its item accessor updates in place. The last item is held while a removed key is being
-    disposed, so an accessor read in that gap never sees `undefined`. */
-function ForKey<T>(props: { each: readonly T[]; by: (item: T) => string; children: (item: () => T, index: () => number) => JSX.Element }) {
-  const byKey = createMemo(() => new Map(props.each.map((x) => [props.by(x), x])));
-  const keys = createMemo(() => props.each.map(props.by));
-  return (
-    <For each={keys()}>
-      {(k, i) => {
-        let last = byKey().get(k)!;
-        return props.children(() => (last = byKey().get(k) ?? last), i);
-      }}
-    </For>
   );
 }
 
@@ -1721,9 +1705,13 @@ export function Sidebar(props: {
     const line = () => rowLine(r.session);
     return <SessionRow session={r.session} selected={props.selected} now={props.now} targets={targets()} detail={line() ? { text: line()!, title: line()! } : null} />;
   };
-  const rowList = (rows: readonly SessionSummary[]) => (
+  /** Rows keyed by path (lib/for-key): a refresh updates each in place, never rebuilds it. A component, so the list it
+      draws is built once and follows `rows` as it changes. */
+  const RowList = (r: { rows: readonly SessionSummary[] }) => (
     <ul class="list">
-      <For each={rows}>{(s) => <ProjectRow session={s} />}</For>
+      <ForKey each={r.rows} by={(s) => s.path}>
+        {(s) => <ProjectRow session={s()} />}
+      </ForKey>
     </ul>
   );
   /** One group of a project: its label and count, the live states, then its collapsed Done. `openCount`: the label counts
@@ -1740,18 +1728,18 @@ export function Sidebar(props: {
           <h5 class="list-group-label org-group-label" title={g.title}>
             {g.label} <span class="text-num">{shown()}</span>
           </h5>
-          <For each={g.states}>
+          <ForKey each={g.states} by={(x) => x.label}>
             {(st) => (
-              <Show when={st.rows.length > 0}>
-                <Show when={st.label}>
+              <Show when={st().rows.length > 0}>
+                <Show when={st().label}>
                   <h6 class="org-state-label">
-                    {st.label} <span class="text-num">{st.rows.length}</span>
+                    {st().label} <span class="text-num">{st().rows.length}</span>
                   </h6>
                 </Show>
-                {rowList(st.rows)}
+                <RowList rows={st().rows} />
               </Show>
             )}
-          </For>
+          </ForKey>
           <Show when={g.done.length > 0}>
             <details class="archive-date org-done" open={groupDoneOpen(g.key, g.done)} onToggle={(e) => onGroupDoneToggle(g.key, g.done, e)}>
               <summary class="list-group-label archive-date-label" title={g.doneTitle}>
@@ -1759,7 +1747,9 @@ export function Sidebar(props: {
                 <span class="archive-date-name">Done</span>
                 <span class="text-num">{g.done.length}</span>
               </summary>
-              <Show when={doneBuilt()}>{rowList(g.done)}</Show>
+              <Show when={doneBuilt()}>
+                <RowList rows={g.done} />
+              </Show>
             </details>
           </Show>
         </section>
@@ -1790,12 +1780,12 @@ export function Sidebar(props: {
     setQuery("");
     search.focus();
   };
-  /** Escape on an empty field: leave it for the list — the open session's row, else the first
-      row; with no row on screen the field just lets go of the focus. */
+  /** Escape on an empty field: leave it for the list without moving it — the open session's row if it is on screen,
+      else the first row on screen; with no row on screen the field just lets go of the focus. */
   const leaveSearch = () => {
-    const list = aside.querySelector(".sidebar-list");
-    const row = list?.querySelector<HTMLElement>('a.session-row[aria-current="page"]') ?? list?.querySelector<HTMLElement>("a.session-row");
-    if (row) row.focus();
+    const list = aside.querySelector<HTMLElement>(".sidebar-list");
+    const row = list ? rowOnScreen(list) : null;
+    if (row) row.focus({ preventScroll: true });
     else search.blur();
   };
 
@@ -2487,7 +2477,9 @@ export function Sidebar(props: {
           </div>
         </div>
 
-        <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+        {/* Only the user scrolls this list (lib/list-scroll-hold): the first row on screen holds still through every
+            refresh and every section that opens or closes on its own. */}
+        <nav ref={(el) => onCleanup(holdListScroll(el))} class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
           <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
           <Show when={props.error}>
@@ -2560,14 +2552,13 @@ export function Sidebar(props: {
                 </h2>
               </summary>
               <ul class="list">
-                {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
-                    in place, never remounted, when only the digest changed. */}
-                <For each={needsYou().map((r) => r.session)}>
-                  {(s) => (
+                {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
+                <ForKey each={needsYou()} by={(r) => r.session.path}>
+                  {(r) => (
                     <>
-                      <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />
+                      <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />
                       {/* A proposed playbook run: its one button, under its row (§app.project-runtime/review). */}
-                      <Show when={needsYouPlaybook(s.path)}>
+                      <Show when={needsYouPlaybook(r().session.path)}>
                         {(pb) => (
                           <li class="needs-you-playbook">
                             <MergeRunButton projectId={pb().projectId} run={pb()} />
@@ -2576,31 +2567,31 @@ export function Sidebar(props: {
                       </Show>
                     </>
                   )}
-                </For>
+                </ForKey>
                 {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is.
                     WhatsApp sending down: the row and its one button open Settings → Outreach (#/settings/outreach). */}
-                <For each={needsYouProject()}>
+                <ForKey each={needsYouProject()} by={(x) => x.id}>
                   {(it) => (
                     <>
                       <li>
-                        <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
+                        <a class="list-row list-row-interactive org-needs-item" href={it().href} title={it().detail}>
                           <span class="list-main">
-                            <span class="list-title">{it.title}</span>
-                            <span class="list-meta org-needs-item-detail">{it.detail}</span>
-                            <span class="list-meta">{it.where}</span>
+                            <span class="list-title">{it().title}</span>
+                            <span class="list-meta org-needs-item-detail">{it().detail}</span>
+                            <span class="list-meta">{it().where}</span>
                           </span>
                         </a>
                       </li>
-                      <Show when={it.kind === "whatsapp-down"}>
+                      <Show when={it().kind === "whatsapp-down"}>
                         <li class="needs-you-playbook">
-                          <a class="button button-sm" href={it.href}>
+                          <a class="button button-sm" href={it().href}>
                             Open Outreach Settings
                           </a>
                         </li>
                       </Show>
                     </>
                   )}
-                </For>
+                </ForKey>
               </ul>
               <Show when={needsYouCutNote()}>
                 <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
@@ -2618,9 +2609,9 @@ export function Sidebar(props: {
                 Recent <span class="sidebar-region-count">· {recent().length}</span>
               </h2>
               <ul class="list">
-                <For each={recent()}>
-                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-                </For>
+                <ForKey each={recent()} by={(s) => s.path}>
+                  {(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={targets()} />}
+                </ForKey>
               </ul>
             </section>
           </Show>
@@ -2667,16 +2658,16 @@ export function Sidebar(props: {
               <Show when={!searching() && sessionGroups().length === 0}>
                 <p class="sidebar-region-note">{NO_GROUPS_NOTE}</p>
               </Show>
-              <For each={sections().map((s) => s.group)}>
+              <ForKey each={sections().map((s) => s.group)} by={(g) => g.id}>
                 {(group) => (
-                  <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
+                  <GroupBlock group={group()} sessions={rowsOf(group().id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
                 )}
-              </For>
+              </ForKey>
             </details>
           </Show>
 
           {/* Automations, under Groups (§app.session-list/automations): the sessions Sova's schedules run, a shortcut. */}
-          <AutomationsShelf sessions={all()} searching={!!query().trim()} row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />} />
+          <AutomationsShelf sessions={all()} searching={!!query().trim()} row={(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={targets()} />} />
 
           {/* Projects, above Folders and Organizations (lib/project-region): the only place a standalone project's own sessions
               are listed, and the place of the sessions in its folder; each project's heading with its overseer's eye, then
@@ -2713,49 +2704,57 @@ export function Sidebar(props: {
                   </p>
                 }
               >
-                <For each={projBlocks()}>
+                {/* Keyed by project id (lib/for-key): a refresh mints every block afresh, and each must stay the node it was. */}
+                <ForKey each={projBlocks()} by={(b) => b.id}>
                   {(p) => {
-                    const doneKey = `projects\n${p.id}\nbuilds`;
-                    const open = () => projectFoldOpen(p.id, [...p.builds.active, ...p.builds.done]);
-                    const fold = () => `${open() ? "Hide" : "Show"} ${p.name}'s sessions`;
-                    const hasRows = () => p.builds.active.length + p.builds.done.length > 0;
+                    // The id is the key, so it never changes for this block: everything else is read through `p()`.
+                    const id = p().id;
+                    const doneKey = `projects\n${id}\nbuilds`;
+                    const rows = () => [...p().builds.active, ...p().builds.done];
+                    const open = () => projectFoldOpen(id, rows());
+                    const fold = () => `${open() ? "Hide" : "Show"} ${p().name}'s sessions`;
+                    const hasRows = () => p().builds.active.length + p().builds.done.length > 0;
                     // Done can hold hundreds of a folder's finished sessions: its rows are built only once it opens.
-                    const doneBuilt = builtOnceOpen(() => groupDoneOpen(doneKey, p.builds.done));
+                    const doneBuilt = builtOnceOpen(() => groupDoneOpen(doneKey, p().builds.done));
                     return (
                       <div class="org-project">
                         <div class="org-project-head">
-                          <h4 class="list-group-label org-project-label" title={p.name}>
+                          <h4 class="list-group-label org-project-label" title={p().name}>
                             <Show when={hasRows()}>
                               <button
                                 type="button"
                                 class="button button-icon button-ghost project-fold"
                                 aria-expanded={open()}
-                                aria-controls={`proj-rows-${p.id}`}
+                                aria-controls={`proj-rows-${id}`}
                                 aria-label={fold()}
                                 title={fold()}
-                                onClick={() => onProjectFold(p.id, [...p.builds.active, ...p.builds.done])}
+                                onClick={() => onProjectFold(id, rows())}
                               >
                                 <Icon name="chevron-right" small class="icon-twist" />
                               </button>
                             </Show>
-                            <a class="org-project-name project-region-link" href={projectHref(p.id)}>
+                            <a class="org-project-name project-region-link" href={projectHref(id)}>
                               <Icon name="folder" small class="org-project-icon" />
-                              <bdi>{p.name}</bdi>
+                              <bdi>{p().name}</bdi>
                             </a>
-                            <span class="text-num">{projectOpenCount(p)}</span>
+                            <span class="text-num">{projectOpenCount(p())}</span>
                           </h4>
-                          <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                          <Show when={p().overseer}>{(po) => <OverseerEye session={po()} project={p().name} selected={props.selected} />}</Show>
                         </div>
                         <Show when={hasRows() && open()}>
-                          <div class="project-rows" id={`proj-rows-${p.id}`}>
-                            <Show when={p.builds.active.length > 0}>{rowList(p.builds.active)}</Show>
-                            <Show when={p.builds.done.length > 0}>
-                              <details class="archive-date org-done project-done" open={groupDoneOpen(doneKey, p.builds.done)} onToggle={(e) => onGroupDoneToggle(doneKey, p.builds.done, e)}>
+                          <div class="project-rows" id={`proj-rows-${id}`}>
+                            <Show when={p().builds.active.length > 0}>
+                              <RowList rows={p().builds.active} />
+                            </Show>
+                            <Show when={p().builds.done.length > 0}>
+                              <details class="archive-date org-done project-done" open={groupDoneOpen(doneKey, p().builds.done)} onToggle={(e) => onGroupDoneToggle(doneKey, p().builds.done, e)}>
                                 <summary class="list-group-label archive-date-label project-done-label" title="Merged, or ended in a terminal.">
                                   <Icon name="chevron-right" small class="icon-twist" />
-                                  <span class="archive-date-name">{p.builds.done.length} done</span>
+                                  <span class="archive-date-name">{p().builds.done.length} done</span>
                                 </summary>
-                                <Show when={doneBuilt()}>{rowList(p.builds.done)}</Show>
+                                <Show when={doneBuilt()}>
+                                  <RowList rows={p().builds.done} />
+                                </Show>
                               </details>
                             </Show>
                           </div>
@@ -2763,7 +2762,7 @@ export function Sidebar(props: {
                       </div>
                     );
                   }}
-                </For>
+                </ForKey>
               </Show>
             </details>
           </Show>
@@ -2832,59 +2831,66 @@ export function Sidebar(props: {
                     <span class="text-num">{orgWaitingCount()}</span>
                   </h3>
                   <ul class="list">
-                    <For each={orgNeedsYou().map((r) => r.session)}>
-                      {(s) => (
+                    <ForKey each={orgNeedsYou()} by={(r) => r.session.path}>
+                      {(r) => (
                         <SessionRow
-                          session={s}
+                          session={r().session}
                           selected={props.selected}
                           now={props.now}
                           targets={targets()}
-                          detail={orgNeedsYouDetail(s.path)}
-                          place={orgPlaceLabel(s)}
+                          detail={orgNeedsYouDetail(r().session.path)}
+                          place={orgPlaceLabel(r().session)}
                         />
                       )}
-                    </For>
+                    </ForKey>
                     {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no
                         session, the row opens the project page. A held act recounts its minutes and has Cancel. */}
-                    <For each={orgItems()}>
+                    <ForKey each={orgItems()} by={(x) => x.id}>
                       {(it) => {
                         // Recounted on the list's clock, read at the real time: the clock lags up to a tick, and a count must never run high.
-                        const detail = () => (it.held ? heldWaitLine(it.held, Math.max(props.now, Date.now())) : it.detail);
+                        const detail = () => {
+                          const held = it().held;
+                          return held ? heldWaitLine(held, Math.max(props.now, Date.now())) : it().detail;
+                        };
                         return (
-                          <li classList={{ "org-needs-held": !!it.held }}>
-                            <a class="list-row list-row-interactive org-needs-item" href={it.href} title={detail()}>
+                          <li classList={{ "org-needs-held": !!it().held }}>
+                            <a class="list-row list-row-interactive org-needs-item" href={it().href} title={detail()}>
                               <span class="list-main">
-                                <span class="list-title">{it.title}</span>
+                                <span class="list-title">{it().title}</span>
                                 <span class="list-meta org-needs-item-detail">{detail()}</span>
-                                <span class="list-meta">{it.where}</span>
+                                <span class="list-meta">{it().where}</span>
                               </span>
                             </a>
-                            <Show when={it.held && it.org?.projectId ? { held: it.held, projectId: it.org.projectId } : null}>
+                            <Show when={it().held && it().org?.projectId ? { held: it().held!, projectId: it().org!.projectId! } : null}>
                               {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
                             </Show>
                           </li>
                         );
                       }}
-                    </For>
+                    </ForKey>
                   </ul>
                 </section>
               </Show>
-              <For each={orgs()}>
+              {/* Keyed by org id, its projects by project id (lib/for-key): a refresh mints every section afresh, and each must
+                  stay the node it was, or the clicked row loses its focus and the list's scroll position moves. */}
+              <ForKey each={orgs()} by={(x) => x.id}>
                 {(o) => {
-                  const count = () => orgCount(o);
-                  const waiting = () => waitingIn(orgRows(o));
+                  // The id is the key, so it never changes for this section: everything else is read through `o()`.
+                  const oid = o().id;
+                  const count = () => orgCount(o());
+                  const waiting = () => waitingIn(orgRows(o()));
                   return (
-                    <details class="group-section org-section" open={orgOpen(o)} onToggle={(e) => onOrgToggle(o, e)}>
-                      <summary class="list-group-label group-label org-label" title={orgTitle(o.name, count(), waiting())}>
+                    <details class="group-section org-section" open={orgOpen(o())} onToggle={(e) => onOrgToggle(o(), e)}>
+                      <summary class="list-group-label group-label org-label" title={orgTitle(o().name, count(), waiting())}>
                         <Icon name="chevron-right" small class="icon-twist" />
                         <span class="group-name">
-                          <bdi>{o.name}</bdi>
+                          <bdi>{o().name}</bdi>
                         </span>
                         <Show when={waiting() > 0}>
                           <span class="org-needs-dot" aria-hidden="true" />
                           <span class="visually-hidden">, {waiting()} waiting on you</span>
                         </Show>
-                        <Show when={folderActive(orgRows(o), localRunning())}>
+                        <Show when={folderActive(orgRows(o()), localRunning())}>
                           <span class="session-group-active" title="An agent is working in one of these sessions">
                             <span class="session-rail-dot" />
                             <span class="visually-hidden">, an agent is working here</span>
@@ -2893,78 +2899,83 @@ export function Sidebar(props: {
                         <span class="text-num">{count()}</span>
                         <a
                           class="button button-icon button-ghost org-link"
-                          href={orgHref(o.id)}
-                          aria-label={`Open the ${o.name} page`}
-                          title={`Open the ${o.name} page`}
+                          href={orgHref(oid)}
+                          aria-label={`Open the ${o().name} page`}
+                          title={`Open the ${o().name} page`}
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
                         >
                           <Icon name="arrow-right" small />
                         </a>
                       </summary>
-                      <For each={o.projects}>
-                        {(p) => (
+                      <ForKey each={o().projects} by={(x) => x.id}>
+                        {(p) => {
+                          const pid = p().id;
+                          return (
                           <div class="org-project">
                             <div class="org-project-head">
-                              <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
+                              <h4 class="list-group-label org-project-label" title={projectTitle(p())}>
                                 {/* Its page is one click away; "Other" (no project) has no page. */}
                                 <Show
-                                  when={p.id}
+                                  when={pid}
                                   fallback={
                                     <span class="org-project-name">
-                                      <bdi>{p.name}</bdi>
+                                      <bdi>{p().name}</bdi>
                                     </span>
                                   }
                                 >
                                   {(id) => (
                                     <a class="org-project-name project-region-link" href={projectHref(id())}>
                                       <Icon name="folder" small class="org-project-icon" />
-                                      <bdi>{p.name}</bdi>
+                                      <bdi>{p().name}</bdi>
                                     </a>
                                   )}
                                 </Show>
-                                <span class="text-num">{projectCount(p)}</span>
+                                <span class="text-num">{projectCount(p())}</span>
                               </h4>
-                              <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                              <Show when={p().overseer}>{(po) => <OverseerEye session={po()} project={p().name} selected={props.selected} />}</Show>
                             </div>
                             <ProjectGroup
-                              key={`${o.id}\n${p.id}\nconversations`}
+                              key={`${oid}\n${pid}\nconversations`}
                               label="Conversations"
                               title="Gathering sessions and offers sent to people."
                               doneTitle="Done or closed, and the ones you archived."
                               states={[
-                                { label: "Not started", rows: p.conversations.notStarted },
-                                { label: "In progress", rows: p.conversations.inProgress },
+                                { label: "Not started", rows: p().conversations.notStarted },
+                                { label: "In progress", rows: p().conversations.inProgress },
                               ]}
-                              done={p.conversations.done}
+                              done={p().conversations.done}
                             />
                             <ProjectGroup
-                              key={`${o.id}\n${p.id}\nconflicts`}
+                              key={`${oid}\n${pid}\nconflicts`}
                               label="Conflicts to settle"
                               title="Sessions asking someone to settle two decisions that disagree."
                               doneTitle="Done or closed, and the ones you archived."
                               states={[
-                                { label: "Not started", rows: p.conflicts.notStarted },
-                                { label: "In progress", rows: p.conflicts.inProgress },
+                                { label: "Not started", rows: p().conflicts.notStarted },
+                                { label: "In progress", rows: p().conflicts.inProgress },
                               ]}
-                              done={p.conflicts.done}
+                              done={p().conflicts.done}
                             />
                             <ProjectGroup
-                              key={`${o.id}\n${p.id}\nbuilds`}
+                              key={`${oid}\n${pid}\nbuilds`}
                               label="Sessions"
                               title="Coding sessions this project started, and the other sessions in its folder."
                               doneTitle="Merged, archived, or ended in a terminal."
-                              states={[{ label: "", rows: p.builds.active }]}
-                              done={p.builds.done}
+                              states={[{ label: "", rows: p().builds.active }]}
+                              done={p().builds.done}
                             />
-                            <Show when={p.other.length > 0}>{rowList(p.other)}</Show>
+                            <Show when={p().other.length > 0}>
+                              <RowList rows={p().other} />
+                            </Show>
                           </div>
-                        )}
-                      </For>
+                          );
+                        }}
+                      </ForKey>
                     </details>
                   );
                 }}
-              </For>
+              </ForKey>
             </details>
           </Show>
 

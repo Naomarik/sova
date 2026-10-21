@@ -1010,7 +1010,8 @@ user row.
   the same coding settings, mode and pin. It gets no `sova-coding-worktree` note and no commit
   paragraph at start; the conversation names its worktree later, with the session's own
   `worktree` tool, and the project adopts it then (§app.project-overseer/coding-worktrees,
-  **Adopted later**). The answer carries no `worktree`. The project page's New Coding Session
+  **Adopted later**). The answer carries no `worktree`. A request's Start Chat on the org's Requests tab
+  starts the same session with `"later"` and the request's title (§app.project-assistant/request-chat). The project page's New Coding Session
   button, Start Coding Session and the overseers' starts never send it: they cut the worktree at
   create, as above. In a project root that can't have worktrees (§app.project-overseer/coding-worktrees,
   **Where it can't**) it starts there as any start would, with that reason.

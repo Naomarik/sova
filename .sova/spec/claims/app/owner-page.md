@@ -300,8 +300,9 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   `Get New Owner Link` while a live one exists (with a confirm: the current one stops);
   `Preview Owner Page`; and `Delete Owner Link` set apart as destructive (its confirm:
   §design.copy-deck/owner-page). A new link shows with Copy Link, as on the baton strip.
-- **The Owner card's Project Assistant part** (§app/project-assistant): the owner's open requests
-  with `Mark Done` and `Decline`; `Open Assistant Chat` once the conversation exists; its models
+- **The Owner card's Project Assistant part** (§app/project-assistant): one line, "{n} open
+  requests from {first name}", linking to the org's Requests tab (§app.project-assistant/requests-tab),
+  which lists them and answers them, in place of a list here; `Open Assistant Chat` once the conversation exists; its models
   per kind of work (reply, coding, gathering), each with its price and, for coding and gathering,
   whether a project overrides it (§app.project-assistant/models); and, per project, its Project
   Assistant column of power switches (§app.project-overseer/autonomy-levels; its copy

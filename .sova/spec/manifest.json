@@ -1547,7 +1547,9 @@
         "server/tours/sweep.ts",
         "server/tours/sweep.test.ts",
         "server/index.ts",
-        "server/tours/sweep-startup.integration.test.ts"
+        "server/tours/sweep-startup.integration.test.ts",
+        "server/app.ts",
+        "server/cleanup-dry-run.test.ts"
       ]
     },
     "§app.session-list/content-rules": {
@@ -17957,7 +17959,8 @@
         "server/removed-worktrees.ts",
         "server/index.ts",
         "shared/protocol.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/cleanup-dry-run.test.ts"
       ],
       "requires": [
         "§chat.worktrees/merged-state",

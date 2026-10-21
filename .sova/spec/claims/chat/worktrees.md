@@ -340,7 +340,8 @@ merge stays non-destructive.
   true}` answers what would go (path, branch, merged or empty, and whether its branch would be
   deleted) and what stays, each with its reason. A removal posts `{path, expect: [paths]}` and acts
   only on those paths, each only if it is still removable at that moment; every other tree is left
-  alone. The answer says, per path, removed or kept and why.
+  alone. A `dryRun` that is present and not a boolean ("dryRun must be true or false"), or an
+  `expect` that is not a list of absolute paths, is a 400 before anything is removed. The answer says, per path, removed or kept and why.
 - **Removal.** From the main checkout, `git worktree remove -- <path>`, never `--force`, so git
   refuses a tree that changed under it; for a folder already gone the same command only drops it
   from git's list. The branch is deleted with `git branch -d` only when it is an ancestor of the

@@ -170,8 +170,65 @@ The owner is never the operator: nothing an owner writes is operator identity, w
     3 seconds for the engine; a start still booting carries on after its answer.
 - Each tool's answer says, in plain words for the owner, what happened: started, waiting a few
   minutes, or with the team.
+- **Before it acts**, each of `start_fix`, `deploy` and `start_version` asks the one question the
+  owner page asks (§app.project-assistant/abilities) for its project, and on `team` sets nothing off:
+  the request stays with the team (`deploy` asks the operator to deploy), and its answer says it went
+  to the team (`started: false`). A turn the operator started skips the switch, brake and engine
+  parts of that question (its acts are never restricted), and keeps the rest.
 - **Never**: the shell, files, any operator-only act, another org, a project hidden from the owner
   (§app.owner-page/conversations), a link URL, stopping, removing or making a copy.
+
+## §app.project-assistant/abilities — What the owner is told it can do
+
+- **Where.** Home's Project Assistant card, headed "What it can do for you", the chat's
+  suggestions before its first message, and its `What Can I Ask?` sheet (§app.owner-page/content)
+  list what the assistant can do for the owner: up to 6 lines, each a plain name and how it
+  happens (copy: §design.copy-deck/owner-page). While the assistant isn't ready (no reply model,
+  §app.project-assistant/chat) the card shows the not-ready line and no list, and the chat no
+  suggestions.
+- **Always, whatever the switches**: `Ask about your projects` (answers right away), `Report a
+  problem` (goes to the team at once; an "app is down" report alerts the operator at once,
+  §app.project-assistant/requests), `Ask for something new` (written up with the owner, then sent to
+  the team). The owner may also always ask where their requests stand and see the versions they
+  can try; those are no line of their own.
+- **By the project's Project Assistant column** (§app.project-overseer/autonomy-levels):
+  `Get a problem fixed` (Start coding sessions), `Try the latest version` (Create, start and update
+  running copies; listed only while some shown project lists a version the owner could open,
+  §app.project-assistant/versions) and `Release a new version` (Deploy). Gatherings and coding
+  prompts are never listed: the assistant can't use them.
+- **The same question as the act.** One server function answers, for one shown project and one of
+  fix, version or release, what the assistant would do if asked now, without doing anything:
+  `now` (it starts at once), `held` (it starts on its own after the project's waiting period) or
+  `team` (it goes to the team); a version also `none` (no version listed that could be opened). It
+  asks, in this order, and the first that fails answers `team`: the project's settings are readable
+  and its Project Assistant column is there; the act's switch is On; no brake holds the switches
+  (paused by an attach, an empty roster), read as the project page reads it; for a fix, a coding
+  model is set (§app.project-assistant/models); for a release, the project declares release steps
+  (a deploy target in its definition, §app.project-services/deploy-callers); the project's engine
+  would take that act from the assistant now, unattended (the same check the act gets: switch,
+  brake, limits, at-once caps, archived), and an engine not open on this host is `team`. Then a fix
+  or a release is `held` while the project's waiting period is above 0, else `now`; a version is
+  never held. Unclear is `team`: it never promises what then goes to the team.
+- **The tools ask it too** (§app.project-assistant/tools), so a line that says the team handles it
+  is a tool that answers it went to the team: Deploy On while the engine or a brake refuses
+  `deploy/run` reads "The team releases it" and `deploy` answers `started: false`. The page always
+  asks as the owner (unattended).
+- **Several projects.** When every shown project the line covers gives the same answer, the line
+  is one plain sentence; when they differ, it names the projects of each answer, in the order
+  right away, on its own, the team ("Get a problem fixed: on its own for RakibaDesigns, the team
+  starts it for Rakiba Shop."). Project names only, never a switch's name.
+- **Photos.** While the owner can send photos (the chat's view carries `photos`), one note under
+  the list: "You can add photos and screenshots."
+- **Tapping a line** opens the Assistant tab with the message box started with that line's words
+  (an in-page prefill, never in the address), and puts the cursor in it (not on a touch screen, so
+  no keyboard springs up); nothing is sent until `Send`.
+- **On the wire**: `OwnerHome.abilities` (`shared/owner.ts`), present only while the assistant is
+  ready: `{photos, projects: [{project, fix, version, release}]}`, `project` the shown project's
+  `q_` handle and each answer one of the words above. Never a power id or label, a level, the
+  overseer's column, a model, a brake's reason or a limit.
+- **Fresh.** Worked out at each read of Home, so a switch change shows on the owner's page at its
+  next read (within a minute, or at once on returning to the tab); nothing is pushed. The
+  assistant follows a change from its next act (the tools read the column at each call).
 
 ## §app.project-assistant/requests — The owner's requests, and where they stand
 

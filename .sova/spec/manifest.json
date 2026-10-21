@@ -1231,6 +1231,37 @@
         "server/commands-inventory/baseline.json"
       ]
     },
+    "§app.project-assistant/abilities": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-assistant/models",
+        "§app.project-assistant/versions",
+        "§app.project-services/deploy-callers",
+        "§app.project-assistant/chat",
+        "§app.project-assistant/tools"
+      ],
+      "code": [
+        "server/assistant-would-act.ts",
+        "server/assistant-would-act.test.ts",
+        "server/owner-page.ts",
+        "server/project-assistant-tools.ts",
+        "shared/owner.ts",
+        "src/lib/owner-abilities.ts",
+        "src/lib/owner-abilities.test.ts",
+        "src/share/owner-abilities-view.tsx",
+        "src/share/owner-view.tsx",
+        "src/share/assistant-view.tsx",
+        "server/owner-page-tabs.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T14:35Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#4c2b622b"
+      }
+    },
     "§app.project-assistant/chat": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1508,8 +1539,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-20T14:35Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#4c2b622b"
       }
     },
     "§app.project-assistant/versions": {
@@ -9998,12 +10029,14 @@
         "src/share/versions.tsx",
         "src/share/assistant-view.tsx",
         "src/lib/share-follow.ts",
-        "src/lib/share-follow.test.ts"
+        "src/lib/share-follow.test.ts",
+        "server/owner-page-tabs.integration.test.ts",
+        "src/share/owner.css"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-20T14:35Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#4c2b622b"
       }
     },
     "§app.owner-page/controls": {
@@ -10032,7 +10065,12 @@
         "server/org-routes.ts",
         "src/design/base.css",
         "src/components/OwnerCardAssistant.tsx"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T14:35Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#4c2b622b"
+      }
     },
     "§app.owner-page/conversations": {
       "kind": "behavior",
@@ -10125,7 +10163,12 @@
         "src/share/thread.tsx",
         "server/share/edge.ts",
         "server/share/routes.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T14:35Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#4c2b622b"
+      }
     },
     "§app.owner-page/owner": {
       "kind": "behavior",
@@ -10179,12 +10222,13 @@
         "server/tours/bindings-app.integration.test.ts",
         "src/lib/owner-problem.ts",
         "src/lib/owner-problem.test.ts",
-        "src/share/assistant-view.tsx"
+        "src/share/assistant-view.tsx",
+        "server/owner-page-tabs.integration.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-20T14:35Z",
+        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#4c2b622b"
       }
     },
     "§app.owner-page/rejected": {

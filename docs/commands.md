@@ -14,8 +14,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | What | Count |
 | --- | ---: |
 | Routes registered | 465 |
-| Routes a catalogue entry points at | 99 |
-| Catalogue entries | 126 |
+| Routes a catalogue entry points at | 117 |
+| Catalogue entries | 144 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -26,7 +26,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Pages and assets | 7 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 248 |
-| Pending (not yet a command) | 60 |
+| Class: Page plumbing | 9 |
+| Class: Steps of starting a chat | 2 |
+| Class: Live capability links | 1 |
+| Class: Approvals and grants | 6 |
+| Pending (not yet a command) | 24 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
 | Hand-written tool specs | 116 |
@@ -62,6 +66,15 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.group.send` | Send to Group | changes | `POST /api/session-groups/:id/prompt` | sessions |
 | `session.insights` | Show Session Insight | looks | `GET /api/insights/session` | sessions |
 | `worker.resume` | Resume Worker | changes | `POST /api/workers/resume` | sessions |
+| `session.cleanup` | Clean Up Sessions | changes | `POST /api/sessions/cleanup` | sessions |
+| `session.title.auto` | Name Sessions | changes | `POST /api/sessions/auto-title` | sessions |
+| `session.title.shorten` | Shorten Long Titles | changes | `POST /api/sessions/shorten-titles` | sessions |
+| `session.tags.backfill` | Tag Sessions | changes | `POST /api/sessions/tags/backfill` | sessions |
+| `session.tags.backfill.status` | Show Tagging Progress | looks | `GET /api/sessions/tags/backfill` | sessions |
+| `session.tags.backfill.cancel` | Stop Tagging | changes | `POST /api/sessions/tags/backfill/cancel` | sessions |
+| `session.worktree.summary` | Count Merged Worktrees | looks | `GET /api/worktrees/summary` | sessions |
+| `session.worktree.cleanup` | Clean Up Worktrees | changes | `POST /api/worktrees/cleanup` | sessions |
+| `session.diff.summary` | Show Changes | looks | `GET /api/diff/summary` | sessions |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -93,6 +106,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.overseer.todo.remove` | Remove Project To-do | changes | `DELETE /api/projects/:pid/overseer/todo` | admin |
 | `project.overseer.todo.reorder` | Reorder Project To-dos | changes | `PUT /api/projects/:pid/overseer/todos/order` | admin |
 | `project.overseer.todo.clear-done` | Clear Done Project To-dos | changes | `DELETE /api/projects/:pid/overseer/todos/done` | admin |
+| `project.overseer.get` | Show Project Overseer | looks | `GET /api/projects/:pid/overseer` | sessions |
+| `project.overseer.actions` | List Project Overseer Actions | looks | `GET /api/projects/:pid/overseer/actions` | sessions |
+| `project.overseer.memory.get` | Show Project Overseer Memory | looks | `GET /api/projects/:pid/overseer/memory` | sessions |
 | `project.list` | List Projects | looks | `GET /api/projects` | sessions |
 | `project.get` | Show Project | looks | `GET /api/projects/:pid` | sessions |
 | `project.create` | Add Project | changes | `POST /api/projects` | admin |
@@ -117,6 +133,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `overseer.idea.update` | Update Idea | changes | `PATCH /api/overseer/idea` | admin |
 | `overseer.notes.get` | Show Standing Notes | looks | `GET /api/overseer/notes` | sessions |
 | `overseer.notes.set` | Set Standing Notes | changes | `PUT /api/overseer/notes` | admin |
+| `overseer.get` | Show Overseer | looks | `GET /api/overseer` | sessions |
+| `overseer.memory.get` | Show Overseer Memory | looks | `GET /api/overseer/memory` | sessions |
 | `models.list` | List Models | looks | `GET /api/models` | sessions |
 | `extensions.list` | List Extensions | looks | `GET /api/extensions` | sessions |
 | `targets.list` | List Remote Targets | looks | `GET /api/targets` | sessions |
@@ -133,6 +151,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `usage.prices.refresh` | Refresh Prices | changes | `POST /api/usage/prices/refresh` | admin |
 | `insights.usage` | Usage Limits | looks | `GET /api/insights/usage` | sessions |
 | `insights.usage.history` | Usage History | looks | `GET /api/insights/usage/history` | sessions |
+| `insights.usage.refresh` | Refresh Usage Limits | changes | `POST /api/insights/usage/refresh` | sessions |
+| `schedule.list` | List Schedules | looks | `GET /api/schedules` | sessions |
+| `playbook.list` | List Playbooks | looks | `GET /api/playbooks` | sessions |
+| `draft-spec.list` | List Draft Specs | looks | `GET /api/draft-specs` | full |
 | `insights.agents` | Agents Board | looks | `GET /api/insights/agents` | sessions |
 | `insights.worktrees` | Session Worktrees | looks | `GET /api/insights/worktrees` | sessions |
 | `insights.session.workers` | Hidden Workers | looks | `GET /api/insights/session/workers` | sessions |
@@ -169,66 +191,30 @@ class, leaves it, and a new route never joins it.
 
 | Route | Mesh need |
 | --- | --- |
-| `DELETE /api/attachment` | sessions |
-| `GET /api/attachment` | sessions |
 | `GET /api/diff/patch` | sessions |
-| `GET /api/diff/summary` | sessions |
-| `GET /api/draft-specs` | full |
-| `GET /api/explanations` | sessions |
-| `POST /api/insights/usage/refresh` | sessions |
-| `POST /api/links/:id/seen` | sessions |
-| `GET /api/links/:id/thread` | sessions |
 | `GET /api/memory` | sessions |
 | `GET /api/memory/open` | sessions |
-| `GET /api/overseer` | sessions |
-| `GET /api/overseer/autonomy` | sessions |
-| `POST /api/overseer/autonomy/revoke` | admin |
 | `POST /api/overseer/clear` | admin |
-| `GET /api/overseer/memory` | sessions |
 | `PUT /api/overseer/memory` | admin |
-| `GET /api/playbooks` | sessions |
-| `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
 | `POST /api/projects/:pid/draft-specs/:sid/build` | full |
 | `DELETE /api/projects/:pid/files/:id` | admin |
 | `GET /api/projects/:pid/files/:id` | sessions |
 | `POST /api/projects/:pid/held/:holdId/cancel` | admin |
-| `GET /api/projects/:pid/overseer` | sessions |
-| `PATCH /api/projects/:pid/overseer` | admin |
 | `POST /api/projects/:pid/overseer` | admin |
-| `GET /api/projects/:pid/overseer/actions` | sessions |
 | `POST /api/projects/:pid/overseer/clear` | admin |
 | `POST /api/projects/:pid/overseer/coding` | admin |
 | `POST /api/projects/:pid/overseer/items/code` | admin |
-| `GET /api/projects/:pid/overseer/memory` | sessions |
 | `PUT /api/projects/:pid/overseer/memory` | admin |
 | `POST /api/projects/:pid/overseer/message` | admin |
 | `POST /api/projects/:pid/overseer/run` | admin |
-| `GET /api/projects/:pid/previews` | sessions |
 | `GET /api/projects/:pid/runtime` | sessions |
 | `POST /api/projects/:pid/runtime/merge` | admin |
 | `POST /api/projects/:pid/services/:verb` | admin |
 | `POST /api/projects/:pid/verbs/onboard` | admin |
-| `GET /api/schedules` | sessions |
-| `POST /api/schedules/approve` | admin |
-| `POST /api/schedules/revoke` | admin |
-| `POST /api/sessions/auto-title` | sessions |
 | `GET /api/sessions/by-id/:id` | sessions |
-| `POST /api/sessions/cleanup` | sessions |
 | `POST /api/sessions/connect` | sessions |
-| `GET /api/sessions/dir` | sessions |
 | `GET /api/sessions/git` | sessions |
-| `POST /api/sessions/loadout` | sessions |
-| `POST /api/sessions/profile` | sessions |
-| `POST /api/sessions/shorten-titles` | sessions |
-| `GET /api/sessions/tags/backfill` | sessions |
-| `POST /api/sessions/tags/backfill` | sessions |
-| `POST /api/sessions/tags/backfill/cancel` | sessions |
 | `POST /api/subagents` | sessions |
-| `GET /api/targets/:name/folders` | sessions |
-| `GET /api/transcript/tool` | sessions |
-| `POST /api/upload` | sessions |
-| `POST /api/worktrees/cleanup` | sessions |
-| `GET /api/worktrees/summary` | sessions |
 
 ## Not-a-command classes
 
@@ -606,6 +592,52 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
+### Page plumbing (9)
+
+Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).
+
+| Route | Mesh need |
+| --- | --- |
+| `DELETE /api/attachment` | sessions |
+| `GET /api/attachment` | sessions |
+| `GET /api/explanations` | sessions |
+| `POST /api/links/:id/seen` | sessions |
+| `GET /api/links/:id/thread` | sessions |
+| `GET /api/sessions/dir` | sessions |
+| `GET /api/targets/:name/folders` | sessions |
+| `GET /api/transcript/tool` | sessions |
+| `POST /api/upload` | sessions |
+
+### Steps of starting a chat (2)
+
+The new chat's setup card toggles and profile pick, refused once a message is sent; `session.create` takes a profile itself. Exactly these routes (`CHAT_START`).
+
+| Route | Mesh need |
+| --- | --- |
+| `POST /api/sessions/loadout` | sessions |
+| `POST /api/sessions/profile` | sessions |
+
+### Live capability links (1)
+
+A list that prints live preview links, which open a project's port to whoever holds one. Exactly these routes (`CAPABILITY_LINKS`).
+
+| Route | Mesh need |
+| --- | --- |
+| `GET /api/projects/:pid/previews` | sessions |
+
+### Approvals and grants (6)
+
+Approving a schedule or a draft spec, the Overseer's permits and their revoke, a project overseer's autonomy, powers and limits: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
+
+| Route | Mesh need |
+| --- | --- |
+| `GET /api/overseer/autonomy` | sessions |
+| `POST /api/overseer/autonomy/revoke` | admin |
+| `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
+| `PATCH /api/projects/:pid/overseer` | admin |
+| `POST /api/schedules/approve` | admin |
+| `POST /api/schedules/revoke` | admin |
+
 ## Routes catalogue entries point at
 
 | Route | Mesh need | Entries |
@@ -613,6 +645,8 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
+| `GET /api/diff/summary` | sessions | `session.diff.summary` |
+| `GET /api/draft-specs` | full | `draft-spec.list` |
 | `GET /api/extensions` | sessions | `extensions.list` |
 | `GET /api/files` | sessions | `files.list` |
 | `GET /api/folders` | sessions | `folders.list` |
@@ -622,6 +656,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/insights/session/workers` | sessions | `insights.session.workers` |
 | `GET /api/insights/usage` | sessions | `insights.usage` |
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
+| `POST /api/insights/usage/refresh` | sessions | `insights.usage.refresh` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
 | `GET /api/mode` | sessions | `session.mode.get` |
 | `POST /api/mode` | sessions | `session.mode.set` |
@@ -630,10 +665,12 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `PUT /api/models/favorite` | sessions | `models.favorite` |
 | `POST /api/orgs/:id/owner/requests/:rid` | admin | `org.owner.request.decline`, `org.owner.request.done` |
 | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
+| `GET /api/overseer` | sessions | `overseer.get` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |
 | `PATCH /api/overseer/idea` | admin | `overseer.idea.update` |
 | `GET /api/overseer/ideas` | sessions | `overseer.idea.list` |
+| `GET /api/overseer/memory` | sessions | `overseer.memory.get` |
 | `GET /api/overseer/notes` | sessions | `overseer.notes.get` |
 | `PUT /api/overseer/notes` | admin | `overseer.notes.set` |
 | `DELETE /api/overseer/todo` | admin | `overseer.todo.remove` |
@@ -642,6 +679,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/overseer/todos` | admin | `overseer.todo.add` |
 | `DELETE /api/overseer/todos/done` | admin | `overseer.todo.clear-done` |
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
+| `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
 | `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
@@ -651,10 +689,13 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/projects/:pid/archive` | admin | `project.archive` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
+| `GET /api/projects/:pid/overseer` | sessions | `project.overseer.get` |
+| `GET /api/projects/:pid/overseer/actions` | sessions | `project.overseer.actions` |
 | `GET /api/projects/:pid/overseer/idea` | sessions | `project.overseer.idea.get` |
 | `PATCH /api/projects/:pid/overseer/idea` | admin | `project.overseer.idea.update` |
 | `GET /api/projects/:pid/overseer/ideas` | sessions | `project.overseer.idea.list` |
 | `POST /api/projects/:pid/overseer/ideas` | admin | `project.overseer.idea.add` |
+| `GET /api/projects/:pid/overseer/memory` | sessions | `project.overseer.memory.get` |
 | `DELETE /api/projects/:pid/overseer/todo` | admin | `project.overseer.todo.remove` |
 | `PATCH /api/projects/:pid/overseer/todo` | admin | `project.overseer.todo.update` |
 | `GET /api/projects/:pid/overseer/todos` | sessions | `project.overseer.todo.list` |
@@ -668,6 +709,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |
+| `GET /api/schedules` | sessions | `schedule.list` |
 | `GET /api/session-groups` | sessions | `session.group.list` |
 | `POST /api/session-groups` | sessions | `session.group.create` |
 | `DELETE /api/session-groups/:id` | sessions | `session.group.delete` |
@@ -677,14 +719,20 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/sessions` | sessions | `session.list` |
 | `POST /api/sessions` | sessions | `session.create` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
+| `POST /api/sessions/auto-title` | sessions | `session.title.auto` |
+| `POST /api/sessions/cleanup` | sessions | `session.cleanup` |
 | `POST /api/sessions/configure` | sessions | `session.configure` |
 | `GET /api/sessions/context` | sessions | `session.context` |
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |
 | `POST /api/sessions/fork` | sessions | `session.fork` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
+| `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
+| `GET /api/sessions/tags/backfill` | sessions | `session.tags.backfill.status` |
+| `POST /api/sessions/tags/backfill` | sessions | `session.tags.backfill` |
+| `POST /api/sessions/tags/backfill/cancel` | sessions | `session.tags.backfill.cancel` |
 | `POST /api/sessions/title` | sessions | `session.title.reset`, `session.title.set` |
 | `GET /api/sessions/tools` | sessions | `session.tools.get` |
 | `GET /api/settings` | sessions | `settings.sova.get` |
@@ -709,6 +757,8 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/usage/sessions` | admin | `usage.sessions` |
 | `GET /api/usage/today` | sessions | `usage.today` |
 | `POST /api/workers/resume` | sessions | `worker.resume` |
+| `POST /api/worktrees/cleanup` | sessions | `session.worktree.cleanup` |
+| `GET /api/worktrees/summary` | sessions | `session.worktree.summary` |
 
 ## Chat socket frames
 

@@ -22,7 +22,7 @@ import { closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, 
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
-import { firstText, headerOf, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
+import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
@@ -111,6 +111,8 @@ interface CacheEntry {
   outline: OutlineScan | null;
   /** The file's last finished assistant reply (tail window), for the unread dot and the turn-error mark. */
   lastReply: LastReply | null;
+  /** The Ended line's excerpts, found in the same tail window (§app.overseer/list-overview). */
+  ending: TailEnding;
   /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
       (`overseerOf`): the answer changes with overseer-state.json, not with the file. */
   marked: boolean;
@@ -454,7 +456,49 @@ export function finishedReply(h: HEntry | null): LastReply | null {
  * null when the window has none.
  */
 export async function readTailReply(path: string, size: number): Promise<LastReply | null> {
+  return (await readTailEnding(path, size)).reply;
+}
+
+/** How much of the last user message and of the final reply the Ended line keeps (§app.overseer/list-overview). */
+export const ENDING_EXCERPT = 200;
+
+/** How a session ended, from its tail window: the opening of its last finished reply and of its
+    last user message (a wake nudge, a link message or a topic batch is not one), each with its time. */
+export interface TailEnding {
+  /** `stop` and `error` are the reply's stop reason and error (LastReply's); `close` is the last
+      ENDING_CLOSE characters of its text, kept preview links redacted, whitespace collapsed (the
+      roundup's question check, §app.overseer/roundup). */
+  reply?: { at: number; text: string; stop?: string; error?: string; close?: string };
+  user?: { at: number; text: string };
+}
+
+/** A short excerpt, whitespace collapsed, kept preview links redacted before the cut, and copied so
+    it never keeps its (possibly huge) source string alive (a slice is a view in Bun). */
+function excerpt(text: string): string {
+  const t = redactPreviewLinks(text.slice(0, ENDING_EXCERPT * 10)).replace(/\s+/g, " ").trim();
+  const cutText = t.length > ENDING_EXCERPT ? `${t.slice(0, ENDING_EXCERPT - 1)}…` : t;
+  return Buffer.from(cutText, "utf8").toString("utf8");
+}
+
+/** How much of the final reply's ending the tail keeps for the roundup's question check. */
+export const ENDING_CLOSE = 1200;
+
+/** The reply's last ENDING_CLOSE characters, redacted and collapsed like excerpt, and copied. */
+function closeOf(text: string): string {
+  const t = redactPreviewLinks(text.slice(-ENDING_CLOSE * 10)).replace(/\s+/g, " ").trim();
+  return Buffer.from(t.slice(-ENDING_CLOSE), "utf8").toString("utf8");
+}
+
+/**
+ * One backward scan of the tail window (readTailReply's): the last finished reply, and the excerpts
+ * the Ended line shows (its text's opening, and the last user message's), found within the same
+ * bounded window, so a listing never reads a whole transcript for them.
+ */
+export async function readTailEnding(path: string, size: number): Promise<{ reply: LastReply | null; ending: TailEnding }> {
   const fh = await open(path, "r");
+  let reply: LastReply | null = null;
+  const ending: TailEnding = {};
+  const done = () => ({ reply, ending });
   try {
     const floor = Math.max(0, size - MAX_TAIL);
     let end = size;
@@ -463,7 +507,7 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
       const start = Math.max(floor, end - CHUNK);
       const chunk = Buffer.alloc(end - start);
       const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null;
+      if (bytesRead < chunk.length) return done();
       end = start;
       const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
       let stop = buf.length;
@@ -471,17 +515,32 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
         const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
         if (i < 0 && start > 0) break;
         const line = buf.subarray(i + 1, stop);
-        if (line.includes('"assistant"')) {
-          // A torn trailing line or one that isn't JSON reads as null: skipped.
-          const hit = finishedReply(lineEntry(line));
-          if (hit) return hit;
+        const wantReply = !reply && line.includes('"assistant"');
+        const wantUser = !ending.user && line.includes('"user"');
+        // A torn trailing line or one that isn't JSON reads as null: skipped.
+        const h = wantReply || wantUser ? lineEntry(line) : null;
+        if (wantReply && h?.kind === "assistant") {
+          const hit = finishedReply(h);
+          if (hit) {
+            reply = hit;
+            const said = joinedText(h, { images: false });
+            const close = closeOf(said);
+            ending.reply = { at: hit.at, text: excerpt(said), stop: hit.stopReason, ...(hit.error ? { error: hit.error } : {}), ...(close ? { close } : {}) };
+          }
+        } else if (wantUser && h) {
+          if (h.kind === "user") {
+            const said = joinedText(h, { images: false });
+            const at = entryTime(h);
+            if (said.trim() && !notTitle(said) && at !== null) ending.user = { at, text: excerpt(said) };
+          }
         }
-        if (i < 0) return null;
+        if (reply && ending.user) return done();
+        if (i < 0) return done();
         stop = i;
       }
       carry = buf.subarray(0, stop);
     }
-    return null;
+    return done();
   } finally {
     await fh.close();
   }
@@ -690,7 +749,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const scan = await readOutline(path, st.size, hit?.outline ?? null);
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
-    const lastReply = await readTailReply(path, st.size);
+    const { reply: lastReply, ending } = await readTailEnding(path, st.size);
     const align = await readAlignScan(path, st.size, hit?.align ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
@@ -715,7 +774,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(align.summary ? { align: align.summary } : {}),
       ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, ending, marked: head.overseer, align };
     cache.set(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
@@ -801,6 +860,12 @@ export function lastReplyAtOf(path: string): number | undefined {
 /** A session's last finished reply, from the cached tail read; undefined when unknown. */
 export function lastReplyOf(path: string): LastReply | undefined {
   return cache.get(path)?.lastReply ?? undefined;
+}
+
+/** How the session ended, as the list's cache read it from the file's tail (no read here); undefined
+    while the file isn't cached. */
+export function endingOf(path: string): TailEnding | undefined {
+  return cache.get(path)?.ending;
 }
 
 /**

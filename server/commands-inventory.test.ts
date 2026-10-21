@@ -18,7 +18,7 @@ import { COMMANDS } from "../shared/commands-catalog";
 import { renderCommandsDoc } from "./commands-inventory/render";
 import {
   type Inventory, chatClientTypes, compareInventory, formatInventory, inventoryRoutes, isPageSource, isToolSource, keydownListeners, listFiles,
-  OPTED_OUT, PENDING_NEVER_GROWS, ROUTE_CLASSES, optedOut, pendingGrowth, routeOfEntry, toolSpecs,
+  CAPABILITY_LINKS, CHAT_START, GRANTS, OPTED_OUT, PAGE_PLUMBING, PENDING_NEVER_GROWS, ROUTE_CLASSES, optedOut, pendingGrowth, routeOfEntry, toolSpecs,
 } from "./commands-inventory/scan";
 
 const REPO = resolve(import.meta.dirname, "..");
@@ -225,6 +225,22 @@ describe("the real app and tree", () => {
     assert.deepEqual(rows.filter(([, row]) => row.is === "pending").map(([k]) => k), []);
     assert.deepEqual([...new Set(rows.map(([, row]) => row.is))].sort(), ["command", "opted-out"]);
     assert.ok(rows.some(([k, row]) => k === "POST /api/push/test" && row.is === "command"), "push.test stays a command");
+  });
+
+  test("the core areas' not-a-command classes are exact routes: each registered, each in its class only, nothing beside them", () => {
+    const lists: [string, readonly string[]][] = [["page-plumbing", PAGE_PLUMBING], ["chat-start", CHAT_START], ["capability-links", CAPABILITY_LINKS], ["grants", GRANTS]];
+    const registered = new Set(app.routes.map((r) => `${r.method} ${r.path}`));
+    for (const [id, list] of lists) {
+      const cls = ROUTE_CLASSES.find((c) => c.id === id)!;
+      for (const k of list) {
+        assert.ok(registered.has(k), `${id}: ${k} is not a registered route`);
+        assert.equal(actual.routes[k]?.is, id, k);
+        const [m, p] = [k.slice(0, k.indexOf(" ")), k.slice(k.indexOf(" ") + 1)];
+        // A neighbour (a sub-path, another method) is not in the class: a new core route still arrives pending.
+        for (const [nm, np] of [[m, `${p}/x`], [m === "GET" ? "POST" : "GET", p], [m, p.replace(/\/[^/]+$/, "/x")]] as const)
+          if (!list.includes(`${nm} ${np}`)) assert.equal(cls.matches(nm, np), false, `${id} matches ${nm} ${np}`);
+      }
+    }
   });
 
   test("ChatClientMessage is read whole: every member an inline object with a literal type", () => {

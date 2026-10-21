@@ -135,6 +135,18 @@ When a rule changes, change its test in the same change; a rule without a test i
   prints live capability links (`project.preview.list`); revoking one (`project.preview.off`) is a command.
 - Background sweeps and internal plumbing (a request the page makes to draw itself, a hook, a
   helper). An entry is something a person does.
+- In the core areas these are classed one route at a time, by exact `METHOD /path` lists in
+  `server/commands-inventory/scan.ts`, never a prefix, so a new route beside them still arrives
+  pending: `page-plumbing` (`PAGE_PLUMBING`: attachments and uploads, a tool row's contents, a
+  link's thread and seen mark, the remote folder picker, the explanations feed, the sessions
+  folder's name), `chat-start` (`CHAT_START`: the new chat's setup card and profile pick),
+  `capability-links` (`CAPABILITY_LINKS`: a project's preview links) and `grants` (`GRANTS`:
+  schedule and draft-spec approval, schedule revoke, the Overseer's permits and their revoke, a
+  project overseer's PATCH). Any chat can run catalogue actions with the operator's token, so an
+  approval or a grant is never one.
+- For the Overseer and the project overseers the catalogue only reads. Routes that start, message,
+  run, code or clear an overseer, or turn its memory on, spend model time: they stay pending ("not
+  yet"), never a class, so adding one is a decision of its own.
 - **The areas left as is, by choice** (`§app.commands/opted-out`): every route under `/api/` in
   `OPTED_OUT` (`server/commands-inventory/scan.ts`): orgs, outreach, mesh, session-shares,
   public-links, previews, shares-overview, tours, voice, settings, claude, profiles, push, updates,

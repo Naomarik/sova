@@ -46,6 +46,25 @@ export function optedOut(method: string, path: string, list: readonly string[] =
   return list.some((e) => (e.includes(" ") ? e === routeKey(method, path) : path === `/api/${e}` || path.startsWith(`/api/${e}/`)));
 }
 
+/** A class over exactly these `METHOD /path` routes, never a prefix: a new route beside them still arrives pending. */
+const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => routes.includes(routeKey(m, p));
+
+/** The page's own requests in the core areas: what a view, the composer or a link card asks to draw itself. */
+export const PAGE_PLUMBING: readonly RouteKey[] = [
+  "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
+  "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
+  "GET /api/sessions/dir",
+];
+/** Steps of starting a chat, on its empty screen before the first message (`session.create` takes a profile itself). */
+export const CHAT_START: readonly RouteKey[] = ["POST /api/sessions/loadout", "POST /api/sessions/profile"];
+/** Lists that print live capability links. */
+export const CAPABILITY_LINKS: readonly RouteKey[] = ["GET /api/projects/:pid/previews"];
+/** Approvals, permits and grants, and their revoke: what any chat running a command could otherwise grant itself. */
+export const GRANTS: readonly RouteKey[] = [
+  "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
+  "POST /api/projects/:pid/draft-specs/:sid/approve", "PATCH /api/projects/:pid/overseer",
+];
+
 export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
     id: "peer",
@@ -107,6 +126,30 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
     why: "Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.",
     matches: (m, p) => optedOut(m, p),
     entriesWin: true,
+  },
+  {
+    id: "page-plumbing",
+    label: "Page plumbing",
+    why: "Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).",
+    matches: exactly(PAGE_PLUMBING),
+  },
+  {
+    id: "chat-start",
+    label: "Steps of starting a chat",
+    why: "The new chat's setup card toggles and profile pick, refused once a message is sent; `session.create` takes a profile itself. Exactly these routes (`CHAT_START`).",
+    matches: exactly(CHAT_START),
+  },
+  {
+    id: "capability-links",
+    label: "Live capability links",
+    why: "A list that prints live preview links, which open a project's port to whoever holds one. Exactly these routes (`CAPABILITY_LINKS`).",
+    matches: exactly(CAPABILITY_LINKS),
+  },
+  {
+    id: "grants",
+    label: "Approvals and grants",
+    why: "Approving a schedule or a draft spec, the Overseer's permits and their revoke, a project overseer's autonomy, powers and limits: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).",
+    matches: exactly(GRANTS),
   },
 ];
 

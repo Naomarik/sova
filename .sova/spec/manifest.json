@@ -739,7 +739,8 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T09:45Z"
+        "at": "2026-10-21T22:42Z",
+        "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#11037810"
       },
       "evidence": "verified"
     },
@@ -1250,7 +1251,12 @@
         "server/commands-overseer.test.ts",
         "server/commands-fuzz.test.ts",
         "server/commands-inventory/baseline.json"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T22:42Z",
+        "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#11037810"
+      }
     },
     "§app.project-assistant/chat": {
       "kind": "behavior",
@@ -1477,7 +1483,12 @@
         "server/commands-fuzz.test.ts",
         "server/commands-fuzz/known-500.json",
         "server/commands-inventory/baseline.json"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T22:42Z",
+        "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#11037810"
+      }
     },
     "§app.session-list/accessibility": {
       "kind": "behavior",
@@ -2263,7 +2274,12 @@
       ],
       "requires": [
         "§app.commands/catalogue"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T22:42Z",
+        "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#11037810"
+      }
     },
     "§app/settings-dialog": {
       "kind": "surface",

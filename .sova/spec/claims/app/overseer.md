@@ -114,7 +114,10 @@ to that host over the peer hop (§mesh.peers/listener), never through the page's
 host's sender secret never leaves it. The peer's own routes and refusals apply.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows, each with its
-  worktrees' branches, §app.overseer/sessions-in-play); a session's alignments
+  worktrees' branches, §app.overseer/sessions-in-play; narrowed by date and by what a session has,
+  page by page, each row with how it ended, §app.overseer/list-overview); the roundup of what is
+  outstanding (`sova_outstanding`, §app.overseer/roundup); a search inside conversations
+  (`sova_search_sessions`, §app.overseer/session-search); a session's alignments
   (§app.overseer/alignment-read); one session's
   detail, whose summary topics read newest first, as the insight strip lists them
   (§app.insights/insight-strip), each heading with how long ago its own section of the conversation ended
@@ -122,7 +125,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`), and what is true of it now
   (§app.overseer/session-truth); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
-  opened for writing); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
+  opened for writing; or how it ended, `from: "ending"`, §app.overseer/ending-view); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
   (`sova_links`, §app.overseer/links-tools); this host's live public links with their URLs
@@ -457,6 +460,184 @@ mode extension's own fold, so the Overseer never greps a session file for them.
   `sova_alignment`'s.
 
 The Overseer's prompt names `sova_alignment` for an alignment's questions and decisions.
+
+## §app.overseer/list-overview — Session lists for overviews
+
+`sova_list_sessions` also takes what an overview needs, and every addition only narrows or adds
+to what it listed before:
+
+- **`since`**: only sessions last active at or after it, an ISO date or time, or an age such as
+  `14d` or `24h`; anything else is a refusal naming the forms.
+- **`has`**: one or more of `open-questions` (the session waits on the user's alignment answers,
+  §chat.alignment/session-mark), `ready` (a worktree ready to merge or waiting for the go-ahead),
+  `unmerged` (a worktree with work of its own that is not merged: ready, waiting, in progress,
+  blocked or stale, never one with no commits yet), `removed` (a worktree whose folder is gone
+  with its work not merged, or with no record of a merge), `error` (a turn error, or a live
+  error state) and `asks-you` (the last reply asks the user something, §app.decisions/asks-user).
+  Every one named must hold. The merge filters read readiness as last read, so the head says
+  that a session readiness hasn't read yet matches none of them, and names `sova_outstanding` for
+  what is not checked yet.
+- **A cursor.** Rows run newest first; when more match than the page shows, the head gives a
+  `cursor` that continues after the last row shown, so a long listing is read page by page.
+- **The Ended line.** Each row whose session has one adds "Ended {age}: you: "{the last user
+  message}" · reply: "{the opening of the final reply}"", each about 200 characters, whitespace
+  collapsed. Both come from the session list's own cache of the file's tail (the bounded window
+  the last-reply read already scans, kept per file size and time), so a listing reads no whole
+  transcript; a session whose tail holds neither has no Ended line. The age is the final reply's,
+  else the user message's. A listing with an Ended line is wrapped as untrusted content from
+  other sessions, as a transcript read is, and redacted like every tool's output.
+
+## §app.overseer/roundup — The roundup: what is outstanding
+
+`sova_outstanding {since?, project?, cursor?}` is a read tool that answers "anything outstanding?"
+and "what needs me?" in one call. It covers this host's active sessions (open in a terminal, or
+started in Sova and not archived, or running) and the others last active in the window: by default
+the last 14 days, or from `since` (an ISO date or time, or an age such as `30d`). `project` keeps
+the sessions of one registered project (its id or name) or under one folder. The Overseer's own
+conversations, workers' own sessions, project overseers' conversations and organization and baton
+sessions are left out, and the coverage line counts them as skipped.
+
+- **Rows.** One row per session in a section: `- [title](sova://s/<id>) · <age> · <facts>`, the
+  facts joined by "; ", a session's worktrees comma-joined, each as its branch and a short state
+  ("feat/steer-keys conflicts 7 files"). The folder is named only when it is not the most common
+  folder of the rows, and never on a row that shows a branch; "idle" and reading ages are not
+  shown, nor "archived" on a Can't confirm merged row. A session is in as many sections as apply,
+  once in each. Every row is listed, except in Can't confirm merged and Not checked yet: at most
+  40 rows each, then "and {n} more".
+- **Sections**, in this order, each only when it has rows:
+  - **Lost (on no branch)**: a session's own launch worktree (below) whose folder and branch are
+    gone while a commit its transcript names is on no branch and not on the main branch: "branch
+    sova/<name> and its worktree are gone; newest commit <sha8> (<date>, '<subject>') is on no
+    branch and not on <main>, N commits past <main>; recover with `git branch <name> <sha8>` before
+    gc prunes it". Each such row also names up to 2 other sessions of the window whose user or
+    assistant message holds the branch name's 6 hex digits and a word of its name, with that
+    session's newest such snippet (at most 160 characters): "named in [title](sova://s/<id>):
+    '<snippet>'". That search is the conversation search's (§app.overseer/session-search), stopped
+    after about 5 seconds.
+  - **At risk**: a worktree whose folder is gone while its branch keeps commits not on the main
+    branch, whose content the main branch doesn't have (below).
+  - **Needs your answer**: one row per session not archived, from the attention digest's act
+    items (§app.overseer/attention-digest), its open alignment questions
+    (§chat.alignment/session-mark; never one with none open) and a question its final reply asks
+    (below). On the first page also the act items of no session or of a session outside the
+    window (marked so); with `project`, only that project's sessions' items; the items of skipped
+    sessions are only counted, with `sova_attention` named for them. Archived sessions with an
+    open question or an ask are only counted, in one line. Rows are ranked: first a digest item,
+    or an ask whose session has work not merged (ready, built, uncommitted, at risk or lost) or
+    that says merge, land, commit, build, start, go ahead or proceed; then open alignment
+    questions; then other asks; the most recently active first within each.
+  - **Ready to merge**: a worktree ready, or waiting for the user's go-ahead.
+  - **Built, not merged**: a worktree with commits of its own in progress, blocked or stale
+    (§chat.worktrees/readiness), one whose session is working now saying so.
+  - **Uncommitted only (lost if the worktree goes)**: a worktree with at least one uncommitted
+    file and no commit of its own, with its file count. When the main branch changed k of those
+    n files since the worktree's commit (in m commits), the row adds "master changed k of n files
+    since (m commits): may be superseded". A worktree whose files differ from the main branch by
+    fewer than half the lines they differ from its own commit is not listed, and is counted after
+    the sections ("{n} uncommitted worktrees mostly on main: not listed").
+  - **Errors**: the session's last turn ended in an error or was aborted and no user message came
+    after it, whether or not anyone has seen it: "last turn aborted" or "last turn error: <message>",
+    with its age and "nothing since".
+  - **Can't confirm merged**: a worktree whose folder is gone with no record of a merge, or whose
+    folder git can't read, by session and branch name. It is never counted as not merged. When
+    the branch is gone too and no main subject names it, the commit ids the session's transcript
+    (its last 8 MB) names within 300 characters of the branch name, less any that begins a
+    worktree record's `base` commit there, that git still has: at least one, and every one on the
+    main branch (or its tree on it, or landed), keeps the row here with "(its named commits are on
+    <main>)", and counts the branch as on the main branch for the final-reply question below.
+  - **Not checked yet**: every covered session whose merge state the roundup has no reading for,
+    and every remote-target session, which readiness never reads, each with why.
+- **A question in the final reply.** A session not archived asks the user when its final reply
+  came after its last user message and the reply's last 1,200 characters hold a sentence ending
+  in "?" (closing marks such as `**` or a quote after it allowed), or one starting in the last 400
+  of them that says "tell me", "let me know", "say "…"", "your go-ahead", "waiting on/for you" or
+  "if you'd like".
+  The row shows the last such sentence (at most 110 characters). Not when every such sentence is
+  about a restart and the server started after the reply. Not either when the session tracks at
+  least one branch (its worktrees, its launch worktree), every one of them and every `feat/` or
+  `sova/` branch the sentence names is on the main branch by the roundup's own reading (merged,
+  landed, recorded merged by the cleanup, its named commits on it, or a worktree with nothing of
+  its own), and the sentence
+  is about merging, landing, a branch, being ready or a browser check: those are counted after
+  the sections ("{n} asks about work already on main"). The 1,200 characters come from the session list's own tail read (the Ended
+  line's), with kept preview links redacted.
+- **Launch worktrees.** A covered session whose folder is `<parent>/.worktrees/<repo>-<name>`
+  (`<parent>/<repo>` a git checkout, the longest such name) is read for that worktree when
+  readiness tracks no worktree at that path (§app.project-overseer/coding-worktrees):
+  - its folder there: its branch, its commits not on the repository's checked-out branch (the main
+    branch) and its uncommitted files put it under Built, not merged or Uncommitted only;
+  - its folder gone and `sova/<name>` (or `feat/<name>`) still a branch: At risk when it keeps
+    commits not on the main branch;
+  - folder and branch gone: when the name ends in 6 hex digits, the commit ids its transcript names
+    (its last 8 MB) that git still has; all of them on the main branch is merged; the newest one
+    not on it whose tree no main commit has and which no ref contains is Lost; none found is Can't
+    confirm merged. Any other name is Can't confirm merged unless a main commit's subject records
+    its merge.
+- **Squash landings.** Per repository and main-branch commit, the roundup reads the trees of the
+  main branch's commits of the last 30 days and the subjects of its last 5,000 commits. A worktree
+  with commits not on the main branch (ready, built, at risk) has landed when its branch's tree is
+  one of those trees, or its branch is in a local branch whose tree is one of them and which is not
+  itself on the main branch. A main subject that names the branch as a whole word (the name
+  bounded by the subject's start or end, a space, a quote, a parenthesis, `@` or `:`, `refs/heads/`
+  allowed before it) settles more: for a gone worktree whose branch is gone too, it has landed;
+  for a branch that still exists, the name followed by `@` and a prefix (7 or more digits) of the
+  branch's own tip has landed, and the name alone moves the row to Can't confirm merged with
+  "master names it in <sha8>" (a ready worktree stays ready on the name alone). A landed worktree is not listed, and
+  a line after the sections counts them ("{n} branches whose content is on main: not listed").
+  A merged worktree left with uncommitted files is not listed either, and is counted in the same
+  way ("{n} merged worktrees with leftover files").
+- **Honest coverage.** The merge sections come from merge readiness's own last reading of each
+  session (the same answer `sova_session`'s Merge lines and the merge board read), joined with
+  the worktree cleanup's ledger, which marks a removal it recorded as merged as merged, and with
+  the git reads above. A session Sova hasn't checked recently is checked fresh before the answer,
+  or listed as not checked; it is never counted as fine. Before it answers, the roundup asks
+  readiness to read every session on the page it has no reading for, and every archived idle one
+  whose reading is older than readiness's own 20-second answer age, whatever that reading found,
+  and waits for those reads for at most about 8 seconds. Counted as checked is only a session whose
+  reading came in, and is not one of those old archived readings and not a read still queued or
+  running after the wait. Every other covered session is in Not checked yet: never read ("no merge
+  reading yet"), or read before ("last read {age} ago; a fresh read didn't finish"). An unchecked
+  session is never left out. All git reads are read-only.
+- **Coverage line**, last and outside the untrusted content: "Read: N sessions' final replies,
+  alignments and worktree git state (M with no git reading: listed under Not checked). Not read:
+  branches no session tracks, sessions on other hosts, anything before a session's final reply.",
+  with how many were skipped and why. A page covers at most 300 sessions, newest first; past that
+  the line gives a `cursor` for the next page.
+- Its text from other sessions (titles, summaries, details, sentences) is wrapped as untrusted
+  content and redacted like every tool's output. The roundup itself writes nothing and takes no
+  cap; the readings it asks for are readiness's own background reads, the same a listing queues.
+
+## §app.overseer/ending-view — How a session ended
+
+`sova_read_session` takes `from: "ending"`: the slice from the user's last message to the final
+reply, with the same untrusted wrapping. Its character budget defaults to the read's maximum
+(12,000). The final reply (the last assistant text) is kept whole, past the 1,000-character cap of
+other rows, within that budget; the user's message comes first, then the newest of the rows
+between them that fit the row and character budgets, and a line says how many were left out. A
+final reply longer than the budget keeps its ending, its start cut with "…". A session with no
+user message yet reads from its start. It reads this host's sessions only: with `host`, `ending` is
+refused, naming `last_user` instead.
+
+## §app.overseer/session-search — Searching inside conversations
+
+`sova_search_sessions {words, since?, project?, cursor?}` is a read tool that finds sessions by
+what was said in them:
+
+- **What it searches.** The session files of this host's sessions last changed in the window (14
+  days by default, or from `since`, as the roundup takes it), newest first, `project` as the
+  roundup takes it. Only user and assistant text counts: tool calls, tool output and thinking
+  never match and never show. A message matches when it holds every word, case-insensitive. Only
+  the lines that hold the words are parsed. Messages on abandoned branches can match.
+- **Never these.** The Overseer's own conversations, workers' own sessions, project overseers'
+  conversations and organization and baton sessions are never searched, so their content never
+  shows. Terminal-owned sessions are only read. It writes nothing and takes no cap.
+- **Caps.** At most 20 sessions a call, each with at most 3 snippets of about 200 characters
+  around the match (its newest matches), each saying who spoke and how long ago. When more may
+  match, the result gives a `cursor` that continues with the next session.
+- **Time limit.** A call stops after about 10 seconds and says plainly that it stopped short, how
+  many sessions it searched of how many, and the `cursor` that continues.
+- What it returns is wrapped as untrusted content from other sessions, as a transcript read is,
+  and redacted like every tool's output.
 
 ## §app.overseer/confirm — Decision cards
 
@@ -1394,7 +1575,7 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
 
 - **Check before stating.** Never state a session's state, or list open cards or open questions,
   from memory, a brief, a card's note or a summary line: check it with `sova_session` or
-  `sova_attention` in the same turn, and drop or replace a card that no longer applies before
+  `sova_outstanding` in the same turn, and drop or replace a card that no longer applies before
   listing cards.
 - **A brief is a snapshot** of when it was sent.
 - **Ids are copied** verbatim from a tool's output in the same turn, never typed. The rule has two
@@ -1413,6 +1594,13 @@ run note (§app.overseer/session-truth, §app.overseer/run-note) give it what th
   question is raised once.
 - **Time** comes from tool ages and the run note's time, never from the system prompt's opening
   time.
+- **Roundups are its own.** Status questions across sessions ("what needs me?", "anything
+  outstanding?") are answered by the Overseer itself, `sova_outstanding` first, never by starting
+  a session or a subagent to look. It never reads session files with its file tools: it searches
+  them with `sova_search_sessions`. It reports each row as the roundup labels it (lost, at risk,
+  can't confirm, not checked), names every session, and says what the roundup couldn't check.
+  It lists each Lost, At risk and Needs-your-answer row shown, one line each (its link, then its
+  ask in a few words), and answers only the sections the question is about.
 
 The project overseer's prompt holds the first, and the third as "copied verbatim from a tool's
 output in this turn, never typed or pieced together", for its own tools and the project's

@@ -6094,6 +6094,24 @@
       ],
       "requires": []
     },
+    "§app.overseer/ending-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/session-guards.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-roundup.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:36Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#f6fb6e3b"
+      },
+      "evidence": "verified"
+    },
     "§app.overseer/entry-button": {
       "kind": "behavior",
       "authority": "accepted",
@@ -6207,6 +6225,30 @@
       ],
       "requires": []
     },
+    "§app.overseer/list-overview": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/sessions-index.ts",
+        "server/overseer-roundup.ts",
+        "server/overseer.ts",
+        "server/overseer-roundup.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/sessions-in-play",
+        "§chat.alignment/session-mark",
+        "§chat.worktrees/readiness",
+        "§app.decisions/asks-user"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:36Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#f6fb6e3b"
+      },
+      "evidence": "verified"
+    },
     "§app.overseer/memory-switch": {
       "kind": "behavior",
       "requires": [
@@ -6280,6 +6322,35 @@
         "§app.settings-dialog/overseer"
       ]
     },
+    "§app.overseer/roundup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/overseer-roundup.ts",
+        "server/overseer-tools.ts",
+        "server/merge-readiness.ts",
+        "server/overseer.ts",
+        "server/overseer-roundup.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-roundup-git.ts",
+        "server/sessions-index.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/attention-digest",
+        "§chat.worktrees/readiness",
+        "§chat.worktrees/cleanup",
+        "§chat.alignment/session-mark",
+        "§app.overseer/session-truth",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T15:52Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#ec45ecfd"
+      },
+      "evidence": "verified"
+    },
     "§app.overseer/seen": {
       "kind": "behavior",
       "authority": "accepted",
@@ -6338,6 +6409,25 @@
         "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
       }
     },
+    "§app.overseer/session-search": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/overseer-roundup.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-roundup.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/roundup"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T10:36Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#f6fb6e3b"
+      },
+      "evidence": "verified"
+    },
     "§app.overseer/standing-notes": {
       "kind": "behavior",
       "authority": "accepted",
@@ -6390,7 +6480,8 @@
         "server/project-services/checkout-teardown.ts",
         "server/app.ts",
         "server/agent-loadouts.test.ts",
-        "server/agent-loadouts.snapshot.json"
+        "server/agent-loadouts.snapshot.json",
+        "server/overseer-roundup.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -6400,7 +6491,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T09:45Z"
+        "at": "2026-10-20T10:36Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#f6fb6e3b"
       }
     },
     "§app.settings-dialog/overseer": {
@@ -15920,7 +16012,12 @@
         "§app.overseer/session-truth",
         "§app.overseer/run-note",
         "§chat.memory/overseer"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-20T12:17Z",
+        "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#71dfbdbc"
+      }
     },
     "§chat.topics/delivery": {
       "kind": "behavior",

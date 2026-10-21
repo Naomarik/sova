@@ -1,11 +1,16 @@
-import { createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { FRONT_LABELS, type PublicLinksInfo, type RoutedHost, type ShareFront, type VerifyResult } from "../../shared/public-links";
 import { agoTime, relativeTime } from "../lib/format";
+import { fetchMeshResync } from "../lib/api";
 import { meshPeers } from "../lib/mesh";
+import { type MeshResync, resyncView } from "../lib/mesh-resync";
 import {
   acceptPublicLinksInfo,
   draftIssue,
   FRONTS,
+  gatewayBehind,
+  gatewayBehindText,
+  gatewayResync,
   getPublicLinks,
   normalizeUrl,
   PIN_OF,
@@ -27,6 +32,7 @@ import {
   type PublicLinksDraft,
 } from "../lib/public-links";
 import { copyText } from "../lib/ui-state";
+import { MeshResyncSheet } from "./MeshResyncSheet";
 import { Banner, Chip, CopyButton } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
@@ -555,6 +561,7 @@ export function PublicLinksSettingsSection() {
                   {(w) => <Banner tone="warn" title={w()} />}
                 </Show>
                 <Show when={sh().warningCode === "sleeps" && sh().warning}>{(w) => <p class="field-hint">{w()}</p>}</Show>
+                <Show when={gatewayBehind(info()) && sh().via}>{(id) => <GatewayBehind peerId={id()} name={viaName()} />}</Show>
               </>
             )}
           </Show>
@@ -586,5 +593,69 @@ function RoutedRow(props: { host: RoutedHost }) {
         <Chip tone={h().up ? "success" : undefined}>{h().up ? "Up" : "Down"}</Chip>
       </Show>
     </li>
+  );
+}
+
+/**
+ * The via gateway runs an older share protocol (§mesh.public/panel): a warn banner with the host
+ * menu's Resync for that peer (§mesh.peers/resync), its confirm sheet, and its reason when it can't.
+ * /api/mesh/resync is read once when the banner shows; no answer, or no word about the peer: no button.
+ */
+function GatewayBehind(props: { peerId: string; name: string }) {
+  const [resync, setResync] = createSignal<MeshResync | null>(null);
+  const [sheet, setSheet] = createSignal(false);
+  let closed = false;
+  onCleanup(() => (closed = true));
+  fetchMeshResync().then(
+    (r) => !closed && setResync(r),
+    () => {
+      // no button: the banner still says what it means
+    },
+  );
+  const button = () => {
+    const r = resync();
+    return r ? gatewayResync(resyncView(r.hosts.find((h) => h.id === props.peerId), r.self)) : null;
+  };
+  let trigger: HTMLButtonElement | undefined;
+  const text = () => gatewayBehindText(props.name);
+  return (
+    <>
+      <Banner
+        tone="warn"
+        title={text().title}
+        body={text().body}
+        action={
+          <Show when={button()}>
+            {(b) => (
+              <button
+                ref={trigger}
+                type="button"
+                class="button button-sm"
+                aria-label={`Resync ${props.name}`}
+                aria-disabled={b().reason ? "true" : undefined}
+                title={b().reason ?? `Bring ${props.name} up to this host's build`}
+                onClick={() => !b().reason && setSheet(true)}
+              >
+                Resync
+              </button>
+            )}
+          </Show>
+        }
+      />
+      <Show when={button()?.reason}>{(why) => <p class="field-hint">{why()}</p>}</Show>
+      <Show when={sheet() ? resync() : null}>
+        {(r) => (
+          <MeshResyncSheet
+            hostId={props.peerId}
+            info={r()}
+            onChanged={setResync}
+            onClose={() => {
+              setSheet(false);
+              trigger?.focus();
+            }}
+          />
+        )}
+      </Show>
+    </>
   );
 }

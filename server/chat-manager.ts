@@ -2589,7 +2589,7 @@ class ChatSession {
    * at once while idle, and it is context from the next turn on. False when this runtime may not
    * write (a foreign writer, the TUI) or is mid-turn.
    */
-  async appendNote(customType: string, text: string): Promise<boolean> {
+  async appendNote(customType: string, text: string, details?: unknown): Promise<boolean> {
     if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.harness.isRunning()) return false;
     try {
       assertNotLive(this.path);
@@ -2597,7 +2597,7 @@ class ChatSession {
       return false;
     }
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
-    await this.harness.appendNote(customType, text);
+    await this.harness.appendNote(customType, text, details);
     markOwned(this.path);
     return true;
   }
@@ -4292,6 +4292,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       ? specialLoadout(path, special.spec, special.port, {
           tool: (decl) => toPiTool(serverToolSpec(path, decl)) as PiToolDefinition,
           memory,
+          // The vis retry with no mode to ask: always on for a spec that wants it; its tool never in the loadout.
+          visRetry: () =>
+            visCheckExtension(() => {
+              const h = visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null;
+              return h ? { ...h, visOn: () => true, visToolsOn: () => false } : null;
+            }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
         })
       : null;

@@ -70,6 +70,9 @@ const ROUTES: { method: string; re: RegExp }[] = [
   // The Project Assistant (§app.project-assistant/chat): its view, a message to it; its socket is /ws/i.
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
   { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
+  // The owner's photos (§app.project-assistant/photos): the upload, and one photo of the chat.
+  { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant/image$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant/img/(?:0|[1-9][0-9]{0,4})$`) },
   { method: "GET", re: new RegExp(`^/i/${TOKEN}/v/v_[a-z2-9]{8}$`) },
   // Reviewed tour attachments are scoped to the conversation and its exact checked edition.
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/tours/${TOUR_HANDLE}(?:/assets/${TOUR_FILE}|/progress)?$`) },
@@ -85,9 +88,45 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/s/${TOKEN}/img/(?:0|[1-9][0-9]{0,4})$`) },
 ];
 
-/** The share sockets, by path: `/ws/h` a hand-off's, `/ws/s` a session share's. */
-export type ShareSocketKind = "h" | "s" | "i";
+/** The strict routes, read-only (tests hold every one routing to its kind). */
+export const STRICT_ROUTES: readonly { readonly method: string; readonly re: RegExp }[] = ROUTES;
+
+/** The share sockets, by path: `/ws/h` a hand-off's, `/ws/s` a session share's, `/ws/i` the
+    Project Assistant's. A gateway also forwards `/ws/<kind>/<name>` (and `/ws/t`) of a registered
+    link (FORWARD_SOCKET), so `t` is a socket kind only there. */
+export type ShareSocketKind = "h" | "s" | "i" | "t";
 const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/s": "s", "/ws/i": "i" };
+
+/**
+ * The gateway's forward-only tier (§mesh.public/share-protocol): a well-formed address under a
+ * link, of any page, socket or upload the minting host may add later. A request that passes only
+ * this shape is marked `forwardOnly` and reaches only the router, which forwards it for a hash a
+ * live, accepted host registered for its kind and answers anything else with the unknown-link
+ * 404; it never reaches this host's own share app, and the routed host's ingress judges it
+ * against its strict ROUTES. A segment is 1-64 unreserved characters, never dots only; the raw
+ * path has no `%` (judged before parsing, like ROUTES).
+ */
+const SEG = "[A-Za-z0-9._~-]{1,64}";
+export const FORWARD_SHAPE = new RegExp(`^/(?:api/)?([hist])/(${TOKEN})((?:/${SEG}){1,8})$`);
+/** A judged path's link: its kind and token, whatever follows. */
+const LINK_PATH = new RegExp(`^/(?:api/)?([hist])/(${TOKEN})(?:/|$)`);
+/** A share socket's forward-only shape: `/ws/<kind>` or `/ws/<kind>/<name>`. */
+export const FORWARD_SOCKET = new RegExp(`^/ws/([hist])(?:/(${SEG}))?$`);
+/** The methods the forward-only tier passes. */
+export const FORWARD_METHODS: readonly string[] = ["GET", "HEAD", "POST", "PUT"];
+const dotsOnly = (path: string): boolean => path.split("/").some((seg) => /^\.+$/.test(seg));
+
+/** Whether a request passes the forward-only tier (never decoded, like shareMayReach). */
+export function forwardShape(method: string, pathname: string): boolean {
+  return !pathname.includes("%") && FORWARD_METHODS.includes(method) && FORWARD_SHAPE.test(pathname) && !dotsOnly(pathname);
+}
+
+/** A socket path's kind in the forward-only tier, or null. */
+export function forwardSocketKind(pathname: string): ShareSocketKind | null {
+  if (pathname.includes("%") || dotsOnly(pathname)) return null;
+  const m = FORWARD_SOCKET.exec(pathname);
+  return m ? (m[1] as ShareSocketKind) : null;
+}
 
 /** The raw request target split into path and query, or null unless it is origin-form: "/"
     then anything but a second "/" (absolute-form "http://…", authority-form "host:443", "*" and
@@ -128,10 +167,16 @@ export const UPLOAD_TIMEOUT_MS = 120_000;
 /** A file upload's whole-request timer: 25 MB from a phone on a slow link. */
 export const FILE_UPLOAD_TIMEOUT_MS = 300_000;
 
-const UPLOAD_PATH = new RegExp(`^/api/h/${TOKEN}/image$`);
+/** The photo uploads: a hand-off's and the owner's to their Project Assistant (§app.project-assistant/photos). */
+const UPLOAD_PATH = new RegExp(`^/api/(?:h/${TOKEN}/image|i/${TOKEN}/assistant/image)$`);
 const FILE_PATH = new RegExp(`^/api/h/${TOKEN}/file$`);
-const IMAGE_PATH = new RegExp(`^/api/h/${TOKEN}/img/`);
+const IMAGE_PATH = new RegExp(`^/api/(?:h/${TOKEN}/img/|i/${TOKEN}/assistant/img/)`);
 export const TOUR_IMAGE_PATH = new RegExp(`^/api/(?:t/${TOKEN}|h/${TOKEN}/tours/${TOUR_HANDLE}|i/${TOKEN}/c/k_[a-z2-9]{8}/tours/${TOUR_HANDLE})/assets/${TOUR_FILE}$`);
+/** A forward-only request's body cap and whole-request time: the largest any share route allows
+    (the file upload's), since the gateway never knows what a newer host's new route takes. */
+export const FORWARD_BODY_MAX = FILE_BODY_MAX;
+export const FORWARD_TIMEOUT_MS = FILE_UPLOAD_TIMEOUT_MS;
+
 /** The body cap for a judged path: the photo upload's own, the file upload's own, 16 KB for everything else. */
 export const bodyMaxFor = (pathname: string): number => (UPLOAD_PATH.test(pathname) ? UPLOAD_BODY_MAX : FILE_PATH.test(pathname) ? FILE_BODY_MAX : BODY_MAX);
 
@@ -184,6 +229,7 @@ function routeKind(pathname: string): string {
   if (pathname === "/ws/h") return "socket";
   if (pathname === "/ws/s") return "session socket";
   if (pathname === "/ws/i") return "owner socket";
+  if (pathname.startsWith("/ws/")) return "forwarded socket";
   return pathname.startsWith("/i/") ? "owner page" : pathname.startsWith("/s/") ? "session page" : "page";
 }
 
@@ -194,6 +240,13 @@ export interface ShareRequestContext {
   url: URL;
   /** The rate-limit key the request was counted under. */
   client: string;
+  /** It passed only the gateway's forward-only tier (FORWARD_SHAPE / FORWARD_SOCKET), never
+      the strict ROUTES: only a registered link's host may answer it. */
+  forwardOnly?: true;
+  /** A link a host registered at this gateway (§mesh.public/share-protocol): the request had the
+      gateway's one ceiling (FORWARD_BODY_MAX, FORWARD_TIMEOUT_MS) instead of its page's own
+      limits, so only that host may answer it. Set on forward-only requests too. */
+  routed?: true;
 }
 
 /** A `/ws/h` or `/ws/s` upgrade that passed the edge: the path, the token's shape and the address limit. */
@@ -242,6 +295,15 @@ export interface ShareServerOptions {
   upgrade?: ShareUpgrade;
   /** Preview hosts (§mesh.public/preview-address); absent: none. */
   preview?: PreviewHooks;
+  /** Whether the forward-only tier is on now (the gateway's router: while this host is a
+      gateway). Absent: the strict ROUTES alone, as on a routed host's ingress. */
+  forward?: () => boolean;
+  /** While `forward` is on: whether a host registered the link of `kind` with this token, so its
+      requests get the gateway's ceiling instead of their page's own limits (the host enforces
+      those). A throw is "no". */
+  registered?: (kind: ShareSocketKind, token: string) => boolean;
+  /** The strict tier. Default: shareMayReach. Tests replace it to stand in for an older build. */
+  mayReach?: (method: string, pathname: string) => boolean;
 }
 
 /** The in-process share app and its `/ws/h`: the hooks' defaults, and what a gateway's router
@@ -258,6 +320,8 @@ export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgra
   const sessionUpgrade = sessionShareUpgrade();
   const assistantUpgrade = assistantShareUpgrade(SHARE_WS_MAX_PAYLOAD);
   const upgrade: ShareUpgrade = (req, socket, head, ctx) => {
+    // Only a gateway's forward-only tier names other sockets, and none is ever served in-process.
+    if (ctx.forwardOnly || ctx.kind === "t") return refuse(socket, 404, { error: "Not found" });
     if (ctx.kind === "s") return sessionUpgrade(req, socket, head, ctx);
     if (ctx.kind === "i") return assistantUpgrade(req, socket, head, ctx);
     const { url, token } = ctx;
@@ -380,6 +444,24 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const perAddressTourImages = new RateLimiter(TOUR_IMAGE_REQUESTS_PER_MINUTE);
   const perPreview = new RateLimiter(PREVIEW_LIMITS.requestsPerMinute);
   const preview = opts.preview;
+  const strict = opts.mayReach ?? shareMayReach;
+  const forwardOn = (): boolean => {
+    try {
+      return opts.forward?.() === true;
+    } catch {
+      return false;
+    }
+  };
+  /** Whether a judged path is a link a host registered here (only while the forward tier is on). */
+  const routedLink = (pathname: string): boolean => {
+    const m = LINK_PATH.exec(pathname);
+    if (!m || !opts.registered) return false;
+    try {
+      return opts.registered(m[1] as ShareSocketKind, m[2]!) === true;
+    } catch {
+      return false;
+    }
+  };
   /** The preview a request is for; a throw is the share host's. */
   const previewOf = (req: IncomingMessage): string | null => {
     try {
@@ -443,7 +525,10 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       json(res, 400, { error: "Bad request" });
       return;
     }
-    const url = shareMayReach(req.method ?? "GET", target.path) ? parsedTarget(target) : null;
+    const method = req.method ?? "GET";
+    const strictOk = strict(method, target.path);
+    const forwardOnly = !strictOk && forwardOn() && forwardShape(method, target.path);
+    const url = strictOk || forwardOnly ? parsedTarget(target) : null;
     if (!url) {
       json(res, 404, { error: "Not found" });
       return;
@@ -462,6 +547,22 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     }
     if ((TOUR_IMAGE_PATH.test(url.pathname) ? perAddressTourImages : IMAGE_PATH.test(url.pathname) ? perAddressImages : perAddress).limited(client)) {
       tooMany(res, PAGE_SHELL.test(url.pathname));
+      return;
+    }
+    // A registered link's request, strict or forward-only: the gateway's one ceiling, never its
+    // page's own limit (a newer host may have raised that); the host's ingress judges the rest.
+    const routed = forwardOnly || (forwardOn() && routedLink(url.pathname));
+    if (routed) {
+      if (method === "POST" || method === "PUT") {
+        const len = Number(req.headers["content-length"]);
+        if (!Number.isFinite(len) || len > FORWARD_BODY_MAX) {
+          json(res, 413, { error: "Request body too large" });
+          req.resume();
+          return;
+        }
+      }
+      // Node's own request timer is fileTimeout, the forward-only one.
+      guarded(() => dispatch(req, res, { url, client, routed: true, ...(forwardOnly ? { forwardOnly: true as const } : {}) }), failed("dispatch"));
       return;
     }
     if (req.method === "POST") {
@@ -485,7 +586,9 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       refuse(socket, 400, { error: "Bad request" });
       return;
     }
-    const kind = Object.hasOwn(SOCKETS, target.path) ? SOCKETS[target.path]! : null;
+    const strictKind = Object.hasOwn(SOCKETS, target.path) ? SOCKETS[target.path]! : null;
+    const forwardKind = strictKind ? null : forwardOn() ? forwardSocketKind(target.path) : null;
+    const kind = strictKind ?? forwardKind;
     const url = kind && req.method === "GET" ? parsedTarget(target) : null;
     const tokens = url?.searchParams.getAll("token") ?? [];
     const token = tokens.length === 1 ? tokens[0]! : "";
@@ -509,7 +612,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       refuse(socket, 429, { error: "Too many requests" });
       return;
     }
-    guarded(() => upgrade(req, socket, head, { url, token, client, kind }), failed("upgrade"));
+    guarded(() => upgrade(req, socket, head, { url, token, client, kind, ...(forwardKind ? { forwardOnly: true as const } : {}) }), failed("upgrade"));
   };
   const admit = opts.admit;
   const server = createServer(options, (req, res) => {

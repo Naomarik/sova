@@ -41,6 +41,8 @@ export interface SpecialDeps {
   tool(decl: ServerToolDecl): PiToolDefinition;
   /** The memory engine's extension, when the spec asks for it. */
   memory?: () => PiExtensionFactory;
+  /** The vis retry's extension, when the spec asks for it (its retry always on, its vis_check tool never). */
+  visRetry?: () => PiExtensionFactory;
   /** A run start whose answer did not come: logged by the caller. */
   log?(line: string): void;
 }
@@ -148,7 +150,7 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
     ...(l.noPromptTemplates ? { noPromptTemplates: true } : {}),
     ...(l.noThemes ? { noThemes: true } : {}),
     ...(l.noContextFiles ? { noContextFiles: true } : {}),
-    extensionFactories: [factory, ...(spec.memory && deps.memory ? [deps.memory()] : [])],
+    extensionFactories: [factory, ...(spec.memory && deps.memory ? [deps.memory()] : []), ...(spec.visRetry && deps.visRetry ? [deps.visRetry()] : [])],
     // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of the
     // user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).
     appendSystemPromptOverride:

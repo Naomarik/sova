@@ -1263,6 +1263,9 @@ export const assistantInfo = (id: string) => request<AssistantInfo>(assistantUrl
 export const setAssistantModels = (id: string, models: WorkModels) => request<AssistantInfo>(assistantUrl(id, "assistant"), jsonInit("PUT", { models }));
 /** Mark Done or Decline an owner request. */
 export const setOwnerRequest = (id: string, rid: string, status: "done" | "declined") => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { status }));
+/** Start Chat on an owner request: a new chat in its project with the request as a note
+    (§app.project-assistant/request-chat). 409 `has-chat` carries the live chat's path, `closed` none. */
+export const startOwnerRequestChat = (id: string, rid: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, `requests/${encodeURIComponent(rid)}/chat`), jsonInit("POST"));
 /** Open Assistant Chat: the owner's conversation (made when there is none). */
 export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
 /** The assistant's conversation as the owner sees it (the preview); no token, no use. */

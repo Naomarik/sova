@@ -77,7 +77,7 @@ ${colours}
 
 /** The guide: the opening, the shared rules, the mark syntax, one `## <kind>` section per kind the
     page draws as a figure (in the vis list's order), then svg, then html when `html`. */
-export function gatheringVisGuide(files: Readonly<Record<string, string>> = VIS_FILES, opts: { html?: boolean } = {}): string {
+export function gatheringVisGuide(files: Readonly<Record<string, string>> = VIS_FILES, opts: { html?: boolean; opening?: string } = {}): string {
   const shared = stripVisComments(files.shared ?? "");
   const rules = /^(?:- .*\n?)+/m.exec(shared)?.[0];
   const mark = /^To point at what matters, .*$/m.exec(shared)?.[0];
@@ -94,10 +94,21 @@ export function gatheringVisGuide(files: Readonly<Record<string, string>> = VIS_
   // teaches "never nest" in its overview, which a gathering session doesn't get: so it goes here.
   const own = `Rules for every kind:\n${rules.trim()}\n- Never nest a \`vis\` fence in another fence.`.replace(/^- The parser is strict:.*$/m, "- The parser is strict: use only the syntax below, or the person sees no drawing at all.");
   const free = [svgSection(), ...(opts.html ? [htmlSection(files)] : [])];
-  return `${OPENING}\n\n${own}\n\n## Shared: emphasis\n${mark}\n${MARK_TARGETS}\n\n${[...sections, ...free].join("\n\n")}`;
+  return `${opts.opening ?? OPENING}\n\n${own}\n\n## Shared: emphasis\n${mark}\n${MARK_TARGETS}\n\n${[...sections, ...free].join("\n\n")}`;
 }
 
 const cached: { draw?: string; html?: string } = {};
 /** Built once per tier, on the first session that draws (`html`: it may draw interactive drawings). */
 export const GATHERING_VIS_GUIDE = (html = false): string =>
   html ? (cached.html ??= gatheringVisGuide(VIS_FILES, { html: true })) : (cached.draw ??= gatheringVisGuide());
+
+/** The Project Assistant's opening (§app.project-assistant/drawings): the owner's page, their projects. */
+const ASSISTANT_OPENING = `# Drawings
+
+The owner's page draws \`vis\` fences as small figures. When a picture would help them see their own projects faster than prose (their figures side by side, the steps of something the project does, a screen or layout as a \`wireframe\`), you may put ONE drawing in a reply: a fenced block whose info string is \`vis <kind>\`, with a one-line \`caption:\`, next to a sentence that says what to notice. Most replies need none. Use only the owner's own words and figures and what the project's plan says; in a wireframe use a placeholder like "AED —" for anything else; never invent sample names or numbers.
+
+Never draw people, roles, who decides what, the team's own work, or how this conversation is run: those stay private, in drawings as in words. Every rule about what you may say applies to everything in a drawing (titles, labels, notes, captions, markup and script). Only the kinds below are drawn; anything else shows the owner "A drawing couldn't be shown here."`;
+
+let assistantGuide: string | undefined;
+/** The Project Assistant's drawing guide: every kind the owner page draws, interactive drawings included. Built once. */
+export const ASSISTANT_VIS_GUIDE = (): string => (assistantGuide ??= gatheringVisGuide(VIS_FILES, { html: true, opening: ASSISTANT_OPENING }));

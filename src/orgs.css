@@ -311,9 +311,10 @@
 /* Something in the tab waits on the operator; the words are in the tab's hidden text and title. */
 .org-tab-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--status-warn); flex: none; }
 .org-tabpanel { display: flex; flex-direction: column; gap: var(--space-5); }
-/* Narrower than the five tabs at full spacing: tighter spacing, then the caption size, so a 420px
-   window shows all five with up to three-digit counts (measured live). Narrower than that the strip
-   scrolls and the selected tab is kept in view. Every tab stays 44px tall. */
+/* Narrower than the tabs at full spacing: tighter spacing, then the caption size, so a 420px
+   window shows all six with one-digit counts (and five with up to three-digit ones; measured
+   live). Narrower than that the strip scrolls and the selected tab is kept in view. Every tab
+   stays 44px tall. */
 @container org-tabs (max-width: 599px) {
   .org-tabs { gap: 0; }
   .org-tabs > .tab { padding: 0 var(--space-2); gap: var(--space-1); }

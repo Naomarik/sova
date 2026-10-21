@@ -52,6 +52,7 @@ import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
 import { OrgWhatsAppCard } from "./OrgWhatsAppCard";
 import { OwnerCard } from "./OwnerCard";
+import { OrgRequests } from "./OrgRequests";
 import { CompanyHoursCard } from "./CompanyHoursCard";
 import { PersonForm } from "./PersonForm";
 import { PersonPage } from "./PersonPage";
@@ -90,6 +91,7 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
             start={page.start()}
             tab={page.tab()}
             history={page.history()}
+            request={page.request()}
             titleRef={props.titleRef}
           />
         )}
@@ -299,7 +301,7 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
 
 // ---- one org -------------------------------------------------------------------------------------
 
-function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: HistoryView; titleRef(el: HTMLHeadingElement): void }) {
+function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: HistoryView; request?: string; titleRef(el: HTMLHeadingElement): void }) {
   const org = createOrgSource(props.id);
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
@@ -375,6 +377,15 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: Hi
                       setLinkWarning(warning);
                       setLinks(l);
                     }}
+                  />
+                </Match>
+                <Match when={tab() === "requests"}>
+                  {/* The owner's requests (§app.project-assistant/requests-tab); an answer re-reads the org for its counts. */}
+                  <OrgRequests
+                    org={o()}
+                    focus={props.request}
+                    ownerName={o().ownerPage?.person?.name ?? o().roster.find((p) => p.id === o().owner)?.name ?? ""}
+                    onChanged={() => org.refetch()}
                   />
                 </Match>
                 <Match when={tab() === "people"}>

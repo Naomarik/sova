@@ -320,7 +320,7 @@ export interface ChatMethods {
   /** Append a state record of a registered kind, whatever the run is doing. */
   appendState: { args: { kind: string; data: unknown }; result: string };
   /** A note entry of `noteType` (its custom type), between turns only. */
-  appendNote: { args: { noteType: string; text: string }; result: boolean };
+  appendNote: { args: { noteType: string; text: string; details?: unknown }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
   flushDeferredAppends: { args: Record<string, never>; result: null };
@@ -449,6 +449,9 @@ export interface SpecialSpec {
   attribution?: true;
   background?: true;
   replyText?: true;
+  /** A run that settles with a `vis` block that can't be drawn gets the hidden retry note
+      (§chat.markdown/visuals, server/vis-check.ts), as an ordinary chat with vis on does. */
+  visRetry?: true;
   /** The usage kind the chat's requests are noted under (the Overseer, a project overseer). */
   usage?: "overseer";
   /** The hooks the server answers besides runStart (always installed). */

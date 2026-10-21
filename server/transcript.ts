@@ -44,6 +44,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
+import { OWNER_REQUEST_NOTE, ownerRequestCardOf } from "../shared/project-assistant";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
 // import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
@@ -777,6 +778,15 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
         if (merge) {
           const it = item(id, "worktree-merge", h, contentText(h.content));
           it.worktreeMerge = merge;
+          return [it];
+        }
+      }
+      // An owner request Start Chat put in the chat (§app.project-assistant/request-chat): its card.
+      if (h.noteType === OWNER_REQUEST_NOTE) {
+        const card = ownerRequestCardOf(h.details);
+        if (card) {
+          const it = item(id, "info", h, contentText(h.content));
+          it.ownerRequest = card;
           return [it];
         }
       }

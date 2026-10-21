@@ -221,6 +221,50 @@ test("who may call what", async () => {
   assert.equal((await engine.run("up", { instance: a.instance }, op)).ok, true);
 });
 
+test("the Project Assistant: only up of the one instance its start_version named, once its act is taken", async () => {
+  const acts: string[] = [];
+  const pa = (up: string, refuse?: Error, root = project): Caller => ({
+    kind: "assistant",
+    id: "project-assistant",
+    root,
+    up,
+    act: async (verb, instance) => {
+      acts.push(`${verb}:${instance}`);
+      if (refuse) throw refuse;
+    },
+  });
+  assert.equal((await engine.run("down", { instance: a.instance }, op)).ok, true);
+  const id = a.instance!;
+  const before = readRegistry().instances.length;
+  // Every other verb, another instance, another project, a new copy and no act: forbidden, before any act.
+  for (const [verb, body, caller] of [
+    ["down", { instance: a.instance }, pa(id)],
+    ["apply", { instance: a.instance }, pa(id)],
+    ["reset", { instance: a.instance }, pa(id)],
+    ["create", { project, branch: "sova/pa-new" }, pa(id)],
+    ["up", { project, branch: "sova/pa-new" }, pa(id)],
+    ["up", { instance: a.instance }, pa("i_someone_else")],
+    ["up", { instance: a.instance }, pa(id, undefined, "/elsewhere")],
+    ["up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: project, up: a.instance }],
+    ["up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: project }],
+  ] as [string, Record<string, unknown>, Caller][])
+    assert.equal((await engine.run(verb, body, caller)).error?.code, "forbidden", `${verb} ${JSON.stringify(body)}`);
+  assert.deepEqual(acts, [], "the engine's own refusals come first: no act");
+  assert.equal(readRegistry().instances.length, before, "no copy was made");
+  assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "stopped");
+  // A refused act passes through as thrown, and nothing starts.
+  const refused = new Error("Create, start and update running copies is off for the Project Assistant.");
+  await assert.rejects(() => engine.run("up", { instance: a.instance }, pa(id, refused)), (e) => e === refused);
+  assert.deepEqual(acts, [`up:${a.instance}`]);
+  assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "stopped", "nothing ran");
+  // Taken: up of exactly that instance runs.
+  acts.length = 0;
+  const up = shaped(await engine.run("up", { instance: id }, pa(id)));
+  assert.equal(up.ok, true, JSON.stringify(up.error));
+  assert.deepEqual(acts, [`up:${a.instance}`]);
+  assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "running");
+});
+
 test("with no supervisor reachable, process verbs are unsupported and change nothing", async () => {
   const bare = new ProjectEngine(host.deps({ driver: new SystemdDriver(async () => ({ code: 1, stdout: "", stderr: "Failed to connect to bus" })) }));
   const before = readRegistry().instances.length;

@@ -1,17 +1,17 @@
 import { createResource, createSignal, For, Show } from "solid-js";
 import type { ModelInfo } from "../../shared/protocol";
-import type { AssistantInfo, OwnerRequest, PricedPick } from "../../shared/project-assistant";
+import type { AssistantInfo, PricedPick } from "../../shared/project-assistant";
 import type { WorkKind } from "../../shared/powers";
-import { ApiError, assistantInfo, listModels, openAssistantChat, setAssistantModels, setOwnerRequest } from "../lib/api";
-import { useMinuteNow } from "../lib/minute-clock";
-import { relativeTime } from "../lib/format";
+import { ApiError, assistantInfo, listModels, openAssistantChat, setAssistantModels } from "../lib/api";
+import { orgTabHref } from "../lib/orgs-route";
+import { isOpenRequest, openRequestsLine } from "../lib/owner-requests";
 import { announce } from "../lib/ui-state";
 import { AssistantPowers } from "./PowersGrid";
 import "./OwnerCardAssistant.css";
 
 /**
- * The Owner card's Project Assistant part (§app.owner-page/controls, §app/project-assistant): the
- * owner's open requests with Mark Done and Decline, Open Assistant Chat, its models per kind of work
+ * The Owner card's Project Assistant part (§app.owner-page/controls, §app/project-assistant): one
+ * line linking the owner's open requests on the Requests tab, Open Assistant Chat, its models per kind of work
  * with their prices (per org; a project may override coding and gathering), and each project's
  * Project Assistant switches (powers-ui's AssistantPowers).
  */
@@ -19,8 +19,6 @@ import "./OwnerCardAssistant.css";
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
 export const WORK_LABEL: Record<WorkKind, string> = { reply: "Its replies", coding: "Fixes it starts", gathering: "Gatherings it starts" };
-const KIND_WORD: Record<OwnerRequest["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release" };
-const STATUS_WORD: Record<OwnerRequest["status"], string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined" };
 
 /** "$3 in / $15 out per million tokens", or that the price isn't known. */
 export function priceLine(p: PricedPick | null | undefined): string {
@@ -31,12 +29,11 @@ export function priceLine(p: PricedPick | null | undefined): string {
 }
 
 export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) {
-  const now = useMinuteNow();
   const [info, { mutate, refetch }] = createResource(() => props.orgId, (id) => assistantInfo(id));
   const [models] = createResource(() => listModels().catch((): ModelInfo[] => []));
   const [err, setErr] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
-  const open = () => (info()?.requests ?? []).filter((r) => r.status === "with-team" || r.status === "started");
+  const open = () => (info()?.requests ?? []).filter(isOpenRequest);
   const first = () => props.ownerName.trim().split(/\s+/)[0] ?? props.ownerName;
 
   const run = async (fn: () => Promise<AssistantInfo>, done: string) => {
@@ -82,32 +79,10 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
         {(i) => (
           <>
             <div class="orgs-assistant-requests">
-              <h4 class="orgs-h4">Requests from {first()}</h4>
-              <Show when={open().length} fallback={<p class="orgs-line project-muted">No open requests.</p>}>
-                <ul class="orgs-assistant-list">
-                  <For each={open()}>
-                    {(r) => (
-                      <li class="orgs-assistant-request">
-                        <span class="orgs-assistant-request-main">
-                          <span class="orgs-assistant-request-title">{r.title}</span>
-                          <span class="field-hint">
-                            {KIND_WORD[r.kind]} · {i().projects.find((p) => p.projectId === r.projectId)?.name ?? "A project"} · {STATUS_WORD[r.status]} · {relativeTime(r.createdAt, now())}
-                          </span>
-                          <span class="orgs-line">{r.text}</span>
-                        </span>
-                        <span class="button-row">
-                          <button type="button" class="button button-sm" disabled={busy()} onClick={() => void run(() => setOwnerRequest(props.orgId, r.id, "done"), `${r.title}: done.`)}>
-                            Mark Done
-                          </button>
-                          <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => void run(() => setOwnerRequest(props.orgId, r.id, "declined"), `${r.title}: declined.`)}>
-                            Decline
-                          </button>
-                        </span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
+              {/* The requests themselves are the org's Requests tab (§app.project-assistant/requests-tab). */}
+              <p class="orgs-line">
+                <a href={orgTabHref(props.orgId, "requests")}>{openRequestsLine(open().length, props.ownerName)}</a>
+              </p>
               <div class="button-row">
                 <button type="button" class="button button-sm" onClick={() => void openChat()}>
                   {i().sessionId ? "Open Assistant Chat" : "Start Assistant Chat"}
@@ -139,6 +114,9 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
                       </For>
                     </select>
                     <span class="field-hint">{priceLine(i().models[kind])}</span>
+                    <Show when={kind === "reply" && i().seesPhotos === false}>
+                      <span class="field-hint">This model can't see photos: {first()} won't get an attach button.</span>
+                    </Show>
                   </label>
                 )}
               </For>

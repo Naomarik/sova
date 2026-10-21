@@ -45,6 +45,7 @@ import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { OwnerRequestNote } from "./OwnerRequestNote";
 import { ShowChangesCard } from "./ChangesViewer";
 import { TourCard } from "./TourCard";
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
@@ -943,6 +944,8 @@ export function HistoryItems(props: {
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
+              {/* An owner request a Start Chat put at the top (§app.project-assistant/request-chat). */}
+              <Match when={item.kind === "info" && item.ownerRequest}>{(card) => <OwnerRequestNote card={card()} />}</Match>
               <Match when={item.kind === "info" && item.handoffRun}>
                 {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>

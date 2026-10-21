@@ -242,6 +242,8 @@ user row.
     the project's own recipe (§app.project-services/deploy-callers).
   The Project Assistant column exists only for `gather`, `codingStart`, `codingPrompt`, `copiesRun`
   and `deploy`; every other power is always Off there, and a patch turning one On is refused (400).
+  There, `copiesRun` means starting a copy the owner's versions list holds (`start_version`,
+  §app.project-assistant/tools); it never makes or updates a copy.
 - **Always allowed, in both columns, and never braked:** reading the project and its sessions,
   keeping notes, filing ideas and gaps, asking with a card, planning a gathering for later, sorting
   decisions into drafts (the reconciler), writing requirements into a spec draft, cancelling a held

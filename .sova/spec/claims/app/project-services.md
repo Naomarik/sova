@@ -516,6 +516,12 @@ same engine in-process, never over HTTP:
   turn the user started; the project overseer acts only on its project: reads always, and every other verb only once its project statechart took the act (`services/down` always, `services/run` with `copiesRun` for create, up, apply, test and conform, `services/reset` with `copiesReset` for reset and teardown; any of them in a run the operator started; §app.project-overseer/tools). With its power Off (or a brake on) the statechart refuses with the power's sentence telling it to file it as an idea or raise a confirm card, and the engine never runs; the engine itself checks no power. For both, reset and teardown of an instance it did not
   create, stopping a shared service, and down of a copy with an active share link, answer
   `needs-confirm`: the operator does it.
+- **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and
+  only of the one instance its `start_version` named, which must be a copy the owner's versions list
+  holds (§app.project-assistant/versions), and only once the project statechart took its
+  `services/run` act (`copiesRun` in the Project Assistant column, or a turn the operator started).
+  Every other verb, and `up` of any other instance, is `forbidden`; the self-host rule refuses it
+  like any caller but the operator.
 
 `share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through its statechart's act `services/share` (power `share`, people-facing, held like a preview), run only after every
 check of the share passed, so a refused share never reaches the statechart; the global Overseer's is

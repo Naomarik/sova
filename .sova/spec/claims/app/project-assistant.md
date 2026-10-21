@@ -8,7 +8,10 @@ knows each project from its overview and spec and can read its code (§app/spec-
 cleaned for outsiders), remembers every earlier conversation with them, and writes new
 requirements into its own conversation draft (§app.requirements/conversation-drafts). What else it may set off is
 the project's Project Assistant column of power switches (§app.project-overseer/autonomy-levels): anything
-Off reaches the operator as a request. The operator picks its models, sees its requests in Needs
+Off reaches the operator as a request. The owner can send it photos and screenshots
+(§app.project-assistant/photos), its answers may carry a drawing (§app.project-assistant/drawings),
+and it can start a version the owner may try and hand them an `Open` button for it
+(§app.project-assistant/versions). The operator picks its models, sees its requests in Needs
 you and on the Owner card, and can write in the chat themselves.
 
 The owner page also lists the owner's requests and where each stands, and **Versions you can
@@ -39,6 +42,16 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   owner's name, any conversation's goal or briefing, or anything of other people's conversations.
 - **No message limit.** The owner's messages are limited only as a hand-off link's are
   (§app.baton/share-listener): 10 a minute per link, 16 KB bodies, the listener's per-address limit.
+  A message carries text, photos (§app.project-assistant/photos) or both.
+- **The composer's keys** are Sova's own chat's (§chat.composer/behavior): Enter sends and
+  Shift+Enter starts a new line; Ctrl+Enter or ⌘+Enter always sends; after the owner's last press
+  on the box was a touch, Enter starts a new line and only `Send` sends; while a keyboard is
+  composing characters (`isComposing`), Enter never sends. The placeholder carries the hint
+  ("Write a message. Enter sends") only while Enter sends, and the box's `enterkeyhint` is `send`
+  then, `enter` after a touch. An Enter that sends leaves no new line behind. While an answer is
+  being written, an Enter or `Send` sends nothing and says "Wait for the answer first.", a line
+  that goes once the answer is done; the box keeps the text, so the next Enter sends it.
+  Hand-off pages keep their own keys (§app.baton/outsider-view).
 - **Nothing runs on a model nobody chose.** Its replies run on the org's assistant reply model
   (§app.project-assistant/models), set on the chat at each owner message; with none set, or one this
   host can't run, the chat does not answer: the page says it isn't ready yet and the owner's message
@@ -53,6 +66,69 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   sender).
 - **Rewind, regenerate and modes are refused**: every message in it is someone's.
 
+## §app.project-assistant/photos — The owner's photos
+
+- **When.** The owner can send photos and screenshots only while photos are on (the outsider photo
+  settings, Settings → Organizations, §app.settings-dialog/organizations) and the assistant's reply
+  model sees images (its `input` lists `image`). Only then does the chat's view (`GET
+  /api/i/<token>/assistant`) carry `photos {perMessage, maxBytes}` and the composer show its
+  paperclip; otherwise it shows none, a pasted or dropped picture is not attached, and the upload
+  and message routes refuse a photo (409, code `no-photos`). The Owner card's reply-model row then
+  says "This model can't see photos: {first} won't get an attach button."
+- **The hand-off page's composer** (§app.baton/images) with photos only, never files: the
+  `Attach Photos` paperclip, paste and drop, the same on-device processing (orientation, 2000 px,
+  re-encoded, metadata dropped), upload at attach, the pending strip with progress, Retry and
+  Remove, "Waiting for photos to finish." while an upload runs, and the polite live region.
+- **Upload.** `POST /api/i/<token>/assistant/image` with the raw bytes and their type
+  (`image/jpeg`, `image/png`, `image/webp` or `image/gif`), answering 201 `{id, size, mime}`; 404
+  and 410 for an unknown or dead owner link; 409 `not-ready` while the chat has no reply model;
+  409 `no-photos` (above); 413 over the largest photo; 400 when the bytes aren't the declared type;
+  429 past 20 uploads a minute per link; 507 while the host's staging area is full, as on a hand-off
+  page. The server strips metadata again as a backstop. A photo is staged host-local in the hand-off
+  photos' staging area (never the workspace repo), per org and owner (so before the conversation
+  exists too), and removed once sent or after 24 hours.
+- **Sending.** `POST /api/i/<token>/assistant {text, images?: [id]}`: each id a photo this link
+  staged; at most the per-message limit (400 `too-many`); text may be empty when there are photos.
+  An id that is gone answers 409 `photo-expired`, and the page uploads that photo again once and
+  resends. There is no total or daily limit on photos: only the size, the per-message limit and
+  the request limits. A message counts once against the message limit, whatever its photos. The
+  photos enter the transcript inline, as image content in the owner's message (the session file,
+  in the org's workspace repo); a refused message keeps its staged photos for the retry.
+- **Who sees them.** The owner, in their own messages (one fitted in 320 × 240, more as 96 px tiles;
+  a lightbox scoped to the message; alt "Your photo" or "Your photo {i} of {n}"), fetched from `GET
+  /api/i/<token>/assistant/img/<n>`, `n` numbering the owner's photos of the whole conversation in order; the
+  operator's Preview as the same, from `GET /api/orgs/:id/owner/preview?assistant=1&img=<n>`; and the
+  operator in Sova, as thumbnails (§chat.images/thread-thumbnails). Pixels never ride the view or
+  its socket: a message carries `images [{n, mime}]` only. Photo reads count in the share
+  listener's photo bucket (§app.baton/share-listener), never the page's.
+- **The model** sees each photo as an image in the owner's message. While photos can be sent, its
+  prompt says the owner may attach photos and screenshots, that it may ask for a screenshot when
+  that would help with a problem they report, that it says in words what a photo shows that
+  matters (its memory keeps the words; a photo far back is no longer seen), and that it never
+  describes a face or reads a document's personal numbers back; otherwise it says photos can't be
+  sent here.
+- **The operator's images** in the assistant chat reach the model as in a hand-off session
+  (§app.baton/images): an image the operator attached is sent inline as image content and its path
+  line is removed from the text, so no local path reaches the owner.
+
+## §app.project-assistant/drawings — Drawings in its answers
+
+- **Taught to draw.** Its prompt carries the drawing guide hand-off conversations get with Draw and
+  Interactive drawings on (§app.baton/abilities), written for the owner: at most one drawing in a
+  reply and only when a picture helps; never people, roles or anything private, nor how this
+  conversation is run; only the owner's own words and figures and what the projects' plans say.
+  Every kind the share page draws is taught, interactive (`vis html`) drawings included.
+- **Drawn on the owner page** (and the operator's Preview as) as on a hand-off page
+  (§app.baton/outsider-view): figures and still pictures inline, interactive drawings in the
+  sandboxed frame (§chat.markdown/visuals); a drawing that can't be drawn shows the quiet line "A
+  drawing couldn't be shown here." The outsider redaction's markup backstop runs on them, in views
+  and while streaming alike.
+- **One hidden retry.** When a run of the assistant settles with a `vis` block that has a hard
+  error, it gets the hidden retry note Sova's own chats get (§chat.markdown/visuals, "Feedback to
+  the model": one `sova-vis-retry` message, at most one retry per run, the same exceptions), so the
+  owner sees the fixed drawing. The note is never in the owner's view, its socket or the operator's
+  transcript.
+
 ## §app.project-assistant/tools — What it can always do, and what its switches allow
 
 - **Always, no switch** (§app.project-overseer/autonomy-levels, "always"):
@@ -63,7 +139,10 @@ The owner is never the operator: nothing an owner writes is operator identity, w
     repeat-back and the explicit yes (§app.requirements/conversation-drafts, §app.requirements/lock-in);
   - `report_issue {project, kind: "bug" | "outage" | "question" | "feature", title, text}`: files an
     owner request (§app.project-assistant/requests) with the team;
-  - `owner_requests {}`: the owner's requests and where each stands, to answer "what happened to…".
+  - `owner_requests {}`: the owner's requests and where each stands, to answer "what happened to…";
+  - `owner_versions {}`: the versions the owner can try (§app.project-assistant/versions), each its
+    label, its project and whether it is running, starting, failed to start or not running, so it
+    answers "can I try it?" truthfully. Never a handle, port, branch or address.
 - **By the project's Project Assistant column** (§app.project-overseer/autonomy-levels), each act set off as
   the caller kind `assistant`, never as the operator:
   - `start_fix {project, title, text}`: files a `fix` request, then the project's `build/start` act
@@ -74,24 +153,42 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   - `deploy {project}`: files a `deploy` request, then the project's `deploy/run` act. On: the
     project's own deploy recipe runs as the operator's Deploy would, without overrides
     (§app.project-services/deploy-callers). Off: it asks the operator to deploy (deploy.request).
+  - `start_version {project?, version}`: starts a version the owner names, `version` a label
+    `owner_versions` gave (the project's only version when it lists one). It starts only a copy the
+    versions list holds (the Current version or a fix's copy), never a branch, the team's work in
+    progress or a new copy. Before any act it refuses, in plain words, when the project lists no
+    versions or its copies can't be shown outside the team. An already running copy answers that it
+    is running, with its `Open` button. Otherwise it is the project's `services/run` act
+    (`copiesRun`, never held, logged in the project's activity), then the engine's `up` of exactly
+    that copy as the assistant caller (§app.project-services/callers). With Create, start and update
+    running copies On (or in a turn the operator started) it starts at once and the answer says it
+    is starting; Off (or a brake), checked before the act, nothing starts and no act is logged, a `try` request is filed
+    (§app.project-assistant/requests) and the answer says it went to the team. A start the engine
+    refuses, or one that fails or doesn't answer within its time (§app.project-assistant/versions),
+    says "it didn't start; the team knows" and files the same `try` request. The tool waits at most
+    3 seconds for the engine; a start still booting carries on after its answer.
 - Each tool's answer says, in plain words for the owner, what happened: started, waiting a few
   minutes, or with the team.
 - **Never**: the shell, files, any operator-only act, another org, a project hidden from the owner
-  (§app.owner-page/conversations), a link URL.
+  (§app.owner-page/conversations), a link URL, stopping, removing or making a copy.
 
 ## §app.project-assistant/requests — The owner's requests, and where they stand
 
 - **Stored in the org's workspace** (`projects/<pid>/owner-requests.jsonl`, append-only): a filed
   line `{kind: "filed", id: "or_…", request: "bug" | "outage" | "question" | "feature" | "fix" | "deploy",
-  title, text, at}`, then a line `{kind: "status", id, status: "with-team" | "started" | "done" |
+  title, text, at}` (`try`: a version the owner asked to try, from `start_version`), then a line `{kind: "status", id, status: "with-team" | "started" | "done" |
   "declined", at, sessionId?}` per change; read folded. `title` is the owner's own words, at most 120 characters; `text` at most
   2,000.
 - **Where it stands**, worked out, never typed by a model: `with-team` when filed; `started` when a
-  fix's coding session started; `done` or `declined` only by the operator.
+  fix's coding session started; `done` or `declined` by the operator, except that an open `try`
+  request is `done` on its own once its version's copy is running, whoever started it (the operator
+  from the Branches tab, or a later `start_version`).
 - **Needs you** (§app.overseer/attention-digest), act tier: each open (`with-team`) request is an
   `owner-request` item, an outage an `owner-outage` item, which also sends a phone notification at
   once (§app/notifications, kind `owner-outage`); an owner's ask for a new link is an
-  `owner-link-request` item (§app.owner-page/link). Each opens the org's People tab.
+  `owner-link-request` item (§app.owner-page/link). Each opens the org's People tab, but an open
+  `try` request, which is an `owner-version-request` item and opens the project's Branches tab. A
+  second ask to try the same version while its request is open files none: the open one stands.
 - **The operator answers** on the Owner card: `Mark Done` or `Decline` on each open request
   (`POST /api/orgs/:id/owner/requests/:rid {status}`); the item leaves Needs you.
 - **The project overseer** sees its project's open owner requests in its project read, as data for
@@ -109,6 +206,23 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   (§app.project-services/share: share endpoints declared, `share.allow` not false, no sensitive
   data) and its first share endpoint answers now; any other listed copy says `Not running right
   now`. A project whose copies can never be shared lists none.
+- **Starting and failed.** A copy `start_version` started is `starting` from the start until its
+  first share endpoint answers (then running), and `failed` when the start failed or it hasn't
+  answered 5 minutes after the start; the mark lives in the server's memory and a restart forgets
+  it (a known limitation: a copy still booting then reads `Not running right now` until it
+  answers, and one that never answers is not marked failed). Home and the chat show `Starting…` (disabled) while it starts and re-read every 3 seconds
+  until it is running or failed; a failed copy says "It didn't start. The team knows." with no
+  `Open`; the operator learns of it from its `try` request in Needs you, and a start the engine
+  failed also shows on the project's Branches tab as the engine reports it. `/i/<token>/v/<handle>` of a starting copy
+  answers a small page saying it is starting that reloads itself every 3 seconds (200, `Refresh:
+  3`), so an `Open` pressed early lands on the copy once it answers; of a failed one, 409 "This
+  version didn't start. The team knows."
+- **The `Open` button in the chat.** The assistant's message that followed a `start_version` that
+  started a copy, or found it running, carries that version as a row (`versions`, the Home row's
+  shape), resolved again at each read, so the chat draws it with `Open`, `Starting…` or the failed
+  line as Home does. The model's text never carries an address.
+- **They run until stopped.** Nothing stops a copy on its own: one the assistant started runs
+  until the operator stops it (the project's Branches tab), within the project's slots.
 - **Opened through the owner link**: the page's `Open` is `/i/<token>/v/<handle>` (an HMAC handle of
   the copy, §app.owner-page/conversations), which checks the link and the copy again, then sends
   the browser on (302) to a preview link (§mesh.public/preview) bound to the owner link. No answer
@@ -117,8 +231,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   the owner link's (7 days after its last use, §app.owner-page/link), and every one is turned off
   when the owner link is turned off, replaced, or stops naming the owner. One is made per copy and
   endpoint and kept while both last; a copy torn down turns its own off.
-- No act and no switch: they need no sharing step (§app.project-overseer/autonomy-levels, share is never the
-  assistant's).
+- Opening needs no act and no switch: no sharing step (§app.project-overseer/autonomy-levels, share is never the
+  assistant's). Starting one is `start_version`'s (§app.project-assistant/tools).
 
 ## §app.project-assistant/models — Which models it runs on
 
@@ -149,4 +263,5 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   outsider projection (§app.spec-lookup/outsider-view); link URLs.
 - A test plants a marker in each of those fields, checks it is present in the operator's views,
   then reads every owner answer, socket frame and the model's system prompt and tool results, and
-  finds none.
+  finds none; the version rows in the chat and the `owner_versions` and `start_version` results
+  included, which carry no address, port or branch.

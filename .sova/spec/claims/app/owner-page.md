@@ -105,11 +105,23 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
     only when something waits on them; **Your requests**, only when they made one: each its
     title, its kind and where it stands (§app.project-assistant/requests), newest first;
     **Versions you can try**, only when a shown project lists one
-    (§app.project-assistant/versions): each its name, its project, and `Open` or `Not running
-    right now`; **Your projects**, one card per shown project (name, status, the newest update,
+    (§app.project-assistant/versions): each its name, its project, and `Open`, `Starting…`, "It
+    didn't start. The team knows." or `Not running right now`; **Your projects**, one card per shown project (name, status, the newest update,
     and a line of counts), the whole card a link.
-  - **The Project Assistant** (`#a`): the conversation with it, newest at the bottom, with a
-    composer (§app.project-assistant/chat).
+  - **The Project Assistant** (`#a`): a chat screen that fills the window's height: `← All
+    projects` and the title at the top, the conversation in the middle, newest at the bottom, its
+    first bubble the assistant's greeting, and the composer (§app.project-assistant/chat) pinned at
+    the bottom while the conversation scrolls, never covering the newest message as it grows (an
+    error line, pending photos). It opens at its newest message, the message box
+    focused where there is a mouse or trackpad (never on a touch-only screen, where focus would
+    raise the keyboard). It follows an answer as it is written only while the owner is at the end
+    (within 80px): once they scroll up to read, nothing moves the page until they scroll back down
+    or send, and a send takes it to the end again. A fresh read of the conversation redraws only
+    the messages that changed, so an interactive drawing keeps its state while a version on
+    screen starts. The owner's own photos show in their messages
+    (§app.project-assistant/photos), the assistant's drawings in its answers
+    (§app.project-assistant/drawings), and a version it started as a row with `Open`
+    (§app.project-assistant/versions). The operator's Preview as shows the same, read only.
   - **A project** (`#p/<handle>`): its name and status, then in this order: **Updates**,
     **Waiting on you** (this project's, only when there is something), **Who we've talked to**,
     **What's been decided**, **What's been built**, **Conversations**. Updates, decisions and
@@ -147,7 +159,8 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
   owner as the viewer: the same filter, redaction and sender labels; briefings only when addressed
   to the owner; how many people an offer went to, never who; never cut at an offer; done and closed
   conversations included; no composer. A message's photos (§app.baton/images) show as their count
-  only ("2 photos"), never the pictures. When it is the owner's turn in it, the page says to answer
+  only ("2 photos"), never the pictures: only the owner's own photos, in their own Project
+  Assistant chat, show as pictures. When it is the owner's turn in it, the page says to answer
   through the link the operator sent for it.
 
 ## §app.owner-page/conversations — Which conversations the owner reads
@@ -242,13 +255,17 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 
 - One column at every width, at most 720px wide and centred; at 390px nothing scrolls sideways,
   every button and row is at least 44px tall, and lines wrap rather than being cut. It is part of
-  the share build (`dist-share/`), using its styles; dark only. A reply's markdown reads as
+  the share build (`dist-share/`), using its styles; dark only. The share build's page shell asks
+  for `interactive-widget=resizes-content`, as Sova's own shell does (§app/shell), so an on-screen
+  keyboard shrinks the page and a pinned composer stays above it. A reply's markdown reads as
   §app.session-share/reading describes.
 - **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
   `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
   `GET /api/i/<token>/c/<k_handle>/tours/<handle>` and its narrowly scoped exact-edition asset reads
   (§app.tours/handoffs), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
-  (a message to it), the socket `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
+  (a message to it), `POST /api/i/<token>/assistant/image` and `GET
+  /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), the socket
+  `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
   (a version) and `POST /i/<token>/ask-link` (§app.owner-page/link). The tour reads check current
   owner access and the already-exposed conversation cut before any file read, and recheck after
   asynchronous reads; denial is indistinguishable missing 404. They have no Ask control. Any other
@@ -256,7 +273,7 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   model.
 - **Fresh.** The page reads again every 60 seconds while it is visible (paused while hidden, at
   once when shown again) and says when it last did.
-- **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
+- **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. The owner's photo reads (`/api/i/<token>/assistant/img/<n>`) count in the listener's photo bucket (§app.baton/share-listener), never the page's; a photo upload has the hand-off upload's body cap and time (§app.baton/share-listener). Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
 - **Errors.** When a read fails for any reason but a dead link, the page says it couldn't load,
   that the link still works, and offers `Try Again`; what it showed before stays.
 - **The Project Assistant's errors** read its answer's status as the page's own read does: a

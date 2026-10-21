@@ -490,9 +490,9 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   fetch shows the transcript's top-edge bar. Below 1280 the pane still closes at once, so the
   landing and the bar are in view. The line above is said when the branch has no such row, and
   when the rows down to it can't be fetched, so a jump lands or says so and never waits silently.
-  The fetch starts at the click. In a chat closed for being quiet, such a jump starts it
-  (§chat.transcript/instant-open); asked before the chat's `hello`, it waits for it about 1.5 s at
-  most, then fetches from the file. The pane never waits on the whole transcript either: it reads every row of
+  The fetch starts at the click, and starts no chat of its own: asked before the chat's `hello`
+  (or in a chat closed for being quiet), it reads the file's newest rows itself and fetches from
+  them (§chat.transcript/instant-open); a fetch that can't land says the line above. The pane never waits on the whole transcript either: it reads every row of
   the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
   report's body), a small fraction of the transcript's size, so on a slow link its list is there
   and a jump's fetch has the link to itself.

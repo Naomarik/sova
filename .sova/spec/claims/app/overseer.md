@@ -1252,11 +1252,15 @@ itself.
   automatic try still ahead.
 - **Needs you, the owner's asks** (§app/project-assistant): `owner-request`, one per open request an
   organization's owner filed through its Project Assistant (id `owner-request:<request id>`), "{owner}
-  reports {what} on {project}: {title}", until the operator marks it done or declined (or a fix it
-  started has started); `owner-outage` the same for a report that the app is down, also a phone
-  notification; `owner-link-request`, one per org whose owner asked for a new owner link (id
-  `owner-link-request:<org id>`), until a new link is made. Each is act tier, of no session, and
-  opens the org's People tab.
+  reports {what} on {project}: {title}", while it is with the team: until the operator marks it done
+  or declined, a fix it started has started, or the operator's first message in the chat Start Chat
+  opened for it, and again when that chat is archived before it is done or declined
+  (§app.project-assistant/request-chat); `owner-outage` the same for a report that the app is down,
+  also a phone notification; `owner-link-request`, one per org whose owner asked for a new owner link
+  (id `owner-link-request:<org id>`), until a new link is made. Each is act tier and of no session; a
+  request's item opens the org's Requests tab at that request (`#/orgs/<id>/requests/<rid>`), a link
+  ask the org's People tab, and an open `try` request is an `owner-version-request` item opening the
+  project's Branches tab (§app.project-assistant/requests).
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person

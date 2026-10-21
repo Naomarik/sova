@@ -934,7 +934,7 @@ either. The switches show what is set; while a brake holds them all Off, the Pau
 | Saved (toast and announce) | "{group}, on its own: all on." / "…: all off." · one act: "{act}, from a client: on." / "…: off." · refused: the server's sentence, the switch as it was |
 | Paused (a warn banner above the switches while a brake holds every switch Off) | title `Paused` · body: the server's reason, then "Until you resume, every switch acts as Off. What you set is kept." · `Resume` (secondary), for either brake (an attach on this host, an empty roster) · done: "Resumed. The switches are in force again." · meanwhile every switch is drawn greyed, still showing what is set, and still changes it when pressed |
 | One-time note (an info banner until dismissed) | carried over from a level: title "Levels are now switches." · body "What level {level} let it do on its own is On; everything else is Off. One thing is looser: the overseer no longer approves its own waiting acts, so an act that is On goes ahead after the waiting period unless you cancel it in Needs you." · re-derived after an older Sova changed the level: title "The switches were set again from level {level}." · body "A computer on an older Sova changed this project's level to {level}, so what that level lets it do on its own is On and everything else is Off. The Project Assistant's switches are as they were." · `Dismiss` (ghost; done: "Note dismissed.") |
-| The Project Assistant's switches on the owner page card (§app.owner-page/controls) | one block per project of the organization: the project's name, then the `From a client` column alone, listing only the acts the assistant can ever set · saved: "{project}: {group or act}, from a client: …" · while braked: "Paused: {reason}" (Resume stays on the project page) and the switches drawn greyed, as above · unread: "Couldn't read {project}'s switches." with `Retry` |
+| The Project Assistant's switches on the owner page card (§app.owner-page/controls) | one block per project of the organization: the project's name, then the `From a client` column alone, listing only the acts the assistant can ever set · one line under the last block: "{first} sees what these let the assistant do, in plain words, on their page." · saved: "{project}: {group or act}, from a client: …" · while braked: "Paused: {reason}" (Resume stays on the project page) and the switches drawn greyed, as above · unread: "Couldn't read {project}'s switches." with `Retry` |
 | Needs you and the Pipeline, an act in its waiting period | `Cancel` only; no line says it waits for the overseer's review |
 
 ## §design.copy-deck/project-costs — Project page · Cost card, org page · totals (§app/project-costs)
@@ -1041,6 +1041,7 @@ page never names a host or a person.
 | Verify reasons (server) | Timed out · Couldn't connect · It redirects; the front must forward, not redirect · Got {status}, not Sova's answer · Something else answered, not Sova · The public address must start with https:// · The public address must have no path, query or login · No public address is set. |
 | Routed hosts | heading "Hosts sending links here" · row `{n} links` (`1 link`) · `Last push {time}` / `Never pushed` · `Up` / `Down` / `Not accepted` · none: "No other host sends its links here yet." |
 | Through | "Links open only while {gateway} is on. Keep a client's organization on an always-on host." · Ingress port |
+| Gateway behind (warn banner, §mesh.public/share-protocol) | **{gateway} runs an older version of public links.** Some pages of this host's links may not open until {gateway} is updated. · `Resync` (the host menu's, §mesh.peers/resync; disabled with its reason) |
 | Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port is a whole number from 1 to 65535. · Pick the gateway. · The ingress port is a whole number from 1 to 65535. (the save bar: "Public links: {error}") |
 | Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
 | Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
@@ -1084,11 +1085,21 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 |---|---|
 | Browser tab title | `{org}` |
 | Greeting | "Hi {first}. Here's how your projects are going." |
-| Project Assistant button | `Project Assistant` (primary) · line under it: "Ask about your projects, report a problem or ask for something new." |
+| Tabs | `Home` · `Assistant` · `Requests` (with the open count as a badge, "{n}"; its label for screen readers "Requests, {n} open") |
+| Project Assistant card | heading "What it can do for you" · `Open the Chat` (primary) · not ready: the Assistant's not-ready line, no list |
+| …lines (name · how) | "Ask about your projects" · "Answers right away" — "Report a problem" · "Goes to the team at once" — "Ask for something new" · "Written up with you, then sent to the team" — "Get a problem fixed" · now "Starts right away", held "Starts on its own in a few minutes", team "The team decides when to start it" — "Try the latest version" · now "Starts right away, with an Open button", team "The team starts it for you" — "Release a new version" · now "Starts right away", held "Starts on its own in a few minutes", team "The team releases it" |
+| …projects that differ | "{line}: {segment}, {segment}" with segments, in this order: "right away for {projects}" · "on its own for {projects}" · team: fix "the team starts it for {projects}", version "the team starts it for {projects}", release "the team releases it for {projects}" · `{projects}` "A", "A and B", "A, B and C" |
+| …photos note | "You can add photos and screenshots." |
+| …what a tap starts in the message box | Ask: "How is {project} going?" (several projects: "How are my projects going?") · Report: "Something isn't working: " · New: "I'd like something new: " · Fix: "Please fix this: " · Try: "Can I try the latest version of {project}?" (the first project in Home's order that lists one) · Release: "Please release a new version of {project}." (several projects: "Please release a new version of ") |
+| Requests line on Home | "Your requests: {n} with the team ›" (with none with the team: "Your requests: {n} ›"; singulars as written) |
+| Requests tab | heading "Your requests" · empty: "Nothing asked yet. Ask the Project Assistant for a fix, a new feature or a release." · `Open the Chat` (primary) |
+| Chat suggestions | under the greeting, the card's lines as chips (their names) · once there are messages: `What Can I Ask?` (ghost, at the top) · its sheet: title "What it can do for you", the same lines and chips, `Close` |
 | Your requests, heading | "Your requests" |
-| …row | "{title}" · "{kind} · {status} · {time}" · kinds: `Problem` (bug), `App down` (outage), `Question`, `New feature`, `Fix`, `Release` (deploy) · statuses: `With the team` (info), `Being worked on` (info), `Done` (success), `Not planned` (neutral) |
+| …row | "{title}" · "{kind} · {status} · {time}" · kinds: `Problem` (bug), `App down` (outage), `Question`, `New feature`, `Fix`, `Release` (deploy), `Version to try` (try) · statuses: `With the team` (info), `Being worked on` (info), `Done` (success), `Not planned` (neutral) |
 | Versions you can try, heading | "Versions you can try" · line: "Open a version to try it. These links work as long as this page does." |
-| …row | "Current version" / "Fix: {title}" / "Fix {n} · started {date}" · "{project}" · `Open` (secondary) · not running: "Not running right now" |
+| …row | "Current version" / "Fix: {title}" / "Fix {n} · started {date}" · "{project}" · `Open` (secondary) · starting: `Starting…` (secondary, disabled) · failed: "It didn't start. The team knows." · not running: "Not running right now" |
+| A version, opened while it starts (`/i/…/v/…`) | "Starting this version…" / "This page opens it as soon as it's ready." |
+| A version that didn't start (409) | "This version didn't start. The team knows." |
 | Freshness | "Updated just now" · "Updated {time}" |
 | Waiting on you, heading | "Waiting on you" |
 | …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
@@ -1127,14 +1138,19 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Link no longer active (410) | "This link is no longer active." / "Ask the person who sent it for a new one." |
 | Unknown link (404) | "This link doesn't open anything." / "Check that you copied all of it." |
 | A project or conversation not on the page (404) | "This isn't on your page." / "Go back to all your projects to see what is." · "← All projects" |
-| Assistant, title | "Project Assistant" · back "← All projects" |
-| …empty | "Hi {first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new." |
+| Assistant, title | "Project Assistant" (no back link: the tabs lead back to Home) |
+| …greeting (the first bubble, from "Project Assistant") | "Hi {first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new." |
 | …senders | owner: "You" · operator: "{op}" · assistant: "Project Assistant" |
-| …composer | placeholder "Write a message" · `Send` (primary) · while it writes: "Writing…" |
+| …composer | placeholder "Write a message. Enter sends" while Enter sends, "Write a message" after a touch · `Send` (primary) · while it writes: "Writing…" |
+| …photos | paperclip `Attach Photos` (icon only, its label) · while an upload runs: "Waiting for photos to finish." · the pending strip and its refusals as on a hand-off page (§design.copy-deck/gathering-images) · a picture pasted or dropped while photos are off: "Photos can't be sent here." · photo alt: "Your photo" / "Your photo {i} of {n}" |
+| …a version in an answer | the Versions row above, inside the assistant's bubble |
+| …a drawing that can't be shown | "A drawing couldn't be shown here." |
 | …not ready | "The Project Assistant isn't ready yet. {op} has to finish setting it up." |
 | …busy | "Wait for the answer first." |
 | …too many | "Too many messages. Wait a minute." |
 | …failed | "Your message didn't go through. Try again." |
+| …can't open on this link yet (a 404 with no code) | "The Project Assistant can't open on this link yet." / "{op} has to update the server your link goes through. Your projects still open." |
+| …couldn't load | "We couldn't load the Project Assistant." / "Try again in a minute." · `Try Again` |
 | Couldn't load | "We couldn't load this page. Your link still works. Try again in a minute." · `Try Again` |
 | Too many requests | "Too many requests from this network. Wait a minute, then reload." |
 
@@ -1161,11 +1177,15 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | A new link | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
 | …hint (with the assistant) | "The owner follows every project on one page: the overseer's updates, who was asked, what was decided, each conversation, the versions they can try, and their own Project Assistant." |
 | Project Assistant part, title | "Project Assistant" · line: "{first}'s own chat on their page. It answers, reports problems and outages to you, and notes new requirements for you to review; anything its switches leave off comes to you as a request." |
-| …requests | heading "Requests from {first}" · row "{title}" · "{Kind} · {project} · {status} · {relative time}" · the owner's text · `Mark Done` (secondary) · `Decline` (ghost) · none: "No open requests." · statuses `With the team`, `Being worked on`, `Done`, `Declined` |
+| …requests | one line linking to the Requests tab: "{n} open request(s) from {first}" |
+| Requests tab (§app.project-assistant/requests-tab) | filter `Open` · `Done` · `Declined` · `All` · row "{title}" · "{Kind} · {relative time}" · status chip (dot + word) `With the team`, `Being worked on`, `Done`, `Declined` · the owner's text · "Chat started {relative time}" · `Start Chat` / `Open Chat` · `Mark Done` (secondary) · `Decline` (ghost) · empty, Open: "{n} done. Nothing open from {first} right now." · tab dot "{n} to answer" |
+| Request note in a chat (§app.project-assistant/request-chat) | card title "Request from {first}" · "{Kind} · {project} · filed {relative time}" · title · text · `Open in Requests` |
 | …chat | `Open Assistant Chat` · before the first message: `Start Assistant Chat` |
-| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
-| …switches | heading "What it may set off on its own" · per project, the Project Assistant column (§design.copy-deck/project-powers) |
-| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." |
+| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · under "Its replies", when its model can't see images: "This model can't see photos: {first} won't get an attach button." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
+| …switches | heading "What it may set off on its own" · per project, the Project Assistant column (§design.copy-deck/project-powers) · under them: "{first} sees what these let the assistant do, in plain words, on their page." |
+| Preview modal tabs | a row of tabs at the top: `Home` · `Assistant` · `Requests` (no fixed bar) |
+| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." · `owner-version-request`: "{owner} asks to try {project}: {version}" (opens the project's Branches tab) |
+| `start_version` answers (the model reads them and says them in its own words) | started: "{version} of {project} is starting. Its Open button is in this chat and on the home page." · running: "{version} of {project} is running. Its Open button is in this chat and on the home page." · switch off: the power refusal ("Create, start and update running copies is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.") · can't be shown: "{project}'s versions can't be shown outside the team." · none: "{project} has no versions to try." · failed: "It didn't start; the team knows." |
 | Phone notification | kind word "App down" |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |

@@ -242,6 +242,8 @@ user row.
     the project's own recipe (§app.project-services/deploy-callers).
   The Project Assistant column exists only for `gather`, `codingStart`, `codingPrompt`, `copiesRun`
   and `deploy`; every other power is always Off there, and a patch turning one On is refused (400).
+  There, `copiesRun` means starting a copy the owner's versions list holds (`start_version`,
+  §app.project-assistant/tools); it never makes or updates a copy.
 - **Always allowed, in both columns, and never braked:** reading the project and its sessions,
   keeping notes, filing ideas and gaps, asking with a card, planning a gathering for later, sorting
   decisions into drafts (the reconciler), writing requirements into a spec draft, cancelling a held
@@ -1008,7 +1010,8 @@ user row.
   the same coding settings, mode and pin. It gets no `sova-coding-worktree` note and no commit
   paragraph at start; the conversation names its worktree later, with the session's own
   `worktree` tool, and the project adopts it then (§app.project-overseer/coding-worktrees,
-  **Adopted later**). The answer carries no `worktree`. The project page's New Coding Session
+  **Adopted later**). The answer carries no `worktree`. A request's Start Chat on the org's Requests tab
+  starts the same session with `"later"` and the request's title (§app.project-assistant/request-chat). The project page's New Coding Session
   button, Start Coding Session and the overseers' starts never send it: they cut the worktree at
   create, as above. In a project root that can't have worktrees (§app.project-overseer/coding-worktrees,
   **Where it can't**) it starts there as any start would, with that reason.

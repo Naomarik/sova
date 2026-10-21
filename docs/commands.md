@@ -28,7 +28,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 308 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 114 |
+| Hand-written tool specs | 116 |
 
 ## Catalogue entries
 

@@ -99,29 +99,44 @@ Scoped tour reads additionally require current owner access and a tour handle bo
 
 A shown conversation can include its reviewed checked tour attachments (§app.tours/handoffs), through the same filtered public projection and opaque handles. Their viewer is read-only, with no Ask control, script, report, source identity or recorded site address. Pictures belong only to the exact attached edition; message-photo count-only behavior is unchanged.
 
-- **Three views**, each in the URL fragment so the browser's Back works:
-  - **Home** (`/i/<token>`): the org's name, a greeting to the owner by first name, when it was
-    last updated; the `Project Assistant` button (§app/project-assistant); **Waiting on you**,
-    only when something waits on them; **Your requests**, only when they made one: each its
-    title, its kind and where it stands (§app.project-assistant/requests), newest first;
-    **Versions you can try**, only when a shown project lists one
+- **Three tabs**: `Home`, `Assistant` and `Requests`, a bar at the bottom on a phone and a left
+  sidebar on a computer (§app.owner-page/page). `Requests` shows the count of open requests (with
+  the team or being worked on) while there is one. A project and a conversation open inside Home,
+  and Home stays highlighted. All three read the same Home data and keep it current the same way:
+  while a version is starting, every tab reads again every 3 seconds, so it moves to `Open` on
+  whichever tab is showing.
+- **Its views**, each in the URL fragment so the browser's Back and a shared address work:
+  - **Home** (`/i/<token>`), in this order: a greeting to the owner by first name, with when it
+    was last updated in small type under it; **Waiting on you**, only when something waits on
+    them; the **Project Assistant card**, headed "What it can do for you" (the one strong colour
+    on the page): its lines (§app.project-assistant/abilities), each tappable, and `Open the Chat`;
+    one line on the owner's requests ("Your requests: 1 with the team ›"), only when they made
+    one, opening the Requests tab; **Versions you can try**, only when a shown project lists one
     (§app.project-assistant/versions): each its name, its project, and `Open`, `Starting…`, "It
-    didn't start. The team knows." or `Not running right now`; **Your projects**, one card per shown project (name, status, the newest update,
-    and a line of counts), the whole card a link.
-  - **The Project Assistant** (`#a`): a chat screen that fills the window's height: `← All
-    projects` and the title at the top, the conversation in the middle, newest at the bottom, its
-    first bubble the assistant's greeting, and the composer (§app.project-assistant/chat) pinned at
-    the bottom while the conversation scrolls, never covering the newest message as it grows (an
-    error line, pending photos). It opens at its newest message, the message box
-    focused where there is a mouse or trackpad (never on a touch-only screen, where focus would
-    raise the keyboard). It follows an answer as it is written only while the owner is at the end
-    (within 80px): once they scroll up to read, nothing moves the page until they scroll back down
-    or send, and a send takes it to the end again. A fresh read of the conversation redraws only
-    the messages that changed, so an interactive drawing keeps its state while a version on
-    screen starts. The owner's own photos show in their messages
-    (§app.project-assistant/photos), the assistant's drawings in its answers
-    (§app.project-assistant/drawings), and a version it started as a row with `Open`
-    (§app.project-assistant/versions). The operator's Preview as shows the same, read only.
+    didn't start. The team knows." or `Not running right now`; **Your projects**, one card per
+    shown project (name, status, the newest update, and a line of counts), the whole card a link;
+    the footer.
+  - **The Project Assistant** (`#a`): a chat screen that fills the window's height: the title at
+    the top, the conversation in the middle, newest at the bottom, its first bubble the
+    assistant's greeting, and the composer (§app.project-assistant/chat) pinned at the bottom while
+    the conversation scrolls, never covering the newest message as it grows (an error line,
+    pending photos). It opens at its newest message, the message box focused where there is a
+    mouse or trackpad (never on a touch-only screen, where focus would raise the keyboard). It
+    follows an answer as it is written only while the owner is at the end (within 80px): once they
+    scroll up to read, nothing moves the page until they scroll back down or send, and a send
+    takes it to the end again. A fresh read of the conversation redraws only the messages that
+    changed, so an interactive drawing keeps its state while a version on screen starts. The
+    owner's own photos show in their messages (§app.project-assistant/photos), the assistant's
+    drawings in its answers (§app.project-assistant/drawings), and a version it started as a row
+    with `Open` (§app.project-assistant/versions). Before the first message, the card's lines show
+    as tappable suggestions under its greeting; once there are messages, a `What Can I Ask?` button
+    at the top opens a sheet with the same list and suggestions (a modal dialog, focus kept in
+    it). A suggestion starts the message box as a card line does; nothing is sent until `Send`.
+    On a phone the tab bar hides while the owner types in the box and comes back when they leave
+    it. The operator's Preview as shows the same, read only.
+  - **Requests** (`#r`): every one of the owner's requests (§app.project-assistant/requests),
+    newest first, each its title, its project, kind and where it stands; with none, a line
+    saying nothing was asked yet and `Open the Chat`.
   - **A project** (`#p/<handle>`): its name and status, then in this order: **Updates**,
     **Waiting on you** (this project's, only when there is something), **Who we've talked to**,
     **What's been decided**, **What's been built**, **Conversations**. Updates, decisions and
@@ -247,17 +262,25 @@ Tour reads reveal only a checked public presentation bound to a conversation and
     and branch names (§app.project-assistant/never);
   - conflict routing reasons, stakeholder history, Needs-you items, proposed people;
   - hidden conversations and switched-off projects, their counts included.
+- **One exception**: what the Project Assistant can do for the owner is shown as outcome words
+  worked out from its column (§app.project-assistant/abilities): right away, on its own, the team,
+  none. Never a switch's name or label, a level, the overseer's column, a model, a brake's reason
+  or a limit.
 - A test plants a distinct marker in every one of those fields, checks each marker is present in
   the operator's own views (so its absence means something), then reads every owner-page answer
   and the shell and finds none of them.
 
 ## §app.owner-page/page — Phone first; reading changes nothing
 
-- One column at every width, at most 720px wide and centred; at 390px nothing scrolls sideways,
-  every button and row is at least 44px tall, and lines wrap rather than being cut. It is part of
-  the share build (`dist-share/`), using its styles; dark only. The share build's page shell asks
-  for `interactive-widget=resizes-content`, as Sova's own shell does (§app/shell), so an on-screen
-  keyboard shrinks the page and a pinned composer stays above it. A reply's markdown reads as
+- Narrower than 768px (the page's own width, so the operator's preview follows its own box): one
+  column, full width, with the tab bar fixed at the bottom (above the phone's home area) and the
+  chat's composer above it. 768px and wider: the tabs as a left sidebar and a wider main pane,
+  with chat and reading text kept at a comfortable width; never a chat beside the page. At 390px
+  nothing scrolls sideways, every button, row and tab is at least 44px tall, and lines wrap rather
+  than being cut. It is part of the share build (`dist-share/`), using its styles; dark only. The
+  share build's page shell asks for `interactive-widget=resizes-content`, as Sova's own shell does
+  (§app/shell), so an on-screen keyboard shrinks the page and a pinned composer stays above it. A
+  reply's markdown reads as
   §app.session-share/reading describes.
 - **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
   `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
@@ -282,7 +305,7 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   (429) the busy screen, an offline host (503) the offline answer, read again with backoff. A 404
   with no `code` (an older gateway refusing the address) says the Project Assistant can't open on
   this link yet, that {op} has to update the server the link goes through, and that the projects
-  still open, with `← All projects` and no `Try Again`. Any other failure says it couldn't load
+  still open (the Home tab), with no `Try Again`. Any other failure says it couldn't load
   the Project Assistant and offers `Try Again`, never that the link still works. The message box
   shows only once the chat's view has loaded.
 
@@ -306,10 +329,13 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   per kind of work (reply, coding, gathering), each with its price and, for coding and gathering,
   whether a project overrides it (§app.project-assistant/models); and, per project, its Project
   Assistant column of power switches (§app.project-overseer/autonomy-levels; its copy
-  §design.copy-deck/project-powers), the same control as the project page's.
+  §design.copy-deck/project-powers), the same control as the project page's, with one line under
+  them saying the owner sees what these let the assistant do, in plain words, on their page
+  (§app.project-assistant/abilities).
 - **Preview.** `Preview Owner Page` opens a modal that shows exactly what the owner sees, from the
   same function with no token (`GET /api/orgs/:id/owner/preview[?project=<q_handle>|?c=<k_handle>]`, main listener only); it
-  records no visit and changes nothing. A test pins that the preview's data equals the token
+  records no visit and changes nothing. It shows the Project Assistant card, the three tabs (as a
+  row at the top of the modal, never a fixed bar) and the chat's suggestions, read only. A test pins that the preview's data equals the token
   route's for the same org.
 - **Project page: an Owner Page card** (only while the org has an owner): the `Show this project
   on {first name}'s page` switch and the updates log with `Take Down` (§app.owner-page/updates).

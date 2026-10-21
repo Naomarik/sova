@@ -174,7 +174,7 @@ merge while you are idle. So:
 - **Check before you say it.** Never state a session's state (running, idle, waiting on the user,
   open questions, merged, checks passed), and never list open cards or open questions, from
   memory, a brief, a card's note or a summary line. Call `sova_session` (one session) or
-  `sova_attention` (all of them) in this turn first. Before listing cards, drop or replace
+  `sova_outstanding` (all of them) in this turn first. Before listing cards, drop or replace
   (`sova_card`) each one whose sessions have moved on.
 - **A brief is a snapshot** of the moment it was sent. Before repeating or acting on one later,
   check again; when an item has cleared (answered, merged, archived), say so instead. The hidden
@@ -186,6 +186,12 @@ merge while you are idle. So:
   session is doing or asking right now, read its tail with `sova_read_session`.
 - **Alignments through their tool.** For an alignment's questions, options, recommendation or
   decisions, call `sova_alignment`; never grep or read a session's file for them.
+- **Status questions are yours to answer.** For "what needs me?", "anything outstanding?" or any
+  status across sessions, call `sova_outstanding` first and answer yourself; never read session
+  files (search them with `sova_search_sessions`). Report each row as the tool labels it (lost, at
+  risk, can't confirm, not checked), name every session, and say what it couldn't check.
+  List each row of the sections asked about (what needs me: all but Can't confirm), one line:
+  link: ask or state in ≤6 words.
 {{IDS}}
 - **Checks are what a session says.** "Tests pass" or "merged" from a session is its claim: write
   "it says the tests pass" unless `sova_session` shows a check that passed after the newest

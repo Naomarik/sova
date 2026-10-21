@@ -830,6 +830,45 @@ export function readinessReading(sessionPath: string): { known: false } | { know
   return { known: true, at: hit.at, ...(hit.value ? { value: hit.value } : {}) };
 }
 
+/**
+ * Ask for a reading of every row readiness covers but has none for (or whose file or row moved), and
+ * a fresh one of every parked row whose reading is older than READINESS_TTL_MS, whatever it found (as
+ * an inspection would), then wait for those reads for at most `waitMs` (the roundup,
+ * §app.overseer/roundup). It never waits past the bound. Returns the paths whose read is still queued
+ * or running afterwards: their reading, if any, is the old one.
+ */
+export async function settleReadiness(rows: readonly SessionSummary[], waitMs: number): Promise<Set<string>> {
+  const asked: string[] = [];
+  for (const s of rows) {
+    if (excluded(s)) continue;
+    const hit = cache.get(s.path);
+    if (hit && parked(s) && deps.now() - hit.at >= READINESS_TTL_MS && !active.has(s.path) && !queued.has(s.path)) {
+      forced.add(s.path);
+      queued.set(s.path, fileInput(s));
+      asked.push(s.path);
+      continue;
+    }
+    readinessOverlay(s);
+    if (!hit || queued.has(s.path) || active.has(s.path)) asked.push(s.path);
+  }
+  const pending = () => new Set(asked.filter((p) => queued.has(p) || active.has(p)));
+  if (!asked.length) return pending();
+  if (queued.size) void drain();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const waited = new Promise<void>((done) => {
+    timer = setTimeout(done, Math.max(0, waitMs));
+  });
+  try {
+    await Promise.race([draining ?? Promise.resolve(), waited]);
+  } finally {
+    clearTimeout(timer);
+  }
+  return pending();
+}
+
+/** Archived, not open in a TUI and nothing running: a reading readiness refreshes only on inspection. */
+export const readinessParked = (s: SessionSummary): boolean => parked(s);
+
 /** Whether readiness ever covers this session (worker, Overseer, baton and remote sessions never). */
 export const readinessCovers = (s: SessionSummary): boolean => !excluded(s);
 

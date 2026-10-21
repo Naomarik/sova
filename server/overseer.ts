@@ -29,7 +29,9 @@ import { conflictAttention } from "./decisions";
 import { senderAttention } from "./outreach/health";
 import { ownerAttention } from "./owner-attention";
 import { notSentAttention } from "./outreach/log";
-import { readinessChecksOf, restartItems } from "./merge-readiness";
+import { PROCESS_START_MS, readinessChecksOf, readinessCovers, readinessParked, readinessReading, restartItems, settleReadiness } from "./merge-readiness";
+import { RoundupGit } from "./overseer-roundup-git";
+import { readLedger } from "./removed-worktrees";
 import {
   acquireChatHandle,
   BusyError,
@@ -86,7 +88,7 @@ import { type Redactor, redactExtensionMessages, serverRedactor } from "./overse
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
-import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
+import { cleanupSessions, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
@@ -570,6 +572,13 @@ const host: OverseerToolHost = {
   transcript: async (path) => rowsOf(await readBranch(path)),
   insight: (path) => getSessionInsight(path),
   checks: (path) => readinessChecksOf(path),
+  // The overview reads (§app.overseer/list-overview, §app.overseer/roundup): the list's cached tail,
+  // readiness's own readings with a bounded wait, the cleanup's ledger.
+  ending: (path) => endingOf(path),
+  readiness: { settle: settleReadiness, reading: readinessReading, covers: readinessCovers, parked: readinessParked },
+  ledger: () => readLedger(),
+  roundupGit: new RoundupGit(),
+  serverStart: PROCESS_START_MS,
   held(path) {
     const chat = chatHandle(path)?.mirror;
     if (!chat) return null;

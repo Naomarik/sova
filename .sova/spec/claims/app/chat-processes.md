@@ -207,9 +207,10 @@ by it, under either driver. An idle stop is not a death and never gets a "contin
 its rows and draft and doesn't reconnect: its socket, a reconnect or a server restart never starts
 the chat again; only something that needs the chat does, such as sending from that tab
 (§chat.transcript/instant-open, "A chat closed while its tab is open"). The chat stays closed until
-someone sends to it or acts on it, a jump in its Timeline to a row its tab doesn't hold and
-scrolling back by hand for older rows included (opening it to read doesn't,
-§chat.transcript/instant-open), which starts a new process: its `hello`
+someone sends to it or acts on it, opens it (a click, a reload, every pane of a workspace), brings
+its workspace tab to the front (§workspace.groups/layout-tabs), or another chat or the Overseer
+sends it a message, which starts a new process; a jump in its Timeline or scrolling up for older
+rows doesn't, they read the file (§chat.transcript/instant-open). Its `hello`
 comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
 (median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
 (§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).

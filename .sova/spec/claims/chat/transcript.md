@@ -958,16 +958,13 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
 ## §chat.transcript/instant-open — A chat opens on its saved rows while it starts
 
 Opening a chat shows its newest rows at once, read from its saved session file and scrolled to the
-end, whether or not its process is running. When it isn't (the list's row for it has no `chat`), an
-ordinary chat whose rows are on screen opens asleep, as a tab does after an idle stop ("A chat closed
-while its tab is open", below): opening it to read starts no process, whether by a click in the
-list, a reload, a tab the browser discarded coming back or a restored session, and the first send or
-other action starts it, a jump to a row the tab doesn't hold and scrolling up for older rows
-included ("A chat closed while its tab is open", below). Otherwise the process starts behind the rows (§app.chat-processes/idle-stop):
-the row isn't known within about 1.5 s, there are no rows to show (a new chat, a read that failed or
-hasn't answered), a terminal has it open, it is the Overseer, a project overseer or a baton
-session, or it is a forced reopen. The Overseer, a project overseer, a baton session, a chat whose
-profile grants powers and a peer's chat open this way too, a peer's through that peer. Views that
+end, whether or not its process is running. Opening it starts it, as a send would: a click in the
+list, a reload, a tab the browser discarded coming back, a restored session and every pane of a
+workspace, hidden tabs included (§workspace.groups/layout-tabs), each connect, and the process starts
+behind the rows (§app.chat-processes/idle-stop); the chat's `hello` then brings its state (its
+modes, model and controls). Nothing opens a chat asleep. The Overseer, a project overseer, a baton
+session, a chat whose profile grants powers and a peer's chat open this way too, a peer's through
+that peer. Views that
 only watch (a TUI's session, a worker's or a hidden chat's file, an earlier conversation) are
 unchanged.
 
@@ -978,8 +975,9 @@ unchanged.
   `lastActiveAt`). A file read that fails opens the socket as before, and so does one that hasn't
   answered within about 1.5 s: the socket then names no row, and rows the read brings after the
   chat's `hello` are not shown. A load of older rows asked before the chat's `hello` (a scroll up,
-  a jump, §chat.timeline/jumping) waits for it about 1.5 s at most, then reads the file's newest
-  rows itself and goes on from them, so a slow or failed start never leaves it waiting.
+  a jump, §chat.timeline/jumping) doesn't wait for it: it reads the file's newest rows itself and
+  goes on from them, and a load that can't land says so (a jump shows its usual toast), so a slow or
+  failed start never leaves it waiting.
 - **Nothing downloaded twice.** The socket names the last row the view holds
   (`/ws/chat?…&have=<row id>`), and the chat's `hello` carries its state and only the rows after
   that one (its `after` names it). Rows after it (a reply streaming, entries written between the
@@ -1028,14 +1026,13 @@ unchanged.
   Claude login, mode or sandbox, or a rewind, regenerate, Remove of a queued message or
   `/compact`: each goes to the server at once, in the order it was asked, and is applied before
   anything asked after it. Opening the mode menu starts the chat too, and its lists load once the
-  chat is ready. So does a jump to a row the tab doesn't hold
-  (§chat.timeline/jumping) and the reader scrolling up by hand (a wheel, a touch, a key, a
-  scrollbar drag) to rows not fetched yet: the chat starts, and the rows land once its `hello`
-  says what lies above them, or from the file if it hasn't within about 1.5 s ("Rows from the file
-  first", above). A list fetching on its own (too short to fill the view), one that already reaches
-  the top, and a jump to a row already held start nothing.
+  chat is ready. A message for it from another chat or the Overseer (§app.chat-processes/idle-stop)
+  starts it the same way, and so does bringing its workspace tab to the front
+  (§workspace.groups/layout-tabs); moving focus between panes on screen doesn't. A jump to a row
+  the tab doesn't hold and scrolling up for older rows start nothing of their own: they load from
+  the file ("Rows from the file first", above).
   When something else opens the chat meanwhile (another tab, a worker's report), the tab connects
-  to it. Reloading the page, or opening the chat again, opens it asleep the same way (above).
+  to it. Reloading the page, or opening the chat again, starts it (above).
   Archiving a chat tells its open tabs the same way (`closed`), so no tab reconnects and starts the
   archived chat again; whatever the chat answered before it closed (a send it took) reaches the tab
   first, so nothing it took comes back to the composer, and a server call it took is answered by it,

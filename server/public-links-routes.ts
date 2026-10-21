@@ -6,7 +6,7 @@ import { localRequest } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
 import { frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
 import { previewAddress } from "./share/preview-address";
-import { refreshGateway } from "./share/gateway-client";
+import { gatewayProtocol, refreshGateway } from "./share/gateway-client";
 import { noteVerify, shareListenerSettled, shareState } from "./share/listener";
 import { routedHosts } from "./share/registry";
 import { publicLinksChanged } from "./share/setting-events";
@@ -42,6 +42,8 @@ const SOURCES: PublicLinksSources = { routed: () => routedHosts(), gateways: () 
     `gateways` always (none while the mesh is off). */
 export async function publicLinksInfo(file: PublicLinksFile = readPublicLinks(), sources: PublicLinksSources = SOURCES): Promise<PublicLinksInfo> {
   const self = file.route === "self" && !!file.gateway;
+  // Only on a routed host whose current gateway answered its info (§mesh.public/share-protocol).
+  const protocol = typeof file.route === "object" ? gatewayProtocol() : null;
   const [routed, gateways] = await Promise.all([self ? sources.routed().catch(() => null) : null, sources.gateways().catch(() => [])]);
   return {
     file,
@@ -51,6 +53,7 @@ export async function publicLinksInfo(file: PublicLinksFile = readPublicLinks(),
     ...(self && file.gateway ? { front: frontGuide(file.gateway) } : {}),
     ...(self && routed ? { routed } : {}),
     gateways,
+    ...(protocol ? { gatewayProtocol: protocol } : {}),
   };
 }
 

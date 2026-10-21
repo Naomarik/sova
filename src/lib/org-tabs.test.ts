@@ -8,7 +8,7 @@ const git: OrgGitStatus = { remote: null, lastCommit: null, lastError: null, dir
 const baton = (waiting?: OrgBatonRow["waiting"]): OrgBatonRow => ({ sessionId: "s", path: "/p", publicTitle: "t", projectId: "j", state: "open", holder: null, createdAt: "", ...(waiting ? { waiting } : {}) });
 const person = (status: Person["status"]): Person => ({ id: "p", orgId: "o", name: "n", status, contact: {}, role: "", decides: [], skills: [], competence: {}, language: "", voice: "" });
 
-test("an empty org: Projects first, counts 0, History and Settings uncounted, no dots", () => {
+test("an empty org: Projects first, counts 0, History and Settings uncounted, no dots, no Requests tab", () => {
   const tabs = orgTabsOf({ batons: [], roster: [], projectList: [], problems: [], git });
   assert.deepEqual(
     tabs.map((t) => [t.id, t.count, t.waiting, t.waitingText]),
@@ -22,9 +22,22 @@ test("an empty org: Projects first, counts 0, History and Settings uncounted, no
   );
   assert.deepEqual(
     tabs.map((t) => t.id),
-    [...ORG_TABS],
-    "the strip's tabs are the route's, in its order",
+    ORG_TABS.filter((t) => t !== "requests"),
+    "the strip's tabs are the route's, in its order, Requests left out with no owner and no request",
   );
+});
+
+test("Requests shows with an owner or any request, between Sessions and People; counts open, dots with-team", () => {
+  const base = { batons: [], roster: [], projectList: [], problems: [], git };
+  assert.deepEqual(orgTabsOf({ ...base, owner: "p_o" }).map((t) => t.id), [...ORG_TABS], "an owner: six tabs, the route's order");
+  assert.deepEqual(orgTabsOf({ ...base, owner: null, ownerRequests: { open: 0, withTeam: 0, total: 2 } }).map((t) => t.id), [...ORG_TABS], "requests and no owner now: still shown");
+  assert.ok(!orgTabsOf({ ...base, owner: null, ownerRequests: { open: 0, withTeam: 0, total: 0 } }).some((t) => t.id === "requests"));
+  const r = orgTabsOf({ ...base, owner: "p_o", ownerRequests: { open: 3, withTeam: 2, total: 5 }, needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, requests: 2 } }).find((t) => t.id === "requests")!;
+  assert.deepEqual([r.label, r.count, r.waiting, r.waitingText], ["Requests", 3, 2, "2 to answer"]);
+  const calm = orgTabsOf({ ...base, owner: "p_o", ownerRequests: { open: 1, withTeam: 0, total: 1 }, needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0 } }).find((t) => t.id === "requests")!;
+  assert.deepEqual([calm.count, calm.waiting, calm.waitingText], [1, 0, ""], "being worked on counts, but waits on nobody");
+  const older = orgTabsOf({ ...base, owner: "p_o" }).find((t) => t.id === "requests")!;
+  assert.deepEqual([older.count, older.waiting], [0, 0], "an older server: the tab, no counts");
 });
 
 test("each tab counts its own rows and dots what waits inside it", () => {

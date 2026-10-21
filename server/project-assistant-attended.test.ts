@@ -82,6 +82,7 @@ describe("start_fix with Start coding sessions Off", () => {
     tools.setAssistantActsForTest({
       buildStart: async (...a) => (calls.push(a), { taken: true, held: false, sessionId: "s_never" }),
       deployRun: async (...a) => (calls.push(a), { taken: true, held: false }),
+      copyStart: async (...a) => (calls.push(a), { taken: false, code: "power-off", sentence: "off" }),
     });
     try {
       const branch = [marker, user("u1", "Fix the form")];

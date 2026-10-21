@@ -81,8 +81,10 @@ export type Caller =
       level; the engine checks none. */
   | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true }
   /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
-      project's released `deploy/run` act (`deployAct`), checked against its column of powers. */
-  | { kind: "assistant"; id: string; root: string; deployAct?: true }
+      project's released `deploy/run` act (`deployAct`), checked against its column of powers. `up`: only `up` of that one
+      instance (a copy the owner's versions list holds, which its start_version checked), and only once `act` (its
+      project statechart's `services/run`) is taken. */
+  | { kind: "assistant"; id: string; root: string; deployAct?: true; up?: string; act?: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
@@ -106,9 +108,11 @@ class ActRefused extends Error {
 /** The project overseer's act for `verb`, after the engine's own checks and before anything changes. */
 export async function actFor(caller: Caller, verb: AnyVerb, instance: string | null, detail?: { endpoint: string; days?: number }): Promise<void | VerbActOutcome> {
   // revoke only takes something away: no act, never held (§app.project-services/share).
-  if (caller.kind !== "project-overseer" || (READ_VERBS as readonly string[]).includes(verb) || verb === "revoke") return;
+  if ((READ_VERBS as readonly string[]).includes(verb) || verb === "revoke") return;
+  const act = caller.kind === "project-overseer" ? caller.act : caller.kind === "assistant" ? caller.act : undefined;
+  if (!act) return;
   try {
-    return await caller.act(verb, instance, detail);
+    return await act(verb, instance, detail);
   } catch (err) {
     throw new ActRefused(err);
   }
@@ -699,8 +703,12 @@ export class ProjectEngine {
         throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
       return;
     }
-    // The Project Assistant runs no verb on running copies (its powers act through the project's own acts).
-    if (caller.kind === "assistant") throw new VerbFailure("forbidden", "the Project Assistant runs no verb on running copies");
+    // The Project Assistant runs no verb on running copies but `up` of the one listed copy its start_version named, once
+    // its project's services/run act is taken (actFor, after these checks).
+    if (caller.kind === "assistant") {
+      if (verb === "up" && caller.up && caller.act && run.rec && run.rec.id === caller.up && run.rec.project === caller.root && !run.req.checkout && !run.req.branch) return;
+      throw new VerbFailure("forbidden", "the Project Assistant runs no verb on running copies but up of the version it was asked to start");
+    }
     // A coding session.
     if (verb === "conform") return;
     const checkout = run.rec?.checkout ?? (run as Run & { target?: string }).target ?? null;

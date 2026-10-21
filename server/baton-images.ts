@@ -349,6 +349,8 @@ export function dropStaged(sessionId: string, ids: readonly string[]): void {
  * photo of a session that is closed, done or no longer registered here, go. Empty folders go too.
  */
 export function sweepUploads(now = Date.now(), root = uploadsRoot(), open = (sessionId: string) => {
+  // A Project Assistant owner's staging (`pa-…`, §app.project-assistant/photos) is no session: only its age counts.
+  if (sessionId.startsWith("pa-")) return true;
   const s = batonById(sessionId)?.row.state;
   return s === "open" || s === "needs-you";
 }): number {

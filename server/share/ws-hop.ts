@@ -53,7 +53,7 @@ const EARLY_MAX = 64 * 1024;
 /** Upstream messages held while the page's handshake completes. */
 const PENDING_MAX = 64;
 /** The upstream's closes passed on to the page as they are; any other is HOP_LOST_CLOSE. */
-const ORIGIN_CLOSES = new Set([1000, 4000, 4410]);
+export const ORIGIN_CLOSES = new Set([1000, 4000, 4410]);
 /** An upstream status that means "the host is not there": the page gets the offline 503. */
 const OFFLINE_STATUSES = new Set([502, 503, 504]);
 

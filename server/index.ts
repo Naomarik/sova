@@ -33,6 +33,7 @@ import { startUsagePoller } from "./usage-poll";
 import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
+import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
@@ -182,6 +183,8 @@ server.on("error", (err) => {
 startChatHost();
 // An archived chat's workers stop with it (§app.chat-processes/workers).
 onSessionArchived((sessionId) => void stopWorkersOf(sessionId, "its parent was archived").catch(() => {}));
+// An owner request follows the chat Start Chat opened for it (§app.project-assistant/request-chat).
+wireRequestChats();
 attachWebSockets(server);
 
 // Needs you's Later is gone (§app.overseer/attention-digest): the store an earlier version kept its

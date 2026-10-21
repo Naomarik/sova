@@ -14,8 +14,9 @@ import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoC
 import { askForNewLink, noteOwnerUse, ownerAccess } from "../owner";
 import { attentionChanged } from "../attention-memo";
 import { ownerVersionOf, ownerView } from "../owner-page";
-import { openVersion } from "../owner-versions";
-import { AssistantRefusal, assistantView, sendOwnerMessage } from "../project-assistant";
+import { openVersion, STARTING_PAGE } from "../owner-versions";
+import { AssistantRefusal, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
+import { readAssistantStore } from "../project-assistant-store";
 import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
 import { mountPublicTourRoutes } from "./tour-routes";
@@ -416,20 +417,61 @@ export function createShareApp(): Hono {
     } catch {
       return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
     }
-    // Only { text }: no sender, nothing else. The sender IS the link's owner.
-    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text")) return c.json(refusal("bad-request", "Only { text } is accepted."), 400);
+    // Only { text, images? }: no sender, nothing else. The sender IS the link's owner; images are ids of
+    // photos this link staged (§app.project-assistant/photos), never bytes.
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text" && k !== "images"))
+      return c.json(refusal("bad-request", "Only { text, images } is accepted."), 400);
+    const ids = (body as { images?: unknown }).images;
+    if (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => typeof x !== "string"))) return c.json(refusal("bad-request", "images is a list of photo ids."), 400);
     const text = (body as { text?: unknown }).text;
     if (typeof text === "string" && text.trim().length > ASSISTANT_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${ASSISTANT_TEXT_MAX} characters.`), 413);
     if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
     noteOwnerUse(access);
     try {
-      await sendOwnerMessage(access.orgId, text);
+      await sendOwnerMessage(access.orgId, text, (ids ?? []) as string[]);
     } catch (err) {
       if (err instanceof AssistantRefusal) return c.json(refusal(err.code, err.message), err.status);
       console.warn(`[share] assistant message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
       return c.json(refusal("busy", "The Project Assistant can't take a message right now. Try again in a moment."), 503);
     }
     return c.json({ ok: true }, 202);
+  });
+  // The owner's photos (§app.project-assistant/photos): staged at attach, per org and owner.
+  app.post("/api/i/:token/assistant/image", async (c) => {
+    const token = c.req.param("token");
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    if (!readAssistantStore(access.orgId).models.reply) return c.json(refusal("not-ready", "The Project Assistant isn't ready yet."), 409);
+    const photos = await assistantPhotoLimits(access.orgId).catch(() => null);
+    if (!photos) return c.json(refusal("no-photos", "Photos can't be sent here."), 409);
+    const mime = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    if (!isPhotoType(mime)) return c.json(refusal("bad-type", "This photo's format can't be sent."), 400);
+    const declared = Number(c.req.header("content-length"));
+    if (!Number.isFinite(declared) || declared > photos.maxBytes) return c.json(refusal("too-large", `Over ${Math.round(photos.maxBytes / (1024 * 1024))} MB.`), 413);
+    try {
+      // No total or daily limit (§app.project-assistant/photos): only the per-minute window.
+      countUpload(`i:${hashToken(token)}`, Number.POSITIVE_INFINITY);
+      assertBudget(declared);
+      const personId = access.link.personId;
+      const staged = await stagePhoto({ sessionId: assistantStagingKey(access.orgId, personId), personId, mime, body: c.req.raw.body as AsyncIterable<Uint8Array> | null, maxBytes: photos.maxBytes });
+      noteOwnerUse(access);
+      return c.json(staged, 201);
+    } catch (err) {
+      if (err instanceof PhotoRefusal) {
+        console.warn(`[share] owner photo on ${tokenTag(token)} refused: ${err.code}`);
+        return c.json(refusal(err.code, err.message), err.status);
+      }
+      throw err;
+    }
+  });
+  app.get("/api/i/:token/assistant/img/:n", async (c) => {
+    const token = c.req.param("token");
+    if (imageTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const got = await assistantPhoto(access.orgId, Number(c.req.param("n")));
+    if (!got || !isPhotoType(got.mimeType)) return c.json(refusal("not-found", "No such photo."), 404);
+    return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": IMAGE_CSP, "Content-Disposition": "inline" });
   });
 
   // A version to try (§app.project-assistant/versions): the link and the copy checked again, then on to
@@ -445,6 +487,9 @@ export function createShareApp(): Hono {
     const kind = classify(c.req.header("user-agent")).kind;
     if (kind === "preview") return c.json(refusal("missing", "Not found."), 404);
     if (kind === "person") noteOwnerUse(access);
+    // A copy start_version started that hasn't answered yet: a page that reloads itself until it does; a failed one says so.
+    if (v.state === "starting") return c.html(STARTING_PAGE, 200, { Refresh: "3", "Cache-Control": "no-store", "Content-Security-Policy": PAGE_CSP });
+    if (v.state === "failed") return c.text("This version didn't start. The team knows.", 409, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     const live = ownerAccess(token);
     const url = live.ok ? await openVersion(v, live.link).catch((err) => {
       console.warn(`[share] owner version on ${tokenTag(token)} failed: ${err instanceof Error ? err.message : String(err)}`);

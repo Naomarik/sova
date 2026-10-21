@@ -95,7 +95,8 @@ describe("the edge and the gateway", () => {
 
   test("the gateway routes the file path as the link's own (an `h` row)", () => {
     assert.deepEqual(routeOf(`/api/h/${T}/file`), { kind: "h", token: T });
-    assert.equal(routeOf(`/api/h/${T}/files`), null);
+    // The strict edge judged the path already (files never reaches the router); the kind is the prefix's.
+    assert.equal(shareMayReach("POST", `/api/h/${T}/files`), false);
   });
 });
 

@@ -9,7 +9,12 @@ import { createMemo, untrack, type Accessor } from "solid-js";
 import { filtersKey, type HistoryFilters, type HistoryView } from "./org-history-route";
 import type { OrgTab, OrgsRoute } from "./orgs-route";
 
-export function orgPageRoute(route: Accessor<OrgsRoute>): { start: Accessor<string | undefined>; tab: Accessor<OrgTab | undefined>; history: Accessor<HistoryView | undefined> } {
+export function orgPageRoute(route: Accessor<OrgsRoute>): {
+  start: Accessor<string | undefined>;
+  tab: Accessor<OrgTab | undefined>;
+  history: Accessor<HistoryView | undefined>;
+  request: Accessor<string | undefined>;
+} {
   const start = createMemo(() => {
     const r = route();
     return r.kind === "org" ? r.start : undefined;
@@ -23,7 +28,12 @@ export function orgPageRoute(route: Accessor<OrgsRoute>): { start: Accessor<stri
     const r = route();
     return r.kind === "org" ? r.history : undefined;
   });
-  return { start, tab, history };
+  /** The Requests tab's focused row (`#/orgs/<id>/requests/<rid>`). */
+  const request = createMemo(() => {
+    const r = route();
+    return r.kind === "org" ? r.request : undefined;
+  });
+  return { start, tab, history, request };
 }
 
 /** The History tab's view as scalars behind equality-gated memos (a background re-read keeps

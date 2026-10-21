@@ -19,7 +19,8 @@ import { orgDir, OrgError, readProjects } from "./orgs";
  * org's workspace repo so they travel with it:
  *   `<workspace>/project-assistant.json`       { version: 1, models, conversations: {personId: sessionId} }
  *   `<workspace>/projects/<pid>/owner-requests.jsonl`  append-only: {kind:"filed", …request} | {kind:"status", id, status, at, sessionId?}
- * Read tolerantly: a bad file reads as empty, a torn line is skipped.
+ *        | {kind:"linked", id, sessionId, at} (Start Chat's chat: no status change, §app.project-assistant/request-chat)
+ * Read tolerantly: a bad file reads as empty, a torn line is skipped, a line of a kind not known here is skipped.
  */
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -147,6 +148,9 @@ export function projectRequests(orgId: string, projectId: string): OwnerRequest[
       if (l.status === "started" || l.status === "done" || l.status === "declined" || l.status === "with-team") r.status = l.status;
       if (typeof l.sessionId === "string" && l.sessionId) r.sessionId = l.sessionId;
       r.updatedAt = l.at;
+    } else if (l.kind === "linked" && typeof l.at === "string" && typeof l.sessionId === "string" && l.sessionId) {
+      const r = byId.get(l.id);
+      if (r) r.linked = { sessionId: l.sessionId, at: l.at };
     }
   }
   return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -190,6 +194,17 @@ export function setRequestStatus(orgId: string, id: string, status: OwnerRequest
   attentionChanged();
   return findRequest(orgId, id)!;
 }
+
+/** Start Chat linked a chat to a request: a `linked` line, its status untouched (§app.project-assistant/request-chat). */
+export function linkRequestChat(orgId: string, id: string, sessionId: string, now = Date.now()): OwnerRequest {
+  const r = findRequest(orgId, id);
+  if (!r) throw new OrgError("Unknown request", 404);
+  append(orgId, r.projectId, { kind: "linked", id, sessionId, at: new Date(now).toISOString() });
+  return findRequest(orgId, id)!;
+}
+
+/** The session a request's chat is: the chat Start Chat linked, else the fix's coding session. */
+export const requestChatSession = (r: Pick<OwnerRequest, "linked" | "sessionId">): string | null => r.linked?.sessionId ?? r.sessionId ?? null;
 
 /** The workspace has the store file (tests). */
 export const hasAssistantStore = (orgId: string): boolean => existsSync(storeFile(orgId));

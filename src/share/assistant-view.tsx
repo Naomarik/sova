@@ -1,17 +1,36 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { ASSISTANT_TEXT_MAX, type AssistantServerMessage, type AssistantView } from "../../shared/project-assistant";
-import { LinkedText, Reply } from "./thread";
+import { OFFLINE_PAGE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
+import { assistantProblemText, isDeadLink, OwnerLoadError } from "../lib/owner-problem";
+import { keepUnchanged, nearEnd } from "../lib/share-follow";
+import { batonKinds } from "./markdown";
+import type { UploadRefusal } from "./photos";
+import { ShareComposer, type Attachment, type SendOutcome, type Upload } from "./ShareComposer";
+import { LinkedText, MessagePhotos, Reply } from "./thread";
+import { VersionRows, versionsStarting } from "./versions";
 
 /**
- * The Project Assistant on the owner page (§app.project-assistant/chat): the conversation, newest
- * at the bottom, the reply as it is written, and a composer. It renders what the server sends and
- * nothing else; the operator's preview gets it read-only.
+ * The Project Assistant on the owner page (§app.project-assistant/chat, §app.owner-page/content):
+ * a chat screen that fills the window, the greeting as its first bubble, the conversation newest at
+ * the bottom, the reply as it is written, the owner's photos (§app.project-assistant/photos), the
+ * assistant's drawings (§app.project-assistant/drawings), a started version's row
+ * (§app.project-assistant/versions), and the composer pinned at the bottom. It renders what the
+ * server sends and nothing else; the operator's preview gets it read-only.
  */
+
+/** Its drawings: every kind a hand-off page draws, interactive ones in their frame. */
+const KINDS = batonKinds(true);
+/** How often the chat reads again while a version on screen is starting. */
+const STARTING_MS = 3000;
 
 export interface AssistantApi {
   load(): Promise<AssistantView>;
-  /** Absent: read only (the operator's preview). */
-  send?(text: string): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+  /** Absent: read only (the operator's preview). `images`: staged photo ids. */
+  send?(text: string, images?: string[]): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+  /** Stage a photo (the composer's upload); absent: no photos. */
+  uploadPhoto?(blob: Blob, progress: (p: number) => void): Upload<{ id: string }>;
+  /** Where the view's photo `n` is served. */
+  photo?(n: number): string;
   /** Live frames; returns the unsubscribe. */
   subscribe?(on: (m: AssistantServerMessage) => void): () => void;
 }
@@ -21,31 +40,94 @@ export function sendRefusal(code: string, op: string): string {
   if (code === "not-ready") return `The Project Assistant isn't ready yet. ${op} has to finish setting it up.`;
   if (code === "busy") return "Wait for the answer first.";
   if (code === "rate-limited") return "Too many messages. Wait a minute.";
+  if (code === "no-photos") return PHOTOS_OFF;
   return "Your message didn't go through. Try again.";
 }
 
-export function AssistantChat(props: { first: string; op: string; api: AssistantApi; back: { href: string; onClick(e: MouseEvent): void } }) {
+/** A picture pasted or dropped while photos can't be sent (§design.copy-deck/owner-page). */
+export const PHOTOS_OFF = "Photos can't be sent here.";
+
+/** Whether any version row of the view is starting: the chat reads again until none is. */
+export const anyStarting = (v: AssistantView | null): boolean => !!v?.messages.some((m) => versionsStarting(m.versions));
+
+export function AssistantChat(props: {
+  first: string;
+  op: string;
+  api: AssistantApi;
+  /** A version's Open address; absent in the preview: Open shows, never a link. */
+  versionHref?(handle: string): string;
+  back: { href: string; onClick(e: MouseEvent): void };
+  /** The chat's read failed on the link itself (turned off, unknown, too many requests): the page's
+      own dead-link screen takes over. */
+  onDeadLink?(err: OwnerLoadError): void;
+}) {
   const [view, setView] = createSignal<AssistantView | null>(null);
   const [streaming, setStreaming] = createSignal("");
   const [draft, setDraft] = createSignal("");
   const [sending, setSending] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [loadFailed, setLoadFailed] = createSignal(false);
+  /** Why the last read failed, while it did; what was shown before stays. */
+  const [problem, setProblem] = createSignal<"offline" | "unavailable" | "failed" | null>(null);
+  let offlineRetry: ReturnType<typeof setTimeout> | undefined;
+  let offlineDelay: number = RECONNECT_BACKOFF_MS.first;
   let list: HTMLElement | undefined;
-  let input: HTMLTextAreaElement | undefined;
+  let box: { input: HTMLTextAreaElement; fit(): void } | undefined;
 
-  const toBottom = () => queueMicrotask(() => list?.lastElementChild?.scrollIntoView({ block: "end" }));
+  // The owner's page scrolls to its end, so the newest message ends just above the pinned composer
+  // (scrollIntoView on the thread's end would tuck it under it), but only while the owner is at the
+  // end: one who scrolled up to read is left there until they come back down or send. The read-only
+  // preview scrolls its modal once, at its first read.
+  let following = true;
+  let previewScrolled = false;
+  const toBottom = (force = false) =>
+    queueMicrotask(() => {
+      if (props.api.send) {
+        if (force) following = true;
+        if (following) window.scrollTo(0, document.documentElement.scrollHeight);
+      } else if (!previewScrolled && list?.lastElementChild) {
+        previewScrolled = true;
+        list.lastElementChild.scrollIntoView({ block: "end" });
+      }
+    });
+  if (props.api.send) {
+    const onScroll = () => (following = nearEnd(window.scrollY, window.innerHeight, document.documentElement.scrollHeight));
+    // A wheel up stops following at once, before its scroll event lands under a streamed frame.
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) following = false;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
+    onCleanup(() => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onWheel);
+    });
+  }
   const apply = (v: AssistantView) => {
-    setView(v);
+    // Only what changed is drawn again: a drawing keeps its state through the re-reads.
+    setView({ ...v, messages: keepUnchanged(view()?.messages ?? [], v.messages) });
     setStreaming(v.busy ? (v.streaming ?? "") : "");
-    setLoadFailed(false);
+    setProblem(null);
+    offlineDelay = RECONNECT_BACKOFF_MS.first;
     toBottom();
   };
   const reload = () =>
     props.api
       .load()
       .then(apply)
-      .catch(() => setLoadFailed(true));
+      .catch((err: unknown) => {
+        const kind = err instanceof OwnerLoadError ? err.kind : "failed";
+        if (err instanceof OwnerLoadError && isDeadLink(kind)) {
+          props.onDeadLink?.(err);
+          return;
+        }
+        setProblem(kind === "offline" || kind === "unavailable" ? kind : "failed");
+        // Offline: read again from 5 s, backing off to 60 s, until the host answers (as the page does).
+        if (kind === "offline") {
+          clearTimeout(offlineRetry);
+          offlineRetry = setTimeout(() => void reload(), offlineDelay);
+          offlineDelay = Math.min(offlineDelay * 2, RECONNECT_BACKOFF_MS.max);
+        }
+      });
 
   onMount(() => {
     void reload();
@@ -63,27 +145,58 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
     onCleanup(() => {
       off?.();
       clearInterval(poll);
+      clearTimeout(offlineRetry);
     });
   });
-
-  const send = async (e?: Event) => {
-    e?.preventDefault();
-    const text = draft().trim();
-    if (!text || sending() || !props.api.send) return;
-    setSending(true);
-    setError("");
-    const r = await props.api.send(text).catch(() => ({ ok: false as const, code: "failed", message: "" }));
-    setSending(false);
-    if (!r.ok) {
-      setError(sendRefusal(r.code, props.op));
-      return;
-    }
-    setDraft("");
-    void reload();
-    input?.focus();
-  };
+  // A version on screen is starting: read again every 3 s until it runs or failed (no frame says so).
+  createEffect(
+    on(
+      () => anyStarting(view()),
+      (starting) => {
+        if (!starting) return;
+        const t = setInterval(() => {
+          if (document.visibilityState === "visible") void reload();
+        }, STARTING_MS);
+        onCleanup(() => clearInterval(t));
+      },
+    ),
+  );
 
   const busy = () => !!view()?.busy;
+  // "Wait for the answer first." goes once the answer is done; the box still holds the text.
+  createEffect(
+    on(busy, (b) => {
+      if (!b && error() === sendRefusal("busy", props.op)) setError("");
+    }),
+  );
+  const send = async (text: string, photos: Attachment[], _files: Attachment[], again: boolean): Promise<SendOutcome> => {
+    if (sending() || !props.api.send) return "kept";
+    // While an answer is being written nothing is sent (§app.project-assistant/chat).
+    if (busy()) {
+      setError(sendRefusal("busy", props.op));
+      return "kept";
+    }
+    setSending(true);
+    setError("");
+    const ids = photos.flatMap((a) => (a.id ? [a.id] : []));
+    const r = await props.api.send(text, ids.length ? ids : undefined).catch(() => ({ ok: false as const, code: "failed", message: "" }));
+    setSending(false);
+    if (!r.ok) {
+      // A staged photo expired: the composer uploads it again once and resends.
+      if (r.code === "photo-expired" && !again && ids.length) return { expired: "photo" };
+      setError(sendRefusal(r.code, props.op));
+      return "kept";
+    }
+    toBottom(true);
+    void reload();
+    box?.input.focus();
+    return "sent";
+  };
+  const onUploadRefused = (r: UploadRefusal) => {
+    // The link itself died, or photos turned off since the view was read: read again.
+    if (r.status === 404 || r.status === 410 || r.code === "no-photos" || r.code === "not-ready") void reload();
+  };
+
   const who = (role: string, name?: string) => (role === "owner" ? "You" : role === "operator" ? (name ?? props.op) : "Project Assistant");
 
   return (
@@ -102,18 +215,28 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
           </div>
         </div>
       </Show>
-      <Show when={loadFailed() && !view()}>
-        <div class="empty owner-problem" role="alert">
-          <p class="empty-title">We couldn't load this page.</p>
-          <p class="empty-body">Your link still works. Try again in a minute.</p>
-          <button type="button" class="button empty-action" onClick={() => void reload()}>
-            Try Again
-          </button>
-        </div>
+      <Show when={!view() && problem()}>
+        {(p) => {
+          const text = () => (p() === "offline" ? { title: OFFLINE_PAGE.heading, body: OFFLINE_PAGE.body, tryAgain: true } : assistantProblemText(p() as "unavailable" | "failed", props.op));
+          return (
+            <div class="empty owner-problem" role="alert">
+              <p class="empty-title">{text().title}</p>
+              <p class="empty-body">{text().body}</p>
+              <Show when={text().tryAgain}>
+                <button type="button" class="button empty-action" onClick={() => void reload()}>
+                  Try Again
+                </button>
+              </Show>
+            </div>
+          );
+        }}
       </Show>
       <section class="owner-thread owner-assistant" aria-label="Conversation with the Project Assistant" aria-live="polite" ref={list}>
-        <Show when={view() && !view()!.messages.length && !streaming()}>
-          <p class="owner-empty">Hi {props.first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new.</p>
+        <Show when={view()}>
+          <article class="share-msg share-msg-reply" aria-label="Project Assistant">
+            <span class="share-who">Project Assistant</span>
+            <p class="share-text">Hi {props.first}. I know your projects and what has been agreed so far. Ask me anything, tell me about a problem, or ask for something new.</p>
+          </article>
         </Show>
         <For each={view()?.messages ?? []}>
           {(m) => (
@@ -121,8 +244,14 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
               <span class="share-who" classList={{ "visually-hidden": m.role === "owner" }}>
                 {who(m.role, m.name)}
               </span>
-              <Show when={m.role === "assistant"} fallback={<LinkedText text={m.text} />}>
-                <Reply text={m.text} />
+              <Show when={m.images?.length && props.api.photo}>
+                <MessagePhotos srcs={m.images!.map((p) => props.api.photo!(p.n))} from="you" own />
+              </Show>
+              <Show when={m.role === "assistant"} fallback={<Show when={m.text}><LinkedText text={m.text} /></Show>}>
+                <Reply text={m.text} kinds={KINDS} />
+              </Show>
+              <Show when={m.versions?.length}>
+                <VersionRows versions={m.versions!} href={props.versionHref} />
               </Show>
             </article>
           )}
@@ -131,48 +260,45 @@ export function AssistantChat(props: { first: string; op: string; api: Assistant
           <article class="share-msg share-msg-reply" aria-label="Project Assistant, writing">
             <span class="share-who">Project Assistant · writing</span>
             <Show when={streaming()} fallback={<p class="owner-meta">Writing…</p>}>
-              <Reply text={streaming()} streaming />
+              <Reply text={streaming()} streaming kinds={KINDS} />
             </Show>
           </article>
         </Show>
       </section>
-      <Show when={props.api.send}>
-        <form class="share-composer owner-assistant-composer" onSubmit={(e) => void send(e)}>
-          <div class="share-field" onClick={(e) => e.target === e.currentTarget && input?.focus()}>
-            <label class="visually-hidden" for="assistant-text">
-              Your message
-            </label>
-            <div class="share-compose-row">
-              <textarea
-                ref={input}
-                id="assistant-text"
-                class="share-input"
-                rows={1}
-                maxlength={ASSISTANT_TEXT_MAX}
-                placeholder="Write a message"
-                value={draft()}
-                onInput={(e) => setDraft(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
-                }}
-              />
-              <button
-                type="submit"
-                class="button button-icon share-send"
-                aria-label={sending() ? "Sending" : "Send"}
-                title={sending() ? "Sending" : "Send"}
-                aria-disabled={sending() || busy() || !draft().trim() || view()?.ready === false ? "true" : undefined}
-              >
-                <span class="icon share-icon-send" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          <Show when={error()}>
-            <p class="field-error" role="alert">
-              {error()}
-            </p>
-          </Show>
-        </form>
+      {/* The message box only once the chat's view has loaded: before that, nothing it sends could land. */}
+      <Show when={props.api.send && view()}>
+          <ShareComposer
+            class="owner-assistant-composer"
+            id="assistant-text"
+            label="Your message"
+            placeholder="Write a message"
+            maxLength={ASSISTANT_TEXT_MAX}
+            sendKey="enter"
+            draft={draft}
+            setDraft={setDraft}
+            error={() => error() || null}
+            photos={() => (props.api.uploadPhoto ? (view()?.photos ?? null) : null)}
+            uploadPhoto={(blob, progress) => props.api.uploadPhoto!(blob, progress)}
+            onUploadRefused={onUploadRefused}
+            photosOff={PHOTOS_OFF}
+            blocked={() => busy() || view()?.ready === false}
+            sending={sending}
+            send={send}
+            ref={(b) => {
+              box = b;
+              // The composer growing (an error line, the photo strip, a longer text) would cover the
+              // newest message: while following, the page keeps its end in view.
+              const form = b.input.closest("form");
+              if (form && typeof ResizeObserver !== "undefined") {
+                const ro = new ResizeObserver(() => toBottom());
+                ro.observe(form);
+                onCleanup(() => ro.disconnect());
+              }
+              // Opened to chat: the box takes focus, except on a touch-only screen, where that would
+              // raise the keyboard over the conversation (as Sova's own composer).
+              if (!matchMedia("(hover: none) and (pointer: coarse)").matches) requestAnimationFrame(() => b.input.focus({ preventScroll: true }));
+            }}
+          />
       </Show>
     </>
   );

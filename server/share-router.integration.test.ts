@@ -111,6 +111,12 @@ interface GatewayOpts {
   preflight?: (url: string) => Promise<boolean | "recent">;
   resolve?: (p: PeerEntry) => Promise<string | null>;
   wsHop?: ReturnType<typeof createWsHop>;
+  /** The gateway's preview address; default none. */
+  previewUrl?: string | null;
+  /** The gateway edge's strict tier (an older build's ROUTES); default shareMayReach. */
+  mayReach?: (method: string, pathname: string) => boolean;
+  /** Which tokens this gateway minted itself; default the stores'. */
+  isLocal?: (token: string, kind: "h" | "i" | "s" | "t") => boolean;
 }
 
 /** Read on every call: a test changes `o.setting` or `o.peers` to withdraw a host. */
@@ -125,6 +131,8 @@ async function gateway(o: GatewayOpts) {
     registry: reg,
     setting: () => (o.setting === undefined ? GATEWAY : o.setting),
     publicUrl: () => GATEWAY.publicUrl,
+    previewUrl: () => o.previewUrl ?? null,
+    ...(o.isLocal ? { isLocal: o.isLocal } : {}),
     peers: () => o.peers ?? [PEER],
     resolve: async (p) => {
       resolved.push(p.dnsName);
@@ -143,7 +151,7 @@ async function gateway(o: GatewayOpts) {
   });
   // The client address as M2's trustedClient gives it for a front on loopback: never a header the
   // client sent (the edge's M0 default still believes the last X-Forwarded-For hop).
-  const server = createShareServer({ ...hooks, client: (req) => req.socket.remoteAddress ?? "unknown" });
+  const server = createShareServer({ ...hooks, client: (req) => req.socket.remoteAddress ?? "unknown", ...(o.mayReach ? { mayReach: o.mayReach } : {}) });
   const port = await listen(server);
   after(() => hooks.dispose());
   return { base: `http://127.0.0.1:${port}`, port, dials, resolved, reg, hooks };
@@ -162,7 +170,7 @@ function get(url: string, init: { method?: string; headers?: Record<string, stri
   });
 }
 
-const row = (token: string, kind: "h" | "i" | "x" = "h") => ({ h: hashToken(token), exp: Date.now() + 86_400_000, kind });
+const row = (token: string, kind: "h" | "i" | "s" | "t" | "x" = "h") => ({ h: hashToken(token), exp: Date.now() + 86_400_000, kind });
 
 test("an unknown hash is the gateway's own 404 and never dials anyone", async () => {
   const o = await origin((_q, res) => res.end("{}"));
@@ -233,7 +241,9 @@ test("no gateway setting, a removed or unaccepted peer: in-process, no dial", as
 test("the edge's limits apply before a hop", async () => {
   const o = await origin((_q, res) => res.end("{}"));
   const g = await gateway({ port: o.port, links: [row(T("k"))] });
-  const big = await get(`${g.base}/api/h/${T("k")}/message`, { method: "POST", headers: { "Content-Type": "application/json", Connection: "close" }, body: "x".repeat(20_000) });
+  // A link nobody registered keeps its page's 16 KB cap (a registered one has the gateway's ceiling,
+  // §mesh.public/share-protocol), refused before any hop.
+  const big = await get(`${g.base}/api/h/${T("u")}/message`, { method: "POST", headers: { "Content-Type": "application/json", Connection: "close" }, body: "x".repeat(20_000) });
   assert.equal(big.status, 413);
   assert.equal(o.seen.length, 0);
   // The per-address limit counts every request at the gateway (the 413 above included), before any hop.
@@ -1081,4 +1091,172 @@ test("a routed host's rebuilt share page: its new assets come through the gatewa
     else process.env.SOVA_SHARE_DIST = wasDist;
     rmSync(dirname(dist), { recursive: true, force: true });
   }
+});
+
+// ---- the share protocol (§mesh.public/share-protocol) ---------------------------------------------
+
+const UNKNOWN = { error: "This link doesn't open anything.", code: "not-found" };
+
+/** A GET with its target sent byte for byte (no client-side dot-segment resolution); the whole answer. */
+async function rawGet(port: number, target: string): Promise<string> {
+  const { connect } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const sock = connect(port, "127.0.0.1", () => sock.write(`GET ${target} HTTP/1.1\r\nHost: share\r\nConnection: close\r\n\r\n`));
+    let out = "";
+    sock.on("data", (d) => (out += d));
+    sock.on("end", () => resolve(out));
+    sock.on("error", reject);
+  });
+}
+
+test("forward-only: a registered link's new address hops; an unknown or own token's is the unknown-link 404, never in-process", async () => {
+  const o = await origin((q, res) => res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ url: q.url })));
+  const own = mintLink({ orgId: "o", sessionId: "s", n: 1, personId: "p" });
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i"), row(T("h")), row(own)] });
+  const r = await get(`${g.base}/api/i/${T("i")}/new-thing`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { url: `/api/i/${T("i")}/new-thing` });
+  assert.equal((await get(`${g.base}/i/${T("i")}/a/b.c/d~e`)).status, 200, "a page address under the link, up to 8 segments");
+  assert.equal(o.seen.length, 2);
+  for (const path of [`/api/i/${T("u")}/new-thing`, `/api/h/${T("i")}/new-thing`, `/api/h/${own}/new-thing`]) {
+    const miss = await get(`${g.base}${path}`);
+    assert.equal(miss.status, 404, path);
+    assert.deepEqual(JSON.parse(miss.body), UNKNOWN, path);
+  }
+  assert.equal(o.seen.length, 2, "an unknown, cross-kind or own token is never asked of the host");
+  // Shapes the tier never passes: the edge's own 404.
+  // Sent raw: an HTTP client would resolve the dot segments before they reach the edge.
+  for (const path of [`/api/i/${T("i")}/..`, `/api/i/${T("i")}/%2e`, `/api/i/${T("i")}/a/../b`, `/api/i/${T("i")}/a/./b`, `/api/i/${T("i")}/${"a/".repeat(9)}a`, `/api/x/${T("i")}/a`, `/api/i/${T("i")}/${"a".repeat(65)}`]) {
+    const refused = await rawGet(g.port, path);
+    assert.match(refused, /^HTTP\/1\.1 404 /, path);
+    assert.ok(refused.includes('{"error":"Not found"}'), path);
+  }
+  assert.equal((await get(`${g.base}/api/i/${T("i")}/new-thing`, { method: "DELETE" })).status, 404);
+  assert.equal(o.seen.length, 2);
+});
+
+test("forward-only: a 1 MB body to a registered link's new upload passes, up to the file upload's ceiling", async () => {
+  const o = await origin((_q, res, body) => res.end(String(body.length)));
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i")] });
+  const mb = "x".repeat(1024 * 1024);
+  const r = await get(`${g.base}/api/i/${T("i")}/new-upload`, { method: "POST", headers: { "Content-Type": "application/octet-stream", "Content-Length": String(mb.length) }, body: mb });
+  assert.equal(r.status, 200);
+  assert.equal(r.body, String(mb.length));
+  const { FORWARD_BODY_MAX } = await import("./share/edge");
+  const over = await get(`${g.base}/api/i/${T("i")}/new-upload`, { method: "PUT", headers: { "Content-Length": String(FORWARD_BODY_MAX + 1), Connection: "close" } });
+  assert.equal(over.status, 413);
+  // A strict route keeps its own cap: a message is still 16 KB.
+  const msg = await get(`${g.base}/api/h/${T("i")}/message`, { method: "POST", headers: { "Content-Length": "20000", Connection: "close" }, body: "x".repeat(20_000) });
+  assert.equal(msg.status, 413);
+});
+
+test("forward-only is a gateway's alone: with no gateway setting it is the edge's 404", async () => {
+  const o = await origin((_q, res) => res.end("{}"));
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i")], setting: null });
+  const r = await get(`${g.base}/api/i/${T("i")}/new-thing`);
+  assert.equal(r.status, 404);
+  assert.deepEqual(JSON.parse(r.body), { error: "Not found" });
+  assert.equal(o.seen.length, 0);
+});
+
+test("the Project Assistant's routes hop for a registered owner link (the router's kind is the path's prefix)", async () => {
+  const o = await origin((q, res) => (q.url?.includes("/v/") ? res.writeHead(200).end("v") : res.end(JSON.stringify({ url: q.url }))));
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i")] });
+  assert.equal((await get(`${g.base}/api/i/${T("i")}/assistant`)).status, 200);
+  assert.equal((await get(`${g.base}/api/i/${T("i")}/assistant`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).status, 200);
+  assert.equal((await get(`${g.base}/i/${T("i")}/ask-link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).status, 200);
+  assert.equal((await get(`${g.base}/i/${T("i")}/v/v_abcdefgh`)).status, 200);
+  assert.deepEqual(o.seen.map((x) => x.url), [`/api/i/${T("i")}/assistant`, `/api/i/${T("i")}/assistant`, `/i/${T("i")}/ask-link`, `/i/${T("i")}/v/v_abcdefgh`]);
+});
+
+test("skew: a gateway whose strict routes lack one the host serves still opens it end to end, and the host's ingress stays strict", async () => {
+  // The routed host's ingress: the real edge with its strict ROUTES, answering whatever reached it.
+  const reached: string[] = [];
+  const ingress = createShareServer({
+    dispatch: (req, res) => {
+      reached.push(req.url ?? "");
+      res.writeHead(200, { "Content-Type": "application/json" }).end('{"assistant":true}');
+    },
+    upgrade: (_req, socket) => void socket.destroy(),
+  });
+  const port = await listen(ingress);
+  // An older gateway: its strict routes have no assistant.
+  const older = (method: string, path: string) => !path.endsWith("/assistant") && (method === "GET" || method === "HEAD") && new RegExp(`^/(?:api/)?i/[A-Za-z0-9_-]{43}$`).test(path);
+  const g = await gateway({ port, links: [row(T("i"), "i")], mayReach: older });
+  const r = await get(`${g.base}/api/i/${T("i")}/assistant`);
+  assert.equal(r.status, 200, r.body);
+  assert.equal(r.body, '{"assistant":true}');
+  assert.deepEqual(reached, [`/api/i/${T("i")}/assistant`]);
+  // The ingress answers its own 404 for a path its strict routes don't list, forwarded or not.
+  const stray = await get(`${g.base}/api/i/${T("i")}/not-a-route`);
+  assert.equal(stray.status, 404);
+  assert.deepEqual(JSON.parse(stray.body), { error: "Not found" });
+  assert.equal((await get(`http://127.0.0.1:${port}/api/i/${T("i")}/not-a-route`)).status, 404);
+  assert.deepEqual(reached, [`/api/i/${T("i")}/assistant`], "the host's share app never saw the stray path");
+});
+
+test("/ws/i and /ws/<kind>/<name>: forwarded for a registered hash, 404 otherwise, closed when withdrawn", async () => {
+  const o = await wsOrigin();
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i"), row(T("h"))] });
+  const i = await open(`ws://127.0.0.1:${g.port}/ws/i?token=${T("i")}`);
+  assert.ok("ws" in i, JSON.stringify(i));
+  const named = await open(`ws://127.0.0.1:${g.port}/ws/i/assistant2?token=${T("i")}`);
+  assert.ok("ws" in named, JSON.stringify(named));
+  assert.equal(o.headers.length, 2);
+  for (const url of [`/ws/i/assistant2?token=${T("u")}`, `/ws/i/assistant2?token=${T("h")}`, `/ws/h/x?token=${T("u")}`, `/ws/i/a/b?token=${T("i")}`, `/ws/i/..?token=${T("i")}`, `/ws/i/x?token=${T("i")}&token=${T("i")}`])
+    assert.deepEqual(await open(`ws://127.0.0.1:${g.port}${url}`), { status: 404 }, url);
+  assert.equal(o.headers.length, 2, "none of those dialed the host");
+  // The sweep judges each hop by its own kind: a standing i row is never taken for withdrawn.
+  const iClosed = new Promise<number>((res) => i.ws.once("close", (code) => res(code)));
+  const namedClosed = new Promise<number>((res) => named.ws.once("close", (code) => res(code)));
+  for (let k = 0; k < 3; k++) g.hooks.sweep();
+  // A hop taken for withdrawn stops passing the page's messages up: this one still does.
+  i.ws.send("after-sweep");
+  await until(() => o.got.includes("after-sweep"), "an /ws/i hop on a standing row passing a message after the sweep");
+  // Withdrawn by its own host: the host's own close passes through, as for /ws/h.
+  g.reg.commit("n1", { v: 1, seq: 2, links: [row(T("h"))], assets: [], ingressPort: o.port }, GATEWAY.publicUrl, { now: Date.now(), local: new Set(), live: () => true });
+  g.hooks.sweep();
+  for (const sock of o.sockets) sock.close(4410, "gone");
+  assert.equal(await iClosed, 4410);
+  assert.equal(await namedClosed, 4410);
+});
+
+test("a redirect passes only to a preview host under the gateway's own preview address", async () => {
+  const label = "a".repeat(52);
+  let location = "";
+  const o = await origin((_q, res) => res.writeHead(302, { Location: location }).end());
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i")], previewUrl: "https://*.preview.example.com" });
+  location = `https://${label}.preview.example.com/`;
+  const ok = await get(`${g.base}/i/${T("i")}/v/v_abcdefgh`);
+  assert.equal(ok.status, 302);
+  assert.equal(ok.headers.location, location);
+  assert.equal(ok.headers["cache-control"], "no-store");
+  for (const bad of ["https://elsewhere.example.com/", `http://${label}.preview.example.com/`, `https://${label}.preview.example.com.evil.com/`, `https://u:p@${label}.preview.example.com/`, `https://short.preview.example.com/`, "/relative", ""]) {
+    location = bad;
+    const r = await get(`${g.base}/i/${T("i")}/v/v_abcdefgh`);
+    assert.equal(r.status, 503, bad);
+    assert.equal(r.headers.location, undefined, bad);
+  }
+  // No preview address: no redirect passes.
+  const none = await gateway({ port: o.port, links: [row(T("i"), "i")] });
+  location = `https://${label}.preview.example.com/`;
+  assert.equal((await get(`${none.base}/i/${T("i")}/v/v_abcdefgh`)).status, 503);
+});
+
+test("a registered link's strict address gets the gateway's ceiling, not its page's limit; the gateway's own and unknown links keep the page's", async () => {
+  const o = await origin((_q, res, body) => res.end(String(body.length)));
+  const own = T("o");
+  const g = await gateway({ port: o.port, links: [row(T("i"), "i"), row(own, "i")], isLocal: (t) => t === own });
+  // 32 KB to the Project Assistant: over the 16 KB a message route has at the edge.
+  const body = JSON.stringify({ text: "x".repeat(32 * 1024) });
+  const post = (token: string) => get(`${g.base}/api/i/${token}/assistant`, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)), Connection: "close" }, body });
+  const routed = await post(T("i"));
+  assert.equal(routed.status, 200, routed.body);
+  assert.equal(routed.body, String(body.length), "the host received the whole body");
+  assert.equal(o.seen.length, 1);
+  for (const token of [own, T("u")]) assert.equal((await post(token)).status, 413, token === own ? "the gateway's own link" : "an unknown link");
+  assert.equal(o.seen.length, 1, "neither was asked of the host");
+  // Not a gateway any more: the strict limit again, for every link.
+  const plain = await gateway({ port: o.port, links: [row(T("i"), "i")], setting: null });
+  assert.equal((await get(`${plain.base}/api/i/${T("i")}/assistant`, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)), Connection: "close" }, body })).status, 413);
 });

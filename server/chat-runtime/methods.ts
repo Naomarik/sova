@@ -147,7 +147,7 @@ export const METHODS: Impl = {
     const kind = kindOf(type);
     return chat.harness.state.append(kind, data);
   },
-  appendNote: (chat, { noteType, text }) => chat.appendNote(noteType, text),
+  appendNote: (chat, { noteType, text, details }) => chat.appendNote(noteType, text, details),
   writeProfile: (chat, { data }) => (chat.writeProfile(data), null),
   writeLoadout: (chat, { data }) => (chat.writeLoadout(data), null),
   flushDeferredAppends: (chat) => (chat.flushDeferredAppends(), null),

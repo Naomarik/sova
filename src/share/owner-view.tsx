@@ -21,7 +21,9 @@ import { Dynamic } from "solid-js/web";
 import { stampTime } from "../lib/format";
 import { Item, LinkedText } from "./thread";
 import { AssistantChat, type AssistantApi } from "./assistant-view";
+import { VersionRows, versionsStarting } from "./versions";
 import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assistant";
+import { isDeadLink, OwnerLoadError, type OwnerProblemKind } from "../lib/owner-problem";
 
 /**
  * The Owner page (§app.owner-page/page): Home, a project, a conversation. Read-only. It renders
@@ -29,23 +31,11 @@ import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assi
  * operator's preview (from the preview route) feed it the same answers, so they show the same page.
  */
 
-/** Why a load failed. `unknown`/`gone`/`expired` are about the link (the whole page); `missing` is
-    one project or conversation that isn't on the page; `offline` is a public gateway's 503 (the
-    host it lives on is offline: the page stays and keeps trying); `failed` is anything else. */
-export type OwnerProblemKind = "unknown" | "gone" | "expired" | "busy" | "missing" | "offline" | "failed";
-export class OwnerLoadError extends Error {
-  constructor(
-    readonly kind: OwnerProblemKind,
-    /** On a link that turned off unused: the owner already asked for a new one. */
-    readonly asked = false,
-  ) {
-    super(kind);
-  }
-}
+export { OwnerLoadError, type OwnerProblemKind };
 
 export type OwnerAnswer = OwnerHome | OwnerProject | OwnerConversation;
 
-const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "failed">, { title: string; body: string }> = {
+const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "unavailable" | "failed">, { title: string; body: string }> = {
   expired: { title: "This link turned off after a week without use.", body: "It turns itself off so nobody else can use it later. You can ask for a new one." },
   gone: { title: "This link is no longer active.", body: "Ask the person who sent it for a new one." },
   unknown: { title: "This link doesn't open anything.", body: "Check that you copied all of it." },
@@ -54,6 +44,8 @@ const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "failed"
 
 /** How often the page reads again while it is visible. */
 const REFRESH_MS = 60_000;
+/** How often Home reads again while a version on it is starting (§app.project-assistant/versions). */
+const STARTING_MS = 3000;
 const FIRST = 5;
 
 export function OwnerPage(props: {
@@ -135,6 +127,7 @@ export function OwnerPage(props: {
       document.removeEventListener("visibilitychange", onVisible);
     });
   });
+
   const link = (r: OwnerRoute) => ({
     href: props.href(r),
     onClick: (e: MouseEvent) => {
@@ -154,10 +147,23 @@ export function OwnerPage(props: {
     if (r.kind === "conversation" && "items" in d && d.id === r.id) return d;
     return undefined;
   };
+  // A version on Home is starting: read again every 3 s until it runs or failed.
+  createEffect(
+    on(
+      () => !props.preview && props.route.kind === "home" && versionsStarting((current() as OwnerHome | undefined)?.versions),
+      (starting) => {
+        if (!starting) return;
+        const t = setInterval(() => {
+          if (document.visibilityState === "visible") void read();
+        }, STARTING_MS);
+        onCleanup(() => clearInterval(t));
+      },
+    ),
+  );
   /** A dead or unknown link: nothing of the page stays. */
   const deadLink = () => {
     const p = problem();
-    return p === "unknown" || p === "gone" || p === "expired" || p === "busy" ? PROBLEM[p] : null;
+    return isDeadLink(p) ? PROBLEM[p] : null;
   };
   createEffect(() => {
     const d = current();
@@ -170,7 +176,8 @@ export function OwnerPage(props: {
   );
 
   return (
-    <Dynamic component={props.preview ? "div" : "main"} class="owner">
+    // The chat (#a) fills the window's height, its composer pinned at the bottom; never in the preview's modal.
+    <Dynamic component={props.preview ? "div" : "main"} class="owner" classList={{ "owner-chat": props.route.kind === "assistant" && !props.preview }}>
       <Show
         when={!deadLink()}
         fallback={
@@ -252,7 +259,20 @@ export function OwnerPage(props: {
             // Each read reaches the view: the answers are read through `d()` (a non-keyed Show calls this once).
             <Switch>
               <Match when={"projects" in d() && props.route.kind === "assistant" && props.assistant}>
-                {(api) => <AssistantChat first={(d() as OwnerHome).owner.first} op={(d() as OwnerHome).operator.first} api={api()} back={link({ kind: "home" })} />}
+                {(api) => (
+                  <AssistantChat
+                    first={(d() as OwnerHome).owner.first}
+                    op={(d() as OwnerHome).operator.first}
+                    api={api()}
+                    versionHref={props.versionHref}
+                    back={link({ kind: "home" })}
+                    onDeadLink={(err) => {
+                      // The link itself failed on the chat's read: the page's own dead-link screen.
+                      if (err.asked) setAsking("asked");
+                      setProblem(err.kind);
+                    }}
+                  />
+                )}
               </Match>
               <Match when={"projects" in d()}>
                 <HomeView home={d() as OwnerHome} now={now()} link={link} preview={props.preview} versionHref={props.versionHref} assistant={!!props.assistant} />
@@ -347,7 +367,7 @@ function WaitingSection(props: { waiting: OwnerWaiting[]; op: string; now: numbe
 }
 
 /** The kind and status words of a request (§design.copy-deck/owner-page). */
-const REQUEST_KIND: Record<OwnerRequestRow["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release" };
+const REQUEST_KIND: Record<OwnerRequestRow["kind"], string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release", try: "Version to try" };
 const REQUEST_STATUS: Record<OwnerRequestRow["status"], OwnerChipWord> = {
   "with-team": { word: "With the team", tone: "info" },
   started: { word: "Being worked on", tone: "info" },
@@ -380,27 +400,7 @@ function RequestsSection(props: { requests: OwnerRequestRow[]; now: number }) {
 function VersionsSection(props: { versions: OwnerVersionRow[]; href?: (handle: string) => string }) {
   return (
     <Section id="owner-versions" title="Versions you can try" line="Open a version to try it. These links work as long as this page does.">
-      <ul class="owner-list">
-        <For each={props.versions}>
-          {(v) => (
-            <li class="owner-row owner-row-static">
-              <span class="owner-row-main">
-                <span class="owner-row-title">{v.label}</span>
-                <span class="owner-meta">{v.state === "running" ? v.project : `${v.project} · Not running right now`}</span>
-              </span>
-              <Show when={v.state === "running"}>
-                <Show when={props.href} fallback={<span class="button owner-version-open" aria-disabled="true">Open</span>}>
-                  {(href) => (
-                    <a class="button owner-version-open" href={href()(v.handle)} target="_blank" rel="noopener noreferrer">
-                      Open
-                    </a>
-                  )}
-                </Show>
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
+      <VersionRows versions={props.versions} href={props.href} />
     </Section>
   );
 }

@@ -250,8 +250,9 @@
         "§app.chat-processes/supervision"
       ],
       "agreed": {
-        "by": "user (al_1 go-ahead, revised)",
-        "at": "2026-10-14T22:01Z"
+        "by": "naomarik (al_2 go-ahead)",
+        "at": "2026-10-21T22:49Z",
+        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
       },
       "evidence": "verified"
     },
@@ -3523,8 +3524,9 @@
         "src/components/ChatView.tsx"
       ],
       "agreed": {
-        "by": "user (al_1 go-ahead, revised)",
-        "at": "2026-10-14T22:01Z"
+        "by": "naomarik (al_2 go-ahead)",
+        "at": "2026-10-21T22:49Z",
+        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
       }
     },
     "§chat.timeline/no-virtualization": {
@@ -3700,12 +3702,14 @@
         "scripts/e2e/transcript-follow.mjs",
         "src/lib/error-feed.ts",
         "src/lib/error-feed.test.ts",
-        "server/ws-open-retry.test.ts"
+        "server/ws-open-retry.test.ts",
+        "src/components/GroupView.tsx",
+        "src/components/SessionView.tsx"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-19T21:14Z",
-        "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
+        "by": "naomarik (al_2 go-ahead)",
+        "at": "2026-10-21T22:49Z",
+        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
       },
       "evidence": "reviewed"
     },
@@ -4433,8 +4437,16 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/lib/group-layout.ts"
-      ]
+        "src/lib/group-layout.ts",
+        "src/components/GroupView.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/ChatView.tsx"
+      ],
+      "agreed": {
+        "by": "naomarik (al_2 go-ahead)",
+        "at": "2026-10-21T22:49Z",
+        "source": "pi-session:62ba6e1a-1faf-49d5-8231-81171c89541b#e5270c27"
+      }
     },
     "§workspace.groups/member-states": {
       "kind": "behavior",

@@ -91,6 +91,29 @@ export interface OwnerProjectCard extends OwnerCounts {
   conversations: number;
 }
 
+/** What the Project Assistant would do if asked now (§app.project-assistant/abilities): starts at once, starts on its
+    own after the waiting period, or goes to the team. Outcome words only, never why. */
+export type OwnerAbilityOutcome = "now" | "held" | "team";
+
+/** One shown project's answers. */
+export interface OwnerProjectAbilities {
+  /** The project's handle (q_…), as OwnerProjectCard.id. */
+  project: string;
+  /** Get a problem fixed. */
+  fix: OwnerAbilityOutcome;
+  /** Try the latest version; "none": no version listed that could be opened. */
+  version: OwnerAbilityOutcome | "none";
+  /** Release a new version. */
+  release: OwnerAbilityOutcome;
+}
+
+export interface OwnerAbilities {
+  /** The owner can send photos and screenshots now. */
+  photos: boolean;
+  /** One per shown project, in `projects` order. */
+  projects: OwnerProjectAbilities[];
+}
+
 /** GET /api/i/<token>. */
 export interface OwnerHome {
   org: { name: string };
@@ -106,6 +129,8 @@ export interface OwnerHome {
   versions?: OwnerVersionRow[];
   /** The Project Assistant: whether it takes messages (a reply model is set). */
   assistant?: { ready: boolean };
+  /** What the assistant can do for the owner, per shown project; absent while it isn't ready. */
+  abilities?: OwnerAbilities;
 }
 
 /** Someone asked in the project's conversations. */

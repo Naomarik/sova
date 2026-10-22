@@ -1750,14 +1750,25 @@
         "§chat.context-window/sidebar-ring"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "shared/protocol.ts",
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
-        "src/components/RowPlace.tsx"
-      ]
+        "src/components/RowPlace.tsx",
+        "src/components/AutomationsShelf.tsx",
+        "src/lib/for-key.ts",
+        "src/lib/for-key.browser.test.ts",
+        "src/lib/list-scroll-hold.ts",
+        "src/lib/list-scroll-hold.test.ts",
+        "server/sidebar-scroll.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T23:11Z",
+        "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#f3410c28"
+      }
     },
     "§app.session-list/groups": {
       "kind": "behavior",
@@ -1839,8 +1850,15 @@
         "src/lib/org-region.ts",
         "src/design/base.css",
         "src/lib/text-entry.ts",
-        "src/lib/text-entry.test.ts"
-      ]
+        "src/lib/text-entry.test.ts",
+        "src/lib/list-scroll-hold.ts",
+        "server/sidebar-scroll.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T23:11Z",
+        "source": "pi-session:777149c4-3887-4782-8c20-99e67344e685#f3410c28"
+      }
     },
     "§app.session-list/session-titles": {
       "kind": "behavior",

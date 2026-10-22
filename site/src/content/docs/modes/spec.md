@@ -65,7 +65,11 @@ marked first. The line comes once, and again only when a later edit lands in oth
 
 When the work is done, the agent checks each promise it changed against what it built, records
 what it checked, and promotes the drafts it verified. The session promotes its own drafts, on its own
-branch, before it calls that branch ready to land: nothing that lands the branch promotes them.
+branch, after its checks pass and before it calls that branch done or ready to land: nothing that
+lands the branch promotes them, so the docs land in the same merge as the code they describe. Your
+go-ahead to build or merge covers promoting and committing them; you're never asked for it
+separately, and there is no second, docs-only merge. Only if you say not to commit does the
+session leave its evidence pending.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,
 and the "Also updates" line is the only spec line a reply carries; nothing checks it.
@@ -88,7 +92,8 @@ the same guide and a short note:
 
 - its brief is its go-ahead;
 - it works in the draft its brief names, or says which one it started;
-- it doesn't promote or commit unless its brief says so, because the parent promotes;
+- it doesn't promote or commit unless its brief says so, and then only on its brief's branch,
+  never by landing on the default branch, because the parent promotes on its own branch;
 - its final report lists each claim it updated that existed before the task.
 
 When a worker that wrote code finishes, its summary carries one line naming the claims its changes

@@ -514,7 +514,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /After implementing, verify each changed promise\. Relabel each record as it will read once current: explicit `authority`: `accepted` for new or rewritten prose \(the task's go-ahead adopts it\), `migrated` only for text still as ported, never `candidate`;/);
 	assert.doesNotMatch(spec, /or `migrated`/, "migrated is provenance, not an alternative to accepted");
 	assert.match(spec, /`--commit <rev>` \(Git: the implementation's existing commit\)/);
-	assert.match(spec, /It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes\./, "task approval is not a commit");
+	assert.match(spec, /A go-ahead to build or merge covers committing them with the code, never asked separately; told not to commit, leave evidence pending; never commit unrelated changes\./, "the go-ahead covers committing the docs with the code");
+	for (const gone of [["not permission", "to commit"], ["expected end", "state"], ["always on the", "default branch"]]) assert.ok(!spec.includes(gone.join(" ")), `the docs never wait on a second permission: ${gone.join(" ")}`);
+	assert.match(spec, /A branch isn't done or ready to land until its drafts are promoted on it, by you, after its checks pass; nothing at landing promotes for you\./);
 	assert.match(spec, /`cause: manifest-not-found` means no spec: start a draft\./, "a generic refusal is not permission to bootstrap a malformed spec");
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
@@ -553,7 +555,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
 	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	assert.ok(spec.split(/\s+/).length <= 906, "short enough to ride every turn: growing it is a deliberate change");
+	const words = spec.split(/\s+/).length;
+	assert.ok(words <= 944, `short enough to ride every turn: growing it is a deliberate change (${words} words)`);
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
@@ -1134,7 +1137,7 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 
 test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and updated foreign § go in the final report", () => {
 	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
-	assert.match(SPEC_WORKER_NOTE, /Do not promote, commit, or record `--commit` evidence unless your brief says to/);
+	assert.match(SPEC_WORKER_NOTE, /Promote, commit or record `--commit` evidence only when your brief says to, and then only on its branch, never by landing on the default branch/);
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
 	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
 	for (const phrase of ["`--commit`", "Also updates", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);

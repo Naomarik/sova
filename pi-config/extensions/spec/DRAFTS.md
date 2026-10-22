@@ -26,6 +26,7 @@ node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [-
 node $d recover [--write]                               --root DIR [--json]
 node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
 node $d prune --approved FILE [--write]                 --root DIR [--json]
+node $d prune --official [--from DIR] [--write]         --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
 node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
@@ -330,8 +331,17 @@ no activity for longer than the age limit, with the `drafts` command to run.
 `NAME` or `NAME draftSha256` (copy the hash from the report so a draft that changed after the
 approval is not deleted), `#` starts a comment. Without `--write` it lists what it would delete.
 A name with no draft, a hash that no longer matches, or an interrupted promotion (`.txn/`)
-refuses the whole prune and deletes nothing. It deletes nothing it was not given, and no other
-command deletes a draft.
+refuses the whole prune and deletes nothing. It deletes nothing it was not given.
+
+`prune --official` needs no list: it deletes only drafts the tool confirms are already official
+and keeps every other one, listed with why (`kept`). Without `--from` it reads the project's own
+drafts as `drafts` does and deletes those it reads `promoted`, under the same lock and the same
+refusal of an interrupted promotion. With `--from DIR` it reads each draft folder directly in `DIR`
+(copies kept outside the project, such as the ones a merge round keeps when it removes a landed
+worktree) against the project's current spec alone, without Git: a copy whose changed records are
+all already current, at least one, is deleted; one with a record pending or in conflict, one that
+changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.
+No other command deletes a draft.
 
 ## A manifest conflict in a Git merge
 

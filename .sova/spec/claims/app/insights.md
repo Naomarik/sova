@@ -677,11 +677,18 @@ and neither does one whose launches were never recorded.
 - **Controls.** Range chips `7d` · `30d` · `All` (30d by default), and beside them multi-select **Provider** and
   **Model** filters; the model choices narrow to the selected providers. The range and both filters
   apply to every section below.
-- **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
-  days). Tables by provider, by model (input · cache · output · cost), by kind and by project
+- **Sections.** Stats: Total, Main sessions, Workers, One-shots, each a dollar figure with a small
+  line under it, its cache hit rate (`96% from cache`; with no cache read or write in it, "No cache
+  use reported"). A daily cost bar chart (local days). Tables by provider (tokens · hit rate ·
+  cost), by model (input · cache · hit rate · output · cost), by kind and by project
   (the org project, else the working directory). Top sessions, most expensive first; a click opens
   the session, and a row whose conversation re-sent its history says so under its name
   (§app.insights/usage-resend-display).
+- **Cache hit rate.** The share of input tokens read from cache: cache read ÷ (input + cache read +
+  cache write), output left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded
+  `0%` or `100%` that isn't exact). A table row with no cache read or write shows `—`, its `title`
+  "No cache use reported for this model." (a provider row: "… for this provider."); such rows still
+  count their input in a card's rate. A rate only: no figure of money saved.
 - **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
   pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
   still the starter list.

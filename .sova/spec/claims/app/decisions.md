@@ -56,7 +56,9 @@ appends (one line each).
   key resets Jev's, a changed fallback model resets its own.
 - **Bounds.** At most 2 decisions in flight across the server; two identical requests in flight
   share one call. Every request's state is redacted (§app.decisions/privacy) and capped at 32,000
-  characters before any provider sees it; over the cap it fails `too-large` without a call.
+  characters before any provider sees it; over the cap it fails `too-large` without a call. No
+  Claude Code one-shot (a decision, a session title, a memory summary) starts with a command-line
+  argument over 64 KiB: it fails `too-large` without starting.
 - **Jev.** Plain HTTPS, no SDK. boolean/choice/score map to Jev's `noul`/`choice`/`score`. A state
   estimated over Jev's size limit fails `too-large` locally, without a call. Timeout 8 s, except
   for background purposes nobody waits on (session tags, subagent checks and a merge's follow-up

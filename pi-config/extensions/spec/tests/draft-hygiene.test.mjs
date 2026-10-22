@@ -271,3 +271,23 @@ test("prune takes --approved or --official, and --from only with --official", ()
   assert.equal(run(root, "prune", "--approved", join(root, "x"), "--from", root).exit, 2);
   assert.equal(run(root, "prune", "--official", "--from", join(root, "missing")).exit, 2);
 });
+
+test("a draft whose promoted § current now says differently lists it in promotedConflict, and prune --official keeps it", () => {
+  const root = project();
+  newDraft(root, "mine");
+  write(root, D("mine", "claims/b/other.md"), "# §b/other\n\nOther does Z better.\n");
+  const ev = run(root, "evidence", "mine", "--id", "§b/other", "--by", "t", "--verification", "read", "--snapshot", "--write");
+  assert.equal(ev.exit, 0, JSON.stringify(ev.findings));
+  const pv = run(root, "promote", "mine", "--id", "§b/other");
+  assert.equal(run(root, "promote", "mine", "--id", "§b/other", "--plan", pv.plan, "--write").exit, 0);
+  assert.deepEqual(entry(report(root), "mine").promotedConflict, [], "promoted and still current");
+  // Another change replaces the prose the draft promoted, as taking another branch's spec would.
+  write(root, ".sova/spec/claims/b/other.md", "# §b/other\n\nOther does Z differently.\n");
+  const e = entry(report(root), "mine");
+  assert.deepEqual(e.promotedConflict, ["§b/other"]);
+  assert.equal(e.state, "promoted", "the reading itself is unchanged (F8)");
+  const pr = run(root, "prune", "--official", "--write");
+  assert.deepEqual(pr.deleted, []);
+  assert.deepEqual(pr.kept.map((k) => k.name), ["mine"]);
+  assert.deepEqual(draftNames(root), ["mine"]);
+});

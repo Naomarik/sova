@@ -58,11 +58,13 @@ const commit = (cwd, file, text, subject) => {
   return git(cwd, "rev-parse", "HEAD");
 };
 const wt = (name) => join(root, `wt-${name.replace(/\//g, "-")}`);
+/** A git command that may fail (a merge expected to conflict). */
+const spawnSyncGit = (cwd, args) => { try { execFileSync("git", args, { cwd, env: { ...process.env, ...gitEnv }, stdio: "ignore" }); } catch {} };
 
 /** Runs round.mjs (or another script) asynchronously, so the test's own health server can answer. */
-function run(args, { env = {}, input, script = ROUND } = {}) {
+function run(args, { env = {}, input, script = ROUND, cwd = main } = {}) {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [script, ...args], { cwd: main, env: { ...baseEnv(), ...env }, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [script, ...args], { cwd, env: { ...baseEnv(), ...env }, stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
@@ -1260,4 +1262,73 @@ test("landed deletes kept draft copies only when the draft tool confirms them of
   // Once every copy is official, the folder goes too.
   await run(["landed", br], { env: { FAKE_OFFICIAL: JSON.stringify(["waiting-one"]) } });
   assert.ok(!existsSync(old), "an emptied folder of copies is removed");
+});
+
+test("B1: a § the draft promoted before, now in conflict after taking master's spec without re-promoting, is not promoted: READY and check hand it back", async () => {
+  // Its own repository with a real spec and the real draft tool: the hold-back reads what the tool says.
+  const REAL_CORE = join(REPO_ROOT, "pi-config", "extensions", "spec", "core");
+  const DRAFT = join(REAL_CORE, "sova-spec-draft.mjs");
+  const r2 = join(root, "b1");
+  const main2 = join(r2, "main");
+  const origin2 = join(r2, "origin.git");
+  const env2 = { ...process.env, ...gitEnv, HOME: root };
+  for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) delete env2[k];
+  const tool = (cwd, ...a) => execFileSync(process.execPath, [DRAFT, ...a, "--root", cwd, "--json"], { cwd, env: env2, encoding: "utf8" });
+  const toolJ = (cwd, ...a) => { try { return JSON.parse(tool(cwd, ...a)); } catch (e) { return JSON.parse(e.stdout); } };
+  mkdirSync(r2, { recursive: true });
+  execFileSync("git", ["init", "-q", "--bare", "-b", "master", origin2], { env: env2 });
+  execFileSync("git", ["init", "-q", "-b", "master", main2], { env: env2 });
+  const MANIFEST = { formatVersion: 1, claims: { "§x/top": { kind: "surface", authority: "accepted" }, "§x.top/one": { kind: "behavior", authority: "accepted", requires: [], code: ["lib/one.txt"] } } };
+  const TOP = (one) => `# §x/top\n\nThe top surface.\n\n## §x.top/one\n\n${one}\n`;
+  mkdirSync(join(main2, ".sova", "spec", "claims", "x"), { recursive: true });
+  writeFileSync(join(main2, ".sova/spec/manifest.json"), JSON.stringify(MANIFEST, null, 2) + "\n");
+  writeFileSync(join(main2, ".sova/spec/claims/x/top.md"), TOP("One does X."));
+  writeFileSync(join(main2, ".sova/spec/.gitignore"), "/drafts/\n");
+  commit(main2, "lib/one.txt", "v1\n", "base: spec and code");
+  git(main2, "add", "-A"); git(main2, "commit", "-q", "-m", "base: spec");
+  git(main2, "remote", "add", "origin", origin2);
+  git(main2, "push", "-q", "origin", "master");
+  git(main2, "fetch", "-q", "origin");
+  const wt2 = (b) => join(r2, `wt-${b.replace(/\//g, "-")}`);
+  // A and B each build §x.top/one differently and promote it on their own branch.
+  for (const [br, text] of [["feat/b1-a", "One does X twice."], ["feat/b1-b", "One does X once."]]) {
+    git(main2, "worktree", "add", "-q", wt2(br), "-b", br);
+    const w = wt2(br);
+    assert.equal(toolJ(w, "new", "d", "--write").exit, 0);
+    writeFileSync(join(w, ".sova/spec/drafts/d/spec/claims/x/top.md"), TOP(text));
+    commit(w, "lib/one.txt", `${text}\n`, `${br}: build`);
+    assert.equal(toolJ(w, "evidence", "d", "--id", "§x.top/one", "--by", "t", "--verification", "built", "--commit", "HEAD", "--write").exit, 0);
+    const pv = toolJ(w, "promote", "d", "--id", "§x.top/one");
+    assert.equal(pv.exit, 0, JSON.stringify(pv.findings));
+    assert.equal(toolJ(w, "promote", "d", "--id", "§x.top/one", "--plan", pv.plan, "--write").exit, 0);
+    git(w, "add", "--", ".sova/spec/manifest.json", ".sova/spec/claims"); git(w, "commit", "-q", "-m", `spec: ${br} promoted`);
+  }
+  // A lands; B's check is handed back for the spec conflict.
+  git(main2, "merge", "-q", "--no-edit", "--no-ff", "feat/b1-a");
+  const B = "feat/b1-b", wB = wt2(B), OWNER2 = "0199cccc-owner2";
+  const SPEC_ENV = { SOVA_ROUND_SPEC_CORE: REAL_CORE };
+  assert.equal((await run(["note", B, `owner=${OWNER2}`, "chip=ready", "idle=yes"], { cwd: main2 })).code, 0);
+  const first = await run(["check", B], { cwd: main2, env: SPEC_ENV });
+  assert.equal(first.code, 1, first.out);
+  assert.match(first.out, /conflicts in the spec/);
+  // The owner takes master's whole spec as the hand-back says, but never promotes again.
+  spawnSyncGit(wB, ["merge", "--no-edit", "master"]);
+  git(wB, "checkout", "--no-overlay", "master", "--", ".sova/spec/manifest.json", ".sova/spec/claims");
+  git(wB, "add", "-A"); git(wB, "commit", "-q", "--no-edit");
+  assert.equal(readFileSync(join(wB, ".sova/spec/claims/x/top.md"), "utf8"), TOP("One does X twice."), "fixture: B's branch now holds A's prose, not its own");
+  const headB = git(main2, "rev-parse", B);
+  // READY at the new head: B's own docs are gone from its branch, so it is handed back.
+  const st = state();
+  for (const rec of Object.values(st.branches)) if (rec.ask) rec.ask.at -= 3600_000;
+  writeFileSync(stateFile, JSON.stringify(st));
+  assert.equal((await run(["note", B, `owner=${OWNER2}`, "chip=ready", "idle=yes"], { cwd: main2 })).code, 0);
+  const asked = await run(["ask", B, `topic=${TOPIC}`], { cwd: main2, env: SPEC_ENV });
+  assert.equal(asked.code, 0, asked.out);
+  const reply = await run(["reply", B], { cwd: main2, env: SPEC_ENV, input: batch(TOPIC, [[OWNER2, `READY ${B} ${headB.slice(0, 7)}`, inMs(1000), "b10000000001"]]) });
+  assert.equal(reply.code, 1, reply.out);
+  assert.match(reply.out, /handed back/);
+  const check = await run(["check", B], { cwd: main2, env: SPEC_ENV });
+  assert.equal(check.code, 1, check.out);
+  assert.match(check.out, /^needs: (.*; )?docs not promoted: d(;|$)/m);
+  assert.match(asked.out, /spec drafts aren't promoted yet: d \(§x\.top\/one\)/, "the ask names it too");
 });

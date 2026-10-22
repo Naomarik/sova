@@ -24,6 +24,8 @@
 .costs-stat { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); }
 .costs-stat dt { margin: 0; color: var(--color-ink-muted); }
 .costs-stat dd { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* The cache hit rate under the figure: a caption, in words, never a hue. */
+.costs-stat dd.costs-stat-cache { font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-regular); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
 @container insights (min-width: 768px) {
   .costs-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

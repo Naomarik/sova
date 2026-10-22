@@ -176,10 +176,12 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
 - **A conversation** reads exactly as a share page shows it (§app.baton/outsider-view), with the
   owner as the viewer: the same filter, redaction and sender labels; briefings only when addressed
   to the owner; how many people an offer went to, never who; never cut at an offer; done and closed
-  conversations included; no composer. A message's photos (§app.baton/images) show as their count
+  conversations included; no composer, except in the owner's own feature request chat while they
+  hold it (§app.project-assistant/feature-chats), which also draws its plan cards. A message's photos (§app.baton/images) show as their count
   only ("2 photos"), never the pictures: only the owner's own photos, in their own Project
   Assistant chat, show as pictures. When it is the owner's turn in it, the page says to answer
-  through the link the operator sent for it.
+  through the link the operator sent for it, except in a feature request chat, where they answer
+  on the page.
 
 ## §app.owner-page/conversations — Which conversations the owner reads
 
@@ -197,6 +199,8 @@ A visible conversation's reviewed tour attachment follows that same conversation
   (the placement's `ownerHidden`, §app.projects/placement, shown by default; `PATCH
   /api/orgs/:id/projects/:pid/placement {ownerHidden}`). A project switched off disappears from the page with everything in it, and its
   handle answers 404.
+- **A feature request chat** (§app.project-assistant/feature-chats) is shown only to the person who
+  opened it, while they are the owner; Hide From is never offered for it.
 - **Never shown**: the project overseer's conversations (current and history), coding sessions
   (their titles and topic summaries too), and every other session of the operator's.
 - **Handles.** Projects and conversations are addressed on the page by a handle (`q_` + 8
@@ -288,15 +292,17 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
   `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
   `GET /api/i/<token>/c/<k_handle>/tours/<handle>` and its narrowly scoped exact-edition asset reads
-  (§app.tours/handoffs), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
+  (§app.tours/handoffs), `POST /api/i/<token>/c/<k_handle>/message` and `POST
+  /api/i/<token>/c/<k_handle>/end` (the owner's feature request chat,
+  §app.project-assistant/feature-chats), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
   (a message to it), `POST /api/i/<token>/assistant/image` and `GET
   /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), the socket
   `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
   (a version) and `POST /i/<token>/ask-link` (§app.owner-page/link). The tour reads check current
   owner access and the already-exposed conversation cut before any file read, and recheck after
   asynchronous reads; denial is indistinguishable missing 404. They have no Ask control. Any other
-  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant reaches a
-  model.
+  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant or to the
+  owner's own feature request chat reaches a model.
 - **Fresh.** The page reads again every 60 seconds while it is visible (paused while hidden, at
   once when shown again) and says when it last did.
 - **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. The owner's photo reads (`/api/i/<token>/assistant/img/<n>`) count in the listener's photo bucket (§app.baton/share-listener), never the page's; a photo upload has the hand-off upload's body cap and time (§app.baton/share-listener). Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
@@ -343,8 +349,9 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **Project page: an Owner Page card** (only while the org has an owner): the `Show this project
   on {first name}'s page` switch and the updates log with `Take Down` (§app.owner-page/updates).
 - **Baton strip**: `Hide From {first name}` / `Show To {first name}`, a row of the strip's More
-  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner, and a line
-  while it is hidden (§app.owner-page/conversations).
+  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner but a feature
+  request chat (§app.project-assistant/feature-chats), and a line while it is hidden
+  (§app.owner-page/conversations).
 - **Person page**: an `Owner` chip beside the owner's status, their owner link among their links
   (state, made, expires, Copy Link while live and kept, Delete), and their visits to the owner page as "Opened the owner page"
   rows (§app.organizations/person-page).
@@ -418,7 +425,8 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **Showing or summarising the overseer's conversation**: it is candid, technical, and its tool
   results carry roster data and the About text.
 - **Answering a conversation from the page**: the owner still answers their own questions through
-  the links they are sent; the page writes only to the Project Assistant.
+  the links they are sent; the page writes only to the Project Assistant and, the one exception,
+  to the owner's own feature request chat (§app.project-assistant/feature-chats).
 - **An owner per project, or a login**: one person per org with one personal link is what the
   user asked for.
 - **Showing costs**: never on this page; the assistant's models and their costs are on the

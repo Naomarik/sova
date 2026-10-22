@@ -15,7 +15,10 @@ import { extraSessionRoots, LIVE_DIR, SESSIONS_DIR } from "./paths";
  * - a live record whose owner, status, activity, worker counts or failures changed, or whose
  *   process died or went stale. Writers rewrite their record on every heartbeat (~3-4 s), so a
  *   folder event only schedules a check of the records' signature, never a comparison by itself;
- *   the check also runs every LIVE_CHECK_MS, since a process that dies writes nothing.
+ *   the check also runs every LIVE_CHECK_MS, since a process that dies writes nothing;
+ * - with that check, `checks`: merge readiness compares its tracked worktrees' Git inputs (index,
+ *   HEAD, branch and base refs) as stat stamps and re-reads only a row whose stamps moved, so a
+ *   commit made with no session-file write still reaches the list within seconds.
  *
  * Everything is started with the feed's first listener and stopped with its last.
  */
@@ -33,6 +36,9 @@ export interface FeedWatchOptions {
   resyncMs?: number;
   /** The live records' signature (tests stub it). */
   liveSignature?: () => string;
+  /** Cheap checks run with the live check (merge readiness's Git-input stamps); each announces
+      what it finds through the list generation itself. */
+  checks?: readonly (() => void)[];
 }
 
 /** What of the live records a row, a mark, the digest or the Overseer's state reads; a heartbeat
@@ -149,7 +155,17 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
   sync();
   checkLive();
   const offGeneration = onSessionsChanged(changed);
-  const liveInterval = setInterval(checkLive, opts.liveCheckMs ?? LIVE_CHECK_MS);
+  const periodic = (): void => {
+    checkLive();
+    for (const check of opts.checks ?? []) {
+      try {
+        check();
+      } catch (err) {
+        console.warn("[session-feed] check failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
+  };
+  const liveInterval = setInterval(periodic, opts.liveCheckMs ?? LIVE_CHECK_MS);
   liveInterval.unref?.();
   const resync = setInterval(sync, opts.resyncMs ?? RESYNC_MS);
   resync.unref?.();

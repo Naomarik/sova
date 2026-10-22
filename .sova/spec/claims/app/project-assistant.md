@@ -53,10 +53,11 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   being written, an Enter or `Send` sends nothing and says "Wait for the answer first.", a line
   that goes once the answer is done; the box keeps the text, so the next Enter sends it.
   Hand-off pages keep their own keys (§app.baton/outsider-view).
-- **Nothing runs on a model nobody chose.** Its replies run on the org's assistant reply model
-  (§app.project-assistant/models), set on the chat at each owner message; with none set, or one this
-  host can't run, the chat does not answer: the page says it isn't ready yet and the owner's message
-  is not taken (409 `not-ready`).
+- **Nothing runs on a model nobody chose.** Its replies run on the org's resolved reply model, its
+  own pick or else the host's default (§app.project-assistant/models), set on the chat with its
+  thinking level at each owner message; with none resolved, one this host can't run, or one
+  Settings → Models turned off, the chat is not ready and does not answer: the page says it isn't
+  ready yet and the owner's message is not taken (409 `not-ready`).
 - **The operator in the chat.** The operator opens the same conversation in Sova (Owner card,
   `Open Assistant Chat`) and may write in it; a turn the operator starts is attended: its acts are
   never restricted (§app.project-overseer/autonomy-levels). The owner sees the operator's messages under the
@@ -70,19 +71,23 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 ## §app.project-assistant/photos — The owner's photos
 
 - **When.** The owner can send photos and screenshots only while photos are on (the outsider photo
-  settings, Settings → Organizations, §app.settings-dialog/organizations) and the assistant's reply
-  model sees images (its `input` lists `image`). Only then does the chat's view (`GET
+  settings, Settings → Organizations, §app.settings-dialog/organizations) and the assistant is ready
+  on a resolved reply model (the org's pick or the default, §app.project-assistant/models) that sees
+  images (its `input` lists `image`). Only then does the chat's view (`GET
   /api/i/<token>/assistant`) carry `photos {perMessage, maxBytes}` and the composer show its
   paperclip; otherwise it shows none, a pasted or dropped picture is not attached, and the upload
-  and message routes refuse a photo (409, code `no-photos`). The Owner card's reply-model row then
-  says "This model can't see photos: {first} won't get an attach button."
+  and message routes refuse a photo (409, code `no-photos`). The Owner card's reply row then
+  says "This model can't see photos: {first} won't get an attach button.", and Settings →
+  Organizations says "This model can't see photos: owners who follow it won't get an attach
+  button." under a default that can't.
 - **The hand-off page's composer** (§app.baton/images) with photos only, never files: the
   `Attach Photos` paperclip, paste and drop, the same on-device processing (orientation, 2000 px,
   re-encoded, metadata dropped), upload at attach, the pending strip with progress, Retry and
   Remove, "Waiting for photos to finish." while an upload runs, and the polite live region.
 - **Upload.** `POST /api/i/<token>/assistant/image` with the raw bytes and their type
   (`image/jpeg`, `image/png`, `image/webp` or `image/gif`), answering 201 `{id, size, mime}`; 404
-  and 410 for an unknown or dead owner link; 409 `not-ready` while the chat has no reply model;
+  and 410 for an unknown or dead owner link; 409 `not-ready` while the chat isn't ready (no reply
+  model resolves, or it can't run here or is turned off);
   409 `no-photos` (above); 413 over the largest photo; 400 when the bytes aren't the declared type;
   429 past 20 uploads a minute per link; 507 while the host's staging area is full, as on a hand-off
   page. The server strips metadata again as a backstop. A photo is staged host-local in the hand-off
@@ -168,9 +173,13 @@ The owner is never the operator: nothing an owner writes is operator identity, w
     refuses, or one that fails or doesn't answer within its time (§app.project-assistant/versions),
     says "it didn't start; the team knows" and files the same `try` request. The tool waits at most
     3 seconds for the engine; a start still booting carries on after its answer.
+  - `start_feature_chat {project, title, text}`: opens a feature request chat with the owner
+    (`gather`, §app.project-assistant/feature-chats). Off (or a brake, or the engine refusing the
+    start) it files a `feature` request with the team instead; with the owner's one feature request
+    chat already open, or no gathering model set, it starts and files nothing and says so.
 - Each tool's answer says, in plain words for the owner, what happened: started, waiting a few
   minutes, or with the team.
-- **Before it acts**, each of `start_fix`, `deploy` and `start_version` asks the one question the
+- **Before it acts**, each of `start_fix`, `deploy`, `start_version` and `start_feature_chat` asks the one question the
   owner page asks (§app.project-assistant/abilities) for its project, and on `team` sets nothing off:
   the request stays with the team (`deploy` asks the operator to deploy), and its answer says it went
   to the team (`started: false`). A turn the operator started skips the switch, brake and engine
@@ -183,7 +192,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Where.** Home's Project Assistant card, headed "What it can do for you", the chat's
   suggestions before its first message, and its `What Can I Ask?` sheet (§app.owner-page/content)
   list what the assistant can do for the owner: up to 6 lines, each a plain name and how it
-  happens (copy: §design.copy-deck/owner-page). While the assistant isn't ready (no reply model,
+  happens (copy: §design.copy-deck/owner-page). While the assistant isn't ready (no runnable reply model,
   §app.project-assistant/chat) the card shows the not-ready line and no list, and the chat no
   suggestions.
 - **Always, whatever the switches**: `Ask about your projects` (answers right away), `Report a
@@ -194,21 +203,27 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **By the project's Project Assistant column** (§app.project-overseer/autonomy-levels):
   `Get a problem fixed` (Start coding sessions), `Try the latest version` (Create, start and update
   running copies; listed only while some shown project lists a version the owner could open,
-  §app.project-assistant/versions) and `Release a new version` (Deploy). Gatherings and coding
-  prompts are never listed: the assistant can't use them.
+  §app.project-assistant/versions), `Release a new version` (Deploy) and `Plan something new with
+  you` (Open feature request chats with the owner, §app.project-assistant/feature-chats). While
+  some shown project would open a feature request chat (`now`), `Plan something new with you` takes
+  the place of `Ask for something new`; while none would, `Ask for something new` shows as it
+  always did and the planning line doesn't. Coding prompts are never listed: the assistant can't
+  use them.
 - **The same question as the act.** One server function answers, for one shown project and one of
-  fix, version or release, what the assistant would do if asked now, without doing anything:
+  fix, version, release or feature, what the assistant would do if asked now, without doing anything:
   `now` (it starts at once), `held` (it starts on its own after the project's waiting period) or
   `team` (it goes to the team); a version also `none` (no version listed that could be opened). It
   asks, in this order, and the first that fails answers `team`: the project's settings are readable
   and its Project Assistant column is there; the act's switch is On; no brake holds the switches
   (paused by an attach, an empty roster), read as the project page reads it; for a fix, a coding
-  model is set (§app.project-assistant/models); for a release, the project declares release steps
+  model resolves (the project's, the org's or the default, §app.project-assistant/models); for a
+  feature, a gathering model resolves the same way; for a
+  release, the project declares release steps
   (a deploy target in its definition, §app.project-services/deploy-callers); the project's engine
   would take that act from the assistant now, unattended (the same check the act gets: switch,
   brake, limits, at-once caps, archived), and an engine not open on this host is `team`. Then a fix
-  or a release is `held` while the project's waiting period is above 0, else `now`; a version is
-  never held. Unclear is `team`: it never promises what then goes to the team.
+  or a release is `held` while the project's waiting period is above 0, else `now`; a version and
+  a feature are never held. Unclear is `team`: it never promises what then goes to the team.
 - **The tools ask it too** (§app.project-assistant/tools), so a line that says the team handles it
   is a tool that answers it went to the team: Deploy On while the engine or a brake refuses
   `deploy/run` reads "The team releases it" and `deploy` answers `started: false`. The page always
@@ -223,7 +238,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   (an in-page prefill, never in the address), and puts the cursor in it (not on a touch screen, so
   no keyboard springs up); nothing is sent until `Send`.
 - **On the wire**: `OwnerHome.abilities` (`shared/owner.ts`), present only while the assistant is
-  ready: `{photos, projects: [{project, fix, version, release}]}`, `project` the shown project's
+  ready: `{photos, projects: [{project, fix, version, release, feature?}]}` (`feature` `now` or
+  `team`; an older server sends none, read as `team`), `project` the shown project's
   `q_` handle and each answer one of the words above. Never a power id or label, a level, the
   overseer's column, a model, a brake's reason or a limit.
 - **Fresh.** Worked out at each read of Home, so a switch change shows on the owner's page at its
@@ -245,7 +261,9 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   `done` nor `declined` (archiving a fix's own coding session changes nothing); `done` or `declined`
   by the operator, except that an open `try` request is `done` on its own once its version's copy is
   running, whoever started it (the operator from the Branches tab, or a later `start_version`).
-  Every change is an appended `status` line.
+  Every change is an appended `status` line. A `feature` request whose feature request chat is open
+  reads `Planning with you` on the owner's page (worked out at read time; its stored status stays
+  `with-team`), and `Plan agreed` once the chat is done while the request is still with the team.
 - **Needs you** (§app.overseer/attention-digest), act tier: each open (`with-team`) request is an
   `owner-request` item, an outage an `owner-outage` item, which also sends a phone notification at
   once (§app/notifications, kind `owner-outage`); an owner's ask for a new link is an
@@ -253,7 +271,9 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   that request (`#/orgs/<id>/requests/<rid>`, §app.project-assistant/requests-tab); a link ask opens
   the People tab; an open `try` request is an `owner-version-request` item and opens the project's
   Branches tab. A second ask to try the same version while its request is open files none: the open
-  one stands.
+  one stands. A `feature` request with a feature request chat reads as that chat stands
+  (§app.project-assistant/feature-chats), and one whose chat ended because its owner stopped being
+  the owner is an `owner-feature-ended` item.
 - **The operator answers** on the Requests tab: `Mark Done` or `Decline` on each open request
   (`POST /api/orgs/:id/owner/requests/:rid {status}`); the item leaves Needs you.
 - **The project overseer** sees its project's open owner requests in its project read, as data for
@@ -361,16 +381,39 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 
 - **Per kind of work**: the assistant's replies (`reply`), the coding sessions it starts
   (`coding`), the gatherings it starts (`gathering`); each a provider and model with an optional
-  thinking level. It starts no gathering yet (no tool does); the `gathering` pick is kept and shown
-  for when one does.
-- **Per organization**, in `<workspace>/project-assistant.json` (`models`), set on the Owner card
-  (`PUT /api/orgs/:id/owner/assistant {models}`); for `coding` and `gathering` a project may
-  override it (its Project Assistant column's models, §app.project-overseer/autonomy-levels). The card
-  says which applies.
-- **Cost shown**: each picked model with its price per million input and output tokens
+  thinking level. The `gathering` pick runs the feature request chats it opens
+  (§app.project-assistant/feature-chats); with none resolved, `start_feature_chat` opens none. The
+  Owner card doesn't show the gathering kind: it resolves like the others.
+- **One default for every organization**: the host's Project Assistant default, one model and
+  thinking level for all three kinds, set in Settings → Organizations
+  (§app.settings-dialog/organizations). Host state (`<stateRoot>/baton-settings.json`, `assistant`),
+  never the workspace, and never the new-chat default (§chat.model-menu/saved-default). It is set
+  only through `PUT /api/settings/project-assistant {assistant}` (`null` clears it; command
+  `settings.assistant-default.set`), which a mesh peer may call only with `admin`, as for an
+  organization's own pick (§mesh.peers/grants); `PUT /api/baton/settings`, which `sessions` reaches,
+  refuses an `assistant` key (400).
+- **An organization's own pick**, per kind, in `<workspace>/project-assistant.json` (`models`), set
+  on the Owner card (`PUT /api/orgs/:id/owner/assistant {models}`, each kind `{model, thinking?}`;
+  `null` clears the org's pick, so that kind follows the default again); for `coding` and
+  `gathering` a project may override it (its Project Assistant column's models,
+  §app.project-overseer/autonomy-levels).
+- **One resolution, read everywhere**: the project's override (coding and gathering only), else the
+  organization's pick, else the default, with its source (`project`, `org` or `default`). Replies,
+  readiness, the photo button and photo uploads, the chat's setup, fixes, feature request chats and
+  what the owner page says the assistant would do all read it, so a change of the default moves every organization
+  without its own pick from its next read.
+- **Ready** (§app.project-assistant/chat): a reply model resolves, this host can run it (it is in
+  the host's model list, so known and with credentials) and Settings → Models hasn't turned it off
+  (§app.settings-dialog/models). A default turned off later leaves every organization that follows
+  it not ready; Settings and the Owner card say so.
+- **The first default adopts matching picks, once.** The first time a default is saved on a host,
+  each organization's pick that equals it exactly (same model and same thinking; a pick with no
+  thinking never equals one with a level) is cleared, so it follows the default; every other pick
+  stays the organization's own. Later saves of the default never clear a pick.
+- **Cost shown**: each model with its price per million input and output tokens
   (§app.project-costs/price-table), or that its price isn't known.
-- **None set = not run**: no reply model, no reply (§app.project-assistant/chat); no coding model,
-  `start_fix` stays a request.
+- **None resolved = not run**: no reply model, no reply (§app.project-assistant/chat); no coding
+  model, `start_fix` stays a request.
 
 ## §app.project-assistant/never — What the owner and the assistant's model never get
 
@@ -388,3 +431,108 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   then reads every owner answer, socket frame and the model's system prompt and tool results, and
   finds none; the version rows in the chat and the `owner_versions` and `start_version` results
   included, which carry no address, port or branch.
+
+## §app.project-assistant/feature-chats — Feature request chats: planning something new with the owner
+
+- **What it is.** When the owner asks for something new and the project's Project Assistant column
+  has `gather` On (in that column it reads "Open feature request chats with the owner",
+  §app.project-overseer/autonomy-levels), the assistant opens a **feature request chat**: a
+  gathering conversation (§app/baton) of that project whose first holder is the owner, in which a
+  planning partner works out with them what they want, on plan cards, with drawings and clickable
+  prototypes. It only plans and draws: it has no tool that writes, edits or runs anything, no copy
+  of the code, no branch, and nothing it does changes the project's files or its plan. Nothing it
+  agrees is ever merged or built on its own.
+- **The tool.** `start_feature_chat {project?, title, text}` (§app.project-assistant/tools), for the
+  power `gather`. It asks the owner page's question for `feature` first
+  (§app.project-assistant/abilities). Before anything is filed or started it refuses, saying so
+  and offering to send it to the team instead, when the owner already has an open feature request
+  chat (one open chat per owner, across all the organization's projects) or no gathering model is
+  set (§app.project-assistant/models). On `team` (the switch Off, a brake, the engine refusing the
+  start: the project's at-once and daily gathering limits, §app.project-overseer/limits) it files a
+  `feature` request (§app.project-assistant/requests) and says it went to the team, as with the
+  switch Off today. Otherwise it files the `feature` request, then starts the gathering in-process
+  as the caller `assistant` (never the operator, §app.project-overseer/autonomy-levels): its
+  public title the title, its goal the owner's ask, its first holder the owner, no link minted (the
+  owner uses their page), `started {by: "assistant"}`, the message limit from Settings (default
+  60; Extend works, §app.baton/goal-and-loadout), Draw and Interactive drawings on and Read links
+  off whatever the project's set (§app.baton/abilities), on the assistant's gathering model (a
+  project's override first). The request is linked to the chat. Its answer tells the model the
+  chat is open; the assistant's message after it carries an `Open Feature Chat` button for it
+  (`featureChat {conversation, title}` on that message in the chat's view, resolved again at each
+  read, shown only while the chat is the owner's to read).
+- **The owner's own.** A record in the org's workspace (`project-assistant.json`
+  `featureChats [{sessionId, personId, projectId, requestId, at, ended?}]`) names who opened it.
+  Only that person, while they are the organization's owner, sees it on their page and writes in
+  it; on any other owner's page it does not exist (its handle answers 404). When the owner changes
+  or leaves (the moment their owner link is turned off, §app.owner-page/owner), each open feature
+  request chat of the former owner is closed (Ended), its record notes why, and Needs you tells the
+  operator (`owner-feature-ended`, until its request is marked done or declined). The record is
+  written before the close is tried, so Needs you tells the operator even when the close fails.
+  Ending converges: a close that failed, and an owner change the server restarted before finishing,
+  is done again when each organization opens at the server's start and on every Needs you scan,
+  until each open chat of anyone who is not the owner is recorded as ended and closed.
+- **On the owner page** (§app.owner-page/content): it is a conversation of its project, listed
+  under Waiting on you on Home while the owner holds it (whose hint then says to open it and answer
+  there) and under the project's Conversations.
+  Opened, it reads like the assistant chat: the conversation, its plan cards and drawings, and at
+  the bottom a message box (text only, up to 4,000 characters; the hand-off page's keys) while the
+  owner holds it. Its status: `Planning with you` (the owner holds it), `With {first}` (someone
+  else or the operator holds it), `Plan agreed` (done), `Ended` (closed). `End Chat` (with a
+  confirm) lets the owner drop it.
+- **The plan card** (§app.baton/outsider-view): each plan the chat keeps shows once, at its latest
+  change, with its title, summary, what we found, the plan (the steps), what was ruled out, its
+  drawings and its questions. An open question shows its options with the recommended one marked;
+  the owner taps an option per question and presses `Send My Answers`, or `Go With
+  Recommendations`, or types; each sends an ordinary message in the alignment card's own words
+  (§chat.alignment/card: "al_1: take your recommendation on q1. My answers: 2b — {option}.";
+  "al_1: go with your recommendations for every open question.", never "go ahead": nothing is
+  built here). A decided question shows its answer. Technical notes never exist in these plans and
+  never show.
+- **Messages** go through `POST /api/i/<token>/c/<k_handle>/message {text}` and the drop through
+  `POST /api/i/<token>/c/<k_handle>/end`, both checked against the owner link
+  (§app.owner-page/link) and against "this conversation is a feature request chat this person
+  opened, and they are the owner now"; anything else answers 404. A message counts as that person's
+  message in the conversation (their person id, never operator identity), under the limits of a
+  hand-off page (§app.baton/share-listener: 10 a minute per link, 4,000 characters); it is refused
+  while someone else holds the chat (409 `not-holder`), at the message limit (409 `budget`) and
+  once it is done or closed (409 `closed`). The `/ws/i` socket tells the page when one of the
+  owner's feature request chats changed (`{type: "conversation", conversation}`) and carries its
+  reply's text while it is written (`{type: "conversation-streaming", conversation, text}`),
+  filtered as a hand-off page's streaming text.
+- **What its model is told and has** (§app.baton/goal-and-loadout): the gathering prompt, with
+  a "# Planning something new" section: it is a planning partner in the Project manager writing
+  style (§chat.alignment/style), finds out how the project works today from the project's
+  description and code (outsider view), asks what the person needs, keeps one plan card per need
+  with the `align` tool, draws a wireframe, a flow or a clickable prototype where a picture helps,
+  never promises that or when anything is built, and closes only after repeating the agreed plan
+  back and getting a clear yes from the person who asked. It knows the holder's first name, never
+  that they are the organization's owner. Its tools: `hand_to`, `goal_done`, `record_decision`,
+  `spec_lookup`, `code_read`, the three requirement tools, scoped `show_tour` and `align`; never
+  `propose_roster_edit`, `read_link`, `inspect_files` or `confirm_file`, and, as for every gathering,
+  no built-in, file, shell or subagent tool.
+- **`align`, served by Sova**: the align tool's operations on the same documents (§chat.alignment/tool)
+  except `import`, `status`, `exempt` and the review operations; its schema has no `technical`
+  field, and a call that carries one is refused; visuals are on (§chat.alignment/visuals). Its
+  results are the plans the plan card shows.
+- **Others, when the owner names them.** `hand_to` works as in every gathering (§app.baton/hand-off):
+  the person talking chooses who answers next, and the operator is always reachable. A hand-off to
+  another person mints their link, which the operator sends. The chat stays the owner's: it counts
+  against their one open chat, and only the owner can agree the final plan: `requirements_confirm`
+  and `goal_done` are refused while anyone else holds it ("Only {first}, who asked for this, can
+  agree the plan: hand it back to them first.").
+- **Plan agreed.** `goal_done` after the owner's yes makes it done: the owner page says Plan agreed,
+  its confirmed requirements are in the operator's draft specs (§app.requirements/conversation-drafts),
+  and the request stays With the team. Building it is the operator's own act (Build on the draft
+  spec, §app.requirements/draft-approval); nothing starts coding on its own.
+- **It never ends on its own.** No idle time closes it. It ends when the plan is agreed, when the
+  owner presses End Chat, when the operator closes it, or when its owner stops being the owner.
+- **The operator's side**: an ordinary gathering conversation of the project. Its strip says
+  "Feature request · {owner's first name}" and offers no Hide From (`POST /api/baton/:sid/owner` answers
+  409: "A feature request chat is {first}'s own: it can't be hidden from them."); Take Back, Close
+  Session, Extend and writing in it work as in any gathering (the owner sees the operator's
+  messages under their first name). Needs you: its `feature` request, "{owner} is planning a new
+  feature with the assistant on {project}: {title}" while the chat is open, "{owner} agreed a plan
+  on {project}: {title}" once it is done. The agreed plan is an item of its own (its own id), so
+  having been told about the planning item, or having put it aside, never hides it.
+- **Never to the owner**: technical notes, tool calls or results other than the plan card's
+  allowlisted fields, file names, code, models, costs, the goal and the why.

@@ -67,6 +67,8 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
   { method: "POST", re: new RegExp(`^/i/${TOKEN}/ask-link$`) },
+  // The owner's own feature request chat (§app.project-assistant/feature-chats): a message, and End Chat.
+  { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}/(?:message|end)$`) },
   // The Project Assistant (§app.project-assistant/chat): its view, a message to it; its socket is /ws/i.
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },
   { method: "POST", re: new RegExp(`^/api/i/${TOKEN}/assistant$`) },

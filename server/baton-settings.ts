@@ -138,8 +138,9 @@ export function writeBatonSettings(body: unknown, path = file()): BatonSettings 
   if (photos && "error" in photos) return photos;
   const files = filesOf(b.files);
   if (files && "error" in files) return files;
-  const assistant = assistantOf(b.assistant);
-  if (assistant && "error" in assistant) return assistant;
+  // The Project Assistant's default is never set here: it has its own route, which needs mesh `admin`
+  // (PUT /api/settings/project-assistant, writeAssistantDefault); this one takes `sessions`.
+  if (b.assistant !== undefined) return { error: "assistant is set through PUT /api/settings/project-assistant" };
   let stored: Record<string, unknown> = {};
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
@@ -149,11 +150,33 @@ export function writeBatonSettings(body: unknown, path = file()): BatonSettings 
   }
   const nextPhotos = photos ?? readPhotos(stored.photos);
   const nextFiles = files ?? readFiles(stored.files);
-  const nextAssistant = assistant === undefined ? assistantPickOf(stored.assistant) : assistant;
-  const { assistant: _old, ...rest } = stored;
+  const nextAssistant = assistantPickOf(stored.assistant);
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ ...rest, version: 1, messagesMax: v, photos: nextPhotos, files: nextFiles, ...(nextAssistant ? { assistant: nextAssistant } : {}) }, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify({ ...stored, version: 1, messagesMax: v, photos: nextPhotos, files: nextFiles }, null, 2)}\n`);
   renameSync(tmp, path);
   return { messagesMax: v, photos: nextPhotos, files: nextFiles, assistant: nextAssistant };
+}
+
+/** Set or clear the Project Assistant's default (PUT /api/settings/project-assistant {assistant}); `{ error }`
+    for a bad pick. Every other key is kept (re-read + merge, atomic). */
+export function writeAssistantDefault(body: unknown, path = file()): { assistant: ModelPick | null } | { error: string } {
+  const b = isRecord(body) ? body : {};
+  if (!("assistant" in b)) return { error: "Expected { assistant: {model, thinking?} | null }" };
+  const assistant = assistantOf(b.assistant);
+  if (assistant && "error" in assistant) return assistant;
+  let stored: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    if (isRecord(raw)) stored = raw;
+  } catch {
+    stored = {};
+  }
+  const { assistant: _old, ...rest } = stored;
+  const next = assistant ?? null;
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify({ ...rest, version: 1, ...(next ? { assistant: next } : {}) }, null, 2)}\n`);
+  renameSync(tmp, path);
+  return { assistant: next };
 }

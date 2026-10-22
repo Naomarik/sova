@@ -14,8 +14,10 @@
  * POST /api/baton/:sid/take          -> BatonInfo (Take back: a hand-off to the operator)
  * POST /api/baton/:sid/close         -> BatonInfo
  * POST /api/baton/:sid/extend        body { by } -> BatonInfo (raises the message limit by `by`)
- * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults,
- *                                    the Project Assistant's default model among them)
+ * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults;
+ *                                    GET carries the Project Assistant's default model, which a PUT here refuses)
+ * PUT  /api/settings/project-assistant  body { assistant: ModelPick | null } -> { assistant: PricedPick | null }
+ *                                    (the Project Assistant's default: mesh `admin`, as an org's own pick)
  *
  * Share listener (the only routes it has):
  * GET  /h/<token>                    the share page
@@ -375,7 +377,7 @@ export interface BatonSettings {
   /** Files in gathering chats that take them (§app.baton/files); absent on a PUT keeps what is stored. */
   files: BatonFileSettings;
   /** The host's Project Assistant default model and thinking, every organization's unless it picks its own
-      (§app.project-assistant/models). GET: with its price, or null. PUT: absent keeps it, null clears it. */
+      (§app.project-assistant/models). GET: with its price, or null. Set only through PUT /api/settings/project-assistant. */
   assistant?: PricedPick | null;
 }
 

@@ -454,6 +454,7 @@
     "PUT /api/settings/memory": {"need":"admin","is":"pending"},
     "PUT /api/settings/models": {"need":"admin","is":"pending"},
     "PUT /api/settings/overseer": {"need":"admin","is":"pending"},
+    "PUT /api/settings/project-assistant": {"need":"admin","is":"command","ids":["settings.assistant-default.set"]},
     "PUT /api/settings/provider-limits": {"need":"admin","is":"pending"},
     "PUT /api/settings/session-titles": {"need":"admin","is":"pending"},
     "PUT /api/settings/spec": {"need":"admin","is":"pending"},

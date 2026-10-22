@@ -30,6 +30,7 @@ const pa = await import("./project-assistant");
 const { registerOrgRoutes } = await import("./org-routes");
 const { createShareApp } = await import("./share/routes");
 const { settled } = await import("./workspace-git");
+const mesh = await import("./mesh/access");
 
 after(async () => {
   for (const d of ["ws-a", "ws-b", "ws-c", "ws-photo"]) await settled(join(root, d));
@@ -48,23 +49,26 @@ const app = new Hono();
 registerOrgRoutes(app);
 const putModels = async (orgId: string, models: unknown) =>
   (await (await app.request(`/api/orgs/${orgId}/owner/assistant`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ models }) })).json()) as AssistantInfo;
+/** Settings → Organizations' Save Changes: the default's own route; `undefined` saves the other fields only. */
 const putSettings = (assistant: unknown) =>
-  app.request("/api/baton/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ messagesMax: 60, ...(assistant === undefined ? {} : { assistant }) }) });
+  assistant === undefined
+    ? app.request("/api/baton/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ messagesMax: 60 }) })
+    : app.request("/api/settings/project-assistant", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ assistant }) });
 
 describe("the one resolution: project → org → default (§app.project-assistant/models)", () => {
   beforeEach(() => {
-    settings.writeBatonSettings({ messagesMax: 60, assistant: null });
+    settings.writeAssistantDefault({ assistant: null });
     store.setAssistantModels(orgA.id, { models: { reply: null, coding: null, gathering: null } });
   });
 
   test("nothing set resolves to nothing; a default resolves every kind with source default", () => {
     assert.equal(store.effectiveAssistantModel(orgA.id, "reply"), null);
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: OPUS, thinking: "medium" } });
+    settings.writeAssistantDefault({ assistant: { model: OPUS, thinking: "medium" } });
     for (const k of ["reply", "coding", "gathering"] as const) assert.deepEqual(store.effectiveAssistantModel(orgA.id, k), { pick: { model: OPUS, thinking: "medium" }, source: "default" });
   });
 
   test("the org's own pick wins over the default; a project's override wins for coding and gathering only", () => {
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: OPUS, thinking: "medium" } });
+    settings.writeAssistantDefault({ assistant: { model: OPUS, thinking: "medium" } });
     store.setAssistantModels(orgA.id, { models: { reply: { model: GLM, thinking: "high" }, coding: { model: GLM } } });
     assert.deepEqual(store.effectiveAssistantModel(orgA.id, "reply"), { pick: { model: GLM, thinking: "high" }, source: "org" });
     const override = { reply: { model: SEER }, coding: { model: SEER } };
@@ -74,7 +78,7 @@ describe("the one resolution: project → org → default (§app.project-assista
   });
 
   test("the Owner card's PUT keeps thinking, and a kind's null clears the org's pick so it follows the default", async () => {
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: OPUS, thinking: "medium" } });
+    settings.writeAssistantDefault({ assistant: { model: OPUS, thinking: "medium" } });
     let info = await putModels(orgA.id, { reply: { model: GLM, thinking: "high" } });
     assert.deepEqual({ model: info.models.reply?.model, thinking: info.models.reply?.thinking, source: info.models.reply?.source }, { model: GLM, thinking: "high", source: "org" });
     assert.equal(info.models.coding?.source, "default");
@@ -93,11 +97,11 @@ describe("the one resolution: project → org → default (§app.project-assista
   });
 });
 
-describe("the default in Settings → Organizations (PUT /api/baton/settings)", () => {
+describe("the default in Settings → Organizations (PUT /api/settings/project-assistant)", () => {
   test("a bad model or thinking is refused (400); absent keeps the stored default; null clears it", async () => {
     assert.equal((await putSettings({ model: "no-slash" })).status, 400);
     assert.equal((await putSettings({ model: GLM, thinking: "loud" })).status, 400);
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: GLM } });
+    settings.writeAssistantDefault({ assistant: { model: GLM } });
     assert.equal((await putSettings(undefined)).status, 200);
     assert.equal(settings.assistantDefault()?.model, GLM);
     const got = (await (await app.request("/api/baton/settings")).json()) as { assistant: { model: string } | null };
@@ -133,7 +137,7 @@ describe("the first default adopts exactly-matching picks, once", () => {
 describe("ready = resolved, runnable here, and allowed by Settings → Models", () => {
   test("a default turned off in Settings → Models leaves orgs that follow it not ready; one this host can't run too", async () => {
     store.setAssistantModels(orgC.id, { models: { reply: null } });
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: GLM, thinking: "high" } });
+    settings.writeAssistantDefault({ assistant: { model: GLM, thinking: "high" } });
     assert.deepEqual(await ready.assistantReplyState(orgC.id), { pick: { model: GLM, thinking: "high" }, source: "default", ready: true, problem: null, images: false });
     policy.writeModelPolicy({ disabledProviders: [], disabledModels: [GLM], subagentDisabledProviders: [], subagentDisabledModels: [] });
     assert.equal(await ready.assistantReady(orgC.id), false);
@@ -141,7 +145,7 @@ describe("ready = resolved, runnable here, and allowed by Settings → Models", 
     assert.equal((await putModels(orgC.id, {})).ready, false);
     policy.writeModelPolicy({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] });
     assert.equal(await ready.assistantReady(orgC.id), true);
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: "gone/model" } });
+    settings.writeAssistantDefault({ assistant: { model: "gone/model" } });
     assert.equal((await ready.assistantReplyState(orgC.id))?.problem, "unavailable");
     assert.equal(await ready.assistantReady(orgC.id), false);
   });
@@ -154,7 +158,8 @@ describe("an org with no picks follows a vision default into the owner's photos 
     await owner.setOwner(org.id, alp.id);
     const { token } = plinks.mintOwnerLink(org.id, alp.id);
     assert.deepEqual(store.readAssistantStore(org.id).models, {});
-    settings.writeBatonSettings({ messagesMax: 60, photos: { ...PHOTO_DEFAULTS, enabled: true }, assistant: { model: SEER } });
+    settings.writeBatonSettings({ messagesMax: 60, photos: { ...PHOTO_DEFAULTS, enabled: true } });
+    settings.writeAssistantDefault({ assistant: { model: SEER } });
     const view = await pa.assistantView(org.id);
     assert.equal(view.ready, true);
     assert.deepEqual(view.photos, { perMessage: PHOTO_DEFAULTS.perMessage, maxBytes: PHOTO_DEFAULTS.maxBytes });
@@ -166,15 +171,45 @@ describe("an org with no picks follows a vision default into the owner's photos 
     const r = await upload();
     assert.equal(r.status, 201, await r.clone().text());
     // A default without vision: no paperclip, and the upload refuses a photo.
-    settings.writeBatonSettings({ messagesMax: 60, assistant: { model: GLM } });
+    settings.writeAssistantDefault({ assistant: { model: GLM } });
     assert.equal((await pa.assistantView(org.id)).photos, undefined);
     const no = await upload();
     assert.equal(no.status, 409);
     assert.equal(((await no.json()) as { code: string }).code, "no-photos");
     // No default at all: not ready.
-    settings.writeBatonSettings({ messagesMax: 60, assistant: null });
+    settings.writeAssistantDefault({ assistant: null });
     const nr = await upload();
     assert.equal(nr.status, 409);
     assert.equal(((await nr.json()) as { code: string }).code, "not-ready");
+  });
+});
+
+describe("changing the default needs mesh admin (§app.project-assistant/models, §mesh.peers/grants)", () => {
+  /** A peer's request, gated exactly as the peer listener gates it (server/mesh/listener.ts), then the real route. */
+  const asPeer = async (node: string, method: string, path: string, body: unknown): Promise<number> => {
+    if (!mesh.allows(node, mesh.classifyRequest(method, path).need)) return 403;
+    return (await app.request(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).status;
+  };
+  test("a sessions peer can't change it by any settings route, and still saves the other baton settings; admin and full peers can", async () => {
+    mesh.writeAccess({ version: 1, peers: { reader: { preset: "sessions" }, administrator: { preset: "sessions", caps: { admin: true } }, operator: { preset: "full" } } } as never);
+    mesh.resetAccessCache();
+    try {
+      settings.writeAssistantDefault({ assistant: { model: GLM, thinking: "high" } });
+      // The sessions preset: refused on the default's own route, and the baton route never takes `assistant`.
+      assert.equal(await asPeer("reader", "PUT", "/api/settings/project-assistant", { assistant: { model: SEER } }), 403);
+      assert.notEqual(await asPeer("reader", "PUT", "/api/baton/settings", { messagesMax: 60, assistant: { model: SEER } }), 200);
+      assert.deepEqual(settings.assistantDefault(), { model: GLM, thinking: "high" }, "the default is unchanged");
+      assert.equal(await asPeer("reader", "PUT", "/api/baton/settings", { messagesMax: 45 }), 200, "the other baton settings still save with sessions");
+      assert.equal(settings.readBatonSettings().messagesMax, 45);
+      // Admin (a switch on top of sessions) and full: allowed.
+      assert.equal(await asPeer("administrator", "PUT", "/api/settings/project-assistant", { assistant: { model: SEER } }), 200);
+      assert.equal(settings.assistantDefault()?.model, SEER);
+      assert.equal(await asPeer("operator", "PUT", "/api/settings/project-assistant", { assistant: null }), 200);
+      assert.equal(settings.assistantDefault(), null);
+    } finally {
+      mesh.writeAccess({ version: 1, peers: {} } as never);
+      mesh.resetAccessCache();
+      settings.writeBatonSettings({ messagesMax: 60 });
+    }
   });
 });

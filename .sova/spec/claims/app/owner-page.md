@@ -335,8 +335,16 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **The Owner card's Project Assistant part** (§app/project-assistant): one line, "{n} open
   requests from {first name}", linking to the org's Requests tab (§app.project-assistant/requests-tab),
   which lists them and answers them, in place of a list here; `Open Assistant Chat` once the conversation exists; its models
-  per kind of work (reply, coding, gathering), each with its price and, for coding and gathering,
-  whether a project overrides it (§app.project-assistant/models); and, per project, its Project
+  (§app.project-assistant/models) as two rows, `Its replies` and `Fixes it starts` (the gatherings
+  row is not shown; its pick is kept), each saying where its model comes from, the model and its
+  thinking level ("Default · Opus 5.5 · medium", "This organization · glm-5.3 · high") and its
+  price, with `Change`, which opens the chat composer's model picker (the model row and its
+  thinking ladder, then providers and models: favorites, search, the vision tag, models Settings →
+  Models turned off left out) and saves the model and thinking at once, and, only on the
+  organization's own pick, `Use Default`, which clears it. With no default and no pick the row says
+  "Not set. Set a default in Settings → Organizations.", linking there. A reply model this host can't
+  run or Settings → Models turned off is said under its row; for fixes, a project that overrides it
+  is named; and, per project, its Project
   Assistant column of power switches (§app.project-overseer/autonomy-levels; its copy
   §design.copy-deck/project-powers), the same control as the project page's, with one line under
   them saying the owner sees what these let the assistant do, in plain words, on their page

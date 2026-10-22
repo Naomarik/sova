@@ -1,5 +1,4 @@
 import { createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js";
-import { modelLabel, modelProvider } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
 import { useHostScope } from "../lib/host-scope";
 import { SANDBOX_ROWS, sandboxStateOf, type SandboxState } from "../lib/sandbox";
@@ -7,10 +6,11 @@ import { loginMenu, resendNote } from "../lib/claude-login";
 import type { ContextState } from "../lib/context";
 import type { ChatClaudeLogin, ClaudeAccountsInfo, SandboxInfo } from "../../shared/protocol";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
+import { modelPanelRows, type FlyoutRow } from "./ModelPickButton";
 import { usePaneId } from "../lib/pane-scope";
 import { bindKey } from "../commands/keys";
 import { paletteRequest } from "../commands/palette-open";
-import { Icon, type IconName } from "./ui";
+import { Icon } from "./ui";
 
 /** What the chat view exposes so the flyout can show and change this session's thinking level. */
 export interface ThinkingControl {
@@ -80,27 +80,7 @@ export interface ComposerMenuApi {
 }
 
 /** One row of a panel. Rendering order is this array's order, separators included. */
-interface Row {
-  id: string;
-  role: "menuitem" | "menuitemradio" | "menuitemcheckbox";
-  icon?: IconName;
-  label: string;
-  /** The model row's current id, in mono, after the label. */
-  value?: string;
-  /** The model row's provider, muted, after the value. */
-  meta?: string;
-  /** A submenu row (the model panel). */
-  chevron?: boolean;
-  checked?: boolean;
-  busy?: boolean;
-  disabled: boolean;
-  title?: string;
-  /** Shares the composer's reason line, so a disabled row reads out why. */
-  describe?: boolean;
-  /** The login panel's account group the row sits in. */
-  group?: string;
-  run(): void;
-}
+type Row = FlyoutRow;
 
 /**
  * The composer's `plus` button and its flyout: one native popover anchored ABOVE whatever opened
@@ -170,47 +150,12 @@ export function ComposerMenu(props: {
     }));
   });
 
-  /** The indicator's panel: what the composer's model indicator says, and how to change it. */
+  /** The indicator's panel: what the composer's model indicator says, and how to change it (the
+      rows are shared with the Project Assistant's model control, ModelPickButton.tsx). */
   const modelRows = createMemo<Row[]>(() => {
-    const out: Row[] = [];
     const model = props.model;
-    if (!model) return out;
-    const pending = model.pending();
-    const ref = pending ?? model.model();
-    out.push({
-      id: "model",
-      role: "menuitem",
-      icon: "worker",
-      label: "Model",
-      value: modelLabel(ref) ?? "Choose model",
-      meta: ref ? modelProvider(ref) || undefined : undefined,
-      chevron: true,
-      busy: !!pending,
-      disabled: !!pending,
-      title: pending ?? model.model() ?? "Choose model",
-      run: () => openPanel("picker"),
-    });
-
-    const thinking = props.thinking;
-    if (thinking && showThinking()) {
-      const why = thinking.blocked();
-      const pendingLevel = thinking.pending();
-      for (const level of levels())
-        out.push({
-          id: `thinking-${level}`,
-          role: "menuitemradio",
-          label: level,
-          checked: level === (thinking.level() ?? ""),
-          busy: level === pendingLevel,
-          disabled: !!why || !!pendingLevel,
-          title: why ?? undefined,
-          run: () => {
-            if (why || pendingLevel || level === thinking.level()) return;
-            thinking.choose(level); // the radio follows the server's echo, which may clamp it
-          },
-        });
-    }
-    return out;
+    if (!model) return [];
+    return modelPanelRows({ model, thinking: props.thinking, levels: showThinking() ? levels() : [], openPicker: () => openPanel("picker") });
   });
 
   /** The login label's panel: every login by account, the waiting pick and its Cancel. */

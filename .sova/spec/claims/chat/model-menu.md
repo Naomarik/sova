@@ -98,6 +98,11 @@ The picker has two steps in one panel, **Providers** (what the Model row and `Ct
 - **Mechanism.** The flyout owns the popover; this panel is what's inside it (§chat.composer/composer-flyout has the anchoring, the resize rule, and the `Back` affordance). Mounting the
   panel re-fetches the list and shows the cached one meanwhile; the cache is shared with the
   Thinking group, which reads the same models to know their ladders (`src/lib/models.ts`).
+  The same model panel and picker, in a popover of their own anchored to a `Change` button, are the
+  Project Assistant's model control (§app.project-assistant/models: Settings → Organizations and the
+  Owner card): there the Model row and the ladder pick a value for that setting instead of the
+  session's, the ladder is the picked model's, a level the new model lacks is cleared, and the
+  composer's own flyout is unchanged.
 - **Positioning.**
   - At ≥768 (e.g. 1440) the flyout is 360px wide (or the viewport minus 32px) with
     `max-height: min(440px, 70dvh)`, `--r-md` and `--shadow-2`, sitting above the trigger. The

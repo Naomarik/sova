@@ -11,6 +11,7 @@ import { OVERSEER_HASH, overseerHistoryHref } from "./overseer";
 export function starterName(s: Pick<BatonStarted, "who">, projectName: string): string {
   if (s.who === "project-overseer") return projectName ? `the ${projectName} overseer` : "the project's overseer";
   if (s.who === "overseer") return "you, via the Overseer";
+  if (s.who === "assistant") return "the Project Assistant";
   return "you";
 }
 

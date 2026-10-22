@@ -218,6 +218,8 @@ const ids = (): string[] => [
 // The Project Assistant's records: its models (a marker), one owner request (its id must never show).
 const paStore = await import("./project-assistant-store");
 paStore.setAssistantModels(org.id, { models: { reply: { model: M.assistantModel }, coding: { model: M.assistantModel } } });
+// Readiness asks whether this host runs the reply model: here it does (no real model runtime in this test).
+(await import("./project-assistant-ready")).setAssistantModelListForTests(async () => [{ ref: M.assistantModel }]);
 const ownerReq = paStore.fileRequest(org.id, { projectId: pa.id, kind: "bug", title: "The booking form is slow", text: "It takes a minute." });
 const idsWithRequest = () => [...ids(), ownerReq.id];
 
@@ -302,8 +304,9 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     assert.ok(home.abilities, "control: abilities on Home");
     assert.deepEqual(Object.keys(home.abilities!).sort(), ["photos", "projects"]);
     for (const a of home.abilities!.projects) {
-      assert.deepEqual(Object.keys(a).sort(), ["fix", "project", "release", "version"]);
+      assert.deepEqual(Object.keys(a).sort(), ["feature", "fix", "project", "release", "version"]);
       for (const k of ["fix", "release"] as const) assert.ok(["now", "held", "team"].includes(a[k]), `${k}: ${a[k]}`);
+      assert.ok(["now", "team"].includes(a.feature ?? ""), `feature: ${a.feature}`);
       assert.ok(["now", "held", "team", "none"].includes(a.version));
     }
     // Control: the operator's own view of the switches carries the ids and labels.

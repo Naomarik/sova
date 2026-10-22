@@ -99,3 +99,19 @@ test("the assistant's own list (owner page card): only acts it can ever set, gro
   assert.ok(!g.some((x) => x.id === "spec"), "Spec has no assistant act");
   for (const x of g) assert.notEqual(cellState(x.acts, off(), "assistant"), "none");
 });
+
+test("the gathering power reads as feature request chats in the Project Assistant column only (t12)", async () => {
+  const { powerOffSentence, powerWord } = await import("../../shared/powers");
+  assert.match(powerOffSentence("gather", "assistant"), /feature request/);
+  assert.match(powerOffSentence("gather", "assistant"), /^Open feature request chats with the owner is off for the Project Assistant\./);
+  assert.match(powerOffSentence("gather", "overseer"), /^Start, offer and close gatherings is off for the overseer on its own\./);
+  assert.equal(powerWord("gather", "assistant"), "Open feature request chats with the owner (the Project Assistant's switch)");
+  assert.equal(powerWord("gather", "overseer"), "Start, offer and close gatherings (the overseer's switch)");
+  // A power with no assistant label keeps its own words in both columns.
+  assert.match(powerOffSentence("codingStart", "assistant"), /^Start coding sessions is off for the Project Assistant\./);
+  // The grid keeps the overseer's label on the row and carries the assistant's; the owner card's list uses the assistant's.
+  const row = powerGroups(view(true)).flatMap((g) => g.acts).find((a) => a.id === "gather")!;
+  assert.equal(row.label, "Start, offer and close gatherings");
+  assert.equal(row.assistantLabel, "Open feature request chats with the owner");
+  assert.equal(assistantGroups(view(true)).flatMap((g) => g.acts).find((a) => a.id === "gather")!.label, "Open feature request chats with the owner");
+});

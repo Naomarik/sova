@@ -20,7 +20,7 @@ When an action is off, it stays visible with its reason, such as "Stop the curre
 
 ## Rewind
 
-**Rewind** under one of your messages takes the session back to just before it. That message and every reply after it leave the branch, and its text comes back into the composer, ahead of any draft, so you can edit and send it again. Attached images aren't handed back.
+**Rewind** under one of your messages takes the session back to just before it. That message and every reply after it leave the branch, and its text comes back into the composer, ahead of any draft, so you can edit and send it again. Attached images aren't handed back. A message another session sent comes back as its text alone, without the line that names the sender.
 
 It asks first: the first press shows "This message and every reply after it leave the branch. The session file keeps them." with **Rewind Here** and **Cancel**. Nothing is deleted; the session file still holds the turns you took back.
 
@@ -29,7 +29,7 @@ Rewind won't stop a running turn for you. It's off while a turn or a compaction 
 The same rewind is in two more places:
 
 - **Undo last turn** in the composer's `+` menu goes back one message without leaving the composer.
-- The session pane's **Timeline** lists your messages, each with its own Rewind. Type `/tree` in the composer to open it filtered to your messages.
+- The session pane's **Timeline** lists every message sent to the session, each with its own Rewind. One that another session, the Overseer or a teammate sent has a line above it naming who sent it, such as "From the Overseer". Type `/tree` in the composer to open it filtered to the messages you typed, with **Inputs Only**. That filter, and the composer's "{n} inputs" count, leave out what others sent and scheduled wake-ups.
 
 ## Regenerate
 
@@ -60,6 +60,12 @@ Press the model name at the left of the composer's foot, then **Model**, or pres
 - **Only models you allow.** A model turned off in Settings → Models isn't listed.
 
 When the switch lands, Sova says "Model changed to {model}." If it fails, a banner says why and that you're still on the previous model.
+
+## Focus on the conversation
+
+The **Focus** button, four corners in the transcript's bottom-right corner, leaves only the conversation on screen: the header shrinks to the session's title (and Back, on a narrow window), and the strips under it and the composer go away. Press it again to bring them back. A half-written message and its attachments are kept exactly as they were. Notices that something is wrong, such as a lost connection, still show.
+
+Focus is one choice for this browser: it stays on as you switch sessions and after a reload, until you press the button again. It's in every single-chat screen, the Overseer's included, but not in a workspace pane.
 
 ## Follow the work as it happens
 

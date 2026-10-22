@@ -65,7 +65,7 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, focusMoving, focusView, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
@@ -1115,6 +1115,10 @@ export function App() {
         data-spine={collapsed() ? "on" : undefined}
         data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || projectsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
+        /* Focus (§chat.transcript/focus-view): app.css hides the chat's chrome under it, on a
+           single-chat screen only; data-focus-moving is the moment its collapse animates. */
+        data-focus={focusView() ? "on" : undefined}
+        data-focus-moving={focusMoving() ? "" : undefined}
       >
         <Sidebar
           unfolded={unfolded()}

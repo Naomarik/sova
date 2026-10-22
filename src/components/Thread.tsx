@@ -10,13 +10,13 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
 import { stripPastedPaths } from "../lib/path-attachments";
-import { home } from "../lib/ui-state";
+import { focusView, home, setFocusView } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
-import { usePaneId } from "../lib/pane-scope";
+import { usePaneId, usePaneScope } from "../lib/pane-scope";
 import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
@@ -1489,6 +1489,8 @@ export function ThreadScroller(props: {
   note?: JSX.Element;
 }) {
   const paneId = usePaneId();
+  /** THE view, not a workspace pane: only it has the Focus button. */
+  const single = usePaneScope().id === null;
   let el!: HTMLElement;
   let follow = true;
   const [away, setAway] = createSignal<number | null>(null); // count when the user scrolled away
@@ -2136,8 +2138,32 @@ export function ThreadScroller(props: {
         <Icon name="chevron-down" small />
         {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
       </button>
+      {/* The single view only: a workspace pane has no Focus (§chat.transcript/focus-view). */}
+      <Show when={single}>
+        <FocusToggle />
+      </Show>
       {props.note}
     </div>
+  );
+}
+
+/**
+ * Focus (§chat.transcript/focus-view): one round icon button in the transcript's bottom-right
+ * corner. On, the stylesheet hides the head's extras, the strips under it and the composer (kept
+ * mounted, inert, so its draft survives); the button stays in its corner.
+ */
+export function FocusToggle() {
+  return (
+    <button
+      type="button"
+      class="button focus-toggle"
+      aria-pressed={focusView() ? "true" : "false"}
+      aria-label="Focus"
+      title="Focus"
+      onClick={() => setFocusView(!focusView())}
+    >
+      <Icon name="expand" small />
+    </button>
   );
 }
 

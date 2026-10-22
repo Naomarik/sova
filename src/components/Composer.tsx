@@ -42,6 +42,7 @@ import {
   draftAttachments,
   drafts,
   flushDrafts,
+  focusView,
   loadDraft,
   openLightbox,
   setDraftAttachments,
@@ -1034,6 +1035,9 @@ export function Composer(props: {
   return (
     <footer
       class="composer"
+      // Focus hides the single view's composer but keeps it, draft and all (§chat.transcript/focus-view):
+      // inert, so nothing in it takes focus or a press while it is out of sight.
+      inert={focusView() && scope.id === null ? true : undefined}
       data-drop={drop() ?? undefined}
       onDragOver={(e) => {
         if (disabled() || !e.dataTransfer?.types.includes("Files")) return;

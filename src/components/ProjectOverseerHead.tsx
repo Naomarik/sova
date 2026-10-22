@@ -333,7 +333,7 @@ export function ProjectOverseerHead(props: {
         fallback={
           <Show when={c.error()}>
             {(e) => (
-              <section class="po-status" aria-label="Overseer status">
+              <section class="po-status po-status-error" aria-label="Overseer status">
                 <p class="po-status-line">
                   Couldn't read its status. {e()}{" "}
                   <button type="button" class="button button-sm button-ghost" onClick={() => c.refetch()}>

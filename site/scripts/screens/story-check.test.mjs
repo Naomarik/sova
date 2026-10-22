@@ -66,7 +66,7 @@ test("an enum error lists the allowed values", async () => {
 
 test("a shot names a viewport the story defines", async () => {
   const out = await broken((s) => s.replace('"viewport": "fold"', '"viewport": "flod"'));
-  assert.match(out, /\/shots\/1\/viewport: unknown viewport "flod" \(did you mean "fold"\? viewports are: desktop, compact, fold, phone, video\)/);
+  assert.match(out, /\/shots\/1\/viewport: unknown viewport "flod" \(did you mean "fold"\? viewports are: desktop, compact, compact-wide, fold, phone, video\)/);
 });
 
 test("a dangling reference is named", async () => {

@@ -64,7 +64,8 @@ marked read first. The agent reads the ones
 marked first. The line comes once, and again only when a later edit lands in other claims.
 
 When the work is done, the agent checks each promise it changed against what it built, records
-what it checked, and promotes the drafts it verified. The session promotes its own drafts.
+what it checked, and promotes the drafts it verified. The session promotes its own drafts, on its own
+branch, before it calls that branch ready to land: nothing that lands the branch promotes them.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,
 and the "Also updates" line is the only spec line a reply carries; nothing checks it.

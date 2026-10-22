@@ -28,7 +28,7 @@ Documentation changes only through drafts, never by editing current `claims/` or
 
 Before finishing:
 - Read each § the census note's `Unread § your change landed in` line (once, after your last edit) marks read first; its `census --changed --related` command lists the rest. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd.
-- Before promoting, read `$core/../PROMOTE.md`; promote what you verified, or say in your reply why not.
+- Before promoting, read `$core/../PROMOTE.md`; promote what you verified, or say in your reply why not. Promote on your own branch before you call it ready to land; nothing at landing promotes for you.
 
 The task's go-ahead authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start. It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes. Review packets: `sova-spec-review.mjs`, see `$core/../README.md`. No check, record, evidence or promotion proves correctness; no tool checks meaning.
 

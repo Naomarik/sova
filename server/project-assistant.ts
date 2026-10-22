@@ -22,9 +22,12 @@ import { conversationOf, readAssistantStore, setConversation } from "./project-a
 import { pathOfId } from "./session-prompt";
 import { markSeen } from "./seen";
 import { cleanSessionTitle, setSessionTitle } from "./session-titles";
-import { outsiderRedactor } from "./share/hub";
+import { markupBackstop, redactPhrases } from "./baton-view";
+import { onShareChange, onShareStream, outsiderRedactor } from "./share/hub";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
+import { batonById } from "./baton";
+import { handleOf } from "./person-links";
 
 /**
  * The Project Assistant's conversations (§app.project-assistant/chat): one per org and owner, a
@@ -136,14 +139,23 @@ export function assistantPhotos(branch: readonly HEntry[]): { data: string; mime
  * them in conversation order, as assistantPhotos does), never bytes; an assistant message after a
  * start_version that named a version carries `versionHandles`, resolved to rows by assistantView.
  */
-export function assistantMessages(orgId: string, branch: readonly HEntry[]): (AssistantMessage & { versionHandles?: string[] })[] {
+type RawMessage = AssistantMessage & { versionHandles?: string[]; featureSession?: string };
+
+/** The feature request chat a start_feature_chat result opened (its details' session id), or null. */
+const featureOfDetails = (d: unknown): string | null => {
+  const v = d && typeof d === "object" ? (d as { featureChat?: unknown }).featureChat : undefined;
+  return typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : null;
+};
+
+export function assistantMessages(orgId: string, branch: readonly HEntry[]): RawMessage[] {
   const marks = stateView(branch);
   const r = outsiderRedactor(orgId);
   const op = firstOf(operatorName());
-  const out: (AssistantMessage & { versionHandles?: string[] })[] = [];
+  const out: RawMessage[] = [];
   let n = 0;
   let photo = 0;
   let started: string[] = [];
+  let feature: string | null = null;
   for (const e of branch) {
     if (e.kind === "user") {
       const text = joinedText(e, { images: false }).trim();
@@ -155,18 +167,30 @@ export function assistantMessages(orgId: string, branch: readonly HEntry[]): (As
     } else if (e.kind === "tool-result") {
       const v = e.tool === START_VERSION && !e.isError ? versionOfDetails(e.details) : null;
       if (v && !started.includes(v)) started.push(v);
+      const f = e.tool === "start_feature_chat" && !e.isError ? featureOfDetails(e.details) : null;
+      if (f) feature = f;
     } else if (e.kind === "assistant") {
       const text = joinedText(e, { images: false }).trim();
       if (!text) continue;
-      out.push({ n: ++n, role: "assistant", text: r.redact(r.said(text)), at: e.at ?? "", ...(started.length ? { versionHandles: started } : {}) });
+      out.push({ n: ++n, role: "assistant", text: r.redact(r.said(text)), at: e.at ?? "", ...(started.length ? { versionHandles: started } : {}), ...(feature ? { featureSession: feature } : {}) });
       started = [];
+      feature = null;
     }
   }
   return out.slice(-VIEW_MESSAGES);
 }
 
-/** Each message's version handles as rows, resolved now (state included); a version no longer listed is dropped. */
-async function withVersions(orgId: string, msgs: (AssistantMessage & { versionHandles?: string[] })[]): Promise<AssistantMessage[]> {
+/** Each message's version handles as rows, resolved now (state included); a version no longer listed is dropped. A
+    feature request chat it opened becomes its `Open Feature Chat` row while it is the current owner's to read
+    (§app.project-assistant/feature-chats); its session id never leaves. */
+async function withVersions(orgId: string, msgs: RawMessage[]): Promise<AssistantMessage[]> {
+  const { ownersFeatureChat } = await import("./feature-chats");
+  const ownerId = ownerOf(orgId)?.id ?? null;
+  const featureRow = (sid: string | undefined): AssistantMessage["featureChat"] | undefined => {
+    if (!sid || !ownerId || !ownersFeatureChat(orgId, sid, ownerId)) return undefined;
+    const row = batonById(sid)?.row;
+    return row ? { conversation: handleOf("k", sid), title: outsiderRedactor(orgId).redact(row.publicTitle) } : undefined;
+  };
   const r = outsiderRedactor(orgId);
   const rows = new Map<string, OwnerVersionRow | null>();
   for (const m of msgs)
@@ -175,9 +199,10 @@ async function withVersions(orgId: string, msgs: (AssistantMessage & { versionHa
         const v = await ownerVersionOf(orgId, h).catch(() => null);
         rows.set(h, v ? (versionRows([v], r)[0] ?? null) : null);
       }
-  return msgs.map(({ versionHandles, ...m }) => {
+  return msgs.map(({ versionHandles, featureSession, ...m }) => {
     const versions = (versionHandles ?? []).map((h) => rows.get(h)).filter((x): x is OwnerVersionRow => !!x);
-    return versions.length ? { ...m, versions } : m;
+    const featureChat = featureRow(featureSession);
+    return { ...m, ...(versions.length ? { versions } : {}), ...(featureChat ? { featureChat } : {}) };
   });
 }
 
@@ -350,6 +375,44 @@ export function endAssistantStream(orgId: string, path: string): void {
   lastStream.delete(path);
   refreshAssistant(orgId);
 }
+
+// ---- the owner's feature request chats on the same socket (§app.project-assistant/feature-chats) ----------------
+
+/** The org and the owner's handle of a feature request chat the current owner opened, or null. */
+async function ownersChat(sessionId: string): Promise<{ orgId: string; handle: string; publicTitle: string } | null> {
+  const row = batonById(sessionId)?.row;
+  if (!row || !sockets.has(row.orgId)) return null;
+  const owner = ownerOf(row.orgId)?.id;
+  const { ownersFeatureChat } = await import("./feature-chats");
+  return owner && ownersFeatureChat(row.orgId, sessionId, owner) ? { orgId: row.orgId, handle: handleOf("k", sessionId), publicTitle: row.publicTitle } : null;
+}
+
+const conversationPending = new Set<string>();
+onShareChange((sessionId) => {
+  if (conversationPending.has(sessionId)) return;
+  conversationPending.add(sessionId);
+  setTimeout(() => {
+    conversationPending.delete(sessionId);
+    void ownersChat(sessionId).then((hit) => {
+      if (!hit) return;
+      for (const w of sockets.get(hit.orgId) ?? []) send(w.socket, { type: "conversation", conversation: hit.handle });
+    });
+  }, 60).unref?.();
+});
+
+const lastConversationStream = new Map<string, number>();
+onShareStream((sessionId, text) => {
+  const now = Date.now();
+  if (now - (lastConversationStream.get(sessionId) ?? 0) < 100) return;
+  lastConversationStream.set(sessionId, now);
+  void ownersChat(sessionId).then((hit) => {
+    if (!hit) return;
+    // Filtered as a hand-off page's streaming text: the secret redactor, the profile phrases, the markup backstop.
+    const r = outsiderRedactor(hit.orgId, [hit.publicTitle]);
+    const out = markupBackstop(redactPhrases(r.redact(text), r.phrases), r.phrases);
+    for (const w of sockets.get(hit.orgId) ?? []) send(w.socket, { type: "conversation-streaming", conversation: hit.handle, text: out });
+  });
+});
 
 /** Close every socket of an org whose token no longer opens (a sweep calls it with the check). */
 export function sweepAssistantSockets(alive: (token: string) => boolean): number {

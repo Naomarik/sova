@@ -245,7 +245,11 @@ user row.
   The Project Assistant column exists only for `gather`, `codingStart`, `codingPrompt`, `copiesRun`
   and `deploy`; every other power is always Off there, and a patch turning one On is refused (400).
   There, `copiesRun` means starting a copy the owner's versions list holds (`start_version`,
-  §app.project-assistant/tools); it never makes or updates a copy.
+  §app.project-assistant/tools); it never makes or updates a copy. And `gather` means opening a
+  feature request chat with the owner (`start_feature_chat`, §app.project-assistant/feature-chats):
+  in that column its row reads "Open feature request chats with the owner" (`POWER_INFO.gather.assistantLabel`),
+  and its refusals and history lines use that label; the overseer's column keeps "Start, offer
+  and close gatherings".
 - **Always allowed, in both columns, and never braked:** reading the project and its sessions,
   keeping notes, filing ideas and gaps, asking with a card, planning a gathering for later, sorting
   decisions into drafts (the reconciler), writing requirements into a spec draft, cancelling a held
@@ -321,7 +325,9 @@ user row.
   never uses the operator's message allowance. **Looks**: at most 12 unattended runs a day
   (`unattendedPerDay`).
 - **At once**, for both kinds of turn: 5 of its gathering sessions open (0–20) and 2 of its coding
-  sessions running (0–10).
+  sessions running (0–10). Its gathering sessions are the ones its overseer started and the feature
+  request chats the Project Assistant opened (§app.project-assistant/feature-chats); the operator's
+  own never count.
 - **No token budget.** The coding token budget is gone: nothing refuses on tokens or cost. A
   `tokenBudget` in an older `overseer.json` is ignored on read and dropped at the next save; a
   PATCH carrying one ignores it. An older Sova on another host reads the missing key as its own
@@ -1045,7 +1051,8 @@ user row.
 ## §app.project-overseer/statecharts — The org statecharts: where every lifecycle lives
 
 - **The statecharts are the state.** Every lifecycle and every link of an organization's work is a
-  statechart session, and nothing else stores it: the org (its owner), each person (proposed,
+  statechart session, and nothing else stores it: the org (its owner, and its owner's page link sent
+  to them on WhatsApp, `owner/send-link`, §app.owner-page/send), each person (proposed,
   active, left, and a referral), each project (archived, its overseer, its main stakeholder, its
   owner updates, and every WhatsApp send to its people, `outreach/send`, §app.outreach/send), each gathering session (holder, hand-offs, offers and leases, the message
   budget, the reply running, the wrap-up), each decision, each conflict, each project's

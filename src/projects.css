@@ -132,6 +132,7 @@
 .powers-acts { padding-bottom: var(--space-2); }
 .powers-act { padding-left: calc(16px + var(--space-2)); }
 .powers-act .powers-label { color: var(--color-ink-2); padding: var(--space-1) 0; }
+.powers-act .powers-alt { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .powers-switch { justify-content: flex-end; gap: var(--space-2); }
 /* "—": a tooltip trigger (base.css .tip), 44px square, under the switches' knobs. A dotted underline
    under a dash reads as a second dash, so this trigger goes without it (cursor and bubble remain). */

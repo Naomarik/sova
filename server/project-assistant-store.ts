@@ -7,6 +7,7 @@ import {
   OWNER_REQUEST_TEXT_MAX,
   OWNER_REQUEST_TITLE_MAX,
   type AssistantStore,
+  type FeatureChatRecord,
   type OwnerRequest,
   type OwnerRequestKind,
   type OwnerRequestStatus,
@@ -48,7 +49,8 @@ export function readAssistantStore(orgId: string): AssistantStore {
     const raw = JSON.parse(readFileSync(storeFile(orgId), "utf8"));
     const conversations: Record<string, string> = {};
     if (isObj(raw?.conversations)) for (const [k, v] of Object.entries(raw.conversations)) if (SAFE_ID.test(k) && typeof v === "string" && v) conversations[k] = v;
-    return { version: 1, models: modelsOf(raw?.models), conversations };
+    const featureChats = Array.isArray(raw?.featureChats) ? (raw.featureChats as unknown[]).map(featureChatOf).filter((r): r is FeatureChatRecord => !!r) : [];
+    return { version: 1, models: modelsOf(raw?.models), conversations, ...(featureChats.length ? { featureChats } : {}) };
   } catch {
     return { version: 1, models: {}, conversations: {} };
   }
@@ -85,6 +87,37 @@ export function setAssistantModels(orgId: string, body: unknown): AssistantStore
   }
   writeStore(orgId, s);
   return s;
+}
+
+function featureChatOf(v: unknown): FeatureChatRecord | null {
+  if (!isObj(v)) return null;
+  const ok = (k: string) => typeof v[k] === "string" && SAFE_ID.test(v[k] as string);
+  if (!ok("sessionId") || !ok("personId") || !ok("projectId") || !ok("requestId") || typeof v.at !== "string") return null;
+  const e = isObj(v.ended) && typeof v.ended.at === "string" && (v.ended.why === "owner-changed" || v.ended.why === "left") ? { at: v.ended.at, why: v.ended.why as "owner-changed" | "left" } : undefined;
+  return { sessionId: v.sessionId as string, personId: v.personId as string, projectId: v.projectId as string, requestId: v.requestId as string, at: v.at, ...(e ? { ended: e } : {}) };
+}
+
+/** The feature request chats the assistant opened (§app.project-assistant/feature-chats), oldest first. */
+export const featureChats = (orgId: string): FeatureChatRecord[] => readAssistantStore(orgId).featureChats ?? [];
+
+/** The record of one feature request chat, or null. */
+export const featureChatRecord = (orgId: string, sessionId: string): FeatureChatRecord | null => featureChats(orgId).find((r) => r.sessionId === sessionId) ?? null;
+
+/** Record a new feature request chat. */
+export function addFeatureChat(orgId: string, rec: FeatureChatRecord): void {
+  const s = readAssistantStore(orgId);
+  s.featureChats = [...(s.featureChats ?? []).filter((r) => r.sessionId !== rec.sessionId), rec];
+  writeStore(orgId, s);
+}
+
+/** Note why a feature request chat ended because its person stopped being the owner. */
+export function endFeatureChatRecord(orgId: string, sessionId: string, why: "owner-changed" | "left", now = Date.now()): void {
+  const s = readAssistantStore(orgId);
+  const r = s.featureChats?.find((x) => x.sessionId === sessionId);
+  if (!r || r.ended) return;
+  r.ended = { at: new Date(now).toISOString(), why };
+  writeStore(orgId, s);
+  attentionChanged();
 }
 
 /** The owner's conversation's session id, or null. */

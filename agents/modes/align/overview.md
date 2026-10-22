@@ -23,7 +23,11 @@ alignments as cards and owns its settings file.
 alignment's whole snapshot, newest per id on the branch wins. Sova reads it for the card, the composer chip and the
 session list (`SessionSummary.align`). `align.ts` (builtins only) holds the shape, its strict check
 `normalizeAlignDetails` and the one fold `foldAlignments`; `server/transcript.ts` and `server/align-state.ts` import
-it, so the transcript's align row and the session list read what the extension writes with its own code.
+it, so the transcript's align row and the session list read what the extension writes with its own code. A feature
+request chat (§app.project-assistant/feature-chats) gets a Sova-served `align` (`server/feature-chat-align.ts`) built
+on `applyAlignCall` with no `technical`, `import`, `status` or `exempt`; its results' documents become the owner
+page's plan card (`server/baton-view.ts` `planOf`). A change to `applyAlignCall`'s op table or the details shape
+reaches both.
 - The hidden `align-state` / `align-nudge` custom messages must stay hidden in Sova (`display: false`).
 - An older session's `align-doc` custom entries are read-only.
 

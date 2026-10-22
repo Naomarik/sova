@@ -870,6 +870,23 @@ function ConversationView(props: {
       },
     ),
   );
+  // After a send, read again every 3 s until the reply is in (or 3 minutes passed): the socket's frame may never
+  // come (a dropped socket, a gateway that doesn't pass /ws/i).
+  const [awaiting, setAwaiting] = createSignal<number | null>(null);
+  createEffect(
+    on(awaiting, (since) => {
+      if (since === null) return;
+      const t = setInterval(() => {
+        const items = c().items;
+        const last = items[items.length - 1];
+        const replied = items.length > since && !!last && !(last.kind === "message" && last.by === "you");
+        if (replied || c().state !== "open" || Date.now() - startedAt > 180_000) setAwaiting(null);
+        else if (document.visibilityState === "visible") props.reload();
+      }, 3000);
+      const startedAt = Date.now();
+      onCleanup(() => clearInterval(t));
+    }),
+  );
   const say = async (text: string): Promise<boolean> => {
     if (!props.feature || sending()) return false;
     setSending(true);
@@ -877,6 +894,7 @@ function ConversationView(props: {
     try {
       const out = await props.feature.send(c().id, text);
       if (out.ok) {
+        setAwaiting(c().items.length + 1);
         props.reload();
         return true;
       }

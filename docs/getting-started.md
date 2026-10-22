@@ -146,7 +146,7 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 ## Reinstall or remove
 
 Running the install command again updates to the newest stable release (or the latest of the
-`SOVA_REF` you set; `SOVA_REF=v0.6.0` stays on that release). An install already at that commit isn't rebuilt;
+`SOVA_REF` you set; `SOVA_REF=v0.7.0` stays on that release). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent

@@ -26,6 +26,7 @@ node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [-
 node $d recover [--write]                               --root DIR [--json]
 node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
 node $d prune --approved FILE [--write]                 --root DIR [--json]
+node $d prune --official [--from DIR] [--write]         --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
 node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
@@ -321,7 +322,10 @@ repository too) and writes nothing. Each row has the draft's age in days since i
 | `active` | anything else | keep |
 | `unreadable` | `status` refuses it (corrupt, base tampered) | keep: look by hand |
 
-The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+Each draft also lists `promotedConflict`: the ids it promoted before that current now says
+differently (counted in `current`, so its state may still be `promoted`). A merge process that
+holds a branch until its drafts are promoted counts them as not promoted, and `prune --official`
+keeps such a draft. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
 project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
 A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
 no activity for longer than the age limit, with the `drafts` command to run.
@@ -330,8 +334,17 @@ no activity for longer than the age limit, with the `drafts` command to run.
 `NAME` or `NAME draftSha256` (copy the hash from the report so a draft that changed after the
 approval is not deleted), `#` starts a comment. Without `--write` it lists what it would delete.
 A name with no draft, a hash that no longer matches, or an interrupted promotion (`.txn/`)
-refuses the whole prune and deletes nothing. It deletes nothing it was not given, and no other
-command deletes a draft.
+refuses the whole prune and deletes nothing. It deletes nothing it was not given.
+
+`prune --official` needs no list: it deletes only drafts the tool confirms are already official
+and keeps every other one, listed with why (`kept`). Without `--from` it reads the project's own
+drafts as `drafts` does and deletes those it reads `promoted` with no `promotedConflict`, under the same lock and the same
+refusal of an interrupted promotion. With `--from DIR` it reads each draft folder directly in `DIR`
+(copies kept outside the project, such as the ones a merge round keeps when it removes a landed
+worktree) against the project's current spec alone, without Git: a copy whose changed records are
+all already current, at least one, is deleted; one with a record pending or in conflict, one that
+changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.
+No other command deletes a draft.
 
 ## A manifest conflict in a Git merge
 

@@ -61,18 +61,20 @@ export function ownerAttention(): AttentionItem[] {
     } catch {
       chats = [];
     }
+    // Who opened a chat: its record's person, never whoever is the owner now (an agreed plan outlives an owner change).
+    const personName = (personId: string, fallback: string): string => {
+      try {
+        return readRoster(o.id).find((p) => p.id === personId)?.name ?? fallback;
+      } catch {
+        return fallback;
+      }
+    };
     for (const r of requests) {
       if (r.status !== "with-team") continue;
       const chat = r.kind === "feature" ? chats.find((c) => c.requestId === r.id) : undefined;
       if (chat?.ended) {
         const project = projects.find((p) => p.id === r.projectId);
-        const former = (() => {
-          try {
-            return readRoster(o.id).find((p) => p.id === chat.personId)?.name ?? "The former owner";
-          } catch {
-            return "The former owner";
-          }
-        })();
+        const former = personName(chat.personId, "The former owner");
         out.push({
           id: `owner-feature-ended:${r.id}`,
           path: "",
@@ -90,7 +92,8 @@ export function ownerAttention(): AttentionItem[] {
       if (chat) {
         const project = projects.find((p) => p.id === r.projectId);
         const state = batonById(chat.sessionId)?.row.state;
-        const detail = state === "done" ? `${ownerName} agreed a plan on ${project?.name ?? "a project"}: ${r.title}` : state === "open" || state === "needs-you" ? `${ownerName} is planning a new feature with the assistant on ${project?.name ?? "a project"}: ${r.title}` : null;
+        const who = personName(chat.personId, ownerName);
+        const detail = state === "done" ? `${who} agreed a plan on ${project?.name ?? "a project"}: ${r.title}` : state === "open" || state === "needs-you" ? `${who} is planning a new feature with the assistant on ${project?.name ?? "a project"}: ${r.title}` : null;
         if (detail) {
           out.push({
             // An agreed plan is news of its own: its own id, so whatever was told or put aside about the planning

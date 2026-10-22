@@ -231,6 +231,9 @@ describe("feature request chats", () => {
       assert.equal(rec().ended?.why, "owner-changed", "recorded as ended before the close");
       await new Promise((r) => setTimeout(r, 50));
       assert.equal(baton.batonById(s2)!.row.state, "open", "the failed close left it open");
+      // Alperen is the owner again. Found driving a real owner change: Kim's agreed plan still names Kim, never whoever is the owner now.
+      const vouchers = ownerAttention().filter((i) => i.org?.orgId === org.id && i.title === "Gift vouchers");
+      assert.deepEqual(vouchers.map((i) => i.detail), ["Kim Lee agreed a plan on Archery website: Gift vouchers"]);
       // The next Needs you scan: the item is there, and the sweep closes it.
       const rid = rec().requestId;
       assert.ok(ownerAttention().some((i) => i.kind === "owner-feature-ended" && i.id === `owner-feature-ended:${rid}`));

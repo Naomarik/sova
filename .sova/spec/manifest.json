@@ -1974,6 +1974,36 @@
         "shared/theme.ts"
       ]
     },
+    "§app.shell/missing-folder-home": {
+      "kind": "behavior",
+      "requires": [
+        "§app.shell/the-open-failure-banner",
+        "§chat.sandbox/what-on-enforces",
+        "§chat.transcript/anatomy"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-cwd.ts",
+        "server/chat-manager.ts",
+        "server/harness/pi/open.ts",
+        "shared/protocol.ts",
+        "shared/chat-runtime.ts",
+        "server/chat-runtime/mirror.ts",
+        "server/tours/context.ts",
+        "server/tours/sandbox.ts",
+        "src/lib/open-failure.ts",
+        "src/components/ChatView.tsx",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/session-policy.ts",
+        "server/session-cwd-fallback.test.ts",
+        "src/lib/open-failure.test.ts",
+        "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+        "server/chat-host.test.ts",
+        "server/chat-config.test.ts"
+      ]
+    },
     "§app.shell/remote-session-chips": {
       "kind": "behavior",
       "authority": "accepted",

@@ -8,10 +8,15 @@ import { attentionChanged } from "./attention-memo";
  *
  * The overlays are read from the list itself (the caller's `list`, i.e. listSessions), never from
  * the stores directly: what the feed sends is exactly what the next poll would show, visibility
- * rules included (a signal is left out once seen, while viewed, while running). A re-diff runs on a
- * nudge (a store wrote, a pane attached) and every few seconds while anyone listens, so changes
- * the feed cannot be told about (a turn starting in a TUI) still reach it. Nothing runs, and
- * nothing is listed, while no client is connected.
+ * rules included (a signal is left out once seen, while viewed, while running). A re-diff runs only
+ * on a nudge: a store wrote, a pane attached, the list generation moved (server/list-generation.ts),
+ * or a watch saw a session file or a live record change (server/session-feed-watch.ts, so a turn
+ * starting in a TUI still reaches it); a burst is one re-diff, at most one a second. A safety-net
+ * re-diff runs once a minute while anyone listens. Nothing runs, and nothing is listed, while no
+ * client is connected, nor while nothing changes.
+ *
+ * Each re-diff also builds the attention digest and the Overseer's state from its own list (`after`)
+ * and sends each when it changed, so no window polls them.
  *
  * The same diff also sends `list_changed` when a row changed in a way the marks can't carry (a
  * session a TUI just created, one that went away, its live record, running state or last
@@ -91,11 +96,24 @@ export function listChanged(prev: ReadonlyMap<string, string>, next: ReadonlyMap
 
 export interface SessionFeedOptions {
   list: () => Promise<SessionSummary[]>;
-  /** Re-diff period while a client listens. */
+  /** The safety-net re-diff period while a client listens: for a change no source tells of. */
   intervalMs?: number;
   /** Debounce of nudges. */
   debounceMs?: number;
+  /** The least time between the starts of two re-diffs (a burst of changes is one). */
+  minGapMs?: number;
+  /** What tells the feed that something a row reads may have changed (file watches, the live-record
+      check): started with the first listener, stopped with the last. Returns its stop. */
+  watch?: (changed: () => void) => () => void;
+  /** Frames built from each re-diff's own list (the attention digest, the Overseer's state). Each
+      is sent only when it differs from the last one of its type; the first is the baseline. */
+  after?: (list: readonly SessionSummary[]) => Promise<SessionFeedMessage[]>;
+  /** What of an `after` frame is compared (default: all of it): a build's own time is no change. */
+  frameKey?: (frame: SessionFeedMessage) => string;
 }
+
+/** Once a minute: re-diffs are change-driven, this only catches what no source tells of. */
+export const SAFETY_NET_MS = 60_000;
 
 export class SessionFeed {
   private readonly clients = new Set<Send>();
@@ -104,9 +122,21 @@ export class SessionFeed {
   private sent = new Map<string, SessionMarks>();
   /** rowSignature per listed path as of the last diff; null before the first (no baseline yet). */
   private rows: Map<string, string> | null = null;
+  /** The last `after` frame per type, as JSON. */
+  private extras = new Map<string, string>();
   private chain: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
   private pending: ReturnType<typeof setTimeout> | null = null;
+  private unwatch: (() => void) | null = null;
+  /** When the last re-diff started (the min gap counts from it). */
+  private lastStart = 0;
+  /** Set while the feed itself announces a change, so its own announcement is no new change. */
+  private announcing = false;
+  /** Re-diffs run (tests, measurement). */
+  diffs = 0;
+  /** Change signals heard, and the count as of the last finished re-diff's start, with its list. */
+  private heard = 0;
+  private last: { heard: number; at: number; list: SessionSummary[] } | null = null;
   constructor(private readonly opts: SessionFeedOptions) {}
 
   get size(): number {
@@ -118,8 +148,13 @@ export class SessionFeed {
     let gone = false;
     this.joining++;
     if (!this.timer) {
-      this.timer = setInterval(() => this.nudge(0), this.opts.intervalMs ?? 5000);
+      this.timer = setInterval(() => this.nudge(0), this.opts.intervalMs ?? SAFETY_NET_MS);
       this.timer.unref?.();
+      try {
+        this.unwatch = this.opts.watch?.(() => this.nudge()) ?? null;
+      } catch (err) {
+        console.warn("[session-feed] watch failed:", err instanceof Error ? err.message : String(err));
+      }
     }
     this.run(async () => {
       try {
@@ -140,12 +175,24 @@ export class SessionFeed {
 
   /** Something the overlays read changed: re-diff soon (coalesced). A no-op with no listener. */
   nudge(delayMs = this.opts.debounceMs ?? 250): void {
-    if (this.clients.size === 0 || this.pending) return;
+    if (this.clients.size === 0 || this.announcing) return;
+    this.heard++;
+    if (this.pending) return;
+    const gap = this.lastStart + (this.opts.minGapMs ?? 1000) - Date.now();
     this.pending = setTimeout(() => {
       this.pending = null;
       this.run(() => this.diff());
-    }, delayMs);
+    }, Math.max(delayMs, gap, 0));
     this.pending.unref?.();
+  }
+
+  /** The last re-diff's list while nothing has signalled a change since it started and it is younger
+      than the safety net, else null: a timer that wants the list (the merge board) reads this
+      instead of building one while nothing changes. Never while no client listens. */
+  cleanList(now = Date.now()): Promise<SessionSummary[]> | null {
+    const l = this.last;
+    if (!l || this.clients.size === 0 || this.pending || l.heard !== this.heard || now - l.at >= (this.opts.intervalMs ?? SAFETY_NET_MS)) return null;
+    return Promise.resolve([...l.list]);
   }
 
   /** Sent to every listener as is (tags backfill progress). */
@@ -162,8 +209,17 @@ export class SessionFeed {
     if (this.timer) clearInterval(this.timer);
     if (this.pending) clearTimeout(this.pending);
     this.timer = this.pending = null;
+    const unwatch = this.unwatch;
+    this.unwatch = null;
+    try {
+      unwatch?.();
+    } catch {
+      // a watch already gone
+    }
     this.sent = new Map();
     this.rows = null;
+    this.extras = new Map();
+    this.last = null;
   }
 
   private run(fn: () => Promise<void>): void {
@@ -172,7 +228,11 @@ export class SessionFeed {
 
   private async diff(force = false): Promise<void> {
     if (this.clients.size === 0 && !force) return;
+    this.lastStart = Date.now();
+    this.diffs++;
+    const heard = this.heard;
     const list = await this.opts.list();
+    this.last = { heard, at: this.lastStart, list };
     const { changes, next } = diffMarks(this.sent, list);
     this.sent = next;
     if (changes.length) this.publish({ type: "marks", sessions: changes });
@@ -181,10 +241,24 @@ export class SessionFeed {
     if (this.rows && listChanged(this.rows, rows)) {
       // What changed a row (a Get Link, a share-page reply, a hand-off) may be on the attention
       // digest too, which is memoized: its next read, the one list_changed prompts, is fresh.
-      attentionChanged();
+      this.announcing = true;
+      try {
+        attentionChanged();
+      } finally {
+        this.announcing = false;
+      }
       this.publish({ type: "list_changed" });
     }
     this.rows = rows;
+    if (!this.opts.after) return;
+    const frames = await this.opts.after(list);
+    for (const f of frames) {
+      const json = this.opts.frameKey ? this.opts.frameKey(f) : JSON.stringify(f);
+      // The first of each type is the baseline: a client reads the value itself when it connects.
+      const before = this.extras.get(f.type);
+      this.extras.set(f.type, json);
+      if (before !== undefined && before !== json) this.publish(f);
+    }
   }
 }
 

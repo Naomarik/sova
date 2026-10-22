@@ -46,7 +46,7 @@ describe("SessionFeed", () => {
   test("full snapshot on connect, deltas on nudge, nothing listed with no client", async () => {
     let list: SessionSummary[] = [row("a", { signals: signals(1) })];
     let listed = 0;
-    const feed = new SessionFeed({ list: async () => (listed++, list), intervalMs: 60_000, debounceMs: 0 });
+    const feed = new SessionFeed({ list: async () => (listed++, list), intervalMs: 60_000, debounceMs: 0, minGapMs: 0 });
     feed.nudge();
     await feed.idle();
     assert.equal(listed, 0);
@@ -104,7 +104,7 @@ describe("D3: list_changed, for what the marks can't carry", () => {
 
   test("a session that appears after connect is announced once; nothing on the connect itself", async () => {
     let list: SessionSummary[] = [row("a")];
-    const feed = new SessionFeed({ list: async () => list, intervalMs: 60_000, debounceMs: 0 });
+    const feed = new SessionFeed({ list: async () => list, intervalMs: 60_000, debounceMs: 0, minGapMs: 0 });
     const got: SessionFeedMessage[] = [];
     const remove = feed.add((m) => got.push(m));
     await feed.idle();
@@ -126,7 +126,7 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     let drops = 0;
     onAttentionChanged(() => drops++);
     let list: SessionSummary[] = [row("a")];
-    const feed = new SessionFeed({ list: async () => list, intervalMs: 60_000, debounceMs: 0 });
+    const feed = new SessionFeed({ list: async () => list, intervalMs: 60_000, debounceMs: 0, minGapMs: 0 });
     const remove = feed.add(() => {});
     await feed.idle();
     assert.equal(drops, 0, "the baseline changes nothing");
@@ -141,4 +141,142 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     assert.equal(drops, 1, "unchanged: the memo stays");
     remove();
   });
+});
+
+describe("change-driven comparisons (§app.decisions/push)", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  test("an idle feed lists nothing between safety nets: only the connect's own read", async () => {
+    let listed = 0;
+    let stopped = false;
+    // The default safety net (a minute): nothing is told of a change, so nothing is read again.
+    const feed = new SessionFeed({ list: async () => (listed++, [row("a")]), watch: () => () => void (stopped = true) });
+    const off = feed.add(() => {});
+    await feed.idle();
+    assert.equal(listed, 1);
+    await sleep(1500);
+    await feed.idle();
+    assert.equal(listed, 1, "no list build while nothing changes");
+    assert.equal(feed.diffs, 1);
+    off();
+    assert.equal(stopped, true, "the watch stops with the last listener");
+  });
+
+  test("a watched change compares; a burst is one comparison, at most one per min gap", async () => {
+    let listed = 0;
+    let changed: () => void = () => {};
+    const feed = new SessionFeed({
+      list: async () => (listed++, [row("a")]),
+      debounceMs: 10,
+      minGapMs: 300,
+      watch: (fn) => ((changed = fn), () => {}),
+    });
+    const off = feed.add(() => {});
+    await feed.idle();
+    await sleep(320); // past the connect read's min gap
+    for (let i = 0; i < 20; i++) changed();
+    await sleep(50);
+    await feed.idle();
+    assert.equal(listed, 2, "a burst is one comparison");
+    changed(); // within the min gap of the last start: deferred, not dropped
+    await sleep(100);
+    assert.equal(listed, 2);
+    await sleep(300);
+    await feed.idle();
+    assert.equal(listed, 3);
+    off();
+  });
+
+  test("after-frames: the first of each type is the baseline, then each is sent only when it changed", async () => {
+    let digest = 1;
+    let changed: () => void = () => {};
+    const feed = new SessionFeed({
+      list: async () => [row("a")],
+      debounceMs: 0,
+      minGapMs: 0,
+      watch: (fn) => ((changed = fn), () => {}),
+      after: async () => [
+        { type: "attention", digest: { at: 0, items: [], counts: { act: digest, decide: 0, fyi: 0 } } as any },
+        { type: "overseer", info: { path: "/o", id: "o", history: [], badge: 0, unread: 0, proactivity: "brief", busy: false } as any },
+      ],
+    });
+    const got: SessionFeedMessage[] = [];
+    const off = feed.add((m) => got.push(m));
+    await feed.idle();
+    assert.deepEqual(got.map((m) => m.type), ["marks"], "nothing pushed on connect");
+    changed();
+    await sleep(10);
+    await feed.idle();
+    assert.deepEqual(got.map((m) => m.type), ["marks"], "unchanged values are not sent");
+    digest = 2;
+    changed();
+    await sleep(10);
+    await feed.idle();
+    assert.deepEqual(got.map((m) => m.type), ["marks", "attention"]);
+    assert.equal((got[1] as any).digest.counts.act, 2);
+    off();
+  });
+
+  test("the feed's own announcement (attentionChanged inside a comparison) is no new change", async () => {
+    let list = [row("a")];
+    let listed = 0;
+    let changed: () => void = () => {};
+    const feed = new SessionFeed({ list: async () => (listed++, list), debounceMs: 0, minGapMs: 0, watch: (fn) => ((changed = fn), () => {}) });
+    const { onAttentionNotified } = await import("./attention-memo");
+    const offNotified = onAttentionNotified(() => changed());
+    const off = feed.add(() => {});
+    await feed.idle();
+    list = [row("a"), row("b")];
+    changed();
+    await sleep(10);
+    await feed.idle();
+    await sleep(10);
+    await feed.idle();
+    assert.equal(listed, 2, "no comparison loop");
+    off();
+    offNotified();
+  });
+});
+
+test("frameKey: what is compared; a frame differing only in its build time is not sent again", async () => {
+  let at = 1;
+  let changed: () => void = () => {};
+  const feed = new SessionFeed({
+    list: async () => [row("a")],
+    debounceMs: 0,
+    minGapMs: 0,
+    watch: (fn) => ((changed = fn), () => {}),
+    after: async () => [{ type: "attention", digest: { generatedAt: at++, counts: { act: 0, decide: 0, fyi: 0 }, items: [] } }],
+    frameKey: (f) => (f.type === "attention" ? JSON.stringify({ ...f.digest, generatedAt: 0 }) : JSON.stringify(f)),
+  });
+  const got: SessionFeedMessage[] = [];
+  const off = feed.add((m) => got.push(m));
+  await feed.idle();
+  for (let i = 0; i < 3; i++) {
+    changed();
+    await new Promise((r) => setTimeout(r, 10));
+    await feed.idle();
+  }
+  assert.ok(at >= 4, "the digest was rebuilt");
+  assert.deepEqual(got.map((m) => m.type), ["marks"]);
+  off();
+});
+
+test("cleanList: the last list while nothing changed since; null once a change is heard, or with no listener", async () => {
+  let listed = 0;
+  let changed: () => void = () => {};
+  const feed = new SessionFeed({ list: async () => (listed++, [row(`r${listed}`)]), debounceMs: 0, minGapMs: 0, watch: (fn) => ((changed = fn), () => {}) });
+  assert.equal(feed.cleanList(), null, "no listener");
+  const off = feed.add(() => {});
+  await feed.idle();
+  assert.deepEqual((await feed.cleanList())!.map((r) => r.id), ["r1"]);
+  assert.equal(listed, 1, "served without a build");
+  changed();
+  assert.equal(feed.cleanList(), null, "a change is pending");
+  await new Promise((r) => setTimeout(r, 10));
+  await feed.idle();
+  assert.deepEqual((await feed.cleanList())!.map((r) => r.id), ["r2"]);
+  assert.equal(feed.cleanList(Date.now() + 61_000), null, "older than the safety net");
+  off();
+  assert.equal(feed.cleanList(), null);
 });

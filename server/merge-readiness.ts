@@ -15,6 +15,7 @@ import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
 import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -749,6 +750,9 @@ async function refresh(input: RefreshInput): Promise<void> {
     const again = await computeReadiness(s, facts, current);
     if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
   }
+  // A new answer shows on the next listing: the session feed compares at once (§app.decisions/push)
+  // instead of waiting for a listing that happens to come.
+  if (JSON.stringify(cache.get(s.path)?.value ?? null) !== JSON.stringify(prev?.value ?? null)) sessionsChanged();
 }
 
 function drain(): Promise<void> {

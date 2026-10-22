@@ -14,7 +14,7 @@ import { reconcileProjectServices } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
-import { closeAllOrgHosts } from "./org-engine";
+import { closeAllOrgHosts, onOrgChange } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { stopVoice } from "./voice/service";
 import { startStaticPreviews } from "./project-previews";
@@ -43,7 +43,8 @@ import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
-import { setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { watchFeedInputs } from "./session-feed-watch";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
@@ -225,7 +226,26 @@ const events = startEvents({
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
 });
-configureSessionFeed({ list: () => listSessions().then(events.seeList) });
+// Change-driven (§app.decisions/push): it compares when a watched input or an in-process store
+// changes, an org statechart moves or something the digest lists changes, and pushes the digest
+// and the Overseer's state built from its own list.
+let feedChanged: (() => void) | null = null;
+onOrgChange(() => feedChanged?.());
+configureSessionFeed({
+  list: () => listSessions().then(events.seeList),
+  watch: (changed) => {
+    feedChanged = changed;
+    const offWatch = watchFeedInputs(changed);
+    const offAttention = onAttentionNotified(changed);
+    return () => {
+      feedChanged = null;
+      offWatch();
+      offAttention();
+    };
+  },
+  after: feedFrames,
+  frameKey: feedFrameKey,
+});
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({

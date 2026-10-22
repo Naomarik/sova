@@ -6,7 +6,7 @@ import { OPERATOR } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
 import { ASSISTANT_TEXT_MAX, type AssistantMessage, type AssistantServerMessage, type AssistantView, type OwnerVersionRow } from "../shared/project-assistant";
 import type { BatonPhotoSettings } from "../shared/baton";
-import { acquireChatHandle, chatHandle, getModelRuntime, isSessionBusy } from "./chat-handle";
+import { acquireChatHandle, chatHandle, isSessionBusy } from "./chat-handle";
 import { dropStaged, PhotoRefusal, takeStaged, type SdkImage } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
 import { ownerVersionOf } from "./owner-page";
@@ -19,6 +19,7 @@ import { operatorName, orgDir, OrgError, ownerOf, readIndex, readRoster } from "
 import { sessionIdOfFile } from "./project-overseer-store";
 import { canonicalPath } from "./paths";
 import { conversationOf, readAssistantStore, setConversation } from "./project-assistant-store";
+import { assistantReplyState } from "./project-assistant-ready";
 import { pathOfId } from "./session-prompt";
 import { markSeen } from "./seen";
 import { cleanSessionTitle, setSessionTitle } from "./session-titles";
@@ -181,26 +182,21 @@ async function withVersions(orgId: string, msgs: (AssistantMessage & { versionHa
   });
 }
 
-/** Whether the assistant's reply model sees images: the open chat's model, else the org's reply pick in the catalog. Unknown is no. */
+/** Whether the assistant's resolved reply model (the org's pick, else the default) sees images: the open
+    chat's model when it is that one, else the model list's `input`. Null when none resolves; unknown is no. */
 export async function assistantSeesImages(orgId: string): Promise<boolean | null> {
-  const reply = readAssistantStore(orgId).models.reply;
-  if (!reply) return null;
+  const state = await assistantReplyState(orgId);
+  if (!state) return null;
   const path = await currentAssistantPath(orgId);
   const live = path ? chatHandle(path)?.mirror.model : undefined;
-  if (live && live.ref === reply.model) return live.images;
-  const slash = reply.model.indexOf("/");
-  if (slash <= 0) return false;
-  try {
-    const m = (await getModelRuntime()).getModel(reply.model.slice(0, slash), reply.model.slice(slash + 1));
-    return !!m && Array.isArray(m.input) && m.input.includes("image");
-  } catch {
-    return false;
-  }
+  if (live && live.ref === state.pick.model) return live.images;
+  return state.images;
 }
 
-/** What the owner may send now: the outsider photo limits, or null (photos off, no reply model, or one without vision). */
+/** What the owner may send now: the outsider photo limits, or null (photos off, not ready, or a model without vision). */
 export async function assistantPhotoLimits(orgId: string, settings: BatonPhotoSettings = readBatonSettings().photos): Promise<BatonPhotoSettings | null> {
   if (!settings.enabled) return null;
+  if ((await assistantReplyState(orgId))?.ready !== true) return null;
   return (await assistantSeesImages(orgId)) === true ? settings : null;
 }
 
@@ -209,7 +205,7 @@ export const assistantStagingKey = (orgId: string, personId: string): string => 
 
 /** The view for the owner page (or the operator's preview): empty before the first message. */
 export async function assistantView(orgId: string): Promise<AssistantView> {
-  const ready = !!readAssistantStore(orgId).models.reply;
+  const ready = (await assistantReplyState(orgId))?.ready === true;
   const path = await currentAssistantPath(orgId);
   const limits = ready ? await assistantPhotoLimits(orgId).catch(() => null) : null;
   const photos = limits ? { photos: { perMessage: limits.perMessage, maxBytes: limits.maxBytes } } : {};
@@ -246,8 +242,10 @@ export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: re
   if (!text && !imageIds.length) throw new AssistantRefusal("bad-request", "Write something first.", 400);
   if (text.length > ASSISTANT_TEXT_MAX) throw new AssistantRefusal("bad-request", `Messages are limited to ${ASSISTANT_TEXT_MAX} characters.`, 400);
   if (text.startsWith("/")) throw new AssistantRefusal("bad-request", "Messages can't start with /.", 400);
-  const reply = readAssistantStore(orgId).models.reply;
-  if (!reply) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
+  // The one readiness predicate (project-assistant-ready.ts): a resolved reply model this host runs and policy allows.
+  const state = await assistantReplyState(orgId);
+  if (!state?.ready) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
+  const reply = state.pick;
   const limits = imageIds.length ? await assistantPhotoLimits(orgId).catch(() => null) : null;
   if (imageIds.length && !limits) throw new AssistantRefusal("no-photos", "Photos can't be sent here.");
   if (limits && imageIds.length > limits.perMessage) throw new AssistantRefusal("too-many", `Up to ${limits.perMessage} photos per message.`, 400);
@@ -271,7 +269,7 @@ export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: re
     throw new AssistantRefusal("busy", `The Project Assistant can't take a message right now (${err instanceof Error ? err.message : String(err)}).`, 503);
   }
   // Nothing runs on a model nobody chose (§app.project-assistant/models): the chat answers on the org's
-  // reply model as it is now, and a model this host can't run leaves it not ready.
+  // resolved reply model as it is now (its pick, else the default), and a model this host can't run leaves it not ready.
   if ((await chat.findModel(reply.model)).ok !== true) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
   try {
     if (chat.mirror.model?.ref !== reply.model) await chat.setModel(reply.model);

@@ -24,6 +24,8 @@ const poStore = await import("./project-overseer-store");
 const { ownerHome } = await import("./owner-page");
 const { handleOf } = await import("./person-links");
 const { settled } = await import("./workspace-git");
+// Readiness asks whether this host runs the reply model: here the scripted one does (no real model runtime in this test).
+(await import("./project-assistant-ready")).setAssistantModelListForTests(async () => [{ ref: "scripted/scripted" }]);
 
 after(async () => {
   await settled(join(root, "ws"));

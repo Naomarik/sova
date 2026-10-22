@@ -84,7 +84,7 @@ origin, or some crawlers ignore the image.
 
 ## Deploy: Cloudflare Pages
 
-Static output, no Functions and no adapter.
+Static output, no Functions and no adapter. The site is live at https://sova.naomarik.com/.
 
 | Setting | Value |
 | --- | --- |
@@ -103,7 +103,7 @@ is touched):
 ```sh
 cd site
 pnpm install --frozen-lockfile
-SOVA_SITE_URL=<the site's address> pnpm run build
+SOVA_SITE_URL=https://sova.naomarik.com/ pnpm run build
 node scripts/check-docs-leaks.mjs
 wrangler pages deploy dist --project-name <the Pages project> --branch main --commit-hash <sha>
 ```

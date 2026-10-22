@@ -297,7 +297,9 @@ finishing it reads each § the census note's unread line (§tools.spec/unread-la
 first; the census command that line gives lists the rest. It tells the session that a branch isn't
 done or ready to land until its drafts are promoted on it: the session promotes on its own branch,
 after its checks pass and before it says the branch is ready, since nothing at landing promotes for
-it, and says so without naming any project's merge process. Its go-ahead paragraph says that the
+it, and says so without naming any project's merge process. It says too that a draft whose branch
+already landed is promoted on a fresh branch from the default branch, never on the default branch
+itself. Its go-ahead paragraph says that the
 user's go-ahead to build or merge covers committing the docs with the code on its branch, never asked
 for separately; where the user said not to commit, nothing is, and evidence stays pending. A worker
 is told that its parent promotes, on its own branch before calling it ready; a worker promotes,

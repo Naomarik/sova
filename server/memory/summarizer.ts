@@ -89,8 +89,11 @@ export async function summarize(call: SummaryCall, deps: SummarizerDeps): Promis
   });
 }
 
-/** Failures that stop every summary, not just this one (§chat.memory/recovery): the queue pauses. */
-const GLOBAL_FAILURES: ReadonlySet<DecisionFailure> = new Set(["auth", "quota", "rate-limit", "unavailable"]);
+/** Failures that say nothing about the message (§chat.memory/recovery): the summarizer can't run, or the
+    try was cut short (a slot wait or a run past its deadline, the network, an overloaded provider). The
+    queue pauses and the try isn't counted. Only the rest (too large, a malformed or empty answer, a
+    refused request, an unexplained error) count toward the node's tries. */
+const GLOBAL_FAILURES: ReadonlySet<DecisionFailure> = new Set(["auth", "quota", "rate-limit", "unavailable", "timeout", "network", "overloaded"]);
 
 /** Whether a failed summary stops every summary (the queue pauses) or only its own node (it waits alone). */
 export function failureScope(err: unknown): "global" | "node" {

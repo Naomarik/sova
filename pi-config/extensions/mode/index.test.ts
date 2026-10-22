@@ -517,6 +517,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /A go-ahead to build or merge covers committing them with the code, never asked separately; told not to commit, leave evidence pending; never commit unrelated changes\./, "the go-ahead covers committing the docs with the code");
 	for (const gone of [["not permission", "to commit"], ["expected end", "state"], ["always on the", "default branch"]]) assert.ok(!spec.includes(gone.join(" ")), `the docs never wait on a second permission: ${gone.join(" ")}`);
 	assert.match(spec, /A branch isn't done or ready to land until its drafts are promoted on it, by you, after its checks pass; nothing at landing promotes for you\./);
+	assert.match(spec, /A draft whose branch already landed is promoted on a fresh branch from the default branch, never on the default branch itself\./, "after landing, never on the default branch");
 	assert.match(spec, /`cause: manifest-not-found` means no spec: start a draft\./, "a generic refusal is not permission to bootstrap a malformed spec");
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
@@ -556,7 +557,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
 	const words = spec.split(/\s+/).length;
-	assert.ok(words <= 944, `short enough to ride every turn: growing it is a deliberate change (${words} words)`);
+	assert.ok(words <= 966, `short enough to ride every turn: growing it is a deliberate change (${words} words)`);
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {

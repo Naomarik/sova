@@ -4,6 +4,35 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.7.0 — 2026-10-22
+
+The Project Assistant grows up, owner requests get a home, and a focus view for reading a chat.
+38 commits since v0.6.0. The highlights:
+
+- **A real Project Assistant on the owner page.** It fills the phone with the composer pinned at
+  the bottom, takes photos (when photos are on and the reply model sees images), draws, and can
+  start a version for the owner to try when you allow it; with that off, it files a request
+  instead. A started version shows Starting… until it answers.
+- **"What it can do for you".** The owner page has Home, Assistant and Requests tabs, and a card
+  that says what the assistant can do from the switches you set, with tappable suggestions.
+- **Owner requests on the org page.** A Requests tab lists what owners asked for (Open, Done,
+  Declined), and Start Chat opens a chat in the request's project with the request as a note.
+- **Public links, share protocol 2.** Your computer decides which pages of its links open, so new
+  pages need no gateway update. **If you run a gateway, update it once:** Settings → Public links
+  warns when it is behind and offers Resync.
+- **Focus view.** A corner button in a chat hides everything but its title and the conversation;
+  your draft is kept, and the choice stays across chats and reloads.
+- **The Overseer can round up the work**: what is still open in each session over a window, and a
+  search of what sessions said.
+- **Smaller fixes.** The Timeline names who sent a message, and Inputs Only counts what you typed;
+  the sidebar keeps its scroll position through refreshes and a collapse sticks; a chat that
+  finished starting early says it is ready at once; the mode menu says when someone other than you
+  turned a mode's hooks on.
+
+Going back to `v0.6.0` (`SOVA_REF=v0.6.0`) hasn't been tested on this release: the owner page's
+tabs, requests and assistant versions are gone there, and a gateway already updated to share
+protocol 2 hasn't been tried with it.
+
 ## v0.6.0 — 2026-10-19
 
 Guided tours, everything as a command, and the Overseer's approvals in its head. 63 commits since

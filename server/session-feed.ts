@@ -190,9 +190,15 @@ export class SessionFeed {
       than the safety net, else null: a timer that wants the list (the merge board) reads this
       instead of building one while nothing changes. Never while no client listens. */
   cleanList(now = Date.now()): Promise<SessionSummary[]> | null {
+    const rows = this.cleanRows(now);
+    return rows ? Promise.resolve([...rows]) : null;
+  }
+
+  /** cleanList's rows themselves (the same array while it stays clean, so a memo can match it). */
+  cleanRows(now = Date.now()): readonly SessionSummary[] | null {
     const l = this.last;
     if (!l || this.clients.size === 0 || this.pending || l.heard !== this.heard || now - l.at >= (this.opts.intervalMs ?? SAFETY_NET_MS)) return null;
-    return Promise.resolve([...l.list]);
+    return l.list;
   }
 
   /** Sent to every listener as is (tags backfill progress). */

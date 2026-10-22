@@ -280,3 +280,13 @@ test("cleanList: the last list while nothing changed since; null once a change i
   off();
   assert.equal(feed.cleanList(), null);
 });
+
+test("cleanRows: the same array while clean, so the digest's memo can match it", async () => {
+  const feed = new SessionFeed({ list: async () => [row("a")], debounceMs: 0, minGapMs: 0, watch: () => () => {} });
+  const off = feed.add(() => {});
+  await feed.idle();
+  const a = feed.cleanRows();
+  assert.ok(a);
+  assert.equal(feed.cleanRows(), a);
+  off();
+});

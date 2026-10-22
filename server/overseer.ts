@@ -107,6 +107,7 @@ import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
+import { sessionFeed } from "./session-feed";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { overseerMemoryOf } from "./memory/settings";
@@ -328,8 +329,10 @@ onSessionPrompted(() => (digestMemo = null));
 export function attentionDigest(list?: readonly SessionSummary[]): Promise<ReturnType<typeof buildDigest>> {
   const now = Date.now();
   if (digestMemo && now - digestMemo.at < DIGEST_MS && (!list || digestMemo.list === list)) return digestMemo.value;
+  // While nothing changed since the feed's last list, that list is current: no build of its own.
+  const fed = list ?? sessionFeed()?.cleanRows(now) ?? undefined;
   const value = (async () => {
-    const sessions = list ?? (await listSessions());
+    const sessions = fed ?? (await listSessions());
     const records = readLiveRecords({ includeOwn: true });
     const byPath = new Map<string, { failed: number; since: number; errorTimes: number[] }>();
     for (const r of records) {
@@ -378,7 +381,7 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
     return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
-  digestMemo = { at: now, value, ...(list ? { list } : {}) };
+  digestMemo = { at: now, value, ...(fed ? { list: fed } : {}) };
   value.catch(() => {
     if (digestMemo?.value === value) digestMemo = null;
   });
@@ -1278,6 +1281,8 @@ export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "
   return redactor().redact(`${OVERSEER_BRIEF_PREFIX} ${items.length === 1 ? "A new blocker" : `${items.length} new blockers`} appeared while you were idle:\n${lines.join("\n")}`);
 }
 
+let feedHold: (() => void) | null = null;
+
 async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error: string }> {
   await applySettingsNow();
   const settings = readOverseerSettings();
@@ -1286,6 +1291,13 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   // every proactivity. With nothing to send to, the digest is read only for a brief.
   const wanted = pushWanted();
   if (!wanted) resetPushState();
+  // The loop holds the session feed while it reads the digest, so the digest comes from the feed's
+  // change-driven list (§app.decisions/push) instead of a list built every tick.
+  if ((st || wanted) && !feedHold) feedHold = sessionFeed()?.add(() => {}) ?? null;
+  else if (!st && !wanted && feedHold) {
+    feedHold();
+    feedHold = null;
+  }
   if (!st && !wanted) return { briefed: [] }; // no Overseer yet and no phone to tell: nothing to do
   const digest = await attentionDigest();
   const act = digest.items.filter((i) => i.tier === "act");

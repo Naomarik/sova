@@ -1907,6 +1907,8 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.
 - **Folded width.** `.outline-body` caps at 50vh instead of `--outline-max` (40vh).
+- **Focus.** In Focus (§chat.transcript/focus-view) the strip is hidden on a single-chat screen;
+  it comes back as it was when Focus turns off.
 
 ## §app.insights/summary-sections — One section of the conversation per topic
 

@@ -163,7 +163,9 @@ user row.
 ```
 
 - **Line 1**: back to Sessions, the title **Overseer**, its state chip, the context gauge, the
-  **Without you** button, **Run Now**, the **⋯** menu and Session details.
+  **Without you** button, **Run Now**, the **⋯** menu and Session details. In Focus
+  (§chat.transcript/focus-view) only back (below a 768px window) and the title, with no meta line,
+  and the status strip is hidden unless it says its status couldn't be read.
 - **Meta line**: the project (a link to its page) · the org · "Watching" or "Not watching" · "{n}
   started", a menu of the sessions it started, newest first, each a link when its file is on this
   host, with its kind and state ("Gathering · open", "Coding · working"); omitted while it started

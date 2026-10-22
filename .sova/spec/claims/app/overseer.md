@@ -1462,6 +1462,8 @@ head's height, so a width change is no layout shift.
 - **An earlier conversation** (`#/overseer/h/<id>`): back, its title and age, and History ▾ at
   900px and up; below that, ⋯ holding History… only. Neither Schedules ▾ nor Approvals &
   Schedules… shows there.
+- **Focus** (§chat.transcript/focus-view): the row is back (below a 768px window) and the title
+  alone, at every width.
 
 ## §app.overseer/entry-button — Entry button
 

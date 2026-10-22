@@ -3,6 +3,7 @@
 
 The composer is the form pinned to the foot of a chat where you write its next message, with Send,
 Steer and Stop beside the textarea and the model indicator and mode switch in the foot below it.
+In Focus (§chat.transcript/focus-view) it is hidden but kept, draft and all.
 
 Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
 disabled reasons, the `plus` flyout that holds the panels, the sandbox shield, the @ menu's folder read,

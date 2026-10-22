@@ -8,6 +8,7 @@ import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import { registerComposer } from "../commands/composers";
+import { openPaletteFrom } from "../commands/palette-open";
 import {
   cachedFileIndex,
   capMentionEntries,
@@ -207,9 +208,9 @@ export function Composer(props: {
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
   mode?: ModeControl | null;
-  /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
+  /** Chat sessions only: opens the Playbooks dialog (the palette's Playbooks row). */
   onPlaybooks?: () => void;
-  /** Chat sessions only: the flyout's "Undo last turn" row. */
+  /** Chat sessions only: the palette's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
@@ -491,7 +492,6 @@ export function Composer(props: {
     const cmd = slashMatches()[index];
     if (!token || !cmd) return;
     const next = insertCommand(input.value, token, cmd.name);
-    buttonSlash = null; // that "/" is now part of a command
     setDraft(next.text);
     input.value = next.text;
     input.setSelectionRange(next.caret, next.caret);
@@ -608,56 +608,9 @@ export function Composer(props: {
           : null
         : null;
 
-  // ---- Commands button: opens the same menu by inserting "/" at the caret ----------------
-  /** The "/" (and the space before it) the button inserted; removed if closed untouched. */
-  let buttonSlash: { at: number; space: boolean } | null = null;
-  const dropButtonSlash = () => {
-    const ins = buttonSlash;
-    buttonSlash = null;
-    if (!ins) return;
-    const v = input.value;
-    const token = slashTokenAt(v, ins.at + 1);
-    if (v[ins.at] !== "/" || token?.start !== ins.at || token.query !== "") return; // user typed on
-    const from = ins.space ? ins.at - 1 : ins.at;
-    const next = v.slice(0, from) + v.slice(ins.at + 1);
-    setDraft(next);
-    input.value = next;
-    input.setSelectionRange(from, from);
-  };
-  const toggleCommands = () => {
-    if (disabled() || !(props.commands?.length ?? 0)) return;
-    if (slashOpen()) {
-      const token = slashToken();
-      setSlashDismissed(token ? tokenKey(token) : null);
-      dropButtonSlash();
-      input.focus();
-      updateSlash();
-      return;
-    }
-    const v = input.value;
-    const caret = document.activeElement === input ? input.selectionStart ?? v.length : v.length;
-    const inToken = slashTokenAt(v, caret);
-    if (inToken) {
-      // Already in a (dismissed) token: just reopen it.
-      setSlashDismissed(null);
-      input.focus();
-      input.setSelectionRange(caret, caret);
-      updateSlash();
-      return;
-    }
-    const space = caret > 0 && !/\s/.test(v[caret - 1]!);
-    const insert = `${space ? " " : ""}/`;
-    const next = v.slice(0, caret) + insert + v.slice(caret);
-    setDraft(next);
-    input.value = next;
-    const at = caret + insert.length - 1;
-    buttonSlash = { at, space };
-    input.focus();
-    input.setSelectionRange(at + 1, at + 1);
-    updateSlash();
-  };
-  // The command palette's "This chat" rows (commands/composers): the menu's commands, and "/name "
-  // put in this textarea exactly as the menu's Enter on an empty draft leaves it. Nothing is sent.
+  // The command palette's rows for this chat (commands/composers): the menu's commands, "/name "
+  // put in this textarea exactly as the menu's Enter on an empty draft leaves it (nothing is sent),
+  // and the This chat actions: the file picker, Playbooks and Undo last turn.
   createEffect(() => {
     const off = registerComposer(props.path, {
       commands: () => menuCommands(props.commands ?? []),
@@ -671,6 +624,17 @@ export function Composer(props: {
         input.focus();
         input.setSelectionRange(next.length, next.length);
         updateSlash();
+      },
+      attach: () => {
+        if (!disabled()) picker?.click(); // no await before it: the picker needs the gesture
+      },
+      canPlaybooks: () => !!props.onPlaybooks,
+      playbooks: () => {
+        if (!disabled()) props.onPlaybooks?.();
+      },
+      undoBlocked: () => (props.undo ? props.undo.blocked() : undefined),
+      undo: () => {
+        if (!disabled() && props.undo?.blocked() === null) props.undo.run();
       },
     });
     onCleanup(off);
@@ -1161,16 +1125,13 @@ export function Composer(props: {
           <Show when={!props.readOnly}>
             <VoiceButton voice={voice} />
           </Show>
-          {/* One flyout in place of the old Attach and Commands buttons. */}
+          {/* The plus opens the Commands palette on this chat (§app.command-palette/opening); the
+              flyout it sits with holds the model, login and sandbox panels. */}
           <ComposerMenu
             disabled={disabled()}
-            commandsAvailable={(props.commands?.length ?? 0) > 0}
-            onAttach={() => picker?.click()}
-            onCommands={toggleCommands}
+            onPlus={(trigger) => openPaletteFrom(props.path, trigger)}
             model={props.model}
             thinking={props.thinking}
-            onPlaybooks={props.onPlaybooks}
-            undo={props.undo}
             sandbox={props.sandbox}
             login={props.login}
             onRefocus={() => input.focus()}
@@ -1209,7 +1170,6 @@ export function Composer(props: {
             value={text()}
             disabled={!!props.readOnly}
             onInput={(e) => {
-              buttonSlash = null; // typed: the "/" is the user's now
               setDraft(e.currentTarget.value);
               updateSlash();
               updateMention();
@@ -1228,7 +1188,6 @@ export function Composer(props: {
             // focusout, not blur: a delegated handler is one releaseControl can drop (the textarea
             // has no children, so the two fire alike).
             onFocusOut={() => {
-              dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
               setMentionToken(null);
             }}
@@ -1256,7 +1215,6 @@ export function Composer(props: {
                   e.preventDefault();
                   const token = slashToken();
                   setSlashDismissed(token ? tokenKey(token) : null);
-                  dropButtonSlash(); // a "/" the Commands button added, untouched, goes away
                   updateSlash();
                   return;
                 }

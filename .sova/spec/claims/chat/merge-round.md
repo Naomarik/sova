@@ -176,7 +176,9 @@ shell and under a timeout.
   "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
   never holds the head's sha, and its `next:` line says not to poll. When the branch's worktree holds
   spec drafts not confirmed promoted (the draft tool's `drafts` reading: records pending, records in
-  conflict that the draft never promoted, or a reading that fails, the spec tools missing included),
+  conflict, whether the draft never promoted them or promoted them before and the branch now says them
+  differently, as after taking master's spec in a conflict without promoting again, or a reading that
+  fails, the spec tools missing included),
   the text ends with one more sentence naming each such draft with up to four of those § ids, or
   "status unreadable", telling the owner to promote them on its branch and commit that before it
   answers READY, that the user's go-ahead to merge covers it, and that a READY with them left is

@@ -179,7 +179,7 @@ folder, at any depth, hidden files included (a symlink counts as the file it poi
 helper beside it, or a program that imports a sibling, can't change without asking. Sova asks again
 when any of that changes; editing the instructions in `MODE.md` never asks again, and a mode with
 no tools, commands or hooks never asks at all. A mode without commands or hooks keeps the approval
-it had before they existed. Keep a mode with tools small: a folder of more than 1000 files or 50 MB
+it had before they existed. Keep a mode with tools, commands or hooks small: a folder of more than 1000 files or 50 MB
 can't be turned on. Sova can't tell who wrote a file, so it asks about modes you or your
 agent wrote too.
 

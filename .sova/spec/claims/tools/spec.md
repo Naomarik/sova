@@ -544,7 +544,8 @@ was made) suggests promote; `promoted` (every id is already current, was promote
 before current moved on, or is on the default branch exactly as the draft says it), `superseded` (nothing pending, and an id current changed differently) and
 `empty` (it changes nothing and is older than the age limit) suggest delete; `old` (pending, older
 than the limit, 7 days unless `--days N`), `active` and `unreadable` suggest keep, `landed` with
-the ids whose evidence must be re-recorded first. The default branch is the one
+the ids whose evidence must be re-recorded first. Each draft also lists `promotedConflict`: the ids
+it promoted before that current now says differently, which count as current in its state. The default branch is the one
 `promote` names (origin's HEAD, else `master`, else `main`); a project without Git gets no `landed`.
 It exits 1 when any draft is other than `active`.
 
@@ -555,8 +556,8 @@ interrupted promotion refuses the whole prune, and nothing is deleted.
 
 `draft prune --official` needs no list: it deletes only drafts the tool itself confirms are already
 official, and keeps every other one. Without `--from` it reads the project's own drafts as `drafts`
-does and deletes those it reads `promoted`, under the same lock and refusal of an interrupted
-promotion as an approved prune. With `--from DIR` it reads each draft folder directly in `DIR`, a copy
+does and deletes those it reads `promoted` with nothing in `promotedConflict`, under the same lock
+and refusal of an interrupted promotion as an approved prune. With `--from DIR` it reads each draft folder directly in `DIR`, a copy
 kept outside the project such as the one a merge round keeps, against the project's current spec
 alone, with no Git: one whose records it changes are all already current, at least one, is deleted;
 one with any record pending or in conflict, one that changes nothing, and one it can't read are kept.

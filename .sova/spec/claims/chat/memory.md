@@ -278,12 +278,14 @@ message that keeps failing never blocks the rest.
 
 - **A failure that stops every summary** pauses the whole queue: the summarizer's login failed, it
   hit a usage or rate limit, the model policy refuses its model, or it can't run at all (Claude Code
-  not installed). The queue tries again by itself after 5 minutes, then 10, 20, 40 and at most 60
+  not installed); or a failure that says nothing about the message: a timeout (waiting for a Claude
+  Code slot, or a run killed at its deadline), a network error, an overloaded provider. The message
+  goes back in the queue and the try isn't counted. The queue tries again by itself after 5 minutes, then 10, 20, 40 and at most 60
   between tries; a new message lifts the pause at once. The status's `problem` names the cause and
   the time of the next try, e.g. "The memory summarizer's login failed: check Settings → Accounts.
   Retrying at 2:05 PM.", and clears at the next summary that succeeds.
-- **Any other failure belongs to its node** (a malformed or empty reply, a timeout, a network error,
-  a reading too large): that node waits and is tried again by itself, 5 minutes after its first
+- **A failure that points at the message itself belongs to its node** (a malformed or empty reply,
+  a reading too large, a request the provider refuses as malformed, an unexplained provider error): that node waits and is tried again by itself, 5 minutes after its first
   failed try and 2 hours after its second, while every other node carries on; it sets no `problem`.
   After its third failed try, a message's line is its own text clipped to 512 bytes at a sentence end
   (a merge's: its two lines, clipped to 768), marked as an excerpt in `tree.jsonl`; the whole message

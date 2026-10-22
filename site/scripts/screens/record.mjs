@@ -116,9 +116,10 @@ async function recordOne(name, v, hash) {
     await page.evaluate((h) => (location.hash = h), startHash);
     await page.waitForLoadState("networkidle").catch(() => {});
     if (v.start !== "sessions") await ui.composer(page).waitFor({ state: "visible", timeout: 20_000 });
-    // The app's own animations stay on. Hidden: scrollbars, spell-check marks, toasts and the Jump
-    // to Latest pill (notices that would stack over what the video points at).
-    await page.addStyleTag({ content: "::-webkit-scrollbar { display: none; } .toast, .jump-latest { display: none !important; } ::spelling-error, ::grammar-error { text-decoration: none; }" });
+    // The app's own animations stay on. Hidden: scrollbars, spell-check marks, the browser's tap
+    // highlight (the drawn ring is the tap), toasts and the Jump to Latest pill (notices that would
+    // stack over what the video points at).
+    await page.addStyleTag({ content: "::-webkit-scrollbar { display: none; } .toast, .jump-latest { display: none !important; } ::spelling-error, ::grammar-error { text-decoration: none; } * { -webkit-tap-highlight-color: transparent !important; }" });
     await page.evaluate(() => document.fonts.ready);
     await page.mouse.move(1, 1);
     if (v.prefill) await ui.composer(page).fill(v.prefillText);
@@ -208,7 +209,7 @@ async function recordOne(name, v, hash) {
       to.x = Math.round(to.x);
       to.y = Math.round(to.y);
       if (caption) {
-        const c = captionBox(v, labels.get(`caption:${caption.text}`));
+        const c = caption.plate;
         if (to.x >= c.x - 6 && to.x <= c.x + c.w + 6 && to.y >= c.y - 6 && to.y <= c.y + c.h + 6) throw new Error(`the caption "${caption.text}" covers ${what}: move the caption or the target`);
       }
       if (v.pointer === "arrow") {
@@ -258,6 +259,46 @@ async function recordOne(name, v, hash) {
       }
     };
     const sceneOf = (b) => (b.scene === "overseer" ? v.overseerScene : v.session);
+    // A caption's opaque plate: its box, grown once to cover every line of the page's text it
+    // touches (measured at each beat while the caption shows), so no app text peeks around it.
+    const union = (p, q) => {
+      const x = Math.min(p.x, q.x);
+      const y = Math.min(p.y, q.y);
+      return { x, y, w: Math.max(p.x + p.w, q.x + q.w) - x, h: Math.max(p.y + p.h, q.y + q.h) - y };
+    };
+    const plateOver = (box) =>
+      page.evaluate(({ box, pad, vw, vh, rowMax }) => {
+        const b = { x0: box.x - pad, y0: box.y - pad, x1: box.x + box.w + pad, y1: box.y + box.h + pad };
+        const r = { ...b };
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+          if (!t.textContent.trim()) continue;
+          range.selectNodeContents(t);
+          for (const q of range.getClientRects()) {
+            if (!q.width || !q.height || q.right < b.x0 || q.left > b.x1 || q.bottom < b.y0 || q.top > b.y1) continue;
+            const el = t.parentElement;
+            const st = el && getComputedStyle(el);
+            if (st && (st.visibility === "hidden" || Number(st.opacity) === 0)) continue;
+            // The whole row it sits in (the largest ancestor that is still a row: at most `rowMax`
+            // of the viewport wide and 140px tall), so no neighbour on that row peeks past the
+            // plate. A phone's rows span the screen, so there it takes the whole row.
+            let row = q;
+            for (let e = el; e && e !== document.body; e = e.parentElement) {
+              const er = e.getBoundingClientRect();
+              if (er.width > vw * rowMax || er.height > 140) break;
+              row = er;
+            }
+            r.x0 = Math.min(r.x0, row.left - 4);
+            r.y0 = Math.min(r.y0, row.top - 4);
+            r.x1 = Math.max(r.x1, row.right + 4);
+            r.y1 = Math.max(r.y1, row.bottom + 4);
+          }
+        }
+        const x0 = Math.max(0, r.x0);
+        const y0 = Math.max(0, r.y0);
+        return { x: x0, y: y0, w: Math.min(vw, r.x1) - x0, h: Math.min(vh, r.y1) - y0 };
+      }, { box, pad: 8, vw: v.vp.width, vh: v.vp.height, rowMax: v.vp.width < 768 ? 1 : 0.45 });
 
     track.t0 = now();
     mark(track.t0, 0);
@@ -269,7 +310,15 @@ async function recordOne(name, v, hash) {
       mark(a, Math.min(sinceMark(a), 0.04));
       if (b.caption !== undefined) {
         if (caption) track.captions.push({ ...caption, b: a });
-        caption = b.caption === null ? null : { text: b.caption, a, box: captionBox(v, labels.get(`caption:${b.caption}`)) };
+        if (b.caption !== null) {
+          const box = captionBox(v, labels.get(`caption:${b.caption}`));
+          // The tag sits after the caption when a sped-up stretch falls inside it.
+          const until = v.beats.findIndex((x, k) => k > b.index && x.caption !== undefined);
+          const sped = v.beats.slice(b.index, until < 0 ? undefined : until).some((x) => x.speed);
+          const tag = labels.get(`tag:${v.tagText}`);
+          const reach = sped ? { x: box.x, y: box.y - tag.cssH - 6, w: Math.max(box.w, tag.cssW), h: box.h + tag.cssH + 6 } : box;
+          caption = { text: b.caption, a, box, reach, plate: await plateOver(reach) };
+        } else caption = null;
       }
       if (b.do === "type") {
         const input = ui.composer(page);
@@ -317,6 +366,7 @@ async function recordOne(name, v, hash) {
         await sleep(PACE.rest * 1000);
         mark(now(), PACE.rest);
       }
+      if (caption) caption.plate = union(caption.plate, await plateOver(caption.reach));
       track.beats.push({ i: b.index, do: b.do, a, b: track.anchors.at(-1).r, news: bringsNewContent(b), moves: ["type", "click", "tap", "home"].includes(b.do) });
       await leakGate(page, patterns, `video ${name} ${beatNow}`);
       track.privacy.checked++;

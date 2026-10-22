@@ -7,9 +7,9 @@
       "height": 1800,
       "viewport": "desktop",
       "alt": "Sova on a desktop: the sessions sidebar with 2 sessions that need you, the Retry policy session in Delegate mode waiting on its 3 workers, and the session detail pane's Agents tab with the working worker's transcript.",
-      "hash": "ee704c84b477780a",
-      "sha": "88b9e43d6e315b22",
-      "bytes": 142354
+      "hash": "5561f4a374a002a2",
+      "sha": "1ded753e3e9f3e8d",
+      "bytes": 142102
     },
     "hero-fold": {
       "file": "hero-fold.webp",
@@ -17,9 +17,9 @@
       "height": 1848,
       "viewport": "fold",
       "alt": "The same session on an unfolded foldable: the sidebar on the left and the chat on the right, waiting on its workers.",
-      "hash": "32c518d3d2706c91",
-      "sha": "622fddcdabce4454",
-      "bytes": 106592
+      "hash": "2688b0a621a2e5a4",
+      "sha": "e284e291a5c378f2",
+      "bytes": 106520
     },
     "hero-phone": {
       "file": "hero-phone.webp",
@@ -27,9 +27,9 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "The same session on a folded phone: the chat alone, its alignment decided and its workers running, with a Steer composer.",
-      "hash": "0606a6de0fa3e805",
-      "sha": "fdeadad9d600a655",
-      "bytes": 50884
+      "hash": "259eaadcb417ce5d",
+      "sha": "9efc5fce7cf66a74",
+      "bytes": 50858
     },
     "delegate": {
       "file": "delegate.webp",
@@ -37,9 +37,9 @@
       "height": 1520,
       "viewport": "compact-wide",
       "alt": "The Agents tab beside a Delegate session: 3 workers with their model, tokens and state, and the working worker's transcript: its task, a read, 2 edits and a new test file.",
-      "hash": "59c0ae1f49d53d57",
-      "sha": "99ab4cdc0549aedf",
-      "bytes": 79480
+      "hash": "d7a1a340e58e7d6d",
+      "sha": "51711a652694a368",
+      "bytes": 81050
     },
     "alignment": {
       "file": "alignment.webp",
@@ -47,9 +47,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "An alignment card in the chat: what the agent found, its approach, a rejected alternative, and an open question with 2 options and a recommendation.",
-      "hash": "14b87925505c639a",
-      "sha": "6b364080dd8a949b",
-      "bytes": 82386
+      "hash": "888ab8da619ba7c5",
+      "sha": "cf4158702fbfdb13",
+      "bytes": 82408
     },
     "changes": {
       "file": "changes.webp",
@@ -57,8 +57,8 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The changes viewer: 3 numbered steps, each with why it was made, and the first step's diff.",
-      "hash": "8bfbf78bd603b95b",
-      "sha": "1ff6ef95d5e10e10",
+      "hash": "58277c24f984c3c4",
+      "sha": "dca5f76f07a174b5",
       "bytes": 89186
     },
     "overseer": {
@@ -67,9 +67,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The Overseer page after asking what needs you: a card that lists 2 finished sessions, each with why, and asks before archiving them.",
-      "hash": "298b2004aee9a873",
-      "sha": "b5596e06ab68d549",
-      "bytes": 88834
+      "hash": "b3adc6bf37c85328",
+      "sha": "b04b4a09321f39e4",
+      "bytes": 89112
     },
     "phone-access": {
       "file": "phone-access.webp",
@@ -77,7 +77,7 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "The Access page on a phone: a one-use pairing code, its QR and the link to open it.",
-      "hash": "0743dffbe81bdf30",
+      "hash": "0a74ed6fe1029aee",
       "sha": "d1eb17731d3637f5",
       "bytes": 55968
     },
@@ -87,9 +87,9 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "A session on a phone, waiting on an open question with 2 options and a recommendation.",
-      "hash": "64dfc3e5baa7a2cf",
-      "sha": "44236c87124869f6",
-      "bytes": 52362
+      "hash": "38d5c27b82d981ec",
+      "sha": "4aaa9e628ce0e395",
+      "bytes": 53152
     },
     "transcript": {
       "file": "transcript.webp",
@@ -97,9 +97,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "A running turn: the user's message, a read, 2 edits with their line counts, a finished test run, and a follow-up typed into the Steer composer.",
-      "hash": "e3b4b928ac0f5a96",
-      "sha": "4c35b29ae1cf90c1",
-      "bytes": 76332
+      "hash": "793b7826ecd07899",
+      "sha": "40d1053a7cdb2b8c",
+      "bytes": 76362
     }
   },
   "slots": {
@@ -120,216 +120,216 @@
         {
           "file": "/video/session-desk.av1.mp4",
           "type": "video/mp4; codecs=\"av01.0.08M.08\"",
-          "bytes": 2935431,
-          "sha": "ed20ea83608e1f74",
+          "bytes": 2429621,
+          "sha": "fe664f1165ccd8c5",
           "crf": 30
         },
         {
           "file": "/video/session-desk.mp4",
           "type": "video/mp4; codecs=\"avc1.640032\"",
-          "bytes": 5695182,
-          "sha": "fec830bc6e241e0c",
+          "bytes": 4943057,
+          "sha": "4aabedde476c9393",
           "crf": 20
         }
       ],
       "width": 1920,
       "height": 1200,
-      "seconds": 56.13,
+      "seconds": 56.3,
       "alt": "Sova in use: the Overseer is asked what needs you and names the Retry policy session; in that session a request is typed, the agent reads a file, an alignment card is answered by clicking its recommended option, 3 workers start and one is followed to a passing test (sped up), and the changes open as steps.",
       "slot": "hero.desk",
       "poster": {
         "file": "video-desk.webp",
-        "sha": "4470f399515559af"
+        "sha": "d56fc173d877be35"
       },
-      "hash": "c26f41e5e894d34d",
+      "hash": "867f9490b93a87d6",
       "timeline": {
-        "seconds": 56.12799286127366,
+        "seconds": 56.287579165277904,
         "holds": [
           {
             "i": 0,
-            "a": 0,
-            "b": 0.7,
+            "a": 0.0010001659393310547,
+            "b": 0.702000093460083,
             "needMs": 0
           },
           {
             "i": 3,
-            "a": 3.014638844976621,
-            "b": 5.214638844976621,
-            "needMs": 2200,
-            "read": "Retry policy is new"
+            "a": 3.200853384602958,
+            "b": 6.3008533846029575,
+            "needMs": 3100,
+            "read": "Two need you. Start with Retry policy"
           },
           {
             "i": 5,
-            "a": 7.049633815397302,
-            "b": 8.649633815397301,
+            "a": 8.051222349206608,
+            "b": 9.651222349206607,
             "needMs": 1600,
             "read": "Needs you"
           },
           {
             "i": 9,
-            "a": 14.89040900322645,
-            "b": 16.49040900322645,
+            "a": 15.819461305574304,
+            "b": 17.419461305574305,
             "needMs": 1600,
             "read": "No ceiling"
           },
           {
             "i": 12,
-            "a": 17.991408854453255,
-            "b": 22.291408854453255,
+            "a": 18.83946119113339,
+            "b": 23.13946119113339,
             "needMs": 4300,
             "read": "Cap the upload backoff. How long may one wait? 30 s"
           },
           {
             "i": 16,
-            "a": 26.194460062321358,
-            "b": 28.094460062321357,
+            "a": 27.009879209662596,
+            "b": 28.909879209662595,
             "needMs": 1900,
             "read": "Decided: 30 s"
           },
           {
             "i": 18,
-            "a": 29.509460100468328,
-            "b": 31.10946010046833,
+            "a": 30.325879099036374,
+            "b": 31.925879099036376,
             "needMs": 1600,
             "read": "3 workers"
           },
           {
             "i": 20,
-            "a": 32.89624609463434,
-            "b": 35.39624609463434,
+            "a": 33.76070165461483,
+            "b": 36.26070165461483,
             "needMs": 2500,
             "read": "3 workers and their state"
           },
           {
             "i": 23,
-            "a": 37.930804759510785,
-            "b": 39.53080475951079,
+            "a": 38.80561512820361,
+            "b": 40.405615128203614,
             "needMs": 1600,
             "read": "Tests pass"
           },
           {
             "i": 25,
-            "a": 41.25567241048544,
-            "b": 43.45567241048544,
+            "a": 42.0944824511143,
+            "b": 44.294482451114305,
             "needMs": 2200,
             "read": "All 3 are back"
           },
           {
             "i": 27,
-            "a": 45.21252048042443,
-            "b": 48.71252048042443,
+            "a": 46.01324044083943,
+            "b": 49.213240440839435,
             "needMs": 2800,
             "read": "Cap each wait at 30 s"
           },
           {
             "i": 29,
-            "a": 50.60281715871977,
-            "b": 54.10281715871977,
+            "a": 51.07557595314051,
+            "b": 54.27557595314051,
             "needMs": 2800,
             "read": "Pin the delays with a test"
           }
         ],
         "moves": [
           {
-            "a": 0.7460000419616699,
-            "b": 1.368639050970273
+            "a": 0.7190000534057617,
+            "b": 1.3588533292898475
           },
           {
-            "a": 5.260638886938291,
-            "b": 5.951633918394128
+            "a": 6.316853178609305,
+            "b": 6.989222265283269
           },
           {
-            "a": 8.69563385735897,
-            "b": 9.273266167064428
+            "a": 9.668222309152286,
+            "b": 10.250318320639087
           },
           {
-            "a": 12.73926597060752,
-            "b": 13.394408827750377
+            "a": 13.682318404562428,
+            "b": 14.365461261705285
           },
           {
-            "a": 22.336408730475593,
-            "b": 22.95793440593522
+            "a": 23.166461141542324,
+            "b": 23.81217010503056
           },
           {
-            "a": 24.073934428823403,
-            "b": 24.69546010428303
+            "a": 24.883170251896406,
+            "b": 25.52887921538464
           },
           {
-            "a": 31.157459997471502,
-            "b": 31.767246060302067
+            "a": 31.966878988410155,
+            "b": 32.60470170802059
           },
           {
-            "a": 35.44724625103693,
-            "b": 36.0861380750422
+            "a": 36.32670163935604,
+            "b": 37.0016152623538
           },
           {
-            "a": 39.58380477095488,
-            "b": 40.15767227506369
+            "a": 40.441615141555054,
+            "b": 41.015482645663866
           },
           {
-            "a": 43.5146724638912,
-            "b": 44.10752037552026
+            "a": 44.323482494983324,
+            "b": 44.939240511411334
           },
           {
-            "a": 48.76052061584618,
-            "b": 49.504817023298024
+            "a": 49.22924047326436,
+            "b": 50.00657589973475
           },
           {
-            "a": 54.14281715871977,
-            "b": 54.827992861273664
+            "a": 54.28157599510218,
+            "b": 54.98757916527791
           }
         ],
         "captions": [
           {
             "text": "Ask what needs you",
-            "a": 0,
-            "b": 5.254638844976621
+            "a": 0.0010001659393310547,
+            "b": 6.310853375066214
           },
           {
             "text": "Ask in plain words",
-            "a": 7.049633815397302,
-            "b": 14.497408839194469
+            "a": 8.051222349206608,
+            "b": 15.449461420015222
           },
           {
             "text": "The agent looks first",
-            "a": 14.497408839194469,
-            "b": 16.53040900322645
+            "a": 15.449461420015222,
+            "b": 17.430461223558314
           },
           {
             "text": "Agree on the plan first",
-            "a": 16.53040900322645,
-            "b": 22.331408854453255
+            "a": 17.430461223558314,
+            "b": 23.147461088136563
           },
           {
             "text": "You decide",
-            "a": 22.331408854453255,
-            "b": 28.134460062321356
+            "a": 23.147461088136563,
+            "b": 28.92987919058911
           },
           {
             "text": "Hand it to 3 workers",
-            "a": 28.134460062321356,
-            "b": 31.14946010046833
+            "a": 28.92987919058911,
+            "b": 31.94587907996289
           },
           {
             "text": "Workers you can follow",
-            "a": 31.14946010046833,
-            "b": 39.570804759510786
+            "a": 31.94587907996289,
+            "b": 40.42061523310779
           },
           {
             "text": "All 3 are back",
-            "a": 39.570804759510786,
-            "b": 43.49567241048544
+            "a": 40.42061523310779,
+            "b": 44.30248258653606
           },
           {
             "text": "Read every change as steps",
-            "a": 43.49567241048544,
-            "b": 50.60281715871977
+            "a": 44.30248258653606,
+            "b": 51.07557595314051
           }
         ],
         "sped": [
           {
-            "a": 37.1851381379847,
-            "b": 37.890804759510786,
+            "a": 38.113615098321816,
+            "b": 38.76561512820361,
             "k": 3
           }
         ],
@@ -337,67 +337,67 @@
           {
             "after": 2,
             "next": 4,
-            "gap": 2.28600004196167
+            "gap": 3.122999763488769
           },
           {
             "after": 4,
             "next": 6,
-            "gap": 2.4439999389648426
+            "gap": 2.3790000438690173
           },
           {
             "after": 8,
             "next": 13,
-            "gap": 7.485999727249142
+            "gap": 7.357999753952029
           },
           {
             "after": 10,
             "next": 13,
-            "gap": 5.224999876022338
+            "gap": 5.143999910354616
           },
           {
             "after": 11,
             "next": 13,
-            "gap": 4.384999876022338
+            "gap": 4.333999919891358
           },
           {
             "after": 15,
             "next": 19,
-            "gap": 5.002999935150143
+            "gap": 4.983999967575073
           },
           {
             "after": 17,
             "next": 19,
-            "gap": 1.6879998970031735
+            "gap": 1.6619997978210463
           },
           {
             "after": 19,
             "next": 21,
-            "gap": 3.3800001907348616
+            "gap": 3.421999931335449
           },
           {
             "after": 21,
             "next": 24,
-            "gap": 3.1976666959126803
+            "gap": 3.1399998792012553
           },
           {
             "after": 22,
             "next": 24,
-            "gap": 1.6930000114440915
+            "gap": 1.676000013351441
           },
           {
             "after": 24,
             "next": 26,
-            "gap": 3.057000188827516
+            "gap": 3.007999849319461
           },
           {
             "after": 26,
             "next": 28,
-            "gap": 4.353000240325926
+            "gap": 3.98999996185303
           },
           {
             "after": 28,
             "next": 30,
-            "gap": 4.338000135421751
+            "gap": 3.9750000953674345
           }
         ],
         "privacy": {
@@ -414,186 +414,186 @@
           {
             "i": 1,
             "do": "click",
-            "a": 0.74,
+            "a": 0.71,
             "b": 2.43
           },
           {
             "i": 2,
             "do": "release",
-            "a": 2.47,
-            "b": 2.97
+            "a": 2.44,
+            "b": 3.19
           },
           {
             "i": 3,
             "do": "hold",
-            "a": 3.01,
-            "b": 5.21
+            "a": 3.2,
+            "b": 6.3
           },
           {
             "i": 4,
             "do": "click",
-            "a": 5.25,
-            "b": 7.01
+            "a": 6.31,
+            "b": 8.05
           },
           {
             "i": 5,
             "do": "hold",
-            "a": 7.05,
-            "b": 8.65
+            "a": 8.05,
+            "b": 9.65
           },
           {
             "i": 6,
             "do": "type",
-            "a": 8.69,
-            "b": 12.69
+            "a": 9.66,
+            "b": 13.67
           },
           {
             "i": 7,
             "do": "click",
-            "a": 12.73,
-            "b": 14.46
+            "a": 13.68,
+            "b": 15.43
           },
           {
             "i": 8,
             "do": "release",
-            "a": 14.5,
-            "b": 14.85
+            "a": 15.45,
+            "b": 15.81
           },
           {
             "i": 9,
             "do": "hold",
-            "a": 14.89,
-            "b": 16.49
+            "a": 15.82,
+            "b": 17.42
           },
           {
             "i": 10,
             "do": "release",
-            "a": 16.53,
-            "b": 17.11
+            "a": 17.43,
+            "b": 18.02
           },
           {
             "i": 11,
             "do": "scroll",
-            "a": 17.15,
-            "b": 17.95
+            "a": 18.03,
+            "b": 18.83
           },
           {
             "i": 12,
             "do": "hold",
-            "a": 17.99,
-            "b": 22.29
+            "a": 18.84,
+            "b": 23.14
           },
           {
             "i": 13,
             "do": "click",
-            "a": 22.33,
-            "b": 24.03
+            "a": 23.15,
+            "b": 24.87
           },
           {
             "i": 14,
             "do": "click",
-            "a": 24.07,
-            "b": 25.76
+            "a": 24.88,
+            "b": 26.59
           },
           {
             "i": 15,
             "do": "release",
-            "a": 25.8,
-            "b": 26.15
+            "a": 26.63,
+            "b": 26.98
           },
           {
             "i": 16,
             "do": "hold",
-            "a": 26.19,
-            "b": 28.09
+            "a": 27.01,
+            "b": 28.91
           },
           {
             "i": 17,
             "do": "release",
-            "a": 28.13,
-            "b": 29.47
+            "a": 28.93,
+            "b": 30.3
           },
           {
             "i": 18,
             "do": "hold",
-            "a": 29.51,
-            "b": 31.11
+            "a": 30.33,
+            "b": 31.93
           },
           {
             "i": 19,
             "do": "click",
-            "a": 31.15,
-            "b": 32.86
+            "a": 31.95,
+            "b": 33.72
           },
           {
             "i": 20,
             "do": "hold",
-            "a": 32.9,
-            "b": 35.4
+            "a": 33.76,
+            "b": 36.26
           },
           {
             "i": 21,
             "do": "click",
-            "a": 35.44,
-            "b": 37.15
+            "a": 36.3,
+            "b": 38.07
           },
           {
             "i": 22,
             "do": "release",
-            "a": 37.19,
-            "b": 37.89
+            "a": 38.11,
+            "b": 38.77
           },
           {
             "i": 23,
             "do": "hold",
-            "a": 37.93,
-            "b": 39.53
+            "a": 38.81,
+            "b": 40.41
           },
           {
             "i": 24,
             "do": "click",
-            "a": 39.57,
-            "b": 41.22
+            "a": 40.42,
+            "b": 42.08
           },
           {
             "i": 25,
             "do": "hold",
-            "a": 41.26,
-            "b": 43.46
+            "a": 42.09,
+            "b": 44.29
           },
           {
             "i": 26,
             "do": "click",
-            "a": 43.5,
-            "b": 45.17
+            "a": 44.3,
+            "b": 46.01
           },
           {
             "i": 27,
             "do": "hold",
-            "a": 45.21,
-            "b": 48.71
+            "a": 46.01,
+            "b": 49.21
           },
           {
             "i": 28,
             "do": "click",
-            "a": 48.75,
-            "b": 50.56
+            "a": 49.22,
+            "b": 51.07
           },
           {
             "i": 29,
             "do": "hold",
-            "a": 50.6,
-            "b": 54.1
+            "a": 51.08,
+            "b": 54.28
           },
           {
             "i": 30,
             "do": "home",
-            "a": 54.14,
-            "b": 55.13
+            "a": 54.28,
+            "b": 55.29
           }
         ],
         "edges": {
-          "bottom": 1.2,
+          "bottom": 1.1,
           "right": 1.3,
           "threshold": 40
         }
@@ -604,30 +604,30 @@
         {
           "file": "/video/session-phone.av1.mp4",
           "type": "video/mp4; codecs=\"av01.0.08M.08\"",
-          "bytes": 936834,
-          "sha": "e8abd9dca1b3fd82",
+          "bytes": 582885,
+          "sha": "d58623af44617434",
           "crf": 30
         },
         {
           "file": "/video/session-phone.mp4",
           "type": "video/mp4; codecs=\"avc1.640032\"",
-          "bytes": 1386955,
-          "sha": "9a2af9edd94a4579",
+          "bytes": 1082191,
+          "sha": "dafdd45c465492d8",
           "crf": 20
         }
       ],
       "width": 832,
       "height": 1316,
-      "seconds": 13.4,
+      "seconds": 13.17,
       "alt": "Sova on a phone: the Upload metrics session is opened from the Needs you list, its open question is answered with one tap on Go With Recommendations, and the session carries on.",
       "slot": "feature.phone-question",
       "poster": {
         "file": "video-phone.webp",
         "sha": "3ffe184d4eec5ce8"
       },
-      "hash": "4617e7f1c76c07a6",
+      "hash": "b0a16383dff19e60",
       "timeline": {
-        "seconds": 13.386000137329098,
+        "seconds": 13.155000162124637,
         "holds": [
           {
             "i": 0,
@@ -638,15 +638,15 @@
           },
           {
             "i": 3,
-            "a": 5.096000022888183,
-            "b": 8.496000022888182,
+            "a": 4.993000221252442,
+            "b": 8.393000221252441,
             "needMs": 3400,
             "read": "Does a retried part count as a failure?"
           },
           {
             "i": 6,
-            "a": 10.046000137329099,
-            "b": 12.246000137329098,
+            "a": 9.850999975204468,
+            "b": 12.05099997520447,
             "needMs": 2200,
             "read": "The counter is in"
           }
@@ -656,17 +656,17 @@
           {
             "text": "A session needs you",
             "a": 0,
-            "b": 3.14
+            "b": 3.10600004196167
           },
           {
             "text": "Answer with one tap",
-            "a": 5.096000022888183,
-            "b": 8.536000022888182
+            "a": 4.993000221252442,
+            "b": 8.39800009727478
           },
           {
             "text": "It carries on",
-            "a": 9.64900002479553,
-            "b": 12.286000137329097
+            "a": 9.475999975204468,
+            "b": 12.055000162124635
           }
         ],
         "sped": [],
@@ -674,17 +674,17 @@
           {
             "after": 1,
             "next": 4,
-            "gap": 5.079000062942503
+            "gap": 4.971000146865844
           },
           {
             "after": 2,
             "next": 4,
-            "gap": 3.4799999999999986
+            "gap": 3.4090000629425043
           },
           {
             "after": 5,
             "next": 7,
-            "gap": 2.2799999999999976
+            "gap": 2.211000156402589
           }
         ],
         "privacy": {
@@ -701,44 +701,44 @@
           {
             "i": 1,
             "do": "tap",
-            "a": 3.14,
-            "b": 4.22
+            "a": 3.11,
+            "b": 4.19
           },
           {
             "i": 2,
             "do": "scroll",
-            "a": 4.26,
-            "b": 5.06
+            "a": 4.19,
+            "b": 4.99
           },
           {
             "i": 3,
             "do": "hold",
-            "a": 5.1,
-            "b": 8.5
+            "a": 4.99,
+            "b": 8.39
           },
           {
             "i": 4,
             "do": "tap",
-            "a": 8.54,
-            "b": 9.61
+            "a": 8.4,
+            "b": 9.47
           },
           {
             "i": 5,
             "do": "release",
-            "a": 9.65,
-            "b": 10.01
+            "a": 9.48,
+            "b": 9.84
           },
           {
             "i": 6,
             "do": "hold",
-            "a": 10.05,
-            "b": 12.25
+            "a": 9.85,
+            "b": 12.05
           },
           {
             "i": 7,
             "do": "home",
-            "a": 12.29,
-            "b": 12.59
+            "a": 12.06,
+            "b": 12.36
           }
         ],
         "edges": {

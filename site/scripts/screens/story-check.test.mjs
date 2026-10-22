@@ -152,7 +152,7 @@ test("a video ends by going home, and a tap video never clicks", async () => {
 
 test("$session: in reply text names a story session", async () => {
   const out = await broken((s) => s.replace("sova://s/$session:retry-policy", "sova://s/$session:retry-polcy"));
-  assert.match(out, /\/videos\/desk\/overseer\/script\/2\/say\/2: unknown session "retry-polcy"/);
+  assert.match(out, /\/videos\/desk\/overseer\/script\/2\/say\/5: unknown session "retry-polcy"/);
 });
 
 test("a hold between a say and a tool call waits after the text, inside that reply", () => {

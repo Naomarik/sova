@@ -247,7 +247,8 @@ export function overseerButtonLabel(unread: number): string {
 
 // ---- Polling ---------------------------------------------------------------------------------
 
-/** How often the Overseer's counts are re-read: the entry button's poll, and the attention digest's (App). */
+/** How often the Overseer's to-do list is re-read while open (OverseerTodos). The entry button's
+    counts and the attention digest are pushed instead (App, lib/session-feed). */
 export const OVERSEER_POLL_MS = 10_000;
 
 /** Alt+O opens the Overseer. `code`, not `key`: on a Mac, Option+O types "ø". */

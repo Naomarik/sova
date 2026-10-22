@@ -1721,7 +1721,12 @@
         "src/lib/storage-keys.ts",
         "src/lib/archive.ts",
         "src/lib/archive.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T14:42Z",
+        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+      }
     },
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
@@ -1757,7 +1762,12 @@
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
         "src/components/RowPlace.tsx"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-21T14:42Z",
+        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
+      }
     },
     "§app.session-list/groups": {
       "kind": "behavior",
@@ -1822,11 +1832,15 @@
         "src/lib/drag-archive.test.ts",
         "src/components/AgentsView.tsx",
         "src/lib/project-region.ts",
-        "src/lib/project-region.test.ts"
+        "src/lib/project-region.test.ts",
+        "src/lib/section-reveal.ts",
+        "src/lib/section-reveal.test.ts",
+        "src/lib/section-reveal.browser.test.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-17T18:00Z"
+        "by": "naomarik",
+        "at": "2026-10-21T14:42Z",
+        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
       }
     },
     "§app.session-list/search": {
@@ -9478,11 +9492,15 @@
         "server/org-sessions.ts",
         "server/session-feed.ts",
         "src/lib/built-once.ts",
-        "src/lib/built-once.browser.test.ts"
+        "src/lib/built-once.browser.test.ts",
+        "src/lib/section-reveal.ts",
+        "src/lib/section-reveal.test.ts",
+        "src/lib/section-reveal.browser.test.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T19:32Z"
+        "by": "naomarik",
+        "at": "2026-10-21T14:42Z",
+        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
       }
     },
     "§app.project-overseer/coding-mode": {
@@ -17357,14 +17375,18 @@
         "src/lib/drag-overlay.ts",
         "src/components/ChatView.tsx",
         "src/components/AgentsView.tsx",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "src/lib/section-reveal.ts",
+        "src/lib/section-reveal.test.ts",
+        "src/lib/section-reveal.browser.test.ts"
       ],
       "requires": [
         "§app.session-list/organizations"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-15T19:32Z"
+        "by": "naomarik",
+        "at": "2026-10-21T14:42Z",
+        "source": "pi-session:d5060398-05c1-4e9b-a6a5-186d2888b9b8#483165cc"
       }
     },
     "§app.projects/placement": {

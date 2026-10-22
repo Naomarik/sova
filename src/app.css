@@ -1287,15 +1287,21 @@ html, body { overflow: clip; overscroll-behavior: none; }
    collapse. Scoped to a `.app-main` that holds a transcript, so the pages that borrow the session
    head (Usage, Agents, …) and a workspace (`.workspace`) never change. The composer is kept mounted
    (inert, Composer.tsx), so its draft is there when Focus turns off. */
+/* Registered, so --measure's `ch` resolves in .app-main's font (the composer's), not the button's. */
+@property --focus-right { syntax: "<length-percentage>"; inherits: true; initial-value: 0px; }
 .app-main {
   --focus-toggle: 32px;
   /* What the floating controls and the thread's end add for the gesture bar: only in Focus, when
      the composer that pays it otherwise (§app.shell/viewport) is hidden. */
   --focus-inset: 0px;
+  /* The button's right inset: on a wide screen, the composer column's right edge (the centred
+     --measure + --space-9 column the composer and thread share); where that column is full width,
+     a small inset clear of the scrollbar. */
+  --focus-right: max(var(--space-3), calc((100% - (var(--measure) + var(--space-9))) / 2));
 }
 .focus-toggle {
   position: absolute;
-  right: var(--space-3);
+  right: var(--focus-right);
   bottom: calc(var(--space-3) + var(--focus-inset));
   z-index: 3;
   width: var(--focus-toggle);
@@ -1324,11 +1330,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .app-main > .transcript-wrap > .jump-latest {
   bottom: calc(var(--space-4) + var(--focus-inset));
-  max-width: calc(100% - 2 * (var(--space-3) + var(--focus-toggle) + var(--space-2)));
+  max-width: calc(100% - 2 * (var(--focus-right) + var(--focus-toggle) + var(--space-2)));
 }
 .app-main > .transcript-wrap > .chat-wait-note {
   bottom: calc(var(--space-4) + var(--focus-inset));
-  max-width: calc(100% - 2 * (var(--space-3) + var(--focus-toggle) + var(--space-2)));
+  max-width: calc(100% - 2 * (var(--focus-right) + var(--focus-toggle) + var(--space-2)));
 }
 .app-main > .transcript-wrap > .jump-latest[data-shown] ~ .chat-wait-note {
   bottom: calc(var(--space-4) + var(--control-md) + var(--space-2) + var(--focus-inset));

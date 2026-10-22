@@ -50,8 +50,9 @@ Press it to open the menu. It has these groups:
   choose the chat's [memory type and summary size](#memory).
 - **This project · {name}**, only in a chat whose project has [project modes](/docs/modes/project-modes/):
   one row per mode, with its description and, when it applies, its state, such as **Asks before
-  turning on** for a mode with tools, commands or hooks you haven't approved. A mode the Overseer
-  turned on whose hooks wait for you has an **Approve Hooks** button beside its row.
+  turning on** for a mode with tools, commands or hooks you haven't approved. A mode someone
+  other than you turned on (the Overseer, a script, a chat's agent or an extension) whose hooks wait
+  for you has an **Approve Hooks** button beside its row.
 - **Subagents**: one row, **Subagents · {profile}**, that opens the picker for this chat's
   [subagent profile](/docs/subagent-profiles/).
 

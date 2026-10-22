@@ -14,14 +14,16 @@ the same `~/.pi/agent` your terminal does. It lists every session on the machine
 transcript, watches a session that's open in a TUI as it runs, and gives web chats workers,
 branching and steering. It is one person's tool for one person's agent.
 
-<a href="https://sova.naomarik.com/" title="Watch a session run in Sova (22-second video on the site)">
-  <img src="site/src/assets/screens/hero-desk.webp" alt="Sova on a desktop: the sessions sidebar with 2 sessions that need you, a session in Delegate mode waiting on its 3 workers, and the working worker's transcript." width="416">
-  <img src="site/src/assets/screens/hero-fold.webp" alt="The same session on an unfolded foldable: the sidebar on the left and the chat on the right." width="344">
-  <img src="site/src/assets/screens/hero-phone.webp" alt="The same session on a folded phone: the chat alone, with a Steer composer." width="164">
+<a href="https://sova.naomarik.com/" title="Watch a session run in Sova (video on the site)">
+  <img src="site/src/assets/screens/hero-desk.webp" alt="Sova on a desktop: the sessions sidebar with 2 sessions that need you, a session in Delegate mode waiting on its 3 workers, and the working worker's transcript." width="920">
 </a>
 
-The same session on a desktop, an unfolded foldable and a folded phone.
-[Watch it run on the site](https://sova.naomarik.com/).
+<p align="center">
+  <img src="site/src/assets/screens/hero-phone.webp" alt="The same session on a folded phone: the chat alone, with a Steer composer." width="260">
+</p>
+
+<p align="center">The same session on a desktop and on a folded phone.
+<a href="https://sova.naomarik.com/">Watch it run on the site</a>.</p>
 
 ## Try it
 
@@ -63,13 +65,14 @@ your app launcher. Open it from there, or run `sova open`: it starts the server 
 **Also in Sova:** [rewind, fork and steer](https://sova.naomarik.com/docs/change-direction/) ·
 [several Claude logins](pi-config/extensions/claude-code/README.md) with failover ·
 a [sandbox per session](pi-config/extensions/sandbox/README.md) (bubblewrap or Seatbelt) ·
-[18 themes and your own](docs/customization.md#themes-and-type) ·
+the [Overseer](https://sova.naomarik.com/docs/overseer/), which asks before it acts on a risky request.
+
+**Around it:** [18 themes and your own](docs/customization.md#themes-and-type) ·
 local voice input (Settings → Voice, downloads its model) ·
 read-only [share links](docs/public-links.md) on an address you set up ·
 [playbooks and schedules](https://sova.naomarik.com/docs/playbooks-and-schedules/) ·
 [tours](https://sova.naomarik.com/docs/modes/vis/) of a real interface ·
-a usage page (tokens and costs per session) ·
-the [Overseer](https://sova.naomarik.com/docs/overseer/), which asks before it acts on a risky request.
+a usage page (tokens and costs per session).
 
 ## What it isn't
 

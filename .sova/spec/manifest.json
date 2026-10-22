@@ -10314,6 +10314,43 @@
       "authority": "accepted",
       "evidence": "reviewed"
     },
+    "§app.owner-page/send": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.owner-page/owner",
+        "§app.owner-page/link",
+        "§app.outreach/send",
+        "§app.outreach/links",
+        "§app.overseer/org-people-facing",
+        "§app.overseer/caps"
+      ],
+      "code": [
+        "server/overseer-org-tools.ts",
+        "server/overseer-org-view.ts",
+        "server/overseer-prompt.md",
+        "server/outreach/core.ts",
+        "server/outreach/links.ts",
+        "server/outreach/log.ts",
+        "shared/outreach.ts",
+        "server/owner.ts",
+        "server/person-links.ts",
+        "server/owner-attention.ts",
+        "server/org-history-capture.ts",
+        "statecharts/src/sova/statecharts/org.cljc",
+        "server/vendor/statecharts.js",
+        "server/overseer-owner-send.test.ts",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-tools.test.ts",
+        "statecharts/test/sova/statecharts/refit/org_project_test.cljc"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-19T17:08Z",
+        "source": "pi-session:01a15500-4be1-7306-a0f9-1fe0d5e9f90e#cf4c45cb"
+      }
+    },
     "§app.owner-page/updates": {
       "kind": "behavior",
       "authority": "accepted",
@@ -11369,7 +11406,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T08:01Z"
+        "at": "2026-10-19T17:08Z",
+        "source": "pi-session:01a15500-4be1-7306-a0f9-1fe0d5e9f90e#cf4c45cb"
       }
     },
     "§app.overseer/org-project-overseers": {

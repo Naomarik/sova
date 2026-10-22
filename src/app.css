@@ -1280,3 +1280,93 @@ html, body { overflow: clip; overscroll-behavior: none; }
   pointer-events: none;
 }
 .overseer-schedules > .overseer-attention-dot { top: 5px; right: 5px; }
+
+/* ── Focus (§chat.transcript/focus-view) ─────────────────────────────────────────────────────────
+   One round button in the single view's transcript corner. On, `.app[data-focus="on"]` leaves the
+   conversation alone: the head keeps Back and the title, and the strips under it and the composer
+   collapse. Scoped to a `.app-main` that holds a transcript, so the pages that borrow the session
+   head (Usage, Agents, …) and a workspace (`.workspace`) never change. The composer is kept mounted
+   (inert, Composer.tsx), so its draft is there when Focus turns off. */
+.app-main {
+  --focus-toggle: 32px;
+  /* What the floating controls and the thread's end add for the gesture bar: only in Focus, when
+     the composer that pays it otherwise (§app.shell/viewport) is hidden. */
+  --focus-inset: 0px;
+}
+.focus-toggle {
+  position: absolute;
+  right: var(--space-3);
+  bottom: calc(var(--space-3) + var(--focus-inset));
+  z-index: 3;
+  width: var(--focus-toggle);
+  height: var(--focus-toggle);
+  min-height: 0;
+  padding: 0;
+  border-color: var(--color-border);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  box-shadow: var(--shadow-1);
+}
+/* A 44px target around the 32px circle, as the message actions reach theirs. */
+.focus-toggle::after { content: ""; position: absolute; inset: calc((var(--focus-toggle) - var(--tap-min)) / 2); border-radius: var(--r-full); }
+.focus-toggle:hover { background: var(--color-sunken); color: var(--color-ink); }
+/* On: tint fill and an accent edge, so the state reads from the shape's fill, never a hue alone. */
+.focus-toggle[aria-pressed="true"],
+.focus-toggle[aria-pressed="true"]:hover { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); }
+@media (hover: none), (pointer: coarse) {
+  .focus-toggle { color: var(--color-ink-2); }
+}
+/* The thread's end clears the button: its height and both gaps, so the last message's actions
+   scroll above it. The centred controls keep the button's lane free on both sides. */
+.app-main > .transcript-wrap .transcript-inner {
+  padding-bottom: calc(var(--focus-toggle) + 2 * var(--space-3) + var(--focus-inset));
+}
+.app-main > .transcript-wrap > .jump-latest {
+  bottom: calc(var(--space-4) + var(--focus-inset));
+  max-width: calc(100% - 2 * (var(--space-3) + var(--focus-toggle) + var(--space-2)));
+}
+.app-main > .transcript-wrap > .chat-wait-note {
+  bottom: calc(var(--space-4) + var(--focus-inset));
+  max-width: calc(100% - 2 * (var(--space-3) + var(--focus-toggle) + var(--space-2)));
+}
+.app-main > .transcript-wrap > .jump-latest[data-shown] ~ .chat-wait-note {
+  bottom: calc(var(--space-4) + var(--control-md) + var(--space-2) + var(--focus-inset));
+}
+
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) { --focus-inset: env(safe-area-inset-bottom, 0px); }
+/* The head: Back (where it shows) and the title, one line. */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .session-head { min-height: var(--tap-min); }
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .session-head > :not(.app-back, .session-head-main),
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .session-head .session-head-meta { display: none; }
+/* Under the head, and the composer: collapsed out of sight, still mounted. A project overseer's
+   status strip stays while it says its status couldn't be read. */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > :is(.composer, .outline, .baton-strip, .po-status:not(.po-status-error)) {
+  height: 0;
+  min-height: 0;
+  padding-block: 0;
+  border-block-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+/* The baton strip is held by its own max-height; collapsing it needs that too. (Never the
+   composer's: `none` doesn't interpolate, and would end its collapse at once.) */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .baton-strip { max-height: 0; }
+/* The collapse runs only while Focus changes (App's data-focus-moving), never when the composer
+   grows with its text. Going out of sight, visibility waits for the end; coming back, it is at once.
+   Reduced motion collapses every transition to near zero (tokens.css). */
+.app[data-focus-moving] > .app-main:has(> .transcript-wrap) > :is(.composer, .outline, .baton-strip, .po-status) {
+  interpolate-size: allow-keywords;
+  transition:
+    height var(--dur-base) var(--ease-standard),
+    max-height var(--dur-base) var(--ease-standard),
+    padding var(--dur-base) var(--ease-standard),
+    border-width var(--dur-base) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+.app[data-focus-moving][data-focus="on"] > .app-main:has(> .transcript-wrap) > :is(.composer, .outline, .baton-strip, .po-status) {
+  transition-property: height, max-height, padding, border-width, visibility;
+  transition-delay: 0s, 0s, 0s, 0s, var(--dur-base);
+}
+.app[data-focus-moving] > .app-main:has(> .transcript-wrap) > .session-head { transition: min-height var(--dur-base) var(--ease-standard); }
+.app[data-focus-moving] > .app-main > .transcript-wrap > .focus-toggle { transition: bottom var(--dur-base) var(--ease-standard); }

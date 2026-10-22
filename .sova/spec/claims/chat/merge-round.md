@@ -78,9 +78,16 @@ after each landing, since every other branch is then checked against the new mas
   back to the owner, and the captain parks them outside the repo only with the owner's OK and
   restores them byte for byte; a symlinked `node_modules` is environment, which it may rebuild and
   report.
-- **No spec gate.** The round never refuses or holds a landing over the spec: not over drafts left
-  unpromoted, unclaimed files or a failing census. Drafts are their sessions' own to promote; the
-  captain promotes none.
+- **Docs land with the code.** A branch's spec drafts are its owner's to promote, on that branch,
+  before it answers READY: the user's go-ahead to merge covers that, so nobody asks the user for it,
+  and there is never a second, docs-only landing. The captain promotes none. The ask names the
+  branch's drafts not confirmed promoted. A READY while any is left, or a check that finds one, hands
+  the branch back to its owner with the drafts named, to promote and commit on its branch and answer
+  READY again, and it lands only after that; so does a merge of master into the branch that
+  conflicts in the spec, for the owner to merge master in itself and promote again on top of it. A
+  branch whose owner is gone stays the user's call, and lands with its docs promoted or not at all.
+  Unclaimed files and a failing census still hold nothing: the merge round's spec checks are a
+  safety net under the owner's own promotion, never a gate of their own.
 - **Clean up.** Once a branch is landed and its owner is done with the worktree, the captain removes its worktree from the main checkout
   with exactly the two commands `landed` prints: `git worktree remove -- <path>`, never `--force`,
   then `git branch -d -- <branch>`. Git's own refusals (uncommitted or untracked files, a lock, a
@@ -167,7 +174,13 @@ shell and under a timeout.
   owner asked in the last 10 minutes. Otherwise it records the topic with the ask and prints the text
   to `session_send`: `Is <branch> ready to merge at its current head? Reply with queue_push, topic
   "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
-  never holds the head's sha, and its `next:` line says not to poll. **`reply <branch>`** reads the
+  never holds the head's sha, and its `next:` line says not to poll. When the branch's worktree holds
+  spec drafts not confirmed promoted (the draft tool's `drafts` reading: records pending, records in
+  conflict that the draft never promoted, or a reading that fails, the spec tools missing included),
+  the text ends with one more sentence naming each such draft with up to four of those § ids, or
+  "status unreadable", telling the owner to promote them on its branch and commit that before it
+  answers READY, that the user's go-ahead to merge covers it, and that a READY with them left is
+  handed back; with none the text is as above. **`reply <branch>`** reads the
   delivered topic batches on stdin (§chat.topics/delivery) — every batch piped, when several arrive
   together — or the owner's `session_read` output. A batch is read only against a recorded ask:
   with none, it is refused. When no piped batch is on the ask's topic the answer is refused as
@@ -179,18 +192,30 @@ shell and under a timeout.
   transcript of another session is refused, and in it only the owner's own reply rows (`ASSISTANT:`)
   count. Either way it accepts only a whole line `READY <branch> <sha>`, whose sha (7 or more
   characters) begins the branch's current head, or `NOT READY: <why>`. Any other sha is **stale**;
-  nothing else is an answer, so an echoed ask or a line elsewhere never counts.
+  nothing else is an answer, so an echoed ask or a line elsewhere never counts. A READY at the
+  current head while the worktree still holds drafts not confirmed promoted is not taken: it is
+  recorded as handed back, and `reply` prints the hand-back to `session_send` to the owner (each
+  draft named, to promote and commit on its branch, then answer READY again on the same topic) and
+  exits 1.
 - **`check <branch>`** refuses a branch with no worktree, no commit ahead, uncommitted files or a
   TEMP-style subject. It merges master into the branch in its worktree, never on master. On
-  conflicts it stops and leaves them to the captain, except that a conflicting
-  `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`. It then
+  conflicts it stops and leaves them to the captain, except the spec's: a conflicting
+  `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`, and when a
+  spec file is still conflicted after that (any `claims/*.md` file, or a manifest `merge-manifest`
+  refuses) it aborts the merge, so the worktree is as it was, records the branch as handed back, and
+  prints the hand-back for the owner: merge master in itself, recover the spec as PROMOTE.md says
+  (master's whole spec, the merge committed, its drafts promoted again with the same `--id`s, the
+  claims committed), then answer READY again. It exits 1 and never says to resolve a spec conflict
+  itself. It then
   runs the typecheck, `pnpm test` and then `pnpm test:int` (§app.server-runtime/test-tiers; a tree
   whose package.json has no `test:int` script skips it and says so), both without
   `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
   line from `pi-config/README.md`'s Tests block, and the build, each in its own process group,
   killed whole at its timeout (the larger of a floor and twice the median of its earlier passing
   runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status,
-  which it prints and which add no need: no spec result, draft or unclaimed file holds a branch. A
+  which it prints. A draft not confirmed promoted (as `ask` reads it) is a need, `docs not promoted:
+  <draft>, …`, and the check prints the same hand-back as `reply`; no spec check result, census or
+  unclaimed file is a need. A
   test file that fails, in either tier, is run again on master, in the main checkout at master's sha (refused when
   that file is dirty there), cached per master sha and file: one that fails there too is named
   pre-existing and doesn't block. It also runs `leak-scan.mjs` over the commits landing would
@@ -208,6 +233,18 @@ shell and under a timeout.
   (a branch its owner merged has no check on record), builds the main checkout, records the restart
   need (one that can't be told counts as needed), and prints the notice for the owner, with the
   sentence "Its worktree folder was removed." to add only when the clean-up's remove succeeds.
+  When the landed branch's worktree still holds drafts not confirmed promoted (a branch its owner
+  merged itself, say), it first copies each such draft into
+  `<state root>/playbooks/merge-round/drafts/<head sha>/`, since removing the folder deletes the
+  worktree's own copy, and the notice goes on to say they didn't land with the code, naming each
+  draft with up to four of those § ids, or "status unreadable", and that folder, for the owner to
+  promote on a fresh branch from master by copying them into its worktree's `.sova/spec/drafts/`,
+  never on master itself. A copy that fails withholds the clean up, so the folder and its drafts
+  stay, and the notice names the worktree's own drafts folder instead. With none the notice is
+  unchanged. Every `landed` also runs the draft tool's `prune --official --from <folder> --write`
+  against the main checkout's spec on each folder of copies under that `drafts/` directory, which
+  deletes only the copies the tool confirms are already official there, and removes a folder left
+  empty; a copy the tool can't confirm is kept, and a prune that fails deletes nothing and is said.
   Its `next:` line is the clean-up: `git -C <main checkout> worktree remove -- <path>`, then `git -C
   <main checkout> branch -d -- <branch>`, then `push`. When git's record of that worktree can't
   be written from where the driver runs (a sandboxed captain), it prints instead that the clean-up

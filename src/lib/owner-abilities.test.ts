@@ -110,6 +110,11 @@ test("Home's requests line and the tab's open count", () => {
   assert.equal(requestsLine([{ status: "with-team" }]), "Your requests: 1 with the team ›");
   assert.equal(requestsLine([{ status: "with-team" }, { status: "with-team" }, { status: "done" }]), "Your requests: 2 with the team ›");
   assert.equal(requestsLine([{ status: "started" }, { status: "done" }]), "Your requests: 2 ›");
+  // A feature request whose chat is open reads Planning with you, never with the team (found driving the page);
+  // once its plan is agreed it is with the team again.
+  assert.equal(requestsLine([{ status: "with-team", plan: "planning" }]), "Your requests: 1 ›");
+  assert.equal(requestsLine([{ status: "with-team", plan: "planning" }, { status: "with-team" }]), "Your requests: 1 with the team ›");
+  assert.equal(requestsLine([{ status: "with-team", plan: "agreed" }]), "Your requests: 1 with the team ›");
   assert.equal(openCount([{ status: "with-team" }, { status: "started" }, { status: "done" }, { status: "declined" }]), 2);
   assert.equal(openCount(undefined), 0);
 });

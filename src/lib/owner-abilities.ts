@@ -103,8 +103,9 @@ export const PHOTOS_NOTE = "You can add photos and screenshots.";
 const isOpen = (r: Pick<OwnerRequestRow, "status">): boolean => r.status === "with-team" || r.status === "started";
 /** The Requests tab's badge: the open requests. */
 export const openCount = (rs: readonly Pick<OwnerRequestRow, "status">[] | undefined): number => (rs ?? []).filter(isOpen).length;
-/** Home's line on the owner's requests: "Your requests: 1 with the team ›", or "Your requests: 3 ›". */
-export function requestsLine(rs: readonly Pick<OwnerRequestRow, "status">[]): string {
-  const team = rs.filter((r) => r.status === "with-team").length;
+/** Home's line on the owner's requests: "Your requests: 1 with the team ›", or "Your requests: 3 ›". A feature
+    request being planned with the owner reads Planning with you, so it is not with the team. */
+export function requestsLine(rs: readonly Pick<OwnerRequestRow, "status" | "plan">[]): string {
+  const team = rs.filter((r) => r.status === "with-team" && r.plan !== "planning").length;
   return team ? `Your requests: ${team} with the team ›` : `Your requests: ${rs.length} ›`;
 }

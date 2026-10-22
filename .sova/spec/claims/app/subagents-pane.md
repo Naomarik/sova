@@ -227,11 +227,15 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   tracked worktree, still add their height when they land.
 - **Usage** is what the session has spent, from the usage ledger (§app.insights/usage-ledger,
   `GET /api/usage/session`, polled while the tab shows). First the headline,
-  `{n} tokens in and out · $x` (input + output; cache in its `title`; dollars at API prices,
-  subscriptions included). Under it, when the session's own conversation re-sent its history, the
+  `{n} tokens in and out · $x · {p}% from cache` (input + output; cache in its `title`; dollars at API prices,
+  subscriptions included; the cache hit rate, below, left out when the session reported no cache use). Under it, when the session's own conversation re-sent its history, the
   re-sent line (§app.insights/usage-resend-display). Then a table with one row per model × origin, the main thread first and
   then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · In · Out ·
-  Cache read · Cache write · Cost, with a **Main thread Σ** footer. Every branch counts, retries
+  Cache read · Cache write · Hit rate · Cost, with a **Main thread Σ** footer. The **cache hit rate** is the
+  share of input tokens read from cache: cache read ÷ (input + cache read + cache write), output
+  left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded `0%` or `100%` that
+  isn't exact). A row with no cache read or write shows `—`, its `title` "No cache use reported
+  for this model."; such rows still count their input in the headline's and Σ's rates. Every branch counts, retries
   and housekeeping included; a fork counts only its own calls. Then this session's workers:
   `{n} subagents · {w} working`. Under 400px of pane the table stacks, one block per row: Model and
   Where on its first line, each count labelled under it. Before anything is spent the tab says

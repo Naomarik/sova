@@ -198,9 +198,18 @@ export function PowersGrid(props: {
                   <For each={g.acts}>
                     {(a) => (
                       <div class="powers-row powers-act">
-                        <span class="powers-label">{a.label}</span>
+                        <span class="powers-label">
+                          {a.label}
+                          {/* The Project Assistant column gives this power its own meaning (gather: feature request chats). */}
+                          <Show when={a.assistantLabel && props.cols.includes("assistant")}>
+                            <span class="powers-alt">From a client: {a.assistantLabel}</span>
+                          </Show>
+                        </span>
                         <For each={props.cols}>
-                          {(col) => <PowerSwitch name={switchName(a.label, col)} state={cellState([a], props.maps[col], col)} busy={props.busy} held={props.held} onSet={(on) => props.onSet([a], col, on, a.label, false)} />}
+                          {(col) => {
+                            const label = col === "assistant" && a.assistantLabel ? a.assistantLabel : a.label;
+                            return <PowerSwitch name={switchName(label, col)} state={cellState([a], props.maps[col], col)} busy={props.busy} held={props.held} onSet={(on) => props.onSet([a], col, on, label, false)} />;
+                          }}
                         </For>
                       </div>
                     )}

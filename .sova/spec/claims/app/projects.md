@@ -91,8 +91,16 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   an unarchived web session) folded into one quiet "{n} done" line at the end of the list, which
   opens them in place (closed by default, memory only). The project heading starts with a small
   arrow that folds and unfolds its sessions: open by default, the choice kept in memory for the
-  page's life (as each Done is), and forced open while a search is on or the open session is one of
-  its rows. An **archived**
+  page's life (as each Done is), and forced open while a search is on. When you move to a session
+  among its rows (a click, a link, a notification, the palette, or loading the page on it) a
+  folded project, and its Done if the session is there, opens for that visit without changing the
+  choice, then it is yours to close: a fold you make while on that session stays folded through
+  every refresh, running agent and new message until you unfold it or move to a session again.
+  The region itself is a `<details>`, **open by default**; a collapse is remembered for the tab in
+  `sessionStorage["sova:projects-open"]` through `writeKey`, `"0"` collapsed and anything else
+  open. It is forced open, without changing the stored choice, while a search is on, and opened
+  on the same terms as a project when you move to a session inside it, then yours to close.
+  An **archived**
   session of any kind is never in the block nor its counts: it is in the Archive only
   (§app.session-list/ordinary-surfaces); archiving a build says "Archived. Find it under Archive."
   and unarchiving it "Moved back to {project}.". The region head counts **projects**

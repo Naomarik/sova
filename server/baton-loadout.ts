@@ -53,6 +53,9 @@ import { markOwned } from "./write-guard";
 import { batonContextPhrases, redactContext } from "./baton-view";
 import { CODE_READ_TOOL, lookupPlace, OUTSIDER_LOOKUP_RULES, projectOverview, SPEC_LOOKUP_TOOL, specLookupTools } from "./spec-lookup";
 import { batonDraftTools, catchUpConversationDraft, changeOfRef, DRAFT_TOOLS, noteRecordedDecision } from "./conversation-draft-tools";
+import { FEATURE_CHAT_PROMPT, FEATURE_CHAT_TOOLS_OFF, isFeatureChat } from "./feature-chats";
+import { featureAlignTool } from "./feature-chat-align";
+import { ALIGN_TOOL } from "../pi-config/extensions/mode/align.ts";
 
 /**
  * The baton runtime (§app.baton/goal-and-loadout, /hand-off): what a baton session file opens with.
@@ -83,6 +86,8 @@ export const LOADOUT_TOOLS = [...BATON_TOOLS, READ_LINK_TOOL, ...FILE_TOOLS, ...
     file intake `inspect_files` and `confirm_file` (§app.baton/files). */
 export function activeBatonTools(sessionId: string): string[] {
   const row = batonById(sessionId)?.row;
+  // A feature request chat (§app.project-assistant/feature-chats): its own set, plus the served align.
+  if (row && isFeatureChat(row)) return [...BATON_TOOLS, ...LOOKUP_TOOLS, ...DRAFT_TOOLS, ALIGN_TOOL].filter((t) => !FEATURE_CHAT_TOOLS_OFF.includes(t));
   return [
     ...BATON_TOOLS,
     ...LOOKUP_TOOLS,
@@ -143,7 +148,9 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
       ? `\n# People who have left the organization\n\nNever hand to them or propose them as new people. If someone names one of them, say they have left and ask who covers their area now.\n\n${former.map((p) => `- ${p.name}${p.role ? ` — was ${p.role}` : ""}`).join("\n")}\n`
       : "",
   };
-  return `${template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "")}\n\n${BATON_TOUR_GUIDE}`;
+  // A feature request chat plans with the person (§app.project-assistant/feature-chats).
+  const planning = isFeatureChat(row) ? `\n\n${FEATURE_CHAT_PROMPT}` : "";
+  return `${template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "")}${planning}\n\n${BATON_TOUR_GUIDE}`;
 }
 
 /** What a run's prompt says of the project: its overview (built fresh at the run's start) and the
@@ -742,7 +749,14 @@ const EVERY_MESSAGE = "Every message in a baton session is someone's: it can't b
 
 /** The served tools of one open, their declarations. */
 function batonDecls(path: string, sessionId: string): ServerToolDecl[] {
-  const tools = [...batonTools(sessionId), readLinkTool(sessionId), inspectFilesTool(sessionId), confirmFileTool(sessionId), ...lookupTools(sessionId), ...batonDraftTools(sessionId)];
+  const row = batonById(sessionId)?.row;
+  const feature = !!row && isFeatureChat(row);
+  const tools = [
+    ...batonTools(sessionId).filter((t) => !feature || !FEATURE_CHAT_TOOLS_OFF.includes(t.name)),
+    ...(feature ? [featureAlignTool()] : [readLinkTool(sessionId), inspectFilesTool(sessionId), confirmFileTool(sessionId)]),
+    ...lookupTools(sessionId),
+    ...batonDraftTools(sessionId),
+  ];
   serveTools(path, tools);
   return tools.map(declOfTool);
 }
@@ -792,7 +806,8 @@ registerSpecialHost({
       // Its tools' state lives in this server: served, run through the chat's loopback.
       tools: batonDecls(path, sessionId),
       customTools: [],
-      allow: [...LOADOUT_TOOLS],
+      // A feature request chat: the gathering allowlist without what it never has, plus its served align.
+      allow: isFeatureChat(hit.row) ? [...LOADOUT_TOOLS.filter((t) => !FEATURE_CHAT_TOOLS_OFF.includes(t)), ALIGN_TOOL] : [...LOADOUT_TOOLS],
       // Not the operator's APPEND_SYSTEM.md: nothing of their own setup reaches an outsider's model.
       loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, append: "none" },
       model: hit.row.model ?? defaults.model ?? null,

@@ -728,7 +728,10 @@ reading view, at every width, desktop included.
 - **The button.** Icon only (`expand`, four corners), named "Focus" by `aria-label` and `title`,
   a `<button>` with `aria-pressed`, reached by Tab after Jump to Latest and before the composer. It
   sits in the transcript's bottom-right corner, just above the composer, and stays in that corner
-  when Focus is on, then just above the bottom edge and its gesture bar
+  when Focus is on. On a screen wider than the conversation column, its right edge lines up with the
+  right edge of the composer column under it (the column the thread shares), never against the
+  scrollbar; where that column is full width, it sits a small inset from the transcript's right
+  edge. With Focus on it sits just above the bottom edge and its gesture bar
   (`env(safe-area-inset-bottom)`, which the hidden composer no longer pays). It is round and drawn
   32px, with a 44px target through an `::after` (the message actions' pattern). Off it is quiet:
   the surface fill, a `--color-border` edge and muted ink, like the other icon buttons. On it is

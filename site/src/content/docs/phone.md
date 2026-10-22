@@ -5,7 +5,7 @@ group: Features
 order: 13
 ---
 
-Sova is one web app at every width. On a phone, or a folded foldable, it shows one column: the session list or a session. From there you can answer a question, steer a turn, or start a session, the same as at your desk.
+Sova is one web app at every width. On a phone, or a folded foldable, it shows one column: the session list or a session. From there you can answer a question, steer a turn, or start a session, the same as at your desk. To read a long reply on a small screen, press **Focus** in the transcript's corner: the composer and the header's chips go away until you press it again, and your draft is kept ([Change direction](/docs/change-direction/#focus-on-the-conversation)).
 
 ## Reach Sova from your phone
 

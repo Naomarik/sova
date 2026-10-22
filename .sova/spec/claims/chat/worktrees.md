@@ -137,8 +137,10 @@ in its answer, and its card's message carries the merge line alone; a merge seen
 them in its message. They are: the changed files no claim maps (spec any whose change a user
 sees); a draft with records never promoted, in the worktree or in another worktree whose branch
 the merge brings in, said once per draft in a session and again when its pending § change (into
-the repository's default branch, master or main: promote the landing's own drafts now; another
-session's are named); a merge commit that resolved § by hand (they differ from both parents); an
+a branch other than the repository's default: promote them on it before it lands; into the
+default branch, master or main: they didn't land with the code, and stay in the worktree's drafts
+folder until they are promoted on a fresh branch from the default branch, never on it directly;
+another session's are named); a merge commit that resolved § by hand (they differ from both parents); an
 evidence commit the branch no longer contains; and that the spec warnings could not be computed.
 No line names the § the merge changed, deleted or renamed, or the § whose mapped code changed
 under unchanged prose, and none asks for a line in the reply. Those lines never change the card. The message never starts a turn; one sent while a turn runs

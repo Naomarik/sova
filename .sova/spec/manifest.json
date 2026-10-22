@@ -9168,7 +9168,12 @@
         "src/components/Thread.tsx",
         "src/lib/worktrees.ts",
         "src/app.css"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T03:00Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      }
     },
     "§chat.worktrees/pane": {
       "kind": "behavior",
@@ -10101,8 +10106,9 @@
         "pi-config/extensions/mode/project-tools-worker.ts"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-14T08:06Z"
+        "by": "naomarik",
+        "at": "2026-10-22T03:24Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
       }
     },
     "§app.organizations/about": {
@@ -16311,7 +16317,10 @@
       "evidence": "reviewed",
       "code": [
         ".sova/playbooks/merge-round/PLAYBOOK.md",
-        ".sova/playbooks/merge-round/references/push-restart.md"
+        ".sova/playbooks/merge-round/references/push-restart.md",
+        ".sova/playbooks/merge-round/references/round.md",
+        ".sova/playbooks/merge-round/references/check.md",
+        ".sova/playbooks/merge-round/references/land.md"
       ],
       "requires": [
         "§chat.schedules/fire",
@@ -16320,8 +16329,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user (al_3 go-ahead)",
-        "at": "2026-10-14T16:11Z"
+        "by": "naomarik",
+        "at": "2026-10-22T03:00Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
       }
     },
     "§chat/merge-round": {
@@ -16357,7 +16367,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T03:48Z"
+        "at": "2026-10-22T03:34Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
       }
     },
     "§app.access/callers": {
@@ -16718,8 +16729,14 @@
       "code": [
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/PROMOTE.md"
-      ]
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/tests/draft-hygiene.test.mjs"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T03:34Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      }
     },
     "§tools.spec/git-merge": {
       "kind": "behavior",
@@ -20237,12 +20254,14 @@
         "pi-config/extensions/mode/spec-guard.ts",
         "pi-config/extensions/subagents/spec-brief.ts",
         "pi-config/extensions/subagents/spec-brief.test.ts",
-        "pi-config/extensions/mode/index.test.ts"
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/spec/PROMOTE.md"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T15:17Z",
-        "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+        "at": "2026-10-22T12:29Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
       }
     },
     "§chat.model-menu/favorites": {
@@ -20764,9 +20783,15 @@
         "src/components/Thread.tsx",
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
-        "src/app.css"
+        "src/app.css",
+        "pi-config/extensions/spec/PROMOTE.md"
       ],
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T03:00Z",
+        "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      }
     },
     "§app.baton/files": {
       "kind": "behavior",

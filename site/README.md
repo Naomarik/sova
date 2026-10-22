@@ -3,7 +3,7 @@
 A static [Astro](https://astro.build) site for Sova, styled with the app's own design system:
 `src/styles/tokens.css` is a copy of `src/design/tokens.css`, and `src/styles/components.css` is a
 subset of `.claude/skills/fold-ai-dev-design/fold-ai-dev.css`. The home page's product screens
-and its session video are real Sova, captured on demo data (see Screens and video below); the
+and its two videos are real Sova, captured on demo data (see Screens and video below); the
 Mesh and Organizations pages, and the phone lock screen beside the Overseer, are CSS
 illustrations built from those classes.
 
@@ -60,7 +60,8 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   reply are in one plain-JSON file, `scripts/screens/story.json`; edit only that, then:
   `pnpm run screens:check` (names each problem by line and column), `pnpm run screens` (the
   screenshots whose inputs changed, as lossless WebP masters in `src/assets/screens/` with their
-  `manifest.json`), `pnpm run screens:video` (the session video in `public/video/`) and
+  `manifest.json`), `pnpm run screens:video` (the hero and phone videos in `public/video/`, AV1
+  with an H.264 fallback, checked before they replace the old ones) and
   `pnpm run screens:verify`. Commit the story with what they wrote. The pages take each image's
   alt text and size from the manifest; the build turns the masters into AVIF and WebP and never
   runs the capture, so a stale image builds without complaint. The capture needs the

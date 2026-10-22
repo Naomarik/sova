@@ -13,9 +13,10 @@
   "viewports": {
     "desktop": { "width": 1440, "height": 900, "scale": 2 },
     "compact": { "width": 1100, "height": 760, "scale": 2, "note": "a feature image" },
+    "compact-wide": { "width": 1280, "height": 760, "scale": 2, "note": "a feature image with the session detail pane open: under about 1200px the pane covers part of the chat instead of sitting beside it" },
     "fold": { "width": 816, "height": 616, "scale": 3, "mobile": true, "note": "an unfolded foldable, landscape: 2448x1848 px, 4:3 (the Galaxy Z Fold 8 inner display)" },
     "phone": { "width": 416, "height": 658, "scale": 3, "mobile": true, "note": "a folded foldable cover screen, portrait: 1248x1974 px, about 10:16 (the Galaxy Z Fold 8 cover display)" },
-    "video": { "width": 1280, "height": 800, "scale": 1.5, "note": "the session video, encoded at 1600 px wide" }
+    "video": { "width": 1152, "height": 720, "scale": 2, "note": "the hero video: 16:10 like hero-desk, a little narrower than desktop so the interface reads larger; filmed at 2304x1440, encoded at 1920x1200" }
   },
 
   "project": {
@@ -109,10 +110,11 @@
   "sessions": [
     {
       "id": "upload-metrics",
-      "note": "Needs you: its alignment has an open question.",
+      "note": "Needs you: its alignment has an open question. The phone video answers it (then).",
       "title": "Upload metrics",
       "at": "-2m",
       "model": "main",
+      "modes": ["align"],
       "messages": [
         { "user": "Count failed uploads per hour on the dashboard." },
         { "read": "src/upload/client.ts" },
@@ -132,6 +134,22 @@
             }]
         } },
         { "say": "One question before I add the counter." }
+      ],
+      "then": [
+        { "user": "al_1: go with your recommendations for every open question, and go ahead.", "note": "Exactly what the card's Go With Recommendations sends (src/lib/align-picks.ts acceptAllMessage)." },
+        { "decide": { "answers": { "q1": "Only the last try" }, "status": "implementing" } },
+        { "say": "Counting only uploads that really failed. Adding the counter to send()." },
+        { "edit": {
+            "path": "src/upload/client.ts",
+            "old": "        if (n >= MAX_TRIES) throw err;",
+            "new": [
+              "        if (n >= MAX_TRIES) {",
+              "          failedUploads.add(1);",
+              "          throw err;",
+              "        }"
+            ]
+        } },
+        { "say": "The counter is in. Next, the hourly series on the dashboard." }
       ]
     },
     {
@@ -186,9 +204,10 @@
       "model": "main",
       "modes": ["delegate", "align"],
       "script": [
-        { "user": "Cap the upload client's retry backoff. A flaky connection waits minutes between tries. Keep its public API as it is." },
+        { "user": "Cap the upload retry backoff: on a flaky connection it waits minutes." },
         { "read": "src/upload/retry.ts" },
-        { "say": "The delay doubles from 500 ms with no ceiling, so any raise of MAX_TRIES makes the waits grow without bound." },
+        { "say": "The delay doubles from 500 ms and has no ceiling." },
+        { "hold": "found", "note": "The video holds on what the agent found before the alignment card comes." },
         { "align": {
             "title": "Cap the upload backoff",
             "summary": "Bound the wait between upload retries without changing the client's API.",
@@ -217,13 +236,14 @@
         } },
         { "say": "One question before I hand this out." },
         { "hold": "aligned", "note": "The turn has ended: the alignment card waits on the user. Shot alignment is taken here." },
-        { "user": "1a" },
+        { "user": "al_1: take your recommendation on q1.", "note": "Exactly what clicking the recommended option and Send sends (src/lib/align-picks.ts picksMessage)." },
         { "decide": { "answers": { "q1": "30 s" }, "status": "implementing" } },
+        { "hold": "decided", "note": "The video holds on the card's Decided line before the workers start." },
         { "worktree": { "create": "retry-cap" } },
-        { "say": "Handing the cap to a routine worker, the README to another, and the server question to an investigation worker." },
+        { "say": "Handing this to 3 workers: the cap, the README, and a check on the server." },
         { "spawn": ["cap-delay", "retry-docs", "server-check"] },
         { "wait": ["cap-delay", "retry-docs", "server-check"], "note": "Still waiting at hold delegating: the hero is shot here." },
-        { "say": "All 3 are back. The cap is in and its test passes, and the server dedupes finalize by upload id, so a retried finalize is safe." },
+        { "say": "All 3 are back. The cap is in, its test passes, and a retried finalize is safe." },
         { "show_changes": {
             "scope": "dirty",
             "worktree": "retry-cap",
@@ -352,7 +372,7 @@
     "model": "main",
     "note": "Feature 04 is shot on the Overseer page once this script has run.",
     "script": [
-      { "user": "What needs me?" },
+      { "user": "Which sessions need me, and what can I archive?" },
       { "tool": { "name": "sova_attention", "args": {} } },
       { "say": [
         "Two sessions need you:",
@@ -393,7 +413,7 @@
       "alt": "The same session on a folded phone: the chat alone, its alignment decided and its workers running, with a Steer composer."
     },
     {
-      "id": "delegate", "session": "retry-policy", "at": "delegating", "viewport": "compact", "view": "workers", "worker": "cap-delay",
+      "id": "delegate", "session": "retry-policy", "at": "delegating", "viewport": "compact-wide", "view": "workers", "worker": "cap-delay", "sidebar": "collapsed",
       "alt": "The Agents tab beside a Delegate session: 3 workers with their model, tokens and state, and the working worker's transcript: its task, a read, 2 edits and a new test file."
     },
     {
@@ -422,26 +442,96 @@
     }
   ],
 
-  "video": {
-    "session": "retry-policy",
-    "viewport": "video",
-    "typing": "30ms",
-    "chunk": "35ms",
-    "alt": "A session running in Sova: a request typed in, an alignment with one open question, the answer 1a, 3 workers started and followed in the workers pane, and the changes opened as steps.",
-    "beats": [
-      { "do": "type", "step": 0 },
-      { "do": "send" },
-      { "do": "release", "until": "aligned" },
-      { "do": "pause", "for": "2500ms" },
-      { "do": "type", "step": 6 },
-      { "do": "send" },
-      { "do": "release", "until": "delegating" },
-      { "do": "click", "target": "worker", "worker": "cap-delay" },
-      { "do": "pause", "for": "3s" },
-      { "do": "release", "until": "end" },
-      { "do": "click", "target": "show_changes" },
-      { "do": "pause", "for": "3500ms" }
-    ]
+  "videos": {
+    "desk": {
+      "note": "The landing page's hero loop. Beats and captions follow the storyboard in README.md; story-check lints the pacing rules.",
+      "session": "retry-policy",
+      "viewport": "video",
+      "start": "overseer",
+      "slot": "hero.desk",
+      "width": 1920,
+      "typing": "30ms",
+      "chunk": "30ms",
+      "length": { "min": "50s", "max": "58s" },
+      "budget": { "modern": 3000000, "fallback": 6000000 },
+      "pointer": "arrow",
+      "captions": "bottom-left",
+      "loop": "1s",
+      "prefill": { "scene": "overseer", "step": 0 },
+      "alt": "Sova in use: the Overseer is asked what needs you and names the Retry policy session; in that session a request is typed, the agent reads a file, an alignment card is answered by clicking its recommended option, 3 workers start and one is followed to a passing test (sped up), and the changes open as steps.",
+      "overseer": {
+        "script": [
+          { "user": "What needs me?" },
+          { "tool": { "name": "sova_attention", "args": {} } },
+          { "say": [
+            "Three sessions need you:",
+            "",
+            "- [Retry policy](sova://s/$session:retry-policy) is new and waits for your first message.",
+            "- [Upload metrics](sova://s/$session:upload-metrics) asks one question about retries.",
+            "- [Flaky upload test](sova://s/$session:flaky-test) stopped on a rate limit."
+          ] }
+        ]
+      },
+      "beats": [
+        { "do": "hold", "for": "700ms", "caption": "Ask what needs you" },
+        { "do": "click", "target": "send" },
+        { "do": "release", "scene": "overseer", "until": "end" },
+        { "do": "hold", "read": "Retry policy is new" },
+        { "do": "click", "target": "link", "text": "Retry policy", "caption": null },
+        { "do": "hold", "read": "Needs you", "caption": "Ask in plain words" },
+        { "do": "type", "step": 0 },
+        { "do": "click", "target": "send" },
+        { "do": "release", "until": "found", "caption": "The agent looks first" },
+        { "do": "hold", "read": "No ceiling" },
+        { "do": "release", "until": "aligned", "caption": "Agree on the plan first" },
+        { "do": "scroll", "to": "align" },
+        { "do": "hold", "read": "Cap the upload backoff. How long may one wait? 30 s" },
+        { "do": "click", "target": "align-option", "q": "q1", "option": 0, "caption": "You decide" },
+        { "do": "click", "target": "send" },
+        { "do": "release", "until": "decided" },
+        { "do": "hold", "read": "Decided: 30 s" },
+        { "do": "release", "until": "delegating", "caption": "Hand it to 3 workers" },
+        { "do": "hold", "read": "3 workers" },
+        { "do": "click", "target": "workers", "caption": "Workers you can follow" },
+        { "do": "hold", "for": "2500ms", "read": "3 workers and their state" },
+        { "do": "click", "target": "worker", "worker": "cap-delay" },
+        { "do": "release", "until": "end", "speed": 3 },
+        { "do": "hold", "read": "Tests pass" },
+        { "do": "click", "target": "close-panel", "caption": "All 3 are back" },
+        { "do": "hold", "read": "All 3 are back" },
+        { "do": "click", "target": "review-changes", "caption": "Read every change as steps" },
+        { "do": "hold", "for": "3500ms", "read": "Cap each wait at 30 s" },
+        { "do": "click", "target": "changes-step", "n": 2 },
+        { "do": "hold", "for": "3500ms", "read": "Pin the delays with a test", "caption": null },
+        { "do": "home" }
+      ]
+    },
+    "phone": {
+      "note": "The phone section's clip: a Needs you row opened and its question answered with one tap.",
+      "session": "upload-metrics",
+      "viewport": "phone",
+      "start": "sessions",
+      "slot": "feature.phone-question",
+      "width": 832,
+      "typing": "33ms",
+      "chunk": "30ms",
+      "length": { "min": "10s", "max": "16s" },
+      "budget": { "modern": 1200000, "fallback": 2500000 },
+      "pointer": "tap",
+      "captions": "bottom-left",
+      "loop": "800ms",
+      "alt": "Sova on a phone: the Upload metrics session is opened from the Needs you list, its open question is answered with one tap on Go With Recommendations, and the session carries on.",
+      "beats": [
+        { "do": "hold", "read": "Needs you: Upload metrics, 1 open question", "caption": "A session needs you" },
+        { "do": "tap", "target": "session-row", "text": "Upload metrics", "caption": null },
+        { "do": "scroll", "to": "align-end" },
+        { "do": "hold", "read": "Does a retried part count as a failure?", "caption": "Answer with one tap" },
+        { "do": "tap", "target": "go-with-recommendations", "caption": null },
+        { "do": "release", "until": "end", "caption": "It carries on" },
+        { "do": "hold", "read": "The counter is in" },
+        { "do": "home", "caption": null }
+      ]
+    }
   },
 
   "pageShots": {

@@ -26,6 +26,7 @@ const { FakeDriver } = await import("./chat-runtime/fake-driver");
 const { ChatSupervisor } = await import("./chat-runtime/supervisor");
 const { activeConfigFailure, BusyError, ConfigError, disposeAllChats, serverToolSpec } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
+const { targetDir } = await import("./targets");
 // Start times as on Linux (/proc); on macOS none (no ps spawned: the unit tier forbids it), so locks read by pid alone.
 const { procStart, setProcStartForTest } = await import("./chat-runtime/writer-lock");
 setProcStartForTest((pid) => procStart(pid, "linux"));
@@ -570,10 +571,10 @@ test("a worker's own session file is refused for good with the subagent-session 
   }
 });
 
-test("a chat whose folder is gone is refused before any process, and remembered until the folder is back", async () => {
+test("a remote chat whose placeholder folder is gone is refused before any process, and remembered until the folder is back", async () => {
   const t = setup();
-  const gone = join(agentDir, "gone");
-  mkdirSync(gone);
+  const gone = targetDir("acme", "/srv/gone");
+  mkdirSync(gone, { recursive: true });
   const s = session();
   writeFileSync(s.path, readFileSync(s.path, "utf8").replace(JSON.stringify(cwd), JSON.stringify(gone)));
   const old = new Date(Date.now() - 10 * 60_000);
@@ -582,10 +583,23 @@ test("a chat whose folder is gone is refused before any process, and remembered 
   for (let i = 0; i < 2; i++) await assert.rejects(t.router.acquire(s.path, false), (err: unknown) => err instanceof ConfigError && err.cwd === gone);
   assert.ok(activeConfigFailure(s.path) instanceof ConfigError, "remembered");
   assert.equal(t.driver.started.length, 0, "no process for a doomed open");
-  mkdirSync(gone);
+  mkdirSync(gone, { recursive: true });
   assert.equal(activeConfigFailure(s.path), undefined, "the folder came back");
   const h = await t.router.acquire(s.path, false);
   assert.equal(h?.where, "process");
+  t.router.detach();
+});
+
+test("a local chat whose folder is gone is not refused: its process starts, to open it in the home folder (§app.shell/missing-folder-home)", async () => {
+  const t = setup();
+  const gone = join(agentDir, "gone-local");
+  const s = session();
+  writeFileSync(s.path, readFileSync(s.path, "utf8").replace(JSON.stringify(cwd), JSON.stringify(gone)));
+  const old = new Date(Date.now() - 10 * 60_000);
+  utimesSync(s.path, old, old);
+  const h = await t.router.acquire(s.path, false);
+  assert.equal(h?.where, "process");
+  assert.equal(activeConfigFailure(s.path), undefined);
   t.router.detach();
 });
 

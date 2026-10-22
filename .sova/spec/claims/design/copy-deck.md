@@ -184,8 +184,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
-| Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
+| Trigger opens | the Commands palette (§app.command-palette/opening); `aria-haspopup="dialog"` |
+| Palette's This chat group label | This chat |
+| This chat rows | Attach images · Hide tool calls (hidden: Show tool calls) · Hide thinking (hidden: Show thinking) · Playbooks · Undo last turn (in this order; Undo's copy is §design.copy-deck/timeline-tab) |
+| This chat rows, off | the composer's own reason · Playbooks with no Sova chat: Only a chat open in Sova can send a playbook. |
+| Palette's slash commands group label | Slash commands |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -380,7 +383,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Commands row (composer flyout) | Commands · no list: `title` "No commands available" |
 | Menu head | Commands · {n} |
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |
@@ -743,8 +745,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Off: TUI-live | This session is open in a terminal, so Sova won't write to it. |
 | Off: watching, or no chat open here | Only a chat open in Sova can rewind. |
 | Refused: not on the branch | That input is not on this chat's current branch anymore. |
-| Flyout row | Undo last turn · armed: `Confirm: undo last turn` · title: Rewind to before your last message; its text comes back to the composer |
-| Flyout row, off | Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. |
+| Palette row (This chat) | Undo last turn · description: Rewind to before your last message; its text comes back to the composer · armed: `Confirm: undo last turn`, description: Pick it again to rewind. |
+| Palette row, off | the composer's own reason · Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. · This chat is still loading. · Only a chat open in Sova can rewind. |
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |

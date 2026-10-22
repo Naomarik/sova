@@ -156,7 +156,7 @@ and `fill="none" stroke="currentColor"`.
 | `stop.svg` | Stop (composer): a rounded square; also the mic button while recording (Stop Recording) |
 | `mic.svg` | Dictate: the composer's mic button and the Settings dialog's Voice tab (§chat/voice). A capsule microphone on a stand arc with a short stem and base. New, drawn on the system grid |
 | `chat.svg` | Empty-state mark (no session selected) |
-| `attach.svg` | Attach Images (composer). New, drawn on the system grid |
+| `attach.svg` | Attach Images. Drawn on the system grid; nothing shows it now, since the Commands palette's Attach images row carries no icon |
 | `command.svg` | Commands button (composer, §chat/slash-commands): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview; the composer's run status while the turn writes (§chat.transcript/streaming). A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |

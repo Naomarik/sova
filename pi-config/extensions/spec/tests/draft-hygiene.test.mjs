@@ -198,3 +198,76 @@ test("prune deletes exactly the drafts on the approved list, and nothing without
   assert.deepEqual(current(root), spec, "the current spec is untouched");
   assert.equal(run(root, "status", "keep").exit, 0, "the kept draft is intact");
 });
+
+// ---------------------------------------------------------------- (iv) prune --official: only what the tool confirms official
+test("prune --official deletes only drafts every record of which is already official, and keeps the rest", () => {
+  const root = project();
+  newDraft(root, "same");
+  write(root, D("same", "claims/b/other.md"), "# §b/other\n\nOther does Z better.\n");
+  newDraft(root, "clash");
+  write(root, D("clash", "claims/a/top.md"), TOP.replace("One does X.", "One does X twice."));
+  newDraft(root, "fresh");
+  write(root, D("fresh", "claims/a/top.md"), TOP.replace("The top surface.", "The top surface, renamed."));
+  newDraft(root, "nothing");
+  write(root, ".sova/spec/drafts/broken/draft.json", "{not json");
+  // current gains `same`'s prose (it landed) and different prose for what `clash` edits
+  write(root, ".sova/spec/claims/b/other.md", "# §b/other\n\nOther does Z better.\n");
+  write(root, ".sova/spec/claims/a/top.md", TOP.replace("One does X.", "One does X once."));
+
+  const before = tree(root, ".sova/spec");
+  const pv = run(root, "prune", "--official");
+  assert.equal(pv.exit, 0, JSON.stringify(pv.findings));
+  assert.deepEqual(tree(root, ".sova/spec"), before, "a preview deletes nothing");
+  assert.deepEqual(pv.wouldDelete.map((t) => t.name), ["same"]);
+  assert.deepEqual(pv.kept.map((k) => [k.name, k.state]).sort(), [["broken", "unreadable"], ["clash", "superseded"], ["fresh", "active"], ["nothing", "active"]]);
+
+  const w = run(root, "prune", "--official", "--write");
+  assert.equal(w.exit, 0, JSON.stringify(w.findings));
+  assert.deepEqual(w.deleted.map((t) => t.name), ["same"]);
+  assert.deepEqual(draftNames(root), ["broken", "clash", "fresh", "nothing"], "only the confirmed-official draft is gone");
+  const cur = current(root);
+  assert.deepEqual(cur, Object.fromEntries(Object.entries(before).filter(([p]) => !p.includes("/drafts/"))), "the current spec is untouched");
+});
+
+test("prune --official --from DIR reads copies kept outside the project against its current spec, and deletes only official ones", () => {
+  const root = project();
+  newDraft(root, "landed");
+  write(root, D("landed", "claims/b/other.md"), "# §b/other\n\nOther does Z better.\n");
+  newDraft(root, "waiting");
+  write(root, D("waiting", "claims/a/top.md"), TOP.replace("The top surface.", "The top surface, renamed."));
+  newDraft(root, "nothing");
+  // A merge round's copies: the drafts moved out of the project, as removing a worktree would leave them.
+  const kept = join(tmp(), "kept", "abc123");
+  mkdirSync(kept, { recursive: true });
+  for (const n of ["landed", "waiting", "nothing"]) {
+    spawnSync("cp", ["-a", join(root, ".sova/spec/drafts", n), join(kept, n)]);
+    rmSync(join(root, ".sova/spec/drafts", n), { recursive: true, force: true });
+  }
+  mkdirSync(join(kept, "junk"));
+  writeFileSync(join(kept, "junk", "draft.json"), "{not json");
+
+  // Not landed yet: nothing is confirmed, nothing deleted.
+  const none = run(root, "prune", "--official", "--from", kept, "--write");
+  assert.equal(none.exit, 0, JSON.stringify(none.findings));
+  assert.deepEqual(none.deleted, []);
+  assert.deepEqual(readdirSync(kept).sort(), ["junk", "landed", "nothing", "waiting"]);
+
+  // `landed`'s prose reaches the current spec: only that copy is confirmed and deleted.
+  write(root, ".sova/spec/claims/b/other.md", "# §b/other\n\nOther does Z better.\n");
+  const pv = run(root, "prune", "--official", "--from", kept);
+  assert.deepEqual(pv.wouldDelete.map((t) => t.name), ["landed"]);
+  assert.deepEqual(readdirSync(kept).sort(), ["junk", "landed", "nothing", "waiting"], "a preview deletes nothing");
+  const w = run(root, "prune", "--official", "--from", kept, "--write");
+  assert.deepEqual(w.deleted.map((t) => t.name), ["landed"]);
+  assert.deepEqual(Object.fromEntries(w.kept.map((k) => [k.name, k.state])), { junk: "unreadable", nothing: "empty", waiting: "pending" });
+  assert.deepEqual(readdirSync(kept).sort(), ["junk", "nothing", "waiting"]);
+  assert.deepEqual(draftNames(root), [], "the project's own drafts folder is not touched");
+});
+
+test("prune takes --approved or --official, and --from only with --official", () => {
+  const root = project();
+  assert.equal(run(root, "prune").exit, 2);
+  assert.equal(run(root, "prune", "--official", "--approved", join(root, "x")).exit, 2);
+  assert.equal(run(root, "prune", "--approved", join(root, "x"), "--from", root).exit, 2);
+  assert.equal(run(root, "prune", "--official", "--from", join(root, "missing")).exit, 2);
+});

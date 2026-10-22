@@ -385,7 +385,7 @@ label a person reads says "sessions pane".
     separate choices — they are two sections, and one holds rows the other doesn't.
   - It opens **without** changing the stored choice while a search query is non-empty (every hit
     has to be visible); when the search ends it goes back to the stored choice (`folderOpen`).
-    Unlike an Archive date section, holding the selected session does NOT force it open: an active
+    Unlike an Archive date section, moving to a session inside it does NOT open it: an active
     session is already in Recent, and the folder keeps the user's choice.
   - A folder builds its rows only once it is first open (by the user, a stored choice or a
     search), and keeps them after it closes again. A folder never opened holds its head and count
@@ -1557,9 +1557,12 @@ rest." The archive is also forced open (case 1 below).
 **Folders open/closed state.** Folders is a native `<details>`, **open by default**, like Projects:
 the whole summary row toggles it and the chevron rotates. A collapse is remembered for the tab in
 `sessionStorage["sova:top-open"]` through `writeKey`, `"0"` collapsed and anything else open. It is
-**forced open**, without changing the stored choice, while a search has matches in it and while it
-holds the selected session (from the URL), so its `aria-current` row is visible; when that ends it
-goes back to the stored choice. Collapsed, its head carries Busy's pulsing dot while an agent works
+**forced open**, without changing the stored choice, while a search has matches in it. When you
+move to a session inside it (a click, a link, a notification, the palette, or loading the page on
+it) it opens for that visit, without changing the stored choice, so its `aria-current` row is
+visible, then it is yours to close: a collapse you make while on that session stays shut through
+every refresh, running agent and new message until you open it or move to a session again. When
+the search ends, or you move to a session outside it, it goes back to the stored choice. Collapsed, its head carries Busy's pulsing dot while an agent works
 in one of its sessions (the Projects head's mark). Each folder inside keeps its own open state and
 key (prefix `t`, §app.session-list/content-rules).
 
@@ -1571,18 +1574,22 @@ key (prefix `t`, §app.session-list/content-rules).
   load and written on `toggle`. It lasts for the browser session, not across restarts.
 - It opens automatically, **without** changing the stored choice, when:
   1. Folders is empty (otherwise the sidebar would show nothing but a closed strip);
-  2. the selected session (from the URL) is in the archive, so its `aria-current` row is
-     visible;
+  2. you move to a session in the archive (a click, a link, a notification, the palette, or
+     loading the page on it), or the open session moves into it (archived while open), so its
+     `aria-current` row is visible: opened once for that visit, then yours to close, and a
+     collapse you make while on that session stays shut through every refresh until you open it
+     or move to a session again;
   3. a search query is non-empty (see Search).
 
-  When the condition ends, it goes back to the stored choice. Case 2 is the exception: it doesn't
-  close under the user while they're on that session.
+  When the condition ends, it goes back to the stored choice. Case 2 never closes under the user
+  while they're on that session, and never reopens over their collapse either.
 
 **Ordering.** Needs you, Recent, Groups, Automations, Projects, Folders, Organizations, Archive:
 the shortcut regions first, then Projects with Folders directly under it, then Organizations, and
 the Archive last. Inside each region, groups and rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
-`aria-current`, and case 2 keeps the archive open.
+`aria-current`, and case 2 keeps the archive open unless the user collapsed it while on that
+session.
 
 **Archiving.** Sessions started from Sova (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
@@ -1913,12 +1920,15 @@ projects (§app.projects/list).
 - **Open by default; a collapse is remembered for the tab** in `sessionStorage["sova:orgs-open"]`
   through `writeKey`, `"0"` collapsed and anything else open (the Needs you pattern). Orgs open by
   default and every Done stays closed, both in memory only. **Forced open**, without changing the stored
-  choice: while a search is on (with every org and Done that holds a hit); and while the selected
-  session (from the URL) is inside — then its org and, if needed, its Done are forced open too, so
-  its `aria-current` row, or its project's `aria-current` eye, is visible (the Archive's case 2: it
-  doesn't close under the operator while they're on that session). A folder session of this
-  computer's project forces it open too, here or in the Projects region, since Folders no longer
-  lists it; one Folders still lists (a peer's, or an archived one) forces nothing open.
+  choice, while a search is on (with every org and Done that holds a hit). When you move to a
+  session inside it (a click, a link, a notification, the palette, or loading the page on it) the
+  region, its org and, if needed, its Done open for that visit without changing any choice, so its
+  `aria-current` row, or its project's `aria-current` eye, is visible; then each is yours to close
+  (the Archive's case 2): a collapse you make while on that session stays shut through every
+  refresh, running agent and new message until you open it or move to a session again. A folder
+  session of this computer's project opens its sections the same way, here or in the Projects
+  region, since Folders no longer lists it; one Folders still lists (a peer's, or an archived one)
+  opens nothing here.
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.
@@ -1996,7 +2006,9 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
   `sessionStorage["sova:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
   `month`, `older`; `"1"`/`"0"`), read on load and written on `toggle`. A section opens
   **without** changing its stored choice while a search query is non-empty (so every hit is
-  visible) or while it holds the selected session.
+  visible), and when you move to a session inside it it opens for that visit, then is yours to
+  close: a collapse you make while on that session stays shut until you open it or move to a
+  session again.
 - **Look.** The summary is the `.list-group-label` eyebrow (mono, micro, uppercase, muted), plus
   semibold, at `--row-height`: a 16px twist in the folder icon's column, the name, and the count
   at the right. Hover inks it. It doesn't stick; the folder labels under it keep sticking. A

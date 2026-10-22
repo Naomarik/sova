@@ -77,6 +77,8 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
 </div>
 ```
 
+- **View Rendered.** A closed `markdown` or `md` block's head also carries View Rendered, before
+  Copy Code (§chat.markdown/view-rendered); no other block has it.
 - **Language label.** The first word of the fence's info string, lowercased, and shown in
   uppercase eyebrow type. No info string means "text".
 - **Highlighting.**
@@ -104,6 +106,20 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
   - On failure the label becomes "Couldn't copy" for 1.5s.
 - **Block tokens.** `--color-sunken` ground, a 1px `--color-border` edge, `--r-sm` (monospace
   corners), and code in `--color-ink`. The head is `--control-sm` tall with a 1px rule under it.
+
+## §chat.markdown/view-rendered — View Rendered on a markdown block
+
+A closed code block whose fence word is `markdown` or `md` (any case) carries a second button in
+its head, before Copy Code: **View Rendered**, `.button-sm.button-ghost` with the `eye` icon. It
+opens the block's raw source in the markdown viewer (§app/markdown-viewer) on Rendered, titled
+"Markdown", so the document gets the whole renderer with room to read (tables, headings, lists,
+links, images by §chat.markdown/images-in-markdown, code, `vis` drawings). Its accessible name is
+"View Rendered", and focus returns to it when the viewer closes.
+
+- Every other fence word, a `vis` fence's source fallback and an indented code block get no button.
+- A fence still open mid-stream has no button: half a document is never opened. It appears when
+  the fence closes.
+- Inside the viewer, the button on a markdown block there replaces the viewer's document in place.
 
 ## §chat.markdown/highlight-theme — Highlight theme (dark and light, tokens only)
 

@@ -16,7 +16,7 @@
     "compact-wide": { "width": 1280, "height": 760, "scale": 2, "note": "a feature image with the session detail pane open: under about 1200px the pane covers part of the chat instead of sitting beside it" },
     "fold": { "width": 816, "height": 616, "scale": 3, "mobile": true, "note": "an unfolded foldable, landscape: 2448x1848 px, 4:3 (the Galaxy Z Fold 8 inner display)" },
     "phone": { "width": 416, "height": 658, "scale": 3, "mobile": true, "note": "a folded foldable cover screen, portrait: 1248x1974 px, about 10:16 (the Galaxy Z Fold 8 cover display)" },
-    "video": { "width": 1152, "height": 720, "scale": 2, "note": "the hero video: 16:10 like hero-desk, a little narrower than desktop so the interface reads larger; filmed at 2304x1440, encoded at 1920x1200" }
+    "video": { "width": 1280, "height": 800, "scale": 2, "note": "the hero video: 16:10 like hero-desk, narrower than desktop so the interface reads larger, and at Sova's 1280px breakpoint, from which the session detail pane sits beside the chat instead of covering it; filmed at 2560x1600, encoded at 1920x1200" }
   },
 
   "project": {
@@ -464,11 +464,12 @@
           { "user": "What needs me?" },
           { "tool": { "name": "sova_attention", "args": {} } },
           { "say": [
-            "Three sessions need you:",
+            "Two sessions need you:",
             "",
-            "- [Retry policy](sova://s/$session:retry-policy) is new and waits for your first message.",
             "- [Upload metrics](sova://s/$session:upload-metrics) asks one question about retries.",
-            "- [Flaky upload test](sova://s/$session:flaky-test) stopped on a rate limit."
+            "- [Flaky upload test](sova://s/$session:flaky-test) stopped on a rate limit.",
+            "",
+            "Neither is urgent. Start with [Retry policy](sova://s/$session:retry-policy): it's new and waits for your first message."
           ] }
         ]
       },
@@ -476,7 +477,7 @@
         { "do": "hold", "for": "700ms", "caption": "Ask what needs you" },
         { "do": "click", "target": "send" },
         { "do": "release", "scene": "overseer", "until": "end" },
-        { "do": "hold", "read": "Retry policy is new" },
+        { "do": "hold", "read": "Two need you. Start with Retry policy" },
         { "do": "click", "target": "link", "text": "Retry policy", "caption": null },
         { "do": "hold", "read": "Needs you", "caption": "Ask in plain words" },
         { "do": "type", "step": 0 },
@@ -500,9 +501,9 @@
         { "do": "click", "target": "close-panel", "caption": "All 3 are back" },
         { "do": "hold", "read": "All 3 are back" },
         { "do": "click", "target": "review-changes", "caption": "Read every change as steps" },
-        { "do": "hold", "for": "3500ms", "read": "Cap each wait at 30 s" },
+        { "do": "hold", "for": "3200ms", "read": "Cap each wait at 30 s" },
         { "do": "click", "target": "changes-step", "n": 2 },
-        { "do": "hold", "for": "3500ms", "read": "Pin the delays with a test", "caption": null },
+        { "do": "hold", "for": "3200ms", "read": "Pin the delays with a test", "caption": null },
         { "do": "home" }
       ]
     },

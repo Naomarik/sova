@@ -58,8 +58,9 @@ models on the pi backend.
 
 ## The videos
 
-`videos.desk` is the hero loop (about 55 s, 1920x1200, filmed at 2304x1440 from a 1152x720 viewport
-so the interface reads larger than on a 1440 desktop). `videos.phone` is the phone section's clip
+`videos.desk` is the hero loop (about 56 s, 1920x1200, filmed at 2560x1600 from a 1280x800 viewport:
+the interface reads larger than on a 1440 desktop, and 1280 is Sova's breakpoint from which the
+session detail pane sits beside the chat instead of covering it). `videos.phone` is the phone section's clip
 (about 14 s, 832x1316, the phone viewport). Each is a list of beats, played in order:
 
 | `do` | What happens |
@@ -89,11 +90,14 @@ picture), and `length` and `budget` what the finished files must meet.
   clicked on screen; the story's user step is exactly the text that click sends
   (`src/lib/align-picks.ts`).
 - A caption has at most 5 words and stays at least 2 s, fading in and out, low on the left, away
-  from what the pointer presses.
+  from what the pointer presses. It sits on an opaque plate grown to cover every row of the page's
+  text it touches (measured at each beat while it shows), so no app text peeks around it; the
+  "Sped up" tag sits above it on the same plate.
 
 **How it is made.** record.mjs plays the beats in the page (the app's own animations on; scrollbars,
 spell-check marks, toasts and the Jump to Latest pill hidden) and films it with the CDP screencast,
-which sends a frame only when the page changes. It logs every event as an anchor; between anchors
+which sends a frame only when the page changes (the browser's tap highlight is off too: the drawn
+ring is the tap). It logs every event as an anchor; between anchors
 the video runs at the beat's nominal time (a hold its length, a travel its duration...), so a busy
 machine can't stretch it; only a reply arriving keeps its real length. video-compose.mjs then makes
 a constant 30 fps picture from the frames and draws the pointer, its ripples, the captions (in the

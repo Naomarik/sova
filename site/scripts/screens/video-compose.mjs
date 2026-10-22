@@ -120,7 +120,7 @@ export async function renderLabels(browser, labels, scale, fontPx) {
         `<style>@font-face{font-family:InterSite;src:url(data:font/woff2;base64,${font}) format("woff2");font-weight:100 900}` +
           `html,body{margin:0;background:transparent}` +
           `#l{display:inline-block;margin:12px;font-family:InterSite;letter-spacing:-0.01em;white-space:nowrap}` +
-          `.caption{font-weight:600;font-size:${fontPx}px;line-height:1.25;color:#fff;background:rgba(17,17,24,.86);padding:${Math.round(fontPx * 0.5)}px ${Math.round(fontPx * 0.8)}px;border-radius:${Math.round(fontPx * 0.6)}px;border:1px solid rgba(255,255,255,.14);box-shadow:0 3px 14px rgba(0,0,0,.4)}` +
+          `.caption{font-weight:600;font-size:${fontPx}px;line-height:1.25;color:#fff;background:rgb(17,17,24);padding:${Math.round(fontPx * 0.5)}px ${Math.round(fontPx * 0.8)}px;border-radius:${Math.round(fontPx * 0.6)}px;border:1px solid rgba(255,255,255,.14);box-shadow:0 3px 14px rgba(0,0,0,.4)}` +
           `.tag{font-weight:600;font-size:${Math.round(fontPx * 0.76)}px;line-height:1.2;color:#fff;background:rgba(74,67,216,.92);padding:${Math.round(fontPx * 0.32)}px ${Math.round(fontPx * 0.62)}px;border-radius:999px;box-shadow:0 3px 12px rgba(0,0,0,.35)}</style>` +
           `<span id="l" class="${kind}">${esc}</span>`,
       );
@@ -135,6 +135,15 @@ export async function renderLabels(browser, labels, scale, fontPx) {
     await ctx.close();
   }
   return out;
+}
+
+/** An opaque plate (CSS rect at `scale`), in the captions' colour, with a hairline edge. */
+async function plateSprite(sharp, scale, r) {
+  const w = Math.max(1, Math.round((r.x1 - r.x0) * scale));
+  const h = Math.max(1, Math.round((r.y1 - r.y0) * scale));
+  const rad = Math.round(10 * scale);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="${rad}" fill="rgb(17,17,24)" stroke="rgba(255,255,255,0.14)" stroke-width="${Math.max(1, Math.round(scale))}"/></svg>`;
+  return svgRaw(sharp, svg);
 }
 
 // ---- drawing ----------------------------------------------------------------------------------
@@ -198,6 +207,10 @@ export async function compose({ frames, track, v, labels, root }) {
   const press = await pressSprites(sharp, s, v.pointer);
   const presses = (v.pointer === "tap" ? track.taps : track.clicks).map((c) => ({ ...c, o: toOut(c.t) }));
   const caps = track.captions.map((c) => ({ ...c, oa: toOut(c.a), ob: toOut(c.b), img: labels.get(`caption:${c.text}`) }));
+  // Each caption on its own opaque plate. Back to back, the plates swap at once (no fade between
+  // them), so nothing behind shows; the text fades as usual.
+  const runs = caps.map((c, k) => ({ oa: c.oa, ob: c.ob, x0: c.plate.x, y0: c.plate.y, x1: c.plate.x + c.plate.w, y1: c.plate.y + c.plate.h, joinPrev: k > 0 && c.oa - caps[k - 1].ob < 0.05, joinNext: k < caps.length - 1 && caps[k + 1].oa - c.ob < 0.05 }));
+  for (const r of runs) r.img = await plateSprite(sharp, s, r);
   // The tag shows over the sped-up stretch, and stays long enough to read (a short stretch of
   // three times the speed is over in well under a second).
   const tags = track.speed.map((x) => ({ oa: toOut(x.a), ob: Math.max(toOut(x.b), toOut(x.a) + PACE.caption.min), img: labels.get(`tag:${v.tagText}`) }));
@@ -243,13 +256,17 @@ export async function compose({ frames, track, v, labels, root }) {
       r = track.end;
       frame = mix(last, first, ease(clamp((o - endOut) / loop, 0, 1)));
     }
+    for (const r of runs) {
+      if (o < r.oa || o >= r.ob) continue;
+      const op = Math.min(r.joinPrev ? 1 : (o - r.oa) / CAPTION_FADE, r.joinNext ? 1 : (r.ob - o) / CAPTION_FADE, 1);
+      over(frame, W, H, r.img, r.x0 * s, r.y0 * s, op);
+    }
     for (const c of caps) if (c.img) over(frame, W, H, c.img, c.box.x * s, c.box.y * s, fade(o, c.oa, c.ob));
     for (const t of tags) {
       const cap = caps.find((c) => c.oa <= o && o < c.ob);
       if (!t.img || !cap?.img) continue;
-      const x = (cap.box.x + cap.box.w + 8) * s;
-      const y = (cap.box.y + (cap.box.h - t.img.cssH) / 2) * s;
-      over(frame, W, H, t.img, x, y, fade(o, t.oa, t.ob));
+      // Above the caption, inside its plate.
+      over(frame, W, H, t.img, cap.box.x * s, (cap.box.y - t.img.cssH - 6) * s, fade(o, t.oa, t.ob));
     }
     for (const p of presses) {
       if (v.pointer === "tap" && o >= p.o - PACE.rest && o < p.o) over(frame, W, H, press.touch, p.x * s - press.touch.hx, p.y * s - press.touch.hy, ease((o - (p.o - PACE.rest)) / PACE.rest));

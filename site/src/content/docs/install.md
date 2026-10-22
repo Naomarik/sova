@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/instal
 
 This installs Sova's newest stable release (the `stable` tag, which each release moves to itself); running it again updates to the newest stable release then.
 
-The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.6.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.7.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 

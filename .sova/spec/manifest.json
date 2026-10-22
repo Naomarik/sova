@@ -740,7 +740,8 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T09:45Z"
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
       },
       "evidence": "verified"
     },
@@ -1264,8 +1265,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T09:37Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
       }
     },
     "§app.project-assistant/chat": {
@@ -1303,12 +1304,13 @@
         "src/share/ShareComposer.tsx",
         "src/lib/share-composer.ts",
         "src/lib/share-composer.test.ts",
-        "src/share/owner.css"
+        "src/share/owner.css",
+        "server/project-assistant-ready.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
       }
     },
     "§app.project-assistant/drawings": {
@@ -1403,7 +1405,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§app.project-costs/price-table"
+        "§app.project-costs/price-table",
+        "§app.settings-dialog/models"
       ],
       "code": [
         "server/project-assistant-store.ts",
@@ -1412,12 +1415,20 @@
         "server/org-routes.ts",
         "src/components/OwnerCardAssistant.tsx",
         "src/components/OwnerCardAssistant.css",
-        "src/lib/api.ts"
+        "src/lib/api.ts",
+        "server/project-assistant-ready.ts",
+        "server/project-assistant-default.test.ts",
+        "server/baton-settings.ts",
+        "shared/project-assistant.ts",
+        "src/lib/model-pick.ts",
+        "src/lib/model-pick.test.ts",
+        "server/feature-chats.ts",
+        "server/assistant-would-act.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T09:37Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
       }
     },
     "§app.project-assistant/never": {
@@ -1470,12 +1481,13 @@
         "src/share/thread.tsx",
         "src/components/OwnerCard.tsx",
         "src/components/OwnerCardAssistant.tsx",
-        "server/project-assistant-prompt.test.ts"
+        "server/project-assistant-prompt.test.ts",
+        "server/project-assistant-ready.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T12:19Z",
-        "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#2d6e96df"
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
       }
     },
     "§app.project-assistant/request-chat": {
@@ -2551,7 +2563,12 @@
       ],
       "requires": [
         "§app.commands/catalogue"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+      }
     },
     "§app/settings-dialog": {
       "kind": "surface",
@@ -3666,8 +3683,15 @@
         "src/components/ComposerMenu.tsx",
         "src/design/base.css",
         "src/lib/model-picker.ts",
-        "src/lib/model-picker.test.ts"
-      ]
+        "src/lib/model-picker.test.ts",
+        "src/components/ModelPickButton.tsx",
+        "src/components/ModelPickButton.css"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+      }
     },
     "§chat.model-menu/states": {
       "kind": "behavior",
@@ -9416,8 +9440,15 @@
         "src/lib/api.ts",
         "shared/baton.ts",
         "server/share-message.test.ts",
-        "server/share-message.integration.test.ts"
-      ]
+        "server/share-message.integration.test.ts",
+        "src/components/BatonSettings.css",
+        "server/project-assistant-routes.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+      }
     },
     "§chat.transcript/runaway-stream": {
       "kind": "behavior",
@@ -10294,8 +10325,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T09:37Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "at": "2026-10-22T16:16Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
       }
     },
     "§app.owner-page/conversations": {

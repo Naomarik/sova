@@ -1,6 +1,7 @@
 import { createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown, type RenderedVisual } from "../lib/markdown";
+import { openMarkdown } from "../lib/markdown-viewer";
 import { activatePathChip } from "../lib/path-attachments";
 import { sessionIndexVersion } from "../lib/session-links";
 import { announce, openLightbox, toast } from "../lib/ui-state";
@@ -80,6 +81,12 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
         const target = e.target as HTMLElement;
         const copyButton = target.closest<HTMLButtonElement>(".md-code-copy");
         if (copyButton) return void copy(copyButton);
+        const viewButton = target.closest<HTMLButtonElement>(".md-code-view");
+        if (viewButton) {
+          const source = rendered().codes[Number(viewButton.dataset.codeIndex)];
+          if (source !== undefined) openMarkdown({ title: "Markdown", markdown: source });
+          return;
+        }
         const chip = target.closest<HTMLElement>(".path-chip");
         if (chip) return activatePathChip(chip);
         // A card ref jumps to the card in this chat's thread; it never moves the route.

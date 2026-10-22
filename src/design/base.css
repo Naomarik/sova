@@ -4456,7 +4456,8 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.md-code-copy { flex: none; }
+.md-code-copy,
+.md-code-view { flex: none; }
 .md .md-code pre {
   margin: 0;
   border: 0;

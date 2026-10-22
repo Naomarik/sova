@@ -2,7 +2,7 @@
 // summarizer's call (usage purpose, fallback, policy). Files only under a temp agent dir; no CLI runs.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -141,10 +141,20 @@ describe("the routes", () => {
 });
 
 describe("the summarizer's call", () => {
-  /** A fake `claude` that answers `result`, recording the usage context it ran in. */
-  function fakeClaude(result: string, contexts: unknown[]) {
-    return ((_bin: string, _args: string[]) => {
+  /** What a fake `claude` saw at spawn time: its argv, and the system prompt file it names (text, mode). */
+  interface Seen {
+    args: string[];
+    file?: string;
+    text?: string;
+    mode?: number;
+  }
+  /** A fake `claude` that answers `result`, recording the usage context it ran in (and what it saw). */
+  function fakeClaude(result: string, contexts: unknown[], seen: Seen[] = []) {
+    return ((_bin: string, args: string[]) => {
       contexts.push(currentUsageContext());
+      const at = args.indexOf("--system-prompt-file");
+      const file = at >= 0 ? args[at + 1] : undefined;
+      seen.push({ args: [...args], ...(file ? { file, text: readFileSync(file, "utf8"), mode: statSync(file).mode & 0o777 } : {}) });
       const child = new EventEmitter() as EventEmitter & { stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void };
       child.stdin = new PassThrough();
       child.stdout = new PassThrough();
@@ -175,12 +185,40 @@ describe("the summarizer's call", () => {
     await assert.rejects(summarize(call, { settings: () => both, denied: () => "turned off", spawn: fakeClaude("x", []), agentDir: () => agentDir }), /turned off/);
   });
 
-  test("the argv: no tools, no settings sources, no session, the effort and the system prompt", () => {
-    const a = summaryClaudeArgs(haiku, "SYS");
+  test("the argv: no tools, no settings sources, no session, the effort, and no system prompt text", () => {
+    const a = summaryClaudeArgs(haiku);
     assert.equal(a[a.indexOf("--tools") + 1], "");
     assert.equal(a[a.indexOf("--setting-sources") + 1], "");
     assert.ok(a.includes("--no-session-persistence"));
     assert.equal(a[a.indexOf("--effort") + 1], "low");
-    assert.equal(a[a.indexOf("--system-prompt") + 1], "SYS");
+    assert.ok(!a.includes("--system-prompt") && !a.includes("--append-system-prompt") && !a.includes("--append-system-prompt-file"));
+  });
+
+  test("the system prompt goes in a private file that replaces Claude Code's own, removed after the call; no big argument", async () => {
+    const seen: Seen[] = [];
+    const system = `guide\n${"0+1|a summarized line of the chat. ".repeat(6500)}`; // ~200 KB
+    assert.ok(Buffer.byteLength(system) > 200_000);
+    const out = await summarize({ ...call, system }, { settings: () => settings.memoryDefaults(), denied: () => null, spawn: fakeClaude("A line.", [], seen), agentDir: () => agentDir });
+    assert.equal(out.text, "A line.");
+    const [s] = seen;
+    assert.ok(s && s.file, "--system-prompt-file names a file");
+    assert.equal(s.text, system, "the file holds the call's system prompt, whole");
+    assert.equal(s.mode, 0o600, "readable by its owner only");
+    assert.ok(!s.args.includes("--system-prompt") && !s.args.includes("--append-system-prompt-file"), "replace, never append");
+    assert.ok(s.args.every((x) => Buffer.byteLength(x) <= 64 * 1024), "no argument over 64 KiB");
+    assert.equal(existsSync(s.file!), false, "the file is removed after the call");
+  });
+
+  test("an argument over 64 KiB fails too-large without starting claude", async () => {
+    const { claudeRun } = await import("../decide-llm");
+    const { DecisionError } = await import("../decide");
+    let spawned = 0;
+    const spawn = ((..._a: unknown[]) => {
+      spawned++;
+      throw new Error("must not spawn");
+    }) as unknown as typeof import("node:child_process").spawn;
+    const fail = (f: import("../../shared/protocol").DecisionFailure, m: string) => new DecisionError(f, m);
+    await assert.rejects(claudeRun(["-p", "--system-prompt", "x".repeat(100_000)], "q", { spawn, agentDir: () => agentDir }, 5_000, fail), (err: unknown) => err instanceof DecisionError && err.failure === "too-large" && /argument too large/.test(err.message));
+    assert.equal(spawned, 0);
   });
 });

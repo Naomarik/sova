@@ -173,7 +173,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   done ones); link sessions across hosts and end a link (`sova_link`, `sova_unlink`,
   §app.overseer/links-tools); this host's organizations: orgs, projects, rosters, owners and
   decisions (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`, `sova_project_decisions`,
-  §app.overseer/org-writes), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
+  §app.overseer/org-writes), an owner's page link sent to them on WhatsApp (`sova_owner`
+  `send_link`, §app.owner-page/send), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
   project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers); any project's
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
   logs and doctor at any time, the other verbs (`share` is the operator's: `needs-confirm`; `revoke`
@@ -1850,12 +1851,14 @@ the files: the workspace repos are closed to its file tools (§app.overseer/tool
   those routes have applies unchanged and comes back as the tool's error, worded as the page
   shows it. The exceptions are starting a gathering session or an offer and handing one on, which
   call Sova's in-process start and move with no link minted (§app.overseer/org-people-facing), never
-  `POST /api/baton` or the hand-off route (which mints the next holder's link for the page).
+  `POST /api/baton` or the hand-off route (which mints the next holder's link for the page), and
+  sending an org's owner their page link, which takes the org statechart's act in-process with the
+  operator's envelope and the turn's card (§app.owner-page/send): no route makes and sends one.
 - **The user's authority, marked.** Whatever it writes is written as the operator
   (§app.organizations/field-authority), marked as made through the Overseer and shown as "You, via
   the Overseer" (§app.overseer/org-attribution).
-- **Never:** move an org, or take one over from another host; set or remove its push remote; mint, show or turn off an
-  owner link; Get Link on a baton session; merge or remove a coding worktree
+- **Never:** move an org, or take one over from another host; set or remove its push remote; show or turn off an
+  owner link, or make one other than by sending it to the owner (§app.owner-page/send); Get Link on a baton session; merge or remove a coding worktree
   (§app.project-overseer/coding-worktrees); anything on an org session that is TUI-live. Those
   stay the user's gestures on the page.
 - **Addressing.** Orgs, projects and people by id or by exact name (case-insensitive; a name two
@@ -1968,6 +1971,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   "contact cleared", and the action log records the call with `contact` replaced by `[contact]`.
   (The user gave the value in their own message, which the conversation keeps as they wrote it.)
 - **`sova_owner {op: "set", org, person | null}`** sets the org's owner (§app.owner-page/owner).
+  `{op: "send_link", org, person, note?}` sends the owner their owner page link on WhatsApp, behind
+  a card (§app.owner-page/send).
 - **`sova_project_decisions {op, org, project}`**: `reconcile`, `promote {ids}`, `resolve
   {conflict, …}`, `route {conflict, to}` and `freeze {frozen}` (§app/requirements), through the
   project's decisions routes. `promote` refuses a decision outside its author's area, as a project
@@ -2077,7 +2082,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   page's hand-off route mints one for the operator to copy). No op gets or shows a link: `send_link`
   mints one and hands it straight to the person on WhatsApp (§app.outreach/send), and its
   result says only "Sent {name} their link on WhatsApp." or why not — never the link, the token or
-  the number.
+  the number. `sova_owner` `send_link` sends an org's owner their owner page link the same way
+  (§app.owner-page/send), and its result never holds the link, the token or the number either.
 - **Behind a confirm card, enforced.** These ops act on people or end something, and run only in a
   turn the user opened by clicking a card (§app.overseer/confirm) that lists every person, project,
   session, folder and org the call acts on: the run's opening message is a click on that card, its text exactly
@@ -2087,7 +2093,7 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   turn, or put back in the queue because a compaction was starting) keeps its mark, and that it was
   typed by a person, until it is handed over. A Retry (regenerate) of the click's message carries no
   mark: the turn it starts approves nothing. The ops: `sova_gather` `start`, `offer`,
-  `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_roster` `leave`, and a `revert` that sets
+  `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_owner` `send_link`; `sova_roster` `leave`, and a `revert` that sets
   `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`, `import` and `add` of a
   folder or a session's folder (never a clone); `sova_org` `detach` (§app.overseer/org-project-add).
   Anywhere else (a typed

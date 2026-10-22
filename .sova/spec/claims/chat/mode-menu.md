@@ -506,8 +506,9 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   in separate namespaces, so a built-in added later never takes over a project's mode either. One
   broken folder never hides the others.
 - **Never on by themselves.** A project mode is on only when someone turned it on in that chat:
-  the user, from the chat's mode menu or `/mode` (§chat.mode-menu/terminal), or the Overseer
-  (§app.overseer/tools). A mode file has no way to say "on by default". `Save as default` never
+  the user, from the chat's mode menu or `/mode` (§chat.mode-menu/terminal), the Overseer
+  (§app.overseer/tools), or a script, a chat's agent or an extension through the mode request, whose
+  approval is kept as theirs (§chat.mode-menu/project-mode-hooks). A mode file has no way to say "on by default". `Save as default` never
   stores one and `mode.json` never holds one. A profile, an automation, a project's coding session
   (§app.project-overseer/coding-mode) and `pi --minor` can't name one. Settings shows none.
 - **The chat keeps the version it turned on.** Turning a mode on saves a copy of its `MODE.md`

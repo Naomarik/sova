@@ -19,7 +19,7 @@ A session is listed when one of these holds:
 - One of its tour recordings is waiting for you to sign in to a site, on the tour card.
 - A playbook run proposes a branch to merge. Its row carries a **Merge Branch** button.
 
-A project's failed deploy or open deploy request, and a WhatsApp sender that stopped sending, belong to no session: they list under the session rows as rows of their own, each opening the page where you deal with it.
+A project's failed deploy or open deploy request, and a WhatsApp sender that stopped sending, belong to no session: they list under the session rows as rows of their own, each opening the page where you deal with it. So does each open request an organization's owner files through its Project Assistant. A report, question or request opens the organization's **Requests** tab at it, and stays until work on it starts or you **Mark Done** or **Decline** it. A request to try a version opens the project's **Branches** tab, and an ask for a new owner link opens the **People** tab.
 
 Some things are worth a look but don't block anything, so they never get a row here: a reply that seems to ask you something, a team that has gone quiet, a worktree that's ready to merge, or a stuck subagent. The first two show as a quiet mark on the session's own row, a ready worktree lights the row's worktree count, and a stuck subagent is an item the Overseer reads under its parent session. A [scheduled playbook](/docs/playbooks-and-schedules/) can act on branches ready to merge for you: the Merge round wakes when one turns ready, asks its owner, and lands it.
 
@@ -66,7 +66,7 @@ Open **Settings → Notifications**:
 2. Press **Enable on This Device** and allow notifications when your browser asks.
 3. Press **Send Test** to check. It reaches every device you added, ignoring the switches and quiet hours below, and says which ones failed.
 
-The same tab lists your devices with when each was added and its last delivery or error, and **Remove** takes one off. You can also switch off whole kinds (Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down; Subagent error starts off) and turn on **Quiet hours**, 22:00 to 07:00 on the server's clock by default.
+The same tab lists your devices with when each was added and its last delivery or error, and **Remove** takes one off. You can also switch off whole kinds (Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down, App down; Subagent error starts off) and turn on **Quiet hours**, 22:00 to 07:00 on the server's clock by default.
 
 ### What arrives
 

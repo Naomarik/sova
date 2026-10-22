@@ -66,7 +66,7 @@ Open **Settings → Notifications**:
 2. Press **Enable on This Device** and allow notifications when your browser asks.
 3. Press **Send Test** to check. It reaches every device you added, ignoring the switches and quiet hours below, and says which ones failed.
 
-The same tab lists your devices with when each was added and its last delivery or error, and **Remove** takes one off. You can also switch off whole kinds (Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down; Subagent error starts off) and turn on **Quiet hours**, 22:00 to 07:00 on the server's clock by default.
+The same tab lists your devices with when each was added and its last delivery or error, and **Remove** takes one off. You can also switch off whole kinds (Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down, App down; Subagent error starts off) and turn on **Quiet hours**, 22:00 to 07:00 on the server's clock by default.
 
 ### What arrives
 

@@ -25,7 +25,8 @@ mode: Sova's settings, `mode.json`, profiles and automations never name one, and
 none.
 
 A project mode **never turns itself on**. It is on only when someone turned it on in that chat: you,
-from its mode menu or `/mode`, or [the Overseer](/docs/overseer/). A mode file has no way to say
+from its mode menu or `/mode`, or [the Overseer](/docs/overseer/), a script, a chat's agent or an
+extension, whose approval covers its tools and commands but not its hooks. A mode file has no way to say
 "on by default". Save as default never saves a project mode, and neither a profile, an automation,
 a project's coding session nor `pi --minor` can turn one on.
 

@@ -1,6 +1,6 @@
 ---
 title: Change direction
-description: Rewind to before a message, regenerate a reply, fork from a reply, steer a running turn, and switch models mid-session.
+description: Rewind to before a message, regenerate a reply, fork from a reply, steer a running turn, switch models mid-session, and hide everything but the conversation.
 group: Features
 order: 14
 ---
@@ -65,7 +65,7 @@ When the switch lands, Sova says "Model changed to {model}." If it fails, a bann
 
 **Focus**, the four-corners button at the transcript's bottom right, leaves only the conversation on screen: the header keeps just the session's title (and Back, on a narrow window), and the strips under it and the composer go away. Press it again to bring them back. Your draft and its attachments are kept as they were. Notices that something is wrong, such as a lost connection, still show.
 
-Focus is set per browser, not per session: it stays on as you switch sessions and across reloads. Every single-chat screen has it, the Overseer's included; a workspace pane doesn't.
+Focus is set per browser, not per session: it stays on as you switch sessions and across reloads. Every single-chat screen has it, the Overseer's included; a workspace pane doesn't (its menu's **Focus** item only moves you to that pane).
 
 ## Follow the work as it happens
 

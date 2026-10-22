@@ -26,7 +26,7 @@ commands.
 | [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself, and record checked tours of a real interface. |
 | [codemode](/docs/modes/codemode/) | Minor | The agent can run a short script that calls its other tools, several at once, and filters their output. |
 | [memory](/docs/modes/memory/) | Minor | A cheap model folds the chat's messages into one-line summaries the agent can open back up, so a long chat outgrows its context. Only Sova's mode menu turns it on. |
-| [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until you or the Overseer turn it on, and only you approve its hooks. |
+| [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until someone turns it on in a chat, and only you approve its hooks. |
 
 [Subagent profiles](/docs/subagent-profiles/) hold the models every subagent uses: Delegate's
 workers, team members, the spec writer and the reviewer. Each chat picks one in its mode menu.

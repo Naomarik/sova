@@ -304,8 +304,9 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     assert.ok(home.abilities, "control: abilities on Home");
     assert.deepEqual(Object.keys(home.abilities!).sort(), ["photos", "projects"]);
     for (const a of home.abilities!.projects) {
-      assert.deepEqual(Object.keys(a).sort(), ["fix", "project", "release", "version"]);
+      assert.deepEqual(Object.keys(a).sort(), ["feature", "fix", "project", "release", "version"]);
       for (const k of ["fix", "release"] as const) assert.ok(["now", "held", "team"].includes(a[k]), `${k}: ${a[k]}`);
+      assert.ok(["now", "team"].includes(a.feature ?? ""), `feature: ${a.feature}`);
       assert.ok(["now", "held", "team", "none"].includes(a.version));
     }
     // Control: the operator's own view of the switches carries the ids and labels.

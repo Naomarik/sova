@@ -106,6 +106,9 @@ export interface OwnerRequestRow {
   title: string;
   status: OwnerRequestStatus;
   at: string;
+  /** A `feature` request's feature request chat, as it stands now (§app.project-assistant/feature-chats):
+      "planning" while it is open, "agreed" once done; worked out at read time. */
+  plan?: "planning" | "agreed";
 }
 
 /** A version the owner can try (§app.project-assistant/versions). */
@@ -147,6 +150,9 @@ export interface AssistantMessage {
   /** On the assistant's message after a start_version that started or found a copy: that version,
       resolved at each read (§app.project-assistant/versions). */
   versions?: OwnerVersionRow[];
+  /** On the assistant's message after a start_feature_chat that opened one: that chat, while it is
+      the owner's to read (§app.project-assistant/feature-chats). */
+  featureChat?: { conversation: string; title: string };
 }
 
 export interface AssistantView {
@@ -162,7 +168,27 @@ export interface AssistantView {
   photos?: { perMessage: number; maxBytes: number };
 }
 
-export type AssistantServerMessage = { type: "view"; view: AssistantView } | { type: "streaming"; text: string } | { type: "error"; code: string; message: string };
+export type AssistantServerMessage =
+  | { type: "view"; view: AssistantView }
+  | { type: "streaming"; text: string }
+  | { type: "error"; code: string; message: string }
+  /** One of the owner's feature request chats changed: read it again (§app.project-assistant/feature-chats). */
+  | { type: "conversation"; conversation: string }
+  /** Its reply so far, filtered as a hand-off page's streaming text. */
+  | { type: "conversation-streaming"; conversation: string; text: string };
+
+/** A feature request chat the Project Assistant opened (§app.project-assistant/feature-chats): who it belongs to. */
+export interface FeatureChatRecord {
+  sessionId: string;
+  /** The owner who opened it (a person id). */
+  personId: string;
+  projectId: string;
+  /** Its `feature` request. */
+  requestId: string;
+  at: string;
+  /** Closed because its person stopped being the owner. */
+  ended?: { at: string; why: "owner-changed" | "left" };
+}
 
 /** `<workspace>/project-assistant.json`: the org's assistant models and its conversation per owner. */
 export interface AssistantStore {
@@ -170,6 +196,8 @@ export interface AssistantStore {
   models: WorkModels;
   /** Owner person id -> their conversation's session id (the newest; earlier ones stay in the workspace, closed). */
   conversations: Record<string, string>;
+  /** The feature request chats it opened, oldest first. */
+  featureChats?: FeatureChatRecord[];
 }
 
 /** A model as the Owner card shows it: the pick, its price per million tokens when known. */

@@ -289,9 +289,9 @@ export interface BatonSession {
   startedVia?: "overseer";
 }
 
-/** Who started a gathering session (§app.baton/told): you, the project's overseer, or you through the
-    global Overseer. */
-export type BatonStarter = "operator" | "overseer" | "project-overseer";
+/** Who started a gathering session (§app.baton/told): you, the project's overseer, you through the
+    global Overseer, or the Project Assistant (a feature request chat, §app.project-assistant/feature-chats). */
+export type BatonStarter = "operator" | "overseer" | "project-overseer" | "assistant";
 
 /** The strip's Started by line and its folded Why (operator only, §app.baton/told). */
 export interface BatonStarted {
@@ -509,6 +509,9 @@ export interface BatonInfo {
   wrapup: WrapupInfo | null;
   /** The org's owner, for the strip's Hide From {first} (`session.hiddenFromOwner`); null: none. */
   owner?: { name: string } | null;
+  /** A feature request chat (§app.project-assistant/feature-chats): the first name of the owner who opened it. The
+      strip says "Feature request · {first}" and offers no Hide From. */
+  featureChat?: { first: string };
   /** Who started it, when, and why (§app.baton/told). */
   started: BatonStarted;
   /** GET /api/baton only: photos are on, but the session's model can't see images, so people get no
@@ -559,7 +562,38 @@ export type BatonViewItem =
   /** An offer. `to` = the invitees' names in the view with no viewer (the project overseer's) only;
       on a share page it is empty (no invitee learns who else was asked) and `invited` is the count.
       The briefing only for an invitee (or the view with no viewer). */
-  | { kind: "offer"; id: string; n: number; from: string; to: string[]; invited: number; question: string; briefing?: string };
+  | { kind: "offer"; id: string; n: number; from: string; to: string[]; invited: number; question: string; briefing?: string }
+  /** A feature request chat's plan (§app.project-assistant/feature-chats): the one tool result that crosses, built
+      field by field from an `align` result's document; each plan once, at its latest change. Never technical notes. */
+  | { kind: "plan"; id: string; plan: BatonPlan };
+
+/** A plan card's fields, each text filtered as a reply is (§app.baton/outsider-view). */
+export interface BatonPlan {
+  /** al_N: the plan's own id, so the page names it in an answer. */
+  doc: string;
+  title: string;
+  summary: string;
+  /** open while any question is open; agreed once every live question is decided; dropped. */
+  state: "open" | "agreed" | "dropped";
+  findings: string[];
+  approach: string[];
+  rejected: { option: string; why: string }[];
+  questions: BatonPlanQuestion[];
+  visual?: BatonPlanVisual;
+}
+export interface BatonPlanQuestion {
+  /** qN */
+  id: string;
+  topic: string;
+  ask: string;
+  context?: string;
+  options: { label: string; tradeoff: string }[];
+  recommendation: { choice: string; why: string };
+  decision?: string;
+  visual?: BatonPlanVisual;
+}
+/** A drawing on the plan; `withheld` when the markup backstop kept it off the page. */
+export type BatonPlanVisual = { kind: string; source: string } | { withheld: true };
 
 /** Why a link can't write now. "taken": another invitee of the same offer holds its lease (the page
     names nobody); "withdrawn": the offer is over; "newer-link": the viewer holds the baton, through a

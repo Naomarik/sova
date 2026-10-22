@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { FILES_PER_MESSAGE, SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { FRAME_HOST_NAME, FRAME_HOST_PATH, frameHostHeaders } from "../../shared/vis-frame-host";
 import { linkAccess, nameOf, noteMessage, sessionPathOf, undoNote } from "../baton";
@@ -511,6 +511,46 @@ export function createShareApp(): Hono {
     if (r.status === 409) return c.json(refusal("live", "This link still works."), 409);
     return ownerDead(c, ownerAccess(token));
   });
+  // The owner's own feature request chat (§app.project-assistant/feature-chats): their message, and End Chat. Only a
+  // chat this person opened while they are the owner; anything else answers 404, as a handle that never existed.
+  const featureRoute = (act: (orgId: string, personId: string, handle: string, body: Record<string, unknown>) => Promise<void>, keys: readonly string[]) => async (c: Context) => {
+    const token = c.req.param("token") ?? "";
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    let body: unknown = {};
+    if (keys.length)
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
+      }
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => !keys.includes(k))) return c.json(refusal("bad-request", `Only { ${keys.join(", ")} } is accepted.`), 400);
+    if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
+    try {
+      await act(access.orgId, access.link.personId, c.req.param("handle") ?? "", body as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof OrgError) {
+        if (err.code === "busy") return c.json(refusal("busy", "The chat can't take a message right now. Try again in a moment."), 503);
+        if (err.status === 404) return c.json(refusal("missing", "Not found."), 404);
+        return c.json(refusal(err.code ?? "refused", err.message), err.status === 400 ? (err.code === "too-long" ? 413 : 400) : 409);
+      }
+      console.warn(`[share] feature chat on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json(refusal("busy", "The chat can't take a message right now. Try again in a moment."), 503);
+    }
+    noteOwnerUse(access);
+    return c.json({ ok: true }, 202);
+  };
+  app.post(
+    "/api/i/:token/c/:handle/message",
+    featureRoute(async (orgId, personId, handle, body) => (await import("../feature-chats")).sendOwnerFeatureMessage(orgId, personId, handle, body.text), ["text"]),
+  );
+  app.post(
+    "/api/i/:token/c/:handle/end",
+    featureRoute(async (orgId, personId, handle) => {
+      const f = await import("../feature-chats");
+      await f.ownerEndsFeatureChat(orgId, f.ownersChatByHandle(orgId, personId, handle).sessionId);
+    }, []),
+  );
   app.get("/api/i/:token", ownerRead(() => ({})));
   app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
   app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));

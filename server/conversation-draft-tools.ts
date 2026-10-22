@@ -314,6 +314,9 @@ export interface DraftToolCtx {
   conversation(projectId?: string): ConversationRef | null;
   /** The projects a `project` argument may name (more than one: it is required). */
   projects(): { projectId: string; name?: string }[];
+  /** Why the plan can't be confirmed by whoever holds the conversation now (a feature request chat: only its
+      owner agrees it, §app.project-assistant/feature-chats), or null. */
+  confirmRefusal?(): Promise<string | null>;
 }
 
 const say = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
@@ -393,6 +396,8 @@ export function conversationDraftTools(ctx: DraftToolCtx): ToolSpec[] {
         "The person said yes, in a message of their own, to the summary you repeated back after requirements_summary. Give that summary as you said it. Never call it without their explicit yes: until then nothing is locked in and the conversation stays open.",
       parameters: obj({ summary: str("The summary the person said yes to, as you said it."), ...projectParam() }, ["summary"]) as any,
       async execute(_id, params: any, _signal, _update, tctx) {
+        const not = await ctx.confirmRefusal?.();
+        if (not) throw new Error(not);
         return refusing(async () => {
           const ref = pick(ctx, params?.project);
           const branch = tctx?.branch() ?? [];
@@ -413,6 +418,7 @@ export function batonDraftTools(sessionId: string): ToolSpec[] {
       const r = batonConversation(sessionId);
       return r ? [{ projectId: r.projectId }] : [];
     },
+    confirmRefusal: async () => (await import("./feature-chats")).featureHolderRefusal(sessionId),
   });
 }
 

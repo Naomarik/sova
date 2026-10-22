@@ -60,6 +60,7 @@ import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
+import { featureChatOwnerFirst } from "./feature-chats";
 import { ownerView } from "./owner-page";
 import { orgRequests } from "./project-assistant-store";
 import { batonSettingsView, registerAssistantRoutes, saveBatonSettings } from "./project-assistant-routes";
@@ -109,7 +110,9 @@ export function batonInfo(row: BatonSession): BatonInfo {
         createdAt: last.createdAt,
       }
     : null;
+  const featureFirst = featureChatOwnerFirst(row.sessionId);
   return {
+    ...(featureFirst ? { featureChat: { first: featureFirst } } : {}),
     session: row,
     orgName: readOrgOrPlaceholder(row.orgId).name,
     projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",

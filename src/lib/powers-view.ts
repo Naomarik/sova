@@ -15,6 +15,8 @@ export interface PowerRow {
   label: string;
   /** The Project Assistant column can set it (false: the cell is "—"). */
   assistant: boolean;
+  /** Its meaning in the Project Assistant column, where that differs (gather: feature request chats). */
+  assistantLabel?: string;
 }
 export interface PowerGroupRow {
   id: PowerGroup;
@@ -25,14 +27,14 @@ export interface PowerGroupRow {
 /** The grid's groups as the server orders and names them, each with its acts; the server already left out what a standalone project lacks. */
 export function powerGroups(v: Pick<PowersView, "groups" | "info">): PowerGroupRow[] {
   return v.groups
-    .map((g) => ({ id: g.id, label: g.label, acts: g.powers.filter((p) => v.info[p]).map((p) => ({ id: p, label: v.info[p]!.label, assistant: v.info[p]!.assistant })) }))
+    .map((g) => ({ id: g.id, label: g.label, acts: g.powers.filter((p) => v.info[p]).map((p) => ({ id: p, label: v.info[p]!.label, assistant: v.info[p]!.assistant, ...(v.info[p]!.assistantLabel ? { assistantLabel: v.info[p]!.assistantLabel } : {}) })) }))
     .filter((g) => g.acts.length > 0);
 }
 
 /** The Project Assistant's own list (the owner page card): only the acts it can ever set, each group keeping those. */
 export const assistantGroups = (v: Pick<PowersView, "groups" | "info">): PowerGroupRow[] =>
   powerGroups(v)
-    .map((g) => ({ ...g, acts: g.acts.filter((a) => a.assistant) }))
+    .map((g) => ({ ...g, acts: g.acts.filter((a) => a.assistant).map((a) => (a.assistantLabel ? { ...a, label: a.assistantLabel } : a)) }))
     .filter((g) => g.acts.length > 0);
 
 /** The columns a project shows: the Project Assistant's only while an organization places it (the server marks a standalone view). */

@@ -187,7 +187,7 @@ export class SessionFeed {
   }
 
   /** The last re-diff's list while nothing has signalled a change since it started and it is younger
-      than the safety net, else null: a timer that wants the list (the merge board) reads this
+      than two safety nets (one renews it every period), else null: a timer that wants the list (the merge board) reads this
       instead of building one while nothing changes. Never while no client listens. */
   cleanList(now = Date.now()): Promise<SessionSummary[]> | null {
     const rows = this.cleanRows(now);
@@ -197,7 +197,7 @@ export class SessionFeed {
   /** cleanList's rows themselves (the same array while it stays clean, so a memo can match it). */
   cleanRows(now = Date.now()): readonly SessionSummary[] | null {
     const l = this.last;
-    if (!l || this.clients.size === 0 || this.pending || l.heard !== this.heard || now - l.at >= (this.opts.intervalMs ?? SAFETY_NET_MS)) return null;
+    if (!l || this.clients.size === 0 || this.pending || l.heard !== this.heard || now - l.at >= 2 * (this.opts.intervalMs ?? SAFETY_NET_MS)) return null;
     return l.list;
   }
 

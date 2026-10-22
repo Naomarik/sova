@@ -184,7 +184,7 @@ export function buildApp(deps: AppDeps) {
   built = true;
   /** The chat a person's action on it needs: open, or opened now, as a send opens a chat closed while
       quiet (§chat.transcript/instant-open), never "open the chat first". A missing file is a 404; a
-      session that can't open (a TUI holds it, its folder is gone) is refused with why. */
+      session that can't open (a TUI holds it, its remote placeholder folder is gone) is refused with why. */
   async function chatFor(path: string): Promise<{ chat: ChatHandle } | { status: 404 | 409; error: string }> {
     if (!existsSync(path)) return { status: 404, error: "Session file not found" };
     try {

@@ -1,7 +1,8 @@
 import type { AttentionItem } from "../shared/protocol";
 import { ownerAskOpen, ownerPageInfo } from "./owner";
-import { readIndex, readOrgOrPlaceholder, readProjects } from "./orgs";
-import { orgRequests } from "./project-assistant-store";
+import { readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "./orgs";
+import { featureChats, orgRequests } from "./project-assistant-store";
+import { batonById } from "./baton";
 
 /**
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
@@ -49,8 +50,59 @@ export function ownerAttention(): AttentionItem[] {
     } catch {
       continue;
     }
+    // Feature request chats (§app.project-assistant/feature-chats), by their request.
+    let chats: ReturnType<typeof featureChats> = [];
+    try {
+      chats = featureChats(o.id);
+    } catch {
+      chats = [];
+    }
     for (const r of requests) {
       if (r.status !== "with-team") continue;
+      const chat = r.kind === "feature" ? chats.find((c) => c.requestId === r.id) : undefined;
+      if (chat?.ended) {
+        const project = projects.find((p) => p.id === r.projectId);
+        const former = (() => {
+          try {
+            return readRoster(o.id).find((p) => p.id === chat.personId)?.name ?? "The former owner";
+          } catch {
+            return "The former owner";
+          }
+        })();
+        out.push({
+          id: `owner-feature-ended:${r.id}`,
+          path: "",
+          title: r.title,
+          where: orgName,
+          tier: "act",
+          kind: "owner-feature-ended",
+          since: Date.parse(chat.ended.at) || 0,
+          detail: clip(`${former}'s feature request chat on ${project?.name ?? "a project"} ended: they are no longer the owner. ${r.title}`, 200),
+          href: `#/orgs/${encodeURIComponent(o.id)}/requests/${encodeURIComponent(r.id)}`,
+          org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
+        });
+        continue;
+      }
+      if (chat) {
+        const project = projects.find((p) => p.id === r.projectId);
+        const state = batonById(chat.sessionId)?.row.state;
+        const detail = state === "done" ? `${ownerName} agreed a plan on ${project?.name ?? "a project"}: ${r.title}` : state === "open" || state === "needs-you" ? `${ownerName} is planning a new feature with the assistant on ${project?.name ?? "a project"}: ${r.title}` : null;
+        if (detail) {
+          out.push({
+            id: `owner-request:${r.id}`,
+            path: "",
+            title: r.title,
+            where: orgName,
+            tier: "act",
+            kind: "owner-request",
+            since: Date.parse(r.createdAt) || 0,
+            detail: clip(detail, 200),
+            href: `#/orgs/${encodeURIComponent(o.id)}/requests/${encodeURIComponent(r.id)}`,
+            org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
+          });
+          continue;
+        }
+      }
       const project = projects.find((p) => p.id === r.projectId);
       // A version the owner asked to try (§app.project-assistant/requests): opens the project's Branches tab.
       if (r.kind === "try") {

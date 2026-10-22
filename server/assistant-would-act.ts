@@ -19,7 +19,7 @@ import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
  * is never held. A version first needs one listed that could be opened, else `none`. Unclear is `team`.
  */
 
-export type AssistantAbility = "fix" | "version" | "release";
+export type AssistantAbility = "fix" | "version" | "release" | "feature";
 export type WouldReason = "ok" | "unreadable" | "power-off" | "brake" | "no-model" | "no-recipe" | "no-version" | "refused";
 export interface WouldAnswer {
   outcome: OwnerAbilityOutcome | "none";
@@ -28,10 +28,11 @@ export interface WouldAnswer {
   sentence?: string;
 }
 
-export const ABILITY_POWER: Record<AssistantAbility, PowerId> = { fix: "codingStart", version: "copiesRun", release: "deploy" };
-const ACT_EVENT: Record<AssistantAbility, string> = { fix: "build/start", version: "services/run", release: "deploy/run" };
-/** The acts the hold policy holds for the waiting period (registry `:hold true`); services/run is never held. */
-const HELD_ACT: Record<AssistantAbility, boolean> = { fix: true, version: false, release: true };
+export const ABILITY_POWER: Record<AssistantAbility, PowerId> = { fix: "codingStart", version: "copiesRun", release: "deploy", feature: "gather" };
+const ACT_EVENT: Record<AssistantAbility, string> = { fix: "build/start", version: "services/run", release: "deploy/run", feature: "baton/start" };
+/** The acts the hold policy holds for the waiting period (registry `:hold true`); services/run is never held, and a
+    feature request chat is started with no hold (the owner is waiting for it, §app.project-assistant/feature-chats). */
+const HELD_ACT: Record<AssistantAbility, boolean> = { fix: true, version: false, release: true, feature: false };
 
 /** What the question reads; the server's own by default, tests stand in. */
 export interface WouldActFacts {
@@ -47,6 +48,11 @@ export interface WouldActFacts {
   hasVersion(orgId: string, projectId: string): Promise<boolean>;
   /** The engine's check of the act from the assistant, unattended: its refusal or null, and the waiting period; null when the engine can't be asked. */
   engine(projectId: string, event: string, payload: Record<string, unknown>): Promise<{ refusal: { code: string; sentence: string } | null; holdMs: number } | null>;
+  /** The gathering model a feature request chat would run on, or null (absent: none). */
+  gatheringModel?(orgId: string, models: WorkModels | null): ModelPick | null;
+  /** The org's placement statechart's check of a gathering start from the assistant, unattended (a feature request
+      chat): its refusal or null; null when it can't be asked (absent: can't). */
+  placement?(orgId: string, projectId: string, event: string, payload: Record<string, unknown>): Promise<{ refusal: { code: string; sentence: string } | null } | null>;
 }
 
 const unreadable = () => null;
@@ -70,6 +76,17 @@ const serverFacts: WouldActFacts = {
     }
   },
   codingModel: (orgId, models) => assistantModelFor(orgId, "coding", models).pick,
+  gatheringModel: (orgId, models) => assistantModelFor(orgId, "gathering", models).pick,
+  async placement(orgId, projectId, event, payload) {
+    try {
+      const { envelopeFor, hostOf } = await import("./org-engine");
+      const { placementSid } = await import("./orgs");
+      const r = hostOf(orgId).explain(placementSid(orgId, projectId), event, payload, envelopeFor(orgId, projectId, { by: "assistant", attended: false }));
+      return { refusal: r ? { code: r.code ?? "refused", sentence: r.sentence } : null };
+    } catch {
+      return null;
+    }
+  },
   hasRelease: async (projectId) => (await deployTargetOf(projectId)) !== null,
   async hasVersion(orgId, projectId) {
     const p = readProjects(orgId).find((x) => x.id === projectId);
@@ -112,6 +129,7 @@ const ENGINE_PAYLOAD: Record<AssistantAbility, Record<string, unknown>> = {
   fix: { sessionId: "would-act", title: "would-act", prompt: "would-act", basis: { kind: "owner-request", id: "would-act" } },
   version: { verb: "up", instance: "would-act" },
   release: {},
+  feature: { sessionId: "would-act", to: "operator", publicTitle: "would-act", goal: "would-act" },
 };
 
 const BRAKE_SENTENCE = "Nothing happens without the operator right now. Tell the owner it went to the team: it reaches the operator as a request.";
@@ -133,6 +151,14 @@ export async function assistantWouldAct(orgId: string, projectId: string, abilit
     if (b) return team("brake", BRAKE_SENTENCE);
   }
   if (ability === "fix" && !f.codingModel(orgId, col.models)) return team("no-model", "no model is set for fixes");
+  if (ability === "feature") {
+    if (!f.gatheringModel?.(orgId, col.models)) return team("no-model", "no model is set for feature request chats");
+    if (o.attended) return { outcome: "now", reason: "ok" };
+    const p = f.placement ? await f.placement(orgId, projectId, ACT_EVENT.feature, ENGINE_PAYLOAD.feature).catch(() => null) : null;
+    if (!p) return team("unreadable", "The project can't be reached on this host now. Tell the owner it went to the team.");
+    if (p.refusal) return team(p.refusal.code === "power-off" ? "power-off" : p.refusal.code === "brake" ? "brake" : "refused", p.refusal.sentence);
+    return { outcome: "now", reason: "ok" };
+  }
   if (ability === "release" && !(await f.hasRelease(projectId).catch(() => false))) return team("no-recipe", "the project has no release steps set up");
   if (o.attended) return { outcome: "now", reason: "ok" };
   const e = await f.engine(projectId, ACT_EVENT[ability], ENGINE_PAYLOAD[ability]);

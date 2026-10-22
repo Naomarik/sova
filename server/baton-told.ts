@@ -31,7 +31,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 /** Who started it, as its statechart data records it; a session from before `started` by its owner and startedVia. Pure. */
 export function starterOf(data: Record<string, unknown>): { who: BatonStarter; overseerId?: string; why?: string } {
   const s = data["started"];
-  if (isObj(s) && (s.by === "operator" || s.by === "overseer" || s.by === "project-overseer")) {
+  if (isObj(s) && (s.by === "operator" || s.by === "overseer" || s.by === "project-overseer" || s.by === "assistant")) {
     const why = str(s.why).trim();
     const overseerId = str(s.overseerId);
     return { who: s.by, ...(overseerId ? { overseerId } : {}), ...(why ? { why } : {}) };

@@ -11,6 +11,7 @@ import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { assistantModelFor, fileRequest, orgRequests, setRequestStatus } from "./project-assistant-store";
 import { specLookupTools } from "./spec-lookup";
 import { operatorStarted } from "./project-assistant";
+import { setFeatureStartForTest, startFeatureChat } from "./feature-chats";
 import type { ToolCtx } from "../shared/harness";
 
 /**
@@ -336,6 +337,41 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
     },
   };
 
+  const startFeature: ToolSpec = {
+    name: "start_feature_chat",
+    label: "Plan something new",
+    description:
+      "The owner wants something new: open a feature request chat, a separate conversation where it is planned with them on plan cards, with drawings and prototypes to try. Agree a short title with them first. When opening one on its own isn't allowed here, it goes to the team. Say back to the owner what the answer says.",
+    promptSnippet: "start_feature_chat: open a chat to plan something new with the owner (or send it to the team)",
+    parameters: obj(
+      {
+        ...projectParam(orgId),
+        title: str(`What they want, in their words (at most ${OWNER_REQUEST_TITLE_MAX} characters).`),
+        text: str("What they asked for and why, as they said it."),
+      },
+      [...needsProject(orgId), "title", "text"],
+    ),
+    async execute(_id, params, _signal, _update, call) {
+      const p = projectOf(orgId, params.project);
+      const owner = ctx.owner();
+      if (!owner) throw new Error("This conversation has no owner now.");
+      const attended = attendedNow(call);
+      const toTeam = (why: string) => {
+        const r = fileRequest(orgId, { projectId: p.id, kind: "feature", title: params.title, text: params.text });
+        return say(`Filed with the team (${why}). Tell the owner it's with the team; they can follow it under Your requests.`, { request: r.id, started: false });
+      };
+      // The owner page's question (§app.project-assistant/abilities): on `team`, no chat opens.
+      const would = await assistantWouldAct(orgId, p.id, "feature", { attended });
+      if (would.outcome === "team" && would.reason !== "no-model") return toTeam(would.reason === "power-off" ? "opening a planning chat on its own is off here" : "the team has to start it");
+      const out = await startFeatureChat(orgId, { projectId: p.id, owner, title: String(params.title ?? ""), text: String(params.text ?? "") }, { attended });
+      if (out.kind === "has-open")
+        return say(`Not opened: the owner already has a planning chat open ("${out.title}"). Tell them to finish or end that one first, or offer to send this to the team instead (report_issue, kind feature).`, { started: false });
+      if (out.kind === "no-model") return say("Not opened: no model is set for planning chats yet. Offer to send it to the team instead (report_issue, kind feature).", { started: false });
+      if (out.kind === "team") return say("Filed with the team: a planning chat couldn't be opened now. Tell the owner it's with the team; they can follow it under Your requests.", { request: out.request.id, started: false });
+      return say("The planning chat is open. Tell the owner it's open: they can tap Open Feature Chat under your message, or find it under Waiting on you on their home page.", { request: out.request.id, featureChat: out.sessionId, started: true });
+    },
+  };
+
   const agree: ToolSpec = {
     name: "requirement_agree",
     label: "Note a requirement",
@@ -371,11 +407,13 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
 
   const drafts = conversationDraftTools({ sessionId: ctx.sessionId, conversation, projects: () => assistantProjects(orgId).map((p) => ({ projectId: p.id, name: p.name })) });
   const lookups = specLookupTools({ sessionId: ctx.sessionId, projects: () => assistantProjects(orgId), view: "outsider" });
-  return [...lookups, agree, ...drafts, reportIssue, ownerRequests, startFix, deploy, ownerVersions, startVersion];
+  return [...lookups, agree, ...drafts, reportIssue, ownerRequests, startFix, deploy, ownerVersions, startVersion, startFeature];
 }
 
 /** The tool names, in loadout order (the allowlist). */
-export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "start_fix", "deploy", "owner_versions", "start_version"] as const;
+export const ASSISTANT_TOOL_NAMES = ["spec_lookup", "code_read", "requirement_agree", "requirement_drop", "requirements_summary", "requirements_confirm", "report_issue", "owner_requests", "start_fix", "deploy", "owner_versions", "start_version", "start_feature_chat"] as const;
+
+export { setFeatureStartForTest };
 
 /** The owner's display name now (the tools' ctx). */
 export function ownerNow(orgId: string, personId: string): { id: string; name: string } | null {

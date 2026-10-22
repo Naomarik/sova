@@ -78,7 +78,15 @@ export interface RemoteWhere {
   pid: number;
 }
 
+/** A mirror as a listing reads it: all of it but the LLM count (exported for tests). */
+export function mirrorListedKey(m: ChatRuntimeMirror): string {
+  const { llm: _llm, ...rest } = m;
+  return JSON.stringify(rest);
+}
+
 export class RemoteChatHandle extends ChatHandle {
+  /** mirrorListedKey of the last state frame that started a new listing. */
+  private listedKey: string | null = null;
   readonly where = "process" as const;
   mirror: ChatRuntimeMirror;
   private link!: Link;
@@ -168,7 +176,14 @@ export class RemoteChatHandle extends ChatHandle {
     on("reply", (f) => this.replied(f.reply));
     on("state", (f) => {
       this.mirror = f.mirror;
-      sessionsChanged();
+      // A new listing only when something besides the LLM count moved: its token ring turns over
+      // every 30 s on its own, and the count reaches the in-flight hub through hooks.state, never a
+      // row (§app.decisions/push: an idle chat must not start a comparison).
+      const listed = mirrorListedKey(f.mirror);
+      if (listed !== this.listedKey) {
+        this.listedKey = listed;
+        sessionsChanged();
+      }
       this.hooks.state?.(this);
     });
     on("touched", () => sessionsChanged());

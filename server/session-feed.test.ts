@@ -276,7 +276,7 @@ test("cleanList: the last list while nothing changed since; null once a change i
   await new Promise((r) => setTimeout(r, 10));
   await feed.idle();
   assert.deepEqual((await feed.cleanList())!.map((r) => r.id), ["r2"]);
-  assert.equal(feed.cleanList(Date.now() + 61_000), null, "older than the safety net");
+  assert.equal(feed.cleanList(Date.now() + 121_000), null, "older than two safety nets");
   off();
   assert.equal(feed.cleanList(), null);
 });

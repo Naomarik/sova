@@ -9,7 +9,7 @@ the chat's full history back.
 
 Owns: the two memory types and their credit, where memory can be turned on, each chat's own type and
 view size, the message log, the summary tree and the view, the summarizer, what a turn sends, the
-recall tools and their rows, preparing an existing chat, zoomable compaction, the memory status and
+recall tools and their rows, preparing an existing chat, recovering from failed summaries, zoomable compaction, the memory status and
 outline the web shows, Settings → Memory and the overseers' switches. Not here: the mode menu's rows
 and Save as default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
@@ -116,7 +116,7 @@ is needed and a rewind or a fork is correct by construction: on load the engine 
 leaves with the branch, and every summary covering a message from the first difference on is
 dropped (and the view cut back to the lines before it). Summaries live beside the chat in
 `<agent dir>/sova/memory/<session id>/` (`tree.jsonl` the built nodes, `state.json` the views and
-their saved prefixes); "Fork from here" copies the source chat's directory to the fork (when the
+their saved prefixes, `retry.json` the failed summaries' tries and retry times, §chat.memory/recovery); "Fork from here" copies the source chat's directory to the fork (when the
 source has one and the fork has none), and the fork keeps what still matches its own branch. Turning memory off keeps
 them, so turning it back on only summarizes what came after; deleting or archiving the chat deletes
 them.
@@ -128,16 +128,19 @@ Following Taelin's design: message `i` is node `(0, i)`; node `(l, i)` merges `(
 bytes is its own node with no model call (two short lines are joined by a newline); every other node
 is one summarizer call asked for 512 bytes with a 512-character ruler, accepted up to 768 bytes, and a
 longer reply is cut at its last sentence end within 768 bytes, never asked again. Each node is built
-once.
+once; a node whose summary keeps failing is tried again later on its own, and after its third failed
+try its line is a clipped excerpt instead (§chat.memory/recovery).
 
 The view is a list of nodes covering every message, oldest first; each new message appends its line.
 Once the view passes the chat's size it merges, in one batch, the most due sibling pair whose parent
 is built (due = (T − the pair's last message) / 2^l; the oldest pair wins a tie), again and again
 until it is at most half the size; a batch that can't reach half yet merges what it can at each new
 message until it does. The view is saved and never rebuilt from the log, except after a rewind or a
-fork. Nodes ready to build wait in a queue (never a scan of the tree), leaves first, up to 4 calls at
-once; a merge is ready once both halves are built, and merges are built in the background as soon as
-they are.
+fork. Nodes ready to build wait in a queue (never a scan of the tree), up to 4 calls at once: leaves
+first, then merges, except while the summarizer's compaction view is over its size
+(§chat.memory/summarizer): then a merge that combines two of its lines goes before every leaf. A
+merge is ready once both halves are built, and merges are built in the background as soon as they
+are.
 
 ## §chat.memory/summarizer — Who writes the summaries
 
@@ -148,8 +151,20 @@ provider's request limit as background work, runs on this host's Claude login li
 one-shots, and is recorded in the usage ledger as the chat's own spend with purpose `memory`. Its
 system prompt is the compaction guide (adapted from Taelin's §4–§5) followed by a stable prefix of
 the chat's **compaction view** (the view merged further, to 16–32 KB, saved beside it), so calls read
-it from the prompt cache; the lines after the prefix and the task go in the message. A failed call
-is tried again at the next message; while the summarizer can't run at all the status says why.
+it from the prompt cache; the lines after the prefix and the task go in the message. The summarizer
+keeps its own instructions only: a Claude Code call gets its system prompt from a private temporary
+file (`--system-prompt-file`, which replaces Claude Code's own instructions, nothing added to them),
+written readable by its owner only and removed when the call ends, never on the command line, so no
+size keeps it from starting (§app.decisions/providers bounds every one-shot's arguments); a pi call
+takes it as the call's system prompt.
+
+The compaction view is merged down with the merges already built before every summary and whenever
+a merge is built, not only when a message arrives, and while it is over 32 KB a merge that combines
+two of its lines is built before any new message's leaf (§chat.memory/tree). One summary's context lines are capped at 64 KB: past that the oldest lines are
+left out, in fixed steps of 16 KB counted from the view's first line, behind a line saying which
+messages are left out, so back-to-back summaries share the same prefix and its cache; a prefix over
+the cap is never saved. Each call is bounded by its own deadline and budget cap, with no other
+spending cap. What a failed call does next: §chat.memory/recovery.
 
 ## §chat.memory/turn — What a UniiChat turn sends
 
@@ -223,7 +238,9 @@ predates it rebases once.
 Turning memory on in a chat that already has messages prepares it in the background: every message
 not summarized yet is queued, and until the view covers the chat, turns go out exactly as without
 memory. The status reads "Preparing memory: 120 of 480 messages" (messages summarized of messages
-logged). Memory applies from the first turn after the leaves are built.
+logged). Memory applies from the first turn after the leaves are built. A message whose summary keeps
+failing never holds preparing up for good: the others carry on, and after its third failed try its
+line is an excerpt (§chat.memory/recovery).
 
 A chat whose memory is on but was never prepared (no view built yet: an overseer that is on by
 default and already has history, §chat.memory/overseer, or a chat whose preparing a restart cut
@@ -245,12 +262,44 @@ writes the view of everything it compacts again.
 
 The chat's WebSocket gets `memory_status` after hello and on every change, only from a runtime with
 the memory engine: `off`, `preparing` (done of total), `updating` (a turn waiting), or `ready` (with
-the merges still being written), each but off with an optional `problem` sentence. `GET
+the merges still being written), each but off with an optional `problem` sentence. The `problem`
+shows only while every summary is paused, says when they are tried again, and clears at the next
+summary that succeeds (§chat.memory/recovery); a single message that keeps failing never sets it. `GET
 /api/memory?path=…` gives the lines the model sees now (UniiChat: the next turn's view; zoomable: the
 newest compaction's lines) with each line's first and last transcript entry, and `GET
 /api/memory/open?path=…&id=&n=` the two lines under a line, or a message whole, for the Session
 pane's read-only Memory outline. Their lines read as the model is shown them, ids whole where
 certain (§chat.memory/full-ids).
+
+## §chat.memory/recovery — When summaries fail
+
+A chat's memory recovers from failed summaries on its own, with no new message needed, and one
+message that keeps failing never blocks the rest.
+
+- **A failure that stops every summary** pauses the whole queue: the summarizer's login failed, it
+  hit a usage or rate limit, the model policy refuses its model, or it can't run at all (Claude Code
+  not installed). The queue tries again by itself after 5 minutes, then 10, 20, 40 and at most 60
+  between tries; a new message lifts the pause at once. The status's `problem` names the cause and
+  the time of the next try, e.g. "The memory summarizer's login failed: check Settings → Accounts.
+  Retrying at 2:05 PM.", and clears at the next summary that succeeds.
+- **Any other failure belongs to its node** (a malformed or empty reply, a timeout, a network error,
+  a reading too large): that node waits and is tried again by itself, 5 minutes after its first
+  failed try and 2 hours after its second, while every other node carries on; it sets no `problem`.
+  After its third failed try, a message's line is its own text clipped to 512 bytes at a sentence end
+  (a merge's: its two lines, clipped to 768), marked as an excerpt in `tree.jsonl`; the whole message
+  stays one `zoom` away. A new message doesn't reset a node's tries.
+- **Many failing in a row**: when 8 different nodes fail one after another with no success between,
+  the summarizer counts as down and the queue pauses as for a failure that stops every summary, its
+  `problem` reading "Memory summaries are failing: …" with the time of the next try; the tries already
+  counted stay counted.
+- **Saved.** Each node's tries and next try, and the pause's next try, are kept in the chat's
+  sidecar (`retry.json`, §chat.memory/log), so a chat whose process reloads or exits while idle picks
+  up where it left off. A rewind or fork drops those past the first changed message.
+- **Repair on load.** The first time the running chat's engine reads its branch, it merges the
+  compaction view down with the merges already built, throws away a saved prefix over the 64 KB cap
+  (§chat.memory/summarizer), queues every ready merge and sets its retry timers. Reading a chat no
+  runtime holds (the Memory outline of a closed chat) builds nothing, writes nothing and starts no
+  timer.
 
 ## §chat.memory/settings — Settings → Memory
 

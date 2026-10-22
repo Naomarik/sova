@@ -1574,13 +1574,16 @@ async function draftReport(root, name, now, days, tip, branch) {
     let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
     const last = lastActivity(d);
     return { ...row, createdAt: d?.createdAt ?? null, lastActivity: last && new Date(last).toISOString(), ageDays: last && Math.floor((now - last) / DAY_MS),
-      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], draftSha256: await draftHash(root, name) };
+      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], promotedConflict: [], draftSha256: await draftHash(root, name) };
   }
   const s = await statusOut(root, a);
   const promoted = new Set(a.d.promotions.flatMap((p) => p.ids ?? []));
   let pending = s.ids.filter((i) => i.current === "pending").map((i) => i.id);
   const conflict = s.ids.filter((i) => i.current === "conflict" && !promoted.has(i.id)).map((i) => i.id);
   const current = s.ids.filter((i) => i.current === "already-current" || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
+  // Promoted by this draft before, and now different in current: counted current here, but a caller that must know
+  // the draft's own text is still what the tree says (a merge round's hold-back) reads them apart.
+  const promotedConflict = s.ids.filter((i) => i.current === "conflict" && promoted.has(i.id)).map((i) => i.id);
   // Pending here but already on the default branch, byte for byte (its record, and every claim file it is in): this work
   // tree's current lags the branch it was merged into. Any other difference keeps it pending.
   const onBranch = [];
@@ -1629,7 +1632,7 @@ async function draftReport(root, name, now, days, tip, branch) {
   if (s.proposedGraph.exit === 2) reasons.push("the draft graph does not load (exit 2)");
   const suggest = state === "landed" ? "promote" : ["promoted", "superseded", "empty"].includes(state) ? "delete" : "keep";
   return { ...row, purpose: a.d.purpose ?? null, createdAt: a.d.createdAt, lastActivity: last && new Date(last).toISOString(), ageDays: age,
-    state, reasons, suggest, pending, conflict, current, draftSha256: await draftHash(root, name) };
+    state, reasons, suggest, pending, conflict, current, promotedConflict, draftSha256: await draftHash(root, name) };
 }
 async function cmdDrafts(root, o) {
   const g = await gitInfo(root), days = daysOf(o), now = Date.now();
@@ -1721,8 +1724,9 @@ async function pruneOfficialHere(root, o) {
     const g = await gitInfo(root), branch = g.git ? defaultBranch(root) : null, tip = branch && resolveCommit(root, `refs/heads/${branch}`);
     for (const name of await draftNames(root)) {
       const r = await draftReport(root, name, Date.now(), daysOf(o), tip, branch);
-      if (r.state === "promoted") targets.push({ name, draft: draftRel(name), draftSha256: r.draftSha256 });
-      else kept.push({ name, draft: draftRel(name), state: r.state, reasons: r.reasons });
+      // A § it promoted that current now says differently is no longer confirmed official: kept.
+      if (r.state === "promoted" && !r.promotedConflict.length) targets.push({ name, draft: draftRel(name), draftSha256: r.draftSha256 });
+      else kept.push({ name, draft: draftRel(name), state: r.state, reasons: r.state === "promoted" ? [...r.reasons, `promoted before, now different in current: ${r.promotedConflict.join(", ")}`] : r.reasons });
     }
     return { refusals, targets, kept };
   };

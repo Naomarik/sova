@@ -1227,7 +1227,8 @@ class Round {
   }
 
   /** Each draft in `tree`, by name, with the ids the draft tool's `drafts` reading says aren't promoted
-   *  yet: pending, or in conflict and never promoted by the draft (null: unreadable). */
+   *  yet: pending, or in conflict (never promoted by the draft, or promoted before and now said
+   *  differently in the tree) (null: unreadable). */
   async draftStatuses(tree) {
     if (!tree) return [];
     let drafts = [];
@@ -1244,7 +1245,10 @@ class Round {
     return drafts.map((name) => {
       const row = rows?.find((d) => d?.name === name);
       if (!row || row.state === "unreadable" || !Array.isArray(row.pending)) return { name, pending: null };
-      return { name, pending: [...row.pending, ...(Array.isArray(row.conflict) ? row.conflict : [])].map((id) => (typeof id === "string" ? id : "?")) };
+      // A § the draft promoted before that the tree now says differently (a branch that took master's spec in a
+      // conflict and never promoted again) is not promoted: the draft's text isn't what lands.
+      const list = (k) => (Array.isArray(row[k]) ? row[k] : []);
+      return { name, pending: [...row.pending, ...list("conflict"), ...list("promotedConflict")].map((id) => (typeof id === "string" ? id : "?")) };
     });
   }
 

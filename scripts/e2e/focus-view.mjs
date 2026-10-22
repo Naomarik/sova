@@ -137,6 +137,7 @@ try {
 
 const COVER = { viewport: { width: 475, height: 670 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2.625 };
 const UNFOLDED = { viewport: { width: 933, height: 620 }, hasTouch: true, deviceScaleFactor: 1 };
+const WIDE = { viewport: { width: 2000, height: 1200 }, deviceScaleFactor: 1 };
 
 async function newPage(device, { theme } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: "block", ...device });
@@ -400,6 +401,32 @@ try {
     await ctx.close();
   }
 
+  // ---------------- a wide desktop ----------------
+  {
+    const { ctx, page } = await newPage(WIDE);
+    await open(page, A);
+    await settle();
+    await check("wide: the button's right edge lines up with the composer column's, off the scrollbar", async () => {
+      const r = await page.evaluate(() => ({
+        btn: document.querySelector(".transcript-wrap > .focus-toggle").getBoundingClientRect().right,
+        col: document.querySelector(".composer-inner").getBoundingClientRect().right,
+        wrap: document.querySelector(".transcript-wrap").getBoundingClientRect().right,
+      }));
+      assert(Math.abs(r.btn - r.col) <= 1, JSON.stringify(r));
+      assert(r.wrap - r.btn > 100, `clear of the scrollbar: ${JSON.stringify(r)}`);
+    });
+    await check("wide: Focus on keeps the button in the column's right edge", async () => {
+      const col = await page.evaluate(() => document.querySelector(".composer-inner").getBoundingClientRect().right);
+      await toggle(page).click();
+      await settle();
+      const btn = await page.evaluate(() => document.querySelector(".transcript-wrap > .focus-toggle").getBoundingClientRect().right);
+      assert(Math.abs(btn - col) <= 1, `btn ${btn} col ${col}`);
+      await toggle(page).click();
+      await settle();
+    });
+    await ctx.close();
+  }
+
   // ---------------- the Overseer ----------------
   {
     const { ctx, page } = await newPage(UNFOLDED);
@@ -428,7 +455,7 @@ try {
   if (SHOTS) {
     mkdirSync(SHOTS, { recursive: true });
     for (const theme of ["dark", "light"])
-      for (const [name, device] of [["cover", COVER], ["unfolded", UNFOLDED]]) {
+      for (const [name, device] of [["cover", COVER], ["unfolded", UNFOLDED], ["wide", WIDE]]) {
         const { ctx, page } = await newPage(device, { theme });
         await open(page, A);
         await settle();

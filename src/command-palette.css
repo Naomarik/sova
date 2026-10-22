@@ -51,6 +51,10 @@
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
 }
+/* The help line is about keys: a phone (a coarse pointer, or under 768px) has none to press. */
+@media (max-width: 767px), (pointer: coarse) {
+  .palette-foot { display: none; }
+}
 
 .palette-panel-head { display: flex; flex-direction: column; gap: var(--space-1); }
 .palette-panel-head p { margin: 0; }

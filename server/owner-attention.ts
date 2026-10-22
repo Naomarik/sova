@@ -3,6 +3,7 @@ import { ownerAskOpen, ownerPageInfo } from "./owner";
 import { readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "./orgs";
 import { featureChats, orgRequests } from "./project-assistant-store";
 import { batonById } from "./baton";
+import { convergeFeatureChats } from "./feature-chats";
 
 /**
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
@@ -51,8 +52,11 @@ export function ownerAttention(): AttentionItem[] {
       continue;
     }
     // Feature request chats (§app.project-assistant/feature-chats), by their request.
+    // First the sweep: a former owner's chat still open is recorded as ended now and closed in the background, so
+    // an owner change whose close failed, or never ran before a restart, converges on this scan.
     let chats: ReturnType<typeof featureChats> = [];
     try {
+      convergeFeatureChats(o.id);
       chats = featureChats(o.id);
     } catch {
       chats = [];
@@ -89,7 +93,9 @@ export function ownerAttention(): AttentionItem[] {
         const detail = state === "done" ? `${ownerName} agreed a plan on ${project?.name ?? "a project"}: ${r.title}` : state === "open" || state === "needs-you" ? `${ownerName} is planning a new feature with the assistant on ${project?.name ?? "a project"}: ${r.title}` : null;
         if (detail) {
           out.push({
-            id: `owner-request:${r.id}`,
+            // An agreed plan is news of its own: its own id, so whatever was told or put aside about the planning
+            // item (the Overseer's brief remembers items by id and kind) never covers it.
+            id: state === "done" ? `owner-request:${r.id}:agreed` : `owner-request:${r.id}`,
             path: "",
             title: r.title,
             where: orgName,

@@ -173,29 +173,79 @@ export async function startFeatureChat(
 
 // ---- ending ----------------------------------------------------------------------------------------------------
 
+/** What closes a chat that ended (tests stand one in that fails). */
+let closeForTest: typeof closeBaton | null = null;
+export function setFeatureCloseForTest(f: typeof closeBaton | null): void {
+  closeForTest = f;
+}
+
+/** Why a chat's person no longer owns it: they left the roster, or someone else is the owner. */
+function whyNotOwner(orgId: string, personId: string): "owner-changed" | "left" {
+  try {
+    const p = readRoster(orgId).find((x) => x.id === personId);
+    return !p || p.status === "left" ? "left" : "owner-changed";
+  } catch {
+    return "owner-changed";
+  }
+}
+
 /**
- * The owner changed or left (their owner link was just turned off): every open feature request chat of anyone
- * who is not the owner now is closed, its record noting why; Needs you tells the operator. Returns how many.
+ * The first half of ending a former owner's chats, synchronous and idempotent: every open feature request chat
+ * whose person is not the owner now gets its `ended` record (so Needs you tells the operator whatever the close
+ * does). Returns every chat whose record says ended while its conversation is still open: those still to close.
  */
-export async function endFormerOwnersChats(orgId: string, why: "owner-changed" | "left"): Promise<number> {
+export function recordFormerOwnersChats(orgId: string, why?: "owner-changed" | "left"): string[] {
+  const chats = featureChats(orgId);
+  if (!chats.length) return [];
   const now = ownerOf(orgId)?.id ?? null;
-  let n = 0;
-  for (const rec of featureChats(orgId)) {
-    if (rec.ended || rec.personId === now) continue;
+  const toClose: string[] = [];
+  for (const rec of chats) {
     const row = batonById(rec.sessionId)?.row;
-    if (!row) continue;
-    if (isOpen(row)) {
-      try {
-        await closeBaton(rec.sessionId, { envelope: envelopeFor(orgId, row.projectId, { by: "system", attended: false }), reason: "The owner changed." });
-      } catch (err) {
-        console.warn(`[feature-chat] closing ${rec.sessionId.slice(0, 8)} after the owner changed: ${err instanceof Error ? err.message : String(err)}`);
-        continue;
-      }
-      endFeatureChatRecord(orgId, rec.sessionId, why);
+    if (!row || row.orgId !== orgId || !isOpen(row)) continue;
+    if (!rec.ended) {
+      if (rec.personId === now) continue;
+      endFeatureChatRecord(orgId, rec.sessionId, why ?? whyNotOwner(orgId, rec.personId));
+    }
+    toClose.push(rec.sessionId);
+  }
+  return toClose;
+}
+
+/** Closes in flight, so the sweeps that overlap (the owner change, startup, Needs you) close each chat once. */
+const closing = new Set<string>();
+
+/**
+ * The owner changed or left: every open feature request chat of anyone who is not the owner now is recorded as
+ * ended (Needs you tells the operator), then closed. A close that fails stays recorded and is tried again by the
+ * next sweep: at the owner change, at each org's start, and on every Needs you scan. Returns how many closed.
+ */
+export async function endFormerOwnersChats(orgId: string, why?: "owner-changed" | "left"): Promise<number> {
+  let n = 0;
+  for (const sid of recordFormerOwnersChats(orgId, why)) {
+    if (closing.has(sid)) continue;
+    closing.add(sid);
+    try {
+      const row = batonById(sid)?.row;
+      if (!row || !isOpen(row)) continue;
+      await (closeForTest ?? closeBaton)(sid, { envelope: envelopeFor(orgId, row.projectId, { by: "system", attended: false }), reason: "The owner changed." });
       n++;
+    } catch (err) {
+      console.warn(`[feature-chat] closing ${sid.slice(0, 8)} after the owner changed (tried again on the next sweep): ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      closing.delete(sid);
     }
   }
   return n;
+}
+
+/** The Needs you scan's sweep: records what ended now, and closes in the background. Never throws. */
+export function convergeFeatureChats(orgId: string): void {
+  try {
+    if (!recordFormerOwnersChats(orgId).some((sid) => !closing.has(sid))) return;
+  } catch {
+    return;
+  }
+  void endFormerOwnersChats(orgId).catch((err) => console.warn(`[feature-chat] ${orgId}: ending the former owner's chats: ${err instanceof Error ? err.message : String(err)}`));
 }
 
 /** The owner's End Chat (§app.project-assistant/feature-chats): closed, as the operator's Close would. */

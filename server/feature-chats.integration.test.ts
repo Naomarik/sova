@@ -193,4 +193,73 @@ describe("feature request chats", () => {
     assert.equal(ended.length, 1);
     assert.match(ended[0]!.detail ?? "", /Alperen Kaya's feature request chat on Archery website ended: they are no longer the owner\. Online booking/);
   });
+
+  test("the agreed plan is its own Needs you item: an id the planning item's (told, put aside) never covers", async () => {
+    const out = await startFeature("Gift vouchers");
+    assert.equal(out.details.started, true, out.text);
+    const kimSid = String(out.details.featureChat);
+    const rid = store.featureChats(org.id).find((r) => r.sessionId === kimSid)!.requestId;
+    const itemsOf = () => ownerAttention().filter((i) => i.org?.orgId === org.id && i.title === "Gift vouchers");
+    const planning = itemsOf();
+    assert.deepEqual(planning.map((i) => [i.id, i.kind]), [[`owner-request:${rid}`, "owner-request"]]);
+    await baton.markDone(kimSid, "Agreed.");
+    const agreed = itemsOf();
+    assert.deepEqual(agreed.map((i) => i.id), [`owner-request:${rid}:agreed`]);
+    assert.match(agreed[0]!.detail ?? "", /^Kim Lee agreed a plan on Archery website/);
+    // The Overseer's brief remembers what it told by id and kind: told the planning item, the agreed one is still new.
+    const { blockerKey } = await import("./attention");
+    const { briefDecision } = await import("./overseer");
+    const told = new Map([[blockerKey(planning[0]!), { count: 1 }]]);
+    const d = briefDecision({ current: agreed.map(blockerKey), announced: told, proactivity: "brief", now: Date.now(), lastBriefAt: 0, unattended: 0, overseerIdle: true });
+    assert.deepEqual(d.brief, [blockerKey(agreed[0]!)]);
+  });
+
+  test("a close that fails once, or a sweep lost to a restart: the chat still ends, and Needs you says so", async () => {
+    // Kim's chat; the first close attempt throws.
+    const out = await startFeature("Class reminders");
+    assert.equal(out.details.started, true, out.text);
+    const s2 = String(out.details.featureChat);
+    let calls = 0;
+    fc.setFeatureCloseForTest(async (...a) => {
+      if (calls++ === 0) throw new Error("stand-in: the close failed");
+      return baton.closeBaton(...a);
+    });
+    try {
+      await owner.setOwner(org.id, alp.id);
+      await until(() => calls >= 1, "the close attempt");
+      const rec = () => store.featureChats(org.id).find((r) => r.sessionId === s2)!;
+      assert.equal(rec().ended?.why, "owner-changed", "recorded as ended before the close");
+      await new Promise((r) => setTimeout(r, 50));
+      assert.equal(baton.batonById(s2)!.row.state, "open", "the failed close left it open");
+      // The next Needs you scan: the item is there, and the sweep closes it.
+      const rid = rec().requestId;
+      assert.ok(ownerAttention().some((i) => i.kind === "owner-feature-ended" && i.id === `owner-feature-ended:${rid}`));
+      await until(() => baton.batonById(s2)?.row.state === "closed", "closed by the next sweep");
+      assert.equal(calls, 2);
+
+      // Alperen's chat; the owner changes, and the restart comes before anything was written or closed.
+      const out3 = await startFeature("Member cards");
+      assert.equal(out3.details.started, true, out3.text);
+      const s3 = String(out3.details.featureChat);
+      let tried = 0;
+      fc.setFeatureCloseForTest(async () => {
+        tried++;
+        throw new Error("stand-in: the server stopped");
+      });
+      await owner.setOwner(org.id, kim.id);
+      await until(() => tried >= 1, "the close attempt");
+      await new Promise((r) => setTimeout(r, 50));
+      const lost = store.featureChats(org.id).find((r) => r.sessionId === s3)!;
+      store.addFeatureChat(org.id, { sessionId: lost.sessionId, personId: lost.personId, projectId: lost.projectId, requestId: lost.requestId, at: lost.at });
+      assert.equal(baton.batonById(s3)!.row.state, "open");
+      fc.setFeatureCloseForTest(null);
+      // What each org's start runs.
+      assert.equal(await fc.endFormerOwnersChats(org.id), 1);
+      assert.equal(baton.batonById(s3)!.row.state, "closed");
+      assert.equal(store.featureChats(org.id).find((r) => r.sessionId === s3)?.ended?.why, "owner-changed");
+      assert.ok(ownerAttention().some((i) => i.id === `owner-feature-ended:${lost.requestId}`));
+    } finally {
+      fc.setFeatureCloseForTest(null);
+    }
+  });
 });

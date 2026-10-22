@@ -68,7 +68,8 @@ what it checked, and promotes the drafts it verified. The session promotes its o
 branch, after its checks pass and before it calls that branch done or ready to land: nothing that
 lands the branch promotes them, so the docs land in the same merge as the code they describe. Your
 go-ahead to build or merge covers promoting and committing them; you're never asked for it
-separately, and there is no second, docs-only merge. Only if you say not to commit does the
+separately, and there is no second, docs-only merge. A draft whose branch already landed
+is promoted on a fresh branch from the default branch, never on the default branch itself. Only if you say not to commit does the
 session leave its evidence pending.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,

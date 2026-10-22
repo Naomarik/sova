@@ -2,10 +2,11 @@
 // The change-driven session feed on a hermetic server (§app.decisions/push): a TUI session's live
 // record changes only its status, and a connected feed hears list_changed within 6 s; the record
 // asking for input reaches the feed as a pushed attention digest; nothing is pushed while nothing
-// changes.
+// changes. A commit in a session's worktree, with no write to its session file, flips the row's
+// merge readiness within about 6 s.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { WebSocket } from "ws";
@@ -91,6 +92,70 @@ test("a live record's status alone reaches a connected feed as list_changed with
     writeLive({ status: "busy", activity: { state: "needs-input", since: Date.now() } });
     const pushed = await until((m) => m.type === "attention" && m.digest.items.some((i: any) => i.path === sessionFile), 6_000);
     assert.ok(pushed, `no attention push; got ${JSON.stringify(got.map((x) => x.m.type))}`);
+  } finally {
+    sock.close();
+  }
+});
+
+const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
+const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env: gitEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const commit = (cwd: string, file: string, text: string) => {
+  writeFileSync(join(cwd, file), `${text}\n`);
+  git(cwd, "add", file);
+  git(cwd, "commit", "-q", "-m", text);
+};
+
+test("a commit in a session's worktree, with no session-file write, reaches a connected feed: list_changed and the row's readiness flip within about 6 s", async () => {
+  const repo = join(s.scratch, "repo");
+  mkdirSync(repo, { recursive: true });
+  git(repo, "init", "-q", "-b", "master");
+  commit(repo, "a.txt", "one");
+  const base = git(repo, "rev-parse", "HEAD");
+  const wtPath = join(s.scratch, "wt-feed");
+  git(repo, "worktree", "add", "-q", "-b", "feat/feed-watch", wtPath);
+  const wt = realpathSync(wtPath);
+  const id = "01234567-89ab-7cde-8f01-00000000fe02";
+  const dir = join(s.agentDir, "sessions", "--repo-feed--");
+  mkdirSync(dir, { recursive: true });
+  const sessionFile = join(dir, `2026-10-22T00-00-10-000Z_${id}.jsonl`);
+  const lines = [
+    { type: "session", version: 3, id, timestamp: "2026-10-22T00:00:10.000Z", cwd: realpathSync(repo) },
+    { type: "message", id: "u1", parentId: null, timestamp: "2026-10-22T00:00:11.000Z", message: { role: "user", content: [{ type: "text", text: "make the change" }], timestamp: 1 } },
+    { type: "custom", customType: "worktrees", id: "w1", parentId: "u1", timestamp: "2026-10-22T00:00:12.000Z", data: { version: 1, trees: [{ path: wt, branch: "feat/feed-watch", base, baseBranch: "master", status: "active", session: id, how: "created", at: 1 }] } },
+    { type: "message", id: "a1", parentId: "w1", timestamp: "2026-10-22T00:00:13.000Z", message: { role: "assistant", content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: 2 } },
+  ];
+  writeFileSync(sessionFile, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+
+  const sock = new WebSocket(`${s.base.replace(/^http/, "ws")}/ws/watch?feed=sessions`, { headers: { "x-sova-token": s.token } });
+  const got: { m: any; t: number }[] = [];
+  sock.on("message", (d) => got.push({ m: JSON.parse(String(d)), t: Date.now() }));
+  await new Promise<void>((r, j) => (sock.once("open", () => r()), sock.once("error", j)));
+  const rowState = async (): Promise<string | undefined> => {
+    const rows = (await (await fetch(`${s.base}/api/sessions`, { headers: { "x-sova-token": s.token } })).json()) as any[];
+    return rows.find((r) => r.path === sessionFile)?.readiness?.trees?.[0]?.state;
+  };
+  try {
+    // Readiness is read in the background: wait for the first answer (no commit of its own yet).
+    let state: string | undefined;
+    for (let i = 0; i < 100 && state === undefined; i++) {
+      state = await rowState();
+      if (state === undefined) await sleep(200);
+    }
+    assert.equal(state, "in-progress", `before the commit; log:\n${s.log().slice(-1500)}`);
+    await sleep(1500); // let the answer's own list_changed pass
+    got.length = 0;
+    const t0 = Date.now();
+    commit(wt, "b.txt", "the feature");
+    let changed: { t: number } | undefined;
+    let flipped = false;
+    while (Date.now() - t0 < 6_500 && !(changed && flipped)) {
+      changed ??= got.find((x) => x.m.type === "list_changed");
+      if (changed && !flipped) flipped = (await rowState()) === "ready";
+      if (!(changed && flipped)) await sleep(100);
+    }
+    assert.ok(changed, `no list_changed within 6.5 s; got ${JSON.stringify(got.map((x) => x.m.type))}`);
+    assert.ok(flipped, `readiness did not flip to ready; now ${await rowState()}`);
+    assert.ok(changed.t - t0 <= 6_500, `list_changed after ${changed.t - t0} ms`);
   } finally {
     sock.close();
   }

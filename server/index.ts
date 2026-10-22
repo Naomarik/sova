@@ -60,7 +60,7 @@ import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
-import { configureReadiness } from "./merge-readiness";
+import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
 import { startSessionTags } from "./tags-backfill";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
@@ -235,7 +235,7 @@ configureSessionFeed({
   list: () => listSessions().then(events.seeList),
   watch: (changed) => {
     feedChanged = changed;
-    const offWatch = watchFeedInputs(changed);
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs] });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;

@@ -1,11 +1,11 @@
 import type { Context, Hono } from "hono";
-import type { AssistantInfo } from "../shared/project-assistant";
+import type { AssistantInfo, PricedPick } from "../shared/project-assistant";
 import { WORK_KINDS } from "../shared/powers";
 import { attentionChanged } from "./attention-memo";
 import { OrgError, readIndex, readOrgOrPlaceholder } from "./orgs";
 import { assistantSeesImages, currentAssistantPath, ensureAssistant, refreshAssistant } from "./project-assistant";
 import { assistantReplyState } from "./project-assistant-ready";
-import { assistantDefault, assistantPicksAdopted, markAssistantPicksAdopted, readBatonSettings, writeBatonSettings } from "./baton-settings";
+import { assistantDefault, assistantPicksAdopted, markAssistantPicksAdopted, readBatonSettings, writeAssistantDefault, writeBatonSettings } from "./baton-settings";
 import type { BatonSettings } from "../shared/baton";
 import { pricedPick } from "./project-assistant-prices";
 import { adoptDefaultPicks, effectiveAssistantModel, orgRequests, samePick, setAssistantModels, setRequestStatus } from "./project-assistant-store";
@@ -89,17 +89,25 @@ export function batonSettingsView(): BatonSettings {
   return { ...s, assistant: pricedPick(s.assistant ?? null) };
 }
 
-/**
- * PUT /api/baton/settings (Settings → Organizations' Save Changes). Saving the host's FIRST
- * Project Assistant default adopts, once, every org's pick that equals it exactly
- * (§app.project-assistant/models); later saves never clear a pick. A change of the default
- * refreshes every owner page's assistant view (orgs that follow it move with it).
- */
+/** PUT /api/baton/settings (Settings → Organizations' Save Changes): never the assistant's default (its own route). */
 export function saveBatonSettings(body: unknown): BatonSettings {
-  const before = assistantDefault();
   const result = writeBatonSettings(body);
   if ("error" in result) throw new OrgError(result.error, 400);
-  const next = result.assistant ?? null;
+  return { ...result, assistant: pricedPick(result.assistant ?? null) };
+}
+
+/**
+ * PUT /api/settings/project-assistant {assistant} (Settings → Organizations' Save Changes, when the
+ * default changed): its own route so a mesh peer needs `admin` for it, as for an org's own pick
+ * (server/mesh/access.ts: `settings` writes). Saving the host's FIRST default adopts, once, every
+ * org's pick that equals it exactly (§app.project-assistant/models); later saves never clear a pick.
+ * A change refreshes every owner page's assistant view (orgs that follow it move with it).
+ */
+export function saveAssistantDefault(body: unknown): { assistant: PricedPick | null } {
+  const before = assistantDefault();
+  const result = writeAssistantDefault(body);
+  if ("error" in result) throw new OrgError(result.error, 400);
+  const next = result.assistant;
   if (next && !assistantPicksAdopted()) {
     if (!before) adoptDefaultPicks(next);
     markAssistantPicksAdopted();
@@ -112,10 +120,14 @@ export function saveBatonSettings(body: unknown): BatonSettings {
         /* a view refresh is best-effort */
       }
     }
-  return { ...result, assistant: pricedPick(next) };
+  return { assistant: pricedPick(next) };
 }
 
 export function registerAssistantRoutes(app: Hono<any>): void {
+  app.put(
+    "/api/settings/project-assistant",
+    handle(async (c) => c.json(saveAssistantDefault(await body(c)))),
+  );
   app.get(
     "/api/orgs/:id/owner/assistant",
     handle(async (c) => c.json(await assistantInfo(p(c, "id")))),

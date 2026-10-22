@@ -1,5 +1,5 @@
-import type { AssistantInfo, AssistantView } from "../../shared/project-assistant";
-import type { WorkModels } from "../../shared/powers";
+import type { AssistantInfo, AssistantView, PricedPick } from "../../shared/project-assistant";
+import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1303,6 +1303,9 @@ export const setBatonAbilities = (sid: string, abilities: Partial<GatheringAbili
 /** The host's defaults for new hand-off sessions (Settings → Organizations). */
 export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
 export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));
+/** The Project Assistant's default model (Settings → Organizations); its own route, mesh `admin`. */
+export const putAssistantDefault = (assistant: ModelPick | null) =>
+  request<{ assistant: PricedPick | null }>("/api/settings/project-assistant", jsonInit("PUT", { assistant }));
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
   request<{ links: OfferLink[]; info?: BatonInfo; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));

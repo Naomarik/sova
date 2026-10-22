@@ -1,6 +1,6 @@
 import { FILE_MB, MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE, type BatonSettings } from "../../shared/baton";
 import type { ModelPick } from "../../shared/powers";
-import { putBatonSettings } from "./api";
+import { putAssistantDefault, putBatonSettings } from "./api";
 import { createDraftStore } from "./settings-draft";
 
 /** A typed whole number within [min, max], else null. */
@@ -77,9 +77,12 @@ const store = createDraftStore<BatonDraft, BatonSettings>({
       messagesMax: parseLimit(d.messagesMax)!,
       photos: { enabled: d.photosOn, perMessage: photoFields.perMessage(d)!, maxBytes: photoFields.mb(d)! * MB, perConversation: photoFields.perConversation(d)! },
       files: { maxBytes: parseFileMb(d)! * MB },
-      assistant: plainPick(d.assistant),
     });
-    return { saved: result, result };
+    // The Project Assistant's default has its own route (mesh `admin`): sent only when it differs from the stored one.
+    let assistant = result.assistant ?? null;
+    if (!samePick(d.assistant, assistant)) assistant = (await putAssistantDefault(plainPick(d.assistant))).assistant;
+    const saved = { ...result, assistant };
+    return { saved, result: saved };
   },
 });
 

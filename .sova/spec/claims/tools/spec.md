@@ -16,7 +16,8 @@ A map (`map`) shows every area on one page, and `where` finds the claims for a s
 and ranks claims by the words of a topic.
 Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
 a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
-A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved.
+A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved,
+or the drafts the tool confirms are already official.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), `notOwned` (on an area, the claims elsewhere that own what a reader might look for in it), and an `agreed` decision (who decided, when, and where the go-ahead was given); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
@@ -293,7 +294,15 @@ carries that step too. The exemption from drafts is decided from passages read, 
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
 (§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
 finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
-first; the census command that line gives lists the rest. A worker's spec brief lists `toc`, `read` and
+first; the census command that line gives lists the rest. It tells the session that a branch isn't
+done or ready to land until its drafts are promoted on it: the session promotes on its own branch,
+after its checks pass and before it says the branch is ready, since nothing at landing promotes for
+it, and says so without naming any project's merge process. Its go-ahead paragraph says that the
+user's go-ahead to build or merge covers committing the docs with the code on its branch, never asked
+for separately; where the user said not to commit, nothing is, and evidence stays pending. A worker
+is told that its parent promotes, on its own branch before calling it ready; a worker promotes,
+commits or records `--commit` evidence only when its brief says to, and then only on its brief's
+branch, never by landing on the default branch. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.
 
@@ -310,7 +319,9 @@ worker's census, never a hook of its own. A foreign § (one that existed before 
 started) whose text the task's change contradicts, or where it changes what a user sees beyond
 that text, is updated in the task's draft without asking, the task's go-ahead covering it, and
 listed in the reply or report as "Also updates §X: <what>"; it is never asked about. Spec mode stands alone: its guide, notes and
-tools never rely on the merge round or a merge captain, and a session promotes its own drafts.
+tools never rely on the merge round or a merge captain, and a session promotes its own drafts, on its
+own branch, before it calls that branch done or ready to land: with spec mode on, in any project,
+that is what ready means, and the user's go-ahead to build or merge covers it.
 In the web app, an older reply shows any closing lines it was written with, as written, and an
 older session's spec-turn records draw nothing.
 
@@ -522,7 +533,7 @@ graph's warning count, how many of those warnings current does not already have
 (`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
 prose, with their total count and the core `foreign --landing` command that lists every one.
 
-## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list is pruned
+## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
 `draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
 repository too) and writes nothing. Each draft gets its age (days since its last activity: made,
@@ -540,8 +551,17 @@ It exits 1 when any draft is other than `active`.
 `draft prune --approved FILE` deletes only drafts the file names, one per line, each optionally
 followed by the `draftSha256` the report printed (one hash over its `draft.json` and `spec/`); without `--write` it only lists them. A name with
 no draft, a hash that no longer matches (the draft changed after it was approved), or an
-interrupted promotion refuses the whole prune, and nothing is deleted. No other command deletes a
-draft, and none suggests deleting one that still has a pending id.
+interrupted promotion refuses the whole prune, and nothing is deleted.
+
+`draft prune --official` needs no list: it deletes only drafts the tool itself confirms are already
+official, and keeps every other one. Without `--from` it reads the project's own drafts as `drafts`
+does and deletes those it reads `promoted`, under the same lock and refusal of an interrupted
+promotion as an approved prune. With `--from DIR` it reads each draft folder directly in `DIR`, a copy
+kept outside the project such as the one a merge round keeps, against the project's current spec
+alone, with no Git: one whose records it changes are all already current, at least one, is deleted;
+one with any record pending or in conflict, one that changes nothing, and one it can't read are kept.
+Without `--write` either form only lists what it would delete and what it keeps, with why. No other
+command deletes a draft, and none suggests deleting one that still has a pending id.
 
 A promotion preview or write names, once, how many other drafts in its project are older than the
 age limit, with the `drafts` command that says which are left behind.

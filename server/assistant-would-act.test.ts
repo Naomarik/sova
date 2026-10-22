@@ -179,9 +179,10 @@ describe("the owner page's card asks the same question (§app.project-assistant/
     assert.ok(home.abilities, "the assistant is ready");
     const by = new Map(home.abilities!.projects.map((a) => [a.project, a]));
     assert.deepEqual(home.abilities!.projects.map((a) => a.project), home.projects.map((p) => p.id), "the cards' order");
-    assert.deepEqual(by.get(handleOf("q", designs.id)), { project: handleOf("q", designs.id), fix: "held", version: "now", release: "held" });
+    // No gathering model stands in here: a feature request chat goes to the team.
+    assert.deepEqual(by.get(handleOf("q", designs.id)), { project: handleOf("q", designs.id), fix: "held", version: "now", release: "held", feature: "team" });
     // Deploy On, but the engine (a brake) refuses deploy/run: the card says the team, and the tool starts nothing.
-    assert.deepEqual(by.get(handleOf("q", shop.id)), { project: handleOf("q", shop.id), fix: "team", version: "none", release: "team" });
+    assert.deepEqual(by.get(handleOf("q", shop.id)), { project: handleOf("q", shop.id), fix: "team", version: "none", release: "team", feature: "team" });
 
     const set: string[] = [];
     standInActs(set);
@@ -238,5 +239,48 @@ describe("the server's own facts, on a real org", () => {
     assert.deepEqual(fix, { outcome: "held", reason: "ok" });
     const release = await would.assistantWouldAct(org.id, designs.id, "release");
     assert.deepEqual([release.outcome, release.reason], ["team", "no-recipe"], "Deploy On, but the project declares no release steps");
+  });
+});
+
+describe("assistantWouldAct: a feature request chat (§app.project-assistant/feature-chats)", () => {
+  const featureFacts = (f: { column?: PowerMap; gathering?: boolean; refusal?: { code: string; sentence: string } | null; reachable?: boolean; braked?: boolean }, seen: string[] = []) => ({
+    ...facts({ p: { column: f.column ?? on("gather"), braked: f.braked ?? false } }),
+    gatheringModel: () => (f.gathering === false ? null : { model: "scripted/scripted" }),
+    placement: async (_org: string, _p: string, event: string) => {
+      seen.push(event);
+      return f.reachable === false ? null : { refusal: f.refusal ?? null };
+    },
+  });
+  const ask = (f: Parameters<typeof featureFacts>[0], o: { attended?: boolean } = {}, seen: string[] = []) => {
+    would.setWouldActFactsForTest(featureFacts(f, seen));
+    return would.assistantWouldAct("org", "p", "feature", o);
+  };
+
+  test("gather On, a gathering model, the placement takes the start: it opens right away, never held", async () => {
+    const seen: string[] = [];
+    assert.deepEqual(await ask({}, {}, seen), { outcome: "now", reason: "ok" });
+    assert.deepEqual(seen, ["baton/start"], "the placement's gathering start is the act asked");
+  });
+
+  test("gather Off: the team, in the Project Assistant column's own words, and the placement is not asked", async () => {
+    const seen: string[] = [];
+    const a = await ask({ column: assistantDefaults() }, {}, seen);
+    assert.equal(a.outcome, "team");
+    assert.equal(a.reason, "power-off");
+    assert.match(a.sentence ?? "", /^Open feature request chats with the owner is off for the Project Assistant\./);
+    assert.deepEqual(seen, []);
+  });
+
+  test("a brake, no gathering model, an unreachable or refusing placement: the team", async () => {
+    assert.equal((await ask({ braked: true })).reason, "brake");
+    assert.equal((await ask({ gathering: false })).reason, "no-model");
+    assert.equal((await ask({ reachable: false })).reason, "unreadable");
+    const atOnce = await ask({ refusal: { code: "at-once", sentence: "5 of its gathering sessions are open, and the limit is 5 at once." } });
+    assert.deepEqual([atOnce.outcome, atOnce.reason], ["team", "refused"]);
+  });
+
+  test("the operator's own turn skips the switch and the placement, never the model", async () => {
+    assert.deepEqual(await ask({ column: assistantDefaults() }, { attended: true }), { outcome: "now", reason: "ok" });
+    assert.equal((await ask({ gathering: false }, { attended: true })).reason, "no-model");
   });
 });

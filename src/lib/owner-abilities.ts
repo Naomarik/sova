@@ -5,7 +5,7 @@
 import type { OwnerAbilities, OwnerAbilityOutcome } from "../../shared/owner";
 import type { OwnerRequestRow } from "../../shared/project-assistant";
 
-export type AbilityId = "ask" | "report" | "new" | "fix" | "try" | "release";
+export type AbilityId = "ask" | "report" | "new" | "plan" | "fix" | "try" | "release";
 
 export interface AbilityLine {
   id: AbilityId;
@@ -70,6 +70,16 @@ export function abilityLines(projects: readonly { id: string; name: string }[], 
     { id: "new", name: "Ask for something new", how: "Written up with you, then sent to the team", named: false, prefill: "I'd like something new: " },
   ];
   if (!abilities || !shown.length) return lines;
+  // Plan something new with you (§app.project-assistant/feature-chats): in place of "Ask for something new" while
+  // some project opens a feature request chat; while none does, the line above stays as it always was.
+  const plans = shown.map((s) => ({ name: s.name, now: s.feature === "now" }));
+  if (plans.some((p) => p.now)) {
+    const all = plans.every((p) => p.now);
+    const how = all
+      ? { how: "Opens a chat with you right away", named: false }
+      : { how: `right away for ${nameList(plans.filter((p) => p.now).map((p) => p.name))}, the team plans it for ${nameList(plans.filter((p) => !p.now).map((p) => p.name))}.`, named: true };
+    lines[2] = { id: "plan", name: "Plan something new with you", ...how, prefill: "I'd like to plan something new: " };
+  }
   lines.push({ id: "fix", name: NAME.fix, ...howLine("fix", shown.map((s) => ({ name: s.name, outcome: s.fix }))), prefill: "Please fix this: " });
   const withVersion = shown.flatMap((s) => (s.version === "none" ? [] : [{ name: s.name, outcome: s.version }]));
   if (withVersion.length) lines.push({ id: "try", name: NAME.version, ...howLine("version", withVersion), prefill: `Can I try the latest version of ${withVersion[0]!.name}?` });

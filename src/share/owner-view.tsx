@@ -29,6 +29,16 @@ import type { OwnerRequestRow, OwnerVersionRow } from "../../shared/project-assi
 import { isDeadLink, OwnerLoadError, type OwnerProblemKind } from "../lib/owner-problem";
 import { type AbilityLine, abilityLines, openCount, requestsLine } from "../lib/owner-abilities";
 import { AbilityList, Chevron } from "./owner-abilities-view";
+import { ShareComposer, type SendOutcome } from "./ShareComposer";
+import { Reply } from "./thread";
+import { batonKinds } from "./markdown";
+
+/** The owner's own feature request chat (§app.project-assistant/feature-chats): their message and End Chat, by the
+    conversation's handle; absent in the preview (read only). */
+export interface FeatureApi {
+  send(conversation: string, text: string): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+  end(conversation: string): Promise<boolean>;
+}
 
 /**
  * The Owner page (§app.owner-page/page): Home, a project, a conversation. Read-only. It renders
@@ -72,6 +82,8 @@ export function OwnerPage(props: {
   assistant?: AssistantApi;
   /** A version's Open address (`/i/<token>/v/<handle>`); absent in the preview: no Open. */
   versionHref?(handle: string): string;
+  /** The owner's feature request chat writes through this; absent: read only. */
+  feature?: FeatureApi;
 }) {
   const key = createMemo(() => JSON.stringify(props.route));
   const [answer, setAnswer] = createSignal<OwnerAnswer | null>(null);
@@ -310,6 +322,7 @@ export function OwnerPage(props: {
                     pick={pick}
                     prefill={prefill}
                     takePrefill={() => setPrefill(null)}
+                    conversationLink={(id) => link({ kind: "conversation", id })}
                     onDeadLink={(err) => {
                       // The link itself failed on the chat's read: the page's own dead-link screen.
                       if (err.asked) setAsking("asked");
@@ -328,7 +341,15 @@ export function OwnerPage(props: {
                 <ProjectView project={d() as OwnerProject} now={now()} link={link} />
               </Match>
               <Match when={true}>
-                <ConversationView conv={d() as OwnerConversation} now={now()} link={link} tourBase={props.tourBase} />
+                <ConversationView
+                  conv={d() as OwnerConversation}
+                  now={now()}
+                  link={link}
+                  tourBase={props.tourBase}
+                  feature={props.preview ? undefined : props.feature}
+                  subscribe={props.preview ? undefined : props.assistant?.subscribe}
+                  reload={() => void read()}
+                />
               </Match>
             </Switch>
           )}
@@ -453,7 +474,12 @@ function Section(props: { id: string; title: string; line?: JSX.Element; attenti
 /** Rows waiting on the owner. Read-only in v1: they answer through the link the operator sent. */
 function WaitingSection(props: { waiting: OwnerWaiting[]; op: string; now: number; link: Link; withProject: boolean }) {
   return (
-    <Section id="owner-waiting" title="Waiting on you" attention line={`${waitingLine(props.waiting.length)} Answer it using the link ${props.op} sent you for it.`}>
+    <Section
+      id="owner-waiting"
+      title="Waiting on you"
+      attention
+      line={`${waitingLine(props.waiting.length)}${props.waiting.some((w) => !w.feature) ? ` Answer it using the link ${props.op} sent you for it.` : " Open it to answer here."}`}
+    >
       <ul class="owner-list">
         <For each={props.waiting}>
           {(w) => (
@@ -497,7 +523,7 @@ function RequestsSection(props: { requests: OwnerRequestRow[]; now: number; head
                   {REQUEST_KIND[r.kind]} · {r.project} · <Ago at={r.at} now={props.now} />
                 </span>
               </span>
-              <ChipWord chip={REQUEST_STATUS[r.status]} />
+              <ChipWord chip={r.plan === "planning" ? { word: "Planning with you", tone: "info" } : r.plan === "agreed" ? { word: "Plan agreed", tone: "success" } : REQUEST_STATUS[r.status]} />
             </li>
           )}
         </For>
@@ -799,8 +825,85 @@ function ProjectView(props: { project: OwnerProject; now: number; link: Link }) 
   );
 }
 
-function ConversationView(props: { conv: OwnerConversation; now: number; link: Link; tourBase?(conversation: string, handle: string): string }) {
+function ConversationView(props: {
+  conv: OwnerConversation;
+  now: number;
+  link: Link;
+  tourBase?(conversation: string, handle: string): string;
+  feature?: FeatureApi;
+  subscribe?: AssistantApi["subscribe"];
+  reload(): void;
+}) {
   const c = () => props.conv;
+  /** The owner's own feature request chat (§app.project-assistant/feature-chats): they write here while they hold it. */
+  const feature = () => c().feature;
+  const canWrite = () => !!props.feature && feature()?.canWrite === true;
+  const [draft, setDraft] = createSignal("");
+  const [sending, setSending] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [streaming, setStreaming] = createSignal<string | null>(null);
+  const [ending, setEnding] = createSignal<"idle" | "confirm" | "sending">("idle");
+  // Live: the page's socket says when this chat changed (read it again) and carries its reply as it is written.
+  createEffect(
+    on(
+      () => (feature() && props.subscribe ? c().id : null),
+      (id) => {
+        if (!id || !props.subscribe) return;
+        const off = props.subscribe((m) => {
+          if (m.type === "conversation" && m.conversation === id) {
+            setStreaming(null);
+            props.reload();
+          } else if (m.type === "conversation-streaming" && m.conversation === id) setStreaming(m.text);
+        });
+        onCleanup(off);
+      },
+    ),
+  );
+  // Without a socket frame (a dropped socket), a reply in flight is read again every 3 s while the owner waits.
+  createEffect(
+    on(
+      () => (feature() && !canWrite() && c().state === "open" ? c().id : null),
+      (id) => {
+        if (!id) return;
+        const t = setInterval(() => document.visibilityState === "visible" && props.reload(), 3000);
+        onCleanup(() => clearInterval(t));
+      },
+    ),
+  );
+  const say = async (text: string): Promise<boolean> => {
+    if (!props.feature || sending()) return false;
+    setSending(true);
+    setError(null);
+    try {
+      const out = await props.feature.send(c().id, text);
+      if (out.ok) {
+        props.reload();
+        return true;
+      }
+      setError(out.code === "rate-limited" ? "Too many messages. Wait a minute." : out.code === "not-holder" ? "Someone else has this chat right now. You can read along." : out.message || "Your message didn't go through. Try again.");
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+  const send = async (text: string): Promise<SendOutcome> => ((await say(text)) ? "sent" : "kept");
+  const end = async () => {
+    if (!props.feature) return;
+    setEnding("sending");
+    const ok = await props.feature.end(c().id).catch(() => false);
+    setEnding("idle");
+    if (ok) props.reload();
+    else setError("That didn't go through. Try again in a minute.");
+  };
+  const note = () => {
+    const f = feature();
+    if (!f) return null;
+    if (c().status.kind === "plan-agreed") return `You agreed this plan. ${c().operator.first} decides when it's built.`;
+    if (c().status.kind === "closed") return "This chat has ended.";
+    if (f.canWrite) return `Plan it here with the assistant. Nothing is built until ${c().operator.first} decides.`;
+    const s = c().status;
+    return `${"first" in s ? s.first : c().operator.first} has it right now. You can read along.`;
+  };
   return (
     <>
       <a class="owner-back" {...props.link({ kind: "project", id: c().project })}>
@@ -811,14 +914,81 @@ function ConversationView(props: { conv: OwnerConversation; now: number; link: L
         <div class="owner-row-chips">
           <ChipWord chip={conversationChip(c().status)} />
         </div>
-        <p class="owner-note">
-          You can read this conversation. You can't write here.
-          <Show when={c().yourTurn}> It's your turn in this conversation. Answer it using the link {c().operator.first} sent you.</Show>
-        </p>
+        <Show
+          when={note()}
+          fallback={
+            <p class="owner-note">
+              You can read this conversation. You can't write here.
+              <Show when={c().yourTurn}> It's your turn in this conversation. Answer it using the link {c().operator.first} sent you.</Show>
+            </p>
+          }
+        >
+          <p class="owner-note">{note()}</p>
+        </Show>
       </header>
       <section class="owner-thread" aria-label="Conversation">
-        <For each={c().items}>{(it) => <Item item={it} reader drawings={c().drawings} tour={props.tourBase ? { base: handle => props.tourBase!(c().id, handle) } : undefined} />}</For>
+        <For each={c().items}>
+          {(it) => (
+            <Item
+              item={it}
+              reader
+              drawings={c().drawings}
+              tour={props.tourBase ? { base: (handle) => props.tourBase!(c().id, handle) } : undefined}
+              answerPlan={canWrite() ? say : undefined}
+            />
+          )}
+        </For>
+        <Show when={streaming()}>
+          <article class="share-msg share-msg-reply" aria-label="Facilitator" aria-busy="true">
+            <span class="share-who">Facilitator</span>
+            <Reply text={streaming()!} streaming kinds={batonKinds(c().drawings?.html === true)} />
+          </article>
+        </Show>
       </section>
+      <Show when={canWrite()}>
+        <ShareComposer
+          class="owner-assistant-composer owner-feature-composer"
+          id="owner-feature-text"
+          label="Your message"
+          placeholder="Write a message"
+          maxLength={4000}
+          sendKey="mod-enter"
+          draft={draft}
+          setDraft={setDraft}
+          error={error}
+          photos={() => null}
+          uploadPhoto={() => {
+            throw new Error("Photos can't be sent here.");
+          }}
+          sending={sending}
+          send={(text) => send(text)}
+        />
+      </Show>
+      <Show when={!canWrite() && error()}>
+        <p class="owner-note" role="alert">
+          {error()}
+        </p>
+      </Show>
+      <Show when={props.feature && feature()?.canEnd}>
+        <div class="owner-feature-end">
+          <Show
+            when={ending() !== "idle"}
+            fallback={
+              <button type="button" class="button button-ghost" onClick={() => setEnding("confirm")}>
+                End Chat
+              </button>
+            }
+          >
+            <p class="owner-note">End this chat? You can't write in it after.</p>
+            <button type="button" class="button" disabled={ending() === "sending"} onClick={() => void end()}>
+              End Chat
+            </button>
+            <button type="button" class="button button-ghost" onClick={() => setEnding("idle")}>
+              Cancel
+            </button>
+          </Show>
+        </div>
+      </Show>
     </>
   );
 }

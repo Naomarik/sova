@@ -73,7 +73,16 @@ export function registerOrgEffects(host: OrgHostApi, orgId: string): void {
   // org / residence: the owner changed, left, or the org was detached: every owner link off.
   host.effects.register("revoke-owner-links", async (e: Effect) => {
     const why = e.why === "detached" || e.why === "left" || e.why === "owner-changed" ? e.why : "off";
-    return { revoked: revokeOwnerLinks(orgId, why) };
+    const revoked = revokeOwnerLinks(orgId, why);
+    // The former owner's feature request chats end with their owner page (§app.project-assistant/feature-chats).
+    // Not awaited inside the step: each close is an act of its own on the baton.
+    if (why === "left" || why === "owner-changed")
+      setTimeout(() => {
+        void import("./feature-chats")
+          .then((f) => f.endFormerOwnersChats(orgId, why))
+          .catch((err) => console.warn(`[feature-chat] ${orgId}: ending the former owner's chats: ${err instanceof Error ? err.message : String(err)}`));
+      }, 0);
+    return { revoked };
   });
 
   // person: someone left: every hand-off and owner link of theirs answers 410 at once.

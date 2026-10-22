@@ -18,6 +18,7 @@ import { branchOf, parsePi, readBranch, readPi } from "../harness/pi/reader";
 import { photosFor } from "../baton-images";
 import { filesFor } from "../baton-files";
 import { readLedger } from "../project-files";
+import { isFeatureChat } from "../feature-chats";
 
 /**
  * The share page's live side (§app.baton/outsider-view): who is watching which baton session, and
@@ -86,6 +87,8 @@ export async function readView(
     // The share page alone draws a file's row (§app.baton/files); every other reader keeps its line,
     // the id the project overseer's sova_files names it by included.
     ...(out?.files ? { files: sessionFiles(row) } : {}),
+    // A feature request chat's plans cross as plan cards (§app.project-assistant/feature-chats).
+    ...(isFeatureChat(row) ? { plans: true } : {}),
   });
 }
 
@@ -207,8 +210,25 @@ export function watchedHashes(): Set<string> {
 export const SWEEP_MS = 30_000;
 setInterval(sweepWatchers, SWEEP_MS).unref();
 
+/** Listeners beside the hand-off pages' sockets (the owner page's feature request chats, server/project-assistant.ts):
+    told of each change and each streaming text, by session id. */
+const changeListeners: ((sessionId: string) => void)[] = [];
+const streamListeners: ((sessionId: string, text: string) => void)[] = [];
+export function onShareChange(f: (sessionId: string) => void): void {
+  changeListeners.push(f);
+}
+export function onShareStream(f: (sessionId: string, text: string) => void): void {
+  streamListeners.push(f);
+}
+
 /** Push every watcher of a session its view again (debounced: a burst of entries is one push). */
 export function refreshShare(sessionId: string): void {
+  for (const f of changeListeners)
+    try {
+      f(sessionId);
+    } catch {
+      /* a listener's failure is its own */
+    }
   if (!watchers.has(sessionId) || pending.has(sessionId)) return;
   pending.set(
     sessionId,
@@ -234,6 +254,12 @@ async function pushViews(sessionId: string): Promise<void> {
 
 /** The reply being written, text only, at most ~10 pushes a second. */
 export function streamShare(sessionId: string, text: string): void {
+  for (const f of streamListeners)
+    try {
+      f(sessionId, text);
+    } catch {
+      /* a listener's failure is its own */
+    }
   const set = watchers.get(sessionId);
   if (!set?.size) return;
   const now = Date.now();

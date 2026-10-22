@@ -113,3 +113,20 @@ test("Home's requests line and the tab's open count", () => {
   assert.equal(openCount([{ status: "with-team" }, { status: "started" }, { status: "done" }, { status: "declined" }]), 2);
   assert.equal(openCount(undefined), 0);
 });
+
+test("Plan something new with you takes the place of Ask for something new while some project opens a feature request chat", () => {
+  // Switch Off everywhere (or an older server with no `feature`): Ask for something new, as today.
+  assert.equal(byId(abilityLines([A], abilities(ab(A, { feature: "team" })))).new!.name, "Ask for something new");
+  assert.equal(byId(abilityLines([A], abilities(ab(A)))).plan, undefined);
+  // On: one plain line, in the same place, with its own prefill.
+  const on = abilityLines([A], abilities(ab(A, { feature: "now" })));
+  assert.equal(on[2]!.id, "plan");
+  assert.equal(lineText(on[2]!), "Plan something new with you. Opens a chat with you right away.");
+  assert.equal(on[2]!.prefill, "I'd like to plan something new: ");
+  assert.equal(byId(on).new, undefined);
+  // Projects that differ are named.
+  const mixed = byId(abilityLines([A, B], abilities(ab(A, { feature: "now" }), ab(B, { feature: "team" })))).plan!;
+  assert.equal(lineText(mixed), "Plan something new with you: right away for RakibaDesigns, the team plans it for Rakiba Shop.");
+  // Never more than 6 lines.
+  assert.ok(abilityLines([A], abilities(ab(A, { feature: "now", fix: "now", version: "now", release: "now" }))).length <= 6);
+});

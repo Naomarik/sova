@@ -147,6 +147,34 @@ export const tokenSum = (t: CostTokens) => t.input + t.output + t.cacheRead + t.
 /** Cache read and write together, the model table's one Cache column. */
 export const cacheSum = (t: CostTokens) => t.cacheRead + t.cacheWrite;
 
+/** Every input token: uncached input, cache read and cache write (output left out). */
+export const inputSum = (t: CostTokens) => t.input + t.cacheRead + t.cacheWrite;
+
+/**
+ * The cache hit rate, 0..1: the share of input tokens read from cache, cacheRead / (input +
+ * cacheRead + cacheWrite). Null when the count reported no cache read or write at all (a provider
+ * that doesn't cache, or doesn't say), or has no input: there is no rate to show, only its absence.
+ */
+export function cacheHitRate(t: CostTokens): number | null {
+  const all = inputSum(t);
+  if (cacheSum(t) <= 0 || all <= 0) return null;
+  return t.cacheRead / all;
+}
+
+/** A rate in whole percent: "96%"; "<1%" and ">99%" where rounding would claim a 0% or 100% that
+    isn't exact; "—" for none. */
+export function cacheRateWords(rate: number | null): string {
+  if (rate === null || !Number.isFinite(rate)) return "—";
+  if (rate <= 0) return "0%";
+  if (rate >= 1) return "100%";
+  if (rate < 0.005) return "<1%";
+  if (rate >= 0.995) return ">99%";
+  return `${Math.round(rate * 100)}%`;
+}
+
+/** The hover note on a row with no rate. */
+export const noCacheNote = (of: "model" | "provider" = "model") => `No cache use reported for this ${of}.`;
+
 /** Most expensive first; ties by tokens, then by `name`, so two equal rows never swap between polls. */
 export function byCost<T extends Pick<UsageSpend, "usd" | "tokens">>(rows: readonly T[], name: (r: T) => string): T[] {
   return [...rows].sort((a, b) => b.usd - a.usd || tokenSum(b.tokens) - tokenSum(a.tokens) || name(a).localeCompare(name(b)));

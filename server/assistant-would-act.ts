@@ -5,7 +5,7 @@ import type { OwnerAbilityOutcome } from "../shared/owner";
 import { CONTRACT_FILE, parseDefinition } from "../shared/project-contract";
 import { readProjects } from "./orgs";
 import { projectVersions } from "./owner-versions";
-import { assistantModelFor } from "./project-assistant-store";
+import { effectiveAssistantModel } from "./project-assistant-store";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
 /**
@@ -69,7 +69,7 @@ const serverFacts: WouldActFacts = {
       return unreadable();
     }
   },
-  codingModel: (orgId, models) => assistantModelFor(orgId, "coding", models).pick,
+  codingModel: (orgId, models) => effectiveAssistantModel(orgId, "coding", models)?.pick ?? null,
   hasRelease: async (projectId) => (await deployTargetOf(projectId)) !== null,
   async hasVersion(orgId, projectId) {
     const p = readProjects(orgId).find((x) => x.id === projectId);

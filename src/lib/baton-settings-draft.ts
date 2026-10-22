@@ -1,4 +1,5 @@
 import { FILE_MB, MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE, type BatonSettings } from "../../shared/baton";
+import type { ModelPick } from "../../shared/powers";
 import { putBatonSettings } from "./api";
 import { createDraftStore } from "./settings-draft";
 
@@ -22,7 +23,16 @@ export interface BatonDraft {
   perConversation: string;
   /** The largest file, MB (§app.baton/files). */
   fileMb: string;
+  /** The Project Assistant's default model and thinking (§app.project-assistant/models), or null. */
+  assistant: ModelPick | null;
 }
+
+/** A pick as stored: the model and its thinking only (a GET's price is dropped). */
+export const plainPick = (p: ModelPick | null | undefined): ModelPick | null => (p ? { model: p.model, ...(p.thinking ? { thinking: p.thinking } : {}) } : null);
+
+/** Two defaults are the same: model and thinking. */
+export const samePick = (a: ModelPick | null | undefined, b: ModelPick | null | undefined): boolean =>
+  (a?.model ?? null) === (b?.model ?? null) && (a?.thinking ?? null) === (b?.thinking ?? null);
 
 /** A typed largest file, else null. */
 export const parseFileMb = (d: BatonDraft): number | null => parseWhole(d.fileMb, FILE_MB.min, FILE_MB.max);
@@ -40,18 +50,19 @@ const toDraft = (s: BatonSettings): BatonDraft => ({
   mb: String(Math.round(s.photos.maxBytes / MB)),
   perConversation: String(s.photos.perConversation),
   fileMb: String(Math.round((s.files?.maxBytes ?? FILE_MB.default * MB) / MB)),
+  assistant: plainPick(s.assistant),
 });
 
 /** Settings → Organizations' unsaved edit (settings-draft.ts: module state, held on close, forgotten
-    once closed): the message limit new hand-off sessions start with, and photos in gathering chats
-    (§app.baton/images). Saved by the dialog's footer. */
+    once closed): the message limit new hand-off sessions start with, photos and files in gathering chats
+    (§app.baton/images), and the Project Assistant's default model. Saved by the dialog's footer. */
 const store = createDraftStore<BatonDraft, BatonSettings>({
   tab: "organizations",
   label: "Organizations",
   toDraft,
   same: (d, s) => {
     const t = toDraft(s);
-    return d.messagesMax.trim() === t.messagesMax && d.photosOn === t.photosOn && d.perMessage.trim() === t.perMessage && d.mb.trim() === t.mb && d.perConversation.trim() === t.perConversation && d.fileMb.trim() === t.fileMb;
+    return d.messagesMax.trim() === t.messagesMax && d.photosOn === t.photosOn && d.perMessage.trim() === t.perMessage && d.mb.trim() === t.mb && d.perConversation.trim() === t.perConversation && d.fileMb.trim() === t.fileMb && samePick(d.assistant, t.assistant);
   },
   problem: (d) =>
     parseLimit(d.messagesMax) === null
@@ -66,6 +77,7 @@ const store = createDraftStore<BatonDraft, BatonSettings>({
       messagesMax: parseLimit(d.messagesMax)!,
       photos: { enabled: d.photosOn, perMessage: photoFields.perMessage(d)!, maxBytes: photoFields.mb(d)! * MB, perConversation: photoFields.perConversation(d)! },
       files: { maxBytes: parseFileMb(d)! * MB },
+      assistant: plainPick(d.assistant),
     });
     return { saved: result, result };
   },
@@ -76,3 +88,5 @@ export const setBatonDraft = store.setDraft;
 export const setBatonSaved = store.setSaved;
 export const batonSaving = store.saving;
 export const batonSaveError = store.error;
+/** The settings as last saved (or read): the default's price is this one's. */
+export const batonSaved = store.saved;

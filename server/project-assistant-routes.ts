@@ -2,10 +2,13 @@ import type { Context, Hono } from "hono";
 import type { AssistantInfo } from "../shared/project-assistant";
 import { WORK_KINDS } from "../shared/powers";
 import { attentionChanged } from "./attention-memo";
-import { OrgError, readOrgOrPlaceholder } from "./orgs";
+import { OrgError, readIndex, readOrgOrPlaceholder } from "./orgs";
 import { assistantSeesImages, currentAssistantPath, ensureAssistant, refreshAssistant } from "./project-assistant";
+import { assistantReplyState } from "./project-assistant-ready";
+import { assistantDefault, assistantPicksAdopted, markAssistantPicksAdopted, readBatonSettings, writeBatonSettings } from "./baton-settings";
+import type { BatonSettings } from "../shared/baton";
 import { pricedPick } from "./project-assistant-prices";
-import { assistantModelFor, orgRequests, readAssistantStore, setAssistantModels, setRequestStatus } from "./project-assistant-store";
+import { adoptDefaultPicks, effectiveAssistantModel, orgRequests, samePick, setAssistantModels, setRequestStatus } from "./project-assistant-store";
 import { assistantProjects } from "./project-assistant-tools";
 import { HasChatError, startRequestChat, withChats } from "./owner-request-chat";
 import { projectOverseerPaths, readPoSettings, sessionIdOfFile } from "./project-overseer-store";
@@ -46,20 +49,70 @@ const projectModels = (projectId: string) => {
   }
 };
 
-/** The Owner card's Project Assistant part. */
+/** The Owner card's Project Assistant part: each kind resolved (its own pick, else the default) with its source. */
 export async function assistantInfo(orgId: string): Promise<AssistantInfo> {
   readOrgOrPlaceholder(orgId);
-  const s = readAssistantStore(orgId);
+  const fallback = assistantDefault();
   const models: AssistantInfo["models"] = {};
-  for (const k of WORK_KINDS) models[k] = pricedPick(s.models[k] ?? null);
+  for (const k of WORK_KINDS) {
+    const r = effectiveAssistantModel(orgId, k, null, fallback);
+    models[k] = r ? { ...pricedPick(r.pick)!, source: r.source } : null;
+  }
   const projects = assistantProjects(orgId).map((pr) => {
     const o = projectModels(pr.id);
-    const coding = assistantModelFor(orgId, "coding", o);
-    const gathering = assistantModelFor(orgId, "gathering", o);
-    return { projectId: pr.id, name: pr.name, coding: { pick: pricedPick(coding.pick), source: coding.source }, gathering: { pick: pricedPick(gathering.pick), source: gathering.source } };
+    const coding = effectiveAssistantModel(orgId, "coding", o, fallback);
+    const gathering = effectiveAssistantModel(orgId, "gathering", o, fallback);
+    return {
+      projectId: pr.id,
+      name: pr.name,
+      coding: { pick: pricedPick(coding?.pick ?? null), source: coding?.source ?? null },
+      gathering: { pick: pricedPick(gathering?.pick ?? null), source: gathering?.source ?? null },
+    };
   });
   const path = await currentAssistantPath(orgId);
-  return { models, projects, sessionId: path ? sessionIdOfFile(path) : null, requests: await withChats(orgRequests(orgId)), seesPhotos: await assistantSeesImages(orgId).catch(() => false) };
+  const reply = await assistantReplyState(orgId).catch(() => null);
+  return {
+    models,
+    default: pricedPick(fallback),
+    ready: reply?.ready === true,
+    replyProblem: reply?.problem ?? null,
+    projects,
+    sessionId: path ? sessionIdOfFile(path) : null,
+    requests: await withChats(orgRequests(orgId)),
+    seesPhotos: await assistantSeesImages(orgId).catch(() => false),
+  };
+}
+
+/** GET /api/baton/settings: the host's settings, the Project Assistant's default with its price. */
+export function batonSettingsView(): BatonSettings {
+  const s = readBatonSettings();
+  return { ...s, assistant: pricedPick(s.assistant ?? null) };
+}
+
+/**
+ * PUT /api/baton/settings (Settings → Organizations' Save Changes). Saving the host's FIRST
+ * Project Assistant default adopts, once, every org's pick that equals it exactly
+ * (§app.project-assistant/models); later saves never clear a pick. A change of the default
+ * refreshes every owner page's assistant view (orgs that follow it move with it).
+ */
+export function saveBatonSettings(body: unknown): BatonSettings {
+  const before = assistantDefault();
+  const result = writeBatonSettings(body);
+  if ("error" in result) throw new OrgError(result.error, 400);
+  const next = result.assistant ?? null;
+  if (next && !assistantPicksAdopted()) {
+    if (!before) adoptDefaultPicks(next);
+    markAssistantPicksAdopted();
+  }
+  if (!(before && next ? samePick(before, next) : before === next))
+    for (const o of readIndex().orgs) {
+      try {
+        refreshAssistant(o.id);
+      } catch {
+        /* a view refresh is best-effort */
+      }
+    }
+  return { ...result, assistant: pricedPick(next) };
 }
 
 export function registerAssistantRoutes(app: Hono<any>): void {

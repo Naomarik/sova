@@ -14,7 +14,8 @@
  * POST /api/baton/:sid/take          -> BatonInfo (Take back: a hand-off to the operator)
  * POST /api/baton/:sid/close         -> BatonInfo
  * POST /api/baton/:sid/extend        body { by } -> BatonInfo (raises the message limit by `by`)
- * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults)
+ * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults,
+ *                                    the Project Assistant's default model among them)
  *
  * Share listener (the only routes it has):
  * GET  /h/<token>                    the share page
@@ -31,6 +32,7 @@
 
 import type { LinkWarningCode, ShareState } from "./public-links";
 import type { Person } from "./orgs";
+import type { PricedPick } from "./project-assistant";
 
 /** `customType` of the marker a baton session's file carries (data `BatonMarkerData`). */
 export const BATON_ENTRY = "sova-baton";
@@ -372,6 +374,9 @@ export interface BatonSettings {
   photos: BatonPhotoSettings;
   /** Files in gathering chats that take them (§app.baton/files); absent on a PUT keeps what is stored. */
   files: BatonFileSettings;
+  /** The host's Project Assistant default model and thinking, every organization's unless it picks its own
+      (§app.project-assistant/models). GET: with its price, or null. PUT: absent keeps it, null clears it. */
+  assistant?: PricedPick | null;
 }
 
 export interface BatonFileSettings {

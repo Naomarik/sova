@@ -8,7 +8,7 @@ import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } 
 import { attentionChanged } from "./attention-memo";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, keepLink, keptLinks, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
-import { readBatonSettings, writeBatonSettings } from "./baton-settings";
+import { readBatonSettings } from "./baton-settings";
 import { sessionSeesImages } from "./baton-images";
 import { BusyError } from "./chat-handle";
 import {
@@ -62,7 +62,7 @@ import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
 import { orgRequests } from "./project-assistant-store";
-import { registerAssistantRoutes } from "./project-assistant-routes";
+import { batonSettingsView, registerAssistantRoutes, saveBatonSettings } from "./project-assistant-routes";
 import { assistantPhoto, assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
@@ -721,14 +721,11 @@ export function registerOrgRoutes(app: Hono<any>): void {
       );
     }),
   );
-  app.get("/api/baton/settings", (c) => c.json(readBatonSettings()));
+  // The host's defaults, the Project Assistant's default model among them (§app.settings-dialog/organizations).
+  app.get("/api/baton/settings", (c) => c.json(batonSettingsView()));
   app.put(
     "/api/baton/settings",
-    handle(async (c) => {
-      const result = writeBatonSettings(await body(c));
-      if ("error" in result) throw new OrgError(result.error, 400);
-      return c.json(result);
-    }),
+    handle(async (c) => c.json(saveBatonSettings(await body(c)))),
   );
   // What it can do, the operator's change from the strip (§app.baton/abilities): from its next run.
   app.post(

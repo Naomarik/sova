@@ -35,7 +35,17 @@ async function commitResult(dir: string, out: { committed: boolean; sha?: string
   return { committed: out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}), headAt: (await headCommitMs(dir)) ?? Date.now(), pushFailed, ...(out.error ? { error: out.error } : {}) };
 }
 
+/** Ends the feature request chats of anyone no longer the owner (server/feature-chats.ts). Never throws. */
+function sweepFeatureChats(orgId: string, why?: "owner-changed" | "left"): void {
+  void import("./feature-chats")
+    .then((f) => f.endFormerOwnersChats(orgId, why))
+    .catch((err) => console.warn(`[feature-chat] ${orgId}: ending the former owner's chats: ${err instanceof Error ? err.message : String(err)}`));
+}
+
 export function registerOrgEffects(host: OrgHostApi, orgId: string): void {
+  // An owner change whose chats didn't finish ending before a restart: done as the org opens.
+  setTimeout(() => sweepFeatureChats(orgId), 0);
+
   // residence: attach's holder check (r1: the org snapshot's record, the clone's and origin's).
   host.effects.register("read-holder", async (e: Effect) => {
     const dir = typeof e.dir === "string" ? e.dir : dirOfOpen(host, orgId);
@@ -74,14 +84,18 @@ export function registerOrgEffects(host: OrgHostApi, orgId: string): void {
   host.effects.register("revoke-owner-links", async (e: Effect) => {
     const why = e.why === "detached" || e.why === "left" || e.why === "owner-changed" ? e.why : "off";
     const revoked = revokeOwnerLinks(orgId, why);
-    // The former owner's feature request chats end with their owner page (§app.project-assistant/feature-chats).
-    // Not awaited inside the step: each close is an act of its own on the baton.
-    if (why === "left" || why === "owner-changed")
-      setTimeout(() => {
-        void import("./feature-chats")
-          .then((f) => f.endFormerOwnersChats(orgId, why))
-          .catch((err) => console.warn(`[feature-chat] ${orgId}: ending the former owner's chats: ${err instanceof Error ? err.message : String(err)}`));
-      }, 0);
+    // The former owner's feature request chats end with their owner page (§app.project-assistant/feature-chats):
+    // recorded as ended here, so Needs you tells the operator whatever happens next; closed after the step, as each
+    // close is an act of its own on the baton. A record or close that fails here is done by the next sweep (each
+    // org's start, every Needs you scan).
+    if (why === "left" || why === "owner-changed") {
+      try {
+        (await import("./feature-chats")).recordFormerOwnersChats(orgId, why);
+      } catch (err) {
+        console.warn(`[feature-chat] ${orgId}: recording the former owner's chats as ended: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      setTimeout(() => sweepFeatureChats(orgId, why), 0);
+    }
     return { revoked };
   });
 

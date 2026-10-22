@@ -786,6 +786,11 @@ would list master's changes instead.
       up if the copy fails, and prunes earlier copies the draft tool confirms official. The captain
       never promotes; a branch whose owner is gone stays the user's call;
     - GOALS.md gains the rule "Docs land with their code" and a goal-4 measure; the site page says the same.
+    - review B1 (c0639814): `drafts` rows list `promotedConflict` (ids the draft promoted before that current
+      now says differently; state unchanged). The merge round's hold-back counts them as not promoted, so a
+      branch that took master's spec in a conflict without promoting again is handed back, and
+      `prune --official` keeps such a draft. §chat.merge-round/driver, §tools.spec/draft-hygiene (draft
+      `b1-promoted-conflict`, f8a6f806).
   - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check, §tools.spec/draft-hygiene, §tools/spec,
     §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card,
     §chat.mode-menu/workers reworded (draft `spec-lands-with-code`, promoted on the branch at 005f437f;

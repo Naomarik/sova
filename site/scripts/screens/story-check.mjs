@@ -172,6 +172,67 @@ export function offsetMs(o) {
   return m ? Number(m[1]) * { s: 1e3, m: 6e4, h: 36e5, d: 864e5 }[m[2]] : 0;
 }
 
+// ---- video pacing -------------------------------------------------------------------------------
+
+/**
+ * The video's pacing rules, in seconds. The recorder moves the pointer by them; the lint below and
+ * screens:verify (on the recorded timeline) hold the story to them.
+ *   reading hold: 1 s + 0.3 s a meaningful word, never under 1.5 s, never over 5 s
+ *   a new panel or new text: 1.5 s on screen before the pointer moves
+ *   pointer travel 0.5–0.9 s (by distance, eased), 0.3 s rest on the target, a 0.35 s ripple,
+ *   0.4 s still after; typing about 30 characters a second, a typed prompt at most 90 characters;
+ *   a caption at most 5 words, on screen at least 2 s
+ */
+export const PACE = {
+  read: { base: 1, perWord: 0.3, min: 1.5, max: 5 },
+  settle: 1.5,
+  travel: { min: 0.5, max: 0.9 },
+  rest: 0.3,
+  ripple: 0.35,
+  after: 0.4,
+  typingMs: { min: 28, max: 40 },
+  promptMax: 90,
+  caption: { words: 5, min: 2 },
+  scroll: 0.8,
+};
+
+/** Words a viewer reads: tokens with a letter or digit ("30 s" is 2, "—" is none). */
+export const meaningfulWords = (t) => t.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/** The reading time of `t` in ms: 1 s + 0.3 s a word, clamped to 1.5–5 s. */
+export const readingMs = (t) => Math.round(1000 * Math.min(PACE.read.max, Math.max(PACE.read.min, PACE.read.base + PACE.read.perWord * meaningfulWords(t))));
+
+/** What a beat that moves the pointer costs, travel to after (ms). A tap has no travel. */
+export const pressMs = (pointer) => Math.round(1000 * ((pointer === "tap" ? 0 : (PACE.travel.min + PACE.travel.max) / 2) + PACE.rest + PACE.ripple + PACE.after));
+
+/** A beat's estimated length in ms (a release's streaming is a rough 0.8 s, as measured on the
+    story's replies, divided by its speed). */
+export function beatMs(b, { typingMs, loopMs, pointer }) {
+  switch (b.do) {
+    case "hold":
+      return b.ms ?? 0;
+    case "type":
+      return pressMs(pointer) + (b.text?.length ?? 0) * typingMs;
+    case "click":
+    case "tap":
+      return pressMs(pointer);
+    case "release":
+      return Math.round(800 / (b.speed ?? 1));
+    case "scroll":
+      return PACE.scroll * 1000;
+    case "home":
+      return Math.round(1000 * (PACE.travel.max + PACE.rest)) + loopMs;
+    default:
+      return 0;
+  }
+}
+
+/** Beats after which something new is on screen (a page, a panel, streamed text): the pointer
+    waits PACE.settle before it moves again. */
+const NEW_CONTENT = new Set(["link", "session-row", "workers", "worker", "close-panel", "review-changes", "changes-step"]);
+export const bringsNewContent = (b) => b.do === "release" || b.do === "scroll" || ((b.do === "click" || b.do === "tap") && NEW_CONTENT.has(b.target));
+const movesPointer = (b) => ["type", "click", "tap", "home"].includes(b.do);
+
 /** A file body: Text, or { file } read from story/files (the caller has checked the path). */
 export function fileBody(body, storyDir) {
   if (body && typeof body === "object" && !Array.isArray(body)) return readFileSync(join(storyDir, body.file), "utf8");
@@ -204,7 +265,8 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     if (!models.has(s.model)) err(["sessions", i, "model"], `unknown model "${s.model}"`, `models are: ${[...models].join(", ")}`);
     const has = ["messages", "script"].filter((k) => k in s);
     if (has.length !== 1) err(["sessions", i], has.length ? "has both messages and script; a session is static or live, not both" : "needs messages (a static session) or script (a live one)");
-    if (s.modes && !s.script) err(["sessions", i, "modes"], "modes apply to a live session (one with a script)");
+    if (s.then && !s.messages) err(["sessions", i, "then"], "then follows a static session's messages; a live session's script plays it all");
+    if (s.modes && !s.script && !s.then) err(["sessions", i, "modes"], "modes apply to a live session (one with a script) or a static one with then");
     if (s.title.length > 38) warn(["sessions", i, "title"], `title is ${s.title.length} characters; the sidebar shows about 38 before it cuts`);
   });
   for (const [id, w] of Object.entries(workers)) if (!models.has(w.model)) err(["workers", id, "model"], `unknown model "${w.model}"`, `models are: ${[...models].join(", ")}`);
@@ -241,9 +303,15 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   sessions.forEach((s, i) => {
     if (s.messages) scripts.push({ path: ["sessions", i, "messages"], steps: s.messages, kind: "static", owner: s.id });
     if (s.script) scripts.push({ path: ["sessions", i, "script"], steps: s.script, kind: "live", owner: s.id });
+    if (s.then && s.messages) scripts.push({ path: ["sessions", i, "then"], steps: s.then, kind: "then", owner: s.id, pre: { steps: s.messages, path: ["sessions", i, "messages"] } });
   });
   for (const [id, w] of Object.entries(workers)) scripts.push({ path: ["workers", id, "script"], steps: w.script, kind: "worker", owner: id });
   if (story.overseer) scripts.push({ path: ["overseer", "script"], steps: story.overseer.script, kind: "overseer", owner: "overseer" });
+  for (const [name, v] of Object.entries(story.videos ?? {}))
+    if (v.overseer) {
+      scripts.push({ path: ["videos", name, "overseer", "script"], steps: v.overseer.script, kind: "overseer", owner: `${name}-overseer` });
+      if (!story.overseer) err(["videos", name, "overseer"], "the story has no overseer, whose model the opener runs on");
+    }
 
   const firstUser = new Map(); // first user text -> where
   const holdsOf = new Map(); // owner -> Set(hold)
@@ -259,8 +327,9 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
       if (sc.kind === "worker" && ["user", "spawn", "wait"].includes(a)) err([...at, a], `a worker's script can't hold a ${a} step`, a === "user" ? "its task is its first message" : "workers can't start workers");
       if (sc.kind === "overseer" && ["spawn", "wait", "worktree", "edit", "write", "bash", "read", "show_changes", "align", "decide"].includes(a)) err([...at, a], `the Overseer has no ${a} tool`, "use a tool step with one of its sova_* tools");
       if (k === 0 && sc.kind !== "worker" && a !== "user") err(at, "must start with a user step");
+      if (sc.kind === "then" && a === "say" && k === 0) err(at, "then starts with the user step the video sends");
       if (a === "user" && k > 0 && prev && prev !== "say" && prev !== "error") err(at, "the reply before this user step ends in a tool call", "a turn ends with a say step");
-      if (a === "user" && k === 0) {
+      if (a === "user" && k === 0 && sc.kind !== "then") {
         const key = norm(text(step.user));
         if (firstUser.has(key)) err([...at, "user"], `same first message as ${firstUser.get(key)}`, "the director tells live sessions apart by their first message");
         firstUser.set(key, pointerOf(at));
@@ -293,7 +362,7 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   // Spawns: who spawns which worker, and worker worktrees.
   const spawnedBy = new Map(); // worker -> session id
   const worktreesOf = new Map(); // session -> Set(created worktree names, in order seen)
-  for (const sc of scripts.filter((x) => x.kind === "live")) {
+  for (const sc of scripts.filter((x) => x.kind === "live" || x.kind === "then")) {
     const trees = new Set();
     worktreesOf.set(sc.owner, trees);
     sc.steps.forEach((step, k) => {
@@ -390,11 +459,13 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
         }
       });
     };
+    if (sc.pre) run(sc.pre.steps, sc.pre.path, "");
     run(sc.steps, sc.path, "");
   }
 
   // Shots, slots, video.
   const liveIds = new Set(sessions.filter((s) => s.script).map((s) => s.id));
+  const playable = new Set(sessions.filter((s) => s.script || s.then).map((s) => s.id));
   const holdsFor = (sid) => {
     const out = new Set(holdsOf.get(sid) ?? []);
     for (const [w, owner] of spawnedBy) if (owner === sid) for (const h of holdsOf.get(w) ?? []) out.add(h);
@@ -423,34 +494,105 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   });
   for (const [slot, id] of Object.entries(story.pageShots)) if (!shotIds.has(id)) err(["pageShots", slot], `unknown shot "${id}"`, didYouMean(id, [...shotIds]) ? `did you mean "${didYouMean(id, [...shotIds])}"?` : undefined);
 
-  if (story.video) {
-    const v = story.video;
-    if (!liveIds.has(v.session)) err(["video", "session"], `"${v.session}" isn't a live session`);
-    if (!story.viewports[v.viewport]) err(["video", "viewport"], `unknown viewport "${v.viewport}"`, `viewports are: ${Object.keys(story.viewports).join(", ")}`);
+  for (const [name, v] of Object.entries(story.videos ?? {})) checkVideo(name, v);
+
+  function checkVideo(name, v) {
+    const base = ["videos", name];
+    const sess = byId.get(v.session)?.s;
+    if (!sess || !playable.has(v.session)) return err([...base, "session"], `"${v.session}" isn't a live session or a static one with then`);
+    const vp = story.viewports[v.viewport];
+    if (!vp) err([...base, "viewport"], `unknown viewport "${v.viewport}"`, `viewports are: ${Object.keys(story.viewports).join(", ")}`);
+    const slotShot = story.shots.find((x) => x.id === story.pageShots[v.slot]);
+    if (!slotShot) err([...base, "slot"], `no pageShots slot "${v.slot}"`);
+    else if (vp && story.viewports[slotShot.viewport] && Math.abs(vp.width / vp.height - story.viewports[slotShot.viewport].width / story.viewports[slotShot.viewport].height) > 0.005)
+      err([...base, "viewport"], `the ${v.viewport} viewport (${vp.width}x${vp.height}) isn't the shape of slot ${v.slot}'s shot (${slotShot.viewport}): the page plays the video over that still`);
+    if (v.width % 2) err([...base, "width"], "must be even (yuv420p)");
+    if ((v.start ?? "session") === "overseer" && !v.overseer) err([...base, "start"], 'start "overseer" needs the video\'s own overseer opener');
+    if (v.prefill) {
+      const st = (v.prefill.scene === "overseer" ? v.overseer?.script ?? [] : sess.script ?? sess.then)[v.prefill.step];
+      if (!st || actionOf(st) !== "user") err([...base, "prefill", "step"], "not a user step");
+      else if (text(st.user).length > PACE.promptMax) err([...base, "prefill", "step"], `that prompt is over ${PACE.promptMax} characters`);
+      if ((v.prefill.scene === "overseer") !== ((v.start ?? "session") === "overseer")) err([...base, "prefill", "scene"], "the prefill goes in the first screen's composer");
+    }
+    const typing = durationMs(v.typing);
+    if (typing < PACE.typingMs.min || typing > PACE.typingMs.max) err([...base, "typing"], `${v.typing} a character is not about 30 a second (${PACE.typingMs.min}–${PACE.typingMs.max}ms)`);
+    const lo = durationMs(v.length.min);
+    const hi = durationMs(v.length.max);
+    if (lo >= hi) err([...base, "length"], "min must be under max");
     const holds = holdsFor(v.session);
-    const script = byId.get(v.session)?.s.script ?? [];
+    const workersOf = new Set([...spawnedBy].filter(([, o]) => o === v.session).map(([w]) => w));
+    const steps = sess.script ?? sess.then;
+    let pending = null; // what came on screen and hasn't had its settle time
+    let caption = null; // { text, ms, at }
     let ms = 0;
+    const loopMs = durationMs(v.loop ?? "1s");
+    const closeCaption = () => {
+      if (caption && caption.ms < PACE.caption.min * 1000) warn(caption.at, `caption "${caption.text}" is on screen about ${(caption.ms / 1000).toFixed(1)} s (estimated), under ${PACE.caption.min} s`);
+      caption = null;
+    };
     v.beats.forEach((b, i) => {
-      const at = ["video", "beats", i];
-      const need = { type: [], send: [], release: ["until"], click: ["target"], pause: ["for"] }[b.do];
-      for (const k of need) if (b[k] === undefined) err(at, `do "${b.do}" needs "${k}"`);
-      for (const k of ["step", "until", "target", "for", "worker"]) if (b[k] !== undefined && !({ type: ["step"], release: ["until"], click: ["target", "worker"], pause: ["for"] }[b.do] ?? []).includes(k)) err([...at, k], `"${k}" doesn't go with do "${b.do}"`);
-      if (b.do === "type") {
-        if (b.step === undefined) err(at, 'do "type" needs "step"');
-        else if (!script[b.step] || actionOf(script[b.step]) !== "user") err([...at, "step"], `step ${b.step} of ${v.session}'s script is not a user step`);
-        else ms += text(script[b.step].user).length * durationMs(v.typing);
+      const at = [...base, "beats", i];
+      const allowed = { type: ["scene", "step"], click: ["target", "text", "worker", "q", "option", "n"], tap: ["target", "text", "worker", "q", "option", "n"], release: ["scene", "until", "speed"], hold: ["for", "read"], scroll: ["to"], home: [] }[b.do];
+      for (const k of ["scene", "step", "until", "speed", "target", "text", "worker", "q", "option", "n", "to", "for", "read"]) if (b[k] !== undefined && !allowed.includes(k)) err([...at, k], `"${k}" doesn't go with do "${b.do}"`);
+      if (b.do === "type" && b.step === undefined) err(at, 'do "type" needs "step"');
+      if ((b.do === "click" || b.do === "tap") && !b.target) err(at, `do "${b.do}" needs "target"`);
+      if (b.do === "release" && !b.until) err(at, 'do "release" needs "until"');
+      if (b.do === "scroll" && !b.to) err(at, 'do "scroll" needs "to"');
+      if (b.do === "hold" && !b.for && !b.read) err(at, 'a hold needs "read" (what the viewer reads) or "for"');
+      if (v.pointer === "tap" && (b.do === "click" || b.do === "type")) err([...at, "do"], `a tap video presses with "tap"${b.do === "type" ? " and types nothing" : ""}`);
+      if (v.pointer === "arrow" && b.do === "tap") err([...at, "do"], 'an arrow video presses with "click"');
+      if (b.scene === "overseer" && !v.overseer) err([...at, "scene"], "this video has no overseer opener");
+      const scSteps = b.scene === "overseer" ? v.overseer?.script ?? [] : steps;
+      if (b.do === "type" && b.step !== undefined) {
+        const st = scSteps[b.step];
+        if (!st || actionOf(st) !== "user") err([...at, "step"], `step ${b.step} of ${b.scene === "overseer" ? "the opener" : sess.script ? `${v.session}'s script` : `${v.session}'s then`} is not a user step`);
+        else if (text(st.user).length > PACE.promptMax) err([...at, "step"], `that prompt is ${text(st.user).length} characters; a typed prompt is at most ${PACE.promptMax}`);
       }
-      if (b.do === "release" && b.until && b.until !== "end" && !holds.has(b.until)) err([...at, "until"], `no hold "${b.until}" in ${v.session}'s script or its workers'`, `holds: ${[...holds].join(", ")}, or "end"`);
-      if (b.do === "click" && b.target === "worker" && !b.worker) err(at, 'click "worker" needs "worker"');
-      if (b.do === "pause") ms += durationMs(b.for);
+      if (b.do === "release" && b.until && b.until !== "end" && (b.scene === "overseer" || !holds.has(b.until))) err([...at, "until"], `no hold "${b.until}" in ${b.scene === "overseer" ? "the opener" : `${v.session}'s script or its workers'`}`, `holds: ${[...holds].join(", ") || "(none)"}, or "end"`);
+      if (b.target === "worker" && (!b.worker || !workersOf.has(b.worker))) err([...at, "worker"], `"worker" must name one of ${v.session}'s workers: ${[...workersOf].join(", ") || "(none)"}`);
+      if (["link", "session-row"].includes(b.target) && !b.text) err(at, `target ${b.target} needs "text"`);
+      if (b.target === "align-option" && (b.q === undefined || b.option === undefined)) err(at, 'target align-option needs "q" and "option"');
+      if (b.target === "changes-step" && !b.n) err(at, 'target changes-step needs "n"');
+      if (b.speed && b.do !== "release") err([...at, "speed"], "only a release is sped up");
+      if (b.do === "home" && i !== v.beats.length - 1) err(at, '"home" closes the video: it is the last beat');
+      // Reading time (pacing rule 1).
+      let dur = 0;
+      if (b.do === "hold") {
+        const need = b.read ? readingMs(b.read) : 0;
+        const given = b.for ? durationMs(b.for) : 0;
+        if (b.for && b.read && given < need) err([...at, "for"], `${b.for} is under the reading time of "${b.read}" (${(need / 1000).toFixed(1)} s: 1 s + 0.3 s for each of its ${meaningfulWords(b.read)} words)`);
+        if (b.read && given > PACE.read.max * 1000) err([...at, "for"], `a reading hold is at most ${PACE.read.max} s`);
+        dur = Math.max(need, given);
+      } else dur = beatMs({ ...b, text: b.do === "type" ? text(scSteps[b.step]?.user ?? "") : undefined }, { typingMs: typing, loopMs, pointer: v.pointer });
+      // One thing at a time (pacing rule 2): new content gets its settle time before the pointer moves.
+      if (movesPointer(b) && pending) err(at, `the pointer moves ${pending.what === "release" ? "while the reply may still be arriving" : `before what beat ${pending.i} brought has been on screen ${PACE.settle} s`}`, "put a hold of at least 1.5 s (a read of 2+ words) before it");
+      if (b.do === "hold" && dur >= PACE.settle * 1000) pending = null;
+      if (bringsNewContent(b)) pending = { i, what: b.do };
+      // Captions (pacing rule 5).
+      if (b.caption !== undefined) {
+        closeCaption();
+        if (b.caption !== null) {
+          const words = meaningfulWords(b.caption);
+          if (words > PACE.caption.words) err([...at, "caption"], `${words} words; a caption has at most ${PACE.caption.words}`);
+          caption = { text: b.caption, ms: 0, at: [...at, "caption"] };
+        }
+      }
+      if (caption) caption.ms += dur;
+      ms += dur;
     });
-    // Streaming: about 4 characters per chunk.
-    const streamed = [script, ...[...spawnedBy].filter(([, o]) => o === v.session).map(([w]) => workers[w].script)].flat().filter((s) => "say" in s).reduce((n, s) => n + text(s.say).length, 0);
-    ms += (streamed / 4) * durationMs(v.chunk);
-    if (ms > 40_000) warn(["video"], `estimated length ${Math.round(ms / 1000)}s (typing, pauses and streaming) is over 40s`);
-    if (v.poster && !shotIds.has(v.poster)) err(["video", "poster"], `unknown shot "${v.poster}"`);
-    if (!v.poster && !story.pageShots["hero.desk"]) err(["video"], "needs a poster: a shot id, or a hero.desk slot");
+    closeCaption();
+    if (v.beats.at(-1)?.do !== "home") err([...base, "beats"], 'the last beat is "home": the pointer goes back to its start and the video fades into its first frame');
+    if (ms < lo || ms > hi) warn(base, `estimated length ${(ms / 1000).toFixed(1)} s is outside ${v.length.min}–${v.length.max} (the recording's own length is checked by screens:verify)`);
   }
+
+  // $session:<id> inside text (an Overseer's link) names a session of the story.
+  const refs = (v, path) => {
+    if (typeof v === "string") {
+      for (const m of v.matchAll(/\$session:([a-z][a-z0-9-]*)/g)) if (!byId.has(m[1])) err(path, `unknown session "${m[1]}" in "$session:${m[1]}"`);
+    } else if (Array.isArray(v)) v.forEach((x, i) => refs(x, [...path, i]));
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) refs(x, [...path, k]);
+  };
+  refs(story, []);
 
   // Privacy: every string in the story, and the bodies it points at.
   const each = (v, path) => {

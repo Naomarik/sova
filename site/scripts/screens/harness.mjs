@@ -179,22 +179,34 @@ export async function startServer(root, { node = false } = {}) {
 const SKILL = resolve(REPO, ".claude/skills/playwright/scripts");
 
 /** The playwright skill's isolated browser (start-browser.sh), and playwright from its own
-    node_modules, refused when that resolves outside this worktree. */
-export async function startBrowser() {
+    node_modules, refused when that resolves outside this worktree. Where start-browser.sh can't
+    run (it keeps its pid file and profile in /tmp, which a sandbox may make read-only), the same
+    Chromium is started here instead, its profile under `root` (pass the run's root). */
+export async function startBrowser({ root, deviceScale } = {}) {
   for (const p of [SKILL, join(SKILL, "node_modules")]) {
     if (!existsSync(p)) throw new Error(`${p} is missing: install the playwright skill's packages (agents/frontend/overview.md: Playwright in a fresh worktree)`);
     const real = realpathSync(p);
     if (real !== REPO && !real.startsWith(`${REPO}/`)) throw new Error(`${p} resolves to ${real}, outside ${REPO}: refusing to use it`);
   }
+  const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
+  // The video needs its own: the screencast films the window at the window's pixel scale, not the
+  // page's emulated one, so a 2x recording needs a window forced to 2x (start-browser.sh has no
+  // such flag).
+  if (deviceScale) {
+    if (!root) throw new Error("startBrowser({ deviceScale }) needs the run's root for the browser profile");
+    return ownBrowser(chromium, root, deviceScale);
+  }
   let out;
   try {
     out = execFileSync(join(SKILL, "start-browser.sh"), ["--headless"], { cwd: SKILL, stdio: ["ignore", "pipe", "pipe"] }).toString();
   } catch (e) {
-    throw new Error(`the playwright skill's start-browser.sh failed (exit ${e.status}):\n${String(e.stdout ?? "")}${String(e.stderr ?? "")}`.trim());
+    const why = `${String(e.stdout ?? "")}${String(e.stderr ?? "")}`.trim();
+    if (!root) throw new Error(`the playwright skill's start-browser.sh failed (exit ${e.status}):\n${why}`);
+    console.warn(`start-browser.sh failed (exit ${e.status}); starting Chromium directly, its profile under the run's root`);
+    return ownBrowser(chromium, root);
   }
   const port = /PW_PORT=(\d+)/.exec(out)?.[1];
   if (!port) throw new Error(`start-browser.sh printed no PW_PORT:\n${out}`);
-  const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   return {
     browser,
@@ -202,6 +214,35 @@ export async function startBrowser() {
     stop: async () => {
       try { await browser.close(); } catch {}
       try { execFileSync(join(SKILL, "stop-browser.sh"), [], { cwd: SKILL, env: { ...process.env, PW_PORT: port }, stdio: "ignore" }); } catch {}
+    },
+  };
+}
+
+/** The skill's binary choice (CHROMIUM_BIN, then PATH), started headless with CDP on a free port
+    and a profile inside `root`, its window at `deviceScale` if given; stopped with its process group. */
+async function ownBrowser(chromium, root, deviceScale = null) {
+  let bin = process.env.CHROMIUM_BIN;
+  for (const name of ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]) {
+    if (bin) break;
+    try { bin = execFileSync("which", [name], { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch {}
+  }
+  if (!bin) throw new Error("no Chromium binary found: set CHROMIUM_BIN");
+  const port = await freePort();
+  const profile = join(root, "browser-profile");
+  mkdirSync(profile, { recursive: true });
+  // --no-sandbox: a sandbox that leaves /tmp read-only also runs this in a user namespace, where
+  // Chromium's own sandbox can't start. It only ever opens the run's own local server.
+  const flags = [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-crash-reporter", ...(deviceScale ? [`--force-device-scale-factor=${deviceScale}`] : [])];
+  // The caller's own environment: Chromium crashed at start (SIGTRAP) with TMPDIR or XDG dirs moved.
+  const child = startChild(bin, flags, { env: process.env, cwd: root, log: join(root, "logs", "browser.log") });
+  await waitFor(() => fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.ok), { what: "Chromium's CDP endpoint", timeout: 30_000 });
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  return {
+    browser,
+    port,
+    stop: async () => {
+      try { await browser.close(); } catch {}
+      await child.stop();
     },
   };
 }

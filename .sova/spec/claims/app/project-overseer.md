@@ -1045,7 +1045,8 @@ user row.
 ## §app.project-overseer/statecharts — The org statecharts: where every lifecycle lives
 
 - **The statecharts are the state.** Every lifecycle and every link of an organization's work is a
-  statechart session, and nothing else stores it: the org (its owner), each person (proposed,
+  statechart session, and nothing else stores it: the org (its owner, and its owner's page link sent
+  to them on WhatsApp, `owner/send-link`, §app.owner-page/send), each person (proposed,
   active, left, and a referral), each project (archived, its overseer, its main stakeholder, its
   owner updates, and every WhatsApp send to its people, `outreach/send`, §app.outreach/send), each gathering session (holder, hand-offs, offers and leases, the message
   budget, the reply running, the wrap-up), each decision, each conflict, each project's

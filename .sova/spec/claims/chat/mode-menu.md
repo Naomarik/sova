@@ -225,7 +225,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 `POST /api/mode?path=<session>` switches exactly the chat that file belongs to, and `mode.json` is
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
-TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
+TUI holds it, its remote placeholder folder is gone) is refused with why (409), and a file that isn't there is a 404.
 A switch of a project's coding session whose minor modes leave `spec` out is refused before
 anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
 §app.project-overseer/coding-mode). The chat then:

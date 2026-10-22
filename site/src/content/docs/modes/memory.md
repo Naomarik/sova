@@ -86,8 +86,14 @@ Each call is a tool row in the transcript, folded to what it opened: "Recalled m
 - **Preparing memory**: turning memory on in a chat that already has messages summarizes them in the
   background ("Preparing memory: 120 of 480 messages"). Until that's done, turns go out as they would
   without memory.
-- **A problem**: when the summarizer can't run, the composer's status row shows why, as a button that
-  opens Settings → Memory. A failed summary is tried again at the next message.
+- **A problem**: when the summarizer can't run at all (its login failed, it hit a usage limit, the
+  model policy refuses its model, or Claude Code isn't installed), summaries pause and the composer's
+  status row says why and when they're tried again, as a button that opens Settings → Memory. They
+  retry by themselves, and at once at your next message; the row clears at the next summary that
+  works.
+- **A message that keeps failing** never holds up the rest: it's tried again on its own, 5 minutes
+  and then 2 hours later, while everything else carries on. After 3 failed tries its line is a
+  clipped excerpt of the message instead of a summary, and `zoom` still opens the message whole.
 
 Rewinding or forking keeps memory right: summaries of messages that are no longer on the branch are
 dropped, and a fork takes a copy of the summaries that still match it. Turning memory off keeps the

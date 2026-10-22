@@ -25,7 +25,8 @@ mode: Sova's settings, `mode.json`, profiles and automations never name one, and
 none.
 
 A project mode **never turns itself on**. It is on only when someone turned it on in that chat: you,
-from its mode menu or `/mode`, or [the Overseer](/docs/overseer/). A mode file has no way to say
+from its mode menu or `/mode`, or [the Overseer](/docs/overseer/), a script, a chat's agent or an
+extension, whose approval covers its tools and commands but not its hooks. A mode file has no way to say
 "on by default". Save as default never saves a project mode, and neither a profile, an automation,
 a project's coding session nor `pi --minor` can turn one on.
 
@@ -179,19 +180,17 @@ folder, at any depth, hidden files included (a symlink counts as the file it poi
 helper beside it, or a program that imports a sibling, can't change without asking. Sova asks again
 when any of that changes; editing the instructions in `MODE.md` never asks again, and a mode with
 no tools, commands or hooks never asks at all. A mode without commands or hooks keeps the approval
-it had before they existed. Keep a mode with tools small: a folder of more than 1000 files or 50 MB
-can't be turned on. Sova can't tell who wrote a file, so it asks about modes you or your
-agent wrote too.
+it had before they existed. Keep a mode with tools, commands or hooks small: a folder of more than
+1000 files or 50 MB can't be turned on. Sova can't tell who wrote a file, so it asks about modes you
+or your agent wrote too.
 
 Approvals are kept in Sova's own state, outside every repository. Sova remembers the last 8 approved versions of
 each mode in each checkout, so switching back to a branch whose tools you already approved doesn't
-ask again. When the Overseer turns a mode on
-for you, that counts as your approval of its tools and commands, but never of its hooks: they stay
-inactive, and the row says **Hooks need your approval.** Its **Approve Hooks** control shows the
-hooks and approves that exact version. Only you approve hooks, from Sova's page on this machine: an
-approval of hooks from the Overseer, from a chat's agent, from a script or extension, or through a
-mesh peer is refused. If one of those turns a mode on with an approval, its tools and commands run
-and its hooks wait for yours.
+ask again. When someone else turns a mode on (the Overseer, a chat's agent, a script or an
+extension), their approval covers its tools and commands but never its hooks: they stay inactive,
+and the row says **Hooks need your approval.** Its **Approve Hooks** control shows the hooks and
+approves that exact version. Only you approve hooks, from Sova's page on this machine: an approval
+of hooks from any of those, or through a mesh peer, is refused.
 
 If any file in the folder changes on disk while the mode is on, Sova refuses to run its tools. The agent is told
 the mode's files changed, and the row reads **Its tools changed since you approved them, so they won't

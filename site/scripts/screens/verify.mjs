@@ -5,7 +5,9 @@
 //   - every pageShots slot resolves to a manifest entry whose file exists and whose sha matches
 //     the file on disk (a hand-edited or half-written output fails), and whose alt and input hash
 //     match the story (a story edited since the capture fails: run the capture again)
-//   - the video's file and sha, when the story has a video
+//   - each video: its AV1 and H.264 files and their shas, every frame decoded, not frozen, its
+//     length, size and shape, its poster, and its recorded timeline against the pacing rules (every
+//     hold its reading time, captions, the leak gate at every beat, the edge check against the page)
 //   - which images differ from the last commit, by changed-pixel count, so a reviewer looks at those
 //   - the build (pnpm run build, docs leak guard included) and the built images' byte budgets
 //   - no sideways page scroll at 320, 360, 390, 768, 1119 and 1120 px (needs the playwright skill's
@@ -16,8 +18,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { loadStory, REPO, SITE } from "./load-story.mjs";
-import { freePort, OUT_DIR, sleep, startBrowser, VIDEO_DIR, waitFor } from "./harness.mjs";
-import { fileSha, inputHashes } from "./hashes.mjs";
+import { freePort, makeRoot, siteSharp, OUT_DIR, removeRoot, sleep, startBrowser, VIDEO_DIR, waitFor } from "./harness.mjs";
+import { fileSha, inputHashes, videoHash } from "./hashes.mjs";
+import { decodeAll, fileProblems, probe, sourceType, timelineProblems } from "./video-check.mjs";
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
@@ -52,21 +55,40 @@ for (const [slot, id] of Object.entries(plan.pageShots)) {
   if (entry.hash !== hashes[id]) bad(`${id}: its inputs changed since the capture (story, app or capture scripts); run pnpm run screens -- --shot ${id}`);
 }
 for (const id of Object.keys(manifest.shots ?? {})) if (!plan.shots.some((s) => s.id === id)) bad(`manifest.json lists shot ${id}, which story.json no longer has (run pnpm run screens)`);
-if (plan.video) {
-  const vid = manifest.video;
-  if (!vid) bad("the story has a video but manifest.json has none (run pnpm run screens:video)");
-  else {
-    const file = join(VIDEO_DIR, vid.file.replace(/^\/video\//, ""));
-    if (!existsSync(file)) bad(`${vid.file} is missing (run pnpm run screens:video)`);
-    else if (vid.sha !== sha(readFileSync(file))) bad(`${vid.file} doesn't match its manifest entry (run pnpm run screens:video -- --force)`);
-    if (vid.alt !== plan.video.alt) bad("the video's alt text changed in story.json since the recording (run pnpm run screens:video)");
-    if (vid.bytes > 2_500_000) bad(`${vid.file} is ${(vid.bytes / 1e6).toFixed(2)} MB, over the 2.5 MB budget`);
+for (const [name, pv] of Object.entries(plan.videos)) {
+  const vid = manifest.videos?.[name];
+  const v = { ...pv, vp: plan.viewports[pv.viewport] };
+  if (!vid) {
+    bad(`the story has video ${name} but manifest.json has none (run pnpm run screens:video -- --video ${name})`);
+    continue;
+  }
+  if (vid.hash !== videoHash(story, plan, name)) bad(`video ${name}: its inputs changed since the recording (story, app or scripts); run pnpm run screens:video -- --video ${name}`);
+  if (vid.alt !== pv.alt) bad(`video ${name}: its alt text changed in story.json since the recording`);
+  if (vid.slot !== pv.slot) bad(`video ${name}: its slot changed in story.json since the recording`);
+  const poster = join(OUT_DIR, vid.poster.file);
+  if (!existsSync(poster)) bad(`video ${name}: its poster ${vid.poster.file} is missing`);
+  else if (vid.poster.sha !== sha(readFileSync(poster))) bad(`video ${name}: ${vid.poster.file} doesn't match its manifest entry`);
+  for (const p of timelineProblems(vid.timeline, v)) bad(`video ${name}: ${p}`);
+  const kinds = vid.sources.map((x) => (x.type.includes("av01") ? "av1" : x.type.includes("avc1") ? "h264" : "?"));
+  if (kinds[0] !== "av1" || kinds[1] !== "h264") bad(`video ${name}: its sources should be AV1 first, then H.264 (have ${kinds.join(", ")})`);
+  for (const [k, src] of vid.sources.entries()) {
+    const file = join(VIDEO_DIR, src.file.replace(/^\/video\//, ""));
+    if (!existsSync(file)) {
+      bad(`${src.file} is missing (run pnpm run screens:video -- --video ${name} --force)`);
+      continue;
+    }
+    if (src.sha !== sha(readFileSync(file))) bad(`${src.file} doesn't match its manifest entry (run pnpm run screens:video -- --video ${name} --force)`);
+    const p = probe(file);
+    const decoded = decodeAll(file);
+    for (const x of fileProblems(src.file, p, decoded, v, kinds[k] === "av1" ? pv.budget.modern : pv.budget.fallback)) bad(x);
+    if (sourceType(p) !== src.type) bad(`${src.file}: its type is ${sourceType(p)}, the manifest says ${src.type}`);
+    console.log(`video    ${src.file}: ${p.width}x${p.height}, ${p.duration.toFixed(1)} s, ${(p.bytes / 1e6).toFixed(2)} MB, ${decoded.frames} frames decoded (${decoded.distinct} distinct)`);
   }
 }
 
 // Which images changed since the last commit, by pixels.
 try {
-  const sharp = createRequire(join(SITE, "package.json"))("sharp");
+  const sharp = siteSharp();
   for (const entry of Object.values(manifest.shots ?? {})) {
     const rel = join("site", "src", "assets", "screens", entry.file);
     let old;
@@ -120,9 +142,11 @@ if (!flag("--no-browser") && existsSync(join(SITE, "dist", "index.html"))) {
   const port = await freePort();
   const preview = spawn("pnpm", ["exec", "astro", "preview", "--port", String(port), "--host", "127.0.0.1"], { cwd: SITE, stdio: "ignore", detached: true });
   let browser;
+  let browserRoot = null;
   try {
     await waitFor(() => fetch(`http://127.0.0.1:${port}/`).then((r) => r.ok), { what: "astro preview", timeout: 30_000 });
-    browser = await startBrowser();
+    browserRoot = makeRoot();
+    browser = await startBrowser({ root: browserRoot });
     for (const path of ["/", "/mesh", "/orgs"])
       for (const width of [320, 360, 390, 768, 1119, 1120]) {
         const ctx = await browser.browser.newContext({ viewport: { width, height: 800 } });
@@ -138,6 +162,7 @@ if (!flag("--no-browser") && existsSync(join(SITE, "dist", "index.html"))) {
     bad(`sideways-scroll check could not run: ${e.message}`);
   } finally {
     await browser?.stop();
+    removeRoot(browserRoot);
     try { process.kill(-preview.pid, "SIGTERM"); } catch {}
   }
 }

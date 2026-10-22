@@ -44,9 +44,10 @@ export function inputHashes(story, plan) {
   );
 }
 
-export function videoHash(story, plan) {
-  const workers = Object.entries(story.workers ?? {}).filter(([id]) => plan.workers[id]?.owner === story.video.session);
-  return h({ video: story.video, sess: story.sessions.find((s) => s.id === story.video.session), workers, project: story.project, models: story.models, provider: story.provider, sidebar: story.sessions.map((s) => [s.id, s.title, s.at]), rev: appRev(), scripts: scriptsHash() });
+export function videoHash(story, plan, name) {
+  const video = story.videos[name];
+  const workers = Object.entries(story.workers ?? {}).filter(([id]) => plan.workers[id]?.owner === video.session);
+  return h({ video, sess: story.sessions.find((s) => s.id === video.session), workers, overseer: video.overseer ? story.overseer?.model : null, viewport: story.viewports[video.viewport], project: story.project, models: story.models, provider: story.provider, sidebar: story.sessions.map((s) => [s.id, s.title, s.at]), rev: appRev(), scripts: scriptsHash() });
 }
 
 /** A file's content hash, as manifest.json records it. */

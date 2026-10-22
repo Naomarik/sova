@@ -65,7 +65,7 @@ try {
   const patterns = leakPatterns(root);
   let browser = null;
   if (!flag("--no-browser")) {
-    browser = await startBrowser();
+    browser = await startBrowser({ root });
     stops.push(browser.stop);
   }
   const results = {};
@@ -123,6 +123,8 @@ try {
   // The Overseer: its model set, its first message typed on its page, then its end shot.
   const oshots = todo.filter((s) => s.session === "overseer");
   if (oshots.length && plan.overseer && browser) {
+    // Its memory summarizer needs a real login; off, so no notice says it failed.
+    await server.call("PUT", "/api/overseer/memory", { on: false });
     await server.call("PUT", "/api/settings/overseer", { ...(await server.call("GET", "/api/settings/overseer")).settings, model: plan.overseer.model, thinking: plan.overseer.effort });
     const ctx = await newContext(browser.browser, "compact");
     const page = await open(ctx, server, "#/overseer");
@@ -141,7 +143,7 @@ try {
 
   if (browser) {
     // The manifest: every shot of the story, the ones not retaken kept as they were.
-    const next = { _generated: "by site/scripts/screens (pnpm run screens); edit story.json instead", shots: {}, slots: plan.pageShots, ...(manifest.video ? { video: manifest.video } : {}) };
+    const next = { _generated: "by site/scripts/screens (pnpm run screens); edit story.json instead", shots: {}, slots: plan.pageShots, ...(manifest.videos ? { videos: manifest.videos } : {}) };
     for (const shot of plan.shots) {
       const r = results[shot.id];
       if (r) next.shots[shot.id] = { file: r.file, width: r.width, height: r.height, viewport: shot.viewport, alt: shot.alt, hash: inputHash(shot), sha: r.sha, bytes: r.bytes };
@@ -261,6 +263,10 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
       await page.waitForTimeout(800);
     }
 
+    if (shot.sidebar === "collapsed") {
+      await page.getByRole("button", { name: "Collapse sessions pane" }).click({ timeout: 10_000 });
+      await page.waitForTimeout(600);
+    }
     if (shot.view === "workers") {
       await ui.openWorker(page, plan.workers[shot.worker].name);
       await page.waitForTimeout(1200);

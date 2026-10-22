@@ -55,7 +55,7 @@ test("an unknown key gets a did-you-mean", async () => {
 test("a step with no action, or two, says what a step takes", async () => {
   const out = await broken((s) => s.replace('{ "read": "src/upload/retry.ts" },\n        { "say": "The delay', '{ "raed": "src/upload/retry.ts" },\n        { "say": "The delay'));
   assert.match(out, /"raed" is not an action; did you mean "read"\? \(a step takes exactly one of: user, say, read/);
-  const two = await broken((s) => s.replace('{ "user": "1a" }', '{ "user": "1a", "say": "ok" }'));
+  const two = await broken((s) => s.replace('{ "user": "Count failed uploads per hour on the dashboard." }', '{ "user": "Count failed uploads per hour on the dashboard.", "say": "ok" }'));
   assert.match(two, /a step takes exactly one action, but this one has "user" and "say" \(split it into two steps\)/);
 });
 
@@ -71,11 +71,11 @@ test("a shot names a viewport the story defines", async () => {
 
 test("a dangling reference is named", async () => {
   const out = await broken((s) => s.replace('{ "spawn": ["cap-delay", "retry-docs", "server-check"] }', '{ "spawn": ["cap-delay", "retry-docs", "server-chek"] }'));
-  assert.match(out, /\/sessions\/5\/script\/10\/spawn\/2: unknown worker "server-chek"/);
+  assert.match(out, /\/sessions\/5\/script\/12\/spawn\/2: unknown worker "server-chek"/);
   const slot = await broken((s) => s.replace('"hero.fold": "hero-fold"', '"hero.fold": "hero-flod"'));
   assert.match(slot, /\/pageShots\/hero\.fold: unknown shot "hero-flod" \(did you mean "hero-fold"\?\)/);
   const hold = await broken((s) => s.replace('"at": "aligned"', '"at": "align"'));
-  assert.match(hold, /no hold "align" in retry-policy's script or its workers' \(holds: aligned, delegating, or "end"\)/);
+  assert.match(hold, /no hold "align" in retry-policy's script or its workers' \(holds: found, aligned, decided, delegating, or "end"\)/);
 });
 
 test("an edit whose old text isn't in the file says the closest line", async () => {
@@ -86,19 +86,19 @@ test("an edit whose old text isn't in the file says the closest line", async () 
 test("a change in no show_changes step is refused, like the tool does", async () => {
   const out = await broken(
     mutate((v) => {
-      v.sessions[5].script[13].show_changes.steps.pop();
+      v.sessions[5].script[15].show_changes.steps.pop();
     }),
   );
-  assert.match(out, /\/sessions\/5\/script\/13\/show_changes\/steps: README\.md is changed but in no step/);
+  assert.match(out, /\/sessions\/5\/script\/15\/show_changes\/steps: README\.md is changed but in no step/);
 });
 
 test("the align tool's own rules apply", async () => {
   const out = await broken(
     mutate((v) => {
-      v.sessions[5].script[7].decide.answers = { q2: "30 s" };
+      v.sessions[5].script[8].decide.answers = { q2: "30 s" };
     }),
   );
-  assert.match(out, /\/sessions\/5\/script\/7\/decide: the align tool would refuse it: .*q2/);
+  assert.match(out, /\/sessions\/5\/script\/8\/decide: the align tool would refuse it: .*q2/);
 });
 
 test("absolute paths, outside emails, IPs and tailnet names are refused", async () => {
@@ -119,6 +119,47 @@ test("this machine's names are refused when given", async () => {
 test("a turn must end in a reply before the next user step", async () => {
   const out = await broken((s) => s.replace('{ "say": "One question before I hand this out." },\n', ""));
   assert.match(out, /\/sessions\/5\/script\/\d+: the reply before this user step ends in a tool call \(a turn ends with a say step\)/);
+});
+
+test("a video hold shorter than its reading time is refused, with the arithmetic", async () => {
+  const out = await broken(mutate((v) => (v.videos.desk.beats[3] = { do: "hold", for: "1s", read: "Retry policy is new and waits for your first message" })));
+  assert.match(out, /\/videos\/desk\/beats\/3\/for: 1s is under the reading time of "Retry policy is new and waits for your first message" \(4\.0 s: 1 s \+ 0\.3 s for each of its 10 words\)/);
+});
+
+test("the pointer may not move before new content has had its 1.5 s", async () => {
+  const out = await broken(mutate((v) => v.videos.desk.beats.splice(3, 1)));
+  assert.match(out, /\/videos\/desk\/beats\/3: the pointer moves while the reply may still be arriving/);
+});
+
+test("a caption of more than 5 words is refused", async () => {
+  const out = await broken(mutate((v) => (v.videos.desk.beats[0].caption = "Ask the Overseer what needs you now")));
+  assert.match(out, /\/videos\/desk\/beats\/0\/caption: 7 words; a caption has at most 5/);
+});
+
+test("a typed prompt is at most 90 characters, typed at about 30 a second", async () => {
+  const long = await broken(mutate((v) => (v.sessions[5].script[0].user = `${v.sessions[5].script[0].user} Keep its public API exactly as it is today.`)));
+  assert.match(long, /\/videos\/desk\/beats\/\d+\/step: that prompt is \d+ characters; a typed prompt is at most 90/);
+  const slow = await broken(mutate((v) => (v.videos.desk.typing = "80ms")));
+  assert.match(slow, /\/videos\/desk\/typing: 80ms a character is not about 30 a second/);
+});
+
+test("a video ends by going home, and a tap video never clicks", async () => {
+  const home = await broken(mutate((v) => v.videos.desk.beats.pop()));
+  assert.match(home, /\/videos\/desk\/beats: the last beat is "home"/);
+  const click = await broken(mutate((v) => (v.videos.phone.beats[1].do = "click")));
+  assert.match(click, /\/videos\/phone\/beats\/1\/do: a tap video presses with "tap"/);
+});
+
+test("$session: in reply text names a story session", async () => {
+  const out = await broken((s) => s.replace("sova://s/$session:retry-policy", "sova://s/$session:retry-polcy"));
+  assert.match(out, /\/videos\/desk\/overseer\/script\/2\/say\/2: unknown session "retry-polcy"/);
+});
+
+test("a hold between a say and a tool call waits after the text, inside that reply", () => {
+  const { replies } = cutReplies([{ user: "go" }, { say: "Found it." }, { hold: "found" }, { read: "a.ts" }, { say: "Done." }], "/s", { storyDir: HERE, workerSpec: () => ({}) });
+  assert.equal(replies[0].text, "Found it.");
+  assert.equal(replies[0].textHold, "found");
+  assert.equal(replies[0].calls[0].name, "read");
 });
 
 test("every keyword the schema uses is one the validator knows", () => {

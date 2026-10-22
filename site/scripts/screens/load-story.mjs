@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { JsonPosError, parseWithPositions } from "./json-pos.mjs";
-import { actionOf, crossCheck, durationMs, fileBody, makeValidator, offsetMs, text } from "./story-check.mjs";
+import { actionOf, beatMs, crossCheck, durationMs, fileBody, makeValidator, offsetMs, readingMs, text } from "./story-check.mjs";
 
 export const HERE = import.meta.dirname;
 export const SITE = resolve(HERE, "../..");
@@ -111,6 +111,7 @@ export function cutReplies(steps, basePath, ctx) {
   const users = [];
   let say = [];
   let hold = null;
+  let textHold = null;
   let holdAt = null;
   const flushSay = (pointer) => {
     if (!say.length) return;
@@ -135,15 +136,23 @@ export function cutReplies(steps, basePath, ctx) {
       return;
     }
     if (a === "hold") {
+      // Between a say and a tool step, the hold falls inside that reply: its text streams whole,
+      // then it waits there before the tool call (a viewer reads what the agent found first).
+      const next = steps.slice(k + 1).find((x) => actionOf(x) !== "hold");
+      if (say.length && next && !["user", "say", "error"].includes(actionOf(next))) {
+        textHold = step.hold;
+        return;
+      }
       if (say.length) flushSay(pointer);
       hold = step.hold;
       holdAt = pointer;
       return;
     }
     const call = toolCall(step, a, ctx);
-    replies.push({ text: say.join("\n\n"), calls: [{ ...call, pointer: `${pointer}/${a}` }], pointer, ...(hold ? { hold } : {}) });
+    replies.push({ text: say.join("\n\n"), calls: [{ ...call, pointer: `${pointer}/${a}` }], pointer, ...(hold ? { hold } : {}), ...(textHold ? { textHold } : {}) });
     say = [];
     hold = null;
+    textHold = null;
   });
   flushSay(`${basePath}/${steps.length - 1}`);
   if (hold && replies.length) replies.at(-1).idleHolds = [...(replies.at(-1).idleHolds ?? []), hold];
@@ -233,7 +242,16 @@ function compile(story, facts, storyDir, pos) {
       modes: s.modes ?? [],
       pointer: `/sessions/${i}`,
     };
-    if (s.messages) return { ...base, live: false, messages: s.messages.map((m, k) => ({ ...m, pointer: `/sessions/${i}/messages/${k}` })) };
+    if (s.messages) {
+      const messages = s.messages.map((m, k) => ({ ...m, pointer: `/sessions/${i}/messages/${k}` }));
+      if (!s.then) return { ...base, live: false, messages };
+      // Its messages are on disk already; the director plays `then` after them. Pi counts the
+      // static messages' replies too, so the scene is cut from both (their pointers stay apart).
+      const pre = cutReplies(s.messages, `/sessions/${i}/messages`, ctx);
+      const post = cutReplies(s.then, `/sessions/${i}/then`, ctx);
+      scenes.push({ id: s.id, kind: "session", key: pre.users[0].text, model: ref(s.model), contextWindow: base.contextWindow, replies: [...pre.replies, ...post.replies], users: [...pre.users, ...post.users.map((u) => ({ ...u, afterReply: u.afterReply + pre.replies.length }))] });
+      return { ...base, live: false, then: true, messages, users: post.users };
+    }
     const cut = cutReplies(s.script, `/sessions/${i}/script`, ctx);
     scenes.push({ id: s.id, kind: "session", key: cut.users[0].text, model: ref(s.model), contextWindow: base.contextWindow, ...cut });
     return { ...base, live: true, users: cut.users };
@@ -245,6 +263,12 @@ function compile(story, facts, storyDir, pos) {
   if (story.overseer) {
     const cut = cutReplies(story.overseer.script, "/overseer/script", ctx);
     scenes.push({ id: "overseer", kind: "overseer", key: cut.users[0].text, model: ref(story.overseer.model), contextWindow: story.models[story.overseer.model].contextWindow ?? 200_000, ...cut });
+    // A video's own Overseer opener: a scene of its own, told apart by its first message.
+    for (const [name, v] of Object.entries(story.videos ?? {})) {
+      if (!v.overseer) continue;
+      const vcut = cutReplies(v.overseer.script, `/videos/${name}/overseer/script`, ctx);
+      scenes.push({ id: `${name}-overseer`, kind: "overseer", key: vcut.users[0].text, model: ref(story.overseer.model), contextWindow: story.models[story.overseer.model].contextWindow ?? 200_000, ...vcut });
+    }
   }
 
   // Which scenes hold at each hold name (a hold shared by a session and its worker is reached when
@@ -253,6 +277,7 @@ function compile(story, facts, storyDir, pos) {
   for (const sc of scenes)
     for (const r of sc.replies) {
       if (r.hold) (holds[r.hold] ??= []).push({ scene: sc.id, kind: "gate" });
+      if (r.textHold) (holds[r.textHold] ??= []).push({ scene: sc.id, kind: "gate" });
       for (const h of r.idleHolds ?? []) (holds[h] ??= []).push({ scene: sc.id, kind: "idle" });
     }
 
@@ -270,8 +295,36 @@ function compile(story, facts, storyDir, pos) {
     holds,
     shots: story.shots,
     pageShots: story.pageShots,
-    video: story.video ? { ...story.video, typingMs: durationMs(story.video.typing), chunkMs: durationMs(story.video.chunk), poster: story.video.poster ?? story.pageShots["hero.desk"] } : null,
+    videos: Object.fromEntries(Object.entries(story.videos ?? {}).map(([name, v]) => [name, compileVideo(name, v, story)])),
     positions,
+  };
+}
+
+/** A video as the recorder plays it: durations in ms, each hold's length settled (its reading
+    time unless `for` is longer), the scene of each type/release beat named. */
+function compileVideo(name, v, story) {
+  const session = story.sessions.find((s) => s.id === v.session);
+  const typingMs = durationMs(v.typing);
+  return {
+    ...v,
+    name,
+    typingMs,
+    chunkMs: durationMs(v.chunk),
+    loopMs: durationMs(v.loop ?? "1s"),
+    start: v.start ?? "session",
+    lengthMs: { min: durationMs(v.length.min), max: durationMs(v.length.max) },
+    overseerScene: v.overseer ? `${name}-overseer` : null,
+    prefillText: v.prefill ? text((v.prefill.scene === "overseer" ? v.overseer.script : session.script ?? session.then)[v.prefill.step].user) : null,
+    beats: v.beats.map((b, i) => {
+      const out = { ...b, index: i, pointer: `/videos/${name}/beats/${i}` };
+      if (b.do === "type") {
+        const steps = b.scene === "overseer" ? v.overseer.script : session.script ?? session.then;
+        out.text = text(steps[b.step].user);
+      }
+      if (b.do === "hold") out.ms = Math.max(b.for ? durationMs(b.for) : 0, b.read ? readingMs(b.read) : 0);
+      out.estMs = beatMs(out, { typingMs, loopMs: durationMs(v.loop ?? "1s"), pointer: v.pointer });
+      return out;
+    }),
   };
 }
 

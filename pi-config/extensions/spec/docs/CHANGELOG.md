@@ -791,6 +791,10 @@ would list master's changes instead.
       branch that took master's spec in a conflict without promoting again is handed back, and
       `prune --official` keeps such a draft. §chat.merge-round/driver, §tools.spec/draft-hygiene (draft
       `b1-promoted-conflict`, f8a6f806).
+    - A/B B7 (e96c8470): `mode/spec-mode.md` "Before finishing" adds "A draft whose branch already landed is
+      promoted on a fresh branch from the default branch, never on the default branch itself." (it was only
+      in PROMOTE.md; 1 of 8 runs promoted on master). Word cap 944 → 966 (964 words). §tools.spec/mode-reading
+      (draft `landed-draft-fresh-branch`).
   - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check, §tools.spec/draft-hygiene, §tools/spec,
     §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card,
     §chat.mode-menu/workers reworded (draft `spec-lands-with-code`, promoted on the branch at 005f437f;

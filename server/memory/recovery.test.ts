@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { HEntry } from "../../shared/harness";
 import { DecisionError } from "../decide";
-import { CVIEW_HARD, CVIEW_MAX, FAILURE_STREAK, MemoryEngine, NODE_RETRY_MS, PAUSE_FIRST_MS, type EngineDeps, type EngineTimer } from "./engine";
+import { CVIEW_HARD, CVIEW_MAX, FAILURE_STREAK, MemoryEngine, NODE_RETRY_MS, PAUSE_FIRST_MS, PAUSE_MAX_MS, type EngineDeps, type EngineTimer } from "./engine";
 import { messagesOf } from "./log";
 import { COMPACTION_GUIDE } from "./prompts";
 import { MemoryStore, type MemoryFileState, type MemoryRetryState } from "./store";
@@ -364,7 +364,7 @@ describe("failures (§chat.memory/recovery)", () => {
     const e = new MemoryEngine("streak", new MemoryStore(newDir()), {
       summarize: async () => {
         calls++;
-        throw new DecisionError("network", "fetch failed");
+        throw new DecisionError("malformed-answer", "claude returned no line");
       },
       now: time.now,
       setTimer: time.setTimer,
@@ -372,9 +372,47 @@ describe("failures (§chat.memory/recovery)", () => {
     e.sync(chat(12));
     await e.idle();
     assert.equal(calls, FAILURE_STREAK);
-    assert.match(e.status().problem ?? "", /^Memory summaries are failing: fetch failed\. Retrying at 12:05 PM\.$/);
+    assert.match(e.status().problem ?? "", /^Memory summaries are failing: claude returned no line\. Retrying at 12:05 PM\.$/);
     e.dispose();
   });
+
+  for (const [failure, message] of [
+    ["timeout", "claude did not start within 90000 ms (waiting for a Claude Code slot)"],
+    ["timeout", "claude did not answer within 90000 ms"],
+    ["network", "claude: spawn failed"],
+    ["overloaded", "529 overloaded"],
+  ] as const) {
+    test(`a ${failure} failure ("${message}") never spends a message's tries: past 5 min + 2 h, no excerpt`, async () => {
+      const dir = newDir();
+      const time = fakeTime();
+      let down = true;
+      const e = new MemoryEngine(`transient-${failure}`, new MemoryStore(dir), {
+        summarize: async () => {
+          if (down) throw new DecisionError(failure, message);
+          return { text: "s.", model: "f" };
+        },
+        now: time.now,
+        setTimer: time.setTimer,
+      });
+      const branch = chat(6);
+      e.sync(branch);
+      await e.idle();
+      assert.match(e.status().problem ?? "", /Retrying at/);
+      // Well past every node retry: 5 min + 2 h, in the pause's own steps.
+      for (let t = 0; t < 5 * 60_000 + 2 * 3_600_000 + 60_000; t += 60_000) {
+        time.advance(60_000);
+        await e.idle();
+      }
+      for (let k = 0; k < 6; k++) assert.ok(!e.get(0, k)?.excerpt, `leaf ${k} is no excerpt`);
+      assert.deepEqual(retryOf(dir).nodes, [], "no node's tries counted");
+      down = false;
+      time.advance(PAUSE_MAX_MS);
+      await e.idle();
+      for (let k = 0; k < 6; k++) assert.ok(e.get(0, k) && !e.get(0, k)!.excerpt, `leaf ${k} summarized once it works`);
+      assert.equal(e.status().problem, undefined);
+      e.dispose();
+    });
+  }
 
   test("a rewind drops the tries of messages past it", async () => {
     const dir = newDir();

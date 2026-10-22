@@ -755,7 +755,7 @@ would list master's changes instead.
   - Commit: on branch `feat/spec-lands-with-code` (folds in the unlanded `feat/promote-before-landing`,
     d202e854); not on master yet: the merge round folds it in.
   - Why: since 42c63467 nobody made a branch's drafts official at landing. Sessions were told their
-    go-ahead "is not permission to commit" and to promote "on the default branch"; the merge round
+    go-ahead didn't cover committing and to promote on the default branch after landing; the merge round
     promoted none and removed the worktree, so about 1 in 4 landings since 2026-10-08 left docs
     unpromoted, and sessions asked the user for a second, docs-only merge.
   - Changed:
@@ -787,8 +787,9 @@ would list master's changes instead.
       never promotes; a branch whose owner is gone stays the user's call;
     - GOALS.md gains the rule "Docs land with their code" and a goal-4 measure; the site page says the same.
   - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check, §tools.spec/draft-hygiene, §tools/spec,
-    §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card reworded (draft
-    `spec-lands-with-code`). Base: 2aa27857.
+    §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card,
+    §chat.mode-menu/workers reworded (draft `spec-lands-with-code`, promoted on the branch at 005f437f;
+    `foreign --base 11459693 --head 005f437f`). Base: 2aa27857.
   - Goal 4 (code and spec agree after building), measured L0: the merge round's tests on master's
     `round.mjs` with this branch's tests: 6 of 38 fail (the hand-back of a READY with drafts left, the
     check need, the spec-conflict hand-back for claims and for a refused manifest, the kept-copy prune,

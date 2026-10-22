@@ -15,11 +15,13 @@ The **Overseer** button, with the eye icon, sits at the right end of the session
 
 The Overseer is always in the normal mode, with no minor modes, so its composer has no mode switch. In its place is **Quick Actions**, a list of ready-made prompts: What Needs Me, What Finished, What's Running, Tidy Up, and Where Was I. You can edit, add, remove, and reorder them in Settings → Overseer. Just before it, a [memory](/docs/modes/memory/) switch turns the Overseer's memory on or off from its next turn; it starts on.
 
+[**Focus**](/docs/change-direction/#focus-on-the-conversation) works here too: the head keeps only the conversation's title, and Quick Actions go away with the composer until you press it again.
+
 ## What it reads
 
 - **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to merge, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit). In Sova's own repository the [Merge round](/docs/playbooks-and-schedules/#example-the-merge-round) picks up branches ready to merge by itself, asking each branch's owner first.
-- **What's outstanding.** Ask "anything outstanding?" or "what needs me?" and it answers from one roundup of the last 14 days: work at risk or lost (a worktree gone with commits on no branch, and how to recover them), questions waiting for your answer, branches ready to merge, work built but not merged, uncommitted work, and turns that ended in an error. It names every session, and lists what it couldn't check rather than counting it as fine. It answers this itself, without starting a session to look.
-- **Sessions.** The list, which it can narrow by date and by what a session has (open questions, a branch ready or not merged, an error, a reply that asks you something), with how each one ended; one session's details and what's true of it now; its alignments; and a bounded slice of its transcript, such as from your last message to the final reply. It can also search what was said in your sessions by a few words. Text it reads from another session is treated as untrusted.
+- **What's outstanding.** Ask "anything outstanding?" or "what needs me?" and it answers itself, from one roundup of the last 14 days, without starting a session to look: work lost or at risk because its worktree was removed before it merged (with the command that recovers lost commits), questions waiting for you, branches ready to merge, work built but not merged, uncommitted work, and turns that ended in an error. It names every session, and lists what it couldn't check instead of counting it as fine.
+- **Sessions.** The list, narrowed by date or by what a session has (open questions, a branch ready or not merged, an error, a reply that asks you something), with how each one ended; one session's details and what's true of it now; its alignments; and a bounded slice of its transcript, such as your last message through the final reply. It can also search your sessions' messages for a few words. Text it reads from another session is treated as untrusted.
 - **Your setup.** Groups, remote targets, models, subagent profiles, and recent folders.
 
 ## What it can do
@@ -36,8 +38,6 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 - **Write and edit files** wherever it can read, for small changes such as an automation in a project's `.sova/` folder. It leaves code changes to coding sessions, and says what it changed. It never writes Sova's or pi's own files (its settings, your approvals, schedules or sessions), an organization's workspace, or a credentials file. An automation it edits keeps running, as after your own edit.
 
 It can't send to a session that's open in a terminal, archived, or a worker, and it never sends to itself.
-
-The **Focus** button (see [Change direction](/docs/change-direction/#focus-on-the-conversation)) works here too: the head shrinks to the conversation's title, and Quick Actions and the composer go away until you press it again.
 
 ## It asks with cards
 

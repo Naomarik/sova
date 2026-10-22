@@ -375,8 +375,9 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   would give): that same link goes, and nothing the owner holds stops working. Otherwise a new one
   is made exactly as Get New Owner Link makes it (§app.owner-page/link): every older owner link of
   the org stops at once, so the org still has one live link. The org's read (`sova_orgs {org}`)
-  says which it will be, and the Overseer's card says beforehand "Their current link will stop
-  working." when a new one will be made.
+  says which it will be, and the Overseer is told (its instructions and the tool's description, not
+  a check) to say on its card beforehand "Their current link will stop working." when a new one
+  will be made.
 - **The message.** "{operator name} sent you your page for {org name}." (§design.copy-deck/owner-page),
   or the user's note instead when they asked for one, then the link (§app.outreach/channels). A
   note is at most 500 characters and is refused when it repeats a contact or private text of the
@@ -406,7 +407,7 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 
 - **A send that turns the older owner link off only once its message went** (al_1 review): it
   would leave two live owner links of one org while the send is in flight. The Overseer's send makes
-  a new link as Get New Owner Link does, and says so on its card first (§app.owner-page/send).
+  a new link as Get New Owner Link does, and is told to say so on its card first (§app.owner-page/send).
 - **Telling staff the owner can read their conversations** (rejected by the user): one more line
   on every share page, for a fact the operator already manages with Hide From.
 - **An operator news editor or an approval step** (rejected by the user): the overseer posts on its

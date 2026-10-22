@@ -29,6 +29,7 @@
     </div>
     <button class="button jump-latest">…chevron-down… Jump to Latest · 3 new</button>  <!-- conditional -->
   </section>
+  <button class="button focus-toggle" aria-pressed="false" aria-label="Focus" title="Focus">…expand…</button>  <!-- §chat.transcript/focus-view -->
 
   <footer class="composer">…§chat/composer…</footer>
 </main>
@@ -42,6 +43,7 @@
   chips, the `TUI` chip, a 44px **Share session** icon link (`.session-share-open`, icon `share`, to
   the share page `#/share/<id>`, §app.session-share/share-page) and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
+  In Focus (§chat.transcript/focus-view) the head holds only Back (where it shows) and the title.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
   `.session-head-meta`, as plain mono text they can't change.
@@ -705,6 +707,62 @@ runaway reply there is capped: it can't write a line too long to read back or to
   stays where the browser put it, not following, with Jump to Latest showing, until one of those.
   A jump never turns following back on, even when it lands at the end (§chat.timeline/jumping):
   the reader keeps their place, with Jump to Latest showing.
+
+## §chat.transcript/focus-view — Focus: only the conversation
+
+Every single-chat screen (a chat, a watched session, the Overseer and its earlier conversations, a
+project overseer) has one **Focus** button, and turning it on leaves the conversation alone on
+screen: the head shrinks to its title, and the strips under it and the composer go away. It is a
+reading view, at every width, desktop included.
+
+```html
+<div class="transcript-wrap">
+  <section class="transcript pane">…</section>
+  <button class="button jump-latest">…</button>
+  <button class="button focus-toggle" type="button" aria-pressed="false|true" aria-label="Focus" title="Focus">
+    <span class="icon icon-sm" style="--icon: url(/icons/expand.svg)" aria-hidden="true"></span>
+  </button>
+</div>
+```
+
+- **The button.** Icon only (`expand`, four corners), named "Focus" by `aria-label` and `title`,
+  a `<button>` with `aria-pressed`, reached by Tab after Jump to Latest and before the composer. It
+  sits in the transcript's bottom-right corner, just above the composer, and stays in that corner
+  when Focus is on, then just above the bottom edge and its gesture bar
+  (`env(safe-area-inset-bottom)`, which the hidden composer no longer pays). It is round and drawn
+  32px, with a 44px target through an `::after` (the message actions' pattern). Off it is quiet:
+  the surface fill, a `--color-border` edge and muted ink, like the other icon buttons. On it is
+  filled with `--color-accent-tint` and edged in `--color-accent`, with ink: the state reads from
+  the fill and the edge, never from a hue alone. A workspace pane has no Focus button, and Focus
+  changes nothing in a workspace.
+- **What Focus hides.** In the head, everything but the title: the path line and Regenerate title,
+  the context readout, the profile, code and remote chips, the `TUI` chip, Share session and Session
+  details; on the Overseer's head its proactivity, Ideas, Todos, Schedules, History, Clear and ⋯;
+  on a project overseer's head its state chip, Without you, Run Now, ⋯ and Session details, and its
+  status strip. Back stays where it shows (below a 768px window), so the head is one line: Back and
+  the title. Under the head, the Current goal strip (§app.insights/insight-strip) and a baton
+  session's strip go. The whole composer goes: the run-status and workers row, staged answers, the
+  input row and the foot; on a watched session, its read-only composer and its reason with it.
+- **What it never hides.** The transcript's notices stay while something is wrong: a lost
+  connection, a failed model or login switch, a chat that couldn't start or open, a reload onto new
+  code that failed, and a project overseer's "Couldn't read its status". So do the thread's own rows,
+  Jump to Latest and the wait note. The sessions pane is untouched.
+- **The draft is kept.** The composer stays mounted, `inert` and hidden (no height, `visibility:
+  hidden`), so a half-written message, its attachments and the caret are exactly as they were when
+  Focus turns off. Focus inside the composer when Focus turns on moves to the Focus button.
+- **It moves, briefly.** What hides collapses over `--dur-base` with `--ease-standard`; under
+  `prefers-reduced-motion` it is instant. A view following the end stays at the end through it; a
+  reader scrolled up keeps the row at the top of the view (§chat.transcript/turn-end-keeps-reader).
+- **Nothing sits under the button.** The thread's end is padded by the button's height plus its
+  gaps (and the bottom inset, in Focus), so the last message and its actions scroll clear of it. Jump
+  to Latest and the wait note stay centred and leave the button's lane free, at a 344px screen too,
+  and in Focus they ride above the bottom inset as well.
+- **One choice per browser.** On or off is kept in this browser's `localStorage` (`sova:focus`,
+  `"true"` for on; anything else is off), for every session at once, never per session: switching
+  sessions (from the sidebar, or back to the list and into another) keeps it, and a reload brings
+  it back. Blocked or full storage keeps the choice for the page. Nothing turns it off but the
+  button; there is no gesture. The shell carries it as `data-focus="on"` on `.app` (§app/shell),
+  and the stylesheet does the hiding, on a `.app-main` that holds a transcript only.
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 

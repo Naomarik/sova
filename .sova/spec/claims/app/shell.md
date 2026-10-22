@@ -15,7 +15,7 @@ unfolded (≥768)                                  folded (<768)
 
 ```html
 <a class="button skip-link" href="#transcript">Skip to Transcript</a>
-<div class="app" data-view="list|session" data-spine="on"?>   <!-- data-spine: ≥768, pane collapsed -->
+<div class="app" data-view="list|session" data-spine="on"? data-focus="on"?>   <!-- data-spine: ≥768, pane collapsed; data-focus: §chat.transcript/focus-view -->
   <aside class="app-sidebar" aria-label="Sessions">…§app/session-list…</aside>
   <main class="app-main">…§chat/transcript head, transcript, composer…</main>
   <!-- ≥768 only; CSS hides it folded; not rendered while the pane is collapsed -->
@@ -91,7 +91,9 @@ restart) and not only after the keyboard has opened once.
   run under the system bars and `env(safe-area-inset-*)` carries their size. The bottom inset is
   padded by what sits on the bottom edge (the composer, §chat.composer/tokens; the sidebar foot;
   the spine foot), so their surface continues under the gesture bar while their controls stay
-  above it. `.app` pads the top, left and right insets itself, so the head is never under a status
+  above it. In Focus (§chat.transcript/focus-view) the composer is hidden and the transcript reaches
+  the bottom edge: its end padding, the Focus button, Jump to Latest and the wait note add the
+  inset instead. `.app` pads the top, left and right insets itself, so the head is never under a status
   bar or a cutout; where the browser keeps those outside the page (Chrome on Android, in a tab or
   installed) they are 0 and nothing moves.
 

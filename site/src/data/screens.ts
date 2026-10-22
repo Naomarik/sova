@@ -1,4 +1,4 @@
-// The product screenshots and the session video, as site/scripts/screens/ last wrote them: real
+// The product screenshots and the session videos, as site/scripts/screens/ last wrote them: real
 // Sova on the demo data in site/scripts/screens/story.json (dark theme; the same images in both
 // site themes). The pages ask by slot ("hero.desk"); the alt text, size and file come from the
 // generated manifest, so a picture and its words can't drift apart. A slot with no image fails
@@ -7,8 +7,9 @@ import type { ImageMetadata } from "astro";
 import manifest from "../assets/screens/manifest.json";
 
 interface ShotEntry { file: string; width: number; height: number; viewport: string; alt: string }
-interface VideoEntry { file: string; width: number; height: number; seconds: number; alt: string; poster: string }
-interface Manifest { shots: Record<string, ShotEntry>; slots: Record<string, string>; video?: VideoEntry }
+interface VideoSource { file: string; type: string; bytes: number }
+interface VideoEntry { sources: VideoSource[]; width: number; height: number; seconds: number; alt: string; slot: string; poster: { file: string } }
+interface Manifest { shots: Record<string, ShotEntry>; slots: Record<string, string>; videos?: Record<string, VideoEntry> }
 
 const m = manifest as unknown as Manifest;
 const files = import.meta.glob<{ default: ImageMetadata }>("../assets/screens/*.webp", { eager: true });
@@ -29,12 +30,31 @@ export function screen(slot: string): Screen {
   return byId(id, `slot ${slot}`);
 }
 
-/** The recorded session with its poster shot, when there is one and it has its poster's shape:
-    it plays over that still and must fill the same screen area exactly (never cropped, never
-    letterboxed). A video of another shape is left off the page; re-record it. */
-export const video: (VideoEntry & { posterShot: Screen }) | null = (() => {
-  if (!m.video) return null;
-  const posterShot = byId(m.video.poster, "the video's poster");
-  const same = Math.abs(m.video.width / m.video.height - posterShot.image.width / posterShot.image.height) < 0.005;
-  return same ? { ...m.video, posterShot } : null;
-})();
+export interface Video {
+  /** AV1 first, H.264 as the fallback: the browser plays the first whose type it can. */
+  sources: VideoSource[];
+  width: number;
+  height: number;
+  seconds: number;
+  alt: string;
+  /** The video's first frame, which its loop also fades back into. */
+  poster: ImageMetadata;
+  /** The slot's still, shown with reduced motion (and under the video). */
+  still: Screen;
+}
+
+/** A recorded video ("desk", "phone") with its poster and the still it plays over, when there is
+    one and it has the still's shape: it must fill the same screen area exactly (never cropped,
+    never letterboxed). A video of another shape is left off the page; re-record it. */
+export function video(name: string): Video | null {
+  const v = m.videos?.[name];
+  if (!v) return null;
+  const poster = files[`../assets/screens/${v.poster.file}`]?.default;
+  if (!poster) throw new Error(`video ${name}: no poster ${v.poster.file} in site/src/assets/screens/; run pnpm run screens:video`);
+  const still = screen(v.slot);
+  const same = Math.abs(v.width / v.height - still.image.width / still.image.height) < 0.005;
+  return same ? { sources: v.sources, width: v.width, height: v.height, seconds: v.seconds, alt: v.alt, poster, still } : null;
+}
+
+/** Whether the page shows any video (the footer says so). */
+export const hasVideo = Object.keys(m.videos ?? {}).some((name) => video(name) !== null);

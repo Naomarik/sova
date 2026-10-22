@@ -351,6 +351,8 @@ an `align` call: it is the message, not its working.
   Overseer, a project overseer or a baton session. Even there, only the **newest revision** of an
   **open** alignment (not done or dropped) with **at least one open question** answers; every
   earlier revision, an older session's `align-doc` card and a settled document stay read-only.
+  A feature request chat's plans are answered by its owner on the owner page instead, on a plan
+  card of their own (§app.project-assistant/feature-chats); in Sova its card stays read-only.
   With adversarial review switched on, the same newest card's foot also shows for its review
   button or verdict, with or without an open question (§chat.alignment-review/card).
 - **Take a recommendation (tick).** Each open question's recommendation becomes the label

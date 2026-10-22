@@ -684,6 +684,22 @@ label a person reads says "sessions pane".
   the only signal, because the head of the main pane repeats the title.
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
+- **Only the user scrolls the list.** Nothing the app does moves what the session list shows:
+  not a refresh, not a click on a row, not a row or a Needs you item arriving or going away above
+  what is on screen, not a section above opening or closing on its own, not a search ending, on
+  every device (an iPhone or iPad included). Every section, project and row keeps its element
+  across refreshes (each is keyed by its id, a row by its path), so a refresh never tears down and
+  rebuilds what the user is looking at, and a focused row keeps its focus. The rows on screen hold
+  still: the first row in view stays exactly where it was, and what arrives or leaves above it
+  shifts the list's scroll offset by its own height so that nothing on screen moves. A row that
+  itself moves (into another state group or an open Done, or to another place in its list) or goes
+  away is never followed: the next row or section head in view that kept its place holds still
+  instead, so a moving row never carries the rest of the list with it. A list
+  scrolled to its very top stays at its top, so what arrives there shows. When the user opens or
+  closes a section themselves, the head they pressed is what holds still. On a phone, where an
+  open session puts the list away, the list comes back where it was. The one exception: pressing
+  a region's count on the side strip (the spine, §app.session-list/spine) scrolls that region
+  into view, which is what the press asks for.
 
 ## §app.session-list/needs-you — Needs you
 
@@ -2198,8 +2214,9 @@ record whose transcript is gone.
 - **Keys.** `/` anywhere, while focus isn't in a text field, focuses the field (from the spine,
   the pane expands first, §app.session-list/spine). `Esc` inside the field clears the query
   first; a second `Esc`, on the empty field, leaves it (the split button returns), and focus goes
-  back to the list: the open
-  session's row, else the list's first row (with no row on screen the field simply loses focus).
+  back to the list without moving it: the open session's row if it is on screen, else the first
+  row on screen (with no row on screen the field simply loses focus). The list stays where it
+  was scrolled.
   Clear Search returns focus to the input.
 
 ## §app.session-list/working-now — Working now: the one count

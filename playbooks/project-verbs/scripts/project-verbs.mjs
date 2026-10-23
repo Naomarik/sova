@@ -16,7 +16,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export const CONTRACT_FILE = ".sova/project.json";
 
@@ -175,6 +175,18 @@ async function loadContract() {
     contract = null;
   }
   return contract;
+}
+
+let slotsModule;
+/** Sova's slot-limit module (the one reader of the copy limit in force), or null outside a Sova checkout. */
+async function loadSlots() {
+  if (slotsModule !== undefined) return slotsModule;
+  try {
+    slotsModule = await import(new URL("../../../shared/project-slots.ts", import.meta.url).href);
+  } catch {
+    slotsModule = null;
+  }
+  return slotsModule;
 }
 
 /** Whether the parser takes `key` (probed with a minimal definition, since its key lists are private). */
@@ -701,7 +713,10 @@ export async function check(file, root) {
   }
   const listen = new Map(listening().map((l) => [l.port, l]));
   const held = sovaHeld().ports;
-  const top = def.slots.cap + 2;
+  // Every slot a copy may take (§app.project-services/instances): up to 2 × cap + 2 of the limit in force (the main
+  // checkout's saved file), or of this file's own cap when it raises it (it is main's once it lands).
+  const slots = await loadSlots();
+  const top = slots ? Math.max(slots.slotLimitOf(mainOf(root ?? dirname(resolve(file))), def).top, slots.slotPlan(def.slots.cap).top) : def.slots.cap + 2;
   for (const s of def.services) {
     const at = `$.services.${s.name}`;
     if (takesIsolation && !isObj(raw.services?.[s.name]?.isolation)) problems.push(`${at}.isolation: record {method, why} (references/isolation.md)`);
@@ -710,6 +725,7 @@ export async function check(file, root) {
       if ("fixed" in p && s.scope === "checkout") problems.push(`${at}.ports.${k}: a fixed port on a checkout service gives every instance the same port; use {base, stride}`);
       for (let slot = 0; slot <= top; slot++) {
         const n = c.portFor(p, slot);
+        if (n > 65535) break;
         const l = listen.get(n);
         const h = held.find((x) => x.port === n && !(resolve(x.project) === resolve(root ?? "") && x.slot === slot && x.service === s.name));
         // Slot 0 is the main checkout's own: what listens there today is usually the app itself.

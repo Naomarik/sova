@@ -96,6 +96,7 @@ export const ERROR_CODES = [
   "invalid-definition",
   "not-conformant",
   "cap-reached",
+  "slots-blocked",
   "port-held",
   "not-ready",
   "start-failed",
@@ -125,6 +126,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "verify-failed": 1,
   "not-conformant": 2,
   "cap-reached": 2,
+  "slots-blocked": 2,
   "port-held": 2,
   "dirty-worktree": 2,
   unsupported: 2,
@@ -315,8 +317,6 @@ export function selectorsProblem(v: unknown): string | null {
   for (const x of v) if (typeof x !== "string" || !SELECTOR.test(x)) return `${JSON.stringify(x)} is not a selector (letters, digits and _ . / : * -, starting with a letter, digit or _, at most 200)`;
   return null;
 }
-/** Conformance takes the two slots above the cap (§app.project-services/conform). */
-export const scratchSlots = (def: Pick<ProjectDef, "slots">): [number, number] => [def.slots.cap + 1, def.slots.cap + 2];
 
 const NAME = /^[a-z][a-z0-9-]{0,30}$/;
 /** The variables Sova sets itself (§app.project-services/contract): a definition's env never names one. */

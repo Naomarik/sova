@@ -1,5 +1,6 @@
 import { createContext, For, Show, useContext } from "solid-js";
-import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
+import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo, AlignTriage } from "../../shared/protocol";
+import { stakesChip } from "../lib/align-triage";
 import type { AlignVisualInfo } from "../../shared/protocol";
 import { ALIGN_STATUS_CHIP, alignStatusOf, alignStyleMark, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, visualFence, type AlignCardSection } from "../lib/align";
 import { adversarialReview, planReviewRunning, REVIEW_ABOUT, reviewFoot, reviewLinesOf, reviewPhaseName } from "../lib/align-review";
@@ -40,6 +41,8 @@ export interface AlignAnswer {
   /** Why a review button can't send now (no reviewer for the chat's profile, or Go's own blocks), else null. */
   reviewBlocked?(): string | null;
   requestReview?(doc: string, phase: "plan" | "diff"): void;
+  /** The card's triage at this version (§app.decisions/align-triage), when the server has one. */
+  triage?(doc: string, rev: number): AlignTriage["docs"][string] | undefined;
 }
 export const AlignAnswerContext = createContext<AlignAnswer | null>(null);
 
@@ -313,6 +316,13 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
   const chip = () => QUESTION_CHIP[state()];
   const rec = () => recommendedOption(props.q);
   const take = () => (state() === "open" ? props.answer : null);
+  const stakes = () => {
+    if (state() !== "open" || !props.answer?.triage) return null;
+    const rev = props.answer.current(props.doc)?.rev;
+    const t = rev === undefined ? undefined : props.answer.triage(props.doc, rev);
+    const st = t?.stakes[props.q.id];
+    return t && st ? stakesChip(st, t) : null;
+  };
   const recLine = () => (
     <>
       <span class="align-q-line">
@@ -355,6 +365,15 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
       </strong>
       <Show when={!fold}>
         <Chip tone={chip().tone}>{chip().label}</Chip>
+      </Show>
+      {/* The question's stakes, guessed per card version (§app.decisions/align-triage): open questions only. */}
+      <Show when={!fold && stakes()}>
+        {(c) => (
+          <span class={`chip align-q-stakes${c().flagged ? " chip-warn" : ""}`} title={c().title}>
+            <i class="chip-dot" />
+            {c().text}
+          </span>
+        )}
       </Show>
       <Show when={fold && outcome()}>
         {(o) => (

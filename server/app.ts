@@ -137,7 +137,8 @@ import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parse
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile } from "./extensions";
-import { decisions } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { alignTriage } from "./align-triage";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
@@ -804,6 +805,22 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
+  });
+
+  // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open
+  // question, asked once per card version and only with attention signals on. Same 400/404 as above.
+  app.get("/api/sessions/align-triage", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await alignTriage(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
   });
 
   // The tools a held chat declares to its model now (server/session-tools.ts, §chat.transcript/setup-card-tools).

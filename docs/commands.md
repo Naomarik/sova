@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 463 |
-| Routes a catalogue entry points at | 100 |
-| Catalogue entries | 127 |
+| Routes registered | 464 |
+| Routes a catalogue entry points at | 101 |
+| Catalogue entries | 128 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -52,6 +52,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.draft.set` | Set Draft | changes | `PUT /api/sessions/draft` | sessions |
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
+| `session.align.triage` | Show Alignment Triage | looks | `GET /api/sessions/align-triage` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
@@ -666,6 +667,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `POST /api/session-groups/assign` | sessions | `session.group.assign` |
 | `GET /api/sessions` | sessions | `session.list` |
 | `POST /api/sessions` | sessions | `session.create` |
+| `GET /api/sessions/align-triage` | sessions | `session.align.triage` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
 | `POST /api/sessions/configure` | sessions | `session.configure` |
 | `GET /api/sessions/context` | sessions | `session.context` |

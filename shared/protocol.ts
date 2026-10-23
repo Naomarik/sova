@@ -4250,6 +4250,14 @@ export interface DecisionProbeResult {
     went in circles. */
 export type SignalKind = "asks-you" | "looping" | "unverified";
 
+/** An alignment question's stakes (§app.decisions/align-triage). */
+export const ALIGN_STAKES = ["low-risk", "deletes-data", "costs-money", "changes-architecture-or-contract"] as const;
+export type AlignStakes = (typeof ALIGN_STAKES)[number];
+/** GET /api/sessions/align-triage: per open card (by `al_N`), the version answered and each open question's stakes. */
+export interface AlignTriage {
+  docs: Record<string, { rev: number; provider: DecisionProviderId; model: string; stakes: Record<string, AlignStakes> }>;
+}
+
 /** The turn card's outcome choice (§app.decisions/attention-signals). */
 export const TURN_OUTCOMES = ["did-what-was-asked", "partial-stopped", "waiting-on-user", "waiting-on-team", "hit-unfixed-failure", "progress-report"] as const;
 export type TurnOutcome = (typeof TURN_OUTCOMES)[number];

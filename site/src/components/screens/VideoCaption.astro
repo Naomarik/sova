@@ -1,0 +1,156 @@
+---
+// What a session video shows at this moment, as page text under it (nothing is drawn into the
+// picture): a thin chapter bar, then the chapter's name and the caption. Its cues come from the
+// recording (the screens manifest: each caption's start and end in the video's own seconds, its
+// chapter, and the sped-up stretches), so it follows the video's own clock through loops, pauses
+// and seeking. The bar has one segment per chapter, as wide as the chapter is long: past ones
+// filled, the current one filling with playback, later ones empty. Each segment is a button that
+// jumps the video to the chapter's start and plays it.
+//
+// Without JavaScript, with reduced motion, or when the video can't play, there is no bar and no
+// chapter name: the fixed line describes the still shown then. The words are hidden from screen
+// readers; they get the scene list once, never each change, and the bar's buttons by their names.
+import type { Video } from "../../data/screens";
+
+interface Props {
+  video: Video;
+  /** The id of the <video> it follows. */
+  for: string;
+  class?: string;
+}
+const { video, for: target, class: cls } = Astro.props;
+
+// The chapters, from the cues: each runs from its first caption's start to its last one's end.
+const chapters: { name: string; a: number; b: number }[] = [];
+for (const c of video.cues) {
+  const last = chapters.at(-1);
+  if (c.chapter && last?.name === c.chapter) last.b = c.b;
+  else if (c.chapter) chapters.push({ name: c.chapter, a: c.a, b: c.b });
+}
+const first = video.cues[0];
+const num = (k: number) => String(k + 1).padStart(2, "0");
+---
+<div class:list={["vcap", cls, chapters.length && "vcap-chaptered"]} data-video-caption data-for={target} data-cues={JSON.stringify(video.cues)} data-tags={JSON.stringify(video.tags)}>
+  {chapters.length > 0 && (
+    <div class="vcap-bar" role="group" aria-label="Video chapters">
+      {chapters.map((ch) => (
+        <button type="button" class="vcap-seg" style={`flex-grow: ${(ch.b - ch.a).toFixed(2)}`} data-a={ch.a} data-b={ch.b} aria-label={`Jump to ${ch.name}`}>
+          <span class="vcap-track"><span class="vcap-fill"></span></span>
+        </button>
+      ))}
+    </div>
+  )}
+  <div class="vcap-words" aria-hidden="true">
+    {chapters.length > 0 && (
+      <p class="vcap-head">
+        <span class="vcap-chapter vcap-fade"><span class="vcap-layer is-on"><span class="vcap-num">{num(0)}</span> {chapters[0]!.name}</span><span class="vcap-layer"></span></span>
+        <span class="vcap-tag" hidden></span>
+      </p>
+    )}
+    <p class="vcap-line vcap-fade"><span class="vcap-layer is-on">{first?.text ?? video.line}</span><span class="vcap-layer"></span></p>
+    <p class="vcap-fixed">{video.line}</p>
+  </div>
+</div>
+<noscript><style>.vcap .vcap-bar, .vcap .vcap-head, .vcap .vcap-line { display: none; } .vcap .vcap-fixed { display: block; }</style></noscript>
+<ol class="visually-hidden" aria-label="What the video shows, scene by scene">
+  {video.cues.map((c) => <li>{c.text}</li>)}
+</ol>
+
+<script>
+  interface Cue { a: number; b: number; text: string; chapter?: string }
+  for (const cap of document.querySelectorAll<HTMLElement>("[data-video-caption]")) {
+    const video = document.getElementById(cap.dataset.for ?? "");
+    const line = cap.querySelector<HTMLElement>(".vcap-line");
+    const label = cap.querySelector<HTMLElement>(".vcap-chapter");
+    const tag = cap.querySelector<HTMLElement>(".vcap-tag");
+    const segs = [...cap.querySelectorAll<HTMLButtonElement>(".vcap-seg")];
+    const fills = segs.map((s) => s.querySelector<HTMLElement>(".vcap-fill")!);
+    if (!(video instanceof HTMLVideoElement) || !line) continue;
+    const cues: Cue[] = JSON.parse(cap.dataset.cues ?? "[]");
+    const tags: Cue[] = JSON.parse(cap.dataset.tags ?? "[]");
+    if (!cues.length) continue;
+    const spans = segs.map((s) => ({ a: Number(s.dataset.a), b: Number(s.dataset.b) }));
+    const names = [...new Set(cues.map((c) => c.chapter).filter(Boolean))] as string[];
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+    // With reduced motion no <source> matches and the still shows; a failed load shows it too.
+    let failed = false;
+    const playing = () => !reduce.matches && !failed && !video.error;
+
+    // Two stacked layers per text: the new words fade in over the old ones as they fade out.
+    const swap = (box: HTMLElement, key: string, html: string) => {
+      if (box.dataset.key === undefined) box.dataset.key = box.children[0]!.textContent ?? "";
+      if (box.dataset.key === key) return;
+      box.dataset.key = key;
+      const [on, off] = box.classList.contains("vcap-b") ? [box.children[1]!, box.children[0]!] : [box.children[0]!, box.children[1]!];
+      off.innerHTML = html;
+      on.classList.remove("is-on");
+      off.classList.add("is-on");
+      box.classList.toggle("vcap-b");
+    };
+    const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
+
+    const at = (list: Cue[], t: number) => list.find((c) => t >= c.a && t < c.b) ?? null;
+    let mode = "";
+    const show = (t: number) => {
+      const next = playing() ? "live" : "fixed";
+      if (next !== mode) cap.dataset.mode = mode = next;
+      if (mode === "fixed") return;
+      // Past the last cue's end (a rounding at the loop's seam) the last one stays.
+      const c = at(cues, t) ?? (t >= cues[cues.length - 1]!.b ? cues[cues.length - 1]! : cues[0]!);
+      swap(line, c.text, esc(c.text));
+      if (label && c.chapter) {
+        const k = names.indexOf(c.chapter);
+        swap(label, `${String(k + 1).padStart(2, "0")} ${c.chapter}`, `<span class="vcap-num">${String(k + 1).padStart(2, "0")}</span> ${esc(c.chapter)}`);
+      }
+      if (tag) {
+        const g = at(tags, t);
+        tag.hidden = !g;
+        if (g && tag.textContent !== g.text) tag.textContent = g.text;
+      }
+      const cur = spans.findIndex((s) => t < s.b);
+      spans.forEach((s, k) => {
+        const p = cur === -1 || k < cur ? 1 : k > cur ? 0 : Math.min(1, Math.max(0, (t - s.a) / (s.b - s.a)));
+        fills[k]!.style.transform = `scaleX(${p.toFixed(4)})`;
+        segs[k]!.classList.toggle("is-current", k === cur);
+      });
+    };
+    const now = () => show(video.currentTime);
+    for (const e of ["loadedmetadata", "timeupdate", "seeked", "seeking", "play", "pause", "emptied"]) video.addEventListener(e, now);
+    // The last <source> reports a load that failed for every source.
+    video.querySelector("source:last-of-type")?.addEventListener("error", () => {
+      failed = true;
+      now();
+    });
+    video.addEventListener("error", () => {
+      failed = true;
+      now();
+    });
+    reduce.addEventListener("change", now);
+
+    // A segment jumps to its chapter's start (just inside it, so its first caption shows) and plays.
+    segs.forEach((seg, k) =>
+      seg.addEventListener("click", () => {
+        video.currentTime = spans[k]!.a + 0.02;
+        show(video.currentTime);
+        video.play().catch(() => {});
+      }),
+    );
+
+    // Frame-accurate while it plays, so the current segment fills smoothly; where the browser has no
+    // frame callback, an animation frame reads the clock instead (timeupdate is about 4 a second).
+    if ("requestVideoFrameCallback" in video) {
+      const tick = (_: number, meta: { mediaTime: number }) => {
+        show(meta.mediaTime);
+        video.requestVideoFrameCallback(tick);
+      };
+      video.requestVideoFrameCallback(tick);
+    } else {
+      const frame = () => {
+        if (!video.paused) now();
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    }
+    now();
+  }
+</script>

@@ -768,8 +768,8 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "at": "2026-10-23T02:47Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
       },
       "evidence": "verified"
     },
@@ -957,6 +957,34 @@
       "kind": "behavior",
       "authority": "accepted",
       "evidence": "unreviewed"
+    },
+    "§app.insights/cost-by-project": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/cost-history",
+        "§app.insights/usage-ledger",
+        "§app.projects/folder-sessions"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-helper/project-fold.ts",
+        "server/usage-helper/project-fold.test.ts",
+        "server/project-folder.ts",
+        "server/usage-helper/query.ts",
+        "server/usage-helper/service.ts",
+        "server/usage-routes.ts",
+        "shared/usage/wire.ts",
+        "src/lib/cost-history.ts",
+        "src/lib/cost-history.test.ts",
+        "src/components/CostsTab.tsx",
+        "server/usage-helper/ledger.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T10:03Z",
+        "source": "pi-session:9036aa60-89be-4d56-a5e2-2a554f0bf09b#dcfc92f9"
+      }
     },
     "§app.insights/insight-strip": {
       "kind": "behavior",
@@ -2248,6 +2276,40 @@
         "shared/usage/wire.ts",
         "shared/protocol.ts"
       ]
+    },
+    "§app.subagents-pane/member-inbox": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.teams/inbox",
+        "§app.subagents-pane/transcript-view",
+        "§app.subagents-pane/worker-rows"
+      ],
+      "code": [
+        "server/team-inbox.ts",
+        "server/team-inbox.test.ts",
+        "server/insights.ts",
+        "server/app.ts",
+        "shared/protocol.ts",
+        "shared/commands/other.ts",
+        "shared/commands-ids.json",
+        "src/components/TeamInbox.tsx",
+        "src/components/SubagentPane.tsx",
+        "src/lib/team-inbox.ts",
+        "src/lib/team-inbox.test.ts",
+        "src/lib/api.ts",
+        "server/commands-fuzz.test.ts",
+        "src/lib/team-inbox.browser.test.ts",
+        "src/design/base.css",
+        "server/commands-inventory/baseline.json",
+        "docs/commands.md"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
     },
     "§app.subagents-pane/memory-outline": {
       "kind": "behavior",
@@ -7510,6 +7572,78 @@
         "§mesh.ui/page"
       ]
     },
+    "§app.teams/inbox": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§teams.defaults/routing",
+        "§teams.defaults/handover",
+        "§app.worker-restore/resume"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/subagents/inbox-lifecycle.ts",
+        "pi-config/extensions/subagents/inbox-lifecycle.test.ts",
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts",
+        "pi-config/extensions/subagents/delivery.test.ts",
+        "pi-config/extensions/subagents/inbox.test.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/mailbox.test.ts",
+        "pi-config/extensions/subagents/member.test.ts",
+        "pi-config/extensions/subagents/reattach.test.ts",
+        "pi-config/extensions/subagents/restore.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T03:53Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
+    },
+    "§app.teams/requests": {
+      "kind": "behavior",
+      "requires": [
+        "§app.teams/running-limit",
+        "§app.teams/seats"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/subagents/index.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      }
+    },
+    "§app.teams/running-limit": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/subagents/index.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      }
+    },
     "§app.teams/seats": {
       "kind": "behavior",
       "authority": "accepted",
@@ -7527,7 +7661,12 @@
         "server/insights.ts",
         "shared/protocol.ts",
         "server/insights-eject.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
     },
     "§app/teams": {
       "kind": "surface",
@@ -7620,11 +7759,13 @@
         "pi-config/extensions/subagents/member.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
       }
     },
     "§teams.defaults/file": {
@@ -7655,8 +7796,17 @@
         "pi-config/extensions/subagents/member.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
-      ]
+        "pi-config/extensions/subagents/README.md",
+        "shared/profiles.ts",
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts",
+        "pi-config/extensions/subagents/inbox-lifecycle.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
     },
     "§teams.defaults/monitor": {
       "kind": "behavior",
@@ -7670,8 +7820,15 @@
         "pi-config/extensions/subagents/member.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
-      ]
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
     },
     "§teams.defaults/roster-context": {
       "kind": "behavior",
@@ -7686,8 +7843,14 @@
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md",
-        "pi-config/extensions/claude-code/context-window.ts"
-      ]
+        "pi-config/extensions/claude-code/context-window.ts",
+        "pi-config/extensions/subagents/inbox.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
     },
     "§teams.defaults/routing": {
       "kind": "behavior",
@@ -7701,8 +7864,15 @@
         "pi-config/extensions/subagents/member.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
-      ]
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      }
     },
     "§teams.defaults/team-report": {
       "kind": "behavior",
@@ -7731,11 +7901,14 @@
         "pi-config/extensions/subagents/member.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/subagents/inbox.ts",
+        "pi-config/extensions/subagents/delivery.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-23T02:25Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
       }
     },
     "§teams/defaults": {
@@ -19573,8 +19746,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T02:39Z",
-        "source": "pi-session:e1d4092c-fde7-4e3b-98b6-2e3413689e78#56f6249c"
+        "at": "2026-10-22T10:03Z",
+        "source": "pi-session:9036aa60-89be-4d56-a5e2-2a554f0bf09b#dcfc92f9"
       }
     },
     "§app.insights/usage-ledger": {

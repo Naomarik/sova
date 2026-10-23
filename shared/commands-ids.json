@@ -127,7 +127,8 @@
     "org.owner.request.chat",
     "org.owner.request.done",
     "org.owner.request.decline",
-    "settings.assistant-default.set"
+    "settings.assistant-default.set",
+    "insights.session.inbox"
   ],
   "retired": [
     "settings.agents.get"

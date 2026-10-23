@@ -82,8 +82,9 @@ This covers `team_create`, `team_add` and `agent_spawn`.
 - **An ejected member is out of the team's traffic.** It is left out of the state counts, which
   count seated members only; `team_list` and `team_roster` add `N ejected` beside them and end
   its line with `· ejected {UTC time}`. New members' headers leave it out of "Other members". A
-  `team_msg` to `all` skips it, and a direct `team_msg` or `team_steer` to it fails saying it was
-  ejected. `agent_resume` refuses it: an ejected worker holds no seat to come back to.
+  `team_msg` to `all` skips it and names it on the answer's skipped line. A direct `team_msg` or
+  `team_steer` to it goes to its newest live successor, when it has one, and the sender is told
+  (§app.teams/inbox); otherwise it fails saying it was ejected. `agent_resume` refuses it: an ejected worker holds no seat to come back to.
 - **TUI.** The `/team` status widget hides an ejected member the way it hides a stopped one; a
   team whose members are all ejected or stopped leaves the widget. The `/team` workspace keeps
   the row and marks it `· ejected` after its state; its roster title counts `N ejected` apart.
@@ -115,3 +116,101 @@ is.
 - **Only the parent's copy.** A team member's completion routed to its coordinator
   (§teams.defaults/routing) still reaches the coordinator; only a `subagent-complete` to the
   parent is ever held.
+
+## §app.teams/inbox — Each member's inbox: queued, never refused or lost
+
+Every team message and every Sova notice to a team member becomes an **item** in that member's
+inbox. Sending never fails because the member is busy, starting, asleep or being replaced, and
+no item disappears without its sender or the coordinator being told. Messages to the main chat
+(the coordinator's `team_ask` and `team_report`, completions routed to the parent) are unchanged:
+they join the main chat's own queue, which never refuses.
+
+- **An item.** A one-line subject (at most 120 characters; the sender's `subject`, else the first
+  non-blank line of the message, cut to 120), the message (at most 8,000 characters), an optional
+  `urgent` mark, and an optional `replyTo`: the id of the item it answers, which must exist in the
+  same main chat. Sova fills in the rest and the sender can never set or fake it: the id
+  (`i_<n>`, unique and increasing across the whole main chat, never reused), who sent it (a
+  member's role and worker ID, `main thread` or `Sova`, taken from where the request came from,
+  never from its body), when, and its kind: `message`, `question`, `report`, `handover`,
+  `notice` or `instruction`. An item is open while it is new or read and has not been returned;
+  an `instruction` item is never open.
+- **Sending answers at once.** `team_msg` to one member, several or `all` replies as soon as the
+  items are stored, without waiting for any member to take them: `Queued for <role> (<ag_NN>):
+  item i_41`, one line per recipient. `all` is one copy for each live member (working, idle or
+  starting), the sender excluded; members that have stopped or were ejected are skipped and named
+  on one info line (`skipped (stopped): monitor (ag_29)`), never reported as a failure. When a
+  recipient has more than 50 open items the queued line says so (`builder has 63 open items`).
+  There is no cap on sending. The descriptions of `team_msg`, `team_ask` and `team_steer` say
+  "At most 8,000 characters; for longer, write a file and send its path."
+- **Waking the member.** An idle member's normal items are gathered for about 3 seconds, then it
+  is woken once with one list; an urgent item wakes it at once. A busy member is never
+  interrupted: on the pi backend (every team member today, Claude models included, which run as
+  pi workers on the Claude Code provider) urgent items reach it at its next step, and normal
+  items are listed once its current turn ends. On a backend with no next-step delivery, urgent
+  items too wait for the turn's end. One wake is in flight per member; items that arrive meanwhile
+  join the next list.
+- **The list.** `[Team inbox: N new (k urgent) — team_inbox open <ids> to read, done <ids> to mark
+  addressed]`, then at most 20 lines, urgent first, oldest first within each, each with the id,
+  kind, sender and subject (`! i_42 notice from monitor — Wrap up: context 78%`), and `… and M
+  more` past 20. An item of at most 600 characters is shown in full under its line, up to 4,000
+  characters of full text per list; an item shown in full counts as read. Unopened items are
+  listed again only when new ones arrive or a turn ends with new items waiting, never on a timer.
+- **Reading and marking.** `team_inbox` takes `action`: `list` (the default: open items, or
+  `limit` of the newest), `open` (up to 20 `ids`, shown in full, marking them read), `done` (up to
+  20 `ids`, marking them addressed, with an optional one-line `note` of at most 200 characters)
+  and `sent` (the status and note of items this member sent). Each item goes new → read →
+  addressed (new → addressed directly too). A reply whose `replyTo` names a question marks that
+  question addressed. The sender is never woken when a status changes. Only the main chat's
+  extension writes an inbox: a member's `team_inbox` is a request the main chat serves, so a mark
+  racing a new delivery never loses the new item.
+- **Questions.** A member's `team_ask` to its routing coordinator (§teams.defaults/routing) is a
+  `question` item; the coordinator answers with `team_msg` and `replyTo` set to it.
+- **Direct instructions skip the list.** The main chat's messages to a member (`agent_steer`,
+  answers to its questions, the `/team` workspace's follow-up and redirect), the coordinator's
+  `team_steer`, and Sova's handover instructions ("finish your step and write your handover
+  note", "your successor has started") are delivered in full right away. Each waits its turn
+  behind a delivery already in progress to that member and is never refused for it; a redirect
+  goes ahead of deliveries still queued, never ahead of the one in progress. A copy goes in the
+  inbox as an `instruction` item, as history; it is never listed in a wake and never counted
+  open. They are still refused for a member that is
+  not live, restored or being stopped.
+- **Sova's notices are items**, so none can be lost: end-of-task reports to the coordinator (a
+  failed task is urgent), handover notices, "new members were added" notices, the monitor's
+  `wrap-up`, `pause` and `resume` notices (urgent), `wake_nudge` fires and the rejoined monitor's
+  resume check (urgent).
+- **A starting member.** An item for a member that has not yet taken its first task is stored and
+  listed after its first step.
+- **A wake that fails** (the member's process did not start, or the delivery was refused) leaves
+  its items stored and is retried after 5 s, 15 s and 60 s, then every 5 minutes, while the member
+  is live. The first failure is recorded as a team action `wake retry`.
+- **A replaced member.** An item (or a `team_steer`) to a member that has been succeeded
+  (§teams.defaults/handover) goes to its newest live successor, and the sender's answer says so
+  (`forwarded to builder-2 (ag_31)`); the item keeps its id and its original sender, and records
+  whom it was first sent to. A message to a member that has ended while its successor is still
+  starting is queued in its inbox, and the answer says the item moves to the successor; it moves
+  once the successor starts, or is returned to its sender if none does. A `team_steer` in that
+  window is refused, saying the successor is still starting: a direct instruction has no inbox to
+  wait in.
+  A message to a stopped or ejected member with no live or starting successor is refused, saying
+  it stopped (or was ejected) and, for a stopped member, that `agent_resume` brings it back.
+- **Moving and returning.** When a member is retired by its successor, its open items move to the
+  successor, keeping their ids and senders, and are listed to it; a moved item leaves the old
+  member's inbox and records whom it moved from, when and why; status lookups and `replyTo`
+  follow the move. A member that ends with no successor (stopped, failed, ejected, or found
+  restored after a restart) returns its open items to their senders, one "not addressed" notice per sender listing
+  its items and why; the
+  items Sova sent go to the routing coordinator, or to the main chat when there is none. A
+  return to the main chat is shown in its transcript and starts no turn. A resumed
+  member (§app.worker-restore/resume) comes back with no open items: they were returned when it
+  was found stopped, and its addressed history stays.
+- **Kept on disk.** Each member's inbox is an append-only file under the main chat's team folder
+  (`<agent dir>/sova/teams/<session>/mailbox/<team_id>/<ag_NN>/items.jsonl`), written only by the
+  main chat's extension. A server restart, a chat reload or a member waking from sleep loses
+  nothing: after a reload, live members with items not yet listed are woken again. Inboxes last
+  as long as the main chat; compaction keeps every open item and the newest 2,000 addressed items
+  per member.
+- **Members on older code.** A member started before this change, or on a backend without team
+  tools, cannot open an inbox: it keeps getting each message in full, on the same never-refused
+  delivery.
+- **Open counts.** `team_roster` and `team_list` show each member's open-item count
+  (`3 open items`), and Sova's screens show each member's inbox (§app.subagents-pane/member-inbox).

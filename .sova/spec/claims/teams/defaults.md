@@ -89,9 +89,9 @@ role nor members default; it does not remove workers already running.
   `subagents-team-assignment-v1` custom entries and replayed, in order, onto the branch's recorded
   teams at `session_start`, so once a member of such a team is back (picked back up or `agent_resume`d) the roster and any later successor still have them. Where none was recorded,
   the roster says the assignment is not known and to ask the member.
-  When the main thread adds members with `team_add`, the routing coordinator is sent a follow-up
-  naming each new member and its assignment, and the `team_add` result says it was told (or that
-  it could not be).
+  When the main thread adds members with `team_add`, the routing coordinator is sent a `notice`
+  item (§app.teams/inbox) naming each new member and its assignment, and the `team_add` result
+  says it was queued for the coordinator (or, with no live coordinator, that it could not be).
 - **It does not invent or countermand work.** Its header and task say: never invent tasks, never
   reassign or cancel a teammate's assigned work, never tell a teammate its task was not assigned;
   the main thread's steers and follow-ups to members are legitimate assignments, and it never
@@ -121,17 +121,19 @@ duty (a successor takes over from its predecessor the moment it starts).
 
 - **Wake.** Every member except the coordinator is spawned with `wake: false`.
 - **Completions.** When any other member settles, its completion (the same summary the parent
-  would get) is delivered to the routing coordinator as a follow-up, not to the parent. A killed
+  would get) is queued for the routing coordinator as a `report` item in its inbox
+  (§app.teams/inbox; urgent when the task failed), not sent to the parent. A killed
   member's completion goes nowhere. The monitor's own settles go nowhere (it settles after every
   check); only a failed monitor task is reported to the coordinator.
-- **Questions.** Another member's `team_ask` is delivered to the routing coordinator as a
-  `[Team question … routed to you as coordinator]` message it answers with `team_msg`; the member
-  is told it went to the coordinator. The monitor has no `team_ask`.
+- **Questions.** Another member's `team_ask` is queued for the routing coordinator as a
+  `question` item, which it answers with `team_msg` and `replyTo` set to that item; the member is
+  told it was queued for the coordinator, with the item's id. The monitor has no `team_ask`.
 - **The coordinator's own completion** goes to the parent as `subagent-complete`, starting a
   parent turn only when no other member (the monitor aside) is working — an interim "waiting on
   the builder" does not wake the parent; a quiescent team does.
 - **No live coordinator.** If the team's coordinator has ended and no successor is live, routing
-  falls back to the parent: completions and questions reach it as before, and a completion then
+  falls back to the parent: completions and questions reach it in the main chat's own queue, as
+  before, and a completion then
   starts a parent turn despite `wake: false`, so the team is never silently orphaned.
 - **Headers.** Each non-coordinator member's header names the coordinator role and says its final
   answer and its questions go there, not to the operator.
@@ -198,8 +200,9 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
   it hands over over `team_msg` (see §teams.defaults/handover).
 - **Notices are records.** A `wrap-up`, `pause` or `resume` notice is recorded as a team action
   of that kind (source `monitor`), and each is also appended to the parent session as a
-  `subagents-team-event-v1` entry. A pause or resume event names the monitor. A `wrap-up` event is
-  written once per member the notice was delivered to and names that member (not the monitor),
+  `subagents-team-event-v1` entry. Each notice is an urgent `notice` item in its recipient's inbox
+  (§app.teams/inbox), so it is never refused or lost. A pause or resume event names the monitor. A
+  `wrap-up` event is written once per member the notice was queued for and names that member (not the monitor),
   with `detail` like `context 78% of 200k` (or the tokens alone when the window is unknown, or
   `context unknown`). The monitor also sends `wrap-up` to the coordinator about each flagged
   member; that delivery is an event about the coordinator only when the coordinator's own context
@@ -210,8 +213,10 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 A member cannot start its own turn, so `wake_nudge` is a mailbox request the parent serves, with
 the wake-nudge extension's semantics: `schedule` (`delay` like `30s`, `5m`, `1h30m`, or an ISO
 `at`), `list`, `cancel {id}`; at least 10 s and at most 24 h ahead, `at` up to 60 s in the past is
-clamped to 10 s, at most 5 pending. At fire time the parent delivers `[wake_nudge nN] Scheduled
-wakeup fired … Reason: …` to the monitor as a follow-up, which starts a task if it is idle.
+clamped to 10 s, at most 5 pending. At fire time the parent queues `[wake_nudge nN] Scheduled
+wakeup fired … Reason: …` for the monitor as an urgent `notice` item from Sova (§app.teams/inbox),
+which wakes it at once if it is idle; a fire is never refused or lost, so no check chain ends
+silently.
 
 **An idle team costs no monitor turns.** A nudge that comes due while no other member is working
 and the team is not paused (a monitor `pause` notice not yet followed by `resume`) is **held**, not
@@ -223,7 +228,7 @@ always fire on time, so the resume check runs while everyone is idle; those fire
 after 30 consecutive fires with no other member working, scheduling is refused until some member
 works again. Pending nudges, held or not, are kept in the team's mailbox and armed again when the parent's session starts after a reload or a restart; a nudge that came due meanwhile fires then. The pause survives one too: a team whose last `pause`/`resume`
 event on the active branch is `pause` is paused again at `session_start`, and when its monitor
-rejoins (picked back up or `agent_resume`d) with no nudge pending it is sent its resume check at once (run `team_roster`; resume if the window is back under the threshold or has reset,
+rejoins (picked back up or `agent_resume`d) with no nudge pending it is sent its resume check at once, as an urgent `notice` item (run `team_roster`; resume if the window is back under the threshold or has reset,
 otherwise schedule the check); the `agent_resume` result says so instead of "nothing was sent to
 it". No other resumed member is sent anything.
 
@@ -244,7 +249,8 @@ provider are marked at or over the pause threshold, and when some but not all lo
 line says how many still have headroom and that this is not a reason to pause. A window
 whose reset time has passed is shown as reset with its usage unknown (the cached percent predates
 the reset) and is never marked at or over the pause threshold, so a stale cache cannot keep a team
-paused. A coordinator's roster also lists the assignments (§teams.defaults/coordinator).
+paused. A coordinator's roster also lists the assignments (§teams.defaults/coordinator). Each
+member's line also carries its open-item count (`3 open items`, §app.teams/inbox) when it has any.
 
 ## §teams.defaults/handover — Successors, handover notes and retirement
 
@@ -277,17 +283,32 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
   `team_ask`. A team restored from history is refused as `team_add` refuses it.
 - **The note comes first.** For a live worker or coordinator, `team_succeed` starts nothing at
   once: the old member is told — as a redirect, so it lands ahead of anything already queued for
-  it (or, when the coordinator succeeds itself, in the tool result) — to finish its step, write or
+  it but never ahead of a delivery in progress, and is never refused because one is in progress
+  (or, when the coordinator succeeds itself, in the tool result) — to finish its step, write or
   update its note, do no new work and end its turn, and the coordinator's result says the
   successor will follow. The successor starts as soon as the note file exists, whether or not the
   old member has ended a turn (follow-ups queued on it would keep it from ever settling), or when
   the old member ends, or when `handover.retireTimeoutMinutes` (read at `team_succeed`) pass —
-  whichever is first. The routing coordinator is then sent a follow-up naming the successor and
-  the true reason it started, judged from whether the note exists at that moment: the note is
+  whichever is first. The routing coordinator is then sent a `handover` item (§app.teams/inbox)
+  naming the successor and the true reason it started, judged from whether the note exists at that moment: the note is
   written; the member ended after, or without, writing it; the wait timed out; or the wait ran out
   just as the note appeared. The old member is told, again as a redirect, that its successor has
   started, to stop any work in progress, and to answer its questions. A member already ended when
   `team_succeed` is called, and a monitor, are succeeded at once.
+- **A reload drops a handover still waiting.** A handover whose successor has not started yet
+  (waiting for the note, for the old member to end, or for the retire timeout) is kept in the main
+  chat's memory only, so a reload of the main chat drops it: no successor starts and nothing is
+  sent. The old member keeps running and keeps its open inbox items (§app.teams/inbox); nothing on
+  disk is lost, and the items move only when a later handover completes, or are returned when the
+  member ends. Calling `team_succeed` again starts the handover over (the old member is told
+  again); when its note is already written, the successor starts within a second.
+  A handover whose successor has started but not yet called `team_ready` is dropped the same way:
+  the old member is never retired by itself and keeps its seat, and the successor's `team_ready`
+  is refused as having no handover pending. The successor link survives the reload (the
+  successor's record keeps `successorOf`), so messages to the old member still reach it while it
+  runs and are forwarded to the successor once it ends, and when it ends its open items move to
+  the successor instead of returning to their senders. To finish such a handover, the main chat
+  stops the old member with `agent_kill`, then releases its seat with `team_eject`.
 - **Follow-ups still queued on the old member.** They are not removed: there is no
   backend-neutral way to clear a worker's queue, so they stay queued and run after the redirects.
   The successor already has every one of them among its inherited main-thread instructions, and
@@ -309,7 +330,9 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
   <old>" (ask it over `team_msg`, call `team_ready`; when the old monitor has already ended, it is
   told so instead: nobody is left to ask and there is no `team_ready` to call), and the old monitor is told to brief it over
   `team_msg` — its pending nudges, notices sent, whether a pause is in force — and to run no
-  further checks; no note is involved. One pending handover per member, and a member still
+  further checks; no note is involved. That briefing request is a direct instruction on the old
+  monitor's delivery lane, never refused for busyness; if it still could not be delivered (the old
+  member is no longer live), the result says so instead of saying it was told. One pending handover per member, and a member still
   taking over cannot itself be succeeded until it has confirmed; the coordinator can start nothing
   else and stop no one. When the coordinator succeeds itself, routing moves to its successor at
   once, only the successor can start further successors, and the old coordinator runs until it is
@@ -322,7 +345,9 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
   retire timeout still applies if it never does. Either way the retirement is a team action row (`retire`),
   as is the start (`handover`). **The retired member's seat is released too:** once it has been
   killed, it is ejected exactly as `team_eject` would (the same persisted `eject` op), with the
-  action's source `system`. A member that had already ended when its successor started — ended
+  action's source `system`. **Its open inbox items move to the successor** (§app.teams/inbox),
+  keeping their ids and senders, and are listed to it; a message sent to the old member after it
+  is retired is forwarded to the successor, and the sender is told. A member that had already ended when its successor started — ended
   before `team_succeed`, or while the successor waited for its note — has nothing to retire and
   is ejected the same way as soon as the successor has started. While a handover is unfinished,
   `team_eject` refuses both of its members — the predecessor, whose successor has not started or

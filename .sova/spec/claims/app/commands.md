@@ -52,6 +52,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `models.favorite`, `usage.costs`, `usage.performance`, `usage.today`, `usage.session`,
   `usage.sessions`, `usage.prices`, `usage.prices.refresh`, `insights.usage`,
   `insights.usage.history`, `insights.agents`, `insights.worktrees`, `insights.session.workers`,
+  `insights.session.inbox`,
   `sova.health`, `settings.sova.get`, `settings.models.get`, `settings.provider-limits.get`,
   `settings.align.get`, `settings.delegate.get`, `settings.spec.get`, `settings.team.get`,
   `settings.summarizer.get`, `settings.overseer.get`, `settings.memory.get`,
@@ -62,6 +63,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
+  `insights.session.inbox` reads a team member's inbox (§app.subagents-pane/member-inbox).
   Running `audit.list` reads Sova's record of who ran what (§app.command-audit/list). The
   `org.owner.request.*` entries are an owner request's Start Chat, Mark Done and Decline
   (§app.project-assistant/request-chat). `settings.assistant-default.set` sets the Project

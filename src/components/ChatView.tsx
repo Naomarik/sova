@@ -131,6 +131,7 @@ import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
 import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
+import { liveTourCalls } from "../lib/tour-rows";
 import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
@@ -344,6 +345,8 @@ export function ChatView(props: {
   const cards = createMemo(() => cardFold(items() ?? [], liveCards(), older()?.summary.cards ?? []));
   /** Cards this run changed: their settled rows read as one line until the refetch. */
   const liveCardIds = createMemo(() => new Set([...cards().cards.keys()].filter((id) => !cards().newest.has(id))));
+  /** Tours this run finished a call for: their settled card reads as a line until the refetch (§app.tours/one-card). */
+  const liveTourIds = createMemo(() => new Set(liveTourCalls(live.tools).keys()));
   /** What a click on each card sent, until the turn it started settles (the card shows "Sent: b"). */
   const [cardSent, setCardSent] = createSignal<Record<string, string>>({});
   const jumpToCard = (card: OverseerCard) => {
@@ -2305,6 +2308,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
+                liveTourIds={liveTourIds()}
               />
               <LiveEntries
                 live={live}

@@ -236,7 +236,7 @@ async function pointOn(page: Page, sel: string, dx: number) {
 
 const headPlace = (page: Page, sel: string) =>
   page.evaluate((sel) => {
-    const host = document.querySelector<HTMLDetailsElement>(sel)!;
+    const host = document.querySelector<HTMLElement>(sel)!;
     const head = host.querySelector<HTMLElement>(":scope > summary, :scope > .org-project-head")!;
     const list = document.querySelector<HTMLElement>(".sidebar-list")!;
     const lr = list.getBoundingClientRect();

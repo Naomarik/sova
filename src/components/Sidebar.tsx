@@ -685,16 +685,14 @@ export function SessionRow(props: {
     open/closed state"), so `searching` — which forces every one of them open — comes in too. */
 /**
  * A group's guide line (§app.session-list/guide-lines): a direct child of the group it draws beside, after its head.
- * Pressing it closes the group the way its head would (lib/guide-line). `edge` is the 2px rule a folder and a
- * Projects-region project already draw on their left edge (the host's border): the line only makes it pressable.
- * Without `edge` the line draws itself, centred under the head's chevron. Hidden from AT and never a Tab stop: the
- * head is the control.
+ * Pressing it closes the group the way its head would (lib/guide-line). It runs down from the head's chevron: beside
+ * the contents, or (a folder, a Projects-region project) down its rows' state rail, where app.css places the chevron.
+ * Hidden from AT and never a Tab stop: the head is the control.
  */
-function GuideLine(props: { name: string; edge?: boolean; fold?: () => void }) {
+function GuideLine(props: { name: string; fold?: () => void }) {
   return (
     <div
       class={GUIDE_LINE}
-      classList={{ "guide-line-edge": !!props.edge }}
       aria-hidden="true"
       title={`Collapse ${props.name}`}
       onClick={(e) => collapseFromLine(e.currentTarget, props.fold)}
@@ -794,7 +792,7 @@ function GroupList(props: {
                 </ForKey>
               </Show>
             </ul>
-            <GuideLine edge name={remote()?.remoteCwd ?? tildePath(cwd, home())} />
+            <GuideLine name={remote()?.remoteCwd ?? tildePath(cwd, home())} />
           </details>
         );
       }}
@@ -2794,7 +2792,7 @@ export function Sidebar(props: {
                               </details>
                             </Show>
                           </div>
-                          <GuideLine edge name={p().name} fold={() => onProjectFold(id, rows())} />
+                          <GuideLine name={p().name} fold={() => onProjectFold(id, rows())} />
                         </Show>
                       </div>
                     );

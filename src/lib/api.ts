@@ -66,6 +66,7 @@ import type {
   TeamInboxView,
   SessionInsight,
   SessionSetup,
+  SessionSetupFileText,
   SessionTools,
   SessionSummary,
   ThemeList,
@@ -970,6 +971,9 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** One file the session's setup lists, as text (§chat.transcript/setup-card-open-file). Never cached. */
+export const fetchSetupFile = (path: string, file: string) =>
+  request<SessionSetupFileText>(`/api/sessions/context/file?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`);
 /** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
 export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the

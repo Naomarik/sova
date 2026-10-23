@@ -31,7 +31,7 @@ export interface Device {
 
 let world = 0;
 /** How a world's agents see processes: by default the real liveness and `claude` checks. */
-export type ProcView = Pick<PoolAgentOptions, "pidAlive" | "runsOn">;
+export type ProcView = Pick<PoolAgentOptions, "pidAlive" | "runsOn" | "procScanMs">;
 
 export function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = [], keychains: Record<string, KeychainOptions> = {}, procs: ProcView = {}) {
   const base = join(root, `w${++world}`);
@@ -52,6 +52,7 @@ export function makeWorld(ids: string[], clock: { now: number }, procScan: () =>
       defaultClaudeDir: d.claudeDir,
       now: () => clock.now,
       tickMs: 0,
+      procScanMs: 0,
       syncMs: 0,
       kill: (pid) => killed.push(pid),
       procScan,

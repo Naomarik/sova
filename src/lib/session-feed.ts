@@ -5,7 +5,7 @@
 // connected host, which the server adds up itself.
 
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import type { LlmInflight, SessionFeedMessage } from "../../shared/protocol";
+import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage } from "../../shared/protocol";
 import { sameInflight } from "./llm-inflight";
 import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } from "./signals";
 import { createReconnectingSocket } from "./socket";
@@ -20,6 +20,26 @@ const [inflight, setInflight] = createSignal<LlmInflight | null>(null, { equals:
     connection's figure is never kept. An unchanged frame doesn't notify. */
 export const llmInflight = inflight;
 
+const [open, setOpen] = createSignal(false);
+/** The feed's socket is open: what it pushes is current. A view that polls only to stand in for a
+    push (App's busy-row re-read) stops while this is true. */
+export const sessionFeedOpen = open;
+
+/** Who takes the Overseer's state and the attention digest the feed pushes (App: its two reads). */
+export interface FeedPushListener {
+  /** The socket (re)opened, or the tab was shown again: nothing pushed in between reached the
+      page, so the full values are read once now. */
+  resync(): void;
+  attention(digest: AttentionDigest): void;
+  overseer(info: OverseerInfo): void;
+}
+const listeners = new Set<FeedPushListener>();
+/** Take the feed's pushes until the returned function is called. */
+export function onFeedPush(l: FeedPushListener): () => void {
+  listeners.add(l);
+  return () => void listeners.delete(l);
+}
+
 export const sessionFeedUrl = () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/watch?feed=sessions`;
 
 /**
@@ -31,8 +51,11 @@ export const sessionFeedUrl = () => `${location.protocol === "https:" ? "wss:" :
  * `refreshList` re-reads the session list. The feed calls it (throttled, `createNudgeThrottle`)
  * when the server says the list changed beyond the marks — a session a TUI just started, one that
  * went away, a live/busy flip — which no poll would catch: the list is otherwise re-read only on
- * focus, while a row is busy, and after this tab's own actions. A reconnect re-reads it too: the
- * list may have changed while the socket was down.
+ * focus, while a row is busy with the feed down, and after this tab's own actions. A reconnect
+ * re-reads it too: the list may have changed while the socket was down.
+ *
+ * It also carries the Overseer's state and the attention digest, each pushed whole when it changes
+ * (no snapshot on connect): every open tells the `onFeedPush` listeners to read both once.
  */
 export function openSessionFeed(refreshList: () => void): void {
   const nudges = createNudgeThrottle(refreshList);
@@ -42,14 +65,18 @@ export function openSessionFeed(refreshList: () => void): void {
       setOverlay(EMPTY_OVERLAY);
       setInflight(null);
       if (isReconnect) nudges.nudge();
+      for (const l of listeners) l.resync();
     },
     onMessage: (msg) => {
       if (msg.type === "marks") setOverlay((o) => applyMarks(o, msg));
       else if (msg.type === "list_changed") nudges.nudge();
       // Never a reason to re-read the list: the count is its own fact.
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);
+      else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);
+      else if (msg.type === "overseer") for (const l of listeners) l.overseer(msg.info);
     },
   });
+  createEffect(() => setOpen(socket.status() === "open"));
   const onFocus = () => {
     if (socket.status() === "failed") socket.retry();
   };
@@ -58,6 +85,7 @@ export function openSessionFeed(refreshList: () => void): void {
     removeEventListener("focus", onFocus);
     setOverlay(EMPTY_OVERLAY);
     setInflight(null);
+    setOpen(false);
   });
   // Down is down: stale marks and a stale count must not outlive the socket that kept them current.
   createEffect(() => {

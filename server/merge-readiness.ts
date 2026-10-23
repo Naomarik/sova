@@ -16,8 +16,9 @@ import { type Finished, fileLandingStore, finishedOf, landingOf, type LandingSto
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
-import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, gitInputsStamp, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -479,6 +480,9 @@ export interface ReadinessDeps {
   /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
       "gone" for a missing folder, null when it can't be read. */
   treeStamp?: (dir: string) => string | null;
+  /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
+      session feed's readiness watch compares them (checkReadinessInputs). */
+  inputsStamp?: (dir: string, baseBranch?: string) => string | null;
   /** Whether the session's last reply finished its work (§chat.worktrees/ready-to-land); "off" when
       no outcome is ever recorded for it. */
   finished: (sessionId: string, cwd: string, lastReplyId: string | undefined) => Finished;
@@ -499,6 +503,7 @@ const defaultDeps = (): ReadinessDeps => ({
   asksUser: (id) => asksUserOf(id),
   gone: (t, dirs) => goneTreeState(t, dirs),
   treeStamp: (dir) => worktreeInsights.quietStamp(dir),
+  inputsStamp: gitInputsStamp,
   finished: finishedOf,
   drafts: (dir) => unpromotedDraftNames(dir),
   landing: fileLandingStore(),
@@ -710,6 +715,9 @@ interface Cached {
   /** Idle when computed (nothing running): its trees' stamps, which each listing compares to re-read
       at once on a commit, checkout, branch switch, base move or merge setup change. */
   stamps?: string;
+  /** Its own trees' Git inputs (inputsStamp) as read before this answer's Git read: a commit there,
+      with no session-file write, re-reads this row (checkReadinessInputs). */
+  watch?: string;
 }
 
 interface RefreshInput { row: SessionSummary; key: string; file: string; size: number }
@@ -809,16 +817,49 @@ async function refresh(input: RefreshInput): Promise<void> {
   const longDirty = !fresh && !!facts?.trees.some((t) => dirtyTtlFor(s, t.path, false) > DIRTY_TTL_MS);
   // Taken before Git is read: a commit landing during the read is never certified as seen.
   const before = facts ? stampsOf(facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id).map((t) => t.path)) : undefined;
+  const watch = facts ? watchStamp(facts, s.id) : undefined;
   const value = facts ? await computeReadiness(s, facts, current, fresh) : undefined;
   if (!current()) return;
   const stamps = idleStamps(s, value, before);
-  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
+  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
   if (value) nudgeSpecs(s, value);
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
     const again = await computeReadiness(s, facts, current);
-    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
+    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
   }
+  // A new answer shows on the next listing: the session feed compares at once (§app.decisions/push)
+  // instead of waiting for a listing that happens to come.
+  if (JSON.stringify(cache.get(s.path)?.value ?? null) !== JSON.stringify(prev?.value ?? null)) sessionsChanged();
+}
+
+/** A session's own trees' Git inputs, or undefined when none can be read. */
+function watchStamp(facts: FileFacts, sessionId: string): string | undefined {
+  const trees = facts.trees.filter((t) => t.status !== "dropped" && t.session === sessionId);
+  if (!trees.length || !deps.inputsStamp) return undefined;
+  const parts = trees.map((t) => deps.inputsStamp!(t.path, t.baseBranch) ?? "unreadable");
+  return parts.join("\n");
+}
+
+/**
+ * The session feed's readiness watch (§app.decisions/push), every few seconds while the feed runs:
+ * per row readiness tracks, its trees' Git inputs as stat stamps (no Git spawned). A row whose
+ * stamps moved (a commit, add, checkout or base move made with no session-file write) is re-read
+ * alone, at once; its new answer starts a listing (refresh). Parked rows, rows whose trees are all
+ * merged, and rows already being read are skipped. Returns how many rows it queued.
+ */
+export function checkReadinessInputs(): number {
+  let n = 0;
+  for (const [path, hit] of cache) {
+    if (!hit.watch || !hit.facts || active.has(path) || queued.has(path) || parked(hit.row)) continue;
+    if (hit.value?.trees.length && hit.value.trees.every((t) => t.state === "merged" || t.state === "removed")) continue;
+    if (watchStamp(hit.facts, hit.row.id) === hit.watch) continue;
+    forced.add(path);
+    queued.set(path, fileInput(hit.row));
+    n++;
+  }
+  if (n) void drain();
+  return n;
 }
 
 /** Once per head commit, tell a session whose finished branch still holds spec drafts to land them on

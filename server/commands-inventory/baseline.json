@@ -172,6 +172,7 @@
     "GET /api/sessions/align-triage": {"need":"sessions","is":"command","ids":["session.align.triage"]},
     "GET /api/sessions/by-id/:id": {"need":"sessions","is":"pending"},
     "GET /api/sessions/context": {"need":"sessions","is":"command","ids":["session.context"]},
+    "GET /api/sessions/context/file": {"need":"sessions","is":"command","ids":["session.context.file"]},
     "GET /api/sessions/dir": {"need":"sessions","is":"pending"},
     "GET /api/sessions/draft": {"need":"sessions","is":"command","ids":["session.draft.get"]},
     "GET /api/sessions/git": {"need":"sessions","is":"pending"},

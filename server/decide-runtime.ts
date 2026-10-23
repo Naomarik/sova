@@ -22,6 +22,33 @@ export const MAX_STATE_CHARS = 32_000;
 export const CALLS_MAX_BYTES = 4 * 1024 * 1024;
 export const callsFile = () => join(stateRoot(), "decisions-calls.jsonl");
 
+/** What replaces a text that may carry a password (§app.decisions/privacy). */
+export const WITHHELD = "[withheld: may carry a password]";
+
+// A password word next to a value: `pw: hunter2`, `password is …`, `passcode=…`. Any value counts.
+const PASSWORD_NEAR_VALUE_RE =
+  /\b(?:pass(?:word|wd|code|phrase)|pwd?)\b\s*(?:[:=]|\bis\b|\bwas\b)\s*["'`]?[^\s"'`]{3,}/i;
+// A code word next to a value with a digit in it: `code 482913`, `token=abc123`, `PIN: 4711`.
+const CODE_NEAR_VALUE_RE =
+  /\b(?:(?:access |auth |api |one[- ]time |verification |login |2fa |mfa )?(?:code|token|pin|otp))\b\s*(?:[:=]|\bis\b|\bwas\b|-)?\s*["'`]?(?=[^\s"'`]*\d)[^\s"'`]{4,}/i;
+
+/** Does this text look like it carries a password or a code next to its value? */
+export function mayCarryPassword(text: string): boolean {
+  return PASSWORD_NEAR_VALUE_RE.test(text) || CODE_NEAR_VALUE_RE.test(text);
+}
+
+/** Every string in `value` that may carry a password, replaced whole by WITHHELD (keys kept). */
+export function withholdPasswords<T>(value: T): T {
+  if (typeof value === "string") return (mayCarryPassword(value) ? WITHHELD : value) as T;
+  if (Array.isArray(value)) return value.map((v) => withholdPasswords(v)) as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = withholdPasswords(v);
+    return out as T;
+  }
+  return value;
+}
+
 /** One ledger line: what a call cost and how it went. Never the state, questions, answers or key. */
 export interface CallLine {
   at: number;
@@ -155,8 +182,9 @@ export function createDecisionRuntime(deps: DecisionRuntimeDeps = {}): DecisionR
     label: theChain.label,
     async decide(req: DecisionRequest): Promise<DecisionResult> {
       const started = now();
-      // Redact before anything leaves the process, whichever provider answers.
-      const state = serverRedactor().redactDeep(req.state);
+      // Withhold and redact before anything leaves the process, whichever provider answers: a
+      // text that may carry a pasted password goes whole, then known and secret-shaped values.
+      const state = serverRedactor().redactDeep(withholdPasswords(req.state));
       const size = typeof state === "string" ? state.length : JSON.stringify(state).length;
       if (size > MAX_STATE_CHARS) {
         record({ at: started, purpose: req.purpose, ok: false, failure: "too-large", latencyMs: 0 });

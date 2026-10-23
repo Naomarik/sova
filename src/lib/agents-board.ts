@@ -7,7 +7,7 @@ import { SESSION_TITLE_MAX } from "../../shared/protocol";
 import type { UsageSessionsTotals, UsageToday } from "../../shared/usage/wire";
 import { teamKey } from "./insights";
 import { isMainThread, isTopSession } from "./regions";
-import { rowNeedsYou, signalTitle } from "./signals";
+import { askKindWord, type NeedsYouMark, rowNeedsYou, signalTitle, signalTooltip } from "./signals";
 import { summaryLineOf } from "./summary-row";
 import { isHostSession, sessionWorking } from "./workers";
 
@@ -38,6 +38,9 @@ export interface BoardRow {
   state: BoardState;
   /** Why it needs you, one short sentence; null unless `state` is "needs-you". */
   reason: string | null;
+  /** The state's one word ("Waiting on you: approval", "Done, unverified", "Working (team)", "Broken"):
+      what a screen reader hears after the title. */
+  word: string;
   /** A TUI has it open, or a runtime (this server's or a TUI's) reports on it. */
   live: boolean;
   working: number;
@@ -62,25 +65,41 @@ type StateInput = Pick<
 /**
  * One state per row. A question the session is blocked on (an input request, an open dialog) wins
  * over work, because nothing moves until you answer; then work (its own turn, or a worker's);
- * then what the last finished turn left for you (a failure, a question, a loop); then idle, or
- * archived for a session you archived that nothing runs in.
+ * then what the last finished turn left for you (a failure, a question, a reply that waits on you
+ * or says it's done without checking); then idle, or archived for a session you archived that
+ * nothing runs in. The word says which: Broken, Working and Working (team) are counted in code; the
+ * kind of waiting and the done words come from the turn card (§app.insights/team-cards).
  */
 export function boardState(
   s: StateInput,
   agent: Pick<LiveAgentSession, "state" | "workerCounts"> | null,
   busy: boolean,
-): { state: BoardState; reason: string | null } {
+): { state: BoardState; reason: string | null; word: string } {
   const activity = s.activity?.state ?? agent?.state;
-  if (activity === "needs-input") return { state: "needs-you", reason: "Waiting on your input." };
-  if ((s.pendingDialogs ?? 0) > 0) return { state: "needs-you", reason: s.pendingDialogs === 1 ? "A dialog is waiting on you." : `${s.pendingDialogs} dialogs are waiting on you.` };
+  if (activity === "needs-input") return { state: "needs-you", reason: "Waiting on your input.", word: "Waiting on you" };
+  if ((s.pendingDialogs ?? 0) > 0)
+    return { state: "needs-you", reason: s.pendingDialogs === 1 ? "A dialog is waiting on you." : `${s.pendingDialogs} dialogs are waiting on you.`, word: "Waiting on you" };
   const workersWorking = agent ? agent.workerCounts.working : sessionWorking(s);
-  if (busy || activity === "working" || workersWorking > 0) return { state: "working", reason: null };
-  if (activity === "error") return { state: "needs-you", reason: s.activity?.error ? `Stopped on an error: ${s.activity.error}` : "Stopped on an error." };
-  if (s.turnError) return { state: "needs-you", reason: s.turnError.message ? `Last turn failed: ${s.turnError.message}` : "Last turn failed." };
+  if (busy || activity === "working") return { state: "working", reason: null, word: "Working" };
+  if (workersWorking > 0) return { state: "working", reason: null, word: "Working (team)" };
+  if (activity === "error") return { state: "needs-you", reason: s.activity?.error ? `Stopped on an error: ${s.activity.error}` : "Stopped on an error.", word: "Broken" };
+  if (s.turnError) return { state: "needs-you", reason: s.turnError.message ? `Last turn failed: ${s.turnError.message}` : "Last turn failed.", word: "Broken" };
   const mark = rowNeedsYou(s, { selected: null, busy: false });
-  if (mark) return { state: "needs-you", reason: mark.kind !== "looping" ? signalTitle(mark) : mark.worker ? "A subagent may be stuck." : "May be looping." };
+  if (mark && mark.kind !== "looping") return { state: "needs-you", reason: signalTooltip(mark), word: markWord(mark) };
   const live = s.live !== null || s.activity !== undefined || agent !== null;
-  return { state: s.archived && !live ? "archived" : "idle", reason: null };
+  if (s.archived && !live) return { state: "archived", reason: null, word: "Archived" };
+  return { state: "idle", reason: null, word: s.signals?.card?.outcome === "did-what-was-asked" ? "Done" : "Idle" };
+}
+
+/** A needs-you mark's word on the board. */
+function markWord(m: NeedsYouMark): string {
+  if (m.kind === "questions") return "Waiting on you: decision";
+  if (m.kind === "unverified") return "Done, unverified";
+  if (m.kind === "asks-you") {
+    const w = askKindWord(m.askKind);
+    return w ? `Waiting on you: ${w}` : "Waiting on you";
+  }
+  return "Needs you";
 }
 
 /**
@@ -91,7 +110,7 @@ export function boardRows(sessions: readonly SessionSummary[], agents: Pick<Agen
   const index = agentIndex(agents);
   return sessions.filter(isMainThread).map((s) => {
     const agent = index.get(s.path) ?? null;
-    const { state, reason } = boardState(s, agent, busyOf(s));
+    const { state, reason, word } = boardState(s, agent, busyOf(s));
     const counts = s.workers ?? s.live?.workers;
     const t = Date.parse(s.lastActiveAt);
     return {
@@ -99,6 +118,7 @@ export function boardRows(sessions: readonly SessionSummary[], agents: Pick<Agen
       agent,
       state,
       reason,
+      word,
       live: s.live !== null || s.activity !== undefined || agent !== null,
       working: agent ? agent.workerCounts.working : (counts?.working ?? 0),
       total: agent ? Math.max(agent.workerCounts.total, agent.workers.length) : (counts?.total ?? 0),
@@ -365,7 +385,7 @@ export function rowDetail(r: Pick<BoardRow, "session" | "reason">, trees: readon
   const list = trees ?? [];
   return {
     reason: r.reason,
-    questions: q && q !== r.reason ? q : null,
+    questions: q && !r.reason?.startsWith(q) ? q : null,
     error: err && err !== r.reason ? err : null,
     now: s.outlineNow?.trim() || null,
     topics: (s.outlineTopics ?? 0) > 0,

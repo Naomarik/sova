@@ -3,37 +3,32 @@ import type { DecisionSettings, SessionSummary, TeamDuty, WorkerInfo } from "../
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { redactTourToolArgs } from "../shared/tour";
-import { parseWakeNudge } from "../shared/wake";
-import type { WorkerTranscriptAdapters, WorkerTranscriptItem, WorkerTranscriptRef, WorkerTranscriptSummary } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
 import { maySend, terminalSession } from "./decide-settings";
 import type { RawLiveRecord } from "./live";
-import { isLooping, readSignals, signalsFile, type StoredStall, updateSignals, workerKey } from "./signals-store";
+import { readSignals, signalsFile, type StoredStall, updateSignals } from "./signals-store";
+import { pruneTurnOutcomes, recordTurnOutcome } from "./turn-outcomes";
 import { joinedText, readTailBranch as readTail } from "./harness/pi/reader";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * Attention signals (Settings → Decisions → "needs you" marks): every FINISHED turn of a main
- * session, and subagent workers that run long, are classified through the decision seam
- * (server/decide.ts — this module never knows which provider answers) and the raw answers stored
- * in signals.json (server/signals-store.ts, which also owns the thresholds and the list overlay).
+ * session is classified through the decision seam (server/decide.ts — this module never knows which
+ * provider answers) and the raw answers stored in signals.json (server/signals-store.ts, which also
+ * owns the thresholds and the list overlay).
  *
- * A main session's turn is asked whether a LONG turn went in circles (`stuck`; never a turn that
- * mostly waited on workers), and, when the session has no open alignment question (those are a
- * fact of its file, SessionSummary.align) and the reply's end looks like it asks (counted in code,
- * `looksLikeAsk`), whether it asks the user something (`asks_user`). A turn with neither asks
- * nothing, makes no model call, and drops the turn before it.
+ * Each finished main-session turn gets ONE request, the turn card (`CARD_QUESTIONS`): does it ask
+ * the user (`asks_user`), how did it end (`outcome`), what kind of ask (`ask_kind`), does it say done
+ * without checking (`claims_unverified`), does it leave work open (`left_open`) — over the asks
+ * excerpt plus facts counted in code (`cardState`). A turn a link message or a topic batch opened
+ * gets no card. Neither a long turn ("stuck") nor a running subagent is asked anything any more
+ * (§app.decisions/attention-signals). Each card is also kept per turn (server/turn-outcomes.ts).
  *
  * Triggers:
  *  - a hosted chat's `agent_settled` (`turnSettled`, wired in index.ts from chat-manager);
  *  - a ticker for everything else (TUI-live sessions, sessions another process wrote): any
  *    main-thread session whose last reply is newer than its stored turn. Transcripts are read with
  *    Sova's own parser from the tail of the file — never SessionManager.open(), never a write;
- *  - the same ticker for workers: a "stuck" check for a worker whose CURRENT turn (from its last
- *    task item) has run ≥ 5 min, at most every 5 min; never a monitor or coordinator, never a turn
- *    a wake nudge started. Only a turn that repeats itself or keeps failing (`workerSuspect`,
- *    counted in code) is sent; any other is stored as making progress without a call. A looping
- *    subagent counts only after two looping answers in a row in the same turn.
  *  - the same ticker, with no model, for a session waiting on subagents that have all gone quiet
  *    for STALL_MS (`quietTeam` + `waitsOnTeam`, §app.decisions/team-stall).
  * Whether a turn failed is never asked: that is a fact of the file (the last reply's stopReason
@@ -49,15 +44,6 @@ export const TICK_MS = 10_000;
 /** A turn first seen by the ticker is classified only if it ended this recently: switching the
     feature on never classifies the whole archive. */
 export const FRESH_MS = 30 * 60_000;
-export const WORKER_STUCK_AFTER_MS = 5 * 60_000;
-export const WORKER_STUCK_EVERY_MS = 5 * 60_000;
-/** How many of a worker's transcript items are read (its current turn is cut from them). */
-export const WORKER_ITEMS = 60;
-/** The mechanical pre-gate before a worker's stuck question: this many identical calls in a row… */
-export const WORKER_REPEAT_MIN = 3;
-/** …or a turn this long whose last WORKER_ERROR_RUN tool results all read as errors. */
-export const WORKER_ERRORING_MS = 15 * 60_000;
-export const WORKER_ERROR_RUN = 3;
 /** What looks like an ask is looked for in this much of the reply's end; the asks excerpt is longer. */
 export const ASK_LOOK_CHARS = 1000;
 export const ASK_TAIL_CHARS = 1500;
@@ -65,9 +51,6 @@ export const ASK_USER_CHARS = 600;
 export const SENTENCE_MAX = 160;
 /** A session waiting on subagents that have done nothing for this long has a stalled team. */
 export const STALL_MS = 15 * 60_000;
-/** A hosted turn this long, or with this many tool calls, also gets the "stuck" question. */
-export const LONG_TURN_MS = 5 * 60_000;
-export const LONG_TURN_TOOLS = 20;
 /** At most this many decisions per tick; the rest wait for the next one. */
 export const TICK_BUDGET = 6;
 /** A failed attempt at one key is retried after this long, at most MAX_ATTEMPTS times. */
@@ -163,86 +146,6 @@ export function turnFacts(branch: readonly HEntry[]): TurnFacts | null {
   };
 }
 
-/** A tool result that reads as a failure (worker transcripts carry no error flag on results). */
-const ERROR_RESULT_RE = /^\s*(?:error\b|Error:|\w*Error:|Exit code [1-9]|Command failed|ENOENT|fatal:)/;
-
-/** A worker transcript's items as tool-call facts: each `tool` item paired with the next result
-    (`ok` false when the result reads as an error, or an error item follows the call). */
-export function workerTools(items: readonly WorkerTranscriptItem[]): ToolCallFact[] {
-  const out: ToolCallFact[] = [];
-  let open: ToolCallFact | null = null;
-  for (const it of items) {
-    if (it.kind === "tool") {
-      open = { name: it.toolName ?? "tool", args: it.text, result: "" };
-      out.push(open);
-    } else if ((it.kind === "tool-result" || it.kind === "error") && open) {
-      open.result = it.text;
-      open.ok = it.kind === "tool-result" && !ERROR_RESULT_RE.test(it.text);
-      open = null;
-    }
-  }
-  return out;
-}
-
-/** A worker's current turn: the items from its last task or steer item on (the tail read may not
-    reach back that far: then every item, and the start is the first item's time, a lower bound). */
-export interface WorkerTurn {
-  items: WorkerTranscriptItem[];
-  /** ms epoch the turn started; 0 unknown. */
-  startedAt: number;
-  startedBy: "task" | "steer" | "wake_nudge" | "unknown";
-}
-
-export function currentWorkerTurn(items: readonly WorkerTranscriptItem[]): WorkerTurn {
-  let i = items.length - 1;
-  while (i >= 0 && items[i]!.kind !== "task" && items[i]!.kind !== "steer") i--;
-  if (i < 0) return { items: [...items], startedAt: items.find((it) => it.at)?.at ?? 0, startedBy: "unknown" };
-  const start = items[i]!;
-  const startedBy = parseWakeNudge(start.text) ? "wake_nudge" : start.kind === "steer" ? "steer" : "task";
-  return { items: items.slice(i), startedAt: start.at ?? 0, startedBy };
-}
-
-/** The mechanical pre-gate: does this turn look like it could be stuck? Same tool and arguments
-    WORKER_REPEAT_MIN times in a row, or a turn of WORKER_ERRORING_MS whose last WORKER_ERROR_RUN
-    tool results are all errors. Anything else is progress without asking a model. */
-export function workerSuspect(tools: readonly ToolCallFact[], runningMs: number): boolean {
-  if (repeats(tools).same_tool_and_args_in_a_row >= WORKER_REPEAT_MIN) return true;
-  const last = tools.slice(-WORKER_ERROR_RUN);
-  return runningMs >= WORKER_ERRORING_MS && last.length === WORKER_ERROR_RUN && last.every((t) => t.ok === false);
-}
-
-/** Tool names that wait (on workers, a team, a scheduled wake), MCP-prefixed or not. */
-const WAIT_TOOL_RE = /^(?:mcp__\w+?__)?(?:agent_wait|wake_nudge|team_\w+)$/;
-
-/** A turn whose tool calls are mostly (more than half) waits: long because it waited, not looping. */
-export function mostlyWaits(tools: readonly ToolCallFact[]): boolean {
-  if (!tools.length) return false;
-  return tools.filter((t) => WAIT_TOOL_RE.test(t.name)).length * 2 > tools.length;
-}
-
-const PATH_KEYS = ["path", "file_path", "filePath", "file", "filename"];
-
-/** Counted in code and handed over as named facts. */
-export function repeats(tools: readonly ToolCallFact[]): { same_tool_and_args_in_a_row: number; distinct_files_touched: number } {
-  let run = 0;
-  let best = 0;
-  let prev = "";
-  const files = new Set<string>();
-  for (const t of tools) {
-    const key = `${t.name}\n${t.args}`;
-    run = key === prev ? run + 1 : 1;
-    prev = key;
-    best = Math.max(best, run);
-    try {
-      const a = JSON.parse(t.args);
-      for (const k of PATH_KEYS) if (typeof a?.[k] === "string") files.add(a[k]);
-    } catch {
-      // args cut short or not JSON: no file
-    }
-  }
-  return { same_tool_and_args_in_a_row: best, distinct_files_touched: files.size };
-}
-
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 /** The first `n` characters, marked when cut. */
 export const head = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -262,7 +165,7 @@ export function withoutFooter(text: string): string {
 /** What makes a reply's end look like it asks: a question mark, or an asking phrase. Loose on
     purpose: it only decides whether a model is asked. */
 const ASK_RE =
-  /\?(?=[\s"'”’)*_`\]]|$)|\b(?:should i|shall i|want me to|do you want|would you like|tell me|let me know|say (?:if|when|which|whether|go)|if you(?:'d|’d)? (?:want|like|prefer)|your call|up to you|confirm(?: and|,| to| it| that| this)|(?:once|after|when) you (?:say|confirm|approve|decide|answer)|say yes|your go\b|which (?:one|option|do you)|can i|may i|ok(?:ay)? to|waiting (?:for|on) your?|your (?:answer|go-ahead|ok|approval|decision))\b/i;
+  /\?(?=[\s"'”’)*_`\]]|$)|\b(?:should i|shall i|want me to|do you want|would you like|tell me|let me know|say (?:if|when|which|whether|go)|if you(?:'d|’d)? (?:want|like|prefer)|your call|up to you|confirm(?: and|,| to| it| that| this)|(?:once|after|when) you (?:say|confirm|approve|decide|answer)|say yes|your go\b|which (?:one|option|do you)|can i|may i|ok(?:ay)? to|waiting (?:for|on) your?|your (?:answer|go-ahead|ok|approval|decision))\b|\b(?:say|reply|answer(?: \w+ by id, or say)?|type)\s+["“'‘`]|\bsay (?:ok|okay|yes|no|go|the word)\b|\bawaiting your\b|\bneeds? (?:your|the operator(?:'s|’s)?|operator) (?:approval|go-ahead|go ahead|ok|okay|confirm\w*|sign-?off|decision|call)\b|\bone word either way\b/i;
 
 /** Counted in code: does the end of a reply (its last ASK_LOOK_CHARS, footer cut) look like it asks? */
 export function looksLikeAsk(reply: string): boolean {
@@ -324,26 +227,7 @@ export function lastSentence(text: string): string {
   return head(flat.slice(flat.lastIndexOf(pick)), SENTENCE_MAX);
 }
 
-function recentTools(tools: readonly ToolCallFact[]): JsonObject[] {
-  return tools.slice(-CAP.tools).map((t) => ({ tool: t.name, summary: head(squash(t.result || t.args), CAP.tool) }));
-}
-
-/** The state of one main-session turn, capped. The caller redacts it. */
-export function turnState(title: string, f: TurnFacts): JsonObject {
-  return {
-    title: head(squash(title), CAP.title),
-    last_user_message: head(f.lastUser, CAP.user),
-    assistant_last: tail(f.assistantLast, CAP.assistant),
-    tool_calls_recent: recentTools(f.tools),
-    repeats: repeats(f.tools),
-    turn: {
-      stop_reason: f.stopReason,
-      ...(f.error ? { error: head(squash(f.error), CAP.error) } : {}),
-      duration_s: Math.round(f.durationMs / 1000),
-      tool_calls: f.tools.length,
-    },
-  };
-}
+// ---- questions (ids are the store's contract) ----------------------------------------------------
 
 /** The state of an asks-only check: the title, the ask's context and the reply's end, footer cut. */
 export function asksState(title: string, f: Pick<TurnFacts, "lastUser" | "assistantLast">): JsonObject {
@@ -353,40 +237,6 @@ export function asksState(title: string, f: Pick<TurnFacts, "lastUser" | "assist
     assistant_last: tail(withoutFooter(f.assistantLast), ASK_TAIL_CHARS),
   };
 }
-
-/** The state of one worker's CURRENT turn, capped. The caller redacts it. */
-export function workerState(w: Pick<WorkerInfo, "name" | "status" | "preview">, s: Pick<WorkerTranscriptSummary, "lastAssistantText" | "lastOutcome" | "partialTurn" | "items">, now: number): JsonObject {
-  const turn = currentWorkerTurn(s.items ?? []);
-  const items = turn.items;
-  const tools = workerTools(items);
-  const task = [...(s.items ?? [])].reverse().find((i) => i.kind === "task" && !parseWakeNudge(i.text))?.text ?? w.preview ?? "";
-  const errors = items.filter((i) => i.kind === "error").map((i) => i.text);
-  const assistantLast = [...items].reverse().find((i) => i.kind === "assistant")?.text ?? "";
-  return {
-    title: head(squash(w.name), CAP.title),
-    task: head(task, CAP.user),
-    assistant_last: tail(assistantLast, CAP.assistant),
-    tool_calls_recent: recentTools(tools),
-    repeats: repeats(tools),
-    worker: {
-      status: w.status,
-      ...(s.lastOutcome ? { last_outcome: s.lastOutcome } : {}),
-      ...(errors.length ? { error: head(squash(errors[errors.length - 1] ?? ""), CAP.error) } : {}),
-      ended_mid_turn: s.partialTurn,
-      turn_started_by: turn.startedBy,
-      turn_running_min: turn.startedAt ? Math.round((now - turn.startedAt) / 60_000) : 0,
-    },
-  };
-}
-
-// ---- questions (ids are the store's contract) ----------------------------------------------------
-
-export const STUCK: Question = {
-  type: "score",
-  instructions:
-    "Is the agent making progress or going in circles? `repeats.same_tool_and_args_in_a_row` is the longest run of identical consecutive tool calls; `repeats.distinct_files_touched` is how many different files it touched. Waiting is not looping: a scheduled wake-up, checking a roster or inbox and then scheduling the next check, or waiting on other workers is progress if each cycle is short and ends by going back to wait. Judge only this turn.",
-  levels: ["making progress", "some repetition", "clearly looping or stuck"],
-};
 
 export const ASKS_USER: Question = {
   type: "boolean",
@@ -398,15 +248,79 @@ export const ASKS_USER: Question = {
   },
 };
 
+export const OUTCOME: Question = {
+  type: "choice",
+  instructions: "How did this turn end, judged from `assistant_last` against `last_user_message`? `facts` are counted in code: trust them.",
+  options: {
+    "did-what-was-asked": "It did what the user asked and says so; nothing it needs from anyone.",
+    "partial-stopped": "It did part of it and stopped short, with work it says is not done.",
+    "waiting-on-user": "It cannot go on until the user answers, decides, approves or gives something.",
+    "waiting-on-team": "It waits on its subagents or another session to report back.",
+    "hit-unfixed-failure": "It ran into a failure (a test, a build, an error) that it did not fix.",
+    "progress-report": "A status update or round report; the work goes on by itself.",
+  },
+};
+
+export const ASK_KIND: Question = {
+  type: "choice",
+  instructions: "If the end of `assistant_last` asks the user for something, what kind of ask is it?",
+  options: {
+    "choose-between-options": "The user must choose between options or make a decision.",
+    "approve-risky-action": "The user must approve an action before it happens (deleting, spending, pushing, changing something shared).",
+    "needs-info": "The user must give information only they have (a value, an answer, a file, a login).",
+    "restart-or-merge-go": "It only asks for the go-ahead to restart a server, merge or push.",
+    "optional-offer": "A courtesy offer the user may ignore ('want me to also…', 'let me know if…').",
+    none: "It asks the user for nothing.",
+  },
+};
+
+export const CLAIMS_UNVERIFIED: Question = {
+  type: "boolean",
+  instructions: "Does `assistant_last` say the work is done while naming something it did not run, test or check?",
+  criteria: {
+    true: "It says done, but says (or plainly shows) that tests, a build, a check or a manual try were not run.",
+    false: "It says what it checked, or it does not claim to be done.",
+  },
+};
+
+export const LEFT_OPEN: Question = {
+  type: "boolean",
+  instructions: "Does `assistant_last` name work that is still to be done?",
+  criteria: {
+    true: "It lists remaining steps, deferred parts, known gaps or follow-ups.",
+    false: "Nothing is named as left to do.",
+  },
+};
+
+/** The turn card (§app.decisions/attention-signals): five questions over one state. */
+export const CARD_QUESTIONS: Record<string, Question> = { asks_user: ASKS_USER, outcome: OUTCOME, ask_kind: ASK_KIND, claims_unverified: CLAIMS_UNVERIFIED, left_open: LEFT_OPEN };
+
 /**
- * A main session's questions. `stuck` only for a long turn that did not mostly wait on workers;
- * `asks_user` only when the session has no open alignment question, a partner's link message did
- * not open the turn, and the reply's end looks like it asks. None: no model call.
+ * A main session's questions: the whole turn card, unless a partner's link message or a topic batch
+ * opened the turn (its question is to the partner, or to an orchestrator): then none, and no call.
  */
-export function turnQuestions(f: TurnFacts, ctx: { openQuestions?: number } = {}): Record<string, Question> {
-  const long = (f.durationMs >= LONG_TURN_MS || f.tools.length >= LONG_TURN_TOOLS) && !mostlyWaits(f.tools);
-  const asks = !(ctx.openQuestions && ctx.openQuestions > 0) && !isLinkMessage(f.lastUser) && !isTopicBatch(f.lastUser) && looksLikeAsk(f.assistantLast);
-  return { ...(long ? { stuck: STUCK } : {}), ...(asks ? { asks_user: ASKS_USER } : {}) };
+export function turnQuestions(f: TurnFacts): Record<string, Question> {
+  return isLinkMessage(f.lastUser) || isTopicBatch(f.lastUser) ? {} : CARD_QUESTIONS;
+}
+
+/** Facts counted in code that ride with the card's state. */
+export interface CardFacts {
+  openQuestions: number;
+  workersRunning: number;
+  restartPending: boolean;
+}
+
+/** The card's state: the asks excerpt plus the facts code already knows. */
+export function cardState(title: string, f: Pick<TurnFacts, "lastUser" | "assistantLast" | "stopReason">, facts: CardFacts): JsonObject {
+  return {
+    ...asksState(title, f),
+    facts: {
+      open_alignment_questions: facts.openQuestions,
+      subagents_working: facts.workersRunning,
+      server_restart_owed: facts.restartPending,
+      stop_reason: f.stopReason,
+    },
+  };
 }
 
 // ---- eligibility (pure) --------------------------------------------------------------------------
@@ -444,12 +358,6 @@ export function readTailBranch(path: string, maxBytes = TAIL_BYTES): Promise<HEn
   return readTail(path, maxBytes);
 }
 
-/** A live worker's transcript ref (the same two kinds worker-restore reads), or null. */
-export function workerRef(w: Pick<WorkerInfo, "backend" | "sessionFile" | "sessionId">): WorkerTranscriptRef | null {
-  if (w.backend === "claude-code") return w.sessionId ? { v: 1, backend: "claude-code", kind: "claude-session-id", locator: w.sessionId } : null;
-  return w.sessionFile ? { v: 1, backend: w.backend ?? "pi", kind: "pi-session-file", locator: w.sessionFile } : null;
-}
-
 // ---- the runtime ---------------------------------------------------------------------------------
 
 export interface SignalsDeps {
@@ -468,12 +376,13 @@ export interface SignalsDeps {
   /** A parent session's team members' standing duties, by worker id (server/insights.ts). Absent:
       no worker is known to have one. */
   duties?: (parentPath: string) => Promise<Map<string, TeamDuty>>;
-  adapters: () => WorkerTranscriptAdapters;
   /** The Redactor over any JSON value. */
   redact: <T>(value: T) => T;
   /** The store changed: push (server/session-feed.ts). */
   changed: () => void;
   file?: string;
+  /** The per-turn outcomes file (server/turn-outcomes.ts); default under the state root. */
+  outcomesFile?: string;
   now?: () => number;
   home?: string;
   /** Delay between agent_settled and the read (the reply's line is flushed by then). */
@@ -490,9 +399,6 @@ interface Attempt {
 export class AttentionSignals {
   private readonly inFlight = new Set<string>();
   private readonly attempts = new Map<string, Attempt>();
-  /** A worker (workerKey) not worth reading again before this time: its turn is young, or a wake
-      nudge started it. In memory: after a restart it is read once more. */
-  private readonly nextLook = new Map<string, number>();
   /** Per session file: whether its last reply (at `replyAt`) waits on its subagents. */
   private readonly waitsCache = new Map<string, { replyAt: number; waits: boolean }>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -541,7 +447,6 @@ export class AttentionSignals {
         if (budget <= 0) break;
         if (await this.classifySession(s, false)) budget--;
       }
-      if (budget > 0) budget -= await this.checkWorkers(list, budget);
       this.prune(list);
       return TICK_BUDGET - budget;
     } finally {
@@ -579,7 +484,7 @@ export class AttentionSignals {
       return false;
     }
     if (!stored && now - facts.replyAt > FRESH_MS) return false;
-    const questions = turnQuestions(facts, { openQuestions: s.align?.openQuestions });
+    const questions = turnQuestions(facts);
     // A turn with nothing to ask: no model call, and like an errored turn it replaces the turn
     // before it, so an older mark does not stay on the row.
     if (!Object.keys(questions).length) {
@@ -587,26 +492,33 @@ export class AttentionSignals {
       return false;
     }
     const key = `${s.id}:${facts.turnId}`;
-    const state = questions.stuck ? turnState(s.title, facts) : asksState(s.title, facts);
+    const state = cardState(s.title, facts, {
+      openQuestions: s.align?.openQuestions ?? 0,
+      workersRunning: s.workers?.working ?? s.live?.workers?.working ?? 0,
+      restartPending: !!s.readiness?.restartPending,
+    });
     // The usage ledger: this decision is the session's one-shot.
     const result = await withUsageContext({ owner: s.id, cwd: s.cwd, kind: "oneshot" }, () => this.decide(key, "attention", state, questions));
     if (!result) return false;
     // The feature or the session's eligibility may have changed while the call ran: then drop it.
     if (exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home)) return true;
     const f = facts;
-    const detail = questions.asks_user ? this.d.redact(lastSentence(f.assistantLast)) : "";
+    const detail = this.d.redact(lastSentence(f.assistantLast));
+    const at = this.now();
     updateSignals((data) => {
       data.sessions[s.id] = {
         turnId: f.turnId,
         replyAt: f.replyAt,
-        at: this.now(),
+        at,
         provider: result.provider,
         model: result.model,
         answers: result.answers,
         ...(detail ? { detail } : {}),
-        schema: 2,
+        schema: 3,
       };
     }, this.file());
+    // The durable per-turn record a branch's readiness can read later (server/turn-outcomes.ts).
+    recordTurnOutcome(s.id, { turnId: f.turnId, replyAt: f.replyAt, at, provider: result.provider, model: result.model, answers: result.answers }, this.d.outcomesFile);
     this.d.changed();
     return true;
   }
@@ -667,94 +579,8 @@ export class AttentionSignals {
     return waits;
   }
 
-  /** Stuck checks for workers whose current turn runs long. */
-  private async checkWorkers(list: readonly SessionSummary[], budget: number): Promise<number> {
-    const byPath = new Map(list.map((s) => [s.path, s]));
-    const settings = this.d.settings();
-    const now = this.now();
-    let used = 0;
-    const seen = new Set<string>();
-    for (const r of this.d.liveRecords()) {
-      if (used >= budget) break;
-      const parent = r.sessionFile ? byPath.get(r.sessionFile) : undefined;
-      // Workers of an ineligible parent are never sent. The parent may be mid-turn: workers are checked anyway.
-      if (!parent || exclusionReason({ ...parent, archived: false }, settings, this.d.held(parent.path), this.d.home)) continue;
-      let duties: Map<string, TeamDuty> | undefined;
-      for (const w of this.d.decodeWorkers(r.rec?.presence)) {
-        if (used >= budget) break;
-        // ag_NN repeats across sessions: a worker is its parent's id and its own.
-        const key = workerKey(parent.id, w.id);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        if (!w.working) continue;
-        const stored = readSignals(this.file()).workers[key];
-        if (stored && now - stored.at < WORKER_STUCK_EVERY_MS) continue;
-        if ((this.nextLook.get(key) ?? 0) > now) continue;
-        // A monitor or coordinator polls on purpose: never checked.
-        duties ??= this.d.duties ? await this.d.duties(parent.path).catch(() => new Map<string, TeamDuty>()) : new Map<string, TeamDuty>();
-        if (duties.has(w.id)) continue;
-        if (await this.checkWorker(parent, w, key)) used++;
-      }
-    }
-    if (this.nextLook.size > 2000) this.nextLook.clear();
-    return used;
-  }
-
-  private async checkWorker(parent: SessionSummary, w: WorkerInfo, key: string): Promise<boolean> {
-    const ref = workerRef(w);
-    if (!ref) return false;
-    const adapter = this.d.adapters().get(ref.backend);
-    const caps = adapter.capabilities();
-    // Without items there is no current turn to judge.
-    if (!caps.read || !caps.items) return false;
-    let summary: WorkerTranscriptSummary;
-    try {
-      summary = await adapter.read(ref, { items: "tail", limit: WORKER_ITEMS });
-    } catch {
-      return false;
-    }
-    if (!summary.found) return false;
-    const now = this.now();
-    const turn = currentWorkerTurn(summary.items ?? []);
-    // A turn a wake nudge started is a scheduled check-in: not judged (looked at again next turn).
-    if (turn.startedBy === "wake_nudge") {
-      this.nextLook.set(key, now + WORKER_STUCK_EVERY_MS);
-      return false;
-    }
-    // The gate is the CURRENT turn's age, not the worker's since its first spawn.
-    const running = turn.startedAt ? now - turn.startedAt : 0;
-    if (running < WORKER_STUCK_AFTER_MS) {
-      this.nextLook.set(key, turn.startedAt ? turn.startedAt + WORKER_STUCK_AFTER_MS : now + WORKER_STUCK_EVERY_MS);
-      return false;
-    }
-    const prev = readSignals(this.file()).workers[key];
-    const sameTurn = !!prev && prev.turnStart === turn.startedAt;
-    const base = { sessionId: parent.id, workerId: w.id, kind: "stuck" as const, name: head(squash(w.name), 80), turnStart: turn.startedAt };
-    // Counted in code first: a turn that neither repeats itself nor keeps failing is progress, and
-    // no model is asked.
-    if (!workerSuspect(workerTools(turn.items), running)) {
-      updateSignals((data) => {
-        data.workers[key] = { ...base, at: this.now(), mechanical: true, answers: {} };
-      }, this.file());
-      this.d.changed();
-      return false;
-    }
-    // A stuck check is keyed by its time slot.
-    const dedupe = `${key}:stuck:${Math.floor(now / WORKER_STUCK_EVERY_MS)}`;
-    // The usage ledger: a worker's stuck check is a one-shot of the session that runs it.
-    const result = await withUsageContext({ owner: parent.id, cwd: parent.cwd, kind: "oneshot" }, () => this.decide(dedupe, "worker", workerState(w, summary, now), { stuck: STUCK }));
-    if (!result) return false;
-    // Two strikes: a looping answer counts only after a looping one before it in the same turn.
-    const strikes = isLooping(result.answers) ? (sameTurn && prev && isLooping(prev.answers) ? (prev.strikes ?? 1) : 0) + 1 : 0;
-    updateSignals((data) => {
-      data.workers[key] = { ...base, at: this.now(), provider: result.provider, model: result.model, answers: result.answers, strikes };
-    }, this.file());
-    this.d.changed();
-    return true;
-  }
-
   /** One decision, redacted, deduplicated in flight and retried with a bound. null = no answer. */
-  private async decide(key: string, purpose: "attention" | "worker", state: JsonObject, questions: Record<string, Question>): Promise<DecisionResult | null> {
+  private async decide(key: string, purpose: "attention", state: JsonObject, questions: Record<string, Question>): Promise<DecisionResult | null> {
     const provider = this.d.provider();
     if (!provider || this.inFlight.has(key)) return null;
     const prev = this.attempts.get(key);
@@ -780,6 +606,7 @@ export class AttentionSignals {
   private prune(list: readonly SessionSummary[]): void {
     if (!list.length) return; // an empty listing is a failed one, not an empty archive
     const ids = new Set(list.map((s) => s.id));
+    pruneTurnOutcomes(ids, this.d.outcomesFile);
     const data = readSignals(this.file());
     const gone = Object.keys(data.sessions).filter((id) => !ids.has(id));
     const goneWorkers = Object.entries(data.workers)

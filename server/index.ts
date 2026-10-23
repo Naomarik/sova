@@ -48,9 +48,9 @@ import { setOffersDispatch } from "./session-offers";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
-import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
-import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
+import { configureSessionFeed, nudgeMarks, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
@@ -61,11 +61,9 @@ import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
 import { configureReadiness } from "./merge-readiness";
-import { startSessionTags } from "./tags-backfill";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
-import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
@@ -255,24 +253,11 @@ const attentionSignals = new AttentionSignals({
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),
   duties: teamDuties,
-  adapters: defaultAdapters,
   redact: (value) => serverRedactor().redactDeep(value),
   changed: nudgeMarks,
 });
 attentionSignals.start();
 onAgentSettled((path) => attentionSignals.turnSettled(path));
-startSessionTags({
-  list: listSessions,
-  onAgentSettled,
-  held: (path) => !!chatHandle(path),
-  provider: decisions,
-  settings: decisionSettings,
-  ready: () => {
-    const s = decisionRuntime().chain.status();
-    return { ready: s.ready, ...(s.reason ? { reason: s.reason } : {}) };
-  },
-  publish: (progress) => publishFeed({ type: "tags_backfill", progress }),
-});
 onTagsChanged(() => nudgeMarks());
 // Merge readiness (§chat.worktrees/readiness) is git and the file; its one follow-up check per
 // merge (§app.decisions/merge-followup) goes through the same seam, only with attention signals on.

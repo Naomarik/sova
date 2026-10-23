@@ -138,7 +138,9 @@
     "project.settings.history",
     "project.settings.undo",
     "project.settings.propose.withdraw",
-    "project.overseer.settings.set"
+    "project.overseer.settings.set",
+    "session.align.triage",
+    "session.workers.checks"
   ],
   "retired": [
     "settings.agents.get"

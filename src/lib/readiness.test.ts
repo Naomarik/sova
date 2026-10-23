@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReadinessState, SessionReadiness } from "../../shared/protocol";
-import { readinessBadge, readinessCount, readinessCountWords, readinessTitle, readinessWord } from "./readiness";
+import { branchStatusLine, readinessBadge, readinessCount, readinessCountWords, readinessTitle, readinessWord } from "./readiness";
 import { readinessChip, readinessReason } from "./worktrees";
 
 const r = (over: Partial<SessionReadiness>): SessionReadiness => ({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged" }], since: 1, ...over });
@@ -60,4 +60,13 @@ test("Session tab chips and visible reasons remain ordinary readiness", () => {
   assert.equal(readinessReason({ readiness: { path: "/p", branch: "b", state: "merged", why: "still tracked active" } }), "Merged · still tracked active");
   assert.equal(readinessReason({ readiness: { path: "/p", branch: "b", state: "ready" } }), null);
   assert.equal(readinessReason({}), null);
+});
+
+test("the branch status line: merged, pushed, live, spec; first in the badge's title", () => {
+  assert.equal(branchStatusLine(undefined), null);
+  assert.equal(branchStatusLine({ branch: "feat/x", commit: "a1b2c3d", pushed: true, live: true, specDrafts: 0 }), "feat/x: merged a1b2c3d · pushed · live · spec promoted");
+  assert.equal(branchStatusLine({ branch: "feat/x", commit: "a1b2c3d", pushed: false, live: false, specDrafts: 2 }), "feat/x: merged a1b2c3d · not pushed · restart owed · 2 spec drafts not promoted");
+  assert.equal(branchStatusLine({ branch: "feat/x", commit: "a1b2c3d", live: true }), "feat/x: merged a1b2c3d · live", "no origin, no drafts folder: those parts are left out");
+  const title = readinessTitle({ trees: [{ path: "/w", branch: "feat/x", state: "merged" }], since: 1, badge: "merged", branch: "feat/x", status: { branch: "feat/x", commit: "a1b2c3d", live: true } });
+  assert.equal(title?.split("\n")[0], "feat/x: merged a1b2c3d · live");
 });

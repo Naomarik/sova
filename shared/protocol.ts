@@ -3363,8 +3363,10 @@ export interface OverseerInfo {
   id: string;
   /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
-  /** Attention counts for the entry button (from the digest). act = needs you; decide = finished/look. */
-  badge: { act: number; decide: number };
+  /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
+      needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
+      you" (additive: absent from older servers, then read `act`). */
+  badge: { act: number; decide: number; needsYou?: number };
   /** Overseer assistant messages newer than the Overseer's own seenAt: the chat-unread badge on the
       entry button, separate from `badge`. */
   unread: number;
@@ -3397,7 +3399,8 @@ export type AttentionKind =
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
-  | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "asks-you"        // decide tier, soft: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "unverified"      // decide tier, soft: decisions' guess that the last reply says it is done but names something it didn't run or check
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
@@ -3412,6 +3415,9 @@ export type AttentionKind =
 export interface AttentionItem {
   /** Session id. */
   id: string;
+  /** A guess of the turn card (§app.overseer/attention-digest, the softer tier): listed in Needs
+      you and counted in "need you", never a brief or a phone notification. Additive. */
+  soft?: true;
   path: string;
   title: string;
   /** cwd (or target:remoteCwd), home-shortened. */
@@ -4246,7 +4252,41 @@ export interface DecisionProbeResult {
     "asks-you": the last reply of a turn with no open alignment question asks the user something
     (open alignment questions stay SessionSummary.align's deterministic count); "looping": the turn
     went in circles. */
-export type SignalKind = "asks-you" | "looping";
+export type SignalKind = "asks-you" | "looping" | "unverified";
+
+/** An alignment question's stakes (§app.decisions/align-triage). */
+export const ALIGN_STAKES = ["low-risk", "deletes-data", "costs-money", "changes-architecture-or-contract"] as const;
+export type AlignStakes = (typeof ALIGN_STAKES)[number];
+/** GET /api/sessions/align-triage: per open card (by `al_N`), the version answered and each open question's stakes. */
+export interface AlignTriage {
+  docs: Record<string, { rev: number; provider: DecisionProviderId; model: string; stakes: Record<string, AlignStakes> }>;
+}
+
+/** A worker report check's outcome choice (§app.decisions/worker-report). */
+export const WORKER_REPORT_OUTCOMES = ["finished", "partial", "blocked", "failed"] as const;
+export type WorkerReportOutcome = (typeof WORKER_REPORT_OUTCOMES)[number];
+/** GET /api/sessions/worker-checks: per worker id, the check of its newest done report. `report` is
+    the report's entry id; `unverified`: it reads finished but doesn't say it ran tests or checks. */
+export interface WorkerChecks {
+  workers: Record<string, { report: string; provider: DecisionProviderId; model: string; outcome: WorkerReportOutcome; unverified: boolean }>;
+}
+
+/** The turn card's outcome choice (§app.decisions/attention-signals). */
+export const TURN_OUTCOMES = ["did-what-was-asked", "partial-stopped", "waiting-on-user", "waiting-on-team", "hit-unfixed-failure", "progress-report"] as const;
+export type TurnOutcome = (typeof TURN_OUTCOMES)[number];
+/** The turn card's kind of ask. */
+export const ASK_KINDS = ["choose-between-options", "approve-risky-action", "needs-info", "restart-or-merge-go", "optional-offer", "none"] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+
+/** A finished turn's card as the wire carries it (additive): the chosen options and the two probabilities. */
+export interface TurnCard {
+  outcome?: TurnOutcome;
+  askKind?: AskKind;
+  /** P(it says it is done but names something not run, tested or checked). */
+  claimsUnverified?: number;
+  /** P(it names work still to do). */
+  leftOpen?: number;
+}
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -4254,11 +4294,16 @@ export interface SessionSignals {
   at: number;
   /** Id of the last assistant entry on the active branch when classified (the cache key). */
   turnId: string;
+  /** Who actually answered: the mark's tooltip names it ("Guessed by Jev", or the model). */
   provider: DecisionProviderId;
+  /** The answering model's id (additive; absent from older servers). */
+  model?: string;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** P(the last reply asks the user something), 0..1, when that turn was asked. */
   asksUser?: number;
+  /** The turn card's answers (additive; absent on records from before the card). */
+  card?: TurnCard;
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
       them. Visibility is server-computed too: `signals` (and `workerSignals`) are present on a
       SessionSummary / SessionMarks only while the mark should show (attention on, kinds non-empty,
@@ -4370,6 +4415,21 @@ export interface SessionReadiness {
   /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
       names work: its weight and the reply's own line naming it. */
   followUp?: { weight: "small" | "significant"; cue: string };
+  /** The branch status line of the newest merge (additive): code only, no model. */
+  status?: BranchStatus;
+}
+
+/** "merged {commit} · pushed · live · spec promoted" (§chat.worktrees/readiness), as facts. */
+export interface BranchStatus {
+  branch: string;
+  /** The merge's commit, 7 characters. */
+  commit: string;
+  /** On the target's origin branch; absent when there is no origin to ask. */
+  pushed?: boolean;
+  /** This server already runs the merge (false: a restart is owed). */
+  live: boolean;
+  /** Spec drafts in the merged worktree not promoted yet; absent when it has none or is gone. */
+  specDrafts?: number;
 }
 
 export type TagsBackfillScope = "recent" | "all";

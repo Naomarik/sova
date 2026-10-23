@@ -34,7 +34,7 @@ const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
     model: null,
     ...over,
   }) as SessionSummary;
-const row = (s: SessionSummary): BoardRow => ({ session: s, agent: null, state: "idle", reason: null, live: false, working: 0, total: 0, teams: [], lastActive: 0 });
+const row = (s: SessionSummary): BoardRow => ({ session: s, agent: null, state: "idle", reason: null, word: "Idle", live: false, working: 0, total: 0, teams: [], lastActive: 0 });
 const ctx = (detailsPath: string | null = null) => ({
   setRenaming() {},
   onRefresh() {},

@@ -281,8 +281,8 @@ fields) and questions (`qN`). It records the writing style in effect at its
 latest change (`style`, absent for Default), and in a session started with
 Visuals on a question, and the document once, can carry a `visual`
 (`{kind, source}`, a `vis` drawing; at most 3 per alignment). A
-question has a topic, the ask, optional context and options (label and
-trade-off), a recommendation (choice and why) and, once answered, a decision
+question has a topic, the ask, optional context and options (a label and its
+`tradeoff`: one plain line on what happens if the user picks it), a recommendation (choice and why) and, once answered, a decision
 (its text, `user` or `accepted-recommendation`, and when). Ids are never
 reused, so "q3" means one question for the document's life.
 

@@ -78,8 +78,13 @@ export interface AlignVisual {
 /** At most this many visuals per alignment, its questions' and its own together. */
 export const ALIGN_VISUALS_MAX = 3;
 
-/** The non-Default writing styles a document records (align-settings.ts AlignStyle; Default is no field). */
-export type AlignDocStyle = "simplified" | "pm";
+/**
+ * The writing style a document records (align-settings.ts AlignStyle): "default" is Technical. A document
+ * written before Technical was recorded has no field and names no style.
+ */
+export type AlignDocStyle = "default" | "simplified" | "pm";
+/** Each recorded style as the card, `get` and the viewer name it (align-settings.ts ALIGN_STYLE_LABELS). */
+export const ALIGN_DOC_STYLE_LABELS: Record<AlignDocStyle, string> = { pm: "Project manager", simplified: "Simplified", default: "Technical" };
 
 /** Adversarial review (behind the mode extension's `adversarial-review` flag): its two phases. */
 export type AlignReviewPhase = "plan" | "diff";
@@ -149,7 +154,7 @@ export interface AlignDocument {
 	rev: number;
 	/** The adversarial review record; absent until a review op ran (and always with the flag off). */
 	review?: AlignReview;
-	/** The writing style in effect at the document's latest change; absent for Default. */
+	/** The writing style in effect at the document's latest change ("default": Technical); absent on older documents. */
 	style?: AlignDocStyle;
 	/** The document's own drawing (§chat.alignment/visuals). */
 	visual?: AlignVisual;
@@ -560,8 +565,8 @@ export interface AlignEnv {
 	review?: AlignReviewEnv;
 	/** The session started with Visuals on: the visual fields are taken (ALIGN_VISUAL_FIELDS). */
 	visuals?: boolean;
-	/** The writing style now; a changing call records it on the document (absent or "default": no field). */
-	style?: "default" | AlignDocStyle;
+	/** The writing style now; a changing call records it on the document (absent: the field is left as it was). */
+	style?: AlignDocStyle;
 }
 
 /** A worker tuple as the reviewer route names it. */
@@ -965,9 +970,8 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	if (doc && changed) {
 		const n = visualCount(doc);
 		need(n <= ALIGN_VISUALS_MAX, `${doc.id} would carry ${n} visuals: at most ${ALIGN_VISUALS_MAX} per alignment (its questions' and its own); remove one with edit_question or edit_doc {visual: null}`);
-		// The style in effect at the document's latest change (§chat.alignment/document); Default is no field.
-		if (env.style !== undefined && env.style !== "default") doc.style = env.style;
-		else if (env.style === "default") delete doc.style;
+		// The style in effect at the document's latest change (§chat.alignment/document); "default" is Technical.
+		if (env.style !== undefined) doc.style = env.style;
 	}
 	if (doc && changed && !creates) {
 		doc.rev += 1;
@@ -1284,7 +1288,7 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 		};
 		if (v.technical !== undefined) doc.technical = technical;
 		if (v.style !== undefined) {
-			if (v.style !== "simplified" && v.style !== "pm") return undefined;
+			if (v.style !== "default" && v.style !== "simplified" && v.style !== "pm") return undefined;
 			doc.style = v.style;
 		}
 		if (v.visual !== undefined) {
@@ -1540,7 +1544,7 @@ export function changeLine(changes: readonly AlignChange[]): string {
 
 /** The whole document as markdown: `get`, `/align export`, the TUI viewer. */
 export function toMarkdown(doc: AlignDocument): string {
-	const style = doc.style ? ` · ${doc.style === "pm" ? "Project manager" : "Simplified"} style` : "";
+	const style = doc.style ? ` · ${ALIGN_DOC_STYLE_LABELS[doc.style]} style` : "";
 	const out = [`## ${doc.id}: ${doc.title}`, "", `_${doc.summary}_`, "", `Status: ${alignStatusWord(alignStatus(doc))} · ${openText(doc)} · v${doc.rev}${style}`];
 	if (doc.visual) out.push("", ...visualMarkdown(doc.visual));
 	if (doc.phase === "dropped" && doc.droppedWhy) out.push(`Dropped: ${doc.droppedWhy}`);

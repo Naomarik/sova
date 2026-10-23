@@ -50,9 +50,9 @@ test("the form's own words and equality", () => {
   assert.deepEqual(
     ALIGN_STYLE_OPTIONS.map((o) => [o.id, o.label, o.description]),
     [
-      ["default", "Default", "Today's detail: files, code and technical trade-offs."],
-      ["simplified", "Simplified", "Short sentences in everyday words, fewer items."],
       ["pm", "Project manager", "Screens, wording and behaviour only; no code. Technical detail folded into notes."],
+      ["simplified", "Simplified", "Short sentences in everyday words, fewer items."],
+      ["default", "Technical", "Files, code and technical trade-offs in the plan."],
     ],
   );
   assert.equal(sameAlignment(base, { ...base }), true);

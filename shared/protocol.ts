@@ -452,8 +452,8 @@ export interface AlignDocInfo {
   /** The adversarial review record (§chat.alignment-review/record); absent on every document no
       review op touched, which is all of them with the `adversarial-review` flag off. */
   review?: AlignReviewInfo;
-  /** The writing style in effect at the document's latest change; absent for Default. */
-  style?: "simplified" | "pm";
+  /** The writing style in effect at the document's latest change ("default": Technical); absent on older documents. */
+  style?: "default" | "simplified" | "pm";
   /** The document's own drawing (§chat.alignment/visuals); a question can carry one too. */
   visual?: AlignVisualInfo;
 }

@@ -3,11 +3,11 @@
   "version": 1,
   "note": "All demo data behind the landing site's screenshots and video. Edit this file, run `pnpm run screens:check`, then `pnpm run screens`. See README.md.",
 
-  "provider": "demo",
+  "provider": "anthropic",
   "models": {
     "main": { "id": "claude-opus-5-5", "provider": "anthropic", "name": "Claude Opus 5.5", "effort": "medium", "contextWindow": 1000000 },
     "glm": { "id": "glm-5.3", "provider": "zai", "name": "GLM-5.3", "contextWindow": 200000 },
-    "deepseek": { "id": "deepseek-v4-pro", "provider": "deepseek", "name": "DeepSeek V4 Pro", "contextWindow": 1000000 },
+    "deepseek": { "id": "deepseek-v4.1-flash", "provider": "deepseek", "name": "DeepSeek Flash 4.1", "contextWindow": 1000000 },
     "gpt": { "id": "gpt-6.1-sol", "provider": "openai", "name": "GPT-6.1 Sol", "effort": "medium", "contextWindow": 400000 }
   },
   "summarizer": "glm",
@@ -529,7 +529,7 @@
         { "do": "release", "until": "delegating", "caption": "Each worker runs on its own model" },
         { "do": "hold", "read": "3 workers" },
         { "do": "click", "target": "workers" },
-        { "do": "hold", "for": "2200ms", "read": "glm-5.3, deepseek-v4-pro, gpt-6.1-sol" },
+        { "do": "hold", "for": "2200ms", "read": "glm-5.3, deepseek-v4.1-flash, gpt-6.1-sol" },
         { "do": "release", "until": "end", "speed": 3, "summary": true, "caption": "Three models, one finished job" },
         { "do": "hold", "read": "All 3 are back" },
         { "do": "click", "target": "review-changes", "caption": "Review every change as steps" },

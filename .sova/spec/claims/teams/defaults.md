@@ -56,7 +56,12 @@ role nor members default; it does not remove workers already running.
   and `defaults.monitor` must be booleans, anything else is refused before any worker starts).
 - **An orchestrator the caller named is the coordinator.** If exactly one member has
   `orchestrator: true`, it becomes the team's coordinator and nothing is synthesized. More than one
-  orchestrator in a coordinated team is refused.
+  orchestrator in a coordinated team is refused, at `team_create` and at a `team_add` to a team
+  that has a coordinator, and never turned into a plain member silently. The refusal says that
+  only the coordinator is the orchestrator, that it hands a member (itself included) over to a
+  successor with `team_succeed`, that a member that only watches the team needs no orchestrator
+  mark, and that the main chat can start a replacement coordinator once none is live
+  (§teams.defaults/handover).
 - **Otherwise one is synthesized**: a member with role `coordinator.role`, `orchestrator: true`,
   on the first tuple that passes the same checks a spawn applies — the backend is loaded, the
   model policy (`model-policy.json`, subagent dimension included) allows it, and the pi model is
@@ -65,7 +70,9 @@ role nor members default; it does not remove workers already running.
   their reasons, and suggests fixing Settings or passing `defaults.coordinator: false`. A caller
   member that takes the coordinator's role without being the orchestrator is refused the same way.
 - **What the result says.** One line per synthesized member: role, backend/model/effort, and
-  whether it is the primary or the fallback (with the primary's denial).
+  whether it is the primary or the fallback (with the primary's denial). One line names the
+  standing roles Sova added to the team (or that it added none) and each one turned off, and by
+  what: the chat's settings, or the call's `defaults.coordinator` / `defaults.monitor: false`.
 - **It does no implementation.** Its header says so: it routes and unblocks the work the main
   thread assigned, verifies and reports, and never edits files itself. It keeps
   `team_roster`/`team_steer` and gains `team_report` and `team_succeed`; it still cannot add or
@@ -104,7 +111,8 @@ role nor members default; it does not remove workers already running.
   on `resume` it restarts them and reports the resume the same way.
 - **Scope.** A team's coordination is fixed at `team_create`. `team_add` never retrofits a
   coordinator onto an uncoordinated team; members added to a coordinated team are routed like the
-  others. At most 8 members start per call, synthesized ones included; the refusal says so.
+  others. There is no per-call limit: a synthesized coordinator and monitor count only toward the
+  chat's running limit (§app.teams/running-limit), whose refusal names them.
 
 ## §teams.defaults/routing — Only the coordinator talks to the main thread
 
@@ -246,15 +254,27 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
   restart at `team_01` in every parent session, so the session id is what keeps two sessions'
   notes apart. The directory is created with the coordinated team; every member's header but the
   monitor's names its own path. The monitor has no file tools and no note.
-- **`team_succeed { role }`** — the routing coordinator only. It starts the successor of that
+- **`team_succeed { role }`** — the routing coordinator's tool for any member, and the main
+  chat's (below) for a coordinator or monitor only. It starts the successor of that
   member (itself included) through the same spawn path: role `<base>-<n+1>` where an existing
   `-N` suffix is stripped first (`builder` → `builder-2` → `builder-3`; the first free number
-  wins), with the same tools, system prompt, cwd, backend options, ownership and duty.
+  wins), with the same tools, system prompt, cwd, backend options, extensions, ownership and duty.
   Its backend/model/effort follow the chat's current profile at successor spawn, except that
   explicit member or per-call choices remain binding. A standing duty uses its current configured
   tuple; an ordinary successor uses the current members default when applicable. With no usable
   applicable default it keeps the predecessor's tuple, and a denied default is reported as such
   (§chat.subagent-profiles/members-default). Running predecessors do not change model.
+- **A replacement from the main chat.** The main chat's `team_succeed { team, role }` (`role` is a
+  role or worker ID) starts a successor only for a member with the coordinator or monitor duty,
+  only when no member of that team with that duty is live (working, idle or stopping), and only
+  for the newest member with that duty; otherwise it is refused, saying why (a live coordinator
+  hands over itself; other members are the coordinator's to succeed). So two coordinators are
+  never live at once. It is the same successor path: the duty, `successorOf`, the predecessor's
+  assignment and every inherited main-thread steer, and its handover note when there is one. The
+  old member has ended, so the successor starts at once, the old member's seat is released, and
+  the action's source is `parent`. A coordinator's successor routes the team as soon as it starts.
+  A coordinator's successor that has no recorded assignment is told to ask the main thread with
+  `team_ask`. A team restored from history is refused as `team_add` refuses it.
 - **The note comes first.** For a live worker or coordinator, `team_succeed` starts nothing at
   once: the old member is told — as a redirect, so it lands ahead of anything already queued for
   it (or, when the coordinator succeeds itself, in the tool result) — to finish its step, write or
@@ -286,7 +306,8 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
   main thread's, part of its assignment, which nobody on the team can cancel; if anyone tells it
   one is not its work, it still is: it replies that it came from the main thread and does it. **A monitor hands over by
   `team_msg` only**: its successor's task is the monitor task, prefixed with "you take over from
-  <old>" (ask it over `team_msg`, call `team_ready`), and the old monitor is told to brief it over
+  <old>" (ask it over `team_msg`, call `team_ready`; when the old monitor has already ended, it is
+  told so instead: nobody is left to ask and there is no `team_ready` to call), and the old monitor is told to brief it over
   `team_msg` — its pending nudges, notices sent, whether a pause is in force — and to run no
   further checks; no note is involved. One pending handover per member, and a member still
   taking over cannot itself be succeeded until it has confirmed; the coordinator can start nothing

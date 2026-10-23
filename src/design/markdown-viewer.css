@@ -1,16 +1,16 @@
 /* ---- MARKDOWN VIEWER (§app/markdown-viewer). One whole markdown document in a native <dialog>
    opened with showModal() (top layer, over any open dialog; recorded deviation, like the
-   lightbox). Desktop: inset --space-5 (24px) on every side with a centred 72ch column that scrolls.
-   Folded: a tall sheet with a --space-5 gap above it and the skill's grip. */
+   lightbox). A centred card as tall as its document up to a cap: 760px wide and 80% of the window
+   on desktop, 16px from each side and 85% tall on a phone; never a sheet. */
 
 .md-viewer {
   position: fixed;
-  inset: var(--space-5);
-  width: auto;
-  height: auto;
+  inset: 0;
+  margin: auto;
+  width: min(760px, calc(100vw - var(--space-5) * 2));
+  height: fit-content;
   max-width: none;
-  max-height: none;
-  margin: 0;
+  max-height: min(80dvh, calc(100dvh - var(--space-5) * 2));
   padding: 0;
   border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--r-xl);
@@ -41,7 +41,6 @@
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
-.sheet-grip + .md-viewer-head { padding-top: var(--space-2); }
 .md-viewer-titles {
   flex: 1;
   min-width: 0;
@@ -112,8 +111,7 @@
 
 @media (max-width: 767px) {
   .md-viewer {
-    inset: var(--space-5) 0 0 0;
-    border-radius: var(--r-xl) var(--r-xl) 0 0;
-    border-bottom: 0;
+    width: calc(100vw - var(--space-4) * 2);
+    max-height: 85dvh;
   }
 }

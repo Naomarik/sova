@@ -555,13 +555,12 @@ label a person reads says "sessions pane".
   start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
   with nothing to say, so 278 titles start on one left edge instead of jittering with whatever
   chip the row happens to carry. Every folder, in every list (Folders, the Archive, each
-  group), wraps its head and rows in one guide rule: a 2px `--color-border` rule flush with the
-  folder's left edge (the pane edge in Folders; inside a user group or an Archive day the folder
-  itself sits one step in, beside that group's own line), then 2px of padding, so the folder's
-  content sits 4px in and reads as one block. Pressing the rule collapses the open folder, as its
-  head does (§app.session-list/guide-lines). The
-  rule sits outside the rows' 34px rail, whose hover and open-row fills start after it; a sticky
-  folder head keeps its own surface. The shell owns the divider, the hover
+  group), sets its head and rows 4px in from its own left edge (the pane edge in Folders; inside
+  a user group or an Archive day the folder itself sits one step in, beside that group's own
+  line), and an open folder draws one guide line down its rows' rail axis, under its chevron,
+  which sits on that axis: the arrow lines up with the rows' dots, and the line breaks around
+  each rail item (§app.session-list/guide-lines). Pressing the line collapses the open folder,
+  as its head does. A sticky folder head keeps its own surface. The shell owns the divider, the hover
   (`--color-sunken`) and the open-row tint (`--color-accent-tint`, via
   `.session-row-shell-current`), so the rail is skin, not a dead zone. Rail items are
   `<button type="button" tabindex="-1">` — pointer and AT affordances, never tab stops
@@ -943,8 +942,8 @@ session to start one." — because dragging a row is the feature's front door (i
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
 - **Indent.** An open group draws its own guide line under its chevron, and its folders sit one
-step in beside it (§app.session-list/guide-lines), each carrying the same guide rule as every other
-folder (§app.session-list/content-rules). Under a group name the line and the step are what tell its
+step in beside it (§app.session-list/guide-lines), each drawing the same guide line down its rows'
+rail as every other folder (§app.session-list/content-rules). Under a group name the line and the step are what tell its
 folders apart as the group's contents rather than siblings of its name; pressing the line collapses
 the group.
 - **The name row.** Twist, name, count, actions — and no folder icon. A group is the user's own
@@ -1874,8 +1873,8 @@ projects (§app.projects/list).
   is the pane's largest name (heading-s, semibold, full ink); a project head is a step down
   (body size, semibold, full ink, a muted `folder` icon before the name), set in one step under
   its org beside the org's guide line, one unbroken line centred under the org's chevron from its
-  head down past its last project (in the Projects region, with no org, a guide rule runs down
-  the project's block at the edge instead; §app.session-list/guide-lines); its groups and states keep their
+  head down past its last project (in the Projects region, with no org, the project's own guide
+  line runs from its arrow down its rows' rail instead; §app.session-list/guide-lines); its groups and states keep their
   quieter labels (the eyebrow and caption), and its rows are the unchanged rows. Counts stay muted.
   Consecutive projects are split by space and a rule, at every width.
 - **Order inside a project.** Rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
@@ -2029,7 +2028,8 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
   semibold, at `--row-height`: a 16px twist in the folder icon's column, the name, and the count
   at the right. Hover inks it. It doesn't stick; the folder labels under it keep sticking. A
   `--color-border` rule separates sections and sits under an open section's summary. An open
-  section draws a guide line under its chevron and its folders sit one step in beside it;
+  section draws a guide line under its chevron and its folders sit one step (`--space-5`) in
+  beside it;
   pressing the line collapses the section (§app.session-list/guide-lines). No new colors.
 - **Accessibility.** AT reads the summary ("Today 4, collapsed"); it holds spans, not a heading,
   for the reason given under Regions. Folder labels inside stay `h3`, each inside its own folder
@@ -2049,36 +2049,41 @@ Archive day. The region bands themselves (Needs you, Groups, Automations, Projec
 Organizations, Archive) have no line, and neither do the labels that don't collapse: an org's
 project heading, Conversations, Conflicts to settle, Sessions, their state labels, and Other.
 
-- **Two placements.**
-  - **Under the arrow**: an organization, a user group, a Done and an Archive day. The line runs
-    from the bottom of the group's head to the end of its contents, its centre on the centre of
-    the head's chevron (within half a pixel, at any zoom: both are placed from the same tokens,
-    the head's `--space-4` inset plus half the 16px icon). An organization's line is one
-    unbroken line down past all its projects, never a piece per project. To give the line its
-    own lane the group's contents sit one step in: an org's projects and a Done's rows
-    `--space-5` + `--space-1` (28px, where an org's projects already sat), a user group's and an
-    Archive day's folders `--space-6` (32px), so the folder's own edge line stands clear of its
-    parent's line instead of doubling it.
-  - **At the edge**: a folder and a Projects-region project keep the rule they had, a 2px
-    `--color-border` rule flush with the group's left edge along its head and rows
-    (§app.session-list/content-rules, §app.session-list/organizations "Three levels"). It only
-    becomes pressable: no title there loses any width.
+- **Every line runs down from its head's chevron**, its centre on the chevron's centre (within
+  half a pixel, at any zoom: both are placed from the same tokens), from the head down to the end
+  of the group's contents. An organization's line is one unbroken line down past all its
+  projects, never a piece per project. Two kinds:
+  - **Beside the contents**: an organization, a user group, an organization project's Done and
+    an Archive day. The chevron keeps its place (the head's `--space-4` inset plus half the 16px
+    icon), the line starts at the head's bottom, and the contents sit one step in to give it a
+    lane of its own: an org's projects and its Done's rows `--space-5` + `--space-1` (28px, where
+    an org's projects already sat), a user group's and an Archive day's folders `--space-5`
+    (24px), clear of the folder's own line further in.
+  - **Down the rows' rail**: a folder (in every list) and a Projects-region project, and that
+    project's "{n} done". The chevron sits on the axis of its rows' state rail (the rail's 2px
+    margin plus half its 30px column, from the row's left edge), so the arrow lines up with the
+    rows' dots, and the line runs down that axis behind the rail: a TUI chip, a Busy dot or a
+    worker count sits on top of it, each in a small ring of the row's own ground (its rest,
+    hover, focus or current tint, never a patch of another colour), so the line visibly breaks
+    around it. Across the open session's row the line takes `--color-border-strong`, since the
+    current tint is as dark as `--color-border` and the line would vanish there. The rows stay where they were (4px in), so no title loses width; the old 2px rule
+    at the group's left edge is gone. A project's "{n} done" sets its rows one step in
+    (`--space-5`), with its chevron on their rail's axis, clear of the project's own line.
 - **The look.** Every line is 2px of `--color-border`, as before. On hover the pointer becomes a
   hand, the line takes `--color-border-strong`, its group's head lights up (the `--color-sunken`
   hover fill and full ink) so you can see what will close, and a tooltip reads "Collapse {name}",
   where {name} is what the head shows: the org's or group's name, the folder's path, the project's
   name, "Done" (or "{n} done"), the day's name.
 - **What a press does.** The line is a transparent box about 12px wide (`--space-3`), centred on
-  the 2px line, so a press up to 6px either side of it lands. An edge line's box stops at the
-  group's own left edge. Where two lines run close (a folder's edge line inside a user group or an
-  Archive day), their boxes split at the midpoint between the two lines and never overlap, so a
-  press goes to the line nearest it. A head on top of a line (a sticky folder or project head)
-  keeps its own press. Pressing the line of an open group closes it exactly as pressing its head
+  the 2px line, so a press up to 6px either side of it lands. Nested lines (a folder's inside a
+  user group or an Archive day, a "{n} done" inside its project) stand far enough apart that
+  their boxes never overlap; were two ever closer, their boxes would split at the midpoint
+  between them. What sits on a line keeps its own press: a head on top of it (a sticky folder or
+  project head) and a rail item (its chip, dot or count). Pressing the line of an open group closes it exactly as pressing its head
   would: the same `toggle`, so the choice is remembered the same way, in the same place
   (a folder's and an Archive day's in `sessionStorage`, an org's, a group's, a Done's and a
   project's in memory), and it counts as your own collapse while you are on a session inside it
-  (§app.session-list/organizations "Open by default"). A closed group's line does nothing: an
-  edge line still draws along the closed head, but pressing it is pressing nothing.
+  (§app.session-list/organizations "Open by default"). A closed group draws no line.
 - **Where you land.** If the group's head had scrolled out of view above the list's top, the list
   scrolls so the collapsed head sits at the top of the list, a sticky head included (its rows
   vanish under it). If the head was in view, nothing moves.

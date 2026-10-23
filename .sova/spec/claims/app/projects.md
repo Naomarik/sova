@@ -90,8 +90,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   waiting, then the finished ones (a build merged per git, a folder session that is neither live nor
   an unarchived web session) folded into one quiet "{n} done" line at the end of the list, which
   opens them in place (closed by default, memory only). The project heading starts with a small
-  arrow that folds and unfolds its sessions, and the guide rule at the edge of an unfolded
-  project's block folds it too (§app.session-list/guide-lines): open by default, the choice kept in memory for the
+  arrow that folds and unfolds its sessions, set on its rows' rail axis, and the guide line
+  running from it down that rail folds an unfolded project too (§app.session-list/guide-lines): open by default, the choice kept in memory for the
   page's life (as each Done is), and forced open while a search is on. When you move to a session
   among its rows (a click, a link, a notification, the palette, or loading the page on it) a
   folded project, and its Done if the session is there, opens for that visit without changing the

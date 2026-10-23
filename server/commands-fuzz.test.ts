@@ -276,6 +276,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
   "project.worktree.remove": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
+  "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
@@ -319,6 +320,7 @@ function anchors(c: CommandEntry): Anchor[] {
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
   }
+  if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real" }];
   // A folder that is no folder is refused whatever else the body says; one already registered (in the set-up) is the
   // route's own 409 after its checks of the body, so each case meets them and none registers a project.
   if (c.id === "project.create") {
@@ -628,6 +630,26 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, []),
   },
+  "project.settings.get": { values: () => withProject(), status: 200 },
+  "project.settings.history": { values: () => withProject(), status: 200 },
+  "project.overseer.settings.set": {
+    values: () => withProject({ watch: false }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/overseer`)).settings as { watch: boolean }).watch, false),
+  },
+  "project.settings.undo": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => {
+        v.pid = await newProject();
+        await sendTo(app, "PATCH", `/api/projects/${v.pid}/overseer`, JSON.stringify({ holdMin: 3 }));
+        v.id = ((await read("GET", `/api/projects/${v.pid}/settings/history`)) as unknown as { id: string }[])[0]!.id;
+      });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/overseer`)).settings as { holdMin: number }).holdMin, 10),
+  },
   "project.offers.list": {
     values: () => {
       const v: Record<string, unknown> = {};
@@ -637,6 +659,24 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
   },
 };
+/** A registered project (its overseer's settings read their defaults), made in the set-up. */
+async function newProject(): Promise<string> {
+  const d = join(root, `project-${++n}`);
+  mkdirSync(d, { recursive: true });
+  const pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id;
+  // No looks of its own while the fuzz runs: its watch loop writes nothing behind a later fixture's hash.
+  await sendTo(app, "PATCH", `/api/projects/${pid}/overseer`, JSON.stringify({ watch: false }));
+  // Its runtime registry's first read, done now: no write lands after the hash.
+  await (await import("./projects/runtime")).observe(pid);
+  await (await import("./org-engine")).hostOf(pid).idle();
+  return pid;
+}
+/** Values naming a project made in the set-up (its pid filled in before the hash is taken), plus `extra`. */
+function withProject(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const v: Record<string, unknown> = { ...extra };
+  pendingSetup.push(async () => void (v.pid = await newProject()));
+  return v;
+}
 /** A session whose folder's project declares one offer, `hello`, with a send button (§chat/offers). */
 function offersSession(): string {
   const d = join(root, `offers-project-${++n}`);

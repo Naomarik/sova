@@ -215,7 +215,9 @@ export function snapshotShaInput(snapshot: Pick<ProjectModeSnapshot, "text" | "d
 /** Thrown by parseModeFile: the message is the user-facing problem line. */
 export class ModeFileError extends Error {}
 
-const KEYS = new Set(["description", "workers", "tools", "commands", "hooks"]);
+/** The keys MODE.md may hold (parseModeFile refuses any other). */
+export const MODE_KEYS = ["description", "workers", "tools", "commands", "hooks"] as const;
+const KEYS = new Set<string>(MODE_KEYS);
 
 /**
  * MODE.md, strictly. A `---` fence on line 1 and a closing `---` line; between them `key: value` lines, where

@@ -2872,7 +2872,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 32995,
+      "bytes": 35629,
       "tools": [
         {
           "name": "sova_project",
@@ -3446,8 +3446,8 @@
         {
           "name": "sova_preview",
           "label": "Preview link",
-          "description": "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), at any level; delete a preview once it has served its purpose.",
-          "promptSnippet": "start (L1, held unattended) or delete a preview link of a coding session's app",
+          "description": "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). Unattended it needs the Share power and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), always allowed; delete a preview once it has served its purpose.",
+          "promptSnippet": "start (the Share power, held unattended) or delete a preview link of a coding session's app",
           "parameters": {
             "type": "object",
             "properties": {
@@ -3586,7 +3586,7 @@
         {
           "name": "sova_files",
           "label": "Files",
-          "description": "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). copy {id, session}: into that coding session's worktree as incoming/<name> (needs L3 in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
+          "description": "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). copy {id, session}: into that coding session's worktree as incoming/<name> (needs Send coding sessions prompts in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
           "promptSnippet": "list files people sent; copy one into a coding session's worktree",
           "parameters": {
             "type": "object",
@@ -3739,6 +3739,88 @@
               "session",
               "states",
               "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_settings",
+          "label": "Settings",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. withdraw {card}: drop a card of yours (sc_…).",
+          "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "get",
+                  "reference",
+                  "propose",
+                  "withdraw"
+                ],
+                "description": "get | reference | propose | withdraw"
+              },
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "overseer.watch",
+                  "overseer.powers",
+                  "overseer.brake",
+                  "overseer.models",
+                  "overseer.assistant-models",
+                  "overseer.abilities",
+                  "overseer.extra",
+                  "overseer.limits",
+                  "overseer.pace",
+                  "overseer.hold",
+                  "overseer.memory",
+                  "project.name",
+                  "services",
+                  "profile",
+                  "playbook",
+                  "schedule",
+                  "mode",
+                  "offers"
+                ],
+                "description": "reference: the setting (from the index in your prompt)."
+              },
+              "why": {
+                "type": "string",
+                "description": "propose: one or two sentences for the operator, shown on the card."
+              },
+              "edits": {
+                "type": "array",
+                "description": "propose: the changes, each an object naming its setting (see the description).",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "setting": {
+                      "type": "string",
+                      "enum": [
+                        "overseer",
+                        "memory",
+                        "project",
+                        "profile",
+                        "playbook",
+                        "mode",
+                        "offers",
+                        "services"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "setting"
+                  ]
+                }
+              },
+              "card": {
+                "type": "string",
+                "description": "withdraw: the card's id (sc_…)."
+              }
+            },
+            "required": [
+              "op"
             ],
             "additionalProperties": false
           }
@@ -3918,7 +4000,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 33307,
+      "bytes": 35941,
       "tools": [
         {
           "name": "sova_project",
@@ -4492,8 +4574,8 @@
         {
           "name": "sova_preview",
           "label": "Preview link",
-          "description": "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), at any level; delete a preview once it has served its purpose.",
-          "promptSnippet": "start (L1, held unattended) or delete a preview link of a coding session's app",
+          "description": "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). Unattended it needs the Share power and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), always allowed; delete a preview once it has served its purpose.",
+          "promptSnippet": "start (the Share power, held unattended) or delete a preview link of a coding session's app",
           "parameters": {
             "type": "object",
             "properties": {
@@ -4632,7 +4714,7 @@
         {
           "name": "sova_files",
           "label": "Files",
-          "description": "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). copy {id, session}: into that coding session's worktree as incoming/<name> (needs L3 in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
+          "description": "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). copy {id, session}: into that coding session's worktree as incoming/<name> (needs Send coding sessions prompts in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
           "promptSnippet": "list files people sent; copy one into a coding session's worktree",
           "parameters": {
             "type": "object",
@@ -4785,6 +4867,88 @@
               "session",
               "states",
               "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_settings",
+          "label": "Settings",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. withdraw {card}: drop a card of yours (sc_…).",
+          "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "get",
+                  "reference",
+                  "propose",
+                  "withdraw"
+                ],
+                "description": "get | reference | propose | withdraw"
+              },
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "overseer.watch",
+                  "overseer.powers",
+                  "overseer.brake",
+                  "overseer.models",
+                  "overseer.assistant-models",
+                  "overseer.abilities",
+                  "overseer.extra",
+                  "overseer.limits",
+                  "overseer.pace",
+                  "overseer.hold",
+                  "overseer.memory",
+                  "project.name",
+                  "services",
+                  "profile",
+                  "playbook",
+                  "schedule",
+                  "mode",
+                  "offers"
+                ],
+                "description": "reference: the setting (from the index in your prompt)."
+              },
+              "why": {
+                "type": "string",
+                "description": "propose: one or two sentences for the operator, shown on the card."
+              },
+              "edits": {
+                "type": "array",
+                "description": "propose: the changes, each an object naming its setting (see the description).",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "setting": {
+                      "type": "string",
+                      "enum": [
+                        "overseer",
+                        "memory",
+                        "project",
+                        "profile",
+                        "playbook",
+                        "mode",
+                        "offers",
+                        "services"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "setting"
+                  ]
+                }
+              },
+              "card": {
+                "type": "string",
+                "description": "withdraw: the card's id (sc_…)."
+              }
+            },
+            "required": [
+              "op"
             ],
             "additionalProperties": false
           }
@@ -4965,7 +5129,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 33436,
+      "bytes": 36070,
       "tools": [
         {
           "name": "sova_project",
@@ -5539,8 +5703,8 @@
         {
           "name": "sova_preview",
           "label": "Preview link",
-          "description": "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), at any level; delete a preview once it has served its purpose.",
-          "promptSnippet": "start (L1, held unattended) or delete a preview link of a coding session's app",
+          "description": "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). Unattended it needs the Share power and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), always allowed; delete a preview once it has served its purpose.",
+          "promptSnippet": "start (the Share power, held unattended) or delete a preview link of a coding session's app",
           "parameters": {
             "type": "object",
             "properties": {
@@ -5691,7 +5855,7 @@
         {
           "name": "sova_files",
           "label": "Files",
-          "description": "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). copy {id, session}: into that coding session's worktree as incoming/<name> (needs L3 in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
+          "description": "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). copy {id, session}: into that coding session's worktree as incoming/<name> (needs Send coding sessions prompts in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
           "promptSnippet": "list files people sent; copy one into a coding session's worktree",
           "parameters": {
             "type": "object",
@@ -5844,6 +6008,88 @@
               "session",
               "states",
               "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_settings",
+          "label": "Settings",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. withdraw {card}: drop a card of yours (sc_…).",
+          "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "get",
+                  "reference",
+                  "propose",
+                  "withdraw"
+                ],
+                "description": "get | reference | propose | withdraw"
+              },
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "overseer.watch",
+                  "overseer.powers",
+                  "overseer.brake",
+                  "overseer.models",
+                  "overseer.assistant-models",
+                  "overseer.abilities",
+                  "overseer.extra",
+                  "overseer.limits",
+                  "overseer.pace",
+                  "overseer.hold",
+                  "overseer.memory",
+                  "project.name",
+                  "services",
+                  "profile",
+                  "playbook",
+                  "schedule",
+                  "mode",
+                  "offers"
+                ],
+                "description": "reference: the setting (from the index in your prompt)."
+              },
+              "why": {
+                "type": "string",
+                "description": "propose: one or two sentences for the operator, shown on the card."
+              },
+              "edits": {
+                "type": "array",
+                "description": "propose: the changes, each an object naming its setting (see the description).",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "setting": {
+                      "type": "string",
+                      "enum": [
+                        "overseer",
+                        "memory",
+                        "project",
+                        "profile",
+                        "playbook",
+                        "mode",
+                        "offers",
+                        "services"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "setting"
+                  ]
+                }
+              },
+              "card": {
+                "type": "string",
+                "description": "withdraw: the card's id (sc_…)."
+              }
+            },
+            "required": [
+              "op"
             ],
             "additionalProperties": false
           }

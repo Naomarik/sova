@@ -147,6 +147,8 @@ import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
+import { pageOnlyRefusal } from "./page-only";
+import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -392,6 +394,7 @@ export function buildApp(deps: AppDeps) {
   registerOrgRoutes(app);
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
+  registerProjectSettingsRoutes(app);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
   // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
@@ -1120,15 +1123,13 @@ export function buildApp(deps: AppDeps) {
 
   /** Why this request can't approve hooks: only the operator's own page on this machine may. */
   function hooksApprovalRefusal(c: Context): string | null {
-    if (overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    if (!localRequest(c)) return "A project mode's hooks are approved only on this machine.";
-    if (c.req.header(CALLER_HEADER) !== undefined) return "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    // The page carries the token as the install's cookie; a script, a chat's terminal or a tool sends the header.
-    if (c.req.header(TOKEN_HEADER) !== undefined) return "A script can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
-    if (extensionCaller(c.req.header(TOKEN_HEADER)) !== null || (bearer !== undefined && isExtensionKey(bearer.trim())))
-      return "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    return null;
+    return pageOnlyRefusal(c, {
+      overseer: "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      local: "A project mode's hooks are approved only on this machine.",
+      chat: "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      script: "A script can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      extension: "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.",
+    });
   }
 
   // POST /api/mode/command?path= { mode, name, args? } (§chat.mode-menu/project-mode-commands): one command of a

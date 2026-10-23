@@ -82,6 +82,11 @@ export type ParsedOffersFile = { state: "missing" } | { state: "broken"; error: 
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
+/** The keys the offers file, an offer and a button may hold (the parse refuses any other; the settings reference covers each). */
+export const OFFERS_FILE_KEYS = ["version", "offers"] as const;
+export const OFFER_KEYS = ["when", "why", "title", "onlyIf", "repeat", "shownBy", "disabled", "buttons"] as const;
+export const BUTTON_KEYS = ["label", "about", "send", "run", "to"] as const;
+
 class OfferError extends Error {}
 const fail = (message: string): never => {
   throw new OfferError(message);
@@ -114,7 +119,7 @@ export const runAllowed = (id: string): id is RunId => (RUN_ALLOWED as readonly 
 function parseButton(raw: unknown, i: number, shownBy: OfferShownBy): OfferButtonDef {
   const where = `buttons[${i}]`;
   if (!isObj(raw)) return fail(`${where} must be an object`);
-  keysOnly(raw, ["label", "about", "send", "run", "to"], where);
+  keysOnly(raw, BUTTON_KEYS, where);
   const label = text(raw, "label", LABEL_MAX, where, true);
   const about = text(raw, "about", ABOUT_MAX, where, true);
   if (/\n/.test(about)) fail(`${where}: "about" is one line`);
@@ -143,7 +148,7 @@ function parseButton(raw: unknown, i: number, shownBy: OfferShownBy): OfferButto
 
 function parseOffer(raw: unknown): OfferDef {
   if (!isObj(raw)) return fail("an offer must be an object");
-  keysOnly(raw, ["when", "why", "title", "onlyIf", "repeat", "shownBy", "disabled", "buttons"], "the offer");
+  keysOnly(raw, OFFER_KEYS, "the offer");
   const when = text(raw, "when", WHEN_MAX, "the offer", true);
   const why = text(raw, "why", WHY_MAX, "the offer", false);
   const title = text(raw, "title", TITLE_MAX, "the offer", true);
@@ -188,7 +193,7 @@ export function parseOffersFile(text: string | null): ParsedOffersFile {
     return { state: "broken", error: `The file is not JSON: ${err instanceof Error ? err.message : String(err)}` };
   }
   if (!isObj(raw)) return { state: "broken", error: "The file must be a JSON object." };
-  const extra = Object.keys(raw).filter((k) => k !== "version" && k !== "offers");
+  const extra = Object.keys(raw).filter((k) => !(OFFERS_FILE_KEYS as readonly string[]).includes(k));
   if (extra.length) return { state: "broken", error: `The file has an unknown key "${extra[0]}".` };
   if (raw.version !== 1) return { state: "broken", error: 'The file needs "version": 1.' };
   if (!isObj(raw.offers)) return { state: "broken", error: 'The file needs "offers": an object of named offers.' };

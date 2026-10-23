@@ -176,9 +176,10 @@ appends (one line each).
   the list). It is the durable "work finished" record a branch's merge readiness can read: a
   session's newest outcome and the reply time it belongs to.
 - **Showing and clearing** is decided on the server: a session's `signals` are sent only while it
-  has a kind, the feature is on, it is not running, and — for every kind but `asks-you`, which stays
-  until the user answers (§app.decisions/asks-user) — no pane has it open and it hasn't been seen
-  since it was checked (the seen store, §app.overseer/seen); a newer turn replaces them. Switching
+  has a kind, the feature is on, it is not running, and — for every kind but `asks-you` and
+  `unverified`, which stay until the user acts (§app.decisions/asks-user) — no pane has it open
+  and it hasn't been seen since it was checked (the seen store, §app.overseer/seen); a newer turn
+  replaces them. A look never clears `asks-you` or `unverified`. Switching
   the feature off hides every mark and keeps the stored answers. The row's mark is
   §app.session-list/anatomy; the Overseer's view is §app.overseer/attention-digest.
 

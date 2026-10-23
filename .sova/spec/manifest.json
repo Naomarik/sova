@@ -6439,8 +6439,9 @@
         "§app.overseer/seen"
       ],
       "agreed": {
-        "by": "user (guided-tours go-ahead: al_6 recorder sign-in decisions)",
-        "at": "2026-10-19T08:08Z"
+        "by": "naomarik",
+        "at": "2026-10-22T21:50Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
       }
     },
     "§app.overseer/caps": {
@@ -7210,12 +7211,30 @@
         "src/lib/signals.ts",
         "src/lib/signals.test.ts",
         "server/events.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/session-feed-watch.ts",
+        "server/session-feed-watch.test.ts",
+        "server/session-feed.integration.test.ts",
+        "server/list-generation.ts",
+        "server/merge-readiness.ts",
+        "server/overseer.ts",
+        "server/events.test.ts",
+        "src/App.tsx",
+        "src/lib/poll.ts",
+        "src/lib/session-feed.browser.test.ts",
+        "server/chat-handle-remote.ts",
+        "server/worktrees.ts",
+        "server/merge-readiness.test.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
         "§app.decisions/session-tags"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T21:50Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      }
     },
     "§app.decisions/session-tags": {
       "kind": "behavior",
@@ -7498,7 +7517,12 @@
         "§app.session-list/recent",
         "§app.session-list/groups",
         "§app.session-list/spine"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T21:50Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      }
     },
     "§teams.defaults/command": {
       "kind": "behavior",
@@ -8080,8 +8104,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T10:01Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "at": "2026-10-22T23:27Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
       }
     },
     "§app.baton/offers-and-leases": {
@@ -9242,8 +9266,9 @@
         "§chat.worktrees/readiness"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:39Z"
+        "by": "naomarik",
+        "at": "2026-10-22T22:00Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
       }
     },
     "§chat.worktrees/merge-card": {
@@ -12479,7 +12504,12 @@
         "server/claude-pool/pool-test-fixtures.ts",
         "server/claude-pool/agent.integration.test.ts",
         "server/claude-pool/agent.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T22:00Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      }
     },
     "§app.claude-logins/idle-pin": {
       "kind": "behavior",
@@ -18645,12 +18675,22 @@
         "server/session-summary-route.test.ts",
         "server/session-profiles-runtime.test.ts",
         "server/org-sessions.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/session-feed.ts",
+        "server/session-feed.test.ts",
+        "server/schedule-routes.ts",
+        "server/chat-handle-remote.ts",
+        "server/chat-handle-remote.test.ts"
       ],
       "requires": [
         "§app/session-list",
         "§app.decisions/push"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T22:15Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      }
     },
     "§chat.worktrees/dirty-freshness": {
       "kind": "behavior",
@@ -18662,7 +18702,9 @@
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
         "server/merge-readiness.integration.test.ts",
-        "server/worktree-cleanup.ts"
+        "server/worktree-cleanup.ts",
+        "server/session-feed-watch.ts",
+        "server/session-feed.integration.test.ts"
       ],
       "requires": [
         "§chat.worktrees/readiness",
@@ -18670,8 +18712,9 @@
         "§chat.worktrees/cleanup"
       ],
       "agreed": {
-        "by": "user (al_1 go-ahead)",
-        "at": "2026-10-16T16:27Z"
+        "by": "naomarik",
+        "at": "2026-10-22T23:48Z",
+        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
       }
     },
     "§tools.spec/review-playbook": {

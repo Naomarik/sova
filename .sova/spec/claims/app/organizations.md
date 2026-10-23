@@ -452,16 +452,14 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   opening the add form.
 - **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
-- **Settings.** In this order: **Settings changes waiting** (only while a project overseer's Settings
-  change card or the folder's uncommitted settings edits wait, §app.project-overseer/settings); **Overseer** (the Watch switch and its hint); **What may happen
+- **Settings.** In this order: **Overseer** (the Watch switch and its hint); **What may happen
   without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
   Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
   model, thinking, abilities and mode selects, three to a row where they fit); **Extra
   instructions**; **Limits** (§app.project-overseer/limits); the Owner Page card while the org has
-  an owner (§app.owner-page/controls); **Offers** (§chat.offers/project-list); **All settings** and
-  **Settings history** (§app.project-overseer/settings); and a **Danger zone** with **Archive Project** (or
+  an owner (§app.owner-page/controls); and a **Danger zone** with **Archive Project** (or
   Unarchive). A pick or switch saves at once; Extra instructions and Limits on their own Save.
 - **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
   page's does, and every control stays at least 44px tall.
@@ -864,9 +862,7 @@ Organizations region's own Needs you, never the global one.
   `overseer`. No other status write is allowed to it, and none to the wrap-up.
 - A project's main stakeholder (§app.organizations/stakeholder) is the operator's alone: it is
   written only through the project PATCH, which no autonomous writer has (the global Overseer
-  calls it for the operator, as the operator; the project overseer's `sova_settings` changes it only
-  in a turn the operator started or at their Apply on its card, as the operator,
-  §app.project-overseer/settings), and cleared by Sova only when that person leaves.
+  calls it for the operator, as the operator), and cleared by Sova only when that person leaves.
   The org's owner (§app.owner-page/owner) is the same: written only through
   `PUT /api/orgs/:id/owner`, cleared by Sova only when that person leaves.
 
@@ -1078,8 +1074,7 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   (§app.organizations/person-page); the project overseer's prompt, `sova_project` and `sova_roster`
   name them (§app.project-overseer/identity, /tools), and its gaps go to them before the operator
   (§app.project-overseer/gaps). The global Overseer's `sova_orgs` and `sova_org_project` name them
-  too, and it may set one for the operator (§app.overseer/org-writes). The project overseer may change
-  it in a turn the operator started, with Undo (§app.project-overseer/settings).
+  too, and it may set one for the operator (§app.overseer/org-writes).
 
 ## §app.organizations/about — About this organization: the operator's context for project overseers
 

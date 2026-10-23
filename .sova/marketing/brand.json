@@ -80,7 +80,7 @@
   },
   "facts": {
     "licence": "Apache-2.0",
-    "hosting": "Not decided",
-    "siteUrl": null
+    "hosting": "Cloudflare Pages",
+    "siteUrl": "https://sova.naomarik.com/"
   }
 }

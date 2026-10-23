@@ -1459,8 +1459,10 @@ The files pi puts into the prompt, in the order it loads them.
   with no role. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
   marked "appended to the system prompt". The role is muted caption text after the path, not a
   chip.
-- **The row.** The path with the home folder written `~` (the full path when it isn't under home,
-  or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
+- **The row.** A file inside the session's own folder is named by its path from that folder, with
+  no folder before it (`AGENTS.md`, `.pi/APPEND_SYSTEM.md`). Any other file is its path with the
+  home folder written `~` (the full path when it isn't under home, or before home is known). The
+  name is on one line and cut with an ellipsis when it doesn't fit. The full
   path is in the row's `title`. Then the role, if any, then its token estimate
   (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own

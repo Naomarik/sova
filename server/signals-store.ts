@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DecisionProviderId, SessionSignals, SignalKind } from "../shared/protocol";
+import type { DecisionProviderId, SessionSignals, SessionSummary, SignalKind } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -22,8 +22,8 @@ import { sessionsChanged } from "./list-generation";
  * Same store rules as seen.ts: re-read and merge before writing, atomic tmp+rename, ~1 s read cache.
  */
 
-/** asks_user.p at or above → "asks-you". */
-export const ASKS_USER_MIN = 0.5;
+/** asks_user.p at or above → "asks-you". Real asks score ~0.95; courtesy offers 0.5–0.8. */
+export const ASKS_USER_MIN = 0.85;
 /** stuck score (0..2) at or above, with confidence at or above STUCK_CONFIDENCE_MIN → "looping". */
 export const STUCK_SCORE_MIN = 1.5;
 export const STUCK_CONFIDENCE_MIN = 0.5;
@@ -184,6 +184,23 @@ export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
   return out;
 }
 
+/** An asking sentence that only asks for a server restart or a merge (or push) go-ahead. */
+const RESTART_GO_RE = /\b(?:restart|merge|merging|land|landing|push|pushing|go live)\b/i;
+export const isRestartGo = (sentence: string | undefined): boolean => !!sentence && RESTART_GO_RE.test(sentence);
+
+/**
+ * A row's signals without an `asks-you` that only asks for a restart or merge go while merge
+ * readiness already says a restart is owed (§app.decisions/asks-user): the readiness badge says it.
+ */
+export function withoutRestartAsk<R extends Pick<SessionSummary, "id" | "signals" | "readiness">>(row: R, data = readSignals()): R {
+  const sig = row.signals;
+  if (!sig?.kinds.includes("asks-you") || !row.readiness?.restartPending) return row;
+  if (!isRestartGo(data.sessions[row.id]?.detail)) return row;
+  const kinds = sig.kinds.filter((k) => k !== "asks-you");
+  const { signals: _drop, ...rest } = row;
+  return (kinds.length ? { ...rest, signals: { ...sig, kinds } } : rest) as R;
+}
+
 /** A stored turn as the wire carries it. */
 export function toWire(t: StoredTurn): SessionSignals {
   const p = boolP(t.answers.asks_user);
@@ -192,6 +209,7 @@ export function toWire(t: StoredTurn): SessionSignals {
     at: t.at,
     turnId: t.turnId,
     provider: t.provider,
+    ...(t.model ? { model: t.model } : {}),
     ...(p !== undefined ? { asksUser: p } : {}),
     ...(s ? { stuck: { score: s.score, confidence: s.confidence } } : {}),
     kinds: signalKinds(t.answers),

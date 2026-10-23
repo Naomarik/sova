@@ -235,6 +235,20 @@ describe("state and questions", () => {
 });
 
 describe("looksLikeAsk: the mechanical pre-filter (labelled cases from the Jev audit)", () => {
+  test("asks the gate used to lose (measured on real replies): quoted reply commands, awaiting your, needs your approval", () => {
+    for (const a of [
+      'Answer each by id, or say "your recs" and I\'ll start.',
+      "Say 'prune drafts' and I'll delete all five.",
+      "Reply “your recs” to take all three.",
+      "Say OK and I'll schedule the restart.",
+      "Master is 39 ahead of origin, awaiting your push/scrub call.",
+      "The preview still needs the operator approval above.",
+      "Promoting needs your go-ahead.",
+    ])
+      assert.equal(sig.looksLikeAsk(a), true, a);
+    for (const p of ["I said the tests pass.", "The reply said it was done.", "No restart pending; nothing ready-declared."]) assert.equal(sig.looksLikeAsk(p), false, p);
+  });
+
   // Hard asks and soft offers Jev put at p >= 0.5 (asks.txt), and the reviewer's A1-A3.
   const asks = [
     "Should I build pass 1? I'd do it in a feature worktree and test on the hermetic server. Also tell me whether you want pass 2.",

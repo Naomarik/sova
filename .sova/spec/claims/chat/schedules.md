@@ -42,9 +42,7 @@ new session, and needs no model to re-arm it.
 
 - **Nothing fires unapproved.** A schedule found in a project's playbook reads **Needs approval**
   until you approve it. Only your click in Sova approves: `POST /api/schedules/approve {cwd,
-  playbook, pin}` from the Playbooks dialog or the Overseer's Approvals & Schedules, or **Apply and
-  Approve** on a project overseer's Settings change card that grants it (§app.project-overseer/settings:
-  the schedule's lines as the card showed them, refused when the file differs). A request that carries
+  playbook, pin}` from the Playbooks dialog or the Overseer's Approvals & Schedules. A request that carries
   the Overseer's sender mark is refused, so no model approves one.
 - **Pinned to what you saw.** An approval records the schedule's pin: its `when:` and `tz:` lines,
   the linked profile's identity (§chat.profiles/projects), and that profile's powers (what it removes

@@ -58,6 +58,7 @@
     "GET /api/health": {"need":"sessions","is":"command","ids":["sova.health"]},
     "GET /api/insights/agents": {"need":"sessions","is":"command","ids":["insights.agents"]},
     "GET /api/insights/session": {"need":"sessions","is":"command","ids":["session.insights"]},
+    "GET /api/insights/session/inbox": {"need":"sessions","is":"command","ids":["insights.session.inbox"]},
     "GET /api/insights/session/workers": {"need":"sessions","is":"command","ids":["insights.session.workers"]},
     "GET /api/insights/usage": {"need":"sessions","is":"command","ids":["insights.usage"]},
     "GET /api/insights/usage/history": {"need":"sessions","is":"command","ids":["insights.usage.history"]},

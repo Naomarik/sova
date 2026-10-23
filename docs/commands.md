@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 477 |
-| Routes a catalogue entry points at | 113 |
-| Catalogue entries | 140 |
+| Routes registered | 478 |
+| Routes a catalogue entry points at | 114 |
+| Catalogue entries | 141 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -149,6 +149,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `insights.agents` | Agents Board | looks | `GET /api/insights/agents` | sessions |
 | `insights.worktrees` | Session Worktrees | looks | `GET /api/insights/worktrees` | sessions |
 | `insights.session.workers` | Hidden Workers | looks | `GET /api/insights/session/workers` | sessions |
+| `insights.session.inbox` | Team Member Inbox | looks | `GET /api/insights/session/inbox` | sessions |
 | `sova.health` | Server Health | looks | `GET /api/health` | sessions |
 | `settings.sova.get` | Sova's Own Settings | looks | `GET /api/settings` | sessions |
 | `settings.models.get` | Model Policy | looks | `GET /api/settings/models` | sessions |
@@ -631,6 +632,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/health` | sessions | `sova.health` |
 | `GET /api/insights/agents` | sessions | `insights.agents` |
 | `GET /api/insights/session` | sessions | `session.insights` |
+| `GET /api/insights/session/inbox` | sessions | `insights.session.inbox` |
 | `GET /api/insights/session/workers` | sessions | `insights.session.workers` |
 | `GET /api/insights/usage` | sessions | `insights.usage` |
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |

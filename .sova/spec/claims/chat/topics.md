@@ -5,7 +5,7 @@ A topic is a return address one session opens for itself. Other sessions push sh
 with `queue_push`, and the notes reach that one session as a batch when it is idle or ends a turn,
 never in the middle of one. It is how a session answers an orchestrator, such as the merge captain
 (§chat/merge-round), without the orchestrator polling its transcript. These topics are unrelated to
-topic-outline's topics.
+topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/session-tags).
 
 ## §chat.topics/open — `queue_open`, and the topic's name
 
@@ -119,7 +119,7 @@ topic-outline's topics.
   sender (a link to that session), its time and its text. It is never a "You" bubble.
 - **Not the user's input.** A batch starts a turn, but it never counts as one of the user's inputs:
   it is left out of the inputs count, the Timeline and the rewind targets, and Regenerating its reply
-  is refused, as for a wake. It never titles the session, whether its reply
+  is refused, as for a wake. It never titles the session, session tags skip it, whether its reply
   asks something is never checked (§app.decisions/asks-user), and the share view leaves it out.
 - **The pusher's side.** In the pushing session, `queue_push` shows as an ordinary tool card with the
   one-sentence result.

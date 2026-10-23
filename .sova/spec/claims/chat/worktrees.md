@@ -44,8 +44,7 @@ by argument list with no shell, locally only (a remote session refuses it).
   `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
-  a fast-forward is done. In a project that turns the merge guard on, a merge into `main` or
-  `master` also needs the user's go-ahead for that exact commit (§chat.worktrees/merge-guard).
+  a fast-forward is done.
 - **list**: the set with each worktree's status.
 
 `detach` and `merge` take the worktree's path or its branch name. Every answer lists the
@@ -200,11 +199,7 @@ chip and adds Removed or Cleaned up. A row with a readiness
 the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
 `title` — and none while merged or removed, which the status chip already says. Its tone follows
 mergeability, as the list row's lit worktree count does (§app.session-list/content-rules): Ready
-to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. A
-worktree that is Ready to land (§chat.worktrees/ready-to-land) reads **Ready to land** (success) in
-place of Ready to merge or Waiting for your OK, and its line starts "Ready to land"; one Landing
-specs reads **Landing specs** (info; warn, with the session's reason as its `title`, when it can't
-land them) with the line "Landing specs · 2 drafts" (and "· can't land them: <why>"). Under the facts, one visible
+to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
 merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's
 word and the why joined by " · ", and no line when there is neither. It wraps; it never truncates. The section follows the
@@ -299,27 +294,11 @@ own light and `title` carry. An **empty leftover
 worktree** — no commit of its own, a clean tree, nothing running — never changes the count. Its `title` names each worktree with its state and every
 routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
-so the Overseer reads the same answer. An open offer card (§chat.offers/card) is no reply that
-asks: it never makes a worktree wait for your OK. Offers' conditions read readiness as it will be
-once the turn ends (§chat.offers/conditions).
-
-**The branch status line**, counted in code with no model call, for the session's newest merge:
-"merged {sha7} · pushed (or not pushed) · live (or restart owed) · spec promoted (or {n} spec
-draft(s) not promoted)". Merged and the commit come from the merge card; pushed from the target's
-`origin` branch (left out when there is no `origin`); live when this server already runs the
-merge (it started after it, or the merge changed no server file), else restart owed; spec from
-the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
-promoted when every spec file it changed now reads the same in the worktree's current spec, or a
-promotion the draft records wrote that file after the draft's last edit to it (a promotion into a
-spec that had moved merges the two, so the current file is not the draft's copy). The
-line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
-row (`SessionSummary.readiness.status`).
+so the Overseer reads the same answer.
 
 Routine session-list and merge-readiness refreshes never query spec assessment status or
-recapture assessment inputs, including for idle merged worktrees, and never run a spec tool.
-The one spec fact readiness carries is the status line's draft count, read from the drafts'
-files and kept until one of them changes. Readiness carries no other spec observation, and the
-row and its title display none. Ordinary git readiness, bash checks,
+recapture assessment inputs, including for idle merged worktrees. Readiness carries no spec
+observations, and the row and its title display none. Ordinary git readiness, bash checks,
 attention items, and routine follow-ups keep the rules above. Explicit companion CLI
 assessments remain separate and available; their observations are not passed tests or release
 gates.
@@ -330,58 +309,6 @@ or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Wa
 {cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
 whole server, however many sessions' merges ask for it, naming how many merges and their
 branches.
-
-## §chat.worktrees/ready-to-land — Ready to land
-
-A worktree a session tracks is **Ready to land** at its head commit when, worked out with no model
-call beside its readiness (§chat.worktrees/readiness):
-
-- git can read it, it isn't merged, it has **no uncommitted files at all** (the one-or-two-file
-  caveat of ready doesn't apply), at least one commit ahead, no conflicts with its base and no
-  temporary commit subject;
-- the session's newest check run isn't failing, it has no open alignment question, and nothing
-  runs in it;
-- and **the work is finished**: the session's latest turn outcome (§app.decisions/attention-signals,
-  the turn card) says it did what was asked, which covers done and done-but-unverified. Whether the
-  last reply asks something doesn't matter: a finished reply that asks "shall I merge?" is still
-  Ready to land. When Decisions' attention signals are off, or turned off for the session's folder,
-  there is no outcome to read, and the code-only conditions above decide alone.
-
-Once a head commit is Ready to land it **stays** so for that commit, kept per session and worktree
-in `<state root>/ready-to-land.json`, even when a later reply asks nothing or its outcome says
-something else; it goes when the branch's head moves, the branch lands, or a live condition above
-stops holding (a new uncommitted file, a failing check, an open question, a turn running).
-
-**Specs land with the branch.** When the worktree holds spec drafts not yet promoted, the landing
-reads **Landing specs** instead (the Session tab's chip, its line "Landing specs · 2 drafts", and
-the merge board, §chat.worktrees/merge-board). Sova then tells the session once per head commit,
-as a message in its chat, to make its specs official on its own branch (promote its drafts) and
-commit them, or, when it can't, to answer with one line `Can't land specs: <why>`; the user is
-never asked. The session's newest reply with that line gives the why, shown on the chip and the
-Landing card (§chat.offers/sova-landing). Once the drafts are promoted and committed the new head
-is Ready to land by the same rule.
-
-The Session tab's chip reads **Ready to land** (or **Landing specs**) in place of Ready to merge or
-Waiting for your OK while it holds; every other reader of readiness (the row's badge, the digest,
-the offers' `branch-ready`) is unchanged.
-
-## §chat.worktrees/merge-guard — Merging into master needs your go-ahead
-
-A project turns this on in its offers file with `"mainMerges": "go-ahead"` (§chat.offers/file);
-Sova's own repository does. Read from the target branch itself (`git show
-refs/heads/<target>:.sova/offers.json`), so a branch can't switch it off for its own merge. Then:
-
-- the `worktree merge` tool (§chat.worktrees/tool) into `main` or `master` refuses, merging
-  nothing, unless the user's go-ahead for that branch at exactly its current head commit is
-  recorded: "This project lands branches on master only with your go-ahead for this exact commit:
-  press Land It on the branch's landing card." Land It (§chat.offers/sova-landing) records it in
-  `<state root>/landing.json`, outside every repository. A session on the Merge Captain profile
-  (its newest profile entry) is exempt: it lands on the user's Land It as before.
-- the Project Overseer's Merge Branch (§app.project-overseer/coding-worktrees) into `main` or
-  `master` follows the same rule: pressed on the operator's own page it is the go-ahead itself (and
-  is recorded); asked any other way it is refused without one for the branch's head.
-
-Merges into any other branch, typed `git` commands and projects without the key are unchanged.
 
 ## §chat.worktrees/cleanup — Removing merged worktrees
 
@@ -468,9 +395,7 @@ and no HTTP call (the merge round's driver, §chat.merge-round/driver); the sche
   readiness has read and how many it hasn't yet (`pending`: while above 0, a missing row is
   unknown, never "no owner"). A row per worktree path: its canonical `path`, `branch`, `repo` (the
   common git directory, read from the worktree's `.git` entry without running git; null when
-  unreadable), readiness `state` and `reason`, its `landing` when it is Ready to land or Landing
-  specs (§chat.worktrees/ready-to-land: `state`, the full head `commit`, the unpromoted `drafts`, the
-  session's `specsWhy`), `readAt`, and its `owner`: session id, status
+  unreadable), readiness `state` and `reason`, `readAt`, and its `owner`: session id, status
   `idle` | `busy` | `archived`, profile id (null for Default) and last activity. Rows are sorted by
   path.
 - **Who owns a row.** Built only from readiness's own last answers, never by reading git or a

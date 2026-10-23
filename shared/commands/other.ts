@@ -287,6 +287,22 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "insights.session.inbox",
+    label: "Team Member Inbox",
+    summary: "A team member's inbox, read-only: its items, or with an item id that item's whole message.",
+    effect: "looks",
+    params: {
+      session: { type: "session", description: "The session that owns the team", in: "query", key: "path", required: true },
+      team: { type: "string", description: "The team id (team_01)", in: "query", key: "team", required: true },
+      worker: { type: "string", description: "The member's worker id (ag_03)", in: "query", key: "worker", required: true },
+      item: { type: "string", description: "An item id (i_2a): answer that item's whole message", in: "query", key: "item" },
+    },
+    route: { method: "GET", path: "/api/insights/session/inbox" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "sova.health",
     label: "Server Health",
     summary: "What this server runs: its start, its commit and its runtime.",

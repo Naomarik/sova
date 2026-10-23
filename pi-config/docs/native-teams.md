@@ -241,11 +241,11 @@ without a valid identity, never import the manager, and expose only:
 
 | Tool | Who | Effect (performed by the parent extension) |
 | --- | --- | --- |
-| `team_msg { to, message }` | any member | steer into the recipient (`to` = sibling role, `ag_NN`, or `all`) with a `[Team message from …]` prefix; Pi recipients get normal steering (or a fresh task if idle), Claude recipients a queued follow-up |
-| `team_inbox { limit? }` | any member | re-read delivered messages/instructions (inbox copy written by the parent) |
-| `team_ask { question }` | any member | a displayed `team-question` message in the parent session (`followUp`, `triggerTurn: true`); the parent answers with `agent_steer { id, message }` |
+| `team_msg { to, message, subject?, urgent?, replyTo? }` | any member | an item in each recipient's inbox (`to` = sibling role, `ag_NN`, or `all` = every live sibling), answered at once with its id; the recipient is woken with a short list (idle: after ~3 s, urgent at once; busy: urgent at its next step, the rest when its turn ends); a succeeded recipient's successor gets it |
+| `team_inbox { action?, ids?, note?, limit? }` | any member | the member's inbox, served by the parent (its only writer): `list` open items, `open` ids in full, `done` ids (addressed, optional note), `sent` (status of what it sent) |
+| `team_ask { question, subject? }` | any member | in a coordinated team, a `question` item for the coordinator (answered with `team_msg` `replyTo`); otherwise a displayed `team-question` message in the parent session (`followUp`, `triggerTurn: true`); the parent answers with `agent_steer { id, message }` |
 | `team_roster {}` | orchestrator | live roster of its own team, states, ownership, recent actions |
-| `team_steer { to, message, mode? }` | orchestrator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from orchestrator …]` prefix |
+| `team_steer { to, message, mode? }` | orchestrator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from orchestrator …]` prefix; delivered in full on the sibling's serial delivery lane (never refused for being busy) |
 
 Transport: request files in the member's own directory under the parent
 session's mailbox root (kept across reloads); the parent polls (250ms), takes the sender's identity from the
@@ -312,8 +312,13 @@ Guarantees, enforced by `team-widget.test.ts`:
   member running in its own chat process; the next manager of that session
   reattaches to it, and its team becomes live again. Every chat, worker and team
   member runs in a process of its own, so a server restart never ends them either.
-  The mailbox and pending nudges are
-  kept beside the team's handover notes.
+  The mailbox, each member's inbox (`items.jsonl`) and pending nudges are
+  kept beside the team's handover notes. After a reload every inbox is folded
+  from disk: live members are woken for items never listed, and a member found
+  ended returns its open items to their senders ("not addressed"; Sova's own
+  to the coordinator, the main thread's to the main chat as a `team-notice`
+  message that starts no turn). At a handover the retired member's open items
+  move to its successor, keeping their ids.
 - **History is per branch.** On session start, team entries
   (`subagents-team-v1`, versioned create/add operations) restore from the
   **active branch only**; a `/tree` jump re-restores. History teams are

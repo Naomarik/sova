@@ -607,6 +607,7 @@ const FIXTURES: Record<string, Fixture> = {
   "insights.agents": { values: () => ({}), status: 200 },
   "insights.worktrees": { values: () => ({ paths: ["fuzz"] }), status: 200 },
   "insights.session.workers": { values: () => ({ session: session()[0] }), status: 200 },
+  "insights.session.inbox": { values: () => ({ session: session()[0], team: "team_01", worker: "ag_01" }), status: 404 },
   "sova.health": { values: () => ({}), status: 200 },
   ...Object.fromEntries(["sova", "models", "provider-limits", "align", "delegate", "spec", "team", "summarizer", "overseer", "memory", "subagents"].map((d) => [`settings.${d}.get`, { values: () => ({}), status: 200 }])),
   "settings.align.set": { values: () => ({ style: "default", visuals: true }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/settings/align")).settings as { visuals: boolean }).visuals, true) },

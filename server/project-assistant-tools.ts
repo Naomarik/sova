@@ -8,7 +8,7 @@ import { agreeRequirement, changeOfRef, conversationDraftTools } from "./convers
 import type { ConversationRef } from "./conversation-draft-store";
 import { orgDir, OrgError, readProjects, readRoster } from "./orgs";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
-import { assistantModelFor, fileRequest, orgRequests, setRequestStatus } from "./project-assistant-store";
+import { effectiveAssistantModel, fileRequest, orgRequests, setRequestStatus } from "./project-assistant-store";
 import { specLookupTools } from "./spec-lookup";
 import { operatorStarted } from "./project-assistant";
 import { setFeatureStartForTest, startFeatureChat } from "./feature-chats";
@@ -233,7 +233,7 @@ export function assistantTools(ctx: AssistantToolCtx): ToolSpec[] {
       const r = fileRequest(orgId, { projectId: p.id, kind: "fix", title: params.title, text: params.text });
       const attended = attendedNow(call);
       const col = columnOf(p.id);
-      const model = assistantModelFor(orgId, "coding", col.models).pick;
+      const model = effectiveAssistantModel(orgId, "coding", col.models)?.pick ?? null;
       const team = (why: string) => say(`Filed with the team (${why}). Tell the owner it's with the team; they can follow it under Your requests.`, { request: r.id, started: false });
       // The owner page's question (§app.project-assistant/abilities): on `team`, nothing is set off.
       const would = await assistantWouldAct(orgId, p.id, "fix", { attended });

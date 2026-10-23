@@ -58,13 +58,14 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `settings.subagents.get`, `settings.align.set`, `push.test`, `chat.stop`, `chat.compact`,
   `chat.rewind`, `chat.regenerate`, `chat.queue.remove`, `chat.reload-code`, `audit.list`,
   `chat.mode-command`, `org.owner.request.chat`, `org.owner.request.done`,
-  `org.owner.request.decline`.
+  `org.owner.request.decline`, `settings.assistant-default.set`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
   Running `audit.list` reads Sova's record of who ran what (§app.command-audit/list). The
   `org.owner.request.*` entries are an owner request's Start Chat, Mark Done and Decline
-  (§app.project-assistant/request-chat).
+  (§app.project-assistant/request-chat). `settings.assistant-default.set` sets the Project
+  Assistant's default model (§app.project-assistant/models).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,

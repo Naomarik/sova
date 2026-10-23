@@ -610,6 +610,7 @@ const FIXTURES: Record<string, Fixture> = {
   "sova.health": { values: () => ({}), status: 200 },
   ...Object.fromEntries(["sova", "models", "provider-limits", "align", "delegate", "spec", "team", "summarizer", "overseer", "memory", "subagents"].map((d) => [`settings.${d}.get`, { values: () => ({}), status: 200 }])),
   "settings.align.set": { values: () => ({ style: "default", visuals: true }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/settings/align")).settings as { visuals: boolean }).visuals, true) },
+  "settings.assistant-default.set": { values: () => ({ assistant: { model: "zai/glm-5.3", thinking: "high" } }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/baton/settings")).assistant as { model: string }).model, "zai/glm-5.3") },
 };
 // Set-up a fixture needs before its hash is taken, done by the fixture's own `values`.
 const pendingSetup: (() => Promise<void>)[] = [];

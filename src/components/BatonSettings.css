@@ -1,0 +1,6 @@
+/* Settings → Organizations' Project Assistant default (§app.settings-dialog/organizations): the picked
+   model and thinking, then its button on the same line where it fits. Token values only. */
+.settings-assistant-default { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.settings-assistant-value { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+/* A warning in words (the sentence carries it, never the color alone). */
+.settings-assistant-warn { color: var(--status-warn); }

@@ -9099,17 +9099,21 @@
         "server/project-overseer-tools.ts",
         "server/project-overseer-prompt.md",
         "src/components/Thread.tsx",
-        "src/components/ProjectPage.tsx"
+        "src/components/ProjectPage.tsx",
+        "server/overseer-org-part.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
         "§chat.profiles/trust",
         "§chat.schedules/approval",
-        "§chat.offers/approval"
+        "§chat.offers/approval",
+        "§app.organizations/stakeholder",
+        "§app.owner-page/controls",
+        "§app.requirements/frozen-spec"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T03:46Z",
+        "at": "2026-10-23T04:59Z",
         "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },

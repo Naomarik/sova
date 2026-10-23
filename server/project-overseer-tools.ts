@@ -31,6 +31,8 @@ import { READ_VERBS } from "../shared/project-contract";
 import { copyIntoWorktree, deleteFile, fileListLine, namedFileRows } from "./project-files-tool";
 import { FileRefusal } from "./project-files";
 import { trialActWait } from "./chat-handle";
+import { runSettingsTool, SETTINGS_TOOL_DESCRIPTION, SETTINGS_TOOL_PARAMETERS } from "./project-settings-tool";
+import { SettingsRefusal } from "./project-settings";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -167,6 +169,7 @@ const PLAIN_POWER: Record<string, ToolPower> = {
   sova_draft_specs: "always", // every conversation's draft vs master, a read
   sova_draft_approve: "operator",
   sova_draft_build: "operator",
+  sova_settings: "per-op", // §app.project-overseer/settings: it prepares; applying is the operator's click
 };
 
 /** Per op, for the tools whose ops differ in power. */
@@ -175,6 +178,8 @@ export const OP_POWER: Record<string, Record<string, PowerId | "always" | "opera
   sova_files: { list: "always", copy: "codingPrompt", delete: "operator" },
   sova_correct: { reopen: "bookkeeping", "skip-stall": "bookkeeping", relink: "bookkeeping", "clear-failed": "bookkeeping", merged: "markMerged" },
   sova_hold: { cancel: "always" },
+  // Applying a settings card (and its approvals) is never a tool's op: the operator's click on the card.
+  sova_settings: { get: "always", reference: "always", propose: "always", withdraw: "always", apply: "operator" },
   sova_project_verbs: {
     status: "always", logs: "always", doctor: "always", down: "always", revoke: "always",
     create: "copiesRun", up: "copiesRun", apply: "copiesRun", conform: "copiesRun", test: "copiesRun",
@@ -665,8 +670,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. " +
         "start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). " +
         "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
-        "Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), at any level; delete a preview once it has served its purpose.",
-      promptSnippet: "start (L1, held unattended) or delete a preview link of a coding session's app",
+        "Unattended it needs the Share power and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), always allowed; delete a preview once it has served its purpose.",
+      promptSnippet: "start (the Share power, held unattended) or delete a preview link of a coding session's app",
       parameters: obj(
         {
           op: str("start | off", { enum: ["start", "off"] }),
@@ -804,7 +809,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       label: "Files",
       description:
         "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). " +
-        "copy {id, session}: into that coding session's worktree as incoming/<name> (needs L3 in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
+        "copy {id, session}: into that coding session's worktree as incoming/<name> (needs Send coding sessions prompts in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
       promptSnippet: "list files people sent; copy one into a coding session's worktree",
       parameters: obj({ op: str("list | copy | delete", { enum: ["list", "copy", "delete"] }), id: str("For copy and delete: the file's id (f_…)."), session: str(`For copy: ${SESSION_PARAM}`) }, ["op"]),
       execute: async (toolCallId: string, params: any) => {
@@ -927,6 +932,22 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (!states.length) throw new Refusal("Give the target states.");
         const now = await host.setState(String(q.session ?? "").trim(), states, reason, q.patch && typeof q.patch === "object" ? (q.patch as Record<string, unknown>) : undefined);
         return { content: text(`${String(q.session).trim()} is now in ${now.join(", ")}.`), details: { states: now, note: `Set state by hand: ${cut(reason, 160)}` } };
+      }),
+    },
+    // ---- the project's settings (§app.project-overseer/settings) -----------------------------------------
+    {
+      name: "sova_settings",
+      label: "Settings",
+      description: SETTINGS_TOOL_DESCRIPTION,
+      promptSnippet: "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
+      parameters: SETTINGS_TOOL_PARAMETERS as any,
+      execute: act("sova_settings", async (q) => {
+        try {
+          return await runSettingsTool(host.project().id, q, host.attended());
+        } catch (err) {
+          if (err instanceof SettingsRefusal || (err instanceof OrgError && err.status !== 404)) throw new Refusal(err.message);
+          throw err;
+        }
       }),
     },
     // ---- the operator's own list ----------------------------------------------------------------------

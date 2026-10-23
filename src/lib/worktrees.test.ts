@@ -75,3 +75,19 @@ test("Review Changes (§chat.changes/entry): none on a branch with no commits; c
   assert.equal(canReviewChanges({ ...row, exists: false }), false);
   assert.equal(canReviewChanges({ ...row, status: "dropped" }), false);
 });
+
+test("Ready to land and Landing specs (§chat.worktrees/ready-to-land): the chip and the line say them in place of Ready to merge", () => {
+  const sha = "f".repeat(40);
+  const ready = { readiness: { path: "/w", branch: "feat/x", state: "waiting-approval" as const, why: "checks passed", reason: "Waiting for your OK · checks passed · 2 commits ahead", landing: { state: "ready" as const, commit: sha } } };
+  assert.equal(readinessChip(ready)?.label, "Ready to land");
+  assert.equal(readinessChip(ready)?.tone, "success");
+  assert.equal(readinessReason(ready), "Ready to land · checks passed · 2 commits ahead");
+  const specs = { readiness: { ...ready.readiness, state: "ready" as const, landing: { state: "specs" as const, commit: sha, drafts: ["a", "b"] } } };
+  assert.equal(readinessChip(specs)?.label, "Landing specs");
+  assert.equal(readinessReason(specs), "Landing specs · 2 drafts");
+  const stuck = { readiness: { ...specs.readiness, landing: { ...specs.readiness.landing, specsWhy: "no spec tools here" } } };
+  assert.equal(readinessChip(stuck)?.tone, "warn");
+  assert.equal(readinessReason(stuck), "Landing specs · 2 drafts · can't land them: no spec tools here");
+  // Without a landing, unchanged.
+  assert.equal(readinessChip({ readiness: { path: "/w", branch: "feat/x", state: "ready" } })?.label, "Ready to merge");
+});

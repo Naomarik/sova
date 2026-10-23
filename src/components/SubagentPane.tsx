@@ -1,7 +1,8 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { LinkedAgentInfo } from "../../shared/mesh-links";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
-import { claudeWatchUrl, fetchHiddenWorkers, wsUrl } from "../lib/api";
+import { claudeWatchUrl, fetchHiddenWorkers, getWorkerChecks, wsUrl } from "../lib/api";
+import { checksKey, untestedChip } from "../lib/worker-checks";
 import type { UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
 import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
 import { headerTokenWords, spendTitle, spoken, transcriptHeaderSid, transcriptHeaderSpend, workerRowSpend } from "../lib/spend";
@@ -147,6 +148,19 @@ export function SubagentPane(props: {
   /** A local member's row opens that session (the Overseer's pane). */
   const hrefOf = (r: LinkedAgentInfo) => (r.self ? sessionHrefOn(sessionHost(), r.path) : undefined);
   const working = () => workers().filter((w) => w.working).length;
+  /** The check of each settled worker's newest done report (§app.decisions/worker-report): read
+      again when a worker settles or ends anew. A failed read shows no chips. */
+  const [checks] = createResource(
+    () => {
+      const key = checksKey(workers());
+      return key ? `${props.path}\n${key}` : false;
+    },
+    async (k) => getWorkerChecks(k.slice(0, k.indexOf("\n"))).catch(() => undefined),
+  );
+  const untestedOf = (id: string) => {
+    const c = checks();
+    return c ? untestedChip(c, id) : null;
+  };
   const label = (w: WorkerInfo) => workerLabel(w, insight.data()?.teams);
   const teamOf = (w: WorkerInfo) => workerTeam(w, insight.data()?.teams);
   /** A team member's badges (duty, then a successor's tie); none for a plain subagent. */
@@ -293,6 +307,13 @@ export function SubagentPane(props: {
             <Show when={ringContext(contextOf(w()))}>{(c) => <ContextRing info={c()} />}</Show>
             <Show when={workerEjected(w(), insight.data()?.teams)}>
               <Chip>Ejected</Chip>
+            </Show>
+            <Show when={!w().working && untestedOf(id)}>
+              {(c) => (
+                <Chip tone="warn" title={c().title}>
+                  {c().text}
+                </Chip>
+              )}
             </Show>
             <StatusChip worker={w()} liveSource={liveSource()} />
             <Show when={openChip(memberOf(w())?.inbox)}>

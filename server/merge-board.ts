@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { ReadinessState, SessionReadiness, SessionSummary } from "../shared/protocol";
+import type { ReadinessState, SessionReadiness, SessionSummary, WorktreeLanding } from "../shared/protocol";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
 
@@ -42,6 +42,8 @@ export interface BoardRow {
   state: ReadinessState;
   /** Readiness's reason line: "Waiting for your OK · checks passed · 3 commits ahead". */
   reason: string;
+  /** Ready to land or Landing specs at its head (§chat.worktrees/ready-to-land); absent otherwise. */
+  landing?: WorktreeLanding;
   /** When readiness made this reading (ISO). */
   readAt: string;
   owner: BoardOwner;
@@ -136,6 +138,7 @@ export function buildBoard(sessions: readonly SessionSummary[], inputs: BoardInp
       repo: repoOf(path),
       state: tree.state,
       reason: tree.reason ?? tree.state,
+      ...(tree.landing ? { landing: tree.landing } : {}),
       readAt: new Date(at).toISOString(),
       owner: { id: s.id, status, profile: s.profile?.id ?? null, lastActiveAt: s.lastActiveAt },
     });

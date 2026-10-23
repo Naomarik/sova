@@ -4,7 +4,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import teamMemberExtension, { MEMBER_TOOLS, ORCHESTRATOR_TOOLS, registerMemberTools } from "./member.ts";
-import { MEMBER_ENV, appendInbox, encodeMemberContext, initMemberDir, takeRequests, writeResponse, type MemberContext } from "./mailbox.ts";
+import { MEMBER_ENV, MESSAGE_LIMIT_TEXT, appendInbox, encodeMemberContext, initMemberDir, memberToolText, takeRequests, writeResponse, type MemberContext } from "./mailbox.ts";
+import { hasInboxCaps } from "./inbox.ts";
 
 function fakePi() {
 	const tools = new Map<string, any>();
@@ -45,9 +46,11 @@ test("the default export is inert without a parent-issued identity and registers
 		process.env[MEMBER_ENV] = "{broken";
 		teamMemberExtension(none.pi);
 		assert.equal(none.tools.size, 0, "a malformed identity registers nothing");
+		assert.equal(hasInboxCaps(s.dir), false, "an inert load announces nothing");
 		process.env[MEMBER_ENV] = encodeMemberContext(s.me);
 		const orchestrator = fakePi();
 		teamMemberExtension(orchestrator.pi);
+		assert.equal(hasInboxCaps(s.dir), true, "a member on this code announces that it opens inboxes (caps.json)");
 		assert.deepEqual([...orchestrator.tools.keys()].sort(), [...MEMBER_TOOLS, ...ORCHESTRATOR_TOOLS].sort());
 		const plain = fakePi();
 		registerMemberTools(plain.pi, { ...s.me, orchestrator: false });
@@ -82,6 +85,14 @@ test("tools write one request into the member's own directory and return the par
 		const asked = parentAnswers(s.dir, () => ({ ok: true, text: "Surfaced" }));
 		await h.call("team_ask", { question: "Which DB?" });
 		assert.deepEqual([(await asked).type, (await asked).message], ["question", "Which DB?"]);
+		// The inbox fields travel as written; the parent derives the sender, never the body.
+		const queued = parentAnswers(s.dir, () => ({ ok: true, text: "Queued for lead (ag_01): item i_7" }));
+		const sent = await h.call("team_msg", { to: "lead", message: "re: schema", subject: "Schema answer", urgent: true, replyTo: "i_3" });
+		assert.equal(sent.content[0].text, "Queued for lead (ag_01): item i_7");
+		const q = await queued;
+		assert.deepEqual([q.subject, q.urgent, q.replyTo], ["Schema answer", true, "i_3"]);
+		assert.equal(h.tools.get("team_msg").parameters.properties.replyTo.pattern, "^i_[0-9a-z]{1,12}$");
+		for (const name of ["team_msg", "team_ask", "team_steer"]) assert.ok(h.tools.get(name).description.includes(MESSAGE_LIMIT_TEXT), `${name} states the 8,000-character limit`);
 		// A negative response becomes a tool error with the parent's exact reason.
 		void parentAnswers(s.dir, () => ({ ok: false, text: "No member with role ghost in team_01." }));
 		await assert.rejects(h.call("team_msg", { to: "ghost", message: "x" }), /No member with role ghost/);
@@ -110,19 +121,37 @@ test("timeouts and cancellation report unknown handling instead of pretending su
 	}
 });
 
-test("team_inbox reads delivered records newest-last without touching the mailbox", async () => {
+test("team_inbox is a request the parent serves (it is the only writer); a parent on older code falls back to the delivered records", async () => {
 	const s = setup(false);
 	const h = fakePi();
-	registerMemberTools(h.pi, s.me, { timeoutMs: 100, pollMs: 5 });
+	registerMemberTools(h.pi, s.me, { timeoutMs: 2000, inboxTimeoutMs: 80, pollMs: 5 });
 	try {
+		// list, open, done and sent each go to the parent, with their fields.
+		for (const [params, want] of [
+			[{}, { action: "list" }],
+			[{ action: "open", ids: ["i_4", "i_5"] }, { action: "open", ids: ["i_4", "i_5"] }],
+			[{ action: "done", ids: ["i_4"], note: " merged " }, { action: "done", ids: ["i_4"], note: "merged" }],
+			[{ action: "sent", limit: 5 }, { action: "sent", limit: 5 }],
+		] as const) {
+			const served = parentAnswers(s.dir, () => ({ ok: true, text: "served" }));
+			assert.equal((await h.call("team_inbox", params)).content[0].text, "served");
+			const r = await served;
+			assert.equal(r.type, "inbox");
+			assert.deepEqual({ action: r.action, ...(r.ids ? { ids: r.ids } : {}), ...(r.note ? { note: r.note } : {}), ...(r.limit ? { limit: r.limit } : {}) }, want);
+		}
+		await assert.rejects(h.call("team_inbox", { action: "open" }), /needs ids/);
+		assert.deepEqual(takeRequests(s.dir), [], "a refused call never reaches the mailbox");
+		// No answer (a parent on older code drops the unknown request): list shows the delivered copies.
 		assert.match((await h.call("team_inbox")).content[0].text, /No messages delivered/);
 		appendInbox(s.dir, { at: 1, kind: "message", from: "lead", fromId: "ag_01", text: "first" });
 		appendInbox(s.dir, { at: 2, kind: "instruction", from: "lead", fromId: "ag_01", text: "second" });
 		const all = await h.call("team_inbox");
 		assert.match(all.content[0].text, /^\[[^\]]+\] message from lead \(ag_01\):\nfirst\n\n\[[^\]]+\] instruction from lead \(ag_01\):\nsecond$/);
-		assert.equal(all.details.count, 2);
+		assert.equal(all.details.legacy, true);
 		assert.deepEqual((await h.call("team_inbox", { limit: 1 })).details.records.map((r: any) => r.text), ["second"]);
-		assert.deepEqual(takeRequests(s.dir), [], "reading the inbox sends nothing to the parent");
+		// open/done have no legacy form: no answer is an error, never a guess.
+		await assert.rejects(h.call("team_inbox", { action: "done", ids: ["i_1"] }), /No response from the parent session/);
+		assert.match(memberToolText(s.me).team_inbox, /served by the parent session/);
 	} finally {
 		s.cleanup();
 	}

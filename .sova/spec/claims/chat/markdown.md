@@ -77,8 +77,8 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
 </div>
 ```
 
-- **View Rendered.** A closed `markdown` or `md` block's head also carries View Rendered, before
-  Copy Code (§chat.markdown/view-rendered); no other block has it.
+- **Rendered.** A closed `markdown` or `md` block's head also carries a Rendered/Source toggle,
+  before Copy Code (§chat.markdown/view-rendered); no other block has it.
 - **Language label.** The first word of the fence's info string, lowercased, and shown in
   uppercase eyebrow type. No info string means "text".
 - **Highlighting.**
@@ -107,19 +107,26 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
 - **Block tokens.** `--color-sunken` ground, a 1px `--color-border` edge, `--r-sm` (monospace
   corners), and code in `--color-ink`. The head is `--control-sm` tall with a 1px rule under it.
 
-## §chat.markdown/view-rendered — View Rendered on a markdown block
+## §chat.markdown/view-rendered — Rendered on a markdown block
 
-A closed code block whose fence word is `markdown` or `md` (any case) carries a second button in
-its head, before Copy Code: **View Rendered**, `.button-sm.button-ghost` with the `eye` icon. It
-opens the block's raw source in the markdown viewer (§app/markdown-viewer) on Rendered, titled
-"Markdown", so the document gets the whole renderer with room to read (tables, headings, lists,
-links, images by §chat.markdown/images-in-markdown, code, `vis` drawings). Its accessible name is
-"View Rendered", and focus returns to it when the viewer closes.
+A closed code block whose fence word is `markdown` or `md` (any case) carries a toggle in its head,
+before Copy Code, that switches the block between its source and the markdown it describes, in
+place, the way a `vis` drawing's Source toggle does (§chat.markdown/visuals). It is
+`.button-sm.button-ghost` with `aria-pressed`: it reads **Rendered** with the `eye` icon while the
+source shows, and **Source** with the `terminal` icon while the rendered markdown shows. A block
+opens on its source.
 
-- Every other fence word, a `vis` fence's source fallback and an indented code block get no button.
-- A fence still open mid-stream has no button: half a document is never opened. It appears when
+- **Rendered** replaces the block's `pre` with the block's raw source drawn by this same renderer
+  (tables, headings, lists, links, images by §chat.markdown/images-in-markdown, code blocks with
+  their own Copy Code, `vis` drawings), inside the block's frame, under its head, with no second
+  bubble. Nothing opens over the page.
+- Copy Code copies the raw source whichever side shows. A button inside the rendered side acts on
+  its own block, never on the block around it.
+- The choice belongs to that block while it stays on screen; a block that is drawn again (its
+  message re-renders it, the page reloads) opens on its source.
+- Every other fence word, a `vis` fence's source fallback and an indented code block get no toggle.
+- A fence still open mid-stream has no toggle: half a document is never rendered. It appears when
   the fence closes.
-- Inside the viewer, the button on a markdown block there replaces the viewer's document in place.
 
 ## §chat.markdown/highlight-theme — Highlight theme (dark and light, tokens only)
 

@@ -54,6 +54,9 @@ also update Y" list live in its guide: read the guide of every area your task to
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses
   the `worktree` tool, whose `create <name>` does exactly that and tracks it so its workers may start
   there); only a release merges it into master. Uncommitted edits in the live tree block a release.
+  One exception: applying a Project Overseer's Settings change card on Sova's own project
+  (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
+  at the operator's click; Sova refuses it when it would touch anything but settings files.
 - Test from the worktree with `pnpm run dev:hermetic` by default (`scripts/hermetic-agent-dir.mjs`
   builds `<worktree>/.agent`: this tree's pi-config, own sessions and state, nothing in `~/.pi`; port
   4810, `SOVA_PORT=<n>` for another; it copies no auth, copy `auth.json` in by hand). Create, archive,

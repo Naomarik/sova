@@ -29,6 +29,8 @@ import {
   providerChoices,
   providerName,
   projectName,
+  projectRows,
+  projectRowTitle,
   toggleModel,
   toggleProvider,
   tokenSum,
@@ -604,11 +606,14 @@ function ModelTable(props: { answer: UsageCosts }) {
 function ProjectTable(props: { answer: UsageCosts; name(id: string): string | undefined }) {
   return (
     <TableCard id="costs-projects" title="By project" caption="Cost by project or folder" class="costs-wide" head={<SpendHead first="Project" />}>
-      <For each={byCost(props.answer.byProject, (r) => r.project ?? r.cwd ?? "")}>
+      <For each={projectRows(props.answer.byProject)}>
         {(r) => (
           <tr>
-            <th scope="row" title={r.cwd ?? r.project ?? undefined}>
+            <th scope="row" title={projectRowTitle(r)}>
               {projectName(r, props.name)}
+              <Show when={r.archived}>
+                <span class="cost-session-meta">archived</span>
+              </Show>
             </th>
             <Num label="Tokens" title={spendTitle(r)}>
               <Tok n={tokenSum(r.tokens)} />

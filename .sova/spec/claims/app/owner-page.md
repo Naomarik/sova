@@ -335,8 +335,8 @@ Tour reads reveal only a checked public presentation bound to a conversation and
 - **The Owner card's Project Assistant part** (§app/project-assistant): one line, "{n} open
   requests from {first name}", linking to the org's Requests tab (§app.project-assistant/requests-tab),
   which lists them and answers them, in place of a list here; `Open Assistant Chat` once the conversation exists; its models
-  (§app.project-assistant/models) as two rows, `Its replies` and `Fixes it starts` (the gatherings
-  row is not shown; its pick is kept), each saying where its model comes from, the model and its
+  (§app.project-assistant/models) as three rows, `Its replies`, `Fixes it starts` and `Feature request
+  chats it starts` (the `gathering` kind, which runs the feature request chats it opens), each saying where its model comes from, the model and its
   thinking level ("Default · Opus 5.5 · medium", "This organization · glm-5.3 · high") and its
   price, with `Change`, which opens the chat composer's model picker (the model row and its
   thinking ladder, then providers and models: favorites, search, the vision tag, models Settings →

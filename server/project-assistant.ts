@@ -6,7 +6,7 @@ import { OPERATOR } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
 import { ASSISTANT_TEXT_MAX, type AssistantMessage, type AssistantServerMessage, type AssistantView, type OwnerVersionRow } from "../shared/project-assistant";
 import type { BatonPhotoSettings } from "../shared/baton";
-import { acquireChatHandle, chatHandle, getModelRuntime, isSessionBusy } from "./chat-handle";
+import { acquireChatHandle, chatHandle, isSessionBusy } from "./chat-handle";
 import { dropStaged, PhotoRefusal, takeStaged, type SdkImage } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
 import { ownerVersionOf } from "./owner-page";
@@ -19,12 +19,16 @@ import { operatorName, orgDir, OrgError, ownerOf, readIndex, readRoster } from "
 import { sessionIdOfFile } from "./project-overseer-store";
 import { canonicalPath } from "./paths";
 import { conversationOf, readAssistantStore, setConversation } from "./project-assistant-store";
+import { assistantReplyState } from "./project-assistant-ready";
 import { pathOfId } from "./session-prompt";
 import { markSeen } from "./seen";
 import { cleanSessionTitle, setSessionTitle } from "./session-titles";
-import { outsiderRedactor } from "./share/hub";
+import { markupBackstop, redactPhrases } from "./baton-view";
+import { onShareChange, onShareStream, outsiderRedactor } from "./share/hub";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
+import { batonById } from "./baton";
+import { handleOf } from "./person-links";
 
 /**
  * The Project Assistant's conversations (§app.project-assistant/chat): one per org and owner, a
@@ -136,14 +140,23 @@ export function assistantPhotos(branch: readonly HEntry[]): { data: string; mime
  * them in conversation order, as assistantPhotos does), never bytes; an assistant message after a
  * start_version that named a version carries `versionHandles`, resolved to rows by assistantView.
  */
-export function assistantMessages(orgId: string, branch: readonly HEntry[]): (AssistantMessage & { versionHandles?: string[] })[] {
+type RawMessage = AssistantMessage & { versionHandles?: string[]; featureSession?: string };
+
+/** The feature request chat a start_feature_chat result opened (its details' session id), or null. */
+const featureOfDetails = (d: unknown): string | null => {
+  const v = d && typeof d === "object" ? (d as { featureChat?: unknown }).featureChat : undefined;
+  return typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : null;
+};
+
+export function assistantMessages(orgId: string, branch: readonly HEntry[]): RawMessage[] {
   const marks = stateView(branch);
   const r = outsiderRedactor(orgId);
   const op = firstOf(operatorName());
-  const out: (AssistantMessage & { versionHandles?: string[] })[] = [];
+  const out: RawMessage[] = [];
   let n = 0;
   let photo = 0;
   let started: string[] = [];
+  let feature: string | null = null;
   for (const e of branch) {
     if (e.kind === "user") {
       const text = joinedText(e, { images: false }).trim();
@@ -155,18 +168,30 @@ export function assistantMessages(orgId: string, branch: readonly HEntry[]): (As
     } else if (e.kind === "tool-result") {
       const v = e.tool === START_VERSION && !e.isError ? versionOfDetails(e.details) : null;
       if (v && !started.includes(v)) started.push(v);
+      const f = e.tool === "start_feature_chat" && !e.isError ? featureOfDetails(e.details) : null;
+      if (f) feature = f;
     } else if (e.kind === "assistant") {
       const text = joinedText(e, { images: false }).trim();
       if (!text) continue;
-      out.push({ n: ++n, role: "assistant", text: r.redact(r.said(text)), at: e.at ?? "", ...(started.length ? { versionHandles: started } : {}) });
+      out.push({ n: ++n, role: "assistant", text: r.redact(r.said(text)), at: e.at ?? "", ...(started.length ? { versionHandles: started } : {}), ...(feature ? { featureSession: feature } : {}) });
       started = [];
+      feature = null;
     }
   }
   return out.slice(-VIEW_MESSAGES);
 }
 
-/** Each message's version handles as rows, resolved now (state included); a version no longer listed is dropped. */
-async function withVersions(orgId: string, msgs: (AssistantMessage & { versionHandles?: string[] })[]): Promise<AssistantMessage[]> {
+/** Each message's version handles as rows, resolved now (state included); a version no longer listed is dropped. A
+    feature request chat it opened becomes its `Open Feature Chat` row while it is the current owner's to read
+    (§app.project-assistant/feature-chats); its session id never leaves. */
+async function withVersions(orgId: string, msgs: RawMessage[]): Promise<AssistantMessage[]> {
+  const { ownersFeatureChat } = await import("./feature-chats");
+  const ownerId = ownerOf(orgId)?.id ?? null;
+  const featureRow = (sid: string | undefined): AssistantMessage["featureChat"] | undefined => {
+    if (!sid || !ownerId || !ownersFeatureChat(orgId, sid, ownerId)) return undefined;
+    const row = batonById(sid)?.row;
+    return row ? { conversation: handleOf("k", sid), title: outsiderRedactor(orgId).redact(row.publicTitle) } : undefined;
+  };
   const r = outsiderRedactor(orgId);
   const rows = new Map<string, OwnerVersionRow | null>();
   for (const m of msgs)
@@ -175,32 +200,28 @@ async function withVersions(orgId: string, msgs: (AssistantMessage & { versionHa
         const v = await ownerVersionOf(orgId, h).catch(() => null);
         rows.set(h, v ? (versionRows([v], r)[0] ?? null) : null);
       }
-  return msgs.map(({ versionHandles, ...m }) => {
+  return msgs.map(({ versionHandles, featureSession, ...m }) => {
     const versions = (versionHandles ?? []).map((h) => rows.get(h)).filter((x): x is OwnerVersionRow => !!x);
-    return versions.length ? { ...m, versions } : m;
+    const featureChat = featureRow(featureSession);
+    return { ...m, ...(versions.length ? { versions } : {}), ...(featureChat ? { featureChat } : {}) };
   });
 }
 
-/** Whether the assistant's reply model sees images: the open chat's model, else the org's reply pick in the catalog. Unknown is no. */
+/** Whether the assistant's resolved reply model (the org's pick, else the default) sees images: the open
+    chat's model when it is that one, else the model list's `input`. Null when none resolves; unknown is no. */
 export async function assistantSeesImages(orgId: string): Promise<boolean | null> {
-  const reply = readAssistantStore(orgId).models.reply;
-  if (!reply) return null;
+  const state = await assistantReplyState(orgId);
+  if (!state) return null;
   const path = await currentAssistantPath(orgId);
   const live = path ? chatHandle(path)?.mirror.model : undefined;
-  if (live && live.ref === reply.model) return live.images;
-  const slash = reply.model.indexOf("/");
-  if (slash <= 0) return false;
-  try {
-    const m = (await getModelRuntime()).getModel(reply.model.slice(0, slash), reply.model.slice(slash + 1));
-    return !!m && Array.isArray(m.input) && m.input.includes("image");
-  } catch {
-    return false;
-  }
+  if (live && live.ref === state.pick.model) return live.images;
+  return state.images;
 }
 
-/** What the owner may send now: the outsider photo limits, or null (photos off, no reply model, or one without vision). */
+/** What the owner may send now: the outsider photo limits, or null (photos off, not ready, or a model without vision). */
 export async function assistantPhotoLimits(orgId: string, settings: BatonPhotoSettings = readBatonSettings().photos): Promise<BatonPhotoSettings | null> {
   if (!settings.enabled) return null;
+  if ((await assistantReplyState(orgId))?.ready !== true) return null;
   return (await assistantSeesImages(orgId)) === true ? settings : null;
 }
 
@@ -209,7 +230,7 @@ export const assistantStagingKey = (orgId: string, personId: string): string => 
 
 /** The view for the owner page (or the operator's preview): empty before the first message. */
 export async function assistantView(orgId: string): Promise<AssistantView> {
-  const ready = !!readAssistantStore(orgId).models.reply;
+  const ready = (await assistantReplyState(orgId))?.ready === true;
   const path = await currentAssistantPath(orgId);
   const limits = ready ? await assistantPhotoLimits(orgId).catch(() => null) : null;
   const photos = limits ? { photos: { perMessage: limits.perMessage, maxBytes: limits.maxBytes } } : {};
@@ -246,8 +267,10 @@ export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: re
   if (!text && !imageIds.length) throw new AssistantRefusal("bad-request", "Write something first.", 400);
   if (text.length > ASSISTANT_TEXT_MAX) throw new AssistantRefusal("bad-request", `Messages are limited to ${ASSISTANT_TEXT_MAX} characters.`, 400);
   if (text.startsWith("/")) throw new AssistantRefusal("bad-request", "Messages can't start with /.", 400);
-  const reply = readAssistantStore(orgId).models.reply;
-  if (!reply) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
+  // The one readiness predicate (project-assistant-ready.ts): a resolved reply model this host runs and policy allows.
+  const state = await assistantReplyState(orgId);
+  if (!state?.ready) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
+  const reply = state.pick;
   const limits = imageIds.length ? await assistantPhotoLimits(orgId).catch(() => null) : null;
   if (imageIds.length && !limits) throw new AssistantRefusal("no-photos", "Photos can't be sent here.");
   if (limits && imageIds.length > limits.perMessage) throw new AssistantRefusal("too-many", `Up to ${limits.perMessage} photos per message.`, 400);
@@ -271,7 +294,7 @@ export async function sendOwnerMessage(orgId: string, raw: unknown, imageIds: re
     throw new AssistantRefusal("busy", `The Project Assistant can't take a message right now (${err instanceof Error ? err.message : String(err)}).`, 503);
   }
   // Nothing runs on a model nobody chose (§app.project-assistant/models): the chat answers on the org's
-  // reply model as it is now, and a model this host can't run leaves it not ready.
+  // resolved reply model as it is now (its pick, else the default), and a model this host can't run leaves it not ready.
   if ((await chat.findModel(reply.model)).ok !== true) throw new AssistantRefusal("not-ready", "The Project Assistant isn't ready yet.");
   try {
     if (chat.mirror.model?.ref !== reply.model) await chat.setModel(reply.model);
@@ -350,6 +373,44 @@ export function endAssistantStream(orgId: string, path: string): void {
   lastStream.delete(path);
   refreshAssistant(orgId);
 }
+
+// ---- the owner's feature request chats on the same socket (§app.project-assistant/feature-chats) ----------------
+
+/** The org and the owner's handle of a feature request chat the current owner opened, or null. */
+async function ownersChat(sessionId: string): Promise<{ orgId: string; handle: string; publicTitle: string } | null> {
+  const row = batonById(sessionId)?.row;
+  if (!row || !sockets.has(row.orgId)) return null;
+  const owner = ownerOf(row.orgId)?.id;
+  const { ownersFeatureChat } = await import("./feature-chats");
+  return owner && ownersFeatureChat(row.orgId, sessionId, owner) ? { orgId: row.orgId, handle: handleOf("k", sessionId), publicTitle: row.publicTitle } : null;
+}
+
+const conversationPending = new Set<string>();
+onShareChange((sessionId) => {
+  if (conversationPending.has(sessionId)) return;
+  conversationPending.add(sessionId);
+  setTimeout(() => {
+    conversationPending.delete(sessionId);
+    void ownersChat(sessionId).then((hit) => {
+      if (!hit) return;
+      for (const w of sockets.get(hit.orgId) ?? []) send(w.socket, { type: "conversation", conversation: hit.handle });
+    });
+  }, 60).unref?.();
+});
+
+const lastConversationStream = new Map<string, number>();
+onShareStream((sessionId, text) => {
+  const now = Date.now();
+  if (now - (lastConversationStream.get(sessionId) ?? 0) < 100) return;
+  lastConversationStream.set(sessionId, now);
+  void ownersChat(sessionId).then((hit) => {
+    if (!hit) return;
+    // Filtered as a hand-off page's streaming text: the secret redactor, the profile phrases, the markup backstop.
+    const r = outsiderRedactor(hit.orgId, [hit.publicTitle]);
+    const out = markupBackstop(redactPhrases(r.redact(text), r.phrases), r.phrases);
+    for (const w of sockets.get(hit.orgId) ?? []) send(w.socket, { type: "conversation-streaming", conversation: hit.handle, text: out });
+  });
+});
 
 /** Close every socket of an org whose token no longer opens (a sweep calls it with the check). */
 export function sweepAssistantSockets(alive: (token: string) => boolean): number {

@@ -184,8 +184,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
-| Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
+| Trigger opens | the Commands palette (§app.command-palette/opening); `aria-haspopup="dialog"` |
+| Palette's This chat group label | This chat |
+| This chat rows | Attach images · Hide tool calls (hidden: Show tool calls) · Hide thinking (hidden: Show thinking) · Playbooks · Undo last turn (in this order; Undo's copy is §design.copy-deck/timeline-tab) |
+| This chat rows, off | the composer's own reason · Playbooks with no Sova chat: Only a chat open in Sova can send a playbook. |
+| Palette's slash commands group label | Slash commands |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -380,7 +383,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Commands row (composer flyout) | Commands · no list: `title` "No commands available" |
 | Menu head | Commands · {n} |
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |
@@ -743,8 +745,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Off: TUI-live | This session is open in a terminal, so Sova won't write to it. |
 | Off: watching, or no chat open here | Only a chat open in Sova can rewind. |
 | Refused: not on the branch | That input is not on this chat's current branch anymore. |
-| Flyout row | Undo last turn · armed: `Confirm: undo last turn` · title: Rewind to before your last message; its text comes back to the composer |
-| Flyout row, off | Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. |
+| Palette row (This chat) | Undo last turn · description: Rewind to before your last message; its text comes back to the composer · armed: `Confirm: undo last turn`, description: Pick it again to rewind. |
+| Palette row, off | the composer's own reason · Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. · This chat is still loading. · Only a chat open in Sova can rewind. |
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |
@@ -928,7 +930,7 @@ either. The switches show what is set; while a brake holds them all Off, the Pau
 | Section | heading `What may happen without you` · under it: "Anything you tell it yourself always runs. These switches cover only what happens without you." |
 | Always allowed (above the switches) | one line: "Some acts are always allowed, whatever the switches say." · under it a disclosure, `What it can always do` (closed on every open), that opens the full list, one item per row, as the server names them (reading the project and its sessions, keeping notes and ideas, asking you with a card, …) |
 | Column headers | `Overseer on its own` · `Project Assistant from a client` (only while an organization places the project; a standalone project shows the first column alone) · where the grid is narrower than 480px: `On its own` · `From a client` |
-| Groups, in order | `People` · `Spec` · `Code` · `Running copies` · `Release`, each with its acts under it, labelled as the server's power table names them · a standalone project lists no act only an organization has (gatherings, WhatsApp, owner updates, the roster), so it has no People group |
+| Groups, in order | `People` · `Spec` · `Code` · `Running copies` · `Release`, each with its acts under it, labelled as the server's power table names them (in the Project Assistant column a power's `assistantLabel` where it has one: `gather` reads `Open feature request chats with the owner` there) · a standalone project lists no act only an organization has (gatherings, WhatsApp, owner updates, the roster), so it has no People group |
 | Group row | a chevron, the group's name and "{n} acts" (1: "1 act"; hidden below 480px), then one switch per column · the name is a button (`aria-expanded`), `aria-label` "Show the {n} acts in {group}" / "Hide the {n} acts in {group}" · opened: one row per act, each with its own switches |
 | Switch | Sova's standard switch, drawn as on Settings > General · its state as a word before the box: `On` · `Off` · a group whose acts differ in that column: `Mixed` (the standard switch's mixed state: the knob in the middle of the track with a dash in it; the input is indeterminate, so it reads as mixed) · `aria-label` "{group or act}, on its own" / "{group or act}, from a client", + ", mixed" while Mixed · pressing a group's switch while Off or Mixed turns On every act in it that the column can set; while On, Off · a group's Project Assistant switch counts only the acts the assistant can set |
 | A cell the Project Assistant can't set | `—` (muted, no switch) · on hover, keyboard focus and tap, a tooltip: "Not available to the client" · hidden: "{act}, from a client: not available to the client" |
@@ -1088,11 +1090,11 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Greeting | "Hi {first}. Here's how your projects are going." |
 | Tabs | `Home` · `Assistant` · `Requests` (with the open count as a badge, "{n}"; its label for screen readers "Requests, {n} open") |
 | Project Assistant card | heading "What it can do for you" · `Open the Chat` (primary) · not ready: the Assistant's not-ready line, no list |
-| …lines (name · how) | "Ask about your projects" · "Answers right away" — "Report a problem" · "Goes to the team at once" — "Ask for something new" · "Written up with you, then sent to the team" — "Get a problem fixed" · now "Starts right away", held "Starts on its own in a few minutes", team "The team decides when to start it" — "Try the latest version" · now "Starts right away, with an Open button", team "The team starts it for you" — "Release a new version" · now "Starts right away", held "Starts on its own in a few minutes", team "The team releases it" |
+| …lines (name · how) | "Ask about your projects" · "Answers right away" — "Report a problem" · "Goes to the team at once" — "Ask for something new" · "Written up with you, then sent to the team" — "Get a problem fixed" · now "Starts right away", held "Starts on its own in a few minutes", team "The team decides when to start it" — "Try the latest version" · now "Starts right away, with an Open button", team "The team starts it for you" — "Release a new version" · now "Starts right away", held "Starts on its own in a few minutes", team "The team releases it" — "Plan something new with you" (in place of "Ask for something new" while some project opens one) · now "Opens a chat with you right away" · a project where it goes to the team: "the team plans it for {projects}" |
 | …projects that differ | "{line}: {segment}, {segment}" with segments, in this order: "right away for {projects}" · "on its own for {projects}" · team: fix "the team starts it for {projects}", version "the team starts it for {projects}", release "the team releases it for {projects}" · `{projects}` "A", "A and B", "A, B and C" |
 | …photos note | "You can add photos and screenshots." |
 | …what a tap starts in the message box | Ask: "How is {project} going?" (several projects: "How are my projects going?") · Report: "Something isn't working: " · New: "I'd like something new: " · Fix: "Please fix this: " · Try: "Can I try the latest version of {project}?" (the first project in Home's order that lists one) · Release: "Please release a new version of {project}." (several projects: "Please release a new version of ") |
-| Requests line on Home | "Your requests: {n} with the team ›" (with none with the team: "Your requests: {n} ›"; singulars as written) |
+| Requests line on Home | "Your requests: {n} with the team ›" (with none with the team: "Your requests: {n} ›"; singulars as written; a feature request whose chat is open, `Planning with you`, isn't counted with the team until its plan is agreed) |
 | Requests tab | heading "Your requests" · empty: "Nothing asked yet. Ask the Project Assistant for a fix, a new feature or a release." · `Open the Chat` (primary) |
 | Chat suggestions | under the greeting, the card's lines as chips (their names) · once there are messages: `What Can I Ask?` (ghost, at the top) · its sheet: title "What it can do for you", the same lines and chips, `Close` |
 | Your requests, heading | "Your requests" |
@@ -1105,7 +1107,7 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | Waiting on you, heading | "Waiting on you" |
 | …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
 | …row | "{conversation title}" · "{project} · asked {time}" |
-| …hint | "Answer it using the link {op} sent you for it." |
+| …hint | "Answer it using the link {op} sent you for it." · when every row is the owner's own feature request chat: "Open it to answer here." |
 | Projects, heading | "Your projects" |
 | Project card, counts | "Talked to {n} people · {n} decisions · {n} pieces of work finished" — singulars "1 person", "1 decision", "1 piece of work" |
 | …no updates yet | "No updates yet." |
@@ -1133,6 +1135,10 @@ ago", "1 hour ago"; the exact date and time as the element's title. Every count 
 | …none | "No conversations yet." |
 | …show all | `Show All {n} Conversations` |
 | Conversation, line | "You can read this conversation. You can't write here." |
+| Feature request chat (§app.project-assistant/feature-chats) | status chips `Planning with you` (warn) · `With {first}` (info) · `Plan agreed` (success) · `Ended` (neutral) · line while the owner holds it: "Plan it here with the assistant. Nothing is built until {op} decides." · while someone else holds it: "{first} has it right now. You can read along." · composer placeholder "Write a message" · `Send` (primary) · `End Chat` (ghost; confirm "End this chat? You can't write in it after." · `End Chat` · `Cancel`) · ended: "This chat has ended." · plan agreed: "You agreed this plan. {op} decides when it's built." |
+| …plan card | card head "The plan" (agreed: "The plan · agreed"; dropped: "The plan · set aside") · its title and summary · headings "What we found" · "The plan" · "Ruled out" · "Questions" · a question: "{qN} · {topic}" · its ask · options lettered a, b…, the recommended one marked "Recommended" · "Why we recommend it: {why}" · decided: "Answer: {decision}" · a drawing it can't show: "A drawing couldn't be shown here." · buttons `Send My Answers` (primary) · `Go With Recommendations` (secondary) · the message they send, in the alignment card's words: "{al_N}: take your recommendation on q1. My answers: 2b — {option}." · "{al_N}: go with your recommendations for every open question." |
+| …in the assistant's chat | `Open Feature Chat` (secondary) under the assistant's message |
+| …requests | status `Planning with you` (info) while its chat is open, `Plan agreed` (success) once agreed |
 | …when it's the owner's turn | "It's your turn in this conversation. Answer it using the link {op} sent you." |
 | Footer | "Only people with this link can open this page. If someone else gets it, tell {op} and they'll turn it off." |
 | Link turned off unused (410) | "This link turned off after a week without use." / "It turns itself off so nobody else can use it later. You can ask for a new one." · `Ask for a New Link` (primary) · asked: "You asked for a new link. It will come the same way this one did." · failed: "That didn't go through. Try again in a minute." |
@@ -1182,10 +1188,11 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | Requests tab (§app.project-assistant/requests-tab) | filter `Open` · `Done` · `Declined` · `All` · row "{title}" · "{Kind} · {relative time}" · status chip (dot + word) `With the team`, `Being worked on`, `Done`, `Declined` · the owner's text · "Chat started {relative time}" · `Start Chat` / `Open Chat` · `Mark Done` (secondary) · `Decline` (ghost) · empty, Open: "{n} done. Nothing open from {first} right now." · tab dot "{n} to answer" |
 | Request note in a chat (§app.project-assistant/request-chat) | card title "Request from {first}" · "{Kind} · {project} · filed {relative time}" · title · text · `Open in Requests` |
 | …chat | `Open Assistant Chat` · before the first message: `Start Assistant Chat` |
-| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · under "Its replies", when its model can't see images: "This model can't see photos: {first} won't get an attach button." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
+| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Feature request chats it starts" · value "Default · {model} · {thinking}" / "This organization · {model} · {thinking}" (no thinking: no third part) · hint "{$in} in / {$out} out per million tokens" / "Price not known." · none: "Not set. Set a default in Settings → Organizations." (the last words link there) · buttons `Change` (secondary), `Use Default` (ghost, only on the org's own pick) · done (announced) "{row}: {model}." / "{row}: follows the default." · under "Its replies", when its model can't see images: "This model can't see photos: {first} won't get an attach button."; turned off: "Settings → Models turned this model off: {first}'s assistant isn't ready."; can't run here: "This host can't run this model: {first}'s assistant isn't ready." · a project's override: "{project} uses its own model for fixes ({model}, {price})." |
+| Settings → Organizations, Project Assistant (§app.settings-dialog/organizations) | heading "Project Assistant" · field "Default model" · value "{model} · {thinking}" or `Choose Model` · hint "Every organization uses it unless it picks its own." · price "{$in} in / {$out} out per million tokens" / "Price not known." / unsaved: "Its price shows once saved." · warnings "This model can't see photos: owners who follow it won't get an attach button." / "Settings → Models turned this model off: organizations that follow it aren't ready." / "This host can't run this model: organizations that follow it aren't ready." |
 | …switches | heading "What it may set off on its own" · per project, the Project Assistant column (§design.copy-deck/project-powers) · under them: "{first} sees what these let the assistant do, in plain words, on their page." |
 | Preview modal tabs | a row of tabs at the top: `Home` · `Assistant` · `Requests` (no fixed bar) |
-| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." · `owner-version-request`: "{owner} asks to try {project}: {version}" (opens the project's Branches tab) |
+| Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" (a feature with an open feature request chat: "{owner} is planning a new feature with the assistant on {project}: {title}"; agreed: "{owner} agreed a plan on {project}: {title}") · `owner-feature-ended`: "{owner}'s feature request chat on {project} ended: they are no longer the owner. {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." · `owner-version-request`: "{owner} asks to try {project}: {version}" (opens the project's Branches tab) |
 | `start_version` answers (the model reads them and says them in its own words) | started: "{version} of {project} is starting. Its Open button is in this chat and on the home page." · running: "{version} of {project} is running. Its Open button is in this chat and on the home page." · switch off: the power refusal ("Create, start and update running copies is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.") · can't be shown: "{project}'s versions can't be shown outside the team." · none: "{project} has no versions to try." · failed: "It didn't start; the team knows." |
 | Phone notification | kind word "App down" |
 | Preview modal title | "{org}, as {first} sees it" |
@@ -1197,9 +1204,11 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …none | "The overseer hasn't posted an update yet. It posts when a conversation finishes, something is agreed, or a piece of work is finished, at most once a day." |
 | …Take Down | `Take Down` (destructive, outlined) · confirm: "{first} stops seeing this update. It stays in this list and in the workspace history." · `Take Down` · `Cancel` |
 | …switch saved (toast) | "{project} shows on {first}'s page." · "{project} is off {first}'s page." |
+| Baton strip, a feature request chat | "Feature request · {first}" · no Hide From · refused hide: "A feature request chat is {first}'s own: it can't be hidden from them." |
 | Baton strip | `Hide From {first}` / `Show To {first}` · while hidden: "Hidden from {first}'s owner page." · toasts "Hidden from {first}'s owner page." / "Shown on {first}'s owner page." |
 | Person page | chip `Owner` beside the status · link row title "The owner page", state `Can read` / `Turned off` / `Expired` · visit row "Opened the owner page · {device} · {relative time}" |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged." · "An update was posted {relative time}: at most one a day." · "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words." · "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words." · "An update is at most 2,000 characters." · "This organization has no owner, so there is no page to post to." |
+| The Overseer's send of the owner page link (§app.owner-page/send) | WhatsApp message: "{operator name} sent you your page for {org}." then the link · sent: "Sent {name} their owner page link on WhatsApp." · not sent: "Not sent to {name}: {why}." then, after a new link was made, "A new owner link was made but not delivered, and their old link no longer works: copy the new one from the People tab.", else "You can send it yourself from the People tab." · no answer: "It isn't known whether the message to {name} went. It won't be sent again: check {name}'s page under Sent on WhatsApp before sending another." · refused: "{name} isn't {org}'s owner. Nothing was sent." · "{org} has no owner, so there is no owner page to send. Nothing was sent." · card note when a new link will be made: "Their current link will stop working." · person page, Sent on WhatsApp: "Their owner page" |
 
 ## §design.copy-deck/session-share — Session share links (§app/session-share)
 

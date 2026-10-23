@@ -33,8 +33,10 @@ model one `Spec warning: …` line for each thing it can act on, from
 `sova-spec.mjs foreign --base <target before> --head <target after> --landing --drafts <worktree>`
 and the drafts' evidence: changed files no claim maps (spec any whose change a user sees); a draft
 with unpromoted records in the merged worktree or a worktree whose branch the merge brings in
-(`pending`, or `conflict` never promoted: promote what shipped; into the default branch, promote
-the landing's own drafts now; another worktree's are named with it); a merge commit that resolved §
+(`pending`, or `conflict` never promoted: into another branch, promote them on it before it lands;
+into the default branch, they didn't land with the code and stay in the worktree's drafts folder
+until promoted on a fresh branch, never on the default branch itself; another worktree's are named
+with it); a merge commit that resolved §
 by hand (it differs from both parents; `git show --cc`); an evidence commit a draft names that the
 branch doesn't contain (a rebase after evidence); and that the warnings could not be computed. Each
 is said once: a `worktree merge` says them in its tool result and its card's message is the merge

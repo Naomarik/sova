@@ -9,7 +9,7 @@ import { catchUpConversationDraft, projectsWithRecord } from "./conversation-dra
 import { PROJECT_ASSISTANT } from "./harness/state-kinds";
 import { operatorName, orgDir } from "./orgs";
 import { assistantOfPath, endAssistantStream, ownerFirstName, refreshAssistant, streamAssistant } from "./project-assistant";
-import { readAssistantStore } from "./project-assistant-store";
+import { effectiveAssistantModel } from "./project-assistant-store";
 import { ASSISTANT_TOOL_NAMES, assistantProjects, assistantTools, ownerNow } from "./project-assistant-tools";
 import { OUTSIDER_LOOKUP_RULES, projectOverview } from "./spec-lookup";
 import { ASSISTANT_VIS_GUIDE } from "./baton-vis-guide";
@@ -87,7 +87,8 @@ registerSpecialHost({
     const a = assistantOfPath(path);
     if (!a) throw new Error("Not a Project Assistant conversation.");
     const tools = toolsFor(path, a.orgId, a.personId, a.sessionId);
-    const reply = readAssistantStore(a.orgId).models.reply ?? null;
+    // The resolved reply model (the org's pick, else the host's default, §app.project-assistant/models).
+    const reply = effectiveAssistantModel(a.orgId, "reply")?.pick ?? null;
     return {
       kind: "project-assistant",
       extension: "sova-project-assistant",

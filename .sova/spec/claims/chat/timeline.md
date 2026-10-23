@@ -43,8 +43,9 @@ only verb, and it lives on exactly one kind of row: a message on the active bran
 - **The composer's inputs row**, below. It is the discoverable door: the tab strip only helps
   someone who already opened the pane, and `/tree` only helps someone who knows pi. It opens the
   Timeline with the filter **on**.
-- **The composer flyout's `Undo last turn`** (§design.copy-deck/composer-flyout), the last item after a
-  separator, rewinds to just before the newest message **without opening the pane**. It is a
+- **The Commands palette's `Undo last turn`**, the last row of its This chat group (the
+  composer's `plus` opens it, §app.command-palette/rows), rewinds to just before the newest
+  message **without opening the pane**. It is a
   different gesture — one step back, from where you are typing — and it stays.
 
 Each door **sets** the filter, even on a pane already showing the tab: `/tree` on an unfiltered
@@ -386,8 +387,8 @@ and the boundary and abandoned rows after a rewind (`viewRows`, `rewoundAt`, `se
 Rewind is two steps, in the row, with no modal. The first press turns the row's button into
 **Rewind Here** (destructive, focused) beside **Cancel** (ghost), and an `.input-row-note` says
 "This message and every reply after it leave the branch. The session file keeps them." Esc
-cancels without closing the pane. The flyout's Undo last turn works the same way: the first
-press relabels it "Confirm: undo last turn" and the flyout stays open; closing it disarms.
+cancels without closing the pane. The palette's Undo last turn works the same way: the first
+pick relabels it "Confirm: undo last turn" and the palette stays open; closing it disarms.
 
 While one rewind is in flight its button reads "Rewinding…" with `aria-busy`, and every other
 row is disabled ("A rewind is already in progress.").
@@ -409,8 +410,8 @@ Streaming refuses; it never auto-aborts. Stopping is the user's call, and a rewi
 killed a running turn and its workers would be the surprise. The server enforces all of this
 again (below), so a stale pane can't get past it: a refusal's message shows inline under its row
 (a `.text-error` span inside an `.input-row-note`, hung off the button's `aria-describedby`), and
-the flyout toasts it. Until the chat's `hello` has said where its last input is, the flyout's Undo
-last turn is off with its usual title and no reason.
+the palette's Undo last turn toasts it. Until the chat's `hello` has said where its last input is,
+the palette's Undo last turn is disabled with "This chat is still loading." as its description.
 
 ### After a rewind
 
@@ -435,7 +436,7 @@ A shadow row still jumps (it toasts "That message isn't in the transcript on scr
 transcript has reloaded without it), and it has no density line: the replies it drew left the
 branch with it. The rewind marker for this rewind lands at its own time, after them.
 
-**Any successful rewind refreshes the axis once, whoever started it** — a row, the flyout's Undo
+**Any successful rewind refreshes the axis once, whoever started it** — a row, the palette's Undo
 last turn. The chat tells the app each time the server says `rewound`; the app mints a counter
 and hands it to the pane for that session path only, and the pane re-reads the transcript and
 draws the boundary and the shadow. A rewind in one session never refreshes another's. **A refusal

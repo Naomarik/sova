@@ -3,7 +3,8 @@
 // the asks-you fold. What the rest of the server answers (summaries, readiness, git, the routes a button
 // calls) is stubbed through setOfferDeps; the store and the files are real, in a throwaway agent dir.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
@@ -26,6 +27,7 @@ const writeOffers = (o: Record<string, unknown>) => writeFileSync(join(project, 
 let head = "a".repeat(40);
 let summaryOver: Partial<SessionSummary> = {};
 let readinessState: string | null = null;
+let landingTree: Record<string, unknown> | null = null;
 const requests: { url: string; body: unknown }[] = [];
 let answer: { status: number; body: unknown } = { status: 200, body: { ok: true } };
 let n = 0;
@@ -37,6 +39,7 @@ beforeEach(() => {
   head = "a".repeat(40);
   summaryOver = {};
   readinessState = null;
+  landingTree = null;
   requests.length = 0;
   answer = { status: 200, body: { ok: true } };
   offers.setOfferDeps({
@@ -45,6 +48,7 @@ beforeEach(() => {
       return { id, path, cwd: project, title: `Session ${id}`, lastActiveAt: 1, ...summaries.get(path), ...summaryOver } as SessionSummary;
     },
     async readiness() {
+      if (landingTree) return { trees: [landingTree], since: 0 } as unknown as SessionSummary["readiness"];
       return readinessState ? ({ trees: [{ path: project, branch: "feat/x", state: readinessState }], since: 0 } as unknown as SessionSummary["readiness"]) : undefined;
     },
     async sessions() {
@@ -334,5 +338,76 @@ describe("the project page's list", () => {
     assert.equal(offers.projectOffers(project).file, "broken");
     rmSync(join(project, ".sova", "offers.json"));
     assert.equal(offers.projectOffers(project).file, "missing");
+  });
+});
+
+describe("the Landing offer (§chat.offers/sova-landing, §chat.offers/buttons)", () => {
+  const sovaFile = () => writeFileSync(join(project, ".sova", "offers.json"), readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8"));
+  const landingFile = () => join(root, "agent", "sova", "landing.json");
+  const drafts = (on: boolean) => {
+    const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+    const d = join(project, ".sova", "spec", "drafts", "my-draft");
+    rmSync(join(project, ".sova", "spec"), { recursive: true, force: true });
+    if (!on) return;
+    mkdirSync(join(d, "spec", "claims"), { recursive: true });
+    mkdirSync(join(project, ".sova", "spec", "claims"), { recursive: true });
+    writeFileSync(join(project, ".sova", "spec", "claims", "a.md"), "old");
+    writeFileSync(join(d, "draft.json"), JSON.stringify({ format: "sova-spec-draft/1", name: "my-draft", base: { files: { "claims/a.md": sha("old") } } }));
+    writeFileSync(join(d, "spec", "claims", "a.md"), "new");
+  };
+
+  test("shown for the worktree when Ready to land; Land It records the go-ahead for that exact commit and sends it to the captain", async () => {
+    sovaFile();
+    drafts(false);
+    const captain = sid();
+    const owner = sid();
+    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
+    const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    assert.equal(card.title, "Land feat/x?");
+    assert.deepEqual(card.buttons.map((b) => b.label), ["Land It", "Not Yet"], "Merge Without Specs… is off the card: no draft is left");
+    await offers.chooseOffer(pathOf(owner), owner, card.id, 0);
+    assert.equal((requests.at(-1)!.body as { path: string }).path, pathOf(captain));
+    assert.match((requests.at(-1)!.body as { text: string }).text, /^Go ahead: land feat\/x at a{12}\.$/);
+    const { goAheadFor } = await import("../pi-config/extensions/worktrees/landing.ts");
+    assert.equal(goAheadFor("feat/x", head, landingFile())?.session, owner);
+    assert.equal(goAheadFor("feat/x", "b".repeat(40), landingFile()), undefined);
+  });
+
+  test("not Ready to land: nothing is shown; Not Yet records Not Yet; a refused send records nothing", async () => {
+    sovaFile();
+    drafts(false);
+    const captain = sid();
+    const owner = sid();
+    landingTree = { path: project, branch: "feat/x", state: "waiting-approval" };
+    await refused(offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project }), /ready to land/);
+    head = "c".repeat(40);
+    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
+    const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    answer = { status: 409, body: { error: "busy" } };
+    await assert.rejects(offers.chooseOffer(pathOf(owner), owner, card.id, 1), /busy/);
+    const { readLanding } = await import("../pi-config/extensions/worktrees/landing.ts");
+    assert.equal(readLanding(landingFile()).notYet.some((n) => n.commit === head), false);
+    answer = { status: 200, body: { ok: true } };
+    await offers.chooseOffer(pathOf(owner), owner, card.id, 1);
+    assert.equal(readLanding(landingFile()).notYet.some((n) => n.commit === head && n.branch === "feat/x"), true);
+  });
+
+  test("specs left and the session says why: Merge Without Specs… asks first, naming the drafts, and records the go-ahead without specs", async () => {
+    sovaFile();
+    drafts(true);
+    head = "d".repeat(40);
+    const captain = sid();
+    const owner = sid();
+    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "specs", commit: head, drafts: ["my-draft"] } };
+    await refused(offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project }), /ready to land/);
+    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "specs", commit: head, drafts: ["my-draft"], specsWhy: "no spec tools" } };
+    const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    assert.deepEqual(card.buttons.map((b) => b.label), ["Merge Without Specs…", "Not Yet"]);
+    assert.match(card.buttons[0]!.confirm ?? "", /^Land feat\/x without its specs\? These spec drafts stay behind, to promote later on a fresh branch from master: my-draft\.$/);
+    await offers.chooseOffer(pathOf(owner), owner, card.id, 0);
+    assert.match((requests.at(-1)!.body as { text: string }).text, /without its specs \(my-draft\)/);
+    const { goAheadFor } = await import("../pi-config/extensions/worktrees/landing.ts");
+    assert.equal(goAheadFor("feat/x", head, landingFile())?.withoutSpecs, true);
+    drafts(false);
   });
 });

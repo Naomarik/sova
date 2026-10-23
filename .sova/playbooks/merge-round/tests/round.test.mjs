@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -38,10 +38,12 @@ const writeBoard = (rows, { pending = 0, at = Date.now() } = {}) => {
   const iso = new Date(at).toISOString();
   writeFileSync(boardFile, JSON.stringify({
     v: 1, at: iso, read: 10, pending,
-    rows: rows.map(([branch, state, owner, status, path = wt(branch)]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, readAt: iso, owner: { id: owner, status, profile: null, lastActiveAt: iso } })),
+    rows: rows.map(([branch, state, owner, status, path = wt(branch), landing]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, ...(landing ? { landing } : {}), readAt: iso, owner: { id: owner, status, profile: null, lastActiveAt: iso } })),
   }));
 };
 const outputs = [];
+/** Ready to land at the branch's current head (§chat.worktrees/ready-to-land), as the board says it. */
+const landed = (branch, over = {}) => ({ state: "ready", commit: execFileSync("git", ["-C", main, "rev-parse", `refs/heads/${branch}`], { encoding: "utf8" }).trim(), ...over });
 
 const gitEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "gitconfig") };
 const baseEnv = () => {
@@ -348,8 +350,8 @@ test("status without the board: git facts, owners unknown and why, exit 2", asyn
 
 test("status: the whole board sorted by the next action, counts first, owners from the board", async () => {
   writeBoard([
-    ["feat/clean", "waiting-approval", OWNER, "idle"],
-    ["feat/firstrun", "ready", "0199cccc-busy", "busy"],
+    ["feat/clean", "waiting-approval", OWNER, "idle", undefined, landed("feat/clean")],
+    ["feat/firstrun", "ready", "0199cccc-busy", "busy", undefined, landed("feat/firstrun")],
     ["feat/dirty", "ready", "0199dddd-archived", "archived"],
     ["feat/temp", "in-progress", "0199eeee-temp", "idle"],
     ["feat/slow", "ready", "0199ffff-elsewhere", "idle", join(root, "not-a-worktree")],
@@ -360,9 +362,9 @@ test("status: the whole board sorted by the next action, counts first, owners fr
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(objectFiles(), objects, "merge-tree wrote into the shared object store");
   const out = r.out.split("\n");
-  assert.match(out[0], /^Merge board \(written \d+s ago\): 0 to check · 0 to land · 1 to ask now · 1 owner busy · 1 owner archived · 4 no session tracks · 0 owner unknown · 1 not ready\.$/);
+  assert.match(out[0], /^Merge board \(written \d+s ago\): 0 to check · 0 to land · 1 to queue now · 0 card shown · 1 owner busy · 1 owner archived · 4 no session tracks · 0 owner unknown · 1 not ready\.$/);
   const at = (re) => out.findIndex((l) => re.test(l));
-  assert.ok(at(/^== Ready to merge, owner idle: ask the owner now \(1\)$/) === at(/^feat\/clean: /) - 1, "under its group's head");
+  assert.ok(at(/^== Ready to land, owner idle: queue it \(Sova shows the Landing card\) \(1\)$/) === at(/^feat\/clean: /) - 1, "under its group's head");
   const order = ["feat/clean", "feat/firstrun", "feat/dirty", "feat/conflict", "feat/temp"].map((b) => at(new RegExp(`^${b}: `)));
   assert.deepEqual([...order].sort((a, b) => a - b), order, "ask, busy, archived, untracked, not ready");
   const line = (b) => out.find((l) => l.startsWith(`${b}:`)) ?? "";
@@ -376,7 +378,7 @@ test("status: the whole board sorted by the next action, counts first, owners fr
   assert.match(line("feat/dirty"), /1 uncommitted \(junk\.txt\)/);
   assert.match(line("feat/conflict"), /conflicts with master in 1 file/);
   assert.match(line("feat/manifest"), /conflicts with master in 1 file/);
-  assert.match(r.out, /next: round\.mjs ask feat\/clean topic=<your topic> \(ask the owner, never the user\)/);
+  assert.match(r.out, /next: round\.mjs ask feat\/clean \(Ready to land: queues it, and Sova shows its owner the Landing card\)/);
   assert.equal(state().branches["feat/clean"].board.owner, OWNER, "the board's owner is recorded");
   // While Sova hasn't read every session, a worktree with no row is unknown, never untracked.
   writeBoard([["feat/clean", "waiting-approval", OWNER, "idle"]], { pending: 7 });
@@ -391,7 +393,7 @@ test("status: the whole board sorted by the next action, counts first, owners fr
   assert.match(line("feat/manifest"), /conflicts with master in 1 file/);
   assert.match(r.out, /feat\/\[private name\]-notes: /);
   assert.match(r.out, /Main checkout: on master, 0 uncommitted, \+1\/-0 vs origin\/master/);
-  writeBoard([["feat/clean", "waiting-approval", OWNER, "idle"]]);
+  writeBoard([["feat/clean", "waiting-approval", OWNER, "idle", undefined, landed("feat/clean")]]);
   const j = await run(["status", "--json"]);
   const parsed = JSON.parse(j.out);
   assert.deepEqual([parsed.branches.find((b) => b.branch === "feat/clean").group, parsed.branches.find((b) => b.branch === "feat/temp").group], ["ask", "untracked"]);
@@ -999,8 +1001,9 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.deepEqual(ownerOf({ owner: "B", idle: "yes", notedAt: 3000, board }), { owner: "B", from: "note", status: "idle", at: 3000, via: "note" });
   assert.deepEqual(ownerOf({ owner: "A", idle: "no", notedAt: 3000, board }), { owner: "A", from: "note", status: "busy", at: 3000, via: "note" }, "the newest reading of that owner");
   assert.equal(ownerOf({}), null);
-  const g = (rec, row, pending = 0) => groupOf({ rec, row, head: "h", master: "m", pending });
-  const row = (state) => ({ state });
+  const g = (rec, row, pending = 0, extra = {}) => groupOf({ rec, row, head: "h", master: "m", pending, ...extra });
+  const L = { state: "ready", commit: "h" };
+  const row = (state, landing = L) => ({ state, ...(landing ? { landing } : {}) });
   assert.equal(g({ check: { ok: true, head: "h", masterSha: "m" } }, null), "land");
   assert.equal(g({ answer: { kind: "ready", head: "h" }, board }, row("ready")), "check");
   assert.equal(g({ board }, row("waiting-approval")), "ask");
@@ -1008,8 +1011,22 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.equal(g({ board: { ...board, status: "archived" } }, row("in-progress")), "archived");
   assert.equal(g({}, null), "untracked");
   assert.equal(g({}, null, 3), "unknown");
-  assert.equal(g({ board }, row("in-progress")), "not-ready");
+  assert.equal(g({ board }, row("in-progress", null)), "not-ready");
   assert.equal(g({ board, answer: { kind: "not-ready", head: "h" } }, row("ready")), "not-ready");
+  // Ready to land (§chat.worktrees/ready-to-land): what the captain queues; Ready to merge alone isn't finished work.
+  assert.equal(g({ board }, row("waiting-approval", null)), "not-ready");
+  assert.equal(g({ board }, row("ready", { ...L, commit: "old" })), "not-ready", "Ready to land at another head");
+  assert.equal(g({ board }, row("ready", { state: "specs", commit: "h", drafts: ["d"] })), "not-ready", "landing its specs");
+  assert.equal(g({ board }, row("ready", { state: "specs", commit: "h", drafts: ["d"], specsWhy: "no tools" })), "ask", "its specs can't land: the card offers Merge Without Specs…");
+  assert.equal(g({ board, source: "user", chip: "ready" }, row("ready", null)), "ask", "the user named it: asked the old way");
+  // The Landing card: shown, waiting; refused, asked again; the user's answer at this head.
+  const queued = { board, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
+  assert.equal(g(queued, row("ready"), 0, { queued: { at: 1, card: "of_1" } }), "waiting");
+  assert.equal(g(queued, row("ready"), 0, { queued: { at: 1, refused: "an open offer" } }), "ask");
+  assert.equal(g({ board }, row("in-progress", null), 0, { answer: { kind: "go-ahead" } }), "check", "Land It at this head is the go-ahead");
+  assert.equal(g({ board }, row("ready"), 0, { answer: { kind: "not-yet" } }), "not-ready", "Not Yet waits for a new commit");
+  assert.deepEqual(landingAnswer(parseLanding(JSON.stringify({ v: 1, goAheads: [{ branch: "b", commit: "a".repeat(40), by: "land-it", withoutSpecs: true }], notYet: [{ branch: "c", commit: "a".repeat(40) }] })), "b", "a".repeat(40)), { kind: "go-ahead", withoutSpecs: true, by: "land-it" });
+  assert.equal(landingAnswer(parseLanding("{bad"), "b", "a".repeat(40)), null);
 });
 
 test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {
@@ -1331,4 +1348,49 @@ test("B1: a § the draft promoted before, now in conflict after taking master's 
   assert.equal(check.code, 1, check.out);
   assert.match(check.out, /^needs: (.*; )?docs not promoted: d(;|$)/m);
   assert.match(asked.out, /spec drafts aren't promoted yet: d \(§x\.top\/one\)/, "the ask names it too");
+});
+
+test("Ready to land: ask queues the branch for Sova's Landing card; status reads Sova's answer, then the user's Land It or Not Yet at that head", async () => {
+  const sova = join(agent, "sova");
+  const queueFile = join(sova, "landing-queue.json");
+  const shownFile = join(sova, "landing-shown.json");
+  const landingFile = join(sova, "landing.json");
+  const saved = readFileSync(stateFile, "utf8");
+  try {
+    git(main, "worktree", "add", "-q", "-b", "feat/landq", wt("feat/landq"), "master");
+    writeFileSync(join(wt("feat/landq"), "landq.txt"), "landq\n");
+    git(wt("feat/landq"), "add", "landq.txt");
+    git(wt("feat/landq"), "commit", "-q", "-m", "landq");
+    const head = git(main, "rev-parse", "feat/landq");
+    writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
+    const q = await run(["ask", "feat/landq"]);
+    assert.equal(q.code, 0, q.out);
+    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows ${OWNER} the Landing card\\.$`, "m"));
+    assert.match(q.out, /don't poll/);
+    const entries = JSON.parse(readFileSync(queueFile, "utf8")).entries;
+    assert.deepEqual(entries.map((e) => [e.branch, e.head, e.owner, e.captain, e.path === wt("feat/landq")]), [["feat/landq", head, OWNER, ME, true]]);
+    assert.equal((await run(["ask", "feat/landq"])).code, 1, "queued once per head");
+    const line = async () => (await run(["status"])).out.split("\n").find((l) => l.startsWith("feat/landq:")) ?? "";
+    assert.match(await line(), /queued \d+s ago at [0-9a-f]{7}; Sova hasn't read the queue yet/);
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), card: "of_1" } } }));
+    const shown = await run(["status", "--json"]);
+    assert.equal(JSON.parse(shown.out).branches.find((b) => b.branch === "feat/landq").group, "waiting");
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/landq", commit: head, at: "x" }] }));
+    assert.match(await line(), /the user said Not Yet at [0-9a-f]{7}: it waits for a new commit/);
+    assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "not-ready");
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [{ branch: "feat/landq", commit: head, at: "x", by: "land-it" }], notYet: [] }));
+    assert.match(await line(), /the user's go-ahead \(Land It\) at [0-9a-f]{7}/);
+    const go = await run(["status", "--json"]);
+    assert.equal(JSON.parse(go.out).branches.find((b) => b.branch === "feat/landq").group, "check", "Land It counts as READY");
+    // Sova refused to show it: the next ask falls back to the typed READY ask, on the round's topic.
+    writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [] }));
+    writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), refused: "an open offer" } } }));
+    assert.match(await line(), /Sova didn't show the card: an open offer/);
+    const old = await run(["ask", "feat/landq", `topic=${TOPIC}`]);
+    assert.equal(old.code, 0, old.out);
+    assert.match(old.out, /Is feat\/landq ready to merge at its current head\?/);
+  } finally {
+    writeFileSync(stateFile, saved);
+    for (const f of [queueFile, shownFile, landingFile, boardFile]) rmSync(f, { force: true });
+  }
 });

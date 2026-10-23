@@ -9,6 +9,7 @@ import {
   type OfferDef,
   type OfferRepeat,
   type OfferSnapshot,
+  type LandingRecord,
   type ParsedOffersFile,
   type ProjectOffersAnswer,
   type SessionOffersAnswer,
@@ -29,6 +30,9 @@ import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
+import { unpromotedDraftNames } from "./spec-drafts-state";
+import { canonical } from "../pi-config/extensions/worktrees/state.ts";
+import { LANDING_FILE_NAME, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
 
 /**
  * Session offers (§chat/offers): the server's side. Each session's record (its tool snapshot, its
@@ -58,6 +62,11 @@ interface StoredCard extends OfferCard {
   to: ("shower" | null)[];
   /** The session that showed it (another chat's), by path. */
   fromPath?: string;
+  /** Per button: what its click records (§chat.offers/buttons, landing). */
+  landing?: (LandingRecord | null)[];
+  /** The branch and full head commit the card was shown for. */
+  branch?: string;
+  head?: string;
 }
 
 interface SessionRecord {
@@ -188,7 +197,18 @@ function readRecord(sessionId: string): SessionRecord | null {
         const card = normalizeOfferCard(c);
         const s = c as Record<string, unknown>;
         if (!card || typeof s.moment !== "string" || typeof s.root !== "string" || !Array.isArray(s.sends) || !Array.isArray(s.runs) || !Array.isArray(s.to)) continue;
-        cards.push({ ...card, moment: s.moment, root: s.root, sends: s.sends as (string | null)[], runs: s.runs as (string | null)[], to: s.to as ("shower" | null)[], ...(typeof s.fromPath === "string" ? { fromPath: s.fromPath } : {}) });
+        cards.push({
+          ...card,
+          moment: s.moment,
+          root: s.root,
+          sends: s.sends as (string | null)[],
+          runs: s.runs as (string | null)[],
+          to: s.to as ("shower" | null)[],
+          ...(typeof s.fromPath === "string" ? { fromPath: s.fromPath } : {}),
+          ...(Array.isArray(s.landing) ? { landing: s.landing as (LandingRecord | null)[] } : {}),
+          ...(typeof s.branch === "string" ? { branch: s.branch } : {}),
+          ...(typeof s.head === "string" ? { head: s.head } : {}),
+        });
       }
       rec = {
         v: 1,
@@ -328,6 +348,8 @@ interface Facts {
   base?: string;
   commit?: string;
   project: string;
+  /** The folder's spec drafts not promoted, by name ({drafts}). */
+  drafts?: string;
 }
 
 async function gitLine(args: string[], cwd: string): Promise<string | undefined> {
@@ -355,14 +377,26 @@ const CONDITION_WORDS: Record<OfferCondition, string> = {
   "tree-clean": "the folder has no uncommitted changes",
   "no-open-alignment": "no alignment question is open",
   "has-merge-captain": "a Merge Captain session works in this project",
+  "ready-to-land": "the branch is ready to land",
+  "specs-promoted": "the branch holds no spec draft left unpromoted",
+  "specs-left": "the branch holds spec drafts left unpromoted",
 };
 
-async function conditionHolds(c: OfferCondition, s: SessionSummary, root: string, readiness: () => Promise<SessionSummary["readiness"]>): Promise<boolean> {
+/** The trees a condition reads: the one the offer is shown for, else every tree of the session. */
+type TreesOf = () => Promise<NonNullable<SessionSummary["readiness"]>["trees"]>;
+
+async function conditionHolds(c: OfferCondition, s: SessionSummary, root: string, trees: TreesOf, folder: string): Promise<boolean> {
   switch (c) {
     case "branch-ready":
-      return !!(await readiness())?.trees.some((t) => t.state === "ready" || t.state === "waiting-approval");
+      return (await trees()).some((t) => t.state === "ready" || t.state === "waiting-approval");
     case "waiting-for-ok":
-      return !!(await readiness())?.trees.some((t) => t.state === "waiting-approval");
+      return (await trees()).some((t) => t.state === "waiting-approval");
+    case "ready-to-land":
+      return (await trees()).some((t) => t.landing?.state === "ready" || !!t.landing?.specsWhy);
+    case "specs-promoted":
+      return !unpromotedDraftNames(folder)?.length;
+    case "specs-left":
+      return !!unpromotedDraftNames(folder)?.length;
     case "tree-clean": {
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
@@ -395,6 +429,9 @@ export interface ShowInput {
   from?: string;
   /** The user message the agent's turn answers (once-per-reply). */
   replyId?: string;
+  /** The worktree the offer is for (Sova's Landing card on the captain's queue): its branch, commit
+      and conditions are read there instead of the session's folder. */
+  tree?: string;
 }
 
 const projectWords = "Nothing was shown.";
@@ -425,9 +462,22 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   const fromPath = input.from;
   if (def.buttons.some((b) => b.to === "shower") && !fromPath) throw new OfferRefusal(`"${input.offer}" sends to the chat that shows it: name that chat with from. ${projectWords}`, 400);
   let readiness: Promise<SessionSummary["readiness"]> | undefined;
-  const ready = () => (readiness ??= deps.readiness(s));
-  for (const c of def.onlyIf) if (!(await conditionHolds(c, s, root, ready))) throw new OfferRefusal(`"${input.offer}" shows only when ${CONDITION_WORDS[c]}, and it doesn't now. ${projectWords}`);
-  const facts = await factsOf(s.cwd, root);
+  const folder = input.tree ?? s.cwd;
+  const trees: TreesOf = async () => {
+    const all = (await (readiness ??= deps.readiness(s)))?.trees ?? [];
+    return input.tree ? all.filter((t) => canonical(t.path) === canonical(input.tree!)) : all;
+  };
+  for (const c of def.onlyIf) if (!(await conditionHolds(c, s, root, trees, folder))) throw new OfferRefusal(`"${input.offer}" shows only when ${CONDITION_WORDS[c]}, and it doesn't now. ${projectWords}`);
+  // A button's own conditions leave it off the card.
+  const shown: OfferDef["buttons"] = [];
+  for (const b of def.buttons) {
+    let ok = true;
+    for (const c of b.onlyIf ?? []) if (!(await conditionHolds(c, s, root, trees, folder))) ok = false;
+    if (ok) shown.push(b);
+  }
+  if (!shown.length) throw new OfferRefusal(`None of "${input.offer}"'s buttons fits now. ${projectWords}`);
+  const facts = await factsOf(folder, root);
+  facts.drafts = unpromotedDraftNames(folder)?.join(", ");
   const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`);
   // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, not open).
@@ -439,7 +489,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     if (!f) throw new OfferRefusal("The session in from doesn't exist.", 404);
     from = { id: f.id, title: f.title || "Untitled" };
   }
-  const card = makeCard(def, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
+  const card = makeCard({ ...def, buttons: shown }, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
   rec.cards.push(card);
   rec.path = input.path;
   saveRecord(rec);
@@ -453,14 +503,14 @@ function momentOf(repeat: OfferRepeat, head: string | undefined, reply: string):
   return `reply:${reply}`;
 }
 
-function makeCard(def: OfferDef, input: ShowInput, n: number, facts: Facts, moment: string, root: string, note: string | undefined, from: OfferCard["from"], fromPath: string | undefined, at: string): StoredCard {
-  const fill = { branch: facts.branch, base: facts.base, commit: facts.commit, project: facts.project };
+function makeCard(def: OfferDef, input: ShowInput, n: number, facts: Facts & { head?: string }, moment: string, root: string, note: string | undefined, from: OfferCard["from"], fromPath: string | undefined, at: string): StoredCard {
+  const fill = { branch: facts.branch, base: facts.base, commit: facts.commit, project: facts.project, drafts: facts.drafts };
   return {
     id: `of_${n}`,
     name: input.offer,
     title: fillText(def.title, fill),
     ...(note ? { note } : {}),
-    buttons: def.buttons.map((b) => ({ label: b.label, about: b.about, kind: b.run ? ("run" as const) : ("send" as const) })),
+    buttons: def.buttons.map((b) => ({ label: b.label, about: b.about, kind: b.run ? ("run" as const) : ("send" as const), ...(b.confirm ? { confirm: fillText(b.confirm, fill) } : {}) })),
     at,
     by: input.by,
     ...(from ? { from } : {}),
@@ -472,12 +522,15 @@ function makeCard(def: OfferDef, input: ShowInput, n: number, facts: Facts, mome
     runs: def.buttons.map((b) => b.run ?? null),
     to: def.buttons.map((b) => b.to ?? null),
     ...(fromPath ? { fromPath } : {}),
+    ...(def.buttons.some((b) => b.landing) ? { landing: def.buttons.map((b) => b.landing ?? null) } : {}),
+    ...(facts.branch ? { branch: facts.branch } : {}),
+    ...(facts.head ? { head: facts.head } : {}),
   };
 }
 
 /** The card as the wire carries it (what a click needs stays here). */
 function wireCard(c: StoredCard): OfferCard {
-  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, ...card } = c;
+  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, ...card } = c;
   return card;
 }
 
@@ -525,6 +578,7 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
       throw new OfferRefusal(sent.error);
     }
     bump(card.root, card.name, "used");
+    recordLanding(card, index, sessionId, at);
     return wireCard(card);
   }
   Object.assign(card, { state: "chosen", choice: { index, label: button.label, at }, outcome: { state: "running" } });
@@ -534,6 +588,26 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
   card.outcome = { state: outcome.ok ? "done" : "failed", text: outcome.text };
   saveRecord(rec);
   return wireCard(card);
+}
+
+/** Sova's own message to a session, as session.send (the specs nudge, §chat.worktrees/ready-to-land). Throws when it isn't sent. */
+export async function sendToSession(path: string, text: string): Promise<void> {
+  const r = await send(path, text);
+  if (!r.ok) throw new Error(r.error);
+}
+
+export const landingFileOf = () => join(stateRoot(), LANDING_FILE_NAME);
+
+/** A landing button's record, once its send went through (§chat.offers/buttons): the go-ahead for the card's exact commit, or Not Yet. */
+function recordLanding(card: StoredCard, index: number, sessionId: string, at: string): void {
+  const what = card.landing?.[index];
+  if (!what || !card.branch || !card.head) return;
+  try {
+    if (what === "not-yet") recordNotYet({ branch: card.branch, commit: card.head, session: sessionId, at }, landingFileOf());
+    else recordGoAhead({ branch: card.branch, commit: card.head, session: sessionId, at, by: "land-it", ...(what === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}) }, landingFileOf());
+  } catch (err) {
+    console.warn(`[offers] landing record not written: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 async function send(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -641,7 +715,16 @@ export function projectOffers(root: string): ProjectOffersAnswer {
       shownBy: d.shownBy,
       onlyIf: d.onlyIf,
       repeat: d.repeat,
-      buttons: d.buttons.map((b) => ({ label: b.label, about: b.about, kind: b.run ? ("run" as const) : ("send" as const), ...(b.run ? { run: b.run } : {}), ...(b.to ? { to: b.to } : {}) })),
+      buttons: d.buttons.map((b) => ({
+        label: b.label,
+        about: b.about,
+        kind: b.run ? ("run" as const) : ("send" as const),
+        ...(b.run ? { run: b.run } : {}),
+        ...(b.to ? { to: b.to } : {}),
+        ...(b.onlyIf?.length ? { onlyIf: b.onlyIf } : {}),
+        ...(b.confirm ? { confirm: b.confirm } : {}),
+        ...(b.landing ? { landing: b.landing } : {}),
+      })),
     };
   });
   const fp = runFingerprint(file);

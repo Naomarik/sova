@@ -107,3 +107,9 @@ test("the source waits for readiness, writes the file whole at 0600, and shares 
   await src.get(30_000);
   assert.equal(lists, 2);
 });
+
+test("a row carries its landing (§chat.worktrees/ready-to-land) when the tree has one, and none otherwise", () => {
+  const landing = { state: "specs" as const, commit: "a".repeat(40), drafts: ["d"], specsWhy: "no tools" };
+  const b = buildBoard([session("a")], inputs({ a: readiness({ ...tree("/w/l", "feat/l", "ready"), landing }, tree("/w/m", "feat/m", "ready")) }), 0);
+  assert.deepEqual(b.rows.map((r) => [r.branch, r.landing ?? null]), [["feat/l", landing], ["feat/m", null]]);
+});

@@ -30,12 +30,13 @@ export const LABEL_MAX = 32;
 export const ABOUT_MAX = 160;
 export const SEND_MAX = 500;
 export const NOTE_MAX = 300;
+export const CONFIRM_MAX = 300;
 export const FILE_MAX_BYTES = 64 * 1024;
 /** "Rarely used": shown at least this often, used under RARE_SHARE of those. */
 export const RARE_MIN_SHOWN = 5;
 export const RARE_SHARE = 0.2;
 
-export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain"] as const;
+export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain", "ready-to-land", "specs-promoted", "specs-left"] as const;
 export type OfferCondition = (typeof CONDITIONS)[number];
 export const REPEATS = ["once-per-commit", "once-per-reply", "once-per-session"] as const;
 export type OfferRepeat = (typeof REPEATS)[number];
@@ -52,7 +53,13 @@ export type RunId = (typeof RUN_ALLOWED)[number];
 
 /** Placeholders a title may use, and those a send text may use. */
 export const TITLE_FILLS = ["branch", "base", "project"] as const;
-export const SEND_FILLS = ["branch", "base", "commit", "project"] as const;
+export const SEND_FILLS = ["branch", "base", "commit", "project", "drafts"] as const;
+/** What a button's landing key records (§chat.offers/buttons): the user's go-ahead for this exact commit, or Not Yet. */
+export const LANDING_RECORDS = ["go-ahead", "go-ahead-without-specs", "not-yet"] as const;
+export type LandingRecord = (typeof LANDING_RECORDS)[number];
+/** The offers file's top-level switch of the merge guard (§chat.worktrees/merge-guard), and its one value. */
+export const MAIN_MERGES_KEY = "mainMerges";
+export const MAIN_MERGES_GO_AHEAD = "go-ahead";
 
 export const NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
@@ -63,6 +70,12 @@ export interface OfferButtonDef {
   run?: RunId;
   /** With send, on an another-chat offer: the text goes to the session that showed it. */
   to?: "shower";
+  /** The button shows only when these hold too. */
+  onlyIf?: OfferCondition[];
+  /** The card asks this first (`{drafts}` and the send fills filled in). */
+  confirm?: string;
+  /** With send: what the click records once its send went through. */
+  landing?: LandingRecord;
 }
 
 export interface OfferDef {
@@ -78,14 +91,14 @@ export interface OfferDef {
 
 export type ParsedOffer = { name: string; ok: true; def: OfferDef } | { name: string; ok: false; error: string };
 
-export type ParsedOffersFile = { state: "missing" } | { state: "broken"; error: string } | { state: "ok"; offers: ParsedOffer[] };
+export type ParsedOffersFile = { state: "missing" } | { state: "broken"; error: string } | { state: "ok"; offers: ParsedOffer[]; mainMerges?: typeof MAIN_MERGES_GO_AHEAD };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** The keys the offers file, an offer and a button may hold (the parse refuses any other; the settings reference covers each). */
-export const OFFERS_FILE_KEYS = ["version", "offers"] as const;
+export const OFFERS_FILE_KEYS = ["version", "offers", "mainMerges"] as const;
 export const OFFER_KEYS = ["when", "why", "title", "onlyIf", "repeat", "shownBy", "disabled", "buttons"] as const;
-export const BUTTON_KEYS = ["label", "about", "send", "run", "to"] as const;
+export const BUTTON_KEYS = ["label", "about", "send", "run", "to", "onlyIf", "confirm", "landing"] as const;
 
 class OfferError extends Error {}
 const fail = (message: string): never => {
@@ -143,7 +156,23 @@ function parseButton(raw: unknown, i: number, shownBy: OfferShownBy): OfferButto
     if (shownBy !== "another-chat") fail(`${where}: "to": "shower" needs "shownBy": "another-chat"`);
     out.to = "shower";
   }
+  if (raw.onlyIf !== undefined) out.onlyIf = conditionsOf(raw.onlyIf, `${where}.onlyIf`);
+  if (raw.confirm !== undefined) {
+    out.confirm = text(raw, "confirm", CONFIRM_MAX, where, true);
+    checkFills(out.confirm, SEND_FILLS, `${where}.confirm`);
+  }
+  if (raw.landing !== undefined) {
+    if (typeof raw.landing !== "string" || !(LANDING_RECORDS as readonly string[]).includes(raw.landing)) fail(`${where}: "landing" is one of ${LANDING_RECORDS.join(", ")}`);
+    if (!hasSend) fail(`${where}: "landing" goes with "send" only`);
+    out.landing = raw.landing as LandingRecord;
+  }
   return out;
+}
+
+function conditionsOf(raw: unknown, where: string): OfferCondition[] {
+  if (!Array.isArray(raw)) fail(`${where} must be a list of conditions`);
+  for (const c of raw as unknown[]) if (typeof c !== "string" || !(CONDITIONS as readonly string[]).includes(c)) fail(`unknown condition ${JSON.stringify(c)} (known: ${CONDITIONS.join(", ")})`);
+  return [...new Set(raw as OfferCondition[])];
 }
 
 function parseOffer(raw: unknown): OfferDef {
@@ -154,11 +183,7 @@ function parseOffer(raw: unknown): OfferDef {
   const title = text(raw, "title", TITLE_MAX, "the offer", true);
   checkFills(title, TITLE_FILLS, "title");
   let onlyIf: OfferCondition[] = [];
-  if (raw.onlyIf !== undefined) {
-    if (!Array.isArray(raw.onlyIf)) fail('"onlyIf" must be a list of conditions');
-    for (const c of raw.onlyIf as unknown[]) if (typeof c !== "string" || !(CONDITIONS as readonly string[]).includes(c)) fail(`unknown condition ${JSON.stringify(c)} (known: ${CONDITIONS.join(", ")})`);
-    onlyIf = [...new Set(raw.onlyIf as OfferCondition[])];
-  }
+  if (raw.onlyIf !== undefined) onlyIf = conditionsOf(raw.onlyIf, '"onlyIf"');
   const repeat = raw.repeat ?? "once-per-commit";
   if (typeof repeat !== "string" || !(REPEATS as readonly string[]).includes(repeat)) fail(`"repeat" is one of ${REPEATS.join(", ")}`);
   const shownBy = raw.shownBy ?? "agent";
@@ -197,6 +222,7 @@ export function parseOffersFile(text: string | null): ParsedOffersFile {
   if (extra.length) return { state: "broken", error: `The file has an unknown key "${extra[0]}".` };
   if (raw.version !== 1) return { state: "broken", error: 'The file needs "version": 1.' };
   if (!isObj(raw.offers)) return { state: "broken", error: 'The file needs "offers": an object of named offers.' };
+  if (raw.mainMerges !== undefined && raw.mainMerges !== MAIN_MERGES_GO_AHEAD) return { state: "broken", error: `"${MAIN_MERGES_KEY}" can only be "${MAIN_MERGES_GO_AHEAD}".` };
   const offers: ParsedOffer[] = [];
   for (const [name, v] of Object.entries(raw.offers)) {
     if (!NAME_RE.test(name)) {
@@ -214,7 +240,7 @@ export function parseOffersFile(text: string | null): ParsedOffersFile {
       offers.push({ name, ok: false, error: `${err.message[0]!.toUpperCase()}${err.message.slice(1)}.` });
     }
   }
-  return { state: "ok", offers };
+  return { state: "ok", offers, ...(raw.mainMerges === MAIN_MERGES_GO_AHEAD ? { mainMerges: MAIN_MERGES_GO_AHEAD } : {}) };
 }
 
 /** The file's offer named `name`, when it is valid and enabled now. */
@@ -289,7 +315,7 @@ export function offerToolParameters(s: OfferSnapshot): Record<string, unknown> {
 
 /** `{name}` placeholders filled from `facts`; one without a value reads as a plain phrase. */
 export function fillText(template: string, facts: Partial<Record<string, string>>): string {
-  const fallback: Record<string, string> = { branch: "this branch", base: "its base", commit: "this commit", project: "this project" };
+  const fallback: Record<string, string> = { branch: "this branch", base: "its base", commit: "this commit", project: "this project", drafts: "its spec drafts" };
   return template.replace(/\{([a-z]+)\}/g, (m, k: string) => facts[k]?.trim() || fallback[k] || m);
 }
 
@@ -301,6 +327,8 @@ export interface OfferCardButton {
   label: string;
   about: string;
   kind: "send" | "run";
+  /** The card asks this before the click counts. */
+  confirm?: string;
 }
 
 export interface OfferCard {
@@ -344,7 +372,7 @@ export function normalizeOfferCard(raw: unknown): OfferCard | undefined {
   const buttons: OfferCardButton[] = [];
   for (const b of raw.buttons) {
     if (!isObj(b) || typeof b.label !== "string" || typeof b.about !== "string" || (b.kind !== "send" && b.kind !== "run")) return undefined;
-    buttons.push({ label: b.label, about: b.about, kind: b.kind });
+    buttons.push({ label: b.label, about: b.about, kind: b.kind, ...(typeof b.confirm === "string" && b.confirm ? { confirm: b.confirm } : {}) });
   }
   const out: OfferCard = { id, name, title, buttons, at, by, state: state as OfferCardState };
   if (typeof raw.note === "string") out.note = raw.note;
@@ -384,7 +412,7 @@ export interface ProjectOfferRow {
   shownBy?: OfferShownBy;
   onlyIf?: OfferCondition[];
   repeat?: OfferRepeat;
-  buttons?: { label: string; about: string; kind: "send" | "run"; run?: string; to?: "shower" }[];
+  buttons?: { label: string; about: string; kind: "send" | "run"; run?: string; to?: "shower"; onlyIf?: OfferCondition[]; confirm?: string; landing?: LandingRecord }[];
   shown: number;
   used: number;
   rarelyUsed: boolean;

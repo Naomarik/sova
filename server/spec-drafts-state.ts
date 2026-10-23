@@ -92,10 +92,16 @@ export function draftPromoted(specRoot: string, draftDir: string): { promoted: b
   return { promoted: true, read };
 }
 
-const cache = new Map<string, { stamps: string; count: number }>();
+const cache = new Map<string, { stamps: string; names: string[] }>();
 
 /** The number of drafts in `<dir>/.sova/spec/drafts/` not promoted; undefined when the folder has none. */
 export function unpromotedDrafts(dir: string): number | undefined {
+  return unpromotedDraftNames(dir)?.length;
+}
+
+/** The names of the drafts in `<dir>/.sova/spec/drafts/` not promoted, sorted (§chat.worktrees/ready-to-land);
+    undefined when the folder has none. */
+export function unpromotedDraftNames(dir: string): string[] | undefined {
   const specRoot = join(dir, ".sova", "spec");
   const draftsDir = join(specRoot, "drafts");
   let names: string[];
@@ -106,19 +112,19 @@ export function unpromotedDrafts(dir: string): number | undefined {
   }
   if (!names.length) return undefined;
   const hit = cache.get(dir);
-  if (hit && hit.stamps === stampOf(hit.stamps)) return hit.count;
-  let count = 0;
+  if (hit && hit.stamps === stampOf(hit.stamps)) return [...hit.names];
+  const left: string[] = [];
   const read: string[] = [draftsDir];
   for (const n of names) {
     const r = draftPromoted(specRoot, join(draftsDir, n));
     if (!r) continue;
     read.push(...r.read);
-    if (!r.promoted) count++;
+    if (!r.promoted) left.push(n);
   }
   const stamps = JSON.stringify(read.map((p) => [p, stamp(p)]));
   if (cache.size > 200) cache.clear();
-  cache.set(dir, { stamps, count });
-  return count;
+  cache.set(dir, { stamps, names: left });
+  return [...left];
 }
 
 /** The same stamps re-read now: equal means nothing that was read has changed. */

@@ -39,9 +39,10 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   Every service may declare `ports` (`{name: {base, stride?}}`, allocated per slot as
   `base + slot × stride`, stride default 1; or `{name: {fixed}}`, the same port for every slot;
   which `base`, `stride` or `fixed` a copy's port takes is the main checkout's,
-  §app.project-services/instances; every slot of 0 to 18, the copies' fixed range and conformance's
-  scratch slots, must give each port at most 65535, and no two ports may meet in any of them, as
-  `base` 3040 and 3050 at stride 1 do in slot 10: either makes the file invalid),
+  §app.project-services/instances; every slot of 0 to cap + 2 must give each port at most 65535, and
+  no two ports may meet in any of them, as `base` 3040 and 3041 at stride 1 do in slot 1: either
+  makes the file invalid; a higher slot whose ports would meet another's or pass 65535 never makes
+  the file invalid, it is only a place no copy takes),
   `requires` (services started first), `ready` (`{tcp: <port name>}` or `{http: <port name>,
   path?}`, answered below 500, with `timeout` seconds, default 60, at most 600), `reload`
   (`"restart"`, `"none"`, `{signal: HUP|USR1|USR2|INT|TERM}` or `{cmd: argv}`), `build` (`{run:
@@ -124,12 +125,19 @@ stable **id** (`<project folder slug>-<8 hex>`, random at create and never reuse
 **generation** that counts its starts from nothing, and a **slot**, a small number that is only an
 allocation and is reused after teardown. Slot 0 is the main checkout's and no other.
 
-Every copy's slot comes from one fixed range, 1 to 16, whatever the limit; conformance's two
-scratch slots, 17 and 18, sit outside it, and no other copy takes them. So changing the limit never
-moves a copy, a port or a scratch slot, and never asks for a new conformance run. Another checkout
-takes the slot asked for (1 to 16; 17 or 18 only when conformance asks), or the lowest free slot of
-1 to 16: a slot blocked by a listener, or by a port another instance holds, is skipped. A stopped
-copy keeps its slot and its ports.
+Every copy's slot comes from one fixed range, 1 to 16, whatever the limit, and conformance's two
+scratch slots sit above it, so changing the limit never moves a copy, a port or a scratch slot, and
+never asks for a new conformance run. Which places a definition can use is its own layout, from its
+ports as numbered for copies: a slot of 1 to 16 is **usable** only when each of its ports is at most
+65535 and none meets a port of slot 0, of a lower usable slot or of a scratch slot (ports declared
+`fixed` are the same in every slot and never count); an unusable slot is no copy's ("slot 14 is
+unavailable: its ports overlap slot 10's"). The scratch slots are the two lowest slots from 17 up
+whose ports meet none of slot 0's, the usable slots' or each other's, within 65535; when there are no
+two such slots, they are 17 and 18 and conformance's report says their ports overlap. No other copy
+takes them. Another checkout takes the slot asked for (a usable slot of 1 to 16; a scratch slot only
+when conformance asks; an unavailable slot is refused naming the overlap), or the lowest free usable
+slot: a slot blocked by a listener, or by a port another instance holds, is skipped. A stopped copy
+keeps its slot and its ports.
 
 The port numbering (each port's `base` and `stride`, or `fixed`) comes from the main checkout's
 `.sova/project.json` as saved in its folder, uncommitted edits included and never its HEAD,
@@ -152,9 +160,8 @@ and at `up` (or a test run's start of what it requires) of a copy that runs noth
 and the copy's start are taken under the registry's lock, so two callers can't both pass it. At the
 limit it is refused `cap-reached`: "{n} copies are running, and this machine allows {cap} at
 once: stop one first."; above it (the limit was lowered under what runs, which stops nothing):
-"{n} running, {k} over the limit: no new copy starts until {k + 1 in words} stop." (one: "until one
-stops"). Either message goes on to name the running copies and where the limit comes from (set on
-this machine, or the project's file). A create with room under the limit but no free slot of 1 to
+"{n} running, {k} over the limit of {cap}: no new copy starts until {k + 1} stop." (digits always). Either message goes on to name the running copies and where the limit comes from (set on
+this machine, or the project's file). A create with room under the limit but no free usable slot of 1 to
 16 is refused `slots-blocked`, naming for each slot the port and its holder: a Sova instance's id,
 or a listener's pid and folder when this user can read them.
 
@@ -481,8 +488,8 @@ started for it, and the log notes the server's start time and the commit its che
 
 `conform` (project, `ref` default the main checkout's HEAD) proves a definition with a fixed,
 versioned suite that no project can change, in two scratch instances A and B on new branches from
-the ref, in the scratch slots 17 and 18, outside the copies' fixed range whatever the copy limit
-(§app.project-services/instances), which no other copy takes:
+the ref, in its scratch slots, above the copies' fixed range whatever the copy limit (the two lowest
+from 17 whose ports meet no other place's, §app.project-services/instances), which no other copy takes:
 doctor; create A, and again
 (`changed: false`); every setup step run a second time exits 0; up A (ready), and again (same
 pids); every declared port of a service up started held by A's own (as §app.project-services/up counts them: its
@@ -667,7 +674,7 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/contract) and the copy has that port; and whether the main
   checkout's definition declares sensitive data; and the copy limit, `limit: {value, source (machine
   or file), file (the file's own value, or null), copies, running, over (the over-limit sentence, or
-  null), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
+  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
@@ -689,7 +696,10 @@ The operator sees and drives every running copy from two places, both on this ho
   in a header, the Overseer's sender mark, an extension's key or a peer is refused, 403), and each
   change is a line of the project's Settings history. A value outside 1 to 16 is refused in words.
   While more copies run than the limit allows, a warn line under it says "{r} running, {k} over the
-  limit: no new copy starts until {k + 1 in words} stop."; nothing is stopped.
+  limit of {cap}: no new copy starts until {k + 1} stop."; nothing is stopped. While the
+  definition's layout leaves a slot of 1 to 16 unusable, a line names each ("Slot 14 is unavailable:
+  its ports overlap slot 10's."), and while the usable slots number fewer than the limit, "Only {n}
+  slots are usable, so at most {n} copies run at once."
 - **The cost line**, under the limit: "Each copy takes about {steady} (up to {peak} at peak), so {cap}
   copies need about {cap × steady}. This machine: {total}, {available} available now." in the warn
   tone when {cap × steady} is more than what is available now; a warning, never a refusal. The

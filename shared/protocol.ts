@@ -272,6 +272,8 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "sova_navigate",
   // An offer card (§chat.offers/card, shared/session-offers.ts OFFER_TOOL): its details are the card.
   "offer",
+  // The project overseer's Settings change card (§app.project-overseer/settings): a propose's details are the card.
+  "sova_settings",
   // Tours retain only a validated small card projection; full authoring input remains lazy.
   "record_tour",
   "show_tour",

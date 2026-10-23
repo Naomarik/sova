@@ -24,6 +24,7 @@ import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } fro
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -2269,6 +2270,7 @@ export function ChatView(props: {
                   focusComposer();
                 },
               }}>
+              <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
               <OfferContext.Provider value={offers}>
               <HistoryItems
                 items={list()}
@@ -2294,6 +2296,7 @@ export function ChatView(props: {
               />
               <OfferTray />
               </OfferContext.Provider>
+              </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>

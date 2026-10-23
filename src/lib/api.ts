@@ -1,6 +1,7 @@
 import type { AssistantInfo, AssistantView, PricedPick } from "../../shared/project-assistant";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
+import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1553,6 +1554,17 @@ export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`
 export const chooseOfferButton = (path: string, card: string, button: number) =>
   request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button }) });
 export const setOfferNotNow = (path: string, offer: string) => request<{ notNow: string[] }>("/api/session-offers/snooze", { method: "POST", body: JSON.stringify({ path, offer }) });
+// A project's settings (§app.project-overseer/settings, shared/project-settings.ts).
+export const getProjectSettings = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings`, { cache: "no-store" });
+export const getSettingsHistory = (projectId: string) => request<SettingsHistoryRow[]>(`${projectPath(projectId)}/settings/history`, { cache: "no-store" });
+/** Apply and Approve (or Land, `card` "local"): a trust grant, from this page only. */
+export const applySettingsCard = (projectId: string, card: string, fingerprint: string) =>
+  request<SettingsApplyResult>(`${projectPath(projectId)}/settings/apply`, jsonInit("POST", { card, fingerprint }));
+/** Dismiss a card (Discard, for "local", with the fingerprint it showed). */
+export const withdrawSettingsCard = (projectId: string, card: string, fingerprint?: string) =>
+  request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
+export const undoSettingsRow = (projectId: string, id: string) =>
+  request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
 export const approveProjectOfferRuns = (projectId: string, fingerprint: string) =>
   request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers/approve`, { method: "POST", body: JSON.stringify({ fingerprint }) });

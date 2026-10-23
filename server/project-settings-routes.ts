@@ -3,7 +3,7 @@ import { OrgError } from "./org-error";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { pageOnlyRefusal } from "./page-only";
 import { projectOf } from "./project-overseer-store";
-import { applyCard, readHistory, settingsInfo, SettingsRefusal, undoRow, withdrawCard } from "./project-settings";
+import { applyCard, fieldLabel, readHistory, valueText, settingsInfo, SettingsRefusal, undoRow, withdrawCard } from "./project-settings";
 import { SettingsGitError } from "./project-settings-git";
 
 /**
@@ -51,7 +51,7 @@ const APPLY_WORDS = {
 export function registerProjectSettingsRoutes(app: Hono<any>): void {
   const base = "/api/projects/:pid/settings";
   app.get(base, handle(async (c) => c.json(await settingsInfo(pid(c)), 200, NO_STORE)));
-  app.get(`${base}/history`, handle(async (c) => c.json([...readHistory(pid(c))].reverse(), 200, NO_STORE)));
+  app.get(`${base}/history`, handle(async (c) => c.json([...readHistory(pid(c))].reverse().map((r) => ({ ...r, label: fieldLabel(r.field), fromText: valueText(r.field, r.from), toText: valueText(r.field, r.to) })), 200, NO_STORE)));
   app.post(
     `${base}/undo`,
     handle(async (c) => {

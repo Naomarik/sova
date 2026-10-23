@@ -18,6 +18,7 @@ import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectOffersCard } from "./ProjectOffersCard";
+import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -336,10 +337,21 @@ export function ProjectPage(props: {
             <ProjectCostCard projectId={projectId} poll={cost} />
           </Match>
           <Match when={tab() === "settings"}>
-            <OverseerSettings po={po} placed={!!org} />
-            {org?.settings()}
-            {/* The project's offers file, read now (§chat.offers/project-list). */}
-            <ProjectOffersCard projectId={projectId} />
+            {(() => {
+              // Every project setting and the overseer's Settings change cards (§app.project-overseer/settings), read while the tab shows.
+              const settings = createProjectSettings(projectId);
+              return (
+                <>
+                  <ProjectSettingsChanges projectId={projectId} data={settings} />
+                  <OverseerSettings po={po} placed={!!org} />
+                  {org?.settings()}
+                  {/* The project's offers file, read now (§chat.offers/project-list). */}
+                  <ProjectOffersCard projectId={projectId} />
+                  <ProjectAllSettings data={settings} />
+                  <ProjectSettingsHistory projectId={projectId} data={settings} />
+                </>
+              );
+            })()}
             <section class="card orgs-section project-danger" aria-labelledby="project-danger">
               <h2 class="orgs-h2" id="project-danger">
                 Danger zone

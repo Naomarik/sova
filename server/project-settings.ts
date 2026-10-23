@@ -960,8 +960,9 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
   const s = readPoSettings(projectOverseerPaths(projectId));
   const tab = `#/projects/${projectId}/settings`;
   const rows: SettingsRow[] = [];
+  const ANCHOR: Record<string, string> = { overseer: "project-settings-overseer", powers: "project-settings-powers", sessions: "project-settings-sessions", extra: "project-extra-label", limits: "project-limits-legend", offers: "project-offers" };
   const sova = (setting: SettingId, state: string, anchor: string, detail?: string) =>
-    rows.push({ setting, label: SETTINGS_REFERENCE[setting].label, state, where: "sova", href: `${tab}?at=${anchor}`, hrefLabel: SETTINGS_REFERENCE[setting].changedAt, ...(detail ? { detail } : {}) });
+    rows.push({ setting, label: SETTINGS_REFERENCE[setting].label, state, where: "sova", href: tab, ...(ANCHOR[anchor] ? { anchor: ANCHOR[anchor] } : {}), hrefLabel: SETTINGS_REFERENCE[setting].changedAt, ...(detail ? { detail } : {}) });
   const count = (col: PowerColumn) => POWERS.filter((p) => s.powers[col][p]).length;
   sova("overseer.watch", s.watch ? "On" : "Off", "overseer");
   sova("overseer.powers", `${count("overseer")} of ${POWERS.length} on for the overseer on its own`, "powers", `${count("assistant")} on for the Project Assistant`);
@@ -1000,12 +1001,12 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
   try {
     const schedules = (await scheduleKeeper()?.list().catch(() => [])) ?? [];
     for (const pb of await listProjectPlaybooks(root)) {
-      file("playbook", "Set", `${tab}?at=playbooks`, "the Playbooks dialog", { name: pb.id, detail: pb.title });
+      file("playbook", "Set", tab, "the Playbooks dialog, in a chat of the project", { name: pb.id, detail: pb.title });
       if (pb.schedule) {
         const known = schedules.find((x) => x.root === root && x.playbook === pb.id);
         const st = known?.state ?? pb.schedule.state;
         const words: Record<string, string> = { "needs-approval": "Needs approval", active: "Approved", paused: "Paused", invalid: "Broken", "not-project": "Not run" };
-        file("schedule", words[st] ?? st, `${tab}?at=playbooks`, "the Playbooks dialog", { name: pb.id, detail: [pb.schedule.text ?? pb.schedule.when, known?.reason ?? pb.schedule.reason].filter(Boolean).join(" · ") });
+        file("schedule", words[st] ?? st, tab, "the Playbooks dialog, in a chat of the project", { name: pb.id, detail: [pb.schedule.text ?? pb.schedule.when, known?.reason ?? pb.schedule.reason].filter(Boolean).join(" · ") });
       }
     }
   } catch {
@@ -1016,19 +1017,20 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
     const listing = discoverProjectModes(root);
     for (const m of listing.modes) {
       const needs = m.toolsHash !== "" && !(listing.root && modeApproved(listing.root, m.id, m.toolsHash));
-      file("mode", m.toolsHash === "" ? "No approval needed" : needs ? "Needs approval" : "Approved", `${tab}?at=modes`, "a chat's mode menu", { name: m.id, detail: m.description });
+      file("mode", m.toolsHash === "" ? "No approval needed" : needs ? "Needs approval" : "Approved", tab, "the mode menu, in a chat of the project", { name: m.id, detail: m.description });
     }
-    for (const pr of listing.problems) file("mode", "Broken", `${tab}?at=modes`, "a chat's mode menu", { name: pr.id, detail: pr.error });
+    for (const pr of listing.problems) file("mode", "Broken", tab, "the mode menu, in a chat of the project", { name: pr.id, detail: pr.error });
   } catch {
     // unreadable: none listed
   }
   // Offers.
   const offers = parseOffersFile(readText(join(root, OFFERS_FILE)));
-  if (offers.state === "missing") file("offers", "Not set", `${tab}?at=offers`, "the Offers list", { detail: OFFERS_FILE });
-  else if (offers.state === "broken") file("offers", "Broken", `${tab}?at=offers`, "the Offers list", { detail: offers.error });
+  if (offers.state === "missing") file("offers", "Not set", tab, "the Offers list", { anchor: "project-offers", detail: OFFERS_FILE });
+  else if (offers.state === "broken") file("offers", "Broken", tab, "the Offers list", { anchor: "project-offers", detail: offers.error });
   else {
     const runs = runButtonsOf(offers).length;
-    file("offers", `${offers.offers.length} offer${offers.offers.length === 1 ? "" : "s"}`, `${tab}?at=offers`, "the Offers list", {
+    file("offers", `${offers.offers.length} offer${offers.offers.length === 1 ? "" : "s"}`, tab, "the Offers list", {
+      anchor: "project-offers",
       detail: runs ? (runsApproved(root, offers) ? "run buttons approved" : "run buttons need approval") : "send buttons only",
     });
   }

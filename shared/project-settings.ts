@@ -27,6 +27,10 @@ export interface SettingsHistoryRow {
   revertOf?: string;
   commit?: string;
   card?: string;
+  /** The field and its values in words (GET …/settings/history adds them). */
+  label?: string;
+  fromText?: string;
+  toText?: string;
 }
 
 /** A grant the card holds: what it allows, keyed like its approval (`project:<root>#<id>` for a profile). */
@@ -96,6 +100,8 @@ export interface SettingsRow {
   where: "sova" | "file";
   /** Where it is changed or approved: an in-app link. */
   href: string;
+  /** On the project's Settings tab: the id of its section's heading (the page scrolls to it). */
+  anchor?: string;
   hrefLabel: string;
 }
 

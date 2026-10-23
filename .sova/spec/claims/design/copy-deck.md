@@ -621,16 +621,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Intro | How the align mode plans with you. |
 | Group headings | Writing style · Visuals · Review |
-| Style options | **Default** Today's detail: files, code and technical trade-offs. · **Simplified** Short sentences in everyday words, fewer items. · **Project manager** Screens, wording and behaviour only; no code. Technical detail folded into notes. |
+| Style options | **Project manager** Screens, wording and behaviour only; no code. Technical detail folded into notes. · **Simplified** Short sentences in everyday words, fewer items. · **Technical** Files, code and technical trade-offs in the plan. |
 | Style hint | Reaches open chats at their next message. |
 | Visuals switch · hint | Draw when it helps · The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving. |
 | Review switch · hint | Adversarial review · In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving. |
 | Profiles line | A subagent profile can set its own writing style and visuals (Settings → Subagents). |
 | Load failed (banner-error) | **Couldn't read the alignment settings.** Nothing was changed. |
 | Save failed (banner-error at the form's end; the draft stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
-| Card meta mark | · Simplified style · · Project manager style (none for Default) |
+| Card meta mark | · Project manager style · · Simplified style · · Technical style (none on an older card that recorded no style) |
 | Card section | Technical notes · {n} |
-| Subagents profile control | Alignment · Writing style: Use host default · Default · Simplified · Project manager — Visuals: Use host default · On · Off |
+| Subagents profile control | Alignment · Writing style: Use host default · Project manager · Simplified · Technical — Visuals: Use host default · On · Off |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 

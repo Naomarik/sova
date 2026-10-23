@@ -90,9 +90,9 @@ try {
     });
     await server.call("POST", `/api/sandbox?path=${encodeURIComponent(path)}`, { state: "off" }).catch((e) => console.warn(`  sandbox off: ${e.message}`));
   };
-  // A static session the director carries on (`then`) has its modes on from the start, so its
-  // stills show what the user sees: an open alignment card with its answer row, say.
-  for (const s of plan.sessions.filter((x) => x.then)) await configure(s, seeded.sessions[s.id]);
+  // A static session with modes has them on from the start, so its stills show what the user
+  // sees: an open alignment card with its answer row, say.
+  for (const s of plan.sessions.filter((x) => !x.live && x.modes.length)) await configure(s, seeded.sessions[s.id]);
 
   // Static sessions and pages first, while nothing is live.
   for (const shot of todo.filter((s) => s.at === "start")) await take(shot);

@@ -76,7 +76,7 @@ test("a dangling reference is named", async () => {
   const slot = await broken((s) => s.replace('"hero.fold": "hero-fold"', '"hero.fold": "hero-flod"'));
   assert.match(slot, /\/pageShots\/hero\.fold: unknown shot "hero-flod" \(did you mean "hero-fold"\?\)/);
   const hold = await broken((s) => s.replace('"at": "delegating", "viewport": "fold"', '"at": "delegatin", "viewport": "fold"'));
-  assert.match(hold, /no hold "delegatin" in retry-backoff's script or its workers' \(holds: decided, back, delegating, or "end"\)/);
+  assert.match(hold, /no hold "delegatin" in retry-backoff's script or its workers' \(holds: decided, delegating, or "end"\)/);
 });
 
 test("an edit whose old text isn't in the file says the closest line", async () => {
@@ -87,10 +87,10 @@ test("an edit whose old text isn't in the file says the closest line", async () 
 test("a change in no show_changes step is refused, like the tool does", async () => {
   const out = await broken(
     mutate((v) => {
-      v.sessions[3].then[11].show_changes.steps.pop();
+      v.sessions[3].then[8].show_changes.steps.pop();
     }),
   );
-  assert.match(out, /\/sessions\/3\/then\/11\/show_changes\/steps: README\.md is changed but in no step/);
+  assert.match(out, /\/sessions\/3\/then\/8\/show_changes\/steps: README\.md is changed but in no step/);
 });
 
 test("the align tool's own rules apply", async () => {
@@ -147,8 +147,8 @@ test("a vis drawing that the app can't parse is refused", async () => {
 });
 
 test("a summary updates only a topic written before it", async () => {
-  const out = await broken(mutate((v) => (v.sessions[3].then[8].summary.topics[0].update = "t9")));
-  assert.match(out, /\/sessions\/3\/then\/8\/summary\/topics\/0\/update: no topic t9 before this summary \(topics so far: t1, t2\)/);
+  const out = await broken(mutate((v) => (v.sessions[3].then[10].summary.topics[0].update = "t9")));
+  assert.match(out, /\/sessions\/3\/then\/10\/summary\/topics\/0\/update: no topic t9 before this summary \(topics so far: t1, t2\)/);
   const from = await broken(mutate((v) => (v.sessions[3].messages[8].summary.topics[0].from = 2)));
   assert.match(from, /\/sessions\/3\/messages\/8\/summary\/topics\/0\/from: step 2 is not a user step before this summary/);
 });
@@ -175,8 +175,8 @@ test("a typed prompt is at most 90 characters, typed at about 30 a second", asyn
 test("a video ends by going home, and a tap video never clicks", async () => {
   const home = await broken(mutate((v) => v.videos.desk.beats.pop()));
   assert.match(home, /\/videos\/desk\/beats: the last beat is "home"/);
-  const click = await broken(mutate((v) => (v.videos.phone.beats[1].do = "click")));
-  assert.match(click, /\/videos\/phone\/beats\/1\/do: a tap video presses with "tap"/);
+  const click = await broken(mutate((v) => (v.videos.desk.pointer = "tap")));
+  assert.match(click, /\/videos\/desk\/beats\/1\/do: a tap video presses with "tap"/);
 });
 
 test("$session: in reply text names a story session", async () => {

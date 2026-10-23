@@ -57,6 +57,7 @@ for (const [slot, id] of Object.entries(plan.pageShots)) {
   if (entry.hash !== hashes[id]) bad(`${id}: its inputs changed since the capture (story, app or capture scripts); run pnpm run screens -- --shot ${id}`);
 }
 for (const id of Object.keys(manifest.shots ?? {})) if (!plan.shots.some((s) => s.id === id)) bad(`manifest.json lists shot ${id}, which story.json no longer has (run pnpm run screens)`);
+for (const name of Object.keys(manifest.videos ?? {})) if (!plan.videos[name]) bad(`manifest.json lists video ${name}, which story.json no longer has (run pnpm run screens:video)`);
 for (const [name, pv] of Object.entries(plan.videos)) {
   const vid = manifest.videos?.[name];
   const v = { ...pv, vp: plan.viewports[pv.viewport] };

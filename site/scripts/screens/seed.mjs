@@ -150,9 +150,9 @@ export function staticSession(plan, s, repo, endMs) {
   push({ type: "model_change", provider, modelId: model });
   if (s.effort) push({ type: "thinking_level_change", thinkingLevel: s.effort });
   push({ type: "session_info", name: s.title });
-  // A session the director carries on was in its modes from the start: the mode extension's own
-  // markers (a switch, then the minor mode), each with the active state it restores from.
-  if (s.then && s.modes.length) {
+  // A static session was in its modes from the start: the mode extension's own markers (a switch,
+  // then the minor mode), each with the active state it restores from.
+  if (s.modes.length) {
     const major = s.modes.includes("delegate") ? "delegate" : "normal";
     const active = { version: 1, mode: major, strict: false, minorModes: s.modes.filter((m) => m !== "delegate") };
     if (major !== "normal") push({ type: "custom", customType: "mode", data: { mode: major, active } });

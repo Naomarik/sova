@@ -6,8 +6,9 @@
 // reduced motion no source matches and the still shows. data/screens.ts offers the video only when
 // its shape is the still's, so it fills the same screen area exactly: never cropped, never
 // letterboxed. The foldable pair moved to its own section below the hero (FoldDevice.astro).
-// Under it, one line of page text says what the video shows at that moment (VideoCaption.astro);
-// nothing is drawn into the picture.
+// Under it, page text says what the video shows at that moment: a chapter bar whose segments jump
+// to each chapter, the chapter's name and the caption (VideoCaption.astro); nothing is drawn into
+// the picture.
 import { getImage } from "astro:assets";
 import Frame from "../Frame.astro";
 import Screen from "../Screen.astro";

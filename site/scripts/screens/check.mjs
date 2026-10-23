@@ -37,7 +37,8 @@ console.log(`  workers   ${Object.keys(plan.workers).length}${plan.overseer ? ",
 console.log(`  holds     ${Object.keys(plan.holds).join(", ") || "(none)"}`);
 console.log(`  shots     ${plan.shots.length} (${Object.entries(byViewport).map(([k, n]) => `${n} ${k}`).join(", ")}), dark theme`);
 console.log(`  slots     ${Object.keys(plan.pageShots).length}`);
-if (plan.video) console.log(`  video     ${plan.video.session}, ${plan.video.beats.length} beats, poster ${plan.video.poster}`);
+for (const v of Object.values(plan.videos))
+  console.log(`  video     ${v.name}: ${v.session}, ${v.beats.length} beats, about ${(v.beats.reduce((n, b) => n + b.estMs, 0) / 1000 + v.loopMs / 1000).toFixed(0)} s estimated, over slot ${v.slot}`);
 
 /** Two-space JSON, with short leaf objects and arrays of scalars on one line when they fit. */
 function canonical(v) {

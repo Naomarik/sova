@@ -50,6 +50,15 @@ test("requests and responses decode strictly; ids are safe file names", () => {
 		null, [], { ...good, version: 0 }, { ...good, id: "../x" }, { ...good, id: "UPPER1" }, { ...good, type: "spawn" }, { ...good, type: "kill" },
 		{ ...good, at: "now" }, { ...good, to: "a\nb" }, { ...good, to: "x".repeat(65) }, { ...good, message: "m".repeat(8001) }, { ...good, mode: "interrupt" },
 	]) assert.equal(decodeRequest(bad), undefined, JSON.stringify(bad));
+	// The inbox fields: strict bounds, nothing else adopted.
+	const inboxReq = { version: 1, id: "abcdef", type: "inbox", at: 1, action: "done", ids: ["i_1", "i_1", "i_2a"], note: " ok " };
+	assert.deepEqual(decodeRequest(inboxReq), { version: 1, id: "abcdef", type: "inbox", at: 1, action: "done", ids: ["i_1", "i_2a"], note: "ok" });
+	assert.deepEqual(decodeRequest({ ...good, type: "message", subject: " Hi ", urgent: true, replyTo: "i_9" }), { ...good, type: "message", subject: "Hi", urgent: true, replyTo: "i_9" });
+	for (const bad of [
+		{ ...inboxReq, action: "delete" }, { ...inboxReq, ids: ["41"] }, { ...inboxReq, ids: Array.from({ length: 21 }, (_, i) => `i_${i}`) },
+		{ ...inboxReq, note: "a\nb" }, { ...inboxReq, note: "n".repeat(201) }, { ...inboxReq, limit: 0 }, { ...inboxReq, limit: 1.5 },
+		{ ...good, subject: "s".repeat(121) }, { ...good, subject: "a\nb" }, { ...good, urgent: "yes" }, { ...good, replyTo: "../x" },
+	]) assert.equal(decodeRequest(bad), undefined, JSON.stringify(bad));
 	const minimal = decodeRequest({ version: 1, id: "abcdef", type: "roster", at: 1 })!;
 	assert.deepEqual(minimal, { version: 1, id: "abcdef", type: "roster", at: 1 });
 	assert.deepEqual(decodeResponse({ version: 1, id: "abcdef", ok: true, text: "t", details: { a: 1 } }), { version: 1, id: "abcdef", ok: true, text: "t", details: { a: 1 } });

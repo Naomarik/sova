@@ -55,7 +55,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
+import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
@@ -1421,6 +1421,16 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
+  });
+
+  // One team member's inbox, read-only (§app.subagents-pane/member-inbox): its items without
+  // bodies, or with &item= one item's whole message. The server never writes an inbox.
+  app.get("/api/insights/session/inbox", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const res = await getMemberInbox(path, c.req.query("team") ?? "", c.req.query("worker") ?? "", c.req.query("item"));
+    return res.ok ? c.json(res.body, 200, { "Cache-Control": "no-store" }) : c.json({ error: res.error }, res.status);
   });
 
   // Resource monitor (§app/resource-monitor): the latest background sample, and its history (5s from

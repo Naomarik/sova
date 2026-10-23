@@ -257,6 +257,17 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.workers.checks",
+    label: "Show Worker Report Checks",
+    summary: "Whether each worker's newest done report says it ran its tests or checks, as Jev or the configured model guessed it.",
+    effect: "looks",
+    params: { session: session("query", "path") },
+    route: { method: "GET", path: "/api/sessions/worker-checks" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.context",
     label: "Show Session Context",
     summary: "What pi loads for a session's folder: its context files and skills, with their sizes.",

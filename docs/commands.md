@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 464 |
-| Routes a catalogue entry points at | 101 |
-| Catalogue entries | 128 |
+| Routes registered | 465 |
+| Routes a catalogue entry points at | 102 |
+| Catalogue entries | 129 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -53,6 +53,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
 | `session.align.triage` | Show Alignment Triage | looks | `GET /api/sessions/align-triage` | sessions |
+| `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
@@ -679,6 +680,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
 | `POST /api/sessions/title` | sessions | `session.title.reset`, `session.title.set` |
 | `GET /api/sessions/tools` | sessions | `session.tools.get` |
+| `GET /api/sessions/worker-checks` | sessions | `session.workers.checks` |
 | `GET /api/settings` | sessions | `settings.sova.get` |
 | `GET /api/settings/align` | sessions | `settings.align.get` |
 | `PUT /api/settings/align` | admin | `settings.align.set` |

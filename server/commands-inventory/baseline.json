@@ -172,6 +172,7 @@
     "GET /api/sessions/git": {"need":"sessions","is":"pending"},
     "GET /api/sessions/summary": {"need":"sessions","is":"command","ids":["session.get"]},
     "GET /api/sessions/tools": {"need":"sessions","is":"command","ids":["session.tools.get"]},
+    "GET /api/sessions/worker-checks": {"need":"sessions","is":"command","ids":["session.workers.checks"]},
     "GET /api/settings": {"need":"sessions","is":"command","ids":["settings.sova.get"]},
     "GET /api/settings/align": {"need":"sessions","is":"command","ids":["settings.align.get"]},
     "GET /api/settings/claude-status": {"need":"sessions","is":"pending"},

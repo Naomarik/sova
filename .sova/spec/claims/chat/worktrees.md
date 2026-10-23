@@ -294,7 +294,9 @@ own light and `title` carry. An **empty leftover
 worktree** — no commit of its own, a clean tree, nothing running — never changes the count. Its `title` names each worktree with its state and every
 routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
-so the Overseer reads the same answer.
+so the Overseer reads the same answer. An open offer card (§chat.offers/card) is no reply that
+asks: it never makes a worktree wait for your OK. Offers' conditions read readiness as it will be
+once the turn ends (§chat.offers/conditions).
 
 Routine session-list and merge-readiness refreshes never query spec assessment status or
 recapture assessment inputs, including for idle merged worktrees. Readiness carries no spec

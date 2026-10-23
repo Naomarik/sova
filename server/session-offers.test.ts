@@ -52,7 +52,8 @@ beforeEach(() => {
     },
     async head(path) {
       const id = /x_(.+)\.jsonl$/.exec(path)?.[1];
-      return id ? { id, cwd: project, ...(summaries.get(path)?.parent ? { parent: summaries.get(path)!.parent } : {}) } : null;
+      const o = summaries.get(path) as (Partial<SessionSummary> & { started?: boolean }) | undefined;
+      return id ? { id, cwd: project, ...(o?.parent ? { parent: o.parent } : {}), ...(o?.started ? { started: true } : {}) } : null;
     },
     async request(url, init) {
       requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
@@ -118,6 +119,14 @@ describe("the snapshot (b1's half in this process)", () => {
     assert.equal((await offers.sessionOffers(id, project)).cards.length, 1, "the cards it had stay");
   });
 
+  test("a session that talked before it had a record gets none, never the file as it is now", async () => {
+    writeOffers({ alpha: def() });
+    const id = sid();
+    summaries.set(pathOf(id), { started: true } as Partial<SessionSummary>);
+    assert.equal(await offers.offerSnapshotFor(id, pathOf(id), project), null);
+    assert.equal(offers.recordedSnapshot(id), null, "none is recorded");
+  });
+
   test("a fork starts with its parent's snapshot", async () => {
     writeOffers({ alpha: def() });
     const parent = sid();
@@ -142,16 +151,27 @@ describe("showing an offer", () => {
     assert.equal(JSON.stringify(card).includes("merge it"), false, "the send text stays on the server");
   });
 
-  test("the repeat guard: once per commit by default; a new commit may show it again and replaces the open card", async () => {
+  test("the repeat guard: once per commit by default; a new commit may show it again once the first is answered", async () => {
     writeOffers({ merge: def() });
     const id = sid();
     await show(id, "merge");
     await refused(show(id, "merge"), /already shown for this commit/);
     head = "b".repeat(40);
+    await refused(show(id, "merge"), /open/);
+    await offers.chooseOffer(pathOf(id), id, "of_1", 1);
     const second = await show(id, "merge");
     assert.equal(second.id, "of_2");
     const cards = (await offers.sessionOffers(id, project)).cards;
-    assert.deepEqual(cards.map((c) => [c.id, c.state, c.supersededBy ?? null]), [["of_1", "superseded", "of_2"], ["of_2", "open", null]]);
+    assert.deepEqual(cards.map((c) => [c.id, c.state]), [["of_1", "chosen"], ["of_2", "open"]]);
+  });
+
+  test("while another offer is open, a new one shows nothing and the refusal names the open one", async () => {
+    writeOffers({ a: def({ title: "Offer A?" }), b: def({ title: "Offer B?" }) });
+    const id = sid();
+    const a = await show(id, "a");
+    await refused(show(id, "b"), /"a".*open|open.*"a"/);
+    const cards = (await offers.sessionOffers(id, project)).cards;
+    assert.deepEqual(cards.map((c) => [c.id, c.name, c.state]), [[a.id, "a", "open"]], "A stays open; B was never recorded");
   });
 
   test("once per session and once per reply", async () => {
@@ -160,8 +180,10 @@ describe("showing an offer", () => {
     await show(id, "s");
     head = "c".repeat(40);
     await refused(show(id, "s"), /in this session/);
-    await show(id, "r", { replyId: "u1" });
+    await offers.chooseOffer(pathOf(id), id, "of_1", 1);
+    const r1 = await show(id, "r", { replyId: "u1" });
     await refused(show(id, "r", { replyId: "u1" }), /for this reply/);
+    await offers.chooseOffer(pathOf(id), id, r1.id, 1);
     await show(id, "r", { replyId: "u2" });
   });
 
@@ -218,6 +240,16 @@ describe("clicks", () => {
     await assert.rejects(offers.chooseOffer(pathOf(id), id, card.id, 1), /no longer open/);
     const list = offers.projectOffers(project).offers.find((o) => o.name === "merge")!;
     assert.ok(list.shown >= 1 && list.used >= 1);
+  });
+
+  test("two clicks at once on one card send its message once", async () => {
+    writeOffers({ merge: def() });
+    const id = sid();
+    const card = await show(id, "merge");
+    const results = await Promise.allSettled([offers.chooseOffer(pathOf(id), id, card.id, 0), offers.chooseOffer(pathOf(id), id, card.id, 0)]);
+    assert.equal(requests.length, 1, `sent once: ${JSON.stringify(requests)}`);
+    assert.deepEqual(results.map((r) => r.status).sort(), ["fulfilled", "rejected"]);
+    assert.equal((await offers.sessionOffers(id, project)).cards[0]!.state, "chosen");
   });
 
   test("a send the route refuses leaves the card open, with the route's words", async () => {

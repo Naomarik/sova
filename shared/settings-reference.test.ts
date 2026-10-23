@@ -27,7 +27,7 @@ test("every field PATCH …/overseer reads has an entry", () => {
 test("the project's own PATCH (name, root) has an entry", () => {
   // server/projects/routes.ts PATCH /api/projects/:pid reads exactly these.
   const route = readFileSync(join(import.meta.dirname, "..", "server", "projects", "routes.ts"), "utf8");
-  const read = /editProject\(pidOf\(c\), \{ ([^}]*) \}/.exec(route)?.[1]?.split(",").map((x) => x.trim().split(":")[0]!) ?? [];
+  const read = /editProject\([^,]+, \{ ([^}]*) \}/.exec(route)?.[1]?.split(",").map((x) => x.trim().split(":")[0]!) ?? [];
   assert.deepEqual(read.sort(), ["name", "root"]);
   assert.deepEqual(missing(read, keysOf("project.name")), []);
 });

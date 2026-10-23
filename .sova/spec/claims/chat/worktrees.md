@@ -302,7 +302,9 @@ draft(s) not promoted)". Merged and the commit come from the merge card; pushed 
 `origin` branch (left out when there is no `origin`); live when this server already runs the
 merge (it started after it, or the merge changed no server file), else restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
-promoted when every spec file it changed now reads the same in the worktree's current spec. The
+promoted when every spec file it changed now reads the same in the worktree's current spec, or a
+promotion the draft records wrote that file after the draft's last edit to it (a promotion into a
+spec that had moved merges the two, so the current file is not the draft's copy). The
 line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
 row (`SessionSummary.readiness.status`).
 

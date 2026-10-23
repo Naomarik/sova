@@ -24,7 +24,7 @@ Each alignment has an id (`al_1`, `al_2`…), a title and a one-line summary of 
 - **Approach** (`a1`, `a2`…): the steps it proposes.
 - **Rejected** (`x1`, `x2`…): alternatives it turned down, each with why.
 - **Questions** (`q1`, `q2`…): what it needs you to decide. A question has a topic, the ask,
-  optional context, optional options lettered a, b, c…, each with its trade-off, and a
+  optional context, optional options lettered a, b, c…, each with a one-line consequence of picking it, and a
   **recommendation** with its reason.
 - **Technical notes** (`t1`, `t2`…): the files, code and technical detail that a plan written for
   someone who doesn't read code leaves out of the other fields.
@@ -35,11 +35,11 @@ Ids are never reused within an alignment, so "q3" keeps meaning the same questio
 
 How the agent writes alignments is set in **Settings → Alignment**:
 
-- **Writing style.** **Default** keeps files, code and technical trade-offs in the plan.
-  **Simplified** uses short sentences in everyday words and fewer items. **Project manager**
-  describes only screens, wording and behaviour, with no code; it still asks a technical choice
-  you'd notice (speed, cost, data kept or lost) as a product question, and puts the technical
-  detail in the technical notes. A change reaches open chats at their next message.
+- **Writing style.** **Project manager**, the default, describes only screens, wording and
+  behaviour, with no code; it still asks a technical choice you'd notice (speed, cost, data kept or
+  lost) as a product question, and puts the technical detail in the technical notes. **Simplified**
+  uses short sentences in everyday words and fewer items. **Technical** keeps files, code and
+  technical trade-offs in the plan. A change reaches open chats at their next message.
 - **Visuals.** With **Draw when it helps** on, the agent can draw a wireframe or a flow on the
   card when a picture explains faster than words, at most 3 per alignment. It applies to sessions
   you start after saving.
@@ -85,7 +85,8 @@ The card shows the summary, then the **Approach**, then the questions. Open ques
 decided and dropped ones fold to one line with their outcome. **Technical notes** sit folded under
 the Approach; **Findings** and **Rejected** start folded at the bottom. Past Aligning, a chip shows
 the status. A visual is drawn under its question's context, or the alignment's under the summary,
-and an alignment written in a non-Default style says so in its header ("Simplified style").
+and each alignment names its writing style in its header ("Project manager style"; an
+older one may name none).
 When the agent decides a request needs no alignment, it shows one line instead:
 "No alignment needed", with why.
 

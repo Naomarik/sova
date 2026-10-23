@@ -5932,6 +5932,100 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
 
+/* ---- MEMBER INBOX (§app.subagents-pane/member-inbox). A team member's view has two tabs under
+   its head, Transcript and Inbox, in the session tabs' strip grammar. The inbox is its own scroll
+   region: one row per item, the whole row the press that opens it, its message under it once
+   open. Read-only: no control here marks, sends or deletes. ---------------------------------- */
+.subagents-view-tabs {
+  flex: none;
+  flex-wrap: nowrap;
+  padding: 0 var(--space-2);
+  background: var(--color-surface);
+  scrollbar-width: thin;
+}
+.subagents-view-tabs > .tab { flex: none; }
+.subagents-inbox {               /* compose with .pane */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-4) var(--space-6);
+}
+.inbox-skeleton { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.inbox-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.inbox-item {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  min-width: 0;
+}
+.inbox-item-line {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inbox-item-line:hover { background: var(--color-sunken); }
+.inbox-item-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.inbox-item-line[aria-expanded="true"] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.inbox-item-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.inbox-item-head > .chip { flex: none; }
+.inbox-item-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+.inbox-item[data-status="new"] .inbox-item-subject { font-weight: var(--fw-semibold); }
+/* The meta wraps rather than clip: the status chip and the time are facts, never the part cut. */
+.inbox-item-meta {
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+  white-space: normal;
+  align-items: center;
+  row-gap: 2px;
+}
+.inbox-item-meta > * { white-space: nowrap; }
+.inbox-item-meta > .meta-line-shrink { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.inbox-item-meta .meta-line-sep { margin-right: var(--space-1); }
+.inbox-item-note {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--color-ink-2);
+  overflow-wrap: anywhere;
+}
+.inbox-item-body {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.inbox-item-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: var(--measure);
+}
+.inbox-item-error { margin: 0; color: var(--status-error); }
+.inbox-more { margin: var(--space-3) 0 0; color: var(--color-ink-muted); }
+
 /* ---- LINKED AGENT (§mesh.links/agents-pane). A linked member's view: the message thread
    between the sessions above its transcript, in the head's strip grammar (surface, bottom rule),
    capped so the transcript keeps most of the height. Read-only: no composer, ever. Each message
@@ -6594,6 +6688,10 @@ a.subagent-row { text-decoration: none; }
 /* What an option's click approves, and what it wrote (§app.overseer/approvals). */
 .overseer-card-grant { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
 .overseer-card-permit { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+/* Offer cards (§chat.offers/card): the decision card's look, with the project's buttons; one another
+   chat showed stands at the thread's end, with who showed it under its title. */
+.offer-tray { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.offer-card-from { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
 /* The composer's "3 of 10 running" (§app.overseer/caps; a button to Settings → Overseer → Limits),
    first in the row's right-hand cluster, and the Approvals & Schedules body (§app.overseer/approvals):
@@ -6769,7 +6867,8 @@ a.subagent-row { text-decoration: none; }
 /* A reply that seems to ask and a team gone quiet are quiet marks, never the accent: neither is a
    Needs you item (§app.session-list/needs-you). */
 .session-signal-asks,
-.session-signal-stalled { color: var(--color-ink-muted); }
+.session-signal-stalled,
+.session-signal-unverified { color: var(--color-ink-muted); }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The merge-readiness badge joins line 3's facts, "2h ago · 2 of 3 · ready ✓ · model", in the meta's

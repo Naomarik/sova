@@ -56,7 +56,7 @@ export function specSummary(p: SubagentProfile): string {
 }
 
 /** The align mode's writing style labels (pi-config/extensions/mode/align-settings.ts ALIGN_STYLE_LABELS). */
-export const ALIGN_STYLE_NAMES = { default: "Default", simplified: "Simplified", pm: "Project manager" } as const;
+export const ALIGN_STYLE_NAMES = { pm: "Project manager", simplified: "Simplified", default: "Technical" } as const;
 type AlignOverride = NonNullable<SubagentProfile["alignment"]>;
 
 /** Alignment, closed (§chat.subagent-profiles/settings): "Host default", or what the profile overrides. */

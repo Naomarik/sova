@@ -5,7 +5,7 @@
 // connected host, which the server adds up itself.
 
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage, TagsBackfillProgress } from "../../shared/protocol";
+import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage } from "../../shared/protocol";
 import { sameInflight } from "./llm-inflight";
 import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } from "./signals";
 import { createReconnectingSocket } from "./socket";
@@ -13,10 +13,6 @@ import { createReconnectingSocket } from "./socket";
 const [overlay, setOverlay] = createSignal<MarksOverlay>(EMPTY_OVERLAY);
 /** What the feed has said, for `overlaid` (src/lib/signals.ts). Empty while the socket is down. */
 export const marksOverlay = overlay;
-
-const [backfill, setBackfill] = createSignal<TagsBackfillProgress | null>(null);
-/** The tags backfill's progress as last pushed; null until a backfill has reported on this page. */
-export const pushedBackfill = backfill;
 
 const [inflight, setInflight] = createSignal<LlmInflight | null>(null, { equals: sameInflight });
 /** The LLM calls in flight as the current connection last pushed them; null (unknown) until its
@@ -73,7 +69,6 @@ export function openSessionFeed(refreshList: () => void): void {
     },
     onMessage: (msg) => {
       if (msg.type === "marks") setOverlay((o) => applyMarks(o, msg));
-      else if (msg.type === "tags_backfill") setBackfill(msg.progress);
       else if (msg.type === "list_changed") nudges.nudge();
       // Never a reason to re-read the list: the count is its own fact.
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);

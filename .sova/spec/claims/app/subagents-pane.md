@@ -335,7 +335,8 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
 
 - **Anatomy.** The whole row is the button, 44px minimum. Line 1 is the name (the team role when
   the worker is a team member, else its own name), with the context ring and the status chip at
-  the right. Line 2 is the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
+  the right; a team member with open inbox items also shows its `{n} open` count chip
+  (§app.subagents-pane/member-inbox). Line 2 is the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
   "No response yet." or the reply itself: one clipped line of a reply said little and cost every
   row a line. The transcript says it whole, one tap away.
 - **The meta line ranks its facts** (`.meta-line`, shared with the transcript view's meta). It is
@@ -369,6 +370,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `running`, its model request waiting on its provider's limit (§app.provider-limits/waiting-shown) | `.chip` + dot, Queued, the waiting text in `title` | `{provider}` · `{model}` · `{tokens}` |
   | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | a team member whose `ejectedAt` is set (§app.teams/seats) | `.chip` + dot, Ejected, **before** the status chip, which stays | unchanged |
+  | its newest report says done but not that it ran tests or checks (§app.decisions/worker-report) | `.chip.chip-warn` + dot, Untested, **before** the status chip, which stays; the source in `title` | unchanged |
 
   **Tokens** are that worker's spend from the usage ledger (§app.insights/usage-ledger: its own
   calls and its own workers', at any depth; input + output, mono, the same §chat/context-window
@@ -444,7 +446,8 @@ When the record's worker count is larger than the list, the end of the list says
 ## §app.subagents-pane/transcript-view — Transcript view
 
 A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no attach**, and
-no disabled composer with a reason either. The one exception is a restored worker
+no disabled composer with a reason either. A team member's view puts it under a Transcript tab
+beside its Inbox (§app.subagents-pane/member-inbox). The one exception is a restored worker
 (§app.worker-restore/restore). Under its view head, a `usage-note` says what happened: a
 `restored` one reads "Not running since a server restart." (interrupted: "Not running since a
 server restart; it was mid-task at {HH:MM}, and that turn never finished."). The pane offers no
@@ -532,6 +535,67 @@ webapp never writes to it (AGENTS.md: no file locking).
 A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows
 for as long as the parent lists them, and a selected one stays shown after that (sticky
 selection, above).
+
+## §app.subagents-pane/member-inbox — A team member's inbox
+
+The Session detail pane's Agents tab shows each team member's inbox (§app.teams/inbox), read-only.
+A worker that belongs to no team, or a member with no inbox file yet, shows none of this.
+
+```html
+<button class="subagent-row" type="button">
+  …name · ring · status chip…
+  <span class="chip chip-count" title="3 open items in its inbox">3 open</span>   <!-- n > 0 only -->
+  …meta line…
+</button>
+<div class="subagents-view">
+  <header class="subagents-view-head">…as in the transcript view…</header>
+  <div class="subagents-view-tabs" role="tablist" aria-label="builder">
+    <button role="tab" aria-selected="true">Transcript</button>
+    <button role="tab" aria-selected="false">Inbox · 3 open</button>
+  </div>
+  <section class="subagents-inbox pane" role="tabpanel" aria-label="builder inbox">
+    <ul class="inbox-list">
+      <li class="inbox-item" data-status="new">
+        <button class="inbox-item-line" aria-expanded="false">
+          <span class="chip chip-warn"><i class="chip-dot"></i>Urgent</span>   <!-- urgent items only -->
+          <span class="inbox-item-subject">Wrap up: context 78%</span>
+          <span class="meta-line">Notice · from monitor · <span class="chip">New</span> · 5m ago</span>
+        </button>
+        <p class="inbox-item-note">…the member's note, when it set one…</p>
+        <div class="inbox-item-body">…the message, once opened…</div>
+      </li>
+    </ul>
+  </section>
+</div>
+```
+
+- **The count on the row.** A team member's worker row (§app.subagents-pane/worker-rows) shows a
+  quiet count chip, `{n} open`, when it has open items (new or read, not returned, never an
+  instruction copy); none at 0.
+- **Two tabs.** A team member's transcript view (§app.subagents-pane/transcript-view) gets two
+  tabs under its head: Transcript (today's view, the default) and Inbox, labelled `Inbox · {n}
+  open` when it has open items, else `Inbox`.
+- **Each item.** Newest first, one row each: the urgent mark when urgent (a warn chip, dot and
+  the word "Urgent"), the subject, then a meta line: its kind (Message, Question, Report,
+  Handover, Notice, Instruction) · who sent it (`from builder`, `from main thread`, `from Sova`)
+  · its status as a chip with its word (New, Read, Addressed, or "Returned to sender") · when it
+  was sent, in relative time with the full time in `title`. An item that came from another
+  member's inbox (moved at a handover or forwarded) says "Moved from {role}"; an item that moved
+  away no longer shows in the old member's inbox. The member's note, when it set one, is on its
+  own line.
+- **Opening.** A press on an item opens it (`aria-expanded`) and shows its whole message, read
+  from the server only then; a second press closes it. Opening an item here never changes its
+  status: only the member marks its items.
+- **Read-only.** The user reads every inbox and changes nothing: no marking, no sending, no
+  deleting. The server only reads the inbox files the main chat's extension writes and never
+  writes them. The read is a looks entry on the commands catalogue.
+- **Fresh while open.** The tab is polled while it is open, at the pane's own poll, so a new or
+  addressed item shows without reopening.
+- **How many.** The newest 500 items show; past that, a line under the list says "The newest
+  500 of {total} items."
+- **Empty and failed.** An inbox with no items reads "0 items in {role}'s inbox." over "Messages
+  and notices sent to it show up here." A read that fails shows an error banner, "Couldn't read
+  {role}'s inbox." with "Nothing in it changed." and the reason, and a Retry button.
 
 ## §app.subagents-pane/context-fill — Each worker's context fill
 

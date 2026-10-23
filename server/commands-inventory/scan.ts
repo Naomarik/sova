@@ -76,6 +76,12 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
     matches: (m, p) => (m === "GET" && p === "/*") || /^\/design\//.test(p) || /^\/explain(?:\/|$)/.test(p),
   },
   {
+    id: "trust-grants",
+    label: "Trust grants",
+    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval) and applying a settings card with its approvals (§app.project-overseer/settings): the operator's own grant of trust, never an action a script or an agent runs.",
+    matches: (m, p) => m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply"),
+  },
+  {
     id: "middleware",
     label: "Middleware and fallbacks",
     why: "`app.use` gates and the `/api` not-found answer: they run around routes, they are not routes.",

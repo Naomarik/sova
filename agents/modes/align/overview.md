@@ -28,19 +28,27 @@ request chat (§app.project-assistant/feature-chats) gets a Sova-served `align` 
 on `applyAlignCall` with no `technical`, `import`, `status` or `exempt`; its results' documents become the owner
 page's plan card (`server/baton-view.ts` `planOf`). A change to `applyAlignCall`'s op table or the details shape
 reaches both.
+- **An option's `tradeoff` is its consequence line**: one plain line on what happens if the user picks it. Sova
+  sends it, with the ask and the recommendation, to the alignment card's triage (`server/align-triage.ts`,
+  §app.decisions/align-triage: a stakes chip per open question, one decision per card version). Renaming the field
+  or dropping the line breaks that reader; accepting never depends on it.
 - The hidden `align-state` / `align-nudge` custom messages must stay hidden in Sova (`display: false`).
 - An older session's `align-doc` custom entries are read-only.
 
 **The settings file.** `mode-align.json` (agent dir) holds the writing style and Visuals:
-`{version: 1, style: "default" | "simplified" | "pm", visuals}`. One module, `align-settings.ts` (builtins only plus
-`mode/delegate.ts`), holds the shape, the strict parse, a reader that reads a missing or malformed file as Default
-with Visuals off, the atomic writer and `resolveAlign`. Settings → Alignment writes it; it syncs like
+`{version: 1, style: "pm" | "simplified" | "default", visuals}` (`default` is shown as Technical and never
+migrated). One module, `align-settings.ts` (builtins only plus `mode/delegate.ts`), holds the shape, the strict
+parse, a reader that reads a missing or malformed file as Project manager with Visuals off, the atomic writer and
+`resolveAlign`. Settings → Alignment writes it; it syncs like
 `mode-spec.json`. A subagent profile's optional `alignment` `{style?, visuals?}` overrides it field by field
 (§chat.alignment/settings-file).
 - **Style** is re-read by every session at each turn boundary. A change reaches an open chat as one hidden
-  `mode-note` whose details record `style` / `headStyle`. A head fixed in a style other than Default records it in the
-  extension's own `mode-head` custom entry `{v: 1, style}` (none: Default, once a prompt went out since the last
-  compaction).
+  `mode-note` whose details record `style` / `headStyle`. A head fixed in a style other than Technical records it in the
+  extension's own `mode-head` custom entry `{v: 1, style}` (none: Technical, once a prompt went out since the last
+  compaction). These history fallbacks stay `"default"` whatever the missing-file default is: they say what a head
+  was sent with, so an older chat's head rebuilds byte for byte.
+- **Documents** record the style of their latest change (`doc.style`), Technical as `"default"`; a document with
+  no `style` predates that and its card names no style.
 - **Visuals** are read at session start. In Sova they come from the chat's `sova-align-launch` state entry
   `{v: 1, review, visuals}` (Sova's own, written with the chat's first message; the first in the file holds), handed
   over as the `align-visuals` flag `on` | `off`. In the TUI the flag is absent and the file is read. Visuals bring the

@@ -23,6 +23,8 @@ import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } f
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -31,7 +33,7 @@ import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
-import { approveSchedule, fetchTranscriptRows, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -129,7 +131,8 @@ import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
 import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
-import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
+import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
+import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
 import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -1622,6 +1625,9 @@ export function ChatView(props: {
   const listHere = createMemo(() => !!items());
   /** The connection's own reason to wait, or null (lib/chat-wait waitReason). */
   const waitingReason = (): ComposerReason | null => waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
+  // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
+  const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
+  if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -1669,7 +1675,17 @@ export function ChatView(props: {
       return !!current?.reviewer;
     },
   );
+  /** The open cards' triage (§app.decisions/align-triage): read again when a card's version changes. */
+  const [triage] = createResource(
+    () => {
+      if (!alignAnswerable()) return false;
+      const key = triageKey(aligns().map((e) => ({ id: e.doc.id, rev: e.doc.rev, open: isOpenDoc(e.doc) && openCount(e.doc) > 0 })));
+      return key ? `${props.path}\n${key}` : false;
+    },
+    async (k) => getAlignTriage(k.slice(0, k.indexOf("\n"))).catch(() => undefined),
+  );
   const alignAnswer: AlignAnswer = {
+    triage: (doc, rev) => triageOf(triage(), doc, rev),
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
     picked: (doc, q) => picks()[doc]?.some((p) => p.q === q && !p.option) ?? false,
@@ -2265,6 +2281,8 @@ export function ChatView(props: {
                   focusComposer();
                 },
               }}>
+              <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
+              <OfferContext.Provider value={offers}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -2287,6 +2305,9 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              <OfferTray />
+              </OfferContext.Provider>
+              </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>

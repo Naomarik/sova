@@ -13,7 +13,6 @@ import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import type { WorkerTally, WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
-import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ChangesSession } from "./ChangesViewer";
 import { HistoryItems, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
@@ -265,7 +264,6 @@ export function WatchView(props: {
           )}
         </Show>
       </ThreadScroller>
-      <FlyoutSession.Provider value={() => props.path}>
         <Composer
           path={props.path}
           readOnly={props.readOnly}
@@ -281,7 +279,6 @@ export function WatchView(props: {
           onSend={() => false}
           onAbort={() => {}}
         />
-      </FlyoutSession.Provider>
     </>
   );
 }

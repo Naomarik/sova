@@ -28,7 +28,7 @@ Rewind won't stop a running turn for you. It's off while a turn or a compaction 
 
 The same rewind is in two more places:
 
-- **Undo last turn** in the composer's `+` menu goes back one message without leaving the composer.
+- **Undo last turn** in the Commands palette (the composer's `+` opens it) goes back one message without leaving the composer: pick it, then pick it again to confirm.
 - The session pane's **Timeline** lists every message sent to the session, each with its own Rewind. A message from another session, the Overseer or a teammate has a line above it naming the sender, such as "From the Overseer". Type `/tree` in the composer to open it with **Inputs Only** on, which keeps only the messages you typed. That filter and the composer's "{n} inputs" count leave out messages from others and scheduled wake-ups.
 
 ## Regenerate

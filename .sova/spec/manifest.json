@@ -9346,7 +9346,8 @@
         "server/project-overseer-prompt.md",
         "src/components/Thread.tsx",
         "src/components/ProjectPage.tsx",
-        "server/overseer-org-part.ts"
+        "server/overseer-org-part.ts",
+        "server/project-services/copy-limit.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
@@ -9359,8 +9360,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-23T21:05Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
       }
     },
     "§app.project-overseer/tools": {
@@ -16866,8 +16867,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T20:29Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+        "at": "2026-10-23T21:05Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
       }
     },
     "§app.project-services/contract": {
@@ -16892,8 +16893,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T20:29Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+        "at": "2026-10-23T21:05Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
       }
     },
     "§app.project-services/create": {
@@ -16975,12 +16976,14 @@
         "server/project-services/engine.integration.test.ts",
         "shared/project-slots.ts",
         "server/project-services/slots.test.ts",
-        "shared/project-contract.test.ts"
+        "shared/project-contract.test.ts",
+        "server/project-services/copy-limit.ts",
+        "shared/project-contract.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T20:30Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+        "at": "2026-10-23T21:05Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
       }
     },
     "§app.project-services/lock": {
@@ -19042,7 +19045,7 @@
     "§app.project-services/services-ui": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.project-services/status-logs",
         "§app.project-services/callers",
@@ -19067,8 +19070,14 @@
         "src/lib/link-delete.ts",
         "src/delete-button.css",
         "src/lib/two-step.ts",
-        "server/app.ts"
-      ]
+        "server/app.ts",
+        "server/project-services/copy-limit.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T21:05Z",
+        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+      }
     },
     "§app.project-services/adopt": {
       "kind": "behavior",

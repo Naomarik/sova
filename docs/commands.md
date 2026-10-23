@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 478 |
+| Routes registered | 479 |
 | Routes a catalogue entry points at | 114 |
 | Catalogue entries | 141 |
 | Class: Peer protocol | 38 |
@@ -24,7 +24,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 2 |
+| Class: Trust grants | 3 |
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
@@ -601,13 +601,14 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (2)
+### Trust grants (3)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval) and applying a settings card with its approvals (§app.project-overseer/settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
 | `POST /api/projects/:pid/offers/approve` | admin |
+| `PUT /api/projects/:pid/services/limit` | admin |
 | `POST /api/projects/:pid/settings/apply` | admin |
 
 ### Middleware and fallbacks (2)

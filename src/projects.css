@@ -612,3 +612,13 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-settings-row .list-meta { overflow-wrap: anywhere; }
 .project-settings-state { font-size: var(--fs-caption); color: var(--color-ink-2); }
 .settings-card-lands { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+
+/* The copy limit at the top of the Branches tab (§app.project-services/services-ui). */
+.services-limit { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
+.services-limit-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin: 0; }
+.services-limit-source { color: var(--color-ink-muted); }
+.services-limit-form { display: flex; flex-direction: column; gap: var(--space-2); max-width: 28rem; }
+.services-limit-input { max-width: 6rem; }
+.services-limit-over { margin: 0; }
+.services-limit-cost { margin: 0; }
+.services-limit-cost-warn { color: var(--status-warn); }

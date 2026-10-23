@@ -10,7 +10,9 @@ import { isProjectModeId, ModeFileError, parseModeFile, PROJECT_MODE_ENTRY, PROJ
 import { scheduleOf, scheduleText } from "../shared/schedules";
 import { OFFERS_FILE, parseOffersFile, runButtonsOf } from "../shared/session-offers";
 import { SETTINGS_REFERENCE, type SettingId } from "../shared/settings-reference";
-import { PROJECT_EDIT_KEYS } from "../shared/project-settings";
+import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS } from "../shared/project-settings";
+import { copyLimitOf } from "../shared/project-slots";
+import { copyLimitProblem, machineCopyLimit, setMachineCopyLimit } from "./project-services/copy-limit";
 import { checkoutRootOf, discoverProjectModes, readProjectMode } from "../pi-config/extensions/mode/project-discovery.ts";
 import { OrgError } from "./org-error";
 import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";
@@ -117,6 +119,7 @@ const LABEL: Record<string, string> = {
   "project.stakeholder": "The main stakeholder",
   "project.ownerHidden": "Shown on the owner's page",
   "project.frozen": "Frozen spec",
+  [COPIES_FIELD]: "Copy limit",
 };
 
 export function fieldLabel(field: string): string {
@@ -143,6 +146,7 @@ export function valueText(field: string, v: unknown): string {
   if (field.startsWith("file:")) return v === null ? "absent" : String(v).slice(0, 10);
   if (field === "resume") return String(v);
   if (field === "project.frozen") return v === true ? "Frozen" : "Not frozen";
+  if (field === COPIES_FIELD) return v === null || v === undefined ? "the project's file's value" : `${String(v)} at once`;
   if (field === "project.ownerHidden") return v === true ? "Hidden" : "Shown";
   if (field === "project.stakeholder") return typeof v === "string" && v ? (placementDeps?.nameOf(v) ?? v) : "None";
   return v === null || v === undefined ? "not set" : String(v);
@@ -194,6 +198,43 @@ export function patchOf(changes: Pick<KeptChange, "field" | "to">[]): ProjectOve
     else body[field] = to;
   }
   return body as ProjectOverseerPatch;
+}
+
+// ---- this machine's copy limit (§app.project-services/instances) ------------------------------------------
+
+const isCopiesField = (f: string): boolean => f === COPIES_FIELD;
+
+/** The project's file's limit (its `slots` cap, or the default): what a null machine value means. */
+const fileCopyLimit = (projectId: string): number => copyLimitOf(projectOf(projectId).root).cap;
+
+/** Whether this machine's copy limit going from `from` to `to` (null: the file's) raises it: a grant, in words. */
+function copiesGrant(projectId: string, from: unknown, to: unknown): string | undefined {
+  const file = fileCopyLimit(projectId);
+  const eff = (v: unknown) => (typeof v === "number" ? v : file);
+  return eff(to) > eff(from) ? `raises the copy limit on this machine to ${eff(to)} running copies at once (from ${eff(from)})` : undefined;
+}
+
+/** The change of this machine's copy limit to `to`, in words with its grant, or null when it is already that. */
+function copiesChange(projectId: string, to: number | null): KeptChange | null {
+  const from = machineCopyLimit(projectOf(projectId).root);
+  if (same(from, to)) return null;
+  const grant = copiesGrant(projectId, from, to);
+  return { field: COPIES_FIELD, label: fieldLabel(COPIES_FIELD), from, to, fromText: valueText(COPIES_FIELD, from), toText: valueText(COPIES_FIELD, to), ...(grant ? { grant } : {}) };
+}
+
+/**
+ * Set this machine's copy limit for the project (null: back to the project's file's) and write its history
+ * line. The Branches tab's Change (the route checks the request is the operator's own page) and the settings'
+ * apply and undo come here. A value outside 1 to 16 is refused in words (400).
+ */
+export function setCopyLimit(projectId: string, to: unknown, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): SettingsHistoryRow[] {
+  const why = copyLimitProblem(to);
+  if (why) throw new OrgError(why, 400);
+  const root = projectOf(projectId).root;
+  const from = machineCopyLimit(root);
+  if (same(from, to)) return [];
+  setMachineCopyLimit(root, to as number | null);
+  return appendHistory(projectId, [{ field: COPIES_FIELD, from, to: to ?? null, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]);
 }
 
 // ---- history ----------------------------------------------------------------------------------------
@@ -354,7 +395,8 @@ export type SettingsEdit =
   | { setting: "playbook"; id: string; text: string | null }
   | { setting: "mode"; id: string; text: string | null }
   | { setting: "offers"; file: Record<string, unknown> | null }
-  | { setting: "services"; file: Record<string, unknown> | null };
+  | { setting: "services"; file: Record<string, unknown> | null }
+  | { setting: "copies"; limit: number | null };
 
 const PATCH_REFUSED: Record<string, string> = {
   autonomy: "Levels are gone: set the powers (patch.powers) instead.",
@@ -365,7 +407,7 @@ const PATCH_REFUSED: Record<string, string> = {
 const PATCH_KNOWN = new Set(["model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities", "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "assistantModels", "caps"]);
 
 /** A file edit: its path, setting and new text (null: removed). Throws the parser's refusal. */
-async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
+async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
   const json = (v: Record<string, unknown>) => `${JSON.stringify(v, null, 2)}\n`;
   const sized = (t: string) => (Buffer.byteLength(t) > FILE_MAX ? refuse(`That file would be over ${FILE_MAX / 1024} KB.`) : t);
   switch (e.setting) {
@@ -633,9 +675,10 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   let memory: { on?: boolean; type?: string; size?: number } | undefined;
   let name: string | undefined;
   const placementTo: Partial<Record<PlacementField, unknown>> = {};
+  let copiesTo: { to: number | null } | undefined;
   const fileEdits: { rel: string; setting: SettingId; id?: string; text: string | null }[] = [];
   for (const raw of edits) {
-    if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
+    if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "copies" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
     const e = raw as SettingsEdit;
     if (e.setting === "overseer") {
       if (!isObj(e.patch)) refuse("An overseer edit carries patch: the fields to change.");
@@ -672,6 +715,12 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
         }
         for (const f of asked) placementTo[f] = (e as Record<string, unknown>)[f.slice(8)] ?? null;
       }
+    } else if (e.setting === "copies") {
+      for (const k of Object.keys(e)) if (k !== "setting" && !(COPIES_EDIT_KEYS as readonly string[]).includes(k)) refuse(`Unknown copies setting "${k}" (sova_settings reference copies lists them).`);
+      if (!("limit" in e)) refuse("A copies edit names limit: 1 to 16, or null for the project's file's value.");
+      const why = copyLimitProblem(e.limit);
+      if (why) refuse(why);
+      copiesTo = { to: e.limit };
     } else if (["profile", "playbook", "mode", "offers", "services"].includes(e.setting)) {
       const f = await fileEdit(project.root, e as never);
       if (fileEdits.some((x) => x.rel === f.rel)) refuse(`Two edits change ${f.rel}: make it one.`);
@@ -688,6 +737,10 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   const kept = keptChanges(flatten(current), flatten(next));
   const placementNow = placementOf(projectId);
   if (placementNow) kept.push(...keptChanges(placementNow, placementTo));
+  if (copiesTo) {
+    const c = copiesChange(projectId, copiesTo.to);
+    if (c) kept.push(c);
+  }
   if (body.resume === true) kept.push({ field: "resume", label: fieldLabel("resume"), from: "braked", to: "resumed", fromText: "on", toText: "lifted", grant: grantOf("resume", null, null)! });
   if (name === project.name) name = undefined;
 
@@ -764,8 +817,9 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
 
 /** Apply Sova-kept changes: the overseer's own as one PATCH, then the placement's one by one; their history rows. */
 async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | "to">[], by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
-  const own = changes.filter((k) => !isPlacementField(k.field));
+  const own = changes.filter((k) => !isPlacementField(k.field) && !isCopiesField(k.field));
   const rows: SettingsHistoryRow[] = own.length ? await depsOrThrow().patch(projectId, patchOf(own), by, meta) : [];
+  for (const k of changes) if (isCopiesField(k.field)) rows.push(...setCopyLimit(projectId, k.to ?? null, by, meta));
   for (const k of changes) {
     if (!isPlacementField(k.field)) continue;
     const from = placementOf(projectId)?.[k.field] ?? null;
@@ -778,7 +832,7 @@ async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | 
 }
 
 const settingOfField = (field: string): SettingId =>
-  isPlacementField(field) ? field : field.startsWith("powers.") ? "overseer.powers" : field.startsWith("caps.") ? "overseer.limits" : field === "watch" ? "overseer.watch" : field === "holdMin" ? "overseer.hold" : field === "extraSystemPrompt" ? "overseer.extra" : field === "gatheringAbilities" ? "overseer.abilities" : field === "resume" ? "overseer.brake" : field === "watchGapMin" || field === "soonLookSec" ? "overseer.pace" : "overseer.models";
+  isPlacementField(field) ? field : isCopiesField(field) ? "copies" : field.startsWith("powers.") ? "overseer.powers" : field.startsWith("caps.") ? "overseer.limits" : field === "watch" ? "overseer.watch" : field === "holdMin" ? "overseer.hold" : field === "extraSystemPrompt" ? "overseer.extra" : field === "gatheringAbilities" ? "overseer.abilities" : field === "resume" ? "overseer.brake" : field === "watchGapMin" || field === "soonLookSec" ? "overseer.pace" : "overseer.models";
 
 function mergeBodies(a: Record<string, any>, b: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = { ...a };
@@ -864,7 +918,7 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
 
   // The kept part as it reads now: the grant set must be the card's.
   const current = readPoSettings(projectOverseerPaths(projectId));
-  const body = patchOf(c.kept.filter((k) => !isPlacementField(k.field)));
+  const body = patchOf(c.kept.filter((k) => !isPlacementField(k.field) && !isCopiesField(k.field)));
   let now: KeptChange[] = [];
   try {
     now = keptChanges(flatten(current), flatten(mergePoPatch(current, body)));
@@ -876,6 +930,11 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
     const p = placementOf(projectId);
     if (!p) throw new OrgError("No organization places this project any more: dismiss the card.", 409);
     now.push(...keptChanges(p, Object.fromEntries(placed.map((k) => [k.field, k.to]))));
+  }
+  const copiesKept = c.kept.find((k) => isCopiesField(k.field));
+  if (copiesKept) {
+    const ch = copiesChange(projectId, (copiesKept.to as number | null) ?? null);
+    if (ch) now.push(ch);
   }
   if (c.kept.some((k) => k.field === "resume")) now.push({ ...c.kept.find((k) => k.field === "resume")! });
   const grantsNow = now.filter((k) => k.grant).map((k) => `${k.field}:${k.grant}`).sort().join("|");
@@ -1039,6 +1098,12 @@ export async function undoRow(projectId: string, rowId: unknown, opts: { notPage
     if (nowName !== row.to) throw new OrgError("The project's name changed since: undo the newer change first.", 409);
     return { undone: await d.rename(projectId, String(row.from), by, meta) };
   }
+  if (isCopiesField(row.field)) {
+    const nowVal = machineCopyLimit(projectOf(projectId).root);
+    if (!same(nowVal, row.to)) throw new OrgError(`${fieldLabel(row.field)} changed since: undo the newer change first.`, 409);
+    if (opts.notPage && copiesGrant(projectId, row.to, row.from)) throw new OrgError(opts.notPage, 403);
+    return { undone: setCopyLimit(projectId, row.from ?? null, by, meta) };
+  }
   if (isPlacementField(row.field)) {
     const p = placementOf(projectId);
     if (!p) throw new OrgError("No organization places this project any more.", 409);
@@ -1090,6 +1155,11 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
     sova("project.frozen", valueText("project.frozen", placement["project.frozen"]), "head");
   }
   sova("project.archive", project.archived ? "Archived" : "Not archived", "head");
+  {
+    const machine = machineCopyLimit(root);
+    const limit = copyLimitOf(root, { machine });
+    rows.push({ setting: "copies", label: SETTINGS_REFERENCE.copies.label, state: `${limit.cap} at once`, where: "sova", href: `#/projects/${projectId}/branches`, hrefLabel: "the Branches tab", detail: machine !== null ? "set on this machine" : "from the project's file" });
+  }
 
   const file = (setting: SettingId, state: string, href: string, hrefLabel: string, extra: Partial<SettingsRow> = {}) =>
     rows.push({ setting, label: SETTINGS_REFERENCE[setting].label, state, where: "file", href, hrefLabel, ...extra });

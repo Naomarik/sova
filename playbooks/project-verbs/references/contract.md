@@ -14,7 +14,7 @@ ports and env in declaration order.
 | key | value |
 |---|---|
 | `version` | `1` |
-| `slots` | `{cap}` (`cap`): copies besides the main checkout's, 1–16, default 4; only the main checkout's saved value is in force, and its port numbering numbers every copy. Conformance uses slots cap+1 and cap+2; other copies take 1 to 2×cap+2, skipping those |
+| `slots` | `{cap}` (`cap`): the project's default for how many copies besides the main checkout's may run at once, 1–16, default 4; only the main checkout's saved value counts, and a limit set on the machine (the Branches tab) overrides it. The main checkout's port numbering numbers every copy. Copies take slots 1 to 16 whatever the limit; conformance uses 17 and 18 |
 | `host` | names (`A-Z0-9_`) of host variables kept in Sova's state, read as `${host.NAME}`; never put their values in the repo |
 | `sources` | the checkout files the definition was derived from (at most 50, relative, each once). Drift is a change to one of them at HEAD. Not hashed |
 | `setup` | steps `{id, run, inputs?, timeout?}` run at create, in order; skipped while the rendered argv and the hash of `inputs` (checkout files) are unchanged |
@@ -43,7 +43,7 @@ Exactly one of `cmd` and `static`.
 | `static` | a folder of the checkout Sova serves itself on 127.0.0.1; exactly one port, and none of `cwd`, `env`, `build`, `container`, `ready`; `reload` is `none`; never shared |
 | `cwd` | relative to the checkout, default `.` |
 | `env` | `{NAME: template}`; never a name Sova sets (`SOVA_V`, `SOVA_SLOT`, `SOVA_PORT_…`, see below) |
-| `ports` | `{name: {base, stride?}}` → `base + slot × stride` (`stride` default 1), or `{name: {fixed}}` (`fixed`), the same in every slot. 1024–65535 in every slot up to cap+2, and no two ports' ranges may meet |
+| `ports` | `{name: {base, stride?}}` → `base + slot × stride` (`stride` default 1), or `{name: {fixed}}` (`fixed`), the same in every slot. 1024–65535 in every slot from 0 to 18, and no two ports' ranges may meet in them |
 | `requires` | services started first (a shared service requires only shared ones) |
 | `ready` | `{tcp: <port name>}` (`tcp`) or `{http: <port name>, path?}` (`http`, `path`) (any answer below 500), `timeout` seconds (default 60, max 600). Without it: ready when its first port listens, or after 1 s with no ports |
 | `reload` | `"restart"` (default), `"none"`, `{signal: HUP\|USR1\|USR2\|INT\|TERM}` (`signal`) or `{cmd: argv}` |
@@ -107,8 +107,8 @@ A conformance stamp proves exactly one hash. The hash covers the whole parsed de
 | `invalid-request` | 3 | a bad verb argument |
 | `not-found` | 3 | no such project, instance or ref |
 | `not-conformant` | 2 | a verb that needs a passing conformance |
-| `cap-reached` | 2 | the project already runs as many copies as the limit (the main checkout's saved `slots.cap`): tear one down or raise it |
-| `slots-blocked` | 2 | the limit isn't used up, but every slot Sova may give is blocked (a listener or another instance on its ports): the message names each holder; never stop one |
+| `cap-reached` | 2 | as many copies already run as the limit in force allows (only running copies count): stop one, or ask the operator to raise the limit |
+| `slots-blocked` | 2 | the limit isn't used up, but every slot of 1 to 16 is blocked (a listener or another instance on its ports): the message names each holder; never stop one |
 | `port-held` | 2 | something else holds a port of the slot: change `base`/`stride`, never stop the holder |
 | `dirty-worktree` | 2 | commit first |
 | `unsupported` | 2 | the verb or method isn't available here (no `test` declared, no supervisor) |

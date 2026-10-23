@@ -28,6 +28,29 @@ export interface CopyView extends Omit<InstanceSummary, "services"> {
   open?: EntryView;
 }
 
+/**
+ * The copy limit as the Branches tab shows it (§app.project-services/services-ui): the limit in force and where
+ * it comes from, how many copies there are and run, the sentence while more run than it allows, what a copy
+ * takes in memory (conformance's reading) and this machine's memory.
+ */
+export interface CopyLimitView {
+  value: number;
+  /** `machine`: set on this machine; `file`: the main checkout's file's value (or the default without a valid file). */
+  source: "machine" | "file";
+  /** The main checkout's file's own value, or null: that file is missing or invalid (4 applies). */
+  file: number | null;
+  /** The project's copies besides the main checkout's and conformance's. */
+  copies: number;
+  /** Those of them that run (wanting a service running). */
+  running: number;
+  /** "{n} running, {k} over the limit: …" while more run than the limit allows, else null. */
+  over: string | null;
+  /** Per copy, the larger of conformance's two scratch copies' readings; null: none measured. */
+  estimate: { steadyBytes: number; peakBytes: number; source: "current" | "older"; at: string } | null;
+  /** This machine's memory now, or null when it can't be read. */
+  host: { totalBytes: number; availableBytes: number } | null;
+}
+
 export interface ProjectServicesView {
   projectId: string;
   root: string;
@@ -41,6 +64,8 @@ export interface ProjectServicesView {
   supervisor: Check | null;
   /** Why status could not be read (the copies are then empty). */
   error?: string;
+  /** The copy limit and its cost (the route adds it). */
+  limit?: CopyLimitView;
 }
 
 /** A copy that runs now, as the host-wide list shows it. */

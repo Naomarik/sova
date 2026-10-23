@@ -43,7 +43,8 @@
             "",
             "## Uploads",
             "",
-            "`createClient(base)` returns `send()` and `finalize()`. A failed part is retried up to 10 times."
+            "`createClient(base)` returns `send()` and `finalize()`.",
+            "A failed part is retried up to 10 times."
           ],
           "src/upload/sleep.ts": [
             "export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));"
@@ -112,7 +113,7 @@
   "sessions": [
     {
       "id": "upload-metrics",
-      "note": "Needs you: its alignment has an open question. The phone video answers it (then).",
+      "note": "Needs you: its alignment has an open question (the phone still).",
       "title": "Upload metrics",
       "at": "-2m",
       "model": "main",
@@ -136,22 +137,6 @@
             }]
         } },
         { "say": "One question before I add the counter." }
-      ],
-      "then": [
-        { "user": "al_1: go with your recommendations for every open question, and go ahead.", "note": "Exactly what the card's Go With Recommendations sends (src/lib/align-picks.ts acceptAllMessage)." },
-        { "decide": { "answers": { "q1": "Only the last try" }, "status": "implementing" } },
-        { "say": "Counting only uploads that really failed. Adding the counter to send()." },
-        { "edit": {
-            "path": "src/upload/client.ts",
-            "old": "        if (n >= MAX_TRIES) throw err;",
-            "new": [
-              "        if (n >= MAX_TRIES) {",
-              "          failedUploads.add(1);",
-              "          throw err;",
-              "        }"
-            ]
-        } },
-        { "say": "The counter is in. Next, the hourly series on the dashboard." }
       ]
     },
     {
@@ -259,26 +244,23 @@
         { "spawn": ["cap-delay", "retry-docs", "server-check"] },
         { "wait": ["cap-delay", "retry-docs", "server-check"], "note": "Still waiting at hold delegating: the hero stills are shot here." },
         { "say": "All 3 are back. The cap is in, its test passes, and a retried finalize is safe." },
+        { "show_changes": {
+            "scope": "dirty",
+            "worktree": "retry-cap",
+            "title": "Cap the upload backoff",
+            "steps": [
+              { "title": "Cap each wait at 30 s, with a test", "why": "Waits doubled past a minute by the 8th try. GLM-5.3 capped them.", "files": ["src/upload/retry.ts", "src/upload/retry.test.ts"] },
+              { "title": "Say so in the README", "why": "The README describes the retries. DeepSeek added the ceiling.", "files": ["README.md"] }
+            ]
+        }, "note": "One step per worker that changed code; the server check (GPT) changed none, and the next reply says so." },
+        { "say": "2 steps to review: the cap and its test, and the README line. The server check changed no code." },
         { "summary": {
             "now": "Capped at 30 s; all 3 workers are back",
             "overall": "Upload retries: a ceiling for each wait",
             "topics": [
               { "heading": "A 30 s ceiling", "summary": ["You chose 30 s as the longest wait.", "Each wait now stops at 30 s, and its test passes.", "A retried finalize is safe on the server."] }
             ]
-        }, "note": "Written live: the director answers Sova's summarizer with it once the turn ends." },
-        { "hold": "back", "note": "The turn has ended. The video ends here; the changes still goes on." },
-        { "user": "Show me the changes as steps." },
-        { "show_changes": {
-            "scope": "dirty",
-            "worktree": "retry-cap",
-            "title": "Cap the upload backoff",
-            "steps": [
-              { "title": "Cap each wait at 30 s", "why": "Doubling from 500 ms passes a minute by the 8th try; delayFor() stops at MAX_DELAY_MS.", "files": ["src/upload/retry.ts"] },
-              { "title": "Pin the delays with a test", "why": "The doubling and the ceiling were untested.", "files": ["src/upload/retry.test.ts"] },
-              { "title": "Say so in the README", "why": "The README describes the retries.", "files": ["README.md"] }
-            ]
-        } },
-        { "say": "Here are the changes in 3 steps. Say merge when you've read them." }
+        }, "note": "Written live: the director answers Sova's summarizer with it once the turn ends." }
       ]
     },
     {
@@ -357,6 +339,7 @@
       "name": "Cap the retry delay",
       "in": "retry-cap",
       "task": "In src/upload/retry.ts, add delayFor(n): 500 ms doubling per try, capped at MAX_DELAY_MS = 30_000. Use it in backoff(). Add src/upload/retry.test.ts covering the doubling and the cap, and run it.",
+      "note": "Its diff is step 1 of the changes viewer, held on in the hero: kept short enough that both files show whole at the video's 1280x800.",
       "script": [
         { "read": "src/upload/retry.ts" },
         { "edit": {
@@ -365,11 +348,7 @@
             "new": [
               "export const MAX_TRIES = 10;",
               "export const MAX_DELAY_MS = 30_000;",
-              "",
-              "/** The wait before try `n + 1`: doubling from 500 ms, never more than MAX_DELAY_MS. */",
-              "export function delayFor(n: number): number {",
-              "  return Math.min(500 * 2 ** (n - 1), MAX_DELAY_MS);",
-              "}"
+              "export const delayFor = (n: number) => Math.min(500 * 2 ** (n - 1), MAX_DELAY_MS);"
             ]
         } },
         { "edit": {
@@ -382,21 +361,16 @@
             "content": [
               "import assert from \"node:assert/strict\";",
               "import { test } from \"node:test\";",
-              "import { delayFor, MAX_DELAY_MS } from \"./retry.ts\";",
+              "import { delayFor } from \"./retry.ts\";",
               "",
-              "test(\"doubles from 500 ms\", () => {",
-              "  assert.deepEqual([1, 2, 3, 4].map(delayFor), [500, 1000, 2000, 4000]);",
-              "});",
-              "",
-              "test(\"never waits more than 30 s\", () => {",
-              "  assert.equal(delayFor(8), MAX_DELAY_MS);",
-              "  assert.equal(delayFor(40), MAX_DELAY_MS);",
+              "test(\"doubles from 500 ms, never past 30 s\", () => {",
+              "  assert.deepEqual([1, 2, 3, 8, 40].map(delayFor), [500, 1000, 2000, 30_000, 30_000]);",
               "});"
             ]
         } },
         { "hold": "delegating", "note": "This worker is mid-turn when the hero is shot." },
         { "bash": { "command": "node --test src/upload/retry.test.ts" } },
-        { "say": "Done. delayFor() caps each wait at 30 s, backoff() uses it, and both tests pass." }
+        { "say": "Done. delayFor() caps each wait at 30 s, backoff() uses it, and its test passes." }
       ]
     },
     "retry-docs": {
@@ -409,7 +383,7 @@
         { "edit": {
             "path": "README.md",
             "old": "A failed part is retried up to 10 times.",
-            "new": "A failed part is retried up to 10 times; each wait doubles from 500 ms and is capped at 30 s."
+            "new": ["A failed part is retried up to 10 times.", "Each wait doubles from 500 ms and stops at 30 s."]
         } },
         { "say": "Added the sentence to the Uploads section." }
       ]
@@ -479,7 +453,7 @@
     },
     {
       "id": "changes", "session": "retry-backoff", "at": "end", "viewport": "compact", "view": "changes",
-      "alt": "The changes viewer: 3 numbered steps, each with why it was made, and the first step's diff."
+      "alt": "The changes viewer: 2 numbered steps, one per worker that changed code, each with why it was made, and the first step's diff: the 30 s cap and its test."
     },
     {
       "id": "overseer", "session": "overseer", "at": "end", "viewport": "compact",
@@ -501,7 +475,7 @@
 
   "videos": {
     "desk": {
-      "note": "The landing page's hero loop: one thread in about 50 s. Beats follow the storyboard in README.md; the captions are page text under the video (the recorder writes their cue list); story-check lints the pacing rules.",
+      "note": "The landing page's hero loop: one thread in about 60 s. Beats follow the storyboard in README.md; the captions are page text under the video (the recorder writes their cue list); story-check lints the pacing rules.",
       "session": "retry-backoff",
       "viewport": "video",
       "start": "overseer",
@@ -509,14 +483,14 @@
       "width": 1920,
       "typing": "30ms",
       "chunk": "30ms",
-      "length": { "min": "46s", "max": "54s" },
+      "length": { "min": "55s", "max": "62s" },
       "budget": { "modern": 3000000, "fallback": 6000000 },
       "pointer": "arrow",
       "captions": "page",
       "loop": "1s",
       "prefill": { "scene": "overseer", "step": 0 },
       "line": "Retry backoff in Delegate, waiting on its 3 workers, each on its own model.",
-      "alt": "Sova in use: the Overseer finds a past session by what was said in it, then lists the 3 sessions waiting on you; Retry backoff opens on a chart of its retry waits and an alignment card, its recommended option is chosen with one click, 3 workers on 3 providers' models finish (sped up), and the session's Timeline shows its chapters, idle gap, decision and workers under a current summary.",
+      "alt": "Sova in use: the Overseer finds a past session by what was said in it, then lists the 3 sessions waiting on you; Retry backoff opens on a chart of its retry waits and an alignment card, its recommended option is chosen with one click, 3 workers on 3 providers' models finish (sped up), their changes are reviewed as numbered steps with their reasons (the 30 s cap and its test, then the README line), and the session's Timeline shows its chapters, idle gap, decision and workers under a current summary.",
       "overseer": {
         "script": [
           { "user": "Where was the session where we set up upload retries?" },
@@ -538,7 +512,7 @@
         { "do": "hold", "for": "1500ms", "caption": "Ask the Overseer about past work" },
         { "do": "click", "target": "send" },
         { "do": "release", "scene": "overseer", "until": "found-old", "caption": "It finds the session by what was said" },
-        { "do": "hold", "read": "That was Upload client with retries, 12 days ago" },
+        { "do": "hold", "read": "Upload client with retries, 12 days ago" },
         { "do": "type", "scene": "overseer", "step": 4, "caption": "Then ask what's waiting on you" },
         { "do": "click", "target": "send" },
         { "do": "release", "scene": "overseer", "until": "end", "caption": "Every waiting session, and why it waits" },
@@ -547,7 +521,7 @@
         { "do": "scroll", "to": "vis" },
         { "do": "hold", "read": "Wait before each try: 64 s, no ceiling" },
         { "do": "scroll", "to": "align", "caption": "Agree on the plan before work starts" },
-        { "do": "hold", "read": "Cap the backoff. How long may one wait? 30 s" },
+        { "do": "hold", "read": "How long may one wait? 30 s" },
         { "do": "click", "target": "align-option", "q": "q1", "option": 0, "caption": "Your call, in one click" },
         { "do": "click", "target": "send" },
         { "do": "release", "until": "decided" },
@@ -555,38 +529,16 @@
         { "do": "release", "until": "delegating", "caption": "Each worker runs on its own model" },
         { "do": "hold", "read": "3 workers" },
         { "do": "click", "target": "workers" },
-        { "do": "hold", "for": "3000ms", "read": "glm-5.3, deepseek-v4-pro, gpt-6.1-sol" },
-        { "do": "release", "until": "back", "speed": 3, "summary": true, "caption": "Three models, one finished job" },
-        { "do": "hold", "for": "2500ms", "read": "All 3 are back" },
+        { "do": "hold", "for": "2200ms", "read": "glm-5.3, deepseek-v4-pro, gpt-6.1-sol" },
+        { "do": "release", "until": "end", "speed": 3, "summary": true, "caption": "Three models, one finished job" },
+        { "do": "hold", "read": "All 3 are back" },
+        { "do": "click", "target": "review-changes", "caption": "Review every change as steps" },
+        { "do": "hold", "for": "4000ms", "read": "Cap each wait at 30 s, with a test" },
+        { "do": "click", "target": "changes-step", "n": 2, "caption": "Each step with its reason" },
+        { "do": "hold", "read": "README: each wait stops at 30 s" },
+        { "do": "click", "target": "close-changes" },
         { "do": "click", "target": "pane-tab", "text": "Timeline", "caption": "Its timeline and summary at a glance" },
-        { "do": "hold", "for": "4000ms", "read": "Chapters, idle 3h, your decision, 3 workers, Current goal" },
-        { "do": "home" }
-      ]
-    },
-    "phone": {
-      "note": "The phone section's clip: a Needs you row opened and its question answered with one tap. Its captions are page text under the phone.",
-      "session": "upload-metrics",
-      "viewport": "phone",
-      "start": "sessions",
-      "slot": "feature.phone-question",
-      "width": 832,
-      "typing": "33ms",
-      "chunk": "30ms",
-      "length": { "min": "10s", "max": "16s" },
-      "budget": { "modern": 1200000, "fallback": 2500000 },
-      "pointer": "tap",
-      "captions": "page",
-      "loop": "800ms",
-      "line": "A session waiting on one question, its recommendation a tap away.",
-      "alt": "Sova on a phone: the Upload metrics session is opened from the Needs you list, its open question is answered with one tap on Go With Recommendations, and the session carries on.",
-      "beats": [
-        { "do": "hold", "read": "Needs you: Upload metrics, 1 open question", "caption": "A session needs you" },
-        { "do": "tap", "target": "session-row", "text": "Upload metrics" },
-        { "do": "scroll", "to": "align-end" },
-        { "do": "hold", "read": "Does a retried part count as a failure?", "caption": "Answer with one tap" },
-        { "do": "tap", "target": "go-with-recommendations" },
-        { "do": "release", "until": "end", "caption": "It carries on" },
-        { "do": "hold", "read": "The counter is in" },
+        { "do": "hold", "read": "Chapters, idle 3h, your decision, Current goal" },
         { "do": "home" }
       ]
     }

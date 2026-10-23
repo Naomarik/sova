@@ -314,8 +314,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     live one `Copy Link` when its token is kept and `Delete Owner Link`, asked twice like `Delete Link` (done: "Owner link deleted.").
     `Delete All` never touches them.
   - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
-    one row per send, newest first: what went (the gathering's public title, "A preview" or "A
-    message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
+    one row per send, newest first: what went (the gathering's public title, "A preview", "Their
+    owner page" or "A message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
     the number it went from ("from {label} …123") when the log says, and a failure's code.
   - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`
     (`Opened the owner page` for a visit through an owner link),

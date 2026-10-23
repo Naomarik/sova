@@ -11,10 +11,11 @@
 //   recover [--write]                                    roll back an interrupted promotion
 //   drafts [--days N] [--worktrees]                      never writes: each draft's age, state and suggested action
 //   prune --approved FILE [--write]                      delete only the drafts FILE names (the user's approved list)
+//   prune --official [--from DIR] [--write]              delete only drafts the tool confirms are already official
 //   merge-manifest [--base F --ours F --theirs F] [--write]  record-level 3-way merge of manifest.json (a Git conflict)
 //   merge-claims --base F --ours F --theirs F [--path P] [--write]  per-declaration 3-way merge of a claim file (a Git merge driver)
 // All take --root DIR (required) and [--json]. Writes happen only with --write, only under
-// .sova/spec/drafts/ (`prune --write` deletes there, only drafts its list names), except `promote --write`/`recover --write`
+// .sova/spec/drafts/ (`prune --write` deletes there, only drafts its list names or it confirms official; `prune --official --from DIR` deletes in DIR), except `promote --write`/`recover --write`
 // (and `agree --write`, through promote), which also write .sova/spec/manifest.json
 // and files in the claims tree, and the merge drivers, which write only the --ours file Git hands them. It runs
 // only the sibling core (`sova-spec.mjs`) and, in a Git project, read-only `git` plumbing (rev-parse, cat-file,
@@ -33,7 +34,7 @@ import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix, relative } from "node:path";
-import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, openSync, readSync, closeSync } from "node:fs";
+import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, openSync, readSync, closeSync, cpSync } from "node:fs";
 import { tmpdir, hostname, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInspection, declarationSpans } from "./sova-spec.mjs";
@@ -73,9 +74,9 @@ const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
   agree: ["id", "by", "verification", "at", "source", "write"],
   promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
-  drafts: ["days", "worktrees"], prune: ["approved", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
+  drafts: ["days", "worktrees"], prune: ["approved", "official", "from", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
   "merge-claims": ["base", "ours", "theirs", "path", "write"] };
-const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
+const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees", "official"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -83,7 +84,7 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
     const k = a.slice(2);
     if (BOOL.has(k)) { o[k] = true; o.seen.add(k); continue; }
-    if (!["root", "purpose", "against", "by", "verification", "at", "source", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
+    if (!["root", "purpose", "against", "by", "verification", "at", "source", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", "from", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
     if (i + 1 >= argv.length) throw new Fail(2, "usage", `${a} needs a value`);
     if (MULTI.has(k)) o[k].push(argv[++i]); else o[k] = argv[++i];
     o.seen.add(k);
@@ -96,7 +97,9 @@ function parseArgs(argv) {
   if (o.days !== undefined && !/^[1-9][0-9]{0,3}$/.test(o.days)) throw new Fail(2, "usage", "--days takes a whole number of days, 1-9999");
   if (cmd === "drafts" || cmd === "prune") {
     if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
-    if (cmd === "prune" && (typeof o.approved !== "string" || !o.approved)) throw new Fail(2, "usage", "prune needs --approved FILE: the drafts the user approved for deletion, one per line");
+    if (cmd === "prune" && o.official && o.approved !== undefined) throw new Fail(2, "usage", "prune takes --approved FILE or --official, not both");
+    if (cmd === "prune" && !o.official && (typeof o.approved !== "string" || !o.approved)) throw new Fail(2, "usage", "prune needs --approved FILE (the drafts the user approved for deletion, one per line) or --official (only drafts the tool confirms are already official)");
+    if (cmd === "prune" && o.from !== undefined && (!o.official || !o.from)) throw new Fail(2, "usage", "--from DIR goes with --official: a folder of draft copies kept outside the project");
     return o;
   }
   if (cmd === "recover" || cmd === "merge-manifest") {
@@ -145,7 +148,7 @@ const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | di
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
   "agree NAME --id §x --by WHO --verification T [--source REF] [--at ISO] | " +
   "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
-  "drafts [--days N] [--worktrees] | prune --approved FILE | " +
+  "drafts [--days N] [--worktrees] | prune (--approved FILE | --official [--from DIR]) | " +
   "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
@@ -1048,7 +1051,7 @@ async function cmdEvidence(root, o) {
     }
     const malformed = targets.filter((c) => !c.deleted && c.agreedProblem);
     if (malformed.length) throw new Fail(1, "agreed-invalid", malformed.map((c) => `${c.id}: ${c.agreedProblem}`).join("; "));
-    if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV; without permission to commit, leave evidence pending and say so");
+    if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV (commit the code first: the go-ahead covers it); only where the user said not to commit, leave evidence pending and say so");
     if (o.commit !== undefined && !g.git) throw new Fail(1, "not-git", "this is not a Git project: use --snapshot to retain the implementation bytes");
     const paths = o["doc-only"] ? [] : uniqSorted([...targets.flatMap((c) => c.code), ...o.path]);
     const inputs = [];
@@ -1571,13 +1574,16 @@ async function draftReport(root, name, now, days, tip, branch) {
     let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
     const last = lastActivity(d);
     return { ...row, createdAt: d?.createdAt ?? null, lastActivity: last && new Date(last).toISOString(), ageDays: last && Math.floor((now - last) / DAY_MS),
-      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], draftSha256: await draftHash(root, name) };
+      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], promotedConflict: [], draftSha256: await draftHash(root, name) };
   }
   const s = await statusOut(root, a);
   const promoted = new Set(a.d.promotions.flatMap((p) => p.ids ?? []));
   let pending = s.ids.filter((i) => i.current === "pending").map((i) => i.id);
   const conflict = s.ids.filter((i) => i.current === "conflict" && !promoted.has(i.id)).map((i) => i.id);
   const current = s.ids.filter((i) => i.current === "already-current" || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
+  // Promoted by this draft before, and now different in current: counted current here, but a caller that must know
+  // the draft's own text is still what the tree says (a merge round's hold-back) reads them apart.
+  const promotedConflict = s.ids.filter((i) => i.current === "conflict" && promoted.has(i.id)).map((i) => i.id);
   // Pending here but already on the default branch, byte for byte (its record, and every claim file it is in): this work
   // tree's current lags the branch it was merged into. Any other difference keeps it pending.
   const onBranch = [];
@@ -1626,7 +1632,7 @@ async function draftReport(root, name, now, days, tip, branch) {
   if (s.proposedGraph.exit === 2) reasons.push("the draft graph does not load (exit 2)");
   const suggest = state === "landed" ? "promote" : ["promoted", "superseded", "empty"].includes(state) ? "delete" : "keep";
   return { ...row, purpose: a.d.purpose ?? null, createdAt: a.d.createdAt, lastActivity: last && new Date(last).toISOString(), ageDays: age,
-    state, reasons, suggest, pending, conflict, current, draftSha256: await draftHash(root, name) };
+    state, reasons, suggest, pending, conflict, current, promotedConflict, draftSha256: await draftHash(root, name) };
 }
 async function cmdDrafts(root, o) {
   const g = await gitInfo(root), days = daysOf(o), now = Date.now();
@@ -1670,6 +1676,7 @@ async function approvedList(file) {
   return [...list.values()];
 }
 async function cmdPrune(root, o) {
+  if (o.official) return o.from === undefined ? pruneOfficialHere(root, o) : pruneOfficialFrom(root, o);
   const list = await approvedList(o.approved);
   const inspect = async () => {
     const refusals = [], targets = [];
@@ -1701,6 +1708,74 @@ async function cmdPrune(root, o) {
     }
     return { exit: 0, written: true, deleted, refusals: [] };
   });
+}
+
+// Deletes a draft folder whole or not at all: out of its name first, then removed.
+async function removeDraftDir(dir, name) {
+  const gone = join(dir, `.prune-${randomBytes(6).toString("hex")}`);
+  await rename(join(dir, name), gone);
+  await rm(gone, { recursive: true, force: true });
+}
+// `prune --official`: the project's own drafts that `drafts` reads `promoted` (every id already official); the rest kept.
+async function pruneOfficialHere(root, o) {
+  const inspect = async () => {
+    const refusals = [], targets = [], kept = [];
+    if (await exists(join(root, TXN))) refusals.push({ code: "pending-transaction", message: `${TXN} exists: a promotion was interrupted; run recover first` });
+    const g = await gitInfo(root), branch = g.git ? defaultBranch(root) : null, tip = branch && resolveCommit(root, `refs/heads/${branch}`);
+    for (const name of await draftNames(root)) {
+      const r = await draftReport(root, name, Date.now(), daysOf(o), tip, branch);
+      // A § it promoted that current now says differently is no longer confirmed official: kept.
+      if (r.state === "promoted" && !r.promotedConflict.length) targets.push({ name, draft: draftRel(name), draftSha256: r.draftSha256 });
+      else kept.push({ name, draft: draftRel(name), state: r.state, reasons: r.state === "promoted" ? [...r.reasons, `promoted before, now different in current: ${r.promotedConflict.join(", ")}`] : r.reasons });
+    }
+    return { refusals, targets, kept };
+  };
+  if (!o.write) {
+    const p = await inspect();
+    return { exit: p.refusals.length ? 1 : 0, mode: "official", written: false, deleted: [], wouldDelete: p.targets, kept: p.kept, refusals: p.refusals };
+  }
+  return withLock(root, async () => {
+    const p = await inspect();
+    if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `prune refused (${p.refusals.length} reason(s)); nothing was deleted`, { mode: "official", written: false, deleted: [], wouldDelete: p.targets, kept: p.kept, refusals: p.refusals });
+    const dir = await ownDir(root, DRAFTS, false), deleted = [];
+    for (const t of p.targets) { await removeDraftDir(dir, t.name); deleted.push(t); }
+    return { exit: 0, mode: "official", written: true, deleted, kept: p.kept, refusals: [] };
+  });
+}
+// `prune --official --from DIR`: each draft folder in DIR (copies kept outside the project) read against the project's
+// current spec alone, in a throwaway root with no Git: deleted only when every record it changes, at least one, is
+// already current. Anything else, or anything unreadable, is kept.
+async function pruneOfficialFrom(root, o) {
+  const from = resolve(o.from);
+  const st = await lstat(from).catch(() => null);
+  if (!st?.isDirectory()) throw new Fail(2, "usage", `--from ${o.from}: not a directory`);
+  const specDir = await ownDir(root, SPEC, false);
+  const targets = [], kept = [];
+  for (const e of (await readdir(from, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    if (!NAME_RE.test(e.name)) continue;
+    const where = join(from, e.name);
+    if (!e.isDirectory()) { kept.push({ name: e.name, draft: where, state: "unreadable", reasons: ["not a plain directory"] }); continue; }
+    const t = mkdtempSync(join(tmpdir(), "sova-spec-official-"));
+    try {
+      // The project's current spec without its drafts, and this one copy as the only draft.
+      cpSync(specDir, join(t, SPEC), { recursive: true, verbatimSymlinks: true, filter: (src) => relative(specDir, src).split(/[\\/]/)[0] !== "drafts" });
+      cpSync(where, join(t, draftRel(e.name)), { recursive: true, verbatimSymlinks: true });
+      let ids;
+      try { ids = (await statusOut(t, await analyze(t, e.name))).ids; } catch (err) {
+        if (!(err instanceof Fail)) throw err;
+        kept.push({ name: e.name, draft: where, state: "unreadable", reasons: [`${err.code}: ${err.message}`] });
+        continue;
+      }
+      const notCurrent = ids.filter((i) => i.current !== "already-current");
+      if (ids.length && !notCurrent.length) targets.push({ name: e.name, draft: where, draftSha256: await draftHash(t, e.name) });
+      else kept.push({ name: e.name, draft: where, state: ids.length ? "pending" : "empty",
+        reasons: ids.length ? [`not official yet: ${notCurrent.map((i) => `${i.id} (${i.current})`).join(", ")}`] : ["changes nothing, so nothing confirms it"] });
+    } finally { rmSync(t, { recursive: true, force: true }); }
+  }
+  if (!o.write) return { exit: 0, mode: "official", from, written: false, deleted: [], wouldDelete: targets, kept, refusals: [] };
+  const deleted = [];
+  for (const x of targets) { await removeDraftDir(from, x.name); deleted.push(x); }
+  return { exit: 0, mode: "official", from, written: true, deleted, kept, refusals: [] };
 }
 
 // ---------------------------------------------------------------- merge-manifest
@@ -1901,6 +1976,7 @@ function human(out) {
   }
   if (out.command === "prune" && out.deleted) {
     for (const t of out.written ? out.deleted : out.wouldDelete ?? []) L.push(`  ${out.written ? "deleted" : "would delete"} ${t.draft}`);
+    for (const k of out.kept ?? []) L.push(`  kept ${k.draft} (${k.state}): ${k.reasons.join("; ")}`);
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
     if (!out.written && !(out.refusals ?? []).length) L.push("preview; nothing deleted — pass --write");
   }

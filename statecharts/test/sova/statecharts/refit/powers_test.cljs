@@ -25,6 +25,15 @@
       (is (= (pw/off-sentence p "overseer") (:sentence off)))
       (is (nil? on) (str sc " " ev " by " by ": On passes")))))
 
+(deftest gather-reads-feature-chats-for-the-assistant
+  ;; owner-feature-chats t12: the gathering power has its own meaning in the Project Assistant column
+  (is (= "Open feature request chats with the owner is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request."
+         (pw/off-sentence "gather" "assistant")))
+  (is (.startsWith (pw/off-sentence "gather" "overseer") "Start, offer and close gatherings is off for the overseer on its own."))
+  (is (= "power-off" (:code (pw/power-check "start_feature_chat" "gather" {:by "assistant" :powers (only "gather" false)}))))
+  (is (= (pw/off-sentence "gather" "assistant") (:sentence (pw/power-check "start_feature_chat" "gather" {:by "assistant" :powers (only "gather" false)}))))
+  (is (= "Send coding sessions prompts" (pw/label-of "codingPrompt" "assistant")) "a power with no assistant label keeps its own"))
+
 (deftest build-on-promote-off
   ;; al_3 t13: build On, promote Off: the statechart's coding session start passes, its promotion is refused
   (let [env {:by "statechart" :powers (assoc (pw/carry-over "L1") :coding-start true :promote false)}

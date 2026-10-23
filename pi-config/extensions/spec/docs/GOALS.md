@@ -73,7 +73,8 @@ We know it's working when:
 We know it's working when:
 - each built promise has been read against its code;
 - the map shows how many promises are agreed but unbuilt, and how old they are;
-- reviews against the spec keep finding real defects and real holes, and both get fixed.
+- reviews against the spec keep finding real defects and real holes, and both get fixed;
+- a branch's docs land in the same merge as its code, and nobody is asked for a separate, docs-only landing.
 
 ### 5. Complete enough to rebuild an area from
 
@@ -117,6 +118,7 @@ Drafts, marks and checks exist only to serve the goals and constraints above. A 
 - **Each fact is said once.** The second copy is the one that goes stale.
 - **Tools say what they checked.** "Didn't look" is never reported as "found nothing".
 - **Code locations sit beside the text,** in each promise's list of code files, never in the source.
+- **Docs land with their code.** With spec mode on, in any project, a branch isn't done or ready to land until its own drafts are promoted on it, by the session that owns it. The go-ahead to build or merge covers that and committing it; it is never asked for separately, and nothing at landing promotes for anyone.
 
 How much of "how" the spec holds is (open). The shapes of stored and sent data are in.
 
@@ -124,7 +126,7 @@ How much of "how" the spec holds is (open). The shapes of stored and sent data a
 
 - Proving the code is correct.
 - Replacing tests.
-- Stopping work or releases. The tools report and people decide. The one gate is that only promotion writes the main spec.
+- Stopping work or releases. The tools report and people decide. The one gate is that only promotion writes the main spec; a branch whose own drafts aren't promoted isn't ready yet, by the rule above, not by a tool's verdict.
 - Keeping records for their own sake.
 - Describing every file. Tests, fixtures and plumbing need no promises, and work that changes no behaviour needs no new ones.
 

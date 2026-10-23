@@ -18,8 +18,9 @@
    "onboard" "markMerged" "copiesRun" "copiesReset" "share" "deploy"])
 
 (def info
-  "Per power: its old level (the carry-over), whether the Project Assistant column can have it, its label."
-  {"gather"       {:old "L1" :assistant true  :label "Start, offer and close gatherings"}
+  "Per power: its old level (the carry-over), whether the Project Assistant column can have it, its label,
+   and its label in the Project Assistant column where that differs (`:assistant-label`)."
+  {"gather"       {:old "L1" :assistant true  :label "Start, offer and close gatherings" :assistant-label "Open feature request chats with the owner"}
    "whatsapp"     {:old "L1" :assistant false :label "Message people on WhatsApp"}
    "ownerUpdates" {:old "L1" :assistant false :label "Post owner updates"}
    "roster"       {:old "L2" :assistant false :label "Approve or decline proposed people"}
@@ -98,10 +99,16 @@
     (or (= "operator" by)
         (and (true? (:attended envelope)) (not= "statechart" by)))))
 
+(defn label-of
+  "A power's label in a column (shared/powers.ts powerLabel): the Project Assistant's own words where it has them."
+  [power column]
+  (let [i (info power)]
+    (if (= "assistant" column) (or (:assistant-label i) (:label i)) (:label i))))
+
 (defn off-sentence
   "The refusal of an act whose power is Off in the caller's column (shared/powers.ts powerOffSentence)."
   [power column]
-  (let [label (:label (info power))]
+  (let [label (label-of power column)]
     (if (= "assistant" column)
       (str label " is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.")
       (str label " is off for the overseer on its own. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."))))

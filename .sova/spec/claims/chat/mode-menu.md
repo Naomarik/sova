@@ -404,8 +404,10 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
   (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
   brief and any remote instructions, followed by a short **worker note**: the brief is its
-  go-ahead; it works in the draft its brief names (or says which it started); it doesn't promote,
-  commit or record `--commit` evidence unless the brief says so — the parent promotes; and its final
+  go-ahead; it works in the draft its brief names (or says which it started); it promotes, commits
+  or records `--commit` evidence only when the brief says so, and then only on the brief's branch,
+  never by landing on the default branch — the parent promotes, on its own branch before calling it
+  ready; and its final
   report lists each foreign § it updated. Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.

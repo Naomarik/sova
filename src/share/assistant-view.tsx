@@ -71,6 +71,8 @@ export function AssistantChat(props: {
   /** The chat's read failed on the link itself (turned off, unknown, too many requests): the page's
       own dead-link screen takes over. */
   onDeadLink?(err: OwnerLoadError): void;
+  /** A feature request chat's link, for its Open Feature Chat button (§app.project-assistant/feature-chats). */
+  conversationLink?(id: string): { href: string; onClick(e: MouseEvent): void };
 }) {
   const [view, setView] = createSignal<AssistantView | null>(null);
   const [streaming, setStreaming] = createSignal("");
@@ -307,6 +309,11 @@ export function AssistantChat(props: {
               </Show>
               <Show when={m.versions?.length}>
                 <VersionRows versions={m.versions!} href={props.versionHref} />
+              </Show>
+              <Show when={m.featureChat && props.conversationLink}>
+                <a class="button owner-feature-open" aria-label={`Open Feature Chat: ${m.featureChat!.title}`} {...props.conversationLink!(m.featureChat!.conversation)}>
+                  Open Feature Chat
+                </a>
               </Show>
             </article>
           )}

@@ -13,10 +13,10 @@ import {
   parseDefinition,
   portsFor,
   render,
-  scratchSlots,
   serviceOrder,
   type VerbResult,
 } from "./project-contract";
+import { slotPlan } from "./project-slots";
 
 const parse = (o: unknown) => parseDefinition(JSON.stringify(o));
 /** The JSON path a bad definition is refused at. */
@@ -37,7 +37,7 @@ test("a static site is one service with one port", () => {
   assert.equal(def.services[0]!.reload, "none");
   assert.deepEqual(portsFor(def, 0), { site: { http: 8731 } });
   assert.deepEqual(portsFor(def, 3), { site: { http: 8734 } });
-  assert.deepEqual(scratchSlots(def), [5, 6]);
+  assert.deepEqual(slotPlan(def.slots.cap).scratch, [5, 6]);
 });
 
 test("a full definition parses with defaults filled in", () => {
@@ -120,7 +120,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
     1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
-    2: ["not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
+    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };

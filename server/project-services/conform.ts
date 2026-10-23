@@ -8,7 +8,6 @@ import {
   isVerbResult,
   ordered,
   parseDefinition,
-  scratchSlots,
   type Check,
   CONFORM_LOG_LINES,
   type ConformLog,
@@ -18,6 +17,7 @@ import {
   type ProjectDef,
   type VerbResult,
 } from "../../shared/project-contract";
+import { slotLimitOf } from "../../shared/project-slots";
 import { projectOf } from "../project-root";
 import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
 import { rssOf } from "./drivers";
@@ -298,7 +298,8 @@ async function runSuite(
   const s = new Suite(engine, confCaller);
   const { project, commit, def } = t;
   const memory = new Memory(engine, def.services.filter((x) => x.scope === "checkout" && x.cmd && !x.container).map((x) => x.name));
-  const [slotA, slotB] = scratchSlots(def);
+  // The limit in force is the main checkout's saved one, never the ref's (§app.project-services/conform).
+  const [slotA, slotB] = slotLimitOf(project, def).scratch;
   const branchA = `sova/conform-${runId}-a`;
   const branchB = `sova/conform-${runId}-b`;
   const token = `sova-conform-${runId}`;

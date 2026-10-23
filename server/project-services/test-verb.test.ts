@@ -208,8 +208,11 @@ test("a session tests its own worktree's instance, never the main checkout's; do
   const own: Caller = { kind: "session", id: "s1", root: project, own: [checkout, project] };
   const t = await engine.run("test", { instance: wt }, own);
   assert.equal(t.ok, true, t.error?.message);
+  // A bare test from the main checkout names the session's own worktree instead (§app.project-services/callers).
   const m = await engine.run("test", { project }, own);
-  assert.equal(m.error?.code, "forbidden");
+  assert.equal(m.error?.code, "invalid-request");
+  assert.ok(m.error!.message.includes(checkout), m.error!.message);
+  assert.equal((await engine.run("test", { project }, { ...own, own: [project] })).error?.code, "forbidden", "with no worktree of its own: forbidden");
   assert.ok(!readRegistry().instances.some((i) => i.slot === 0), "nothing made for main");
   const dn = await engine.run("down", { instance: wt }, op);
   assert.equal(dn.state, "stopped", dn.error?.message);

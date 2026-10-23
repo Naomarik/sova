@@ -14,7 +14,7 @@ ports and env in declaration order.
 | key | value |
 |---|---|
 | `version` | `1` |
-| `slots` | `{cap}` (`cap`): instances besides the main checkout's, 1–16, default 4. Conformance uses slots cap+1 and cap+2 |
+| `slots` | `{cap}` (`cap`): copies besides the main checkout's, 1–16, default 4; only the main checkout's saved value is in force, and its port numbering numbers every copy. Conformance uses slots cap+1 and cap+2; other copies take 1 to 2×cap+2, skipping those |
 | `host` | names (`A-Z0-9_`) of host variables kept in Sova's state, read as `${host.NAME}`; never put their values in the repo |
 | `sources` | the checkout files the definition was derived from (at most 50, relative, each once). Drift is a change to one of them at HEAD. Not hashed |
 | `setup` | steps `{id, run, inputs?, timeout?}` run at create, in order; skipped while the rendered argv and the hash of `inputs` (checkout files) are unchanged |
@@ -107,7 +107,8 @@ A conformance stamp proves exactly one hash. The hash covers the whole parsed de
 | `invalid-request` | 3 | a bad verb argument |
 | `not-found` | 3 | no such project, instance or ref |
 | `not-conformant` | 2 | a verb that needs a passing conformance |
-| `cap-reached` | 2 | no free slot |
+| `cap-reached` | 2 | the project already runs as many copies as the limit (the main checkout's saved `slots.cap`): tear one down or raise it |
+| `slots-blocked` | 2 | the limit isn't used up, but every slot Sova may give is blocked (a listener or another instance on its ports): the message names each holder; never stop one |
 | `port-held` | 2 | something else holds a port of the slot: change `base`/`stride`, never stop the holder |
 | `dirty-worktree` | 2 | commit first |
 | `unsupported` | 2 | the verb or method isn't available here (no `test` declared, no supervisor) |

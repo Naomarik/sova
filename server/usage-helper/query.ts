@@ -8,6 +8,7 @@ import {
   type UsageDevice,
   type UsageKind,
   type UsageModelRow,
+  type UsageProjectRow,
   type UsagePricing,
   type UsageRange,
   type UsageResend,
@@ -21,6 +22,7 @@ import {
   type UsageWorkerRow,
 } from "../../shared/usage/wire";
 import type { Ledger, Row } from "./ledger";
+import { OTHER_ROW, projectFold, type Fold, type FoldRow } from "./project-fold";
 import type { PriceBook } from "./price-book";
 
 /**
@@ -277,6 +279,7 @@ export class Queries {
   private readonly summaries = new Map<string, Map<string, Summary>>();
   /** The zone summaries were last built for: session queries (which ignore local days) reuse them. */
   private lastTz = "UTC";
+  private noFold: Fold | null = null;
 
   constructor(opts: QueryOptions) {
     this.ledger = opts.ledger;
@@ -384,7 +387,9 @@ export class Queries {
     return names.filter((d) => d >= lo && d <= hi);
   }
 
-  costs(q: { range: UsageRange; providers: string[]; models: string[]; tz: string }): UsageCosts {
+  /** `fold` decides each call's By project row; without one, no project is registered. */
+  costs(q: { range: UsageRange; providers: string[]; models: string[]; tz: string; fold?: Fold }): UsageCosts {
+    const fold = q.fold ?? (this.noFold ??= projectFold({ projects: [], overseer: [] }));
     const tz = validZone(q.tz);
     const today = this.localDay(tz)(this.now());
     const from = q.range === "all" ? null : addDays(today, q.range === "7d" ? -6 : -29);
@@ -399,7 +404,7 @@ export class Queries {
     const daily = new Map<string, Acc>();
     const byProvider = new Map<string, Acc>();
     const byModel = new Map<string, { provider: string; model: string; asked: string | null; requested: Set<string>; acc: Acc; pricing: Pricing }>();
-    const byProject = new Map<string, { project: string | null; cwd: string | null; acc: Acc }>();
+    const byProject = new Map<string, { row: FoldRow; folders: Set<string>; acc: Acc }>();
     const sessions = new Map<string, Acc>();
     const resends = new Map<string, Resends>();
     let first: string | null = null;
@@ -421,8 +426,10 @@ export class Queries {
         for (const r of e.requested) m.requested.add(r);
         m.acc.merge(e.acc);
         m.pricing.merge(e.pricing);
-        const pk = e.project ? `p:${e.project}` : `c:${e.cwd ?? ""}`;
-        get(byProject, pk, () => ({ project: e.project, cwd: e.project ? null : e.cwd, acc: new Acc() })).acc.merge(e.acc);
+        const row = fold(e.cwd, e.kind, e.project);
+        const pr = get(byProject, row.key, () => ({ row, folders: new Set<string>(), acc: new Acc() }));
+        if (e.cwd) pr.folders.add(e.cwd);
+        pr.acc.merge(e.acc);
         if (e.owner) get(sessions, e.owner, () => new Acc()).merge(e.acc);
         if (e.owner && e.resend && e.kind !== "oneshot") get(resends, e.owner, () => new Resends()).merge(e.resend);
       }
@@ -478,7 +485,18 @@ export class Queries {
       byProvider: [...byProvider.entries()].map(([provider, a]) => ({ provider, ...a.spend() })).sort(byUsd),
       byModel: [...byModel.values()].map((m): UsageModelRow => ({ provider: m.provider, model: m.model, ...identity(m.model, m.asked, m.requested), ...m.acc.spend(), ...m.pricing.out(this.name) })).sort(byUsd),
       byKind: USAGE_KIND_ORDER.filter((k) => kinds.has(k)).map((kind) => ({ kind, ...kinds.get(kind)!.spend() })),
-      byProject: [...byProject.values()].map((p) => ({ project: p.project, cwd: p.cwd, ...p.acc.spend() })).sort(byUsd),
+      byProject: [...byProject.values()]
+        .map(({ row, folders, acc }): UsageProjectRow => ({
+          project: row.project ?? null,
+          cwd: row.kind === "folder" ? row.path! : row.kind === "overseer" ? (folders.values().next().value ?? null) : null,
+          kind: row.kind,
+          name: row.name,
+          ...(row.path ? { path: row.path } : {}),
+          folders: folders.size,
+          ...(row.archived ? { archived: true as const } : {}),
+          ...acc.spend(),
+        }))
+        .sort((a, b) => Number(a.kind === OTHER_ROW.kind) - Number(b.kind === OTHER_ROW.kind) || byUsd(a, b)),
       topSessions: top,
       prices: this.prices.info(),
     };

@@ -370,6 +370,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `running`, its model request waiting on its provider's limit (§app.provider-limits/waiting-shown) | `.chip` + dot, Queued, the waiting text in `title` | `{provider}` · `{model}` · `{tokens}` |
   | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | a team member whose `ejectedAt` is set (§app.teams/seats) | `.chip` + dot, Ejected, **before** the status chip, which stays | unchanged |
+  | its newest report says done but not that it ran tests or checks (§app.decisions/worker-report) | `.chip.chip-warn` + dot, Untested, **before** the status chip, which stays; the source in `title` | unchanged |
 
   **Tokens** are that worker's spend from the usage ledger (§app.insights/usage-ledger: its own
   calls and its own workers', at any depth; input + output, mono, the same §chat/context-window

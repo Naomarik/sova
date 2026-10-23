@@ -28,7 +28,8 @@ import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
+import { readSignals, signalsOverlay, withoutRestartAsk } from "./signals-store";
+import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
@@ -913,11 +914,10 @@ function decisionFields(
   const data = readSignals();
   const ctx = { enabled: true, seenAt: seen[s.id], viewing: isViewing(s.id) };
   const running = isSessionBusy(s.path) || (l?.activity ?? activityOf(own?.rec))?.state === "working";
-  const signals = signalsOverlay(s.id, { ...ctx, running }, data);
-  const workerSignals = workerSignalsOverlay(s.id, ctx, Date.now(), data);
+  // An open offer card asks the user too (§app.decisions/asks-user, §chat.offers/card).
+  const signals = withOpenOffer(s.id, signalsOverlay(s.id, { ...ctx, running }, data), running);
   return {
     ...(signals ? { signals } : {}),
-    ...(workerSignals ? { workerSignals } : {}),
     ...(tags ? { tags } : {}),
   };
 }
@@ -1037,7 +1037,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row, previewLabels));
+    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row), previewLabels));
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
@@ -1084,7 +1084,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...fieldLookup()(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
-  return withUnreadReplies(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row));
+  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row)));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

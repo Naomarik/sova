@@ -578,3 +578,37 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .placeholder .skeleton-line { display: block; }
 .placeholder-inline { flex: 1 1 22rem; min-width: 0; }
 .placeholder-inline .skeleton-line { width: min(28rem, 100%); margin: 6px 0; }
+
+/* The project page's Offers list (§chat.offers/project-list). */
+.project-offers-list { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.project-offer-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.project-offer .orgs-line, .project-offer .list-meta, .project-offer .field-error { margin: var(--space-1) 0 0; }
+.project-offer-buttons { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+.project-offers-runs { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-3); }
+
+/* A project's settings (§app.project-overseer/settings): the Settings change card, All settings, the history. */
+.settings-card .card-head { gap: var(--space-2); }
+.settings-card-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.settings-card-why { margin: 0; color: var(--color-ink-2); }
+.settings-card-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.settings-card-list { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+.settings-card-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.settings-card-path { color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.settings-card-diff-toggle { align-self: flex-start; }
+.settings-card-diff {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 360px;
+  overflow: auto;
+  background: var(--color-sunken);
+  border-radius: var(--r-sm);
+  white-space: pre;
+}
+.project-settings-cards { display: flex; flex-direction: column; gap: var(--space-3); }
+.project-settings-group { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-3); }
+.project-settings-rows { margin: 0; padding: 0; }
+.project-settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.project-settings-row .list-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.project-settings-row .list-meta { overflow-wrap: anywhere; }
+.project-settings-state { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.settings-card-lands { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }

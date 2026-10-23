@@ -234,9 +234,16 @@ export const CODING_MODE_GONE = "Projects have no coding mode: coding sessions s
 /** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written.
     `check` runs on the merged settings before anything is written (a throw writes nothing). */
 export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: (next: ProjectOverseerSettings, patch: ProjectOverseerPatch) => void): ProjectOverseerSettings {
+  const next = mergePoPatch(readPoSettings(p), body);
+  check?.(next, body as ProjectOverseerPatch);
+  return writePoSettings(p, next);
+}
+
+/** The settings `body` makes of `current`, checked as PATCH checks it (the first problem thrown as an OrgError). Pure: nothing is written. */
+export function mergePoPatch(current: ProjectOverseerSettings, body: unknown): ProjectOverseerSettings {
   if (!isObj(body)) throw new OrgError("Expected a JSON object body");
   const patch = body as ProjectOverseerPatch;
-  const next = readPoSettings(p);
+  const next: ProjectOverseerSettings = { ...current, caps: { ...current.caps } };
   // One release only: an old client's level sets the overseer column by the carry-over (the caller ends the pause).
   if (patch.autonomy !== undefined) {
     if (!isAutonomy(patch.autonomy)) throw new OrgError(`autonomy must be one of ${AUTONOMY_LEVELS.join(", ")}`);
@@ -264,6 +271,7 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     const v = patch[k];
     if (v === undefined) continue;
     if (v !== null && typeof v !== "string") throw new OrgError(`${k} must be a string or null`);
+    if (typeof v === "string" && v.trim().length > 200) throw new OrgError(`${k} must be at most 200 characters`);
     next[k] = typeof v === "string" && v.trim() ? v.trim() : null;
   }
   // Projects have no coding mode (§app.project-overseer/coding-mode): a patch naming one is refused, never ignored.
@@ -307,8 +315,7 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
       next.caps = { ...next.caps, [k]: v };
     }
   }
-  check?.(next, patch);
-  return writePoSettings(p, next);
+  return next;
 }
 
 /** Why a WorkModels value can't be saved, or null. Pure. */

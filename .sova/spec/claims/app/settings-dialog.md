@@ -444,9 +444,9 @@ The tab after Subagents, and the align mode's settings (§chat/alignment). It op
 Changes like every gated form (§app.settings-dialog/save-bar):
 
 - **Writing style**, a radiogroup of three, each option a label row with a one-line description:
-  **Default** "Today's detail: files, code and technical trade-offs.", **Simplified** "Short
-  sentences in everyday words, fewer items.", **Project manager** "Screens, wording and behaviour
-  only; no code. Technical detail folded into notes." Under it the hint "Reaches open chats at their
+  **Project manager** "Screens, wording and behaviour only; no code. Technical detail folded into
+  notes.", **Simplified** "Short sentences in everyday words, fewer items.", **Technical** "Files,
+  code and technical trade-offs in the plan." A saved `default` shows as Technical. Under it the hint "Reaches open chats at their
   next message."
 - **Visuals**, one switch, "Draw when it helps", with the hint "The align mode draws a wireframe or a
   flow on the alignment card when a picture explains faster than words. Applies to sessions you start
@@ -459,7 +459,7 @@ Changes like every gated form (§app.settings-dialog/save-bar):
 Under the groups one line says "A subagent profile can set its own writing style and visuals
 (Settings → Subagents)." Style and Visuals are stored in `<agent dir>/mode-align.json`
 (§chat.alignment/settings-file), Review in Sova's settings; one Save writes both, and a failure of
-either keeps the form's draft and shows the save-failed banner at its end. The defaults are Default,
+either keeps the form's draft and shows the save-failed banner at its end. The defaults are Project manager,
 Visuals off and Review off.
 
 ## §app.settings-dialog/profiles — Profiles
@@ -594,7 +594,8 @@ In this order:
   policy) show in warn under the row until the next save that changes the fallback. The section ends with the saved chain in words
   ("Asks Jev, then Claude Code · Haiku 4.5.", a paused provider with when it retries, or the
   unavailable sentence).
-- **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
+- **Features.** **Flag sessions that need you**, off by default (there is no Tag sessions switch:
+  automatic tags are retired, §app.decisions/session-tags). With a
   feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
   the unavailable sentence ("Unavailable: Jev is off and no fallback model is set. Nothing is
   checked.", or Jev can't answer and why). The server's note that a feature on stays unavailable
@@ -603,20 +604,13 @@ In this order:
   a Folders textarea, one full path per line (`/…`, `~` or `~/…`). A line that isn't a full path,
   or more than 100 lines, shows the reason under the box and holds Save Changes until fixed
   (§app.decisions/privacy); blank and repeated lines are dropped, so they alone are no change.
-- **Tag past sessions**, only while Tag sessions is saved on or a backfill runs: **Tag Last 30
-  Days** and **Tag All Sessions**, a hint that it runs 2 at a time, skips what's already tagged
-  and costs more on a fallback model; **Stop Tagging** while one runs; a progress line ("Tagged 40
-  of 147 · 2 failed.", then "Tagged 147 sessions · 2 failed. New sessions are tagged as they
-  finish.", or "Stopped at … ." with the reason). Starting waits while a change is being saved,
-  and is held with a reason while nothing can answer (§app.decisions/backfill). Like Test
-  Decisions, it acts on what is saved.
 - A footnote names where the settings are stored, and that the key is stored separately, readable
   only by the user.
 
 ## §app.settings-dialog/decisions-autosave — Decisions saves with Save Changes
 
 Settings → Decisions stages every change — Use Jev, the fallback choice and model, the Features
-and Never send switches, and Folders — and writes them only with the dialog's **Save Changes**
+switch and Never send switches, and Folders — and writes them only with the dialog's **Save Changes**
 (§app.settings-dialog/save-bar). Nothing is written as it is made, and leaving the
 Folders box or the tab writes nothing.
 

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { DecisionSettings, SessionReadiness } from "../shared/protocol";
 import { type Answer, DecisionError, type DecisionProvider, type JsonObject, type Question } from "./decide";
 import { maySend } from "./decide-settings";
+import { withoutFooter } from "./attention-signals";
 import { stateRoot } from "./state-root";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
@@ -88,8 +89,13 @@ function writeStore(store: Store, file = followUpsFile()): void {
   cached = { file, store };
 }
 
-/** What the badge and the digest read from a record: work named, and how much; undefined = none. */
+/** The pointer older records stored when the reply named no open work: never shown. */
+const FALLBACK_CUE_RE = /^see the reply after merging /;
+
+/** What the badge and the digest read from a record: work named, and how much; undefined = none.
+    With no cue line of the reply's own (or a stored fallback pointer), nothing shows. */
 export function followUpOf(rec: FollowUpRecord | undefined): SessionReadiness["followUp"] {
+  if (!rec?.cue || FALLBACK_CUE_RE.test(rec.cue)) return undefined;
   const f = rec?.answers.follow_up;
   const w = rec?.answers.follow_up_weight;
   if (f?.type !== "boolean" || f.p < FOLLOW_UP_P_MIN) return undefined;
@@ -107,13 +113,13 @@ export function followUpFor(sessionId: string, cardId: string): SessionReadiness
 const CUE_RE = /open gaps?|\bgaps?\b|not (?:yet )?(?:verified|covered|tested|checked|fixed|done)|regress|still fails?|fails on|i'?d fix|fix (?:it|that|this|them) separately|separately|follow-?up|left (?:open|to do)|\btodo\b|known (?:issue|problem|bug)|unfinished|not a clean pass/i;
 const ROUTINE_RE = /\brestart|\bpush|clean ?up|worktree remove|rebuild/i;
 
-/** The reply's own first line naming open work (≤120 characters), else its Deferred: line, else a
-    pointer to the reply ("see the reply after merging <branch>"): a bare branch name tells nothing. */
-export function cueOf(reply: string, branch: string): string {
+/** The reply's own first line naming open work (≤120 characters), else its Deferred: line, else ""
+    (nothing to show: a pointer to the reply told the user nothing). */
+export function cueOf(reply: string, _branch?: string): string {
   const lines = reply.split("\n").map((l) => l.replace(/^[\s>*\-•\d.)]+/, "").replace(/[*_`]/g, "").trim()).filter(Boolean);
   const hit = lines.find((l) => CUE_RE.test(l) && !ROUTINE_RE.test(l) && !/^(?:deferred|also changes|plumbing):/i.test(l));
   const deferred = lines.find((l) => /^deferred:/i.test(l));
-  const line = hit ?? deferred ?? `see the reply after merging ${branch}`;
+  const line = hit ?? deferred ?? "";
   return line.length > 120 ? `${line.slice(0, 119)}…` : line;
 }
 
@@ -132,6 +138,9 @@ export interface FollowUpInput {
   reply: { id: string; at: number; text: string };
   /** The mechanical follow-ups, so they are not judged again. */
   routine: { restart_pending: boolean; push_pending: boolean; cleanup: number };
+  /** A merge captain's or an Overseer's session: never checked (its reply after a merge is a round
+      report about other branches). */
+  skip?: "captain" | "overseer";
 }
 
 export interface FollowUpDeps {
@@ -146,8 +155,9 @@ export interface FollowUpDeps {
 export function followUpState(input: FollowUpInput): JsonObject {
   const text = input.reply.text;
   const deferred = deferredOf(text);
-  // Readiness keeps the reply's body tail with its Deferred: line after it: that line goes apart.
-  const body = deferred && text.endsWith(deferred) ? text.slice(0, -deferred.length).trimEnd() : text;
+  // The closing spec lines (Also changes, Also updates, Deferred, …) are cut, as for asks: a footer
+  // of "§… — test mapping" lines read as open work. The Deferred: line goes apart.
+  const body = withoutFooter(text);
   return {
     merge: { ...input.card },
     reply: body.length > REPLY_TAIL_MAX ? body.slice(-REPLY_TAIL_MAX) : body,
@@ -177,6 +187,7 @@ export class MergeFollowUps {
     const now = this.deps.now?.() ?? Date.now();
     const key = followUpKey(input.sessionId, input.cardId);
     const rec = readStore(this.file).cards[key];
+    if (input.skip) return input.skip;
     if (rec && rec.replyId === input.reply.id) return "done";
     if (now - input.reply.at > FOLLOW_UP_FRESH_MS) return "old";
     const gate = maySend(this.deps.settings(), "attention", { cwd: input.cwd, terminal: input.terminal });

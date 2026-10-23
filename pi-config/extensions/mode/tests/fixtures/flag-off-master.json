@@ -138,12 +138,12 @@
                "tradeoff": {
                 "type": "string",
                 "minLength": 1,
-                "description": "What it costs and what it buys."
+                "description": "What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. \"Old rows are deleted for good; the export runs twice as fast\")."
                }
               },
               "additionalProperties": false
              },
-             "description": "The real choices, each with its trade-off (optional)."
+             "description": "The real choices, each with a one-line consequence of picking it (optional)."
             },
             "recommendation": {
              "type": "object",
@@ -295,12 +295,12 @@
                "tradeoff": {
                 "type": "string",
                 "minLength": 1,
-                "description": "What it costs and what it buys."
+                "description": "What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. \"Old rows are deleted for good; the export runs twice as fast\")."
                }
               },
               "additionalProperties": false
              },
-             "description": "The real choices, each with its trade-off (optional)."
+             "description": "The real choices, each with a one-line consequence of picking it (optional)."
             },
             "recommendation": {
              "type": "object",
@@ -406,7 +406,7 @@
             "tradeoff": {
              "type": "string",
              "minLength": 1,
-             "description": "What it costs and what it buys."
+             "description": "What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. \"Old rows are deleted for good; the export runs twice as fast\")."
             }
            },
            "additionalProperties": false

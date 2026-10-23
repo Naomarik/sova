@@ -277,6 +277,8 @@ const READ_PREFIXES = [
   "playbooks",
   "provider-limits",
   "usage",
+  // Session offers (§chat/offers): reading a session's cards is a read; a click sends or runs, an admin act.
+  "session-offers",
 ];
 // Never below `full`: the operator's credentials, the share pages' own routes, this machine's
 // updates (whose writes refuse the peer listener outright), and conversations' draft specs (the

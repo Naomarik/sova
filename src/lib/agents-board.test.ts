@@ -81,14 +81,36 @@ test("state: a question outranks work, work outranks what the last turn left, th
   assert.equal(boardState(sess("a"), agent("/s/a.jsonl", { workerCounts: { total: 2, working: 1, waiting: 1, done: 0, error: 0, killed: 0 } }), false).state, "working");
   assert.equal(boardState(sess("a", { workers: { working: 1, total: 1 } }), null, false).state, "working", "no live record: the list's counts");
   const failed = boardState(sess("a", { turnError: { message: "429" } }), null, false);
-  assert.deepEqual(failed, { state: "needs-you", reason: "Last turn failed: 429" });
-  assert.equal(boardState(sess("a", { signals: { kinds: ["looping"], at: 5 } } as Partial<SessionSummary>), null, false).state, "needs-you");
-  assert.equal(boardState(sess("a", { signals: { kinds: ["looping"], at: 5 }, seenAt: 6 } as Partial<SessionSummary>), null, false).state, "idle", "seen since: nothing new");
-  assert.deepEqual(boardState(sess("a", { signals: { kinds: ["asks-you"], at: 5 } } as Partial<SessionSummary>), null, false), { state: "needs-you", reason: "The last reply asks you something." });
+  assert.deepEqual(failed, { state: "needs-you", reason: "Last turn failed: 429", word: "Broken" });
+  assert.equal(boardState(sess("a", { signals: { kinds: ["looping"], at: 5 } } as Partial<SessionSummary>), null, false).state, "idle", "a looping mark (retired) is nothing");
+  assert.deepEqual(boardState(sess("a", { signals: { kinds: ["asks-you"], at: 5, provider: "jev" } } as Partial<SessionSummary>), null, false), {
+    state: "needs-you",
+    reason: "The last reply asks you something. Guessed by Jev.",
+    word: "Waiting on you",
+  });
   const asking = { align: { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } } };
-  assert.deepEqual(boardState(sess("a", { ...asking, seenAt: 99 }), null, false), { state: "needs-you", reason: "2 open questions in al_1 Export" }, "open questions need you until answered");
+  assert.deepEqual(
+    boardState(sess("a", { ...asking, seenAt: 99 }), null, false),
+    { state: "needs-you", reason: "2 open questions in al_1 Export. From code.", word: "Waiting on you: decision" },
+    "open questions need you until answered",
+  );
   assert.equal(boardState(sess("a", { archived: true }), null, false).state, "archived");
   assert.equal(boardState(sess("a", { archived: true }), agent("/s/a.jsonl"), false).state, "idle", "an archived session something runs in is not shown as archived");
+});
+
+test("the state's one word: code-derived Broken / Working (team), the card's waiting kind and done words", () => {
+  const card = (c: object, kinds: string[] = []) => ({ signals: { kinds, at: 5, provider: "jev", model: "jev-1.14.0", card: c } }) as Partial<SessionSummary>;
+  assert.equal(boardState(sess("a", { workers: { working: 1, total: 1 } }), null, false).word, "Working (team)");
+  assert.equal(boardState(sess("a"), null, true).word, "Working");
+  assert.equal(boardState(sess("a", { activity: { state: "error", error: "boom" } }), null, false).word, "Broken");
+  assert.equal(boardState(sess("a", card({ askKind: "approve-risky-action" }, ["asks-you"])), null, false).word, "Waiting on you: approval");
+  assert.equal(boardState(sess("a", card({ askKind: "needs-info" }, ["asks-you"])), null, false).word, "Waiting on you: info");
+  assert.equal(boardState(sess("a", card({ askKind: "choose-between-options" }, ["asks-you"])), null, false).reason, "The last reply waits on your decision. Guessed by Jev.");
+  const unverified = boardState(sess("a", card({ outcome: "did-what-was-asked", claimsUnverified: 0.9 }, ["unverified"])), null, false);
+  assert.deepEqual([unverified.state, unverified.word], ["needs-you", "Done, unverified"]);
+  assert.deepEqual(boardState(sess("a", card({ outcome: "did-what-was-asked" })), null, false), { state: "idle", reason: null, word: "Done" });
+  assert.equal(boardState(sess("a", card({ outcome: "progress-report" })), null, false).word, "Idle");
+  assert.equal(boardState(sess("a", { archived: true }), null, false).word, "Archived");
 });
 
 test("rows: main threads only, matched to their host record by path; headless workers don't match", () => {
@@ -141,8 +163,7 @@ test("Needs you: archive eligibility wins over attention facts, search and a lin
     { name: "dialog", extra: { pendingDialogs: 2 } },
     { name: "questions", extra: { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } },
     { name: "asks", extra: { signals: { kinds: ["asks-you"], at: 5, turnId: "t1", provider: "jev" } } },
-    { name: "loop", extra: { signals: { kinds: ["looping"], at: 5, turnId: "t1", provider: "jev" } } },
-    { name: "worker-signal", extra: { workerSignals: { stuck: 1 } } },
+    { name: "unverified", extra: { signals: { kinds: ["unverified"], at: 5, turnId: "t1", provider: "jev" } } },
     { name: "tui", extra: { live: { pid: 1, status: "idle" }, turnError: {} } },
     { name: "host-input", extra: {}, host: { state: "needs-input" } },
     { name: "host-error", extra: {}, host: { state: "error" } },
@@ -322,7 +343,7 @@ test("the open row: what it's about and where it stands, never the same fact twi
   // The questions are the reason: said once.
   const asks = boardRows([sess("h", { align: { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_2", title: "Dropdown" } } })], undefined, noBusy)[0]!;
   const h = rowDetail(asks, []);
-  assert.equal(h.reason, "2 open questions in al_2 Dropdown");
+  assert.equal(h.reason, "2 open questions in al_2 Dropdown. From code.");
   assert.equal(h.questions, null);
 });
 

@@ -38,7 +38,7 @@ says so for a day and can put the previous library back (§chat.subagent-profile
   may also carry an optional `reviewer` (`{primary, fallback}` or `null`), the adversarial
   reviewer's route (§chat.alignment-review/route): a profile without the key parses as before, and
   a parse never adds it. Likewise an optional `alignment` `{style?, visuals?}`: the align mode's
-  writing style (`default`, `simplified` or `pm`) and Visuals for chats on this profile, each
+  writing style (`pm`, `simplified` or `default`, the last read as Technical) and Visuals for chats on this profile, each
   field present only when the profile overrides the host's `mode-align.json`
   (§chat.alignment/settings-file); an empty object, an unknown key or a bad value is malformed, and a
   profile without it reads exactly as before. The default
@@ -190,8 +190,8 @@ profile in its mode menu; new chats start on the default."
   - **Reviewer**, only while adversarial review is switched on (§chat.alignment-review/route): one
     switch ("Review alignments with a reviewer"); its summary is the reviewer's model, or
     "Off · no review".
-  - **Alignment**, last: two choices, **Writing style** (Use host default, Default, Simplified,
-    Project manager) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
+  - **Alignment**, last: two choices, **Writing style** (Use host default, Project manager,
+    Simplified, Technical) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
     for a profile without an override; its summary is "Host default" or what it overrides
     ("Project manager · visuals on"). "Use host default" stores no field, and both on it store no
     `alignment` at all.

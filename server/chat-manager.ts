@@ -95,6 +95,10 @@ import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, si
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
+import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
+
+/** The offer note in this process (a chat the server hosts itself: tests). */
+const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -159,6 +163,8 @@ export function setServedTools(decls: readonly ServerToolDecl[] | null): void {
 export interface ChatHosts {
   playbook?: PlaybookHost;
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
+  /** The offer tool's note of a run button's outcome (§chat.offers/card). */
+  offerNote?: (sessionId: string) => Promise<string | null>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -4323,6 +4329,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
         ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
     const outline = special ? false : !isFanoutMember(read);
+    // The offer tool, served (its declaration came with the open) or, in this process, from the snapshot.
+    const offerSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === OFFER_TOOL) : await (await import("./session-offers-tool")).sessionOfferTools(read.id, path, cwd);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
@@ -4349,9 +4357,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
+              ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
               ...powers,
             ],
             ...overrides,

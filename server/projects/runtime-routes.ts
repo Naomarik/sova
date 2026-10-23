@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import { BusyError } from "../chat-handle";
+import { pageOnlyRefusal } from "../page-only";
 import { OrgError } from "../org-error";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
@@ -52,7 +53,9 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
       const b = await body(c);
       const hash = opt(b.hash);
       if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
-      const out = await mergeRun(c.req.param("pid") ?? "", hash);
+      // Pressed on the operator's own page, Merge Branch is the user's go-ahead (§chat.worktrees/merge-guard).
+      const byPage = pageOnlyRefusal(c, { overseer: "o", local: "l", chat: "c", script: "s", extension: "e" }) === null;
+      const out = await mergeRun(c.req.param("pid") ?? "", hash, { byPage });
       if (out.refused) return c.json({ error: `The merge was refused: ${out.refused}`, runtime: out.view }, 409, NO_STORE);
       return c.json(out.view, 200, NO_STORE);
     }),

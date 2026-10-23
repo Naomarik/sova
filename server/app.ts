@@ -24,6 +24,7 @@ import { registerWrapupRoutes } from "./wrapup-routes";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
+import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
@@ -137,7 +138,9 @@ import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parse
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile } from "./extensions";
-import { decisions } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { alignTriage } from "./align-triage";
+import { workerChecks } from "./worker-checks";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
@@ -146,6 +149,8 @@ import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
+import { pageOnlyRefusal } from "./page-only";
+import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -391,8 +396,11 @@ export function buildApp(deps: AppDeps) {
   registerOrgRoutes(app);
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
+  registerProjectSettingsRoutes(app);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
+  // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
+  registerSessionOfferRoutes(app);
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
@@ -818,6 +826,38 @@ export function buildApp(deps: AppDeps) {
     return r.ok ? c.json(r.file, 200, { "Cache-Control": "no-store" }) : c.json({ error: r.error }, r.status);
   });
 
+  // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open
+  // question, asked once per card version and only with attention signals on. Same 400/404 as above.
+  app.get("/api/sessions/align-triage", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await alignTriage(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
+  // The check of each worker's newest done report (§app.decisions/worker-report): an Untested chip
+  // on the worker row, asked once per report and only with attention signals on. Same 400/404.
+  app.get("/api/sessions/worker-checks", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await workerChecks(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
   // The tools a held chat declares to its model now (server/session-tools.ts, §chat.transcript/setup-card-tools).
   // Same 400/404 as the context route above; a session this server doesn't hold (or a terminal's, or a
   // special one) is a 200 whose `state` says so. Never cached.
@@ -1129,15 +1169,13 @@ export function buildApp(deps: AppDeps) {
 
   /** Why this request can't approve hooks: only the operator's own page on this machine may. */
   function hooksApprovalRefusal(c: Context): string | null {
-    if (overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    if (!localRequest(c)) return "A project mode's hooks are approved only on this machine.";
-    if (c.req.header(CALLER_HEADER) !== undefined) return "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    // The page carries the token as the install's cookie; a script, a chat's terminal or a tool sends the header.
-    if (c.req.header(TOKEN_HEADER) !== undefined) return "A script can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
-    if (extensionCaller(c.req.header(TOKEN_HEADER)) !== null || (bearer !== undefined && isExtensionKey(bearer.trim())))
-      return "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    return null;
+    return pageOnlyRefusal(c, {
+      overseer: "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      local: "A project mode's hooks are approved only on this machine.",
+      chat: "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      script: "A script can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      extension: "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.",
+    });
   }
 
   // POST /api/mode/command?path= { mode, name, args? } (§chat.mode-menu/project-mode-commands): one command of a

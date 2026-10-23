@@ -1,21 +1,16 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type {
   DecisionKeyInfo,
   DecisionProbeResult,
   DecisionSettingsInfo,
   DelegateOptions,
-  TagsBackfillProgress,
-  TagsBackfillScope,
 } from "../../shared/protocol";
 import {
-  cancelTagsBackfill,
   deleteDecisionKey,
   getDecisionOptions,
   getDecisionSettings,
-  getTagsBackfill,
   probeDecisions,
   putDecisionKey,
-  startTagsBackfill,
 } from "../lib/api";
 import {
   decisionDirty,
@@ -29,8 +24,6 @@ import {
   setDecisionSaved,
 } from "../lib/decision-draft";
 import {
-  backfillBlocked,
-  backfillLine,
   chainLine,
   cloneDecision,
   decisionDraftReady,
@@ -39,7 +32,6 @@ import {
   jevChip,
   keyAfterProbe,
   keyInputIssue,
-  newerProgress,
   noWarnings,
   offeredSuggestions,
   placeWarnings,
@@ -54,13 +46,9 @@ import {
 } from "../lib/decision-form";
 import { sameChoice, type DraftChoice } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
-import { pushedBackfill } from "../lib/session-feed";
 import { announce, home } from "../lib/ui-state";
 import { Banner, Chip } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
-
-/** How often the backfill's progress is re-read while it runs (the session feed also pushes it). */
-const BACKFILL_POLL_MS = 2000;
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
 
@@ -166,42 +154,6 @@ export function DecisionSettingsSection() {
     } finally {
       setProbing(false);
     }
-  };
-
-  // ---- the tag backfill: read on open, re-read while it runs, and whatever the feed pushes ----
-  const [polled, setPolled] = createSignal<TagsBackfillProgress | null>(null);
-  const progress = createMemo(() => newerProgress(polled(), pushedBackfill()));
-  const [backfillError, setBackfillError] = createSignal<string | null>(null);
-  const [backfillBusy, setBackfillBusy] = createSignal(false);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const readProgress = async () => {
-    try {
-      setPolled(await getTagsBackfill());
-    } catch {
-      // No backfill route (an older server): the controls show no progress.
-    }
-  };
-  void readProgress();
-  createEffect(() => {
-    clearTimeout(timer);
-    if (progress()?.running) timer = setTimeout(() => void readProgress(), BACKFILL_POLL_MS);
-  });
-  onCleanup(() => clearTimeout(timer));
-  const backfillAct = async (run: () => Promise<TagsBackfillProgress>) => {
-    setBackfillError(null);
-    setBackfillBusy(true);
-    try {
-      setPolled(await run());
-    } catch (err) {
-      setBackfillError(message(err));
-    } finally {
-      setBackfillBusy(false);
-    }
-  };
-  const startBackfill = (scope: TagsBackfillScope) => void backfillAct(() => startTagsBackfill(scope));
-  const blocked = () => {
-    const i = loaded();
-    return i ? backfillBlocked(i.chain) : null;
   };
 
   const suggestions = createMemo(() => offeredSuggestions(loaded()?.suggestions ?? [], known(), !!options.error));
@@ -464,17 +416,9 @@ export function DecisionSettingsSection() {
           {switchRow(
             "decisions-attention",
             "Flag sessions that need you",
-            "After a turn, checks whether the reply asks you something or a long turn went in circles, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer lists them too.",
+            "After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too.",
             () => draft()!.features.attention,
             (on) => edit((c) => (c.features.attention = on)),
-            unanswered,
-          )}
-          {switchRow(
-            "decisions-tags",
-            "Tag sessions",
-            "Gives each session a topic you can search.",
-            () => draft()!.features.tags,
-            (on) => edit((c) => (c.features.tags = on)),
             unanswered,
           )}
           {switchRow(
@@ -527,44 +471,6 @@ export function DecisionSettingsSection() {
         </Show>
         <Show when={notes().other.length > 0 && !dirty()}>
           <Banner tone="warn" title="Saved, with notes." body={notes().other.map(sentence).join(" ")} />
-        </Show>
-
-        <Show when={loaded()!.settings.features.tags || progress()?.running}>
-          <fieldset class="settings-delegate-profile" aria-describedby="decisions-backfill-desc">
-            <legend class="settings-delegate-legend">Tag past sessions</legend>
-            <p class="field-hint settings-delegate-desc" id="decisions-backfill-desc">
-              New sessions are tagged as they finish. This tags the ones from before, 2 at a time, and skips any already
-              tagged. On a fallback model it costs more and takes longer.
-            </p>
-            <div class="decisions-backfill">
-              <Show
-                when={progress()?.running}
-                fallback={
-                  <>
-                    <button type="button" class="button button-sm" disabled={backfillBusy() || saving() || blocked() !== null} onClick={() => startBackfill("recent")}>
-                      Tag Last 30 Days
-                    </button>
-                    <button type="button" class="button button-sm" disabled={backfillBusy() || saving() || blocked() !== null} onClick={() => startBackfill("all")}>
-                      Tag All Sessions
-                    </button>
-                  </>
-                }
-              >
-                <button type="button" class="button button-sm" disabled={backfillBusy()} onClick={() => void backfillAct(cancelTagsBackfill)}>
-                  Stop Tagging
-                </button>
-              </Show>
-              <Show when={backfillLine(progress())}>
-                {(line) => (
-                  <p class="decisions-backfill-progress" role="status" data-testid="decisions-backfill">
-                    {line()}
-                  </p>
-                )}
-              </Show>
-            </div>
-            <Show when={!progress()?.running && blocked()}>{(m) => <p class="field-hint">{m()}</p>}</Show>
-            <Show when={backfillError()}>{(m) => <p class="field-error">{sentence(m())}</p>}</Show>
-          </fieldset>
         </Show>
 
         <p class="settings-delegate-file">

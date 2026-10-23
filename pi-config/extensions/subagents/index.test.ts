@@ -5170,3 +5170,40 @@ test("inbox lifecycle: at retirement the old member's open items move to its suc
 		assert.ok(!readMemberItems(h.memberOf("ag_03")!.dir).some((i) => /Not addressed/.test(i.body)));
 	} finally { await h.cleanup(); }
 });
+
+test("a message to a member that ended while its successor is still to start is queued and moves to the successor; with none started it goes back to its sender", async () => {
+	for (const startsSuccessor of [true, false]) {
+		const h = coordinatedHarness(DEFAULTS_FILE);
+		try {
+			await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "counter", prompt: "count" }, { role: "writer", prompt: "write" }] });
+			const counter = h.worker("ag_02");
+			await h.ask("ag_01", { type: "succeed", to: "counter" });
+			// Its process is going away (not live, not yet finished): the succession is still pending.
+			counter.isStopping = () => true;
+			const sent = await h.ask("ag_03", { type: "message", to: "counter", message: "Which files are done?" });
+			assert.equal(sent.ok, true, sent.text);
+			assert.match(sent.text, /^Queued for counter \(ag_02\): item (i_\w+) — counter has ended and its successor is starting: the item moves to it$/);
+			const id = /item (i_\w+)/.exec(sent.text)![1];
+			assert.deepEqual(readMemberItems(h.memberOf("ag_02")!.dir).filter((i) => i.id === id).map((i) => [i.kind, i.from.role, i.status]), [["message", "writer", "new"]]);
+			// team_steer has no inbox to wait in: refused, saying why.
+			assert.match((await h.ask("ag_01", { type: "steer", to: "counter", message: "x" })).text, /has ended and its successor is still starting/);
+			if (!startsSuccessor) {
+				// Every seat taken (the old member still holds its own): the successor cannot start.
+				await h.call("team_add", { team: "Crew", members: Array.from({ length: 20 }, (_, i) => ({ role: `filler${i}`, prompt: `p${i}`, wake: false })) });
+			}
+			counter.exit();
+			await h.tick(60);
+			if (startsSuccessor) {
+				const next = h.worker("ag_05");
+				assert.equal(next?.name, "counter-2");
+				await waitFor(() => readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === id), "the item moved to counter-2");
+				const moved = readMemberItems(h.memberOf("ag_05")!.dir).find((i) => i.id === id)!;
+				assert.deepEqual([moved.from.workerId, moved.movedFrom?.[0].workerId, moved.status], ["ag_03", "ag_02", "new"]);
+			} else {
+				assert.equal(h.workers.some((w: any) => w.name === "counter-2"), false, "no successor started");
+				await waitFor(() => readMemberItems(h.memberOf("ag_02")!.dir).find((i) => i.id === id)?.returned, "the item returned");
+				await waitFor(() => readMemberItems(h.memberOf("ag_03")!.dir).some((i) => i.kind === "notice" && i.body.includes(id)), "the sender told it was not addressed");
+			}
+		} finally { await h.cleanup(); }
+	}
+});

@@ -2482,10 +2482,14 @@ export function registerSubagents(
 		return `${m.role} (${m.workerId}) ${state} and has no live successor. agent_resume { id: "${m.workerId}" } in the main chat brings it back${teams.memberInfo(m.workerId)?.team.coordination ? " (ask the coordinator)" : " (ask with team_ask)"}.`;
 	};
 	/** The member a message for `target` reaches now: itself while live, else its newest live successor. */
-	const reachable = (target: PersistedMember): { ok: true; to: PersistedMember; forwardedFrom?: PersistedMember } | { ok: false; reason: string } => {
+	const reachable = (target: PersistedMember): { ok: true; to: PersistedMember; forwardedFrom?: PersistedMember; awaitingSuccessor?: true } | { ok: false; reason: string } => {
 		if (isLiveWorker(target.workerId) && teams.ejectedAt(target.workerId) === undefined && !isRestored(workerOf(target.workerId)!)) return { ok: true, to: target };
 		const next = liveSuccessor(target.workerId);
-		return next ? { ok: true, to: next, forwardedFrom: target } : { ok: false, reason: goneReason(target) };
+		if (next) return { ok: true, to: next, forwardedFrom: target };
+		// Ended (or ending) while its successor is still to start: kept in its own inbox, which
+		// endInbox moves to the successor once it starts, or returns to the senders if none does.
+		if (teams.ejectedAt(target.workerId) === undefined && (succeeding.has(target.workerId) || pendingSuccessions.has(target.workerId))) return { ok: true, to: target, awaitingSuccessor: true };
+		return { ok: false, reason: goneReason(target) };
 	};
 	/**
 	 * team_msg/team_steer's recipient: a sibling by role or worker ID, or a member that was ejected
@@ -2517,7 +2521,7 @@ export function registerSubagents(
 		return found;
 	};
 	type QueueInput = { kind: InboxKind; body: string; subject?: string; urgent?: boolean; from?: InboxParty; replyTo?: string; broadcastId?: string };
-	type QueueResult = { ok: true; item: InboxItem; to: PersistedMember; forwardedFrom?: PersistedMember } | { ok: false; reason: string };
+	type QueueResult = { ok: true; item: InboxItem; to: PersistedMember; forwardedFrom?: PersistedMember; awaitingSuccessor?: true } | { ok: false; reason: string };
 	/**
 	 * Store one item for a member and schedule its wake (the one path for team messages and Sova's
 	 * notices). A member that was succeeded gets it through its newest live successor; an ended one
@@ -2541,7 +2545,7 @@ export function registerSubagents(
 		}
 		wakes?.notify(where.to.workerId);
 		scheduleRefresh();
-		return { ok: true, item, to: where.to, ...(where.forwardedFrom ? { forwardedFrom: where.forwardedFrom } : {}) };
+		return { ok: true, item, to: where.to, ...(where.forwardedFrom ? { forwardedFrom: where.forwardedFrom } : {}), ...(where.awaitingSuccessor ? { awaitingSuccessor: true as const } : {}) };
 	};
 	/** List what waits for a member now (after a reload, a move, or anything that stored items without a wake). */
 	const scheduleWake = (workerId: string) => {
@@ -2699,7 +2703,7 @@ export function registerSubagents(
 	/** A queued answer line: `Queued for builder (ag_12): item i_41`, with forwarding and flood hints. */
 	const queuedLine = (r: Extract<QueueResult, { ok: true }>): string => {
 		const open = inbox?.openCount(r.to.workerId) ?? 0;
-		return `Queued for ${r.to.role} (${r.to.workerId}): item ${r.item.id}${r.forwardedFrom ? ` — ${r.forwardedFrom.role} (${r.forwardedFrom.workerId}) was replaced: forwarded to ${r.to.role} (${r.to.workerId})` : ""}${open > 50 ? ` · ${r.to.role} has ${open} open items` : ""}`;
+		return `Queued for ${r.to.role} (${r.to.workerId}): item ${r.item.id}${r.forwardedFrom ? ` — ${r.forwardedFrom.role} (${r.forwardedFrom.workerId}) was replaced: forwarded to ${r.to.role} (${r.to.workerId})` : ""}${r.awaitingSuccessor ? ` — ${r.to.role} has ended and its successor is starting: the item moves to it` : ""}${open > 50 ? ` · ${r.to.role} has ${open} open items` : ""}`;
 	};
 	const itemFrom = (me: PersistedMember): InboxParty => ({ role: me.role, workerId: me.workerId });
 	/** team_inbox, served here: the parent is the inbox's only writer (§app.teams/inbox). */
@@ -2829,11 +2833,12 @@ export function registerSubagents(
 					if (/^(all|\*)$/i.test(request.to)) throw new Error("team_steer addresses one sibling at a time.");
 					const named = resolveRecipient(workerId, request.to);
 					const where = reachable(named);
-					if (!where.ok) {
-						// Still an audited attempt: team_list shows it.
-						teams.settleAction(teams.recordAction(named.workerId, request.mode ?? "steer", "orchestrator", request.message), "failed", where.reason);
+					if (!where.ok || where.awaitingSuccessor) {
+						// Still an audited attempt: team_list shows it. A direct instruction has no inbox to wait in.
+						const reason = where.ok ? `${named.role} (${named.workerId}) has ended and its successor is still starting; steer the successor once it is up (team_roster), or send a team_msg, which moves to it.` : where.reason;
+						teams.settleAction(teams.recordAction(named.workerId, request.mode ?? "steer", "orchestrator", request.message), "failed", reason);
 						scheduleRefresh();
-						throw new Error(`Cannot steer: ${where.reason}`);
+						throw new Error(`Cannot steer: ${reason}`);
 					}
 					const target = where.to;
 					const text = [`[Instruction from orchestrator ${me.role} (${me.workerId}), ${info.team.id}${where.forwardedFrom ? ` — sent to ${where.forwardedFrom.role} (${where.forwardedFrom.workerId}), whom you succeeded` : ""}]`, request.message].join("\n");

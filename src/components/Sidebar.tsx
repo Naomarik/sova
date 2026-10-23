@@ -130,6 +130,7 @@ import { MeshHostMenu } from "./MeshHostMenu";
 import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
 import { updateAvailable } from "../lib/updates";
+import { GUIDE_LINE, collapseFromLine } from "../lib/guide-line";
 
 /** The Settings buttons' name: it says when the last check found an update. */
 const settingsLabel = () => (updateAvailable() ? "Settings · update available" : "Settings");
@@ -682,6 +683,25 @@ export function SessionRow(props: {
     `level` is the heading level a folder label takes: h3 directly under a region, h4 inside a
     group, where the group's own label already sits at h3. Every folder collapses (the session list "Folder
     open/closed state"), so `searching` — which forces every one of them open — comes in too. */
+/**
+ * A group's guide line (§app.session-list/guide-lines): a direct child of the group it draws beside, after its head.
+ * Pressing it closes the group the way its head would (lib/guide-line). `edge` is the 2px rule a folder and a
+ * Projects-region project already draw on their left edge (the host's border): the line only makes it pressable.
+ * Without `edge` the line draws itself, centred under the head's chevron. Hidden from AT and never a Tab stop: the
+ * head is the control.
+ */
+function GuideLine(props: { name: string; edge?: boolean; fold?: () => void }) {
+  return (
+    <div
+      class={GUIDE_LINE}
+      classList={{ "guide-line-edge": !!props.edge }}
+      aria-hidden="true"
+      title={`Collapse ${props.name}`}
+      onClick={(e) => collapseFromLine(e.currentTarget, props.fold)}
+    />
+  );
+}
+
 function GroupList(props: {
   groups: CwdGroup[];
   selected: string | null;
@@ -774,6 +794,7 @@ function GroupList(props: {
                 </ForKey>
               </Show>
             </ul>
+            <GuideLine edge name={remote()?.remoteCwd ?? tildePath(cwd, home())} />
           </details>
         );
       }}
@@ -921,6 +942,7 @@ function GroupBlock(props: {
           level={4}
         />
       </Show>
+      <GuideLine name={group().name} />
     </details>
   );
 }
@@ -1751,6 +1773,7 @@ export function Sidebar(props: {
               <Show when={doneBuilt()}>
                 <RowList rows={g.done} />
               </Show>
+              <GuideLine name="Done" />
             </details>
           </Show>
         </section>
@@ -2767,9 +2790,11 @@ export function Sidebar(props: {
                                 <Show when={doneBuilt()}>
                                   <RowList rows={p().builds.done} />
                                 </Show>
+                                <GuideLine name={`${p().builds.done.length} done`} />
                               </details>
                             </Show>
                           </div>
+                          <GuideLine edge name={p().name} fold={() => onProjectFold(id, rows())} />
                         </Show>
                       </div>
                     );
@@ -2984,6 +3009,7 @@ export function Sidebar(props: {
                           );
                         }}
                       </ForKey>
+                      <GuideLine name={o().name} />
                     </details>
                   );
                 }}
@@ -3010,6 +3036,7 @@ export function Sidebar(props: {
                       <span class="text-num">{d().items.length}</span>
                     </summary>
                     <GroupList groups={d().groups} selected={props.selected} now={props.now} idPrefix={`a-${d().id}`} targets={targets()} searching={searching()} />
+                    <GuideLine name={d().label} />
                   </details>
                 )}
               </ForKey>

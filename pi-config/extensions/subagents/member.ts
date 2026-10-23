@@ -255,12 +255,18 @@ export function registerInboxGate(pi: ExtensionAPI): { state(): string[] | undef
 	pi.on("tool_call", (event) => {
 		if (!gated) return undefined;
 		const e = event as { toolName: string; input?: { action?: string; ids?: unknown } };
-		if (e.toolName === "team_inbox" && e.input?.action === "open" && Array.isArray(e.input.ids) && e.input.ids.length) {
+		// Opening an item the wake listed lifts it at once (a batch of calls may follow in the same step).
+		if (e.toolName === "team_inbox" && e.input?.action === "open" && Array.isArray(e.input.ids) && e.input.ids.some((id) => gated!.includes(String(id)))) {
 			gated = undefined;
 			return undefined;
 		}
 		if (GATE_EXEMPT.has(e.toolName)) return undefined;
 		return { block: true, reason: gateRefusal(gated) };
+	});
+	// Any other open lifts it only once it succeeded (a bogus id or a failed open lifts nothing).
+	pi.on("tool_result", (event) => {
+		const e = event as { toolName: string; input?: { action?: string }; isError?: boolean };
+		if (gated && e.toolName === "team_inbox" && e.input?.action === "open" && !e.isError) gated = undefined;
 	});
 	return { state: () => gated };
 }

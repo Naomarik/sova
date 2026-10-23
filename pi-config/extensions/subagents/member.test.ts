@@ -200,3 +200,20 @@ test("inbox gate (§app.teams/inbox-gate): a gated wake that starts the turn ref
 	h.emit("message_end", user(wakeText([it("i_6"), it("i_7")]).text));
 	assert.equal(call("bash"), undefined);
 });
+
+test("inbox gate: an open naming none of the gated items does not lift it; a successful open result does", () => {
+	const h = fakePi();
+	registerInboxGate(h.pi);
+	const it = (id: string): InboxItem => ({ id, teamId: "team_01", from: { role: "lead", workerId: "ag_01" }, to: { role: "dev", workerId: "ag_02" }, kind: "message", urgent: false, subject: id, body: id, sentAt: 1, status: "new" });
+	const gated = wakeText([it("i_4"), it("i_5")], { gate: true }).text;
+	const call = (toolName: string, input: any = {}) => h.emit("tool_call", { toolName, input });
+	h.emit("agent_start", {});
+	h.emit("message_end", { message: { role: "user", content: [{ type: "text", text: gated }] } });
+	assert.equal(call("team_inbox", { action: "open", ids: ["i_zz"] }), undefined, "team_inbox itself is allowed");
+	assert.ok(call("bash"), "a bogus id lifts nothing");
+	h.emit("tool_result", { toolName: "team_inbox", input: { action: "open", ids: ["i_zz"] }, isError: true, content: [] });
+	assert.ok(call("bash"), "a failed open lifts nothing");
+	// An item opened that the wake listed in Still open (not gated): its successful result lifts it.
+	h.emit("tool_result", { toolName: "team_inbox", input: { action: "open", ids: ["i_2"] }, isError: false, content: [] });
+	assert.equal(call("bash"), undefined, "a successful open lifts the gate");
+});

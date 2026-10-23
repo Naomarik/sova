@@ -70,12 +70,14 @@ export interface InboxItem {
 	closedBy?: ClosedBy;
 	/** Seen with a turn record (this code): only such items are ever closed automatically. */
 	readTurn?: number;
+	/** Shown by a wake whose run had not begun when it was recorded (`readTurn` -1): that steer's number. */
+	readSteer?: number;
 }
 /** How an addressed item was closed (absent: not addressed). */
 export const closedByOf = (item: InboxItem): ClosedBy | undefined => (item.status === "addressed" && !item.returned ? item.closedBy ?? "member" : undefined);
 export type InboxOp =
 	| { v: 1; op: "add"; item: InboxItem }
-	| { v: 1; op: "status"; id: string; status: InboxStatus; at: number; note?: string; by?: ClosedBy; turn?: number }
+	| { v: 1; op: "status"; id: string; status: InboxStatus; at: number; note?: string; by?: ClosedBy; turn?: number; steer?: number }
 	| { v: 1; op: "listed"; ids: string[]; at: number }
 	| { v: 1; op: "move"; id: string; to: InboxParty; at: number; why: "handover" | "forward" }
 	| { v: 1; op: "return"; id: string; at: number; why: string };
@@ -145,6 +147,7 @@ function decodeItem(v: unknown): InboxItem | undefined {
 	if (isRecord(v.returned) && isNum(v.returned.at) && isStr(v.returned.why, 500)) item.returned = { at: v.returned.at, why: v.returned.why };
 	if (CLOSED_BY.includes(v.closedBy as ClosedBy)) item.closedBy = v.closedBy as ClosedBy;
 	if (isNum(v.readTurn)) item.readTurn = v.readTurn;
+	if (isNum(v.readSteer)) item.readSteer = v.readSteer;
 	return item;
 }
 
@@ -165,7 +168,11 @@ function applyOp(items: Map<string, InboxItem>, raw: unknown): void {
 			if (raw.status === "addressed") item.addressedAt = raw.at;
 			if (isStr(raw.note, MAX_NOTE_CHARS * 2) && raw.note) item.note = raw.note;
 			if (raw.status === "addressed" && CLOSED_BY.includes(raw.by as ClosedBy)) item.closedBy = raw.by as ClosedBy;
-			if (isNum(raw.turn)) item.readTurn = raw.turn;
+			if (isNum(raw.turn)) {
+				item.readTurn = raw.turn;
+				if (isNum(raw.steer)) item.readSteer = raw.steer;
+				else delete item.readSteer;
+			}
 			return;
 
 		}
@@ -215,6 +222,14 @@ export function foldItemsFile(file: string): Map<string, InboxItem> {
 		return new Map();
 	}
 	return foldItemsText(text);
+}
+
+/** The read record a status op carries: the task, or -1 and the wake's steer while its run has not begun. */
+const turnRecord = (tag: SeenTag): { turn: number; steer?: number } => ("task" in tag ? { turn: tag.task } : { turn: -1, steer: tag.steer });
+function setRecord(item: InboxItem, rec: { turn: number; steer?: number }): void {
+	item.readTurn = rec.turn;
+	if (rec.steer !== undefined) item.readSteer = rec.steer;
+	else delete item.readSteer;
 }
 
 /** One member's items, oldest first. */
@@ -452,11 +467,12 @@ export class InboxStore {
 			}
 			if (item.kind === "instruction" || item.returned) return { id, ok: false, reason: `${id} is ${item.returned ? "returned" : "an instruction (history only)"}`, item: { ...item } };
 			if (status === "read" && item.status !== "new") {
-				// Seen again with no turn record in this process (read before this change, or before a reload): record it now.
-				if (seenAt && item.status === "read" && !this.seen.has(id) && item.readTurn === undefined) {
-					const turn = "task" in seenAt ? seenAt.task : -1;
-					this.append(m, { v: 1, op: "status", id, status: "read", at: item.readAt ?? this.now(), turn });
-					item.readTurn = turn;
+				// Seen again with no usable turn record in this process (read before this change, or shown by a
+				// wake whose run had not begun before a reload): record it now.
+				if (seenAt && item.status === "read" && !this.seen.has(id) && (item.readTurn === undefined || item.readTurn < 0)) {
+					const rec = turnRecord(seenAt);
+					this.append(m, { v: 1, op: "status", id, status: "read", at: item.readAt ?? this.now(), ...rec });
+					setRecord(item, rec);
 					this.seen.set(id, seenAt);
 				}
 				return { id, ok: true, item: { ...item } };
@@ -464,16 +480,16 @@ export class InboxStore {
 			if (status === "addressed" && item.status === "addressed" && cleanNote === undefined) return { id, ok: true, item: { ...item } };
 			const at = this.now();
 			const wasOpen = isOpen(item);
-			const turn = status === "read" && seenAt ? ("task" in seenAt ? seenAt.task : -1) : undefined;
+			const rec = status === "read" && seenAt ? turnRecord(seenAt) : undefined;
 			const closer = status === "addressed" ? (wasOpen ? by : item.closedBy) : undefined;
-			this.append(m, { v: 1, op: "status", id, status, at, ...(cleanNote ? { note: cleanNote } : {}), ...(closer ? { by: closer } : {}), ...(turn !== undefined ? { turn } : {}) });
+			this.append(m, { v: 1, op: "status", id, status, at, ...(cleanNote ? { note: cleanNote } : {}), ...(closer ? { by: closer } : {}), ...rec });
 			item.status = status;
 			if (status === "read") item.readAt = at;
 			else item.addressedAt = at;
 			if (cleanNote) item.note = cleanNote;
 			if (closer) item.closedBy = closer;
-			if (turn !== undefined) {
-				item.readTurn = turn;
+			if (rec) {
+				setRecord(item, rec);
 				this.seen.set(id, seenAt!);
 			}
 			if (wasOpen && !isOpen(item)) m.closed++;
@@ -492,7 +508,7 @@ export class InboxStore {
 	/** Seen with a turn record (in this process, or on disk from before a reload). */
 	hasTurnRecord(id: string): boolean {
 		const item = this.get(id);
-		return this.seen.has(id) || item?.readTurn !== undefined;
+		return this.seen.has(id) || (item?.readTurn ?? -1) >= 0;
 	}
 
 	/**
@@ -512,6 +528,9 @@ export class InboxStore {
 			if (!isOpen(item) || item.status !== "read" || item.kind === "question") continue;
 			const tag = this.seen.get(item.id);
 			if (!tag && item.readTurn === undefined) continue; // Read before this change: never closed automatically.
+			// Shown by a wake whose run had not begun before a reload: its steer cannot be resolved by this
+			// process (each worker numbers its steers anew), so it counts as not seen.
+			if (!tag && item.readTurn! < 0) continue;
 			// Seen before a reload: in a task that has ended.
 			const seenTask = tag ? at(tag) : Number.NEGATIVE_INFINITY;
 			if (seenTask === undefined) continue; // Its wake's run has not begun: not seen yet.
@@ -570,7 +589,7 @@ export class InboxStore {
 		const item = src?.items.get(id);
 		if (!src || !item || to.workerId === src.workerId) return undefined;
 		const at = this.now();
-		const { listedAt: _listed, readAt: _read, readTurn: _turn, ...rest } = item;
+		const { listedAt: _listed, readAt: _read, readTurn: _turn, readSteer: _steer, ...rest } = item;
 		this.seen.delete(id);
 
 		const moved: InboxItem = { ...rest, ...(item.status === "read" ? { status: "new" as const } : item.readAt !== undefined && item.status === "addressed" ? { readAt: item.readAt } : {}), to: { ...to }, movedFrom: [...(item.movedFrom ?? []), { workerId: item.to.workerId, role: item.to.role, at, why }] };

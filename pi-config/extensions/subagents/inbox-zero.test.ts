@@ -107,3 +107,21 @@ test("a mid-turn wake delivered inside the running run closes when that run ends
 		assert.deepEqual(r.status(q), ["read", undefined], "a question is never closed automatically");
 	} finally { r.cleanup(); }
 });
+
+test("after a reload, an item shown by a wake whose run had not begun is not seen: it stays open", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-inbox-zero-"));
+	try {
+		const store = new InboxStore(root);
+		const id = store.add({ teamId: "team_01", from: { role: "qa", workerId: "ag_03" }, to: { role: "dev", workerId: "ag_02" }, kind: "message", body: "Docs moved" }).id;
+		store.markSeen("ag_02", [id], { steer: 5 });
+		assert.deepEqual(store.closeSeen("ag_02", 10, () => undefined), [], "its run has not begun");
+		const again = new InboxStore(root);
+		assert.equal(again.get(id)!.readSteer, 5, "the wake's steer is kept with the read");
+		assert.deepEqual(again.closeSeen("ag_02", 10, () => undefined), []);
+		assert.deepEqual([again.get(id)!.status, again.get(id)!.closedBy], ["read", undefined], "still open, never closed automatically");
+		assert.deepEqual(again.closeSeen("ag_02", "all", () => undefined), [], "not even at the member's end");
+		// Opened again in a known task, it gets a record and closes when that task ends.
+		again.markSeen("ag_02", [id], { task: 3 });
+		assert.deepEqual(again.closeSeen("ag_02", 3, () => undefined).map((i) => i.id), [id]);
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

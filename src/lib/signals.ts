@@ -4,7 +4,7 @@
 // the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
 // reads these, the tests pin them.
 
-import type { AttentionDigest, SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
+import type { AttentionDigest, DecisionProviderId, SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
 
 /** The line-1 mark's kinds: open alignment questions (§chat.alignment/session-mark), a signal, or a
     team gone quiet (§app.decisions/team-stall, the digest's decide item for the session). */
@@ -19,6 +19,22 @@ export interface NeedsYouMark {
   kind: NeedsYouKind;
   worker: boolean;
   align?: NonNullable<SessionSummary["align"]>;
+  /** Where the mark came from: "code" (counted from the file or the live records), or the decision
+      provider that actually answered. Absent: unknown (a subagent's check). */
+  source?: "code" | { provider: DecisionProviderId; model?: string };
+}
+
+/** The name of the provider that answered: Jev by its id, a model by its own name. */
+export function providerName(provider: DecisionProviderId, model?: string): string {
+  if (provider === "jev") return "Jev";
+  const name = model?.split("/").pop()?.trim();
+  return name || "the configured model";
+}
+
+/** The tooltip's last sentence: who said so ("Guessed by Jev.", "From code."); "" when unknown. */
+export function signalSource(m: Pick<NeedsYouMark, "source">): string {
+  if (!m.source) return "";
+  return m.source === "code" ? "From code." : `Guessed by ${providerName(m.source.provider, m.source.model)}.`;
 }
 
 /**
@@ -51,7 +67,7 @@ export function rowNeedsYou(
   opts: { selected: string | null; busy: boolean; stalled?: boolean },
 ): NeedsYouMark | null {
   if (s.path === opts.selected || opts.busy) return null;
-  if (s.align && s.align.openQuestions > 0) return { kind: "questions", worker: false, align: s.align };
+  if (s.align && s.align.openQuestions > 0) return { kind: "questions", worker: false, align: s.align, source: "code" };
   // A reply that asks stays until the user answers; the other kinds are news, gone once seen.
   const seen = !!s.signals && s.seenAt !== undefined && s.seenAt >= s.signals.at;
   const own = s.signals ? (seen ? s.signals.kinds.filter((k) => k === "asks-you") : s.signals.kinds) : [];
@@ -60,10 +76,10 @@ export function rowNeedsYou(
   for (const kind of SIGNAL_PRECEDENCE) {
     if (kind === "questions") continue;
     if (kind === "team-stalled") {
-      if (opts.stalled) return { kind, worker: false };
+      if (opts.stalled) return { kind, worker: false, source: "code" };
       continue;
     }
-    if (own.includes(kind)) return { kind, worker: false };
+    if (own.includes(kind) && s.signals) return { kind, worker: false, source: { provider: s.signals.provider, ...(s.signals.model ? { model: s.signals.model } : {}) } };
     if (workers.includes(kind)) return { kind, worker: true };
   }
   return null;
@@ -105,6 +121,12 @@ export function signalTitle(m: NeedsYouMark): string {
   if (m.kind === "team-stalled") return "Waiting on subagents that have gone quiet.";
   if (m.worker) return "A subagent looks stuck.";
   return "The last turn looks like it went in circles.";
+}
+
+/** The mark's tooltip with its source: "The last reply asks you something. Guessed by Jev." */
+export function signalTooltip(m: NeedsYouMark): string {
+  const src = signalSource(m);
+  return src ? `${signalTitle(m)} ${src}` : signalTitle(m);
 }
 
 /** Topic display words; a topic not listed shows as its id. */

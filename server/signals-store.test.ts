@@ -18,6 +18,33 @@ const asks = (p: number): Answer => ({ type: "boolean", p });
 const outcome = (choice: string, confidence: number): Answer => ({ type: "choice", choice, probabilities: {}, confidence });
 const stuck = (score: number, confidence: number): Answer => ({ type: "score", score, probabilities: [], confidence });
 
+describe("asks-you cutoff and the restart go (§app.decisions/asks-user)", () => {
+  test("the cutoff is 0.85: a courtesy offer at 0.8 is no mark, a real ask at 0.95 is", () => {
+    assert.equal(store.ASKS_USER_MIN, 0.85);
+    assert.deepEqual(store.signalKinds({ asks_user: asks(0.8) }), []);
+    assert.deepEqual(store.signalKinds({ asks_user: asks(0.95) }), ["asks-you"]);
+  });
+
+  test("an ask that only wants a restart or merge go is dropped while readiness says a restart is owed", () => {
+    const file = join(agentDir, "sova", "signals.json");
+    const data = {
+      version: 1 as const,
+      sessions: {
+        r: { turnId: "t", replyAt: 1, at: 2, provider: "jev" as const, model: "m", answers: { asks_user: asks(0.95) }, detail: "Say \"restart now\" when you want the restart.", schema: 2 as const },
+        q: { turnId: "t", replyAt: 1, at: 2, provider: "jev" as const, model: "m", answers: { asks_user: asks(0.95) }, detail: "Should the cards fold by default?", schema: 2 as const },
+      },
+      workers: {},
+      stalls: {},
+    };
+    void file;
+    const sig = { at: 2, turnId: "t", provider: "jev" as const, kinds: ["asks-you" as const] };
+    const restart = { restartPending: true as const } as never;
+    assert.equal(store.withoutRestartAsk({ id: "r", signals: sig, readiness: restart }, data).signals, undefined);
+    assert.deepEqual(store.withoutRestartAsk({ id: "r", signals: sig, readiness: undefined }, data).signals, sig, "no restart owed: the ask stays");
+    assert.deepEqual(store.withoutRestartAsk({ id: "q", signals: sig, readiness: restart }, data).signals, sig, "a real question stays");
+  });
+});
+
 describe("thresholds, applied at read time", () => {
   test("each kind at and just below its threshold", () => {
     assert.deepEqual(store.signalKinds({ stuck: stuck(store.STUCK_SCORE_MIN, store.STUCK_CONFIDENCE_MIN) }), ["looping"]);
@@ -32,14 +59,14 @@ describe("thresholds, applied at read time", () => {
     const old = { outcome: outcome("failed", 1), work_failed: asks(1) };
     assert.deepEqual(store.signalKinds(old), []);
     const wire = store.toWire({ turnId: "t", replyAt: 1, at: 2, provider: "jev", model: "m", answers: old });
-    assert.deepEqual(Object.keys(wire).sort(), ["at", "kinds", "provider", "turnId"]);
+    assert.deepEqual(Object.keys(wire).sort(), ["at", "kinds", "model", "provider", "turnId"]);
   });
 
   test("asks_user reaches the wire as a probability; asksUserOf reads it whatever was seen", () => {
     const t = { turnId: "t", replyAt: 1, at: 2, provider: "jev" as const, model: "m", answers: { asks_user: asks(0.8) }, schema: 2 as const };
     assert.equal(store.toWire(t).asksUser, 0.8);
     const data = { version: 1 as const, sessions: { s: t, quiet: { ...t, answers: { stuck: stuck(0, 1) } } }, workers: {}, stalls: {} };
-    assert.deepEqual(store.asksUserOf("s", data), { turnId: "t", replyAt: 1, p: 0.8, asks: true });
+    assert.deepEqual(store.asksUserOf("s", data), { turnId: "t", replyAt: 1, p: 0.8, asks: false });
     assert.equal(store.asksUserOf("quiet", data), undefined, "a turn not asked has no answer");
     assert.equal(store.asksUserOf("nope", data), undefined);
   });

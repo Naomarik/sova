@@ -4250,7 +4250,10 @@ export interface SessionSignals {
   at: number;
   /** Id of the last assistant entry on the active branch when classified (the cache key). */
   turnId: string;
+  /** Who actually answered: the mark's tooltip names it ("Guessed by Jev", or the model). */
   provider: DecisionProviderId;
+  /** The answering model's id (additive; absent from older servers). */
+  model?: string;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** P(the last reply asks the user something), 0..1, when that turn was asked. */

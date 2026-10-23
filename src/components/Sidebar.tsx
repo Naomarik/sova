@@ -59,7 +59,7 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
 import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
@@ -518,7 +518,7 @@ export function SessionRow(props: {
             <Show when={needsYou()}>
               {(m) => (
                 <>
-                  <span class="session-signal-wrap" title={signalTitle(m())}>
+                  <span class="session-signal-wrap" title={signalTooltip(m())}>
                     {/* Open questions show as the accent count alone; its color is the mark. */}
                     <Show
                       when={m().kind === "questions" && m().align}

@@ -51,7 +51,7 @@ export interface Video {
   tags: Cue[];
 }
 
-/** A recorded video ("desk", "phone") with its poster and the still it plays over, when there is
+/** A recorded video (the hero's "desk") with its poster and the still it plays over, when there is
     one and it has the still's shape: it must fill the same screen area exactly (never cropped,
     never letterboxed). A video of another shape is left off the page; re-record it. */
 export function video(name: string): Video | null {

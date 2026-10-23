@@ -16,7 +16,7 @@ import { attentionChanged } from "../attention-memo";
 import { ownerVersionOf, ownerView } from "../owner-page";
 import { openVersion, STARTING_PAGE } from "../owner-versions";
 import { AssistantRefusal, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
-import { readAssistantStore } from "../project-assistant-store";
+import { assistantReady } from "../project-assistant-ready";
 import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
 import { mountPublicTourRoutes } from "./tour-routes";
@@ -441,7 +441,7 @@ export function createShareApp(): Hono {
     const token = c.req.param("token");
     const access = ownerAccess(token);
     if (!access.ok) return ownerDead(c, access);
-    if (!readAssistantStore(access.orgId).models.reply) return c.json(refusal("not-ready", "The Project Assistant isn't ready yet."), 409);
+    if (!(await assistantReady(access.orgId))) return c.json(refusal("not-ready", "The Project Assistant isn't ready yet."), 409);
     const photos = await assistantPhotoLimits(access.orgId).catch(() => null);
     if (!photos) return c.json(refusal("no-photos", "Photos can't be sent here."), 409);
     const mime = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();

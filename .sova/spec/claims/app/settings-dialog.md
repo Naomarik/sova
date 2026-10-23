@@ -727,10 +727,24 @@ ranges."
 Below it, **Files in gathering chats** (§app.baton/files): **Largest file, MB** 1–25 (default 25),
 with the hint "Applies to gathering sessions that take files, from the next upload." Save-gated
 the same way: "Organizations needs a largest file from 1 to 25 MB."
+Below it, **Project Assistant** (§app.project-assistant/models): one control, **Default model**,
+showing the default's model and thinking level ("Opus 5.5 · medium") with its price once saved, or
+`Choose Model` while there is none; it opens the chat composer's model picker (the model row and
+its thinking ladder, then providers and models). The hint says "Every organization uses it unless
+it picks its own." Under it, when the model can't see images: "This model can't see photos:
+owners who follow it won't get an attach button."; when Settings → Models turned it off:
+"Settings → Models turned this model off: organizations that follow it aren't ready."; when this
+host can't run it: "This host can't run this model: organizations that follow it aren't ready."
+The pick joins the tab's draft and saves with Save Changes like the fields above.
 Host state, not the workspace repo: `<stateRoot>/baton-settings.json`, read and written through
 `GET`/`PUT /api/baton/settings {messagesMax, photos?: {enabled, perMessage, maxBytes,
-perConversation}, files?: {maxBytes}}` (400 outside the bounds; a missing or corrupt file reads as 60 and the photo
-and file defaults, each field on its own).
+perConversation}, files?: {maxBytes}}` (400 outside the bounds, and for an `assistant` key; GET
+also answers `assistant`, the default model with its price, or `null`; a missing or corrupt file
+reads as 60, the photo and file defaults and no default model, each field on its own). The default
+model is written through its own route, `PUT /api/settings/project-assistant {assistant: {model,
+thinking?} | null}` (400 for a model not written as provider/model or an unknown thinking level),
+which a mesh peer reaches only with `admin` (§app.project-assistant/models); Save Changes sends it
+after the other fields, and only when the pick differs from the stored one.
 
 ## §app.settings-dialog/toggle-target — A left-aligned toggle's target
 

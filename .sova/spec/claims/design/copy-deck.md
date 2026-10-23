@@ -184,8 +184,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
-| Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
+| Trigger opens | the Commands palette (§app.command-palette/opening); `aria-haspopup="dialog"` |
+| Palette's This chat group label | This chat |
+| This chat rows | Attach images · Hide tool calls (hidden: Show tool calls) · Hide thinking (hidden: Show thinking) · Playbooks · Undo last turn (in this order; Undo's copy is §design.copy-deck/timeline-tab) |
+| This chat rows, off | the composer's own reason · Playbooks with no Sova chat: Only a chat open in Sova can send a playbook. |
+| Palette's slash commands group label | Slash commands |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -380,7 +383,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Commands row (composer flyout) | Commands · no list: `title` "No commands available" |
 | Menu head | Commands · {n} |
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |
@@ -743,8 +745,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Off: TUI-live | This session is open in a terminal, so Sova won't write to it. |
 | Off: watching, or no chat open here | Only a chat open in Sova can rewind. |
 | Refused: not on the branch | That input is not on this chat's current branch anymore. |
-| Flyout row | Undo last turn · armed: `Confirm: undo last turn` · title: Rewind to before your last message; its text comes back to the composer |
-| Flyout row, off | Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. |
+| Palette row (This chat) | Undo last turn · description: Rewind to before your last message; its text comes back to the composer · armed: `Confirm: undo last turn`, description: Pick it again to rewind. |
+| Palette row, off | the composer's own reason · Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. · This chat is still loading. · Only a chat open in Sova can rewind. |
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |
@@ -1186,7 +1188,8 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | Requests tab (§app.project-assistant/requests-tab) | filter `Open` · `Done` · `Declined` · `All` · row "{title}" · "{Kind} · {relative time}" · status chip (dot + word) `With the team`, `Being worked on`, `Done`, `Declined` · the owner's text · "Chat started {relative time}" · `Start Chat` / `Open Chat` · `Mark Done` (secondary) · `Decline` (ghost) · empty, Open: "{n} done. Nothing open from {first} right now." · tab dot "{n} to answer" |
 | Request note in a chat (§app.project-assistant/request-chat) | card title "Request from {first}" · "{Kind} · {project} · filed {relative time}" · title · text · `Open in Requests` |
 | …chat | `Open Assistant Chat` · before the first message: `Start Assistant Chat` |
-| …models | heading "Models" · rows "Its replies", "Fixes it starts", "Gatherings it starts" · select `Not set`, then every model by ref · hint "{$in} in / {$out} out per million tokens" / "Price not known." / "Not set: nothing runs." · under "Its replies", when its model can't see images: "This model can't see photos: {first} won't get an attach button." · a project's override: "{project} uses its own model for fixes ({model}, {price})" |
+| …models | heading "Models" · rows "Its replies", "Fixes it starts" · value "Default · {model} · {thinking}" / "This organization · {model} · {thinking}" (no thinking: no third part) · hint "{$in} in / {$out} out per million tokens" / "Price not known." · none: "Not set. Set a default in Settings → Organizations." (the last words link there) · buttons `Change` (secondary), `Use Default` (ghost, only on the org's own pick) · done (announced) "{row}: {model}." / "{row}: follows the default." · under "Its replies", when its model can't see images: "This model can't see photos: {first} won't get an attach button."; turned off: "Settings → Models turned this model off: {first}'s assistant isn't ready."; can't run here: "This host can't run this model: {first}'s assistant isn't ready." · a project's override: "{project} uses its own model for fixes ({model}, {price})." |
+| Settings → Organizations, Project Assistant (§app.settings-dialog/organizations) | heading "Project Assistant" · field "Default model" · value "{model} · {thinking}" or `Choose Model` · hint "Every organization uses it unless it picks its own." · price "{$in} in / {$out} out per million tokens" / "Price not known." / unsaved: "Its price shows once saved." · warnings "This model can't see photos: owners who follow it won't get an attach button." / "Settings → Models turned this model off: organizations that follow it aren't ready." / "This host can't run this model: organizations that follow it aren't ready." |
 | …switches | heading "What it may set off on its own" · per project, the Project Assistant column (§design.copy-deck/project-powers) · under them: "{first} sees what these let the assistant do, in plain words, on their page." |
 | Preview modal tabs | a row of tabs at the top: `Home` · `Assistant` · `Requests` (no fixed bar) |
 | Needs you rows | `owner-request`: "{owner} reports {a problem / that the app is down / a question / a new feature / a fix / a release} on {project}: {title}" (a feature with an open feature request chat: "{owner} is planning a new feature with the assistant on {project}: {title}"; agreed: "{owner} agreed a plan on {project}: {title}") · `owner-feature-ended`: "{owner}'s feature request chat on {project} ended: they are no longer the owner. {title}" · `owner-link-request`: "{owner} asks for a new owner link: theirs turned off after a week without use." · `owner-version-request`: "{owner} asks to try {project}: {version}" (opens the project's Branches tab) |

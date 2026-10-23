@@ -380,7 +380,10 @@ again while the team runs, not only when a coordinator or monitor starts.
   weekly or 5-hour one included — ("usage limit", "hit your limit", "out of usage", "limit will
   reset", quota, credit, billing, insufficient, balance, "monthly limit", "weekly limit"), or that
   its sign-in no longer works (401, 403, "not logged in", `/login`, an invalid API key, a failed
-  sign-in or authentication). A plain 429 "rate limit" or "too many requests" is not. Ollama's
+  sign-in or authentication). A plain 429 "rate limit" or "too many requests" is not, nor is a
+  quota or limit over a short window — per minute, second or hour, RPM, TPM, "requests per",
+  "tokens per" (such as "429 RESOURCE_EXHAUSTED: Quota exceeded for metric x, limit: 15 per
+  minute") — while a monthly, weekly or 5-hour limit stays out of usage. Ollama's
   `429: {"message":"you (…) have reached your monthly usage limit, add usage credits: …"}` is. A
   Claude Code member's turn that fails once the bridge has tried every Claude login ends with the
   CLI's own text ("You've hit your limit · resets 3pm", "Claude AI usage limit reached|…", "Not
@@ -395,7 +398,8 @@ again while the team runs, not only when a coordinator or monitor starts.
   while that member runs its role's current primary (the backend and model the chat's profile names
   now), and never while a handover involving it is pending; otherwise its failures are routed as
   before.
-- **The switch.** The member's primary is marked out (below), the member is stopped and its seat
+- **The switch.** The team's duty is recorded as moved to its fallback, and an out-of-usage
+  primary is also marked out for the chat (below); the member is stopped and its seat
   released (the persisted `eject` op, source `system`) before its successor is added, so a team
   with all 24 seats taken still gets it. The successor starts at once through the main chat's
   replacement path (§teams.defaults/handover): role `<base>-<n+1>`, the same duty, the
@@ -419,15 +423,19 @@ again while the team runs, not only when a coordinator or monitor starts.
   coordinator is not stopped; the main chat gets one such `team-notice` naming `agent_kill` and
   `team_succeed`, and that turn's completion is not sent. Either is said once per member; later
   failures of that member are routed as before.
-- **The out primary is remembered.** Every failure that moves or stops a standing member (or is
-  said for it), and every out-of-usage failure of one, marks its running (backend, model) out with the reason and the time, appended to the
-  parent session as a `subagents-dead-tuple-v1` custom entry (`{version: 1, backend, model, reason,
+- **The out primary is remembered.** Only an out-of-usage failure of a standing member marks its
+  running (backend, model) out for the chat — never a streak of other failures — with the reason
+  and the time, appended to the parent session as a `subagents-dead-tuple-v1` custom entry (`{version: 1, backend, model, reason,
   at, teamId?, duty?}`) and replayed from all of the session's entries at `session_start`, so a
   reload keeps it. For 1 hour from that time every tuple check treats it as refused, saying it ran
   out and when it is tried again: a new team's coordinator and monitor, the members default at
   `team_create`, `team_add` and a successor, and every later successor's standing tuple. After the
-  hour new teams try the primary again. A team whose duty switched stays on the fallback for that
-  duty: its later successors of that duty skip the primary even after the hour.
+  hour new teams try the primary again. A team whose duty switched, for any reason (a streak
+  included), stays on the fallback for that duty: its later successors of that duty skip the
+  primary even after the hour. That is the team's alone: a streak switch writes no mark and no
+  `subagents-dead-tuple-v1` entry, so other teams, new teams, `team_add` and the members default
+  still use the primary; a reload reads the team's switch back from its handover event's
+  `fallback: primary <tuple>` detail.
 - **A monitor never goes silent.** After a failed monitor turn that does not switch it, when the
   monitor has no pending or held `wake_nudge`, the parent schedules its next check itself, in
   `everyMinutes`.

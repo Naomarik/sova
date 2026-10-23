@@ -309,7 +309,7 @@
               "align"
             ]
           },
-          "description": "Delegate and/or the align minor mode: a live session's, or a static session's that has `then`."
+          "description": "Delegate and/or the align minor mode: a live session's, or a static one's (written into its file as if on from the start)."
         },
         "messages": {
           "type": "array",
@@ -1288,9 +1288,10 @@
                   "close-panel",
                   "review-changes",
                   "changes-step",
+                  "close-changes",
                   "pane-tab"
                 ],
-                "description": "click, tap: what to press. pane-tab: a tab of the session detail pane, by its text."
+                "description": "click, tap: what to press. pane-tab: a tab of the session detail pane, by its text. close-changes: the changes viewer's Close button (what it uncovers is the page from before, so no settle time follows)."
               },
               "text": {
                 "type": "string",

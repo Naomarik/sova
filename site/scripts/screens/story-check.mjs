@@ -282,7 +282,6 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     const has = ["messages", "script"].filter((k) => k in s);
     if (has.length !== 1) err(["sessions", i], has.length ? "has both messages and script; a session is static or live, not both" : "needs messages (a static session) or script (a live one)");
     if (s.then && !s.messages) err(["sessions", i, "then"], "then follows a static session's messages; a live session's script plays it all");
-    if (s.modes && !s.script && !s.then) err(["sessions", i, "modes"], "modes apply to a live session (one with a script) or a static one with then");
     if (s.title.length > 38) warn(["sessions", i, "title"], `title is ${s.title.length} characters; the sidebar shows about 38 before it cuts`);
   });
   for (const [id, w] of Object.entries(workers)) if (!models.has(w.model)) err(["workers", id, "model"], `unknown model "${w.model}"`, `models are: ${[...models].join(", ")}`);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// pnpm run screens:video [-- --video desk|phone] [--force] [--keep] [--node] [--stills <dir>]
+// pnpm run screens:video [-- --video <name>] [--force] [--keep] [--node] [--stills <dir>]
 //
 // Record the story's `videos`, each in a fresh root: the director paced at the video's chunk, the
 // page played beat by beat and filmed with the CDP screencast, the pointer moved by the pacing
@@ -279,6 +279,8 @@ async function recordOne(name, v, hash) {
           return page.locator("#session-pane button.subagents-close").first();
         case "review-changes":
           return ui.reviewChanges(page);
+        case "close-changes":
+          return page.locator("[role=dialog]").last().getByRole("button", { name: "Close", exact: true });
         case "changes-step":
           return page.locator(".changes-step-row").filter({ has: page.locator(".changes-step-n", { hasText: new RegExp(`^${b.n}$`) }) }).first();
         case "pane-tab":
@@ -308,7 +310,9 @@ async function recordOne(name, v, hash) {
         await sleep(300);
         mark(now(), 0.3);
       } else if (b.do === "click" || b.do === "tap") {
+        const viewer = b.target === "close-changes" ? await page.locator("[role=dialog]").last().elementHandle() : null;
         await press(target(b), b.target);
+        if (viewer) await viewer.waitForElementState("hidden", { timeout: 10_000 });
         if (b.target === "workers") await page.locator("#session-tabpanel").waitFor({ state: "visible", timeout: 10_000 });
         if (b.target === "review-changes") await page.locator("[role=dialog]").last().waitFor({ timeout: 10_000 });
         mark(now(), Math.min(1, Math.max(PACE.ripple + PACE.after, sinceMark(now()))));
@@ -436,7 +440,9 @@ async function recordOne(name, v, hash) {
 
     const manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, "utf8")) : { _generated: "by site/scripts/screens (pnpm run screens); edit story.json instead", shots: {}, slots: plan.pageShots };
     delete manifest.video;
-    manifest.videos = { ...(manifest.videos ?? {}), [name]: {
+    // A video the story no longer has leaves the manifest (its files are deleted by hand).
+    const kept = Object.fromEntries(Object.entries(manifest.videos ?? {}).filter(([n]) => plan.videos[n]));
+    manifest.videos = { ...kept, [name]: {
       sources,
       width: composed.width,
       height: composed.height,

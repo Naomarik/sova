@@ -1,17 +1,17 @@
 # Screens and videos
 
-The landing page's product screenshots and its two videos are real Sova, run on demo data. All
+The landing page's product screenshots and its hero video are real Sova, run on demo data. All
 of that data, and every scripted model reply, is in one plain-JSON file: [`story.json`](story.json).
 Everything else is generated from it on each run, in a throwaway directory, and never committed.
 
 | File | What it is |
 | --- | --- |
-| `story.json` | The demo project, the sessions and their messages, the workers, the Overseer's turn, the shots, the videos' beats and captions. **The only file to edit.** |
+| `story.json` | The demo project, the sessions and their messages, the workers, the Overseer's turn, the shots, the video's beats and captions. **The only file to edit.** |
 | `story/files/` | Optional: demo-repo file bodies too long to read well inline (`{ "file": "story/files/x.ts" }`). |
 | `story.schema.json` | Its schema. Editors that read `$schema` (VS Code and most others) give completion, hover docs and inline errors. |
 | `check.mjs` | `pnpm run screens:check`: validates the story. |
 | `capture.mjs` | `pnpm run screens`: the screenshots. |
-| `record.mjs` | `pnpm run screens:video`: the videos (`--video desk` or `--video phone` for one). |
+| `record.mjs` | `pnpm run screens:video`: the story's `videos` (only `desk`, the hero, today; `--video <name>` for one). |
 | `video-compose.mjs` | Assembly: the pointer and its ripples drawn at 30 fps, the loop's fade, the AV1 and H.264 encodes. Nothing else goes into the picture. |
 | `video-check.mjs` | The checks a video must pass before it replaces the one on the page (record.mjs and verify.mjs both run them), and the page's caption cues (`cuesOf`, `cueProblems`). |
 | `verify.mjs` | `pnpm run screens:verify`: outputs against the story, the videos' checks, build, budgets, sideways scroll. |
@@ -36,9 +36,9 @@ A session has `messages` (finished: written to disk before Sova starts, for the 
 `script` (played live). A static session may also have `then`: steps the director plays live after
 its messages, once a video (or the capture) sends the first of them. The hero session, Retry
 backoff, is one: its history is on disk, 3 hours old, and the video carries on from its open
-alignment card; the phone video answers Upload metrics' open question the same way. Such a
-session's file also carries its modes (the mode extension's own markers), so turning them on for
-the run adds no switch to its Timeline. A script is steps with exactly one action each: `user`,
+alignment card. A static session's file also carries its `modes` (the mode extension's own
+markers), so turning them on for the run adds no switch to its Timeline; Upload metrics is in
+align mode that way, so the phone still shows its card's answer row. A script is steps with exactly one action each: `user`,
 `say`, `read`, `edit`, `write`, `bash`, `align`, `decide`, `worktree`, `spawn`, `wait`,
 `show_changes`, `tool` (any other tool, such as the Overseer's), `hold`, and `summary`.
 
@@ -76,7 +76,7 @@ names are real, the replies are scripted, and Sova isn't affiliated with the mod
 
 ## The videos
 
-`videos.desk` is the hero loop (about 51 s, 1920x1200, filmed at 2560x1600 from a 1280x800 viewport:
+`videos.desk` is the hero loop, and the only video (about 60 s, 1920x1200, filmed at 2560x1600 from a 1280x800 viewport:
 the interface reads larger than on a 1440 desktop, and 1280 is Sova's breakpoint from which the
 session detail pane sits beside the chat instead of covering it). Its storyboard, one thread:
 
@@ -90,16 +90,18 @@ session detail pane sits beside the chat instead of covering it). Its storyboard
 | 0:22 | Agree on the plan before work starts | The alignment card from its title, naming the found session. |
 | 0:27 | Your call, in one click | The recommended 30 s, then Send; Decided: 30 s. |
 | 0:32 | Each worker runs on its own model | 3 workers; the Agents tab: zai glm-5.3, deepseek deepseek-v4-pro, openai gpt-6.1-sol. |
-| 0:40 | Three models, one finished job | Sped up 3x: the workers finish, All 3 are back, the live summary lands. |
-| 0:44 | Its timeline and summary at a glance | The Timeline tab: chapters, idle 3h, the decision, the workers; Current goal above the chat. |
+| 0:40 | Three models, one finished job | Sped up 3x: the workers finish, All 3 are back with 2 steps to review, the live summary lands. |
+| 0:44 | Review every change as steps | Review Changes: the changes viewer, one numbered step per worker that changed code, each with its reason; step 1's diff (GLM-5.3: the 30 s cap and its test). |
+| 0:50 | Each step with its reason | Step 2 clicked: DeepSeek's README line. The server check (GPT-6.1 Sol) changed no code, so it has no step; the reply before says so. |
+| 0:57 | Its timeline and summary at a glance | The viewer closed, the Timeline tab: chapters, idle 3h, the decision, the workers; Current goal above the chat. |
 
-`videos.phone` is the phone section's clip (about 13 s, 832x1316, the phone viewport): a Needs you
-row opened and its question answered with one tap. Each is a list of beats, played in order:
+The phone section shows stills only (the Access page and phone-question): its clip flickered
+and was dropped. A video is a list of beats, played in order:
 
 | `do` | What happens |
 | --- | --- |
 | `type` | The pointer goes to the composer, clicks it, and types a user step (`step`; `scene: "overseer"` for the video's Overseer opener). |
-| `click`, `tap` | The pointer goes to a `target` and presses it: `send`, `composer`, `link` (a reply's link, by `text`), `session-row` (`text`), `align-option` (`q`, `option`), `go-with-recommendations`, `workers`, `worker`, `close-panel`, `review-changes`, `changes-step` (`n`), `pane-tab` (a session detail tab, by `text`). A tap video (`pointer: "tap"`) draws a ring where the finger lands; an arrow video draws an arrow that travels. |
+| `click`, `tap` | The pointer goes to a `target` and presses it: `send`, `composer`, `link` (a reply's link, by `text`), `session-row` (`text`), `align-option` (`q`, `option`), `go-with-recommendations`, `workers`, `worker`, `close-panel`, `review-changes`, `changes-step` (`n`), `close-changes` (the changes viewer's Close: it uncovers the page from before, so it brings nothing new and no settle time follows), `pane-tab` (a session detail tab, by `text`). A tap video (`pointer: "tap"`) draws a ring where the finger lands; an arrow video draws an arrow that travels. |
 | `release` | The director plays on to a hold (`until`, `scene: "overseer"` for the opener's) or the scene's end, the pointer still. `speed: 3` plays that stretch 3 times faster and the page shows a "Sped up 3×" tag beside its caption. `summary: true` also waits until the session's next `summary` step shows in its Current goal strip. |
 | `hold` | Still, while the viewer reads `read` (or for `for`). |
 | `scroll` | The alignment card from its title (`align`), its answer row (`align-end`), the latest drawing (`vis`), or the end. |
@@ -162,7 +164,7 @@ cd site
 pnpm run screens:check                 # a second; no server, browser or model
 pnpm run screens                       # shots whose inputs changed; --all for every one
 pnpm run screens -- --shot hero-desk   # one shot
-pnpm run screens:video                 # the videos, if their inputs changed; --force to re-record
+pnpm run screens:video                 # the video, if its inputs changed; --force to re-record
 pnpm run screens:video -- --video desk --force --stills /tmp/x   # one video, the page after every beat
 pnpm run screens:video -- --cues       # a caption reworded: the cue lists again, no filming
 pnpm run screens:verify                # before committing
@@ -191,8 +193,8 @@ page as it was in `.agent/screens/debug/` (ignored by git; `SCREENS_DEBUG_DIR` p
 Outputs, committed with the story: `site/src/assets/screens/*.webp` (lossless masters, dark theme
 only; the site shows them in both of its themes), `site/src/assets/screens/manifest.json` (alt
 text, sizes, slots, input and content hashes; generated, never edited), and
-`site/public/video/session-{desk,phone}.{av1.mp4,mp4}` with their posters
-`src/assets/screens/video-{desk,phone}.webp`, and each video's `line`, `cues` and `tags` in the
+`site/public/video/session-desk.{av1.mp4,mp4}` with its poster
+`src/assets/screens/video-desk.webp`, and the video's `line`, `cues` and `tags` in the
 manifest (the page's captions, `src/components/screens/VideoCaption.astro`). The pages read alt text and sizes from the manifest, so an
 image and its words can't drift apart; `screens:verify` fails when the manifest, the files and the
 story disagree.

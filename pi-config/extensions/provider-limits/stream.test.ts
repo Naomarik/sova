@@ -146,6 +146,14 @@ test("after 5 re-queues the 429 reaches pi unchanged; a quota 429 and a 429 afte
 		assert.equal((out[0] as any).error.errorMessage, text, "it reaches pi unchanged");
 	}
 
+	// A per-minute quota is a rate limit: re-queued like one.
+	const shortDir = tmpAgent();
+	writeProviderLimits(shortDir, { version: 1, limits: { zai: 5 } });
+	const perMinute = "429 RESOURCE_EXHAUSTED: Quota exceeded for metric x, limit: 15 per minute";
+	const short = scripted([() => fail(perMinute)], { slots: [] }, shortDir);
+	await collect(gateStreamSimple(short, { agentDir: () => shortDir, retry: true, sleep: async () => {} })(model, { messages: [] } as any));
+	assert.equal(short.calls, RATE_LIMIT_RETRIES + 1, "re-queued");
+
 	const midway = scripted([() => [...ok().slice(0, 3), ...fail(RATE)]], { slots: [] }, dir);
 	const partial = await collect(gateStreamSimple(midway, { agentDir: () => dir, retry: true, sleep: async () => {} })(model, { messages: [] } as any));
 	assert.equal(midway.calls, 1);

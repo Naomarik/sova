@@ -5465,3 +5465,52 @@ test("runtime fallback: the out primary survives a reload; new teams, the member
 		assert.match(created, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "after the hour the primary is tried again");
 	} finally { await later.cleanup(); }
 });
+
+test("runtime fallback: a streak of failures that aren't about usage never marks the model out for new teams", async () => {
+	// No fallback: the monitor is stopped after 3 generic failures, and a new team still starts on the primary.
+	const none = { ...FALLBACK_FILE, monitor: { ...FALLBACK_FILE.monitor, fallback: null } };
+	const h = fallbackHarness(none);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		failTurn(monitor, "Connection reset by peer");
+		failTurn(monitor, PLAIN_429);
+		failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => monitor.status === "killed", "the monitor stopped after 3 failures");
+		assert.deepEqual(deadEntries(h), [], "no chat-wide mark");
+		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+	} finally { await h.cleanup(); }
+	// With a fallback: the streak switches this team only; a new team starts on the primary.
+	const f = fallbackHarness();
+	try {
+		await f.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = f.worker("ag_03");
+		for (let i = 0; i < 3; i++) failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => f.worker("ag_04"), "the successor after the streak");
+		assert.equal(f.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5", "this team moved to its fallback");
+		assert.deepEqual(deadEntries(f), [], "no chat-wide mark");
+		const next = (await f.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		// This team stays on its fallback: the monitor's replacement skips the primary.
+		f.worker("ag_04").exit();
+		const replaced = (await f.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
+		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/);
+	} finally { await f.cleanup(); }
+});
+
+test("runtime fallback: once the hour is over a new team retries the primary, while the team that switched stays on its fallback", async () => {
+	const h = fallbackHarness();
+	const realNow = Date.now;
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		failTurn(h.worker("ag_03"), OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the switch");
+		Date.now = () => realNow() + 61 * 60_000;
+		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "the mark expired");
+		h.worker("ag_04").exit();
+		const replaced = (await h.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
+		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/, "the switched team keeps its fallback");
+	} finally { Date.now = realNow; await h.cleanup(); }
+});

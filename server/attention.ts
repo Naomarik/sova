@@ -1,10 +1,18 @@
 import { homedir } from "node:os";
 import { listsInNeedsYou } from "../shared/needs-you";
-import type { AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
+import type { AskKind, AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
 import { readinessItems } from "./merge-readiness";
 import { reviewDetail } from "../shared/playbook-review";
 import type { PlaybookReviewFact } from "./projects/playbook-review";
 import { sessionName } from "./session-names";
+
+/** An ask's line lead by its kind (§app.overseer/attention-digest); "Asks you" when none is known. */
+export function askLead(kind: AskKind | undefined): string {
+  if (kind === "choose-between-options") return "Needs your decision";
+  if (kind === "approve-risky-action" || kind === "restart-or-merge-go") return "Needs your approval";
+  if (kind === "needs-info") return "Needs info from you";
+  return "Asks you";
+}
 
 /**
  * The Overseer's attention digest: what needs the user, what finished, what is running — built
@@ -34,7 +42,7 @@ export interface AttentionRow {
   lastReplyAt?: number;
   /** Words for the decision-signal items (signals-store.ts signalTextOf): the reply's asking
       sentence, and the names of subagents that look stuck. Absent: the fixed fallbacks. */
-  signalText?: { sentence?: string; stuckWorkers: string[] };
+  signalText?: { sentence?: string; askKind?: AskKind; stuckWorkers: string[] };
   /** The session waits on subagents that have all gone quiet (signals-store.ts teamStallOf,
       §app.decisions/team-stall): since when, and who. Absent: not stalled, or the feature is off. */
   teamStall?: { since: number; names: string[] };
@@ -162,7 +170,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const asks = sig.includes("asks-you") && !questions && !s.archived;
   if (asks) {
     const sentence = row.signalText?.sentence;
-    add("decide", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.", true);
+    add("decide", "asks-you", at, sentence ? `${askLead(row.signalText?.askKind)}: ${sentence}` : "The last reply asks you something.", true);
   }
   // Done but not checked (the turn card, §app.decisions/attention-signals): the softer tier too.
   if (sig.includes("unverified") && !asks && !questions && !s.archived) add("decide", "unverified", at, "Says it's done, but didn't run or check everything.", true);

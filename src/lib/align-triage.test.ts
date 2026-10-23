@@ -3,9 +3,11 @@ import { test } from "node:test";
 import { stakesChip, triageKey, triageOf } from "./align-triage";
 
 test("the chip: low risk is muted, every other stakes is flagged; its title names who guessed", () => {
-  assert.deepEqual(stakesChip("low-risk", { provider: "jev" }), { text: "Low risk", flagged: false, title: "Guessed by Jev." });
-  assert.deepEqual(stakesChip("deletes-data", { provider: "pi", model: "zai/glm-5.3" }), { text: "Deletes data", flagged: true, title: "Guessed by glm-5.3." });
+  assert.deepEqual(stakesChip("low-risk", { provider: "jev" }), { text: "Low risk", flagged: false, tone: "text-muted", title: "Guessed by Jev." });
+  assert.deepEqual(stakesChip("deletes-data", { provider: "pi", model: "zai/glm-5.3" }), { text: "Deletes data", flagged: true, tone: "chip-error", title: "Guessed by glm-5.3." });
   assert.equal(stakesChip("costs-money", { provider: "jev" }).text, "Costs money");
+  for (const st of ["deletes-data", "costs-money", "changes-architecture-or-contract"] as const)
+    assert.notEqual(stakesChip(st, { provider: "jev" }).tone, "chip-warn" as string, "a flagged chip never shares the Open chip's warn tone");
   assert.equal(stakesChip("changes-architecture-or-contract", { provider: "jev" }).text, "Changes architecture");
 });
 

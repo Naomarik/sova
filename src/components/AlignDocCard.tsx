@@ -369,7 +369,7 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
       {/* The question's stakes, guessed per card version (§app.decisions/align-triage): open questions only. */}
       <Show when={!fold && stakes()}>
         {(c) => (
-          <span class={`chip align-q-stakes${c().flagged ? " chip-warn" : ""}`} title={c().title}>
+          <span class={`chip align-q-stakes ${c().tone}`} title={c().title}>
             <i class="chip-dot" />
             {c().text}
           </span>

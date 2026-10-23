@@ -1,6 +1,7 @@
 // Run: pnpm exec tsx --conditions=browser --test src/lib/session-feed.browser.test.ts. Solid's reactive (browser) build, a fake
 // WebSocket and mocked timers: the feed's `llm_inflight` count across connect, unchanged and changed
-// frames, a drop, a reconnect and cleanup — never stale, never a list re-read of its own.
+// frames, a drop, a reconnect and cleanup — never stale, never a list re-read of its own; the pushed Overseer and attention values and the
+// open flag; and createPoll with no interval (the pushed values' reads).
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 // The browser condition is this file's whole setup: without it every effect below is inert.
@@ -99,6 +100,93 @@ test("the count: unknown until this connection's snapshot, quiet on unchanged fr
     assert.equal(llmInflight(), null, "cleanup leaves it unknown");
     // Every value an observer saw (it is disposed with the root, so the last null is the signal's own).
     assert.deepEqual(seen, [null, 2, 0, 1, null, 2]);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("pushed values: each open asks for a resync, frames reach the listeners, and the open flag follows the socket", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    FakeSocket.all = [];
+    const { onFeedPush, sessionFeedOpen } = await import("./session-feed");
+    const calls: string[] = [];
+    const dispose = solid.createRoot((dispose) => {
+      openSessionFeed(() => {});
+      solid.onCleanup(
+        onFeedPush({
+          resync: () => calls.push("resync"),
+          attention: (d) => calls.push(`attention:${d.items.length}`),
+          overseer: (o) => calls.push(`overseer:${o.badge}`),
+        }),
+      );
+      return dispose;
+    });
+    const first = FakeSocket.all[0]!;
+    assert.equal(sessionFeedOpen(), false, "connecting is not open");
+    first.open();
+    assert.equal(sessionFeedOpen(), true);
+    assert.deepEqual(calls, ["resync"], "the first open reads both once");
+    first.push({ type: "attention", digest: { items: [] } } as unknown as SessionFeedMessage);
+    first.push({ type: "overseer", info: { badge: 3 } } as unknown as SessionFeedMessage);
+    assert.deepEqual(calls, ["resync", "attention:0", "overseer:3"]);
+    first.drop();
+    assert.equal(sessionFeedOpen(), false, "down is not open");
+    mock.timers.tick(1000);
+    FakeSocket.all[1]!.open();
+    assert.deepEqual(calls.at(-1), "resync", "every reopen reads both again");
+    dispose();
+    assert.equal(sessionFeedOpen(), false);
+    const n = calls.length;
+    FakeSocket.all[1]!.push({ type: "overseer", info: { badge: 1 } } as unknown as SessionFeedMessage);
+    assert.equal(calls.length, n, "a listener that let go hears nothing");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("createPoll with no interval: read once, never again on a timer; a failure still retries; set replaces", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    const { createPoll } = await import("./poll");
+    let reads = 0;
+    let fail = false;
+    const flush = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
+    let poll!: ReturnType<typeof createPoll<{ n: number }>>;
+    const dispose = solid.createRoot((dispose) => {
+      poll = createPoll(async () => {
+        reads++;
+        if (fail) throw new Error("down");
+        return { n: reads };
+      }, null);
+      return dispose;
+    });
+    await flush();
+    assert.equal(reads, 1);
+    assert.equal(poll.data()?.n, 1);
+    mock.timers.tick(10 * 60_000);
+    await flush();
+    assert.equal(reads, 1, "no timer while it reads well");
+    poll.set({ n: 42 });
+    assert.equal(poll.data()?.n, 42, "a pushed value replaces it");
+    mock.timers.tick(60_000);
+    await flush();
+    assert.equal(reads, 1, "set starts no timer either");
+    fail = true;
+    poll.refetch();
+    await flush();
+    assert.equal(reads, 2);
+    assert.equal(poll.data()?.n, 42, "a failure keeps the last value");
+    fail = false;
+    mock.timers.tick(5000);
+    await flush();
+    assert.equal(reads, 3, "the failure's backoff retry runs");
+    mock.timers.tick(10 * 60_000);
+    await flush();
+    assert.equal(reads, 3, "and then no timer again");
+    dispose();
   } finally {
     mock.timers.reset();
   }

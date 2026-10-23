@@ -4193,7 +4193,8 @@ export interface FrontDoorConfig {
 // Push: WS /ws/watch?feed=sessions — the existing read-only socket, in a session-less mode (no
 // ?path=). Sends SessionFeedMessage: a full `marks` snapshot on connect, then one `marks` message
 // per change (a signal, tag or turn error written, cleared, or pruned) and `tags_backfill` progress while a
-// backfill runs. The client overlays these onto its SessionSummary list by id without waiting for
+// backfill runs; `list_changed`, `attention` and `overseer` when those change (never on connect: the
+// client reads the list, digest and Overseer once per open and when its tab becomes visible). The client overlays these onto its SessionSummary list by id without waiting for
 // the list poll; the list itself still carries the same fields (the poll stays the source of truth
 // after a reconnect). Never writes; the socket ignores anything the client sends.
 // ---------------------------------------------------------------------------
@@ -4543,6 +4544,12 @@ export type SessionFeedMessage =
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */
   | { type: "llm_inflight"; inflight: LlmInflight }
+  /** The attention digest (as GET /api/overseer/attention returns it), sent only when it differs
+      from the last one this server pushed; never on connect (the client reads it once when the
+      feed opens and when the tab becomes visible again). */
+  | { type: "attention"; digest: AttentionDigest }
+  /** The Overseer's state (as GET /api/overseer returns it), sent the same way as `attention`. */
+  | { type: "overseer"; info: OverseerInfo }
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

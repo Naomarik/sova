@@ -571,7 +571,9 @@ user row.
 - **Every project setting, one tool.** The project overseer knows and can change every setting of
   its project, Sova-kept and in the project's files: its own settings (Watch, the powers in both
   columns, the models, extra instructions, the limits and pace, the hold, its abilities, its memory
-  switch), the project's name, and the files `.sova/project.json` (services), `.sova/profiles/<id>.json`,
+  switch), the project's name, and, in an organization's project, its main stakeholder
+  (§app.organizations/stakeholder), whether it shows on the owner's page (§app.owner-page/controls)
+  and whether its spec is frozen (§app.requirements/frozen-spec), and the files `.sova/project.json` (services), `.sova/profiles/<id>.json`,
   a playbook's `PLAYBOOK.md` with its schedule lines, a project mode's `MODE.md`
   (`.sova/minor-modes/<id>/`) and `.sova/offers.json`. One tool does it, `sova_settings {op}`, always
   allowed (like `sova_card`): `get` lists every setting with its state, the cards waiting and the
@@ -581,11 +583,13 @@ user row.
   No other chat, worker or the Project Assistant gets the tool or the knowledge.
 - **The reference comes from the parsers.** Each entry is generated from the key lists the
   parsers accept (the services contract, the profile file, a playbook's frontmatter and schedule,
-  `MODE.md`, the offers file, the overseer's settings patch and the project's own patch): a key a
-  parser reads with no reference entry fails a test.
+  `MODE.md`, the offers file, the overseer's settings patch, the project's own patch, the placement
+  patch and the spec patch): a key a parser reads with no reference entry fails a test. Archiving has
+  an entry too (`project.archive`): it says archiving is yours on the project page, with its own confirm.
 - **Structured edits, checked by the same parsers.** `edits` name a setting, never a path:
   `{setting: "overseer", patch}` (the overseer settings' fields), `{setting: "memory", on, type?,
-  size?}`, `{setting: "project", name}`, `{setting: "profile", id, profile | null}`, `{setting:
+  size?}`, `{setting: "project", name?, stakeholder?, ownerHidden?, frozen?}` (the last three an
+  organization's project only: a standalone project's is refused in words), `{setting: "profile", id, profile | null}`, `{setting:
   "playbook", id, text | null}`, `{setting: "mode", id, text | null}`, `{setting: "offers", file |
   null}`, `{setting: "services", file | null}` (null removes the file). Each is checked exactly as
   Sova reads it; the first problem is the refusal and nothing is written. Moving the project's
@@ -600,9 +604,10 @@ user row.
   schedule's `when:`, `tz:` or `profile:` (§chat.schedules/approval); a project mode with tools,
   commands or hooks (§chat.mode-menu/project-modes); an offers file with run buttons
   (§chat.offers/approval) whose run buttons aren't approved as they are; and any change to the services
-  file. The overseer never approves one.
+  file; the spec unfrozen; the project shown on the owner's page again. The overseer never approves one.
 - **What narrows applies at once, in your turn.** In a turn the operator started, each Sova-kept
-  change that is no grant (a power Off, a limit lowered, a model, its memory switch, the name)
+  change that is no grant (a power Off, a limit lowered, a model, its memory switch, the name, the
+  spec frozen, the project hidden from the owner's page, the main stakeholder changed)
   applies at once and its result says so, each with **Undo**. Everything else goes on a **Settings
   change card**: grants, and every change to the project's files. In a run the operator did not start
   (a look, Run Now, a wake-up) nothing applies: it only prepares a card.
@@ -643,7 +648,11 @@ user row.
   lists it newest first (`project.settings.history`). **Undo** (`project.settings.undo {id}`) puts a
   Sova-kept field back, refused (409) when the field changed since ("{field} changed since: undo the
   newer change first."); undoing a file change makes a new card that puts the file back, applied like
-  any other.
+  any other. An undo that is itself a grant (it puts back what widens: a power turned Off back On, a
+  limit raised again, the hold lifted, the extra instructions restored, the spec unfrozen, the project
+  shown on the owner's page again) is the operator's own page only, as Apply is: from a chat's key,
+  the token in a header, the Overseer's sender mark, an extension's key or a peer it is refused (403)
+  and nothing changes. Any other undo is open to any caller, as before.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
   Sova-kept and in the project's files (services, profiles, playbooks and their schedules, modes,
   offers), with its state (on, off, set, not set, broken, needs approval, approved) and a link to

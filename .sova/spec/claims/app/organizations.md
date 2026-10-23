@@ -864,7 +864,9 @@ Organizations region's own Needs you, never the global one.
   `overseer`. No other status write is allowed to it, and none to the wrap-up.
 - A project's main stakeholder (§app.organizations/stakeholder) is the operator's alone: it is
   written only through the project PATCH, which no autonomous writer has (the global Overseer
-  calls it for the operator, as the operator), and cleared by Sova only when that person leaves.
+  calls it for the operator, as the operator; the project overseer's `sova_settings` changes it only
+  in a turn the operator started or at their Apply on its card, as the operator,
+  §app.project-overseer/settings), and cleared by Sova only when that person leaves.
   The org's owner (§app.owner-page/owner) is the same: written only through
   `PUT /api/orgs/:id/owner`, cleared by Sova only when that person leaves.
 
@@ -1076,7 +1078,8 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   (§app.organizations/person-page); the project overseer's prompt, `sova_project` and `sova_roster`
   name them (§app.project-overseer/identity, /tools), and its gaps go to them before the operator
   (§app.project-overseer/gaps). The global Overseer's `sova_orgs` and `sova_org_project` name them
-  too, and it may set one for the operator (§app.overseer/org-writes).
+  too, and it may set one for the operator (§app.overseer/org-writes). The project overseer may change
+  it in a turn the operator started, with Undo (§app.project-overseer/settings).
 
 ## §app.organizations/about — About this organization: the operator's context for project overseers
 

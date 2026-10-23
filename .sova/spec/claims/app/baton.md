@@ -884,9 +884,9 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   (§app.organizations/org-cards), until it is answered.
 - Any change to a baton session's statechart or its links (Get Link, a reply, Extend, Take back, a
   hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
-  part of what the list compares), and the page re-reads the attention digest whenever it re-reads the list for
-  the session feed's `list_changed` (the Organizations region's Needs you lists the digest's
-  items), so its Needs-you item clears within a second, whichever tab or host page made the change.
+  part of what the list compares), and that comparison pushes the changed attention digest to
+  every window (`attention`, §app.decisions/push; the Organizations region's Needs you lists the
+  digest's items), so its Needs-you item clears within a second, whichever tab or host page made the change.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is
   spent) comes back on `/ws/chat` as an error with code `refused` and the reason, never `internal`.

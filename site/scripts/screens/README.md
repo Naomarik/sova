@@ -84,20 +84,20 @@ any other model or provider name on the page, and each run prints the model name
 the interface reads larger than on a 1440 desktop, and 1280 is Sova's breakpoint from which the
 session detail pane sits beside the chat instead of covering it). Its storyboard, one thread:
 
-| At | Caption | On screen |
-| --- | --- | --- |
-| 0:00 | Ask the Overseer about past work | The Overseer page, its composer holding "Where was the session where we set up upload retries?"; Send. |
-| 0:03 | It finds the session by what was said | A Search sessions step; the reply links Upload client with retries (12 days ago). |
-| 0:07 | Then ask what's waiting on you | "What's waiting on me?" typed and sent. |
-| 0:12 | Every waiting session, and why it waits | 3 linked sessions; Needs you reads 3. |
-| 0:16 | Open one: a drawing shows the problem | Retry backoff opens; its last reply's chart: waits doubling to 64 s. |
-| 0:22 | Agree on the plan before work starts | The alignment card from its title, naming the found session. |
-| 0:27 | Your call, in one click | The recommended 30 s, then Send; Decided: 30 s. |
-| 0:32 | Each worker runs on its own model | 3 workers; the Agents tab: zai glm-5.3, deepseek deepseek-v4.1-flash, openai gpt-6.1-sol. |
-| 0:40 | Three models, one finished job | Sped up 3x: the workers finish, All 3 are back with 2 steps to review, the live summary lands. |
-| 0:44 | Review every change as steps | Review Changes: the changes viewer, one numbered step per worker that changed code, each with its reason; step 1's diff (GLM-5.3: the 30 s cap and its test). |
-| 0:50 | Each step with its reason | Step 2 clicked: DeepSeek's README line. The server check (GPT-6.1 Sol) changed no code, so it has no step; the reply before says so. |
-| 0:57 | Its timeline and summary at a glance | The viewer closed, the Timeline tab: chapters, idle 3h, the decision, the workers; Current goal above the chat. |
+| At | Chapter | Caption | On screen |
+| --- | --- | --- | --- |
+| 0:00 | Overseer | Ask the Overseer about past work | The Overseer page, its composer holding "Where was the session where we set up upload retries?"; Send. |
+| 0:03 | Overseer | It finds the session by what was said | A Search sessions step; the reply links Upload client with retries (12 days ago). |
+| 0:07 | Overseer | Then ask what's waiting on you | "What's waiting on me?" typed and sent. |
+| 0:12 | Overseer | Every waiting session, and why it waits | 3 linked sessions; Needs you reads 3. |
+| 0:16 | Drawings | Open one: a drawing shows the problem | Retry backoff opens; its last reply's chart: waits doubling to 64 s. |
+| 0:22 | Alignment | Agree on the plan before work starts | The alignment card from its title, naming the found session. |
+| 0:27 | Alignment | Your call, in one click | The recommended 30 s, then Send; Decided: 30 s. |
+| 0:32 | Delegate | Each worker runs on its own model | 3 workers; the Agents tab: zai glm-5.3, deepseek deepseek-v4.1-flash, openai gpt-6.1-sol. |
+| 0:40 | Delegate | Three models, one finished job | Sped up 3x: the workers finish, All 3 are back with 2 steps to review, the live summary lands. |
+| 0:44 | Review | Review every change as steps | Review Changes: the changes viewer, one numbered step per worker that changed code, each with its reason; step 1's diff (GLM-5.3: the 30 s cap and its test). |
+| 0:50 | Review | Each step with its reason | Step 2 clicked: DeepSeek's README line. The server check (GPT-6.1 Sol) changed no code, so it has no step; the reply before says so. |
+| 0:57 | Timeline | Its timeline and summary at a glance | The viewer closed, the Timeline tab: chapters, idle 3h, the decision, the workers; Current goal above the chat. |
 
 The phone section shows stills only (the Access page and phone-question): its clip flickered
 and was dropped. A video is a list of beats, played in order:
@@ -111,13 +111,17 @@ and was dropped. A video is a list of beats, played in order:
 | `scroll` | The alignment card from its title (`align`), its answer row (`align-end`), the latest drawing (`vis`), or the end. |
 | `home` | The last beat: the pointer goes back to where it started and the video fades into its first frame. |
 
-`caption` on any beat starts a caption there (null ends it; the first beat has one). Captions are
-page text, one line under the video, never drawn into the picture: the recorder writes each one's
-start and end in the video's own seconds (and the sped-up stretches) to the manifest as the
-video's `cues` and `tags`, and the page shows the one for the video's current time, so it follows
-loops, pauses and seeking. `line` is the fixed line shown instead where the video doesn't play
-(reduced motion, no JavaScript, a failed load): it describes the still. Captions and `line` are
-left out of the video's input hash, so rewording one needs only `screens:video -- --cues`, which
+`caption` on any beat starts a caption there (null ends it; the first beat has one), and
+`chapter` names the chapter it belongs to. Captions are page text under the video, never drawn into
+the picture: the recorder writes each one's start, end (in the video's own seconds) and chapter
+(and the sped-up stretches) to the manifest as the video's `cues` and `tags`, and the page shows
+the one for the video's current time, so it follows loops, pauses and seeking. The page draws a
+chapter bar from them: one segment per chapter, as wide as its captions run, each a button that
+jumps the video to the chapter's start, with the chapter's name above the caption. When one caption
+names a chapter every caption does, a chapter's captions are consecutive, and a name has at most
+16 characters (story-check). `line` is the fixed line shown instead where the video doesn't play
+(reduced motion, no JavaScript, a failed load): it describes the still. Captions, chapters and
+`line` are left out of the video's input hash, so rewording one needs only `screens:video -- --cues`, which
 rewrites the cue lists from the recorded beat times, with no filming. `start` names the first screen,
 `prefill` a user step already in its composer, `overseer` the video's own Overseer opener (on the
 story's Overseer model), `slot` the still the page plays it over (same shape; its reduced-motion

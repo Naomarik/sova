@@ -141,8 +141,9 @@ const r2 = (x) => Number(x.toFixed(2));
  * The page's captions for a video, from the story's beats and the recorded beat times (output
  * seconds): a caption runs from the start of its beat (the first from 0) to the start of the next
  * beat that sets one, the last to the end of the video (its loop fade included). `tags` are the
- * sped-up stretches, each shown at least PACE.caption.min s. Wording is the story's: a changed
- * caption needs only these again (record.mjs --cues), never a new recording.
+ * sped-up stretches, each shown at least PACE.caption.min s. A caption beat's `chapter` rides on
+ * its cue (the page's chapter bar). Wording is the story's: a changed caption or chapter needs only
+ * these again (record.mjs --cues), never a new recording.
  */
 export function cuesOf(v, timeline) {
   const at = new Map(timeline.beats.map((b) => [b.i, b.a]));
@@ -152,7 +153,7 @@ export function cuesOf(v, timeline) {
     if (b.caption === undefined) return;
     const a = i === 0 ? 0 : at.get(i);
     if (cur) cues.push({ ...cur, b: r2(a) });
-    cur = b.caption === null ? null : { a: r2(a), text: b.caption };
+    cur = b.caption === null ? null : { a: r2(a), text: b.caption, ...(b.chapter ? { chapter: b.chapter } : {}) };
   });
   if (cur) cues.push({ ...cur, b: r2(timeline.seconds) });
   const tags = timeline.sped.map((x) => ({ a: r2(x.a), b: r2(Math.min(timeline.seconds, Math.max(x.b, x.a + PACE.caption.min))), text: `Sped up ${x.k}×` }));
@@ -165,6 +166,8 @@ export function cueProblems({ cues, tags }, v, seconds) {
   const want = v.beats.map((b) => b.caption).filter((c) => typeof c === "string");
   if (!Array.isArray(cues)) return ["no cue list: run screens:video -- --cues"];
   if (cues.map((c) => c.text).join("\n") !== want.join("\n")) out.push(`the cues (${cues.map((c) => `"${c.text}"`).join(", ")}) are not the story's captions: run screens:video -- --cues`);
+  const chapters = v.beats.filter((b) => typeof b.caption === "string").map((b) => b.chapter ?? "");
+  if (cues.map((c) => c.chapter ?? "").join("\n") !== chapters.join("\n")) out.push("the cues' chapters are not the story's: run screens:video -- --cues");
   if (want.length && cues[0]?.a !== 0) out.push("the first cue doesn't start at 0 s: the page would show no caption on the first frame");
   cues.forEach((c, k) => {
     for (const p of captionProblems(c.text)) out.push(`caption "${c.text}": ${p}`);

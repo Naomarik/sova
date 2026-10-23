@@ -1347,6 +1347,11 @@
                 ],
                 "description": "A caption that starts with this beat and stays until the next caption (null: none from here). Page text under the video: at most 8 words and 48 characters, on the page at least max(2 s, its reading time). The first beat has one."
               },
+              "chapter": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The chapter this beat's caption belongs to: the page draws one bar segment per chapter (a button that jumps the video to its start) and shows the name above the caption. Only on a beat with a string caption; when any caption names one, every caption does, and a chapter's captions are consecutive. Page text, left out of the input hash like the caption."
+              },
               "note": {
                 "$ref": "#/$defs/Note"
               },

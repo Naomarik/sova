@@ -165,6 +165,26 @@ test("the page's cues run from 0 to the end, one per caption, each at least its 
   assert.match(cueProblems({ ...c, cues: [c.cues[1], c.cues[0]] }, v, 12).join("\n"), /are not the story's captions/);
 });
 
+test("a caption's chapter rides on its cue, and a stale chapter asks for --cues", () => {
+  const v = { beats: [{ do: "hold", caption: "Ask the Overseer about past work", chapter: "Overseer" }, { do: "click" }, { do: "release", caption: "Every waiting session, and why it waits", chapter: "Waiting" }, { do: "home" }] };
+  const timeline = { seconds: 12, beats: [{ i: 0, a: 0.04, b: 3 }, { i: 1, a: 3, b: 5 }, { i: 2, a: 5, b: 6 }, { i: 3, a: 6, b: 11 }], sped: [] };
+  const c = cuesOf(v, timeline);
+  assert.deepEqual(c.cues.map((x) => x.chapter), ["Overseer", "Waiting"]);
+  assert.deepEqual(cueProblems(c, v, 12), []);
+  const renamed = { beats: v.beats.map((b, i) => (i === 2 ? { ...b, chapter: "Attention" } : b)) };
+  assert.match(cueProblems(c, renamed, 12).join("\n"), /chapters are not the story's: run screens:video -- --cues/);
+});
+
+test("chapters go on every caption or none, each one run, never on a beat without a caption", async () => {
+  const caps = (v) => v.videos.desk.beats.map((b, i) => [b, i]).filter(([b]) => typeof b.caption === "string");
+  const missing = await broken(mutate((v) => delete caps(v)[1][0].chapter));
+  assert.match(missing, /when one caption names a chapter, every caption does/);
+  const back = await broken(mutate((v) => (caps(v).at(-1)[0].chapter = caps(v)[0][0].chapter)));
+  assert.match(back, /chapter "Overseer" comes back after another/);
+  const stray = await broken(mutate((v) => (v.videos.desk.beats.find((b) => b.caption === undefined).chapter = "Overseer")));
+  assert.match(stray, /a chapter goes on a beat that starts a caption/);
+});
+
 test("a typed prompt is at most 90 characters, typed at about 30 a second", async () => {
   const long = await broken(mutate((v) => (v.videos.desk.overseer.script[4].user = `${v.videos.desk.overseer.script[4].user} And which of those can safely wait until after lunch today, or until tomorrow morning?`)));
   assert.match(long, /\/videos\/desk\/beats\/\d+\/step: that prompt is \d+ characters; a typed prompt is at most 90/);

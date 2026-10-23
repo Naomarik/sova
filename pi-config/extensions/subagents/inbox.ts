@@ -498,7 +498,7 @@ export class InboxStore {
 	/**
 	 * The safety net (§app.teams/inbox-zero): close, as closed automatically, the member's open items
 	 * it saw in a task that has ended and did not close. `upto` is the task that just ended, or "all"
-	 * when the member ends (every task has ended; the setting does not matter). Never a question, an
+	 * when the member ends (every task has ended). Never a question, an
 	 * instruction, an unseen or returned item, nor one read with no turn record (before this change),
 	 * nor one shown by a wake whose run has not begun. Returns the closed items.
 	 */

@@ -72,7 +72,7 @@ test("a merge's unpromoted drafts and orphaned evidence; no foreign §, no code-
 		const rep = await merge(r);
 		assert.ok(rep);
 		assert.equal(rep.warnings.length, 2, texts(rep).join("\n"));
-		assert.equal(rep.warnings[0]!.text, "draft left has 1 unpromoted record (§app/list): promote what shipped");
+		assert.equal(rep.warnings[0]!.text, "draft left has 1 unpromoted record (§app/list): promote it on the branch it merged into, before that branch lands");
 		assert.match(rep.warnings[1]!.text, new RegExp(`^evidence commit ${gone.slice(0, 7)} \\(draft old\\) is not on feat/x`));
 		assert.deepEqual(specLines(rep), texts(rep).map((t) => `Spec warning: ${t}`));
 		assert.ok(!specLines(rep).some((l) => /Foreign §|last line|Deferred|Plumbing/.test(l)));
@@ -147,14 +147,14 @@ test("the landing lists: an unmapped file and an unpromoted draft, worded with n
 		assert.deepEqual(rep.landing.unmappedChanged, [{ path: "scripts/links.sh", status: "A", inBoundary: false }]);
 		assert.deepEqual(rep.landing.unpromotedDrafts.map((d) => [d.draft, d.ids]), [["links", ["§app.list/mark"]]]);
 		assert.equal(rep.warnings[0]!.text, "1 changed file no claim maps (scripts/links.sh): spec any whose change a user sees");
-		assert.equal(rep.warnings[1]!.text, "draft links has 1 unpromoted record (§app.list/mark): promote what shipped");
+		assert.equal(rep.warnings[1]!.text, "draft links has 1 unpromoted record (§app.list/mark): promote it on the branch it merged into, before that branch lands");
 		assert.ok(rep.warnings[1]!.key);
 	} finally {
 		r.done();
 	}
 });
 
-test("q14: into the default branch, the landing's own draft is to be promoted now", async () => {
+test("into the default branch, the landing's own draft is reported as kept for a fresh branch, never to promote on it", async () => {
 	const r = repo();
 	try {
 		execFileSync(process.execPath, [DRAFT, "new", "links", "--write", "--root", r.tree]);
@@ -162,7 +162,8 @@ test("q14: into the default branch, the landing's own draft is to be promoted no
 		put(r.tree, "src/list.ts", "v2 links\n");
 		sh(r.tree, "commit", "-qam", "links, spec deferred");
 		const rep = await merge(r, { onDefault: true });
-		assert.deepEqual(texts(rep).filter((w) => w.startsWith("draft links")), ["draft links has 1 unpromoted record (§app.list/mark): this landed on the default branch, so promote it now"]);
+		assert.deepEqual(texts(rep).filter((w) => w.startsWith("draft links")), [`draft links has 1 unpromoted record (§app.list/mark): it didn't land with the code; the draft stays in ${r.tree}/.sova/spec/drafts/links until promoted on a fresh branch from the default branch, never on it directly`]);
+		assert.ok(!texts(rep).some((w) => /promote (it|them) now|so promote/.test(w)), "never asks to promote on the default branch");
 	} finally {
 		r.done();
 	}

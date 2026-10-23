@@ -3,9 +3,9 @@
   "note": "Files the Sova marketing generator owns, with their content hashes. It rewrites only these; any other file under .sova/marketing/ is yours.",
   "files": {
     ".sova/marketing/.gitignore": "sha256:b602078fb1469bc8897cee12932720b61950dd6c4919395adbcdc0dd34296365",
-    ".sova/marketing/BRAND.md": "sha256:5196f015f8b9153ecb9bb7ec799ea44aa227b170e00052c5652940d91cd8fa08",
+    ".sova/marketing/BRAND.md": "sha256:54e1504a18d9f430b504faf8fe53340e0260285456b931142a2e5be931477695",
     ".sova/marketing/lib/pw.mjs": "sha256:00d993a15dc31568e953d384364b239d92399d306c023bee0d56e17fa7ee4298",
-    ".sova/marketing/local.json": "sha256:40c5efa854b55a079e179b89a1a16854b5f86f8c89ce4e39404ad5cf0d7639f0",
+    ".sova/marketing/local.json": "sha256:016b2f1f3b032004ce54f557f19e34e8fa05a5dd68fae24e3227c6133ca34d50",
     ".sova/marketing/playbooks/demo-screenshots/capture.mjs": "sha256:77e723fb7658e8a749d8a70ccfbf17694fde51eec72f15c455be8cd0076ba17b",
     ".sova/marketing/playbooks/demo-screenshots/plan.example.json": "sha256:0cb09765e81990f239c0161d03a095775d3e0d3f7ae218f2b6eeed2173395156",
     ".sova/marketing/playbooks/demo-screenshots/PLAYBOOK.md": "sha256:e7ee4c25cf31498448cf6872c73ad384b9347578a2adf75fac978b5b2ca93056",

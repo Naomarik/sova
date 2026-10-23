@@ -23,6 +23,8 @@ import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } f
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -31,7 +33,7 @@ import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
-import { approveSchedule, fetchTranscriptRows, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -129,10 +131,11 @@ import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
 import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
-import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
+import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
+import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
-import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
@@ -236,7 +239,7 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A rewind landed on this chat, whoever asked (a Timeline row, or the flyout's "Undo last
+  /** A rewind landed on this chat, whoever asked (a Timeline row, or the palette's "Undo last
       turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
       Success only — a refusal changed nothing. App mints the generation counter the pane watches.
       No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
@@ -1330,7 +1333,7 @@ export function ChatView(props: {
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
   /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
-      and the flyout's Undo row greys out while a rewind is. */
+      and the palette's Undo row greys out while a rewind is. */
   const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
     const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
@@ -1383,7 +1386,7 @@ export function ChatView(props: {
       countPending();
     });
   };
-  /** How many rewinds are out — the flyout's Undo row reads this. */
+  /** How many rewinds are out — the palette's Undo row reads this. */
   const rewindsPending = () => pending().rewind;
   /**
    * A refusal code from a server that may be newer than this build: anything it doesn't know is
@@ -1428,7 +1431,7 @@ export function ChatView(props: {
   onCleanup(() => noteLinks(props.path, null));
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
-  /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch
+  /** The palette's "Undo last turn": a rewind to just before the newest user message on the branch
       (never a link message: a partner's words are no rewind target). */
   const lastInput = () => {
     const list = items() ?? [];
@@ -1625,6 +1628,9 @@ export function ChatView(props: {
   const listHere = createMemo(() => !!items());
   /** The connection's own reason to wait, or null (lib/chat-wait waitReason). */
   const waitingReason = (): ComposerReason | null => waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
+  // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
+  const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
+  if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -1672,7 +1678,17 @@ export function ChatView(props: {
       return !!current?.reviewer;
     },
   );
+  /** The open cards' triage (§app.decisions/align-triage): read again when a card's version changes. */
+  const [triage] = createResource(
+    () => {
+      if (!alignAnswerable()) return false;
+      const key = triageKey(aligns().map((e) => ({ id: e.doc.id, rev: e.doc.rev, open: isOpenDoc(e.doc) && openCount(e.doc) > 0 })));
+      return key ? `${props.path}\n${key}` : false;
+    },
+    async (k) => getAlignTriage(k.slice(0, k.indexOf("\n"))).catch(() => undefined),
+  );
   const alignAnswer: AlignAnswer = {
+    triage: (doc, rev) => triageOf(triage(), doc, rev),
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
     picked: (doc, q) => picks()[doc]?.some((p) => p.q === q && !p.option) ?? false,
@@ -1854,7 +1870,7 @@ export function ChatView(props: {
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
   const toolsKey = createMemo(() => toolsKeyOf(model(), modeState(), hellos()));
-  /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
+  /** The shield's Sandbox panel: the extension answers with a toast and a
       "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
@@ -2275,6 +2291,8 @@ export function ChatView(props: {
                   focusComposer();
                 },
               }}>
+              <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
+              <OfferContext.Provider value={offers}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -2297,6 +2315,9 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              <OfferTray />
+              </OfferContext.Provider>
+              </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
@@ -2374,7 +2395,6 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
@@ -2447,7 +2467,6 @@ export function ChatView(props: {
         onAbort={abort}
         restored={restored()}
       />
-      </FlyoutSession.Provider>
       <Show when={showPlaybooks()}>
         <PlaybooksDialog
           path={props.path}
@@ -2460,8 +2479,8 @@ export function ChatView(props: {
           onSend={(text) => send(text, false, [])}
           onClose={(sent) => {
             setShowPlaybooks(false);
-            // After a send the next thing is the conversation; otherwise back
-            // to the trigger the dialog was opened from.
+            // After a send the next thing is the conversation; otherwise back to the "+" button
+            // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
             if (sent) focusComposer();
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}

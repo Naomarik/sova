@@ -121,10 +121,10 @@ test("context: system prompt first, context files in order, appended sources las
   assert.deepEqual(
     rows.map((r) => [r.label, r.role]),
     [
-      ["~/proj/.pi/SYSTEM.md", "replaces the system prompt"],
+      [".pi/SYSTEM.md", "replaces the system prompt"],
       ["~/.pi/agent/AGENTS.md", null],
-      ["~/proj/CLAUDE.md", null],
-      ["~/proj/.pi/APPEND_SYSTEM.md", "appended to the system prompt"],
+      ["CLAUDE.md", null],
+      [".pi/APPEND_SYSTEM.md", "appended to the system prompt"],
     ],
   );
   assert.equal(contextHeading(rows.length), "Context · 4");
@@ -302,4 +302,11 @@ test("flipped sends the whole off set after one flip, and only that flip changes
   assert.deepEqual(flipped(s, "skill", "b", false), { offContext: ["/g.md"], offSkills: ["a", "b"] });
   assert.deepEqual(flipped(s, "skill", "a", true), { offContext: ["/g.md"], offSkills: [] });
   assert.deepEqual(flipped(s, "skill", "a", false), { offContext: ["/g.md"], offSkills: ["a"] }, "already off: not doubled");
+});
+
+test("a context file in the session's own folder is named from there; one in a sibling or parent isn't", () => {
+  const f = (path: string) => ({ path, bytes: 1, lines: 1 });
+  const rows = contextRows(setup({ context: [f("/home/u/AGENTS.md"), f("/home/u/proj/AGENTS.md"), f("/home/u/proj-two/AGENTS.md"), f("/opt/x/AGENTS.md")] }), "/home/u");
+  assert.deepEqual(rows.map((r) => r.label), ["~/AGENTS.md", "AGENTS.md", "~/proj-two/AGENTS.md", "/opt/x/AGENTS.md"]);
+  assert.deepEqual(contextRows(setup({ cwd: "/home/u/proj/", context: [f("/home/u/proj/AGENTS.md")] }), null).map((r) => r.label), ["AGENTS.md"]);
 });

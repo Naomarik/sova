@@ -357,3 +357,9 @@ dialog.owner-sheet::backdrop { background: var(--scrim); }
 @media (max-width: 767px) {
   dialog.owner-sheet { right: 0; bottom: 0; top: auto; max-height: 85dvh; }
 }
+
+/* The owner's own feature request chat (§app.project-assistant/feature-chats): End Chat under the thread, and the
+   assistant's Open Feature Chat button inside its bubble. */
+.owner-feature-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.owner-feature-end .button { min-height: 44px; }
+.owner-feature-open { align-self: flex-start; margin-top: var(--space-2); min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; }

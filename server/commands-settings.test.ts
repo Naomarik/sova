@@ -62,7 +62,7 @@ describe("the area", () => {
   test("every entry here is in COMMANDS, and nothing that grants power or reveals a secret is", () => {
     for (const c of OTHER_ENTRIES) assert.ok(COMMANDS.includes(c), c.id);
     const writes = OTHER_ENTRIES.filter((c) => c.id.startsWith("settings.") && c.effect === "changes").map((c) => c.id).sort();
-    assert.deepEqual(writes, ["settings.align.set"]);
+    assert.deepEqual(writes, ["settings.align.set", "settings.assistant-default.set"]);
     const forbidden = /\/api\/(profiles|schedules|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
     for (const c of COMMANDS) assert.doesNotMatch(c.route.path, forbidden, c.id);
   });

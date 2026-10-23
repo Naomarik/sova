@@ -55,7 +55,8 @@ export function OverseerView(props: {
 
   const main = createMemo(() => props.sessions.filter(isMainThread));
   const working = () => main().filter((s) => s.busy || sessionWorking(s) > 0 || s.activity?.state === "working").length;
-  const act = () => props.info?.badge.act ?? 0;
+  // The sessions Needs you lists, blockers and guesses alike (shared/needs-you.ts): one rule, so the counts agree.
+  const act = () => props.info?.badge.needsYou ?? props.info?.badge.act ?? 0;
   /** The head's one line: what the Overseer is watching, as counts. */
   const facts = () => {
     const parts = [`${sessions(main().length)}`];

@@ -67,6 +67,8 @@ export interface OwnerWaiting {
   projectName: string;
   /** When it was put to them (the hand-off or the offer). */
   askedAt: string;
+  /** Their own feature request chat (§app.project-assistant/feature-chats): answered on the page, not through a link. */
+  feature?: true;
 }
 
 export interface OwnerCounts {
@@ -105,6 +107,9 @@ export interface OwnerProjectAbilities {
   version: OwnerAbilityOutcome | "none";
   /** Release a new version. */
   release: OwnerAbilityOutcome;
+  /** Plan something new with you (§app.project-assistant/feature-chats): `now` opens a feature request chat, `team`
+      sends it to the team. Absent from an older server: read as `team`. */
+  feature?: "now" | "team";
 }
 
 export interface OwnerAbilities {
@@ -171,7 +176,12 @@ export type OwnerConversationStatus =
   | { kind: "with-operator"; name: string; first: string }
   | { kind: "offered"; count: number }
   | { kind: "done" }
-  | { kind: "closed" };
+  | { kind: "closed" }
+  /** The owner's own feature request chat (§app.project-assistant/feature-chats): they hold it ("Planning with
+      you"), or it is agreed ("Plan agreed"). Someone else holding it reads `with-operator` or `waiting-on`, said
+      "With {first}"; ended reads `closed`. */
+  | { kind: "planning" }
+  | { kind: "plan-agreed" };
 
 export interface OwnerConversationRow {
   /** The conversation's handle (k_…). */
@@ -215,6 +225,9 @@ export interface OwnerConversation extends BatonView {
   status: OwnerConversationStatus;
   /** The owner holds it now: "It's your turn here. Answer through the link {op} sent you." */
   yourTurn: boolean;
+  /** Present only on the owner's own feature request chat (§app.project-assistant/feature-chats): they write here
+      (`canWrite` while they hold it and it is open) and may end it (`canEnd` while it is open). */
+  feature?: { canWrite: boolean; canEnd: boolean };
   org: { name: string };
   operator: OwnerName;
   updatedAt: string;

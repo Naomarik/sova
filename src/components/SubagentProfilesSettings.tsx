@@ -788,7 +788,7 @@ export function SubagentProfilesSettings() {
                               <option value="host" selected={p().alignment?.style === undefined}>
                                 Use host default
                               </option>
-                              <For each={["default", "simplified", "pm"] as const}>
+                              <For each={["pm", "simplified", "default"] as const}>
                                 {(s) => (
                                   <option value={s} selected={p().alignment?.style === s}>
                                     {ALIGN_STYLE_NAMES[s]}

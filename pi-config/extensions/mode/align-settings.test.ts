@@ -6,8 +6,11 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import test from "node:test";
 import {
+	ALIGN_STYLE_LABELS,
+	ALIGN_STYLES,
 	alignSettingsDefaults,
 	alignSettingsReader,
+	isAlignStyle,
 	loadAlignSettings,
 	parseAlignOverride,
 	parseAlignSettings,
@@ -28,7 +31,7 @@ test("parse: strict — both fields, version 1, nothing unknown; each error name
 	for (const [value, error] of [
 		[null, /Expected/],
 		[{ version: 2, style: "pm", visuals: true }, /version must be 1/],
-		[{ version: 1, style: "expert", visuals: true }, /style must be one of default, simplified, pm/],
+		[{ version: 1, style: "expert", visuals: true }, /style must be one of pm, simplified, default/],
 		[{ version: 1, style: "pm" }, /visuals must be true or false/],
 		[{ version: 1, visuals: false }, /style must be/],
 		[{ version: 1, style: "pm", visuals: "yes" }, /visuals must be true or false/],
@@ -41,10 +44,13 @@ test("parse: strict — both fields, version 1, nothing unknown; each error name
 	assert.equal(parseAlignSettingsText('{"version":1,"style":"default","visuals":false}').ok, true);
 });
 
-test("read: a missing or malformed file is Default with Visuals off; the writer writes the canonical shape", () => {
+test("read: a missing or malformed file is Project manager with Visuals off; the writer writes the canonical shape", () => {
 	const file = join(dir, "mode-align.json");
 	assert.deepEqual(loadAlignSettings(file), alignSettingsDefaults());
-	assert.deepEqual(alignSettingsDefaults(), { version: 1, style: "default", visuals: false });
+	assert.deepEqual(alignSettingsDefaults(), { version: 1, style: "pm", visuals: false });
+	writeFileSync(file, JSON.stringify({ version: 1, style: "default", visuals: false }));
+	assert.equal(loadAlignSettings(file).style, "default", "a saved Default stays \"default\" (shown as Technical), never migrated");
+	assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { version: 1, style: "default", visuals: false }, "reading never rewrites the file");
 	writeFileSync(file, "{ not json");
 	assert.deepEqual(loadAlignSettings(file), alignSettingsDefaults());
 	writeFileSync(file, JSON.stringify({ version: 1, style: "pm", visuals: true, extra: 1 }));
@@ -55,6 +61,16 @@ test("read: a missing or malformed file is Default with Visuals off; the writer 
 	assert.equal(read().style, "simplified");
 	rmSync(file);
 	assert.deepEqual(read(), alignSettingsDefaults(), "a removed file is not cached");
+});
+
+test("the styles: Project manager, Simplified, Technical, in that order; the stored \"default\" reads as Technical", () => {
+	assert.deepEqual(ALIGN_STYLES, ["pm", "simplified", "default"]);
+	assert.deepEqual(ALIGN_STYLES.map((s) => ALIGN_STYLE_LABELS[s]), ["Project manager", "Simplified", "Technical"]);
+	assert.ok(isAlignStyle("default"), "the allowed stored values stay default | simplified | pm");
+	// The history fallbacks describe what a head was sent with, not the setting: a head nothing records
+	// was built in Technical (no paragraph), whatever the default for a missing file is now.
+	assert.equal(alignSettingsDefaults().style, "pm");
+	assert.equal(buildAlignPrompt(), ALIGN_INSTRUCTIONS);
 });
 
 test("a profile's override: style and/or visuals, never empty, nothing else; resolution is field by field", () => {
@@ -78,9 +94,9 @@ test("a profile's override: style and/or visuals, never empty, nothing else; res
 	assert.deepEqual(resolveAlign(host, { style: "default", visuals: false }), { style: "default", visuals: false });
 });
 
-test("the paragraphs: Default adds no text; Simplified and Project manager add exactly their own; Visuals follows the style", () => {
+test("the paragraphs: Technical (\"default\") adds no text; Simplified and Project manager add exactly their own; Visuals follows the style", () => {
 	assert.equal(ALIGN_STYLE_PARAGRAPHS.default, undefined);
-	assert.equal(buildAlignPrompt(), ALIGN_INSTRUCTIONS, "Default, Visuals off: the align block is today's, byte for byte");
+	assert.equal(buildAlignPrompt(), ALIGN_INSTRUCTIONS, "Technical, Visuals off: the align block is today's, byte for byte");
 	assert.equal(buildMinorPrompt("align"), ALIGN_INSTRUCTIONS);
 	assert.equal(buildAlignPrompt({ style: "default", visuals: false }), ALIGN_INSTRUCTIONS);
 	assert.equal(buildAlignPrompt({ style: "simplified", visuals: false }), `${ALIGN_INSTRUCTIONS}\n\n${ALIGN_STYLE_PARAGRAPHS.simplified}`);
@@ -143,12 +159,12 @@ test("composePrompt: the head's align block carries the style and Visuals; the D
 	assert.ok(note.text.endsWith(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_STYLE_PARAGRAPHS.simplified}`));
 });
 
-test("the style note: the new paragraph, or back to Default, that the old one no longer applies", () => {
+test("the style note: the new paragraph, or, to Technical, that the old one no longer applies", () => {
 	assert.equal(buildAlignStyleNote("default", "pm"), `Writing style change: the user set the align writing style to Project manager. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${ALIGN_STYLE_PARAGRAPHS.pm}`);
 	assert.match(buildAlignStyleNote("pm", "simplified"), /to Simplified\.[\s\S]*Writing style: Simplified\./);
 	assert.equal(
 		buildAlignStyleNote("simplified", "default"),
-		'Writing style change: the user set the align writing style back to Default. The earlier "Writing style: Simplified" paragraph no longer applies; write alignments at your usual level of detail from now on.',
+		'Writing style change: the user set the align writing style to Technical. The earlier "Writing style: Simplified" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on.',
 	);
 });
 

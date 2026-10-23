@@ -450,6 +450,17 @@ export function parseLanding(text) {
   return d?.v === 1 ? { goAheads: (Array.isArray(d.goAheads) ? d.goAheads : []).filter(ok), notYet: (Array.isArray(d.notYet) ? d.notYet : []).filter(ok) } : { goAheads: [], notYet: [] };
 }
 
+/** Whether an offers file's text turns the merge guard on (§chat.worktrees/merge-guard), as landing.ts's mainMergesOn. */
+export function mainMergesOn(text) {
+  if (text == null) return false;
+  try {
+    const raw = JSON.parse(text);
+    return !!raw && typeof raw === "object" && !Array.isArray(raw) && raw.mainMerges === "go-ahead";
+  } catch {
+    return false;
+  }
+}
+
 /** The user's newest answer on the Landing card for this branch at exactly this head: the go-ahead, or Not Yet. */
 export const landingAnswer = (landing, branch, head) => {
   const go = landing.goAheads.filter((g) => g.branch === branch && g.commit === head).at(-1);
@@ -501,21 +512,25 @@ export const GROUPS = [
 /**
  * A branch's group: `rec` its state record, `row` its board row (or null), `pending` the board's unread sessions,
  * `answer` the user's answer on the Landing card at this head (landingAnswer), `queued` Sova's answer to the
- * captain's queue entry for this head ({card} shown, {refused} not).
+ * captain's queue entry for this head ({card} shown, {refused} not), `guarded` whether master's offers file turns
+ * the merge guard on (mainMergesOn): then only the user's go-ahead at this head (Land It, or the user naming the
+ * branch with its owner's READY) checks or lands it; an owner's own READY alone waits for the Landing card.
  */
-export function groupOf({ rec, row, head, master, pending, answer = null, queued = null }) {
+export function groupOf({ rec, row, head, master, pending, answer = null, queued = null, guarded = false }) {
   const check = rec?.check;
-  if (check?.ok && check.head === head && check.masterSha === master) return "land";
-  if (rec?.answer?.kind === "ready" && rec.answer.head === head) return "check";
+  const ready = rec?.answer?.kind === "ready" && rec.answer.head === head;
+  const named = rec?.source === "user" && (rec.chip === "ready" || rec.chip === "waiting");
+  const goAhead = answer?.kind === "go-ahead" || (named && ready);
+  const ok = guarded ? goAhead : ready || answer?.kind === "go-ahead";
+  if ((ok || !guarded) && check?.ok && check.head === head && check.masterSha === master) return "land";
   // Land It at this head is the user's go-ahead: it counts as the owner's READY.
-  if (answer?.kind === "go-ahead") return "check";
+  if (ok) return "check";
   const own = ownerOf(rec);
   if (!own) return pending > 0 ? "unknown" : "untracked";
   if (own.status === "archived") return "archived";
   if (answer?.kind === "not-yet") return "not-ready";
   if (rec?.answer?.kind === "not-ready" && rec.answer.head === head) return "not-ready";
   // The user named it to land: asked the old way, whatever the board says.
-  const named = rec?.source === "user" && (rec.chip === "ready" || rec.chip === "waiting");
   if (!named) {
     if (row && !landingEligible(row, head)) return "not-ready";
     if (!row && !(rec?.chip === "ready" || rec?.chip === "waiting")) return "not-ready";
@@ -822,6 +837,13 @@ class Round {
     return this.repoInfo;
   }
 
+  /** Whether master's own offers file (read through git, never a working tree) turns the merge guard on. */
+  async guarded() {
+    const { main } = await this.repo();
+    const r = await git(main, ["show", "refs/heads/master:.sova/offers.json"]);
+    return r.code === 0 && mainMergesOn(r.stdout);
+  }
+
   async masterSha() {
     const { main } = await this.repo();
     return gitOut(main, ["rev-parse", "--verify", "refs/heads/master^{commit}"], "rev-parse master");
@@ -926,6 +948,7 @@ class Round {
     const read = this.readBoard();
     const board = read.ok ? read.board : null;
     const landing = this.readLanding();
+    const guarded = await this.guarded();
     const branches = [];
     for (const t of trees.slice(1)) {
       if (!t.branch || t.branch === "master") continue;
@@ -939,7 +962,7 @@ class Round {
       const own = board ? ownerOf(rec) : null;
       const answer = landingAnswer(landing, t.branch, head);
       const queued = rec.ask?.queued && rec.ask.head === head ? this.queueResult(rec.ask.queued) : null;
-      const group = board ? groupOf({ rec, row, head, master, pending: board.pending, answer, queued }) : "unknown";
+      const group = board ? groupOf({ rec, row, head, master, pending: board.pending, answer, queued, guarded }) : "unknown";
       const parts = [];
       parts.push(row ? row.reason : board ? "no readiness on the board" : "readiness unknown");
       if (!board) parts.push("owner unknown");

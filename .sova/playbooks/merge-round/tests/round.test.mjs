@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, landingAnswer, mainMergesOn, needsRestart, ownerOf, parseBatch, parseBoard, parseLanding, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -1027,6 +1027,28 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.equal(g({ board }, row("ready"), 0, { answer: { kind: "not-yet" } }), "not-ready", "Not Yet waits for a new commit");
   assert.deepEqual(landingAnswer(parseLanding(JSON.stringify({ v: 1, goAheads: [{ branch: "b", commit: "a".repeat(40), by: "land-it", withoutSpecs: true }], notYet: [{ branch: "c", commit: "a".repeat(40) }] })), "b", "a".repeat(40)), { kind: "go-ahead", withoutSpecs: true, by: "land-it" });
   assert.equal(landingAnswer(parseLanding("{bad"), "b", "a".repeat(40)), null);
+});
+
+test("groupOf with the merge guard on: only the user's go-ahead at this head checks or lands", () => {
+  const board = { owner: "A", status: "idle", at: 2000 };
+  const g = (rec, row, extra = {}) => groupOf({ rec, row, head: "h", master: "m", pending: 0, ...extra });
+  const row = { state: "ready", landing: { state: "ready", commit: "h" } };
+  const ready = { board, answer: { kind: "ready", head: "h" } };
+  const green = { check: { ok: true, head: "h", masterSha: "m" } };
+  for (const r of [g(ready, row, { guarded: true }), g({ ...ready, ...green }, row, { guarded: true })])
+    assert.ok(r !== "check" && r !== "land", `a session's own READY is no go-ahead: ${r}`);
+  assert.equal(g(ready, row, { guarded: true }), "ask", "queued for the Landing card");
+  const shown = { ...ready, ask: { queued: "lq_1", head: "h", at: 1, owner: "A" } };
+  assert.equal(g(shown, row, { guarded: true, queued: { at: 1, card: "of_1" } }), "waiting");
+  assert.equal(g({ board }, row, { guarded: true, answer: { kind: "go-ahead" } }), "check");
+  assert.equal(g({ board, ...green }, row, { guarded: true, answer: { kind: "go-ahead" } }), "land");
+  const named = { ...ready, source: "user", chip: "ready" };
+  assert.equal(g(named, row, { guarded: true }), "check", "the user named it to the captain");
+  assert.equal(g({ ...named, ...green }, row, { guarded: true }), "land");
+  assert.ok(mainMergesOn('{"mainMerges":"go-ahead"}') && !mainMergesOn('{"mainMerges":"off"}') && !mainMergesOn(null) && !mainMergesOn("{bad"));
+  // The guard off: today's behaviour.
+  assert.equal(g(ready, row), "check");
+  assert.equal(g({ ...ready, ...green }, row), "land");
 });
 
 test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {

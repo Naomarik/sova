@@ -3,13 +3,15 @@ import { open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HBlock } from "../shared/harness";
-import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
+import type { AttentionItem, AttentionKind, AttentionTier, BranchStatus, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
+import { isCaptain } from "./merge-board";
+import { unpromotedDrafts } from "./spec-drafts-state";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -611,14 +613,27 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   let restartPending = false;
   for (const c of cards) if (await mergeNeedsRestart(c).catch(() => false)) restartPending = true;
   let pushPending = false;
+  let pushed: boolean | undefined;
   if (newest) {
     const cwd = own.find((t) => t.path === newest.path)?.path ?? s.cwd;
-    pushPending = (await mergePushed(newest, cwd).catch(() => undefined)) === false;
+    pushed = await mergePushed(newest, cwd).catch(() => undefined);
+    pushPending = pushed === false;
   }
   const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
   if (publishChecks()) checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
-  return sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
+  const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
+  if (!r || !newest) return r;
+  // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
+  const drafts = newest.path && existsSync(newest.path) ? unpromotedDrafts(newest.path) : undefined;
+  const status: BranchStatus = {
+    branch: newest.branch,
+    commit: newest.sha.slice(0, 7),
+    ...(pushed !== undefined ? { pushed } : {}),
+    live: !restartPending,
+    ...(drafts !== undefined ? { specDrafts: drafts } : {}),
+  };
+  return { ...r, status };
 }
 
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */
@@ -636,6 +651,8 @@ async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionRea
       card: { branch: c.branch, target: c.target, commits: c.commits, added: c.added, removed: c.removed },
       reply: c.reply,
       routine: { restart_pending: !!r?.restartPending, push_pending: !!r?.pushPending, cleanup: r?.cleanup ?? 0 },
+      // A merge captain's reply after a merge is a round report about other branches; an Overseer's isn't the work's.
+      ...(isCaptain(s) ? { skip: "captain" as const } : s.overseer || s.projectOverseer ? { skip: "overseer" as const } : {}),
     };
     if (f.skipReason(input) !== null) continue;
     if (await f.check(input)) stored = true;

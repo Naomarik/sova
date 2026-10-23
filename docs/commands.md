@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 478 |
-| Routes a catalogue entry points at | 111 |
-| Catalogue entries | 138 |
+| Routes registered | 477 |
+| Routes a catalogue entry points at | 113 |
+| Catalogue entries | 140 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -26,7 +26,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Pages and assets | 7 |
 | Class: Trust grants | 2 |
 | Class: Middleware and fallbacks | 2 |
-| Pending (not yet a command) | 307 |
+| Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
 | Hand-written tool specs | 120 |
@@ -53,6 +53,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.draft.set` | Set Draft | changes | `PUT /api/sessions/draft` | sessions |
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
+| `session.align.triage` | Show Alignment Triage | looks | `GET /api/sessions/align-triage` | sessions |
+| `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
@@ -403,9 +405,6 @@ class, leaves it, and a new route never joins it.
 | `POST /api/sessions/loadout` | sessions |
 | `POST /api/sessions/profile` | sessions |
 | `POST /api/sessions/shorten-titles` | sessions |
-| `GET /api/sessions/tags/backfill` | sessions |
-| `POST /api/sessions/tags/backfill` | sessions |
-| `POST /api/sessions/tags/backfill/cancel` | sessions |
 | `PUT /api/settings` | admin |
 | `GET /api/settings/claude-status` | sessions |
 | `GET /api/settings/decisions` | sessions |
@@ -700,6 +699,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/session-offers/unsnooze` | admin | `session.offers.unsnooze` |
 | `GET /api/sessions` | sessions | `session.list` |
 | `POST /api/sessions` | sessions | `session.create` |
+| `GET /api/sessions/align-triage` | sessions | `session.align.triage` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
 | `POST /api/sessions/configure` | sessions | `session.configure` |
 | `GET /api/sessions/context` | sessions | `session.context` |
@@ -711,6 +711,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
 | `POST /api/sessions/title` | sessions | `session.title.reset`, `session.title.set` |
 | `GET /api/sessions/tools` | sessions | `session.tools.get` |
+| `GET /api/sessions/worker-checks` | sessions | `session.workers.checks` |
 | `GET /api/settings` | sessions | `settings.sova.get` |
 | `GET /api/settings/align` | sessions | `settings.align.get` |
 | `PUT /api/settings/align` | admin | `settings.align.set` |

@@ -435,6 +435,8 @@ const FIXTURES: Record<string, Fixture> = {
   "session.draft.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.tools.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.context": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.align.triage": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.workers.checks": { values: () => ({ session: session()[0] }), status: 200 },
   "session.insights": { values: () => ({ session: session()[0] }), status: 200 },
   "session.group.list": { values: () => ({}), status: 200 },
   "session.fork": {

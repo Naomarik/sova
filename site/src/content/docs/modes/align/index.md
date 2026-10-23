@@ -24,7 +24,7 @@ Each alignment has an id (`al_1`, `al_2`…), a title and a one-line summary of 
 - **Approach** (`a1`, `a2`…): the steps it proposes.
 - **Rejected** (`x1`, `x2`…): alternatives it turned down, each with why.
 - **Questions** (`q1`, `q2`…): what it needs you to decide. A question has a topic, the ask,
-  optional context, optional options lettered a, b, c…, each with its trade-off, and a
+  optional context, optional options lettered a, b, c…, each with a one-line consequence of picking it, and a
   **recommendation** with its reason.
 - **Technical notes** (`t1`, `t2`…): the files, code and technical detail that a plan written for
   someone who doesn't read code leaves out of the other fields.

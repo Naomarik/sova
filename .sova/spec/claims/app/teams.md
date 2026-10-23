@@ -127,13 +127,16 @@ they join the main chat's own queue, which never refuses.
 
 - **An item.** A one-line subject (at most 120 characters; the sender's `subject`, else the first
   non-blank line of the message, cut to 120), the message (at most 8,000 characters), an optional
-  `urgent` mark, and an optional `replyTo`: the id of the item it answers, which must exist in the
-  same main chat. Sova fills in the rest and the sender can never set or fake it: the id
+  `urgent` mark, an optional `needsReply` mark (`team_msg` only; it makes the item a `question`),
+  and an optional `replyTo`: the id of the item it answers, which must exist in the same main
+  chat. Sova fills in the rest and the sender can never set or fake it: the id
   (`i_<n>`, unique and increasing across the whole main chat, never reused), who sent it (a
   member's role and worker ID, `main thread` or `Sova`, taken from where the request came from,
   never from its body), when, and its kind: `message`, `question`, `report`, `handover`,
-  `notice` or `instruction`. An item is open while it is new or read and has not been returned;
-  an `instruction` item is never open.
+  `notice` or `instruction`, and once addressed, who closed it (`closedBy`: the member, a reply,
+  or `auto` for closed automatically; an addressed item without it reads as closed by the
+  member). An item is open while it is new or read and has not been returned; an `instruction`
+  item is never open.
 - **Sending answers at once.** `team_msg` to one member, several or `all` replies as soon as the
   items are stored, without waiting for any member to take them: `Queued for <role> (<ag_NN>):
   item i_41`, one line per recipient. `all` is one copy for each live member (working, idle or
@@ -152,19 +155,31 @@ they join the main chat's own queue, which never refuses.
 - **The list.** `[Team inbox: N new (k urgent) — team_inbox open <ids> to read, done <ids> to mark
   addressed]`, then at most 20 lines, urgent first, oldest first within each, each with the id,
   kind, sender and subject (`! i_42 notice from monitor — Wrap up: context 78%`), and `… and M
-  more` past 20. An item of at most 600 characters is shown in full under its line, up to 4,000
-  characters of full text per list; an item shown in full counts as read. Unopened items are
-  listed again only when new ones arrive or a turn ends with new items waiting, never on a timer.
+  more` past 20. **A member must open an item to see it:** the list never shows a message's text,
+  whatever its length; an item listed before and still unopened is marked `unopened` on its line.
+  The one exception is a list of exactly one item, which shows that item in full under its line
+  and counts as opening it. Unopened items are listed again only when new ones arrive or a turn
+  ends with new items waiting, never on a timer. The list ends with a **Still open** block of at
+  most 5 lines (inside the 20-line cap, `… and M more` past 5) naming the items the member has
+  opened and not closed, questions first (`i_7 question from writer — opened, not answered`),
+  and a closing line telling it to handle each item and close it in the same step as the work
+  (§app.teams/inbox-zero). Neither the block nor the reminder ever starts a wake of its own.
 - **Reading and marking.** `team_inbox` takes `action`: `list` (the default: open items, or
   `limit` of the newest), `open` (up to 20 `ids`, shown in full, marking them read), `done` (up to
   20 `ids`, marking them addressed, with an optional one-line `note` of at most 200 characters)
   and `sent` (the status and note of items this member sent). Each item goes new → read →
-  addressed (new → addressed directly too). A reply whose `replyTo` names a question marks that
-  question addressed. The sender is never woken when a status changes. Only the main chat's
+  addressed (new → addressed directly too). `done` closes an item as closed by the member. A
+  reply whose `replyTo` names an open item in the replier's own inbox, of any kind, marks that
+  item addressed, closed by a reply, with the note `answered in i_<n>`. The results of `open` and
+  `done` end with the member's count of open items left (`2 open left`). `sent` shows how each
+  addressed item was closed: `closed by builder`, `answered in i_52` or `closed automatically`.
+  The sender is never woken when a status changes. Only the main chat's
   extension writes an inbox: a member's `team_inbox` is a request the main chat serves, so a mark
   racing a new delivery never loses the new item.
 - **Questions.** A member's `team_ask` to its routing coordinator (§teams.defaults/routing) is a
-  `question` item; the coordinator answers with `team_msg` and `replyTo` set to it.
+  `question` item; the coordinator answers with `team_msg` and `replyTo` set to it. A `team_msg`
+  sent with `needsReply: true` is a `question` item too, so it waits for an answer like one.
+  Sova's notices, the monitor's included, are never questions.
 - **Direct instructions skip the list.** The main chat's messages to a member (`agent_steer`,
   answers to its questions, the `/team` workspace's follow-up and redirect), the coordinator's
   `team_steer`, and Sova's handover instructions ("finish your step and write your handover
@@ -193,12 +208,17 @@ they join the main chat's own queue, which never refuses.
   wait in.
   A message to a stopped or ejected member with no live or starting successor is refused, saying
   it stopped (or was ejected) and, for a stopped member, that `agent_resume` brings it back.
-- **Moving and returning.** When a member is retired by its successor, its open items move to the
+- **Moving and returning.** Every way a member ends counts as the end of its turn: when it is
+  stopped, fails, is ejected, is found restored after a restart, or is retired by its successor,
+  Sova first closes automatically every item it opened (with a turn record,
+  §app.teams/inbox-zero) that is not a question, and only then
+  moves or returns what is still open. Handled news is never returned as "not addressed" and never
+  listed again to a successor. When a member is retired by its successor, its open items move to the
   successor, keeping their ids and senders, and are listed to it; a moved item leaves the old
   member's inbox and records whom it moved from, when and why; status lookups and `replyTo`
   follow the move. A member that ends with no successor (stopped, failed, ejected, or found
   restored after a restart) returns its open items to their senders, one "not addressed" notice per sender listing
-  its items and why; the
+  its items and why (an unanswered question always goes back); the
   items Sova sent go to the routing coordinator, or to the main chat when there is none. A
   return to the main chat is shown in its transcript and starts no turn. A resumed
   member (§app.worker-restore/resume) comes back with no open items: they were returned when it
@@ -213,4 +233,47 @@ they join the main chat's own queue, which never refuses.
   tools, cannot open an inbox: it keeps getting each message in full, on the same never-refused
   delivery.
 - **Open counts.** `team_roster` and `team_list` show each member's open-item count
-  (`3 open items`), and Sova's screens show each member's inbox (§app.subagents-pane/member-inbox).
+  (`3 open items`), with its oldest unanswered question and how long it has waited when it has
+  one (`3 open items (1 question unanswered 20 min)`), and one team line: `Inbox: {n} open ·
+  closed by members {m} · automatically {a}`. Sova's screens show each member's inbox
+  (§app.subagents-pane/member-inbox).
+
+## §app.teams/inbox-zero — Inbox zero: members close what they handle, Sova closes what they saw and forgot
+
+Each member keeps its own inbox at zero, and Sova closes for it only what it has seen.
+
+- **The norm.** Every member's standing instructions (helper, coordinator and monitor headers),
+  the team tool descriptions and each wake list say: handle each item and close it in the same
+  step as the work. A reply with `replyTo` closes the item; otherwise `team_inbox done` it with a
+  short note on what you did. End each turn with nothing you have handled left open. They never
+  present the safety net as a reason to skip closing, and they describe today's delivery (items
+  queued in an inbox and listed in a wake), not "the parent session delivers it".
+- **Seen means opened, in a turn.** An item counts as seen once the member opened it
+  (`team_inbox open`, or the single item a wake showed in full). Sova records the member's turn
+  in which it was seen, on disk with the read, so after a main-chat reload an item seen before it
+  closes at the member's next turn end. A wake accepted after the member's turn ended but before Sova handled that
+  end belongs to the next turn, never to the one that ended.
+- **The safety net.** When a member's turn ends, every item it saw in a turn that has ended and
+  did not close is marked addressed, closed automatically, with the note `closed automatically:
+  seen, not closed by <role>`. Never a question, never an `instruction`, never an item it has not
+  opened (a listed subject is not seen), never a returned item. A member that stays busy keeps its
+  items open: nothing closes before the turn that showed it has ended.
+- **Items read before this change** have no turn record: they are never closed automatically.
+  They stay open and are named in the Still open block until the member closes them.
+- **Reports name what is left.** A member's end-of-task report to its coordinator, and the
+  coordinator's own completion to the main chat, end with a line naming its open items after the
+  safety net ran: `[Left open: i_7 question from writer (opened); i_9 report (unopened)]`, at
+  most 10 items then `; … and N more`; none when nothing is open.
+
+## §app.teams/inbox-gate — Open your inbox first
+
+When a wake starts a member's turn (an idle member woken by its inbox) and its list names items
+the member has not opened, every tool call other than `team_inbox`, `team_msg` and `team_ask` is
+refused with `Open your inbox first (team_inbox open <ids>)`, naming those items, until the member
+opens at least one item. Such a wake list says so in its last line: `[Open your inbox first:
+team_inbox open <ids> — other tools are refused until you open one]`. The gate never applies mid-turn (urgent items reaching a busy member at
+its next step), never to a wake of exactly one item (it shows it in full), and never to a turn
+started by anything else. Direct instructions (the main chat's `agent_steer`, the coordinator's
+`team_steer`, Sova's handover instructions; kind `instruction`) never trigger it, and once one is
+delivered nothing it asks for is refused: it lifts the gate for the rest of that turn. A member
+that ends its turn without calling a tool cannot be stopped; that is an accepted limit.

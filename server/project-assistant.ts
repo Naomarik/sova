@@ -14,7 +14,7 @@ import { versionRows } from "./owner-versions";
 import { createSessionFile } from "./harness/pi/state";
 import { joinedText, readBranch } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
-import { BATON_SENT, OVERSEER_SENT, PROJECT_ASSISTANT, SESSION_SENT } from "./harness/state-kinds";
+import { BATON_SENT, PROJECT_ASSISTANT } from "./harness/state-kinds";
 import { operatorName, orgDir, OrgError, ownerOf, readIndex, readRoster } from "./orgs";
 import { sessionIdOfFile } from "./project-overseer-store";
 import { canonicalPath } from "./paths";
@@ -100,23 +100,6 @@ export const VIEW_MESSAGES = 200;
 
 /** Who wrote a user message, as the owner's view shows it: its sent mark, else the team (the operator's name). */
 const authorOf = (marks: ReturnType<typeof stateView>, e: HEntry): string => (e.id ? (marks.byTarget(BATON_SENT, e.id)?.data.by ?? OPERATOR) : OPERATOR);
-
-/** Whether the newest user message of the branch is the operator's own turn (attended: their acts are never
-    restricted). Fail-closed: only on a positive mark of the operator's composer (clientSend's sent mark, by the
-    operator) with no other sender's mark beside it. The owner's mark, another session's (session_send), the
-    Overseer's (chat.send) and no mark at all (a queued item, a crash between the entry and its mark) are all
-    outside input: the client's power column decides. */
-export function operatorStarted(branch: readonly HEntry[]): boolean {
-  const marks = stateView(branch);
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.kind !== "user") continue;
-    if (!e.id) return false;
-    if (marks.byTarget(SESSION_SENT, e.id) || marks.byTarget(OVERSEER_SENT, e.id)) return false;
-    return marks.byTarget(BATON_SENT, e.id)?.data.by === OPERATOR;
-  }
-  return false;
-}
 
 /** The start_version tool's name, and the key of its details naming the version it started (or found running). */
 const START_VERSION = "start_version";

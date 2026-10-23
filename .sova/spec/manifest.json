@@ -4369,6 +4369,35 @@
       },
       "evidence": "reviewed"
     },
+    "§chat.transcript/setup-card-open-file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-setup.ts",
+        "server/app.ts",
+        "shared/protocol.ts",
+        "shared/commands/sessions.ts",
+        "shared/commands-ids.json",
+        "src/lib/api.ts",
+        "src/components/SessionSetup.tsx",
+        "src/app.css",
+        "server/session-setup.test.ts",
+        "src/lib/session-setup.ts",
+        "server/commands-fuzz.test.ts",
+        "server/commands-inventory/baseline.json"
+      ],
+      "requires": [
+        "§chat.transcript/setup-card-context",
+        "§chat.transcript/setup-card-skills",
+        "§app/markdown-viewer"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T02:40Z",
+        "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#01700f50"
+      }
+    },
     "§chat.transcript/states": {
       "kind": "behavior",
       "authority": "accepted",

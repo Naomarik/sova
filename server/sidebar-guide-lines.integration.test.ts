@@ -473,8 +473,21 @@ for (const width of [1280, 320]) {
         const lb = line.getBoundingClientRect();
         const x = lb.left + parseFloat(getComputedStyle(line, "::before").left) + 1;
         const pane = getComputedStyle(document.querySelector(".app-sidebar")!).backgroundColor;
-        const out: { kind: string; onTop: boolean; ring: string; ground: string }[] = [];
-        for (const shell of [...host.querySelectorAll<HTMLElement>(".session-row-shell")].slice(0, 3)) {
+        const out: { row: number; kind: string; onTop: boolean; ring: string; ground: string; lineAbove: boolean; lineBelow: boolean; contrast: number }[] = [];
+        // WCAG contrast of two computed rgb() colours (the text's alpha is 1 in this theme).
+        const lum = (c: string) => {
+          const [r, g, b] = c.match(/[\d.]+/g)!.slice(0, 3).map((v) => {
+            const x = +v / 255;
+            return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+        };
+        const contrastOf = (a: string, b: string) => {
+          const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+          return (hi! + 0.05) / (lo! + 0.05);
+        };
+        const isLine = (el: Element | null) => !!el && el === line;
+        for (const [row, shell] of [...host.querySelectorAll<HTMLElement>(".session-row-shell")].slice(0, 3).entries()) {
           const bg = getComputedStyle(shell).backgroundColor;
           const ground = bg === "rgba(0, 0, 0, 0)" ? pane : bg;
           for (const item of shell.querySelectorAll<HTMLElement>(".session-rail-item")) {
@@ -483,17 +496,42 @@ for (const width of [1280, 320]) {
             const kind = item.classList.contains("session-rail-tui") ? "tui" : item.classList.contains("session-rail-count") ? "count" : "busy";
             const ring =
               kind === "busy" ? getComputedStyle(item, "::before").backgroundColor : kind === "count" ? getComputedStyle(item).backgroundColor : getComputedStyle(item).boxShadow.replace(/\s[\d.]+px.*$/, "");
-            out.push({ kind, onTop: !!hit && item.contains(hit), ring, ground });
+            out.push({
+              row,
+              kind,
+              onTop: !!hit && item.contains(hit),
+              ring,
+              ground,
+              // The line passes behind it: just above and just below the item, still in its row, is the line.
+              // Above, the line or the rail item stacked over it (a count tucks up under Busy's dot).
+              lineAbove: (() => {
+                const el = document.elementFromPoint(x, r.top - 2);
+                return isLine(el) || (!!el && el !== item && !!el.closest(".session-rail-item") && shell.contains(el));
+              })(),
+              lineBelow: isLine(document.elementFromPoint(x, r.bottom + 2)),
+              contrast: contrastOf(getComputedStyle(item).color, ground),
+            });
           }
         }
         return out;
       }, HOSTS.folder);
-    const check = async (state: string) => {
+    /** `row`: the row in that state (hovered, selected), which must carry a worker count of its own. */
+    const check = async (state: string, row?: number) => {
       const items = await read();
       assert.deepEqual([...new Set(items.map((i) => i.kind))].sort(), ["busy", "count", "tui"], `${state}: the rail's three items are drawn`);
       for (const i of items) {
-        assert.ok(i.onTop, `${state}: the ${i.kind} sits on top of the line`);
-        assert.equal(i.ring, i.ground, `${state}: the ${i.kind}'s ring is its row's ground`);
+        assert.ok(i.onTop, `${state}: row ${i.row}'s ${i.kind} sits on top of the line`);
+        assert.equal(i.ring, i.ground, `${state}: row ${i.row}'s ${i.kind}'s ring is its row's ground`);
+      }
+      for (const c of items.filter((i) => i.kind === "count")) {
+        assert.ok(c.lineBelow, `${state}: the line runs on below row ${c.row}'s count`);
+        assert.ok(c.contrast >= 4.5, `${state}: row ${c.row}'s count reads at ${c.contrast.toFixed(2)}:1 on its ground`);
+      }
+      if (row !== undefined) {
+        const c = items.find((i) => i.row === row && i.kind === "count");
+        assert.ok(c, `${state}: the row in that state carries a count`);
+        assert.notEqual(c.ground, items.find((i) => i.row !== row)!.ground, `${state}: that row's ground is its own (not the rest colour)`);
+        assert.ok(c.lineAbove, `${state}: the line runs on above the count`);
       }
     };
     await check("at rest");
@@ -501,14 +539,14 @@ for (const width of [1280, 320]) {
     const r0 = await page.locator(`${HOSTS.folder} .session-row-shell a.session-row`).first().boundingBox();
     await page.mouse.move(r0!.x + r0!.width / 2, r0!.y + 10);
     await page.waitForTimeout(300);
-    await check("hovered");
+    await check("hovered", 0);
     await page.mouse.move(1, 1);
     // The open session: its row's current tint, its items' ring too. (On a phone an open session puts the list away.)
     if (width < 768) return void (await page.context().close());
     await page.evaluate((p) => (location.hash = `#/s/${encodeURIComponent(p)}`), "/w/sessions/f1.jsonl");
     await page.locator(`${HOSTS.folder} .session-row-shell-current`).waitFor({ timeout: 10_000 });
     await page.waitForTimeout(300);
-    await check("selected");
+    await check("selected", 1);
     await page.context().close();
   });
 }

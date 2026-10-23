@@ -391,7 +391,10 @@ their read tools (§app.overseer/tools, "Files").
   the tool, the path and the bytes written, never the content. The tools' arguments reach the model
   as given; their results are redacted like the read tools'.
 - **The prompt** states these rules, tells the overseer to leave code changes to coding sessions and
-  keep its own edits to a project's `.sova/` configuration unless asked, and that a refused write
+  keep its own edits to a project's `.sova/` configuration unless asked (a project overseer is told
+  to change its project's settings with `sova_settings` instead, never by writing the settings files:
+  a settings file it edits shows the operator as uncommitted edits to land or discard,
+  §app.project-overseer/settings), and that a refused write
   is final: never the same file another way, never a session asked to write it.
 
 ## §app.overseer/session-truth — What `sova_session` says is true now

@@ -126,7 +126,9 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
 - Approvals are `<state root>/session-offers-trust.json`
   `{version: 1, approved: {<project root>: {fingerprint, at}}}`, outside every repository, so no
   branch, clone or chat can approve itself. Only you approve, on the project page's Offers list
-  (**Approve Run Buttons**). `POST /api/projects/:pid/offers/approve {fingerprint}` is refused when
+  (**Approve Run Buttons**), or with **Apply and Approve** on a project overseer's Settings change card
+  that grants the file's run buttons (§app.project-overseer/settings: the fingerprint the card showed).
+  `POST /api/projects/:pid/offers/approve {fingerprint}` is refused when
   the file's run buttons changed since you looked: what you approve is what you saw. It is a trust
   grant, so it is no catalogue command (the commands inventory classes it as a trust grant), and no
   agent tool reaches it.

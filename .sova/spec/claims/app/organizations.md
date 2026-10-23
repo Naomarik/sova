@@ -452,14 +452,16 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   opening the add form.
 - **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
-- **Settings.** In this order: **Overseer** (the Watch switch and its hint); **What may happen
+- **Settings.** In this order: **Settings changes waiting** (only while a project overseer's Settings
+  change card or the folder's uncommitted settings edits wait, §app.project-overseer/settings); **Overseer** (the Watch switch and its hint); **What may happen
   without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
   Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
   model, thinking, abilities and mode selects, three to a row where they fit); **Extra
   instructions**; **Limits** (§app.project-overseer/limits); the Owner Page card while the org has
-  an owner (§app.owner-page/controls); and a **Danger zone** with **Archive Project** (or
+  an owner (§app.owner-page/controls); **Offers** (§chat.offers/project-list); **All settings** and
+  **Settings history** (§app.project-overseer/settings); and a **Danger zone** with **Archive Project** (or
   Unarchive). A pick or switch saves at once; Extra instructions and Limits on their own Save.
 - **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
   page's does, and every control stays at least 44px tall.

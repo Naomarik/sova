@@ -8157,9 +8157,9 @@
         "pi-config/extensions/subagents/inbox.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
       }
     },
     "§teams.defaults/file": {
@@ -8197,9 +8197,9 @@
         "pi-config/extensions/subagents/inbox-lifecycle.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
       }
     },
     "§teams.defaults/monitor": {
@@ -8219,9 +8219,9 @@
         "pi-config/extensions/subagents/delivery.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
       }
     },
     "§teams.defaults/roster-context": {
@@ -8263,9 +8263,36 @@
         "pi-config/extensions/subagents/delivery.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T02:25Z",
-        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+      }
+    },
+    "§teams.defaults/runtime-fallback": {
+      "kind": "behavior",
+      "requires": [
+        "§teams.defaults/coordinator",
+        "§teams.defaults/monitor",
+        "§teams.defaults/handover",
+        "§teams.defaults/routing"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/provider-limits/usage-out.ts",
+        "pi-config/extensions/provider-limits/usage-out.test.ts",
+        "pi-config/extensions/provider-limits/gate.ts",
+        "server/reports.ts",
+        "server/reports.test.ts"
+      ],
+      "agreed": {
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
       }
     },
     "§teams.defaults/team-report": {
@@ -14932,11 +14959,20 @@
         "pi-config/extensions/provider-limits/stream.ts",
         "pi-config/extensions/provider-limits/stream.test.ts",
         "pi-config/extensions/provider-limits/gate.ts",
-        "src/components/SettingsDialog.tsx"
+        "src/components/SettingsDialog.tsx",
+        "pi-config/extensions/provider-limits/usage-out.ts",
+        "pi-config/extensions/provider-limits/usage-out.test.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "pi-config/extensions/provider-limits/README.md"
       ],
       "requires": [
         "§app.provider-limits/queue"
-      ]
+      ],
+      "agreed": {
+        "by": "user (Omar)",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+      }
     },
     "§app.provider-limits/setting": {
       "kind": "behavior",

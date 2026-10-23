@@ -66,7 +66,9 @@ role nor members default; it does not remove workers already running.
   on the first tuple that passes the same checks a spawn applies — the backend is loaded, the
   model policy (`model-policy.json`, subagent dimension included) allows it, and the pi model is
   in the session's registry or the backend's own validation accepts it. The primary is tried, then
-  the fallback. If neither passes, **the team is not created**: the error names both tuples and
+  the fallback; a primary that ran out of usage within the hour fails the checks
+  (§teams.defaults/runtime-fallback), and a coordinator whose primary fails at runtime moves to
+  the fallback there. If neither passes, **the team is not created**: the error names both tuples and
   their reasons, and suggests fixing Settings or passing `defaults.coordinator: false`. A caller
   member that takes the coordinator's role without being the orchestrator is refused the same way.
 - **What the result says.** One line per synthesized member: role, backend/model/effort, and
@@ -124,7 +126,9 @@ duty (a successor takes over from its predecessor the moment it starts).
   would get) is queued for the routing coordinator as a `report` item in its inbox
   (§app.teams/inbox; urgent when the task failed), not sent to the parent. A killed
   member's completion goes nowhere. The monitor's own settles go nowhere (it settles after every
-  check); only a failed monitor task is reported to the coordinator.
+  check); only a failed monitor task is reported to the coordinator, except a failure that moves a
+  standing member to its fallback or stops it, which is said once instead
+  (§teams.defaults/runtime-fallback).
 - **Questions.** Another member's `team_ask` is queued for the routing coordinator as a
   `question` item, which it answers with `team_msg` and `replyTo` set to that item; the member is
   told it was queued for the coordinator, with the item's id. The monitor has no `team_ask`.
@@ -163,8 +167,11 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 
 - **When.** In a coordinated team whose chat's effective teams section has `monitor.enabled` and whose `team_create` did not
   pass `defaults.monitor: false`. It is synthesized with role `monitor.role` on the first tuple
-  that passes the spawn checks (primary, then fallback); if neither passes, the team is not
-  created. An uncoordinated team gets no monitor, and the result says why.
+  that passes the spawn checks (primary, then fallback; a primary that ran out of usage within the
+  hour fails them); if neither passes, the team is not created. An uncoordinated team gets no
+  monitor, and the result says why. A monitor whose primary fails at runtime moves to the
+  fallback, or is stopped when none can run, and a failed check that doesn't move it has its next
+  check scheduled by the parent (§teams.defaults/runtime-fallback).
 - **Tools.** `team_msg` (with an optional `notice`: `wrap-up`, `pause` or `resume`), `team_inbox`,
   `team_roster` (read-only) and **`wake_nudge`**, through the member extension (a claude-code monitor is a pi worker on
   the Claude Code provider, so the same). No other member has `wake_nudge`; the
@@ -267,7 +274,8 @@ member's line also carries its open-item count (`3 open items`, §app.teams/inbo
   wins), with the same tools, system prompt, cwd, backend options, extensions, ownership and duty.
   Its backend/model/effort follow the chat's current profile at successor spawn, except that
   explicit member or per-call choices remain binding. A standing duty uses its current configured
-  tuple; an ordinary successor uses the current members default when applicable. With no usable
+  tuple: the primary, else the fallback, where a primary marked out of usage counts as refused and a
+  team whose duty already moved to its fallback keeps it (§teams.defaults/runtime-fallback); an ordinary successor uses the current members default when applicable. With no usable
   applicable default it keeps the predecessor's tuple, and a denied default is reported as such
   (§chat.subagent-profiles/members-default). Running predecessors do not change model.
 - **A replacement from the main chat.** The main chat's `team_succeed { team, role }` (`role` is a
@@ -361,6 +369,68 @@ member's line also carries its open-item count (`3 open items`, §app.teams/inbo
   detail?}`, `detail` at most 500 characters), which the team action history — in memory only —
   is not. A handover event is written when the successor starts, names the old member, and its
   detail is `successor <role> (<ag_NN>) on <backend>/<model>; retire on team_ready or after <N> min`.
+
+## §teams.defaults/runtime-fallback — A standing role that fails at runtime moves to its fallback
+
+The primary/fallback choice of §teams.defaults/coordinator and §teams.defaults/monitor is made
+again while the team runs, not only when a coordinator or monitor starts.
+
+- **Out of usage.** A failed turn is out of usage when its error says the provider's usage,
+  credits, quota, balance or billing ran out, or that a usage limit was reached — a monthly,
+  weekly or 5-hour one included — ("usage limit", "hit your limit", "out of usage", "limit will
+  reset", quota, credit, billing, insufficient, balance, "monthly limit", "weekly limit"), or that
+  its sign-in no longer works (401, 403, "not logged in", `/login`, an invalid API key, a failed
+  sign-in or authentication). A plain 429 "rate limit" or "too many requests" is not. Ollama's
+  `429: {"message":"you (…) have reached your monthly usage limit, add usage credits: …"}` is. A
+  Claude Code member's turn that fails once the bridge has tried every Claude login ends with the
+  CLI's own text ("You've hit your limit · resets 3pm", "Claude AI usage limit reached|…", "Not
+  logged in · Please run /login") or with "Claude usage limit reached" / "Claude sign-in failed";
+  each is out of usage. One classifier decides this, shared with the provider-limits gate
+  (§app.provider-limits/rate-limit).
+- **When it switches.** A member with the coordinator or monitor duty, in a coordinated team of
+  this session, whose turn ends with a failed task (an error; a stop or abort is not one) moves to
+  its fallback **at once** when the failure is out of usage, and otherwise when it is its **3rd
+  failed turn in a row** (a turn that succeeds starts the count again). A single rate limit or
+  blip keeps today's path: its failure is routed as before. It switches only once per member, only
+  while that member runs its role's current primary (the backend and model the chat's profile names
+  now), and never while a handover involving it is pending; otherwise its failures are routed as
+  before.
+- **The switch.** The member's primary is marked out (below), the member is stopped and its seat
+  released (the persisted `eject` op, source `system`) before its successor is added, so a team
+  with all 24 seats taken still gets it. The successor starts at once through the main chat's
+  replacement path (§teams.defaults/handover): role `<base>-<n+1>`, the same duty, the
+  predecessor's assignment and every inherited main-thread steer, its open inbox items, on the
+  fallback. No note is asked for, and there is nothing to retire and no retire timer. The failed
+  turn's own completion goes nowhere. A monitor's successor runs its first check at once, then its
+  normal timer. A coordinator's successor sees every teammate's assignment in its header, routes
+  the team from the moment it starts, and is told its predecessor stopped without a handover note
+  and why.
+- **What is said.** A `handover` event (`subagents-team-event-v1`) names the old member, with
+  detail `successor <role> (<ag_NN>) on <backend>/<model>; fallback: primary <tuple> <reason>`, and
+  a `handover` team action row (source `system`) carries the same. When the monitor switched, the
+  routing coordinator gets one `handover` item saying so; it gets no `failed` report for the turn.
+  In Sova the event reads, in the main chat and the team panel, one line like "Monitor moved to its
+  fallback claude-sonnet-5-5: deepseek-v4.1-flash hit its monthly usage limit." (the old member's
+  role, capitalized; the models by their own names). In the TUI it is a warning toast.
+- **No fallback.** When the role has no fallback, or the fallback fails the spawn checks, nothing
+  is started. A monitor is stopped, so it no longer wakes the coordinator: the routing
+  coordinator gets one `notice` item and the main chat one displayed `team-notice` message that
+  starts no turn, both naming the primary, the reason and that no fallback could run. A
+  coordinator is not stopped; the main chat gets one such `team-notice` naming `agent_kill` and
+  `team_succeed`, and that turn's completion is not sent. Either is said once per member; later
+  failures of that member are routed as before.
+- **The out primary is remembered.** Every failure that moves or stops a standing member (or is
+  said for it), and every out-of-usage failure of one, marks its running (backend, model) out with the reason and the time, appended to the
+  parent session as a `subagents-dead-tuple-v1` custom entry (`{version: 1, backend, model, reason,
+  at, teamId?, duty?}`) and replayed from all of the session's entries at `session_start`, so a
+  reload keeps it. For 1 hour from that time every tuple check treats it as refused, saying it ran
+  out and when it is tried again: a new team's coordinator and monitor, the members default at
+  `team_create`, `team_add` and a successor, and every later successor's standing tuple. After the
+  hour new teams try the primary again. A team whose duty switched stays on the fallback for that
+  duty: its later successors of that duty skip the primary even after the hour.
+- **A monitor never goes silent.** After a failed monitor turn that does not switch it, when the
+  monitor has no pending or held `wake_nudge`, the parent schedules its next check itself, in
+  `everyMinutes`.
 
 ## §teams.defaults/command — `/team defaults`
 

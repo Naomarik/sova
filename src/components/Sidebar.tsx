@@ -59,7 +59,7 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, turnErrorTitle } from "../lib/signals";
 import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
@@ -517,7 +517,7 @@ export function SessionRow(props: {
             <Show when={needsYou()}>
               {(m) => (
                 <>
-                  <span class="session-signal-wrap" title={signalTitle(m())}>
+                  <span class="session-signal-wrap" title={signalTooltip(m())}>
                     {/* Open questions show as the accent count alone; its color is the mark. */}
                     <Show
                       when={m().kind === "questions" && m().align}
@@ -610,7 +610,7 @@ export function SessionRow(props: {
                 </span>
               )}
             </Show>
-            <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
+            <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
               {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
                   badge and the model. Muted, and lit while one of them is ready to merge. The
@@ -1454,6 +1454,9 @@ export function Sidebar(props: {
   /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
   const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
   const needsYouCount = () => needsYou().length + needsYouProject().length;
+  /** The blockers, then the softer tier (the turn card's guesses) under its own label. */
+  const needsYouHard = createMemo(() => needsYou().filter((r) => !r.soft));
+  const needsYouSoft = createMemo(() => needsYou().filter((r) => r.soft));
   createEffect(() => setStalled(stalledPaths(props.attention)));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
@@ -2551,7 +2554,7 @@ export function Sidebar(props: {
               </summary>
               <ul class="list">
                 {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
-                <ForKey each={needsYou()} by={(r) => r.session.path}>
+                <ForKey each={needsYouHard()} by={(r) => r.session.path}>
                   {(r) => (
                     <>
                       <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />
@@ -2591,6 +2594,17 @@ export function Sidebar(props: {
                   )}
                 </ForKey>
               </ul>
+              {/* The softer tier: guesses from the last reply (§app.overseer/attention-digest), under the blockers. */}
+              <Show when={needsYouSoft().length > 0}>
+                <p class="sidebar-region-note" id="r-needs-you-soft">
+                  Maybe waiting on you
+                </p>
+                <ul class="list" aria-labelledby="r-needs-you-soft">
+                  <ForKey each={needsYouSoft()} by={(r) => r.session.path}>
+                    {(r) => <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />}
+                  </ForKey>
+                </ul>
+              </Show>
               <Show when={needsYouCutNote()}>
                 <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
               </Show>

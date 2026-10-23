@@ -11,7 +11,7 @@ and each merge becomes a card.
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/worktrees/README.md).
-- Tests: `cd pi-config/extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts && node tests/run.mjs`.
+- Tests: `cd pi-config/extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts landing.test.ts && node tests/run.mjs`.
 
 ## What Sova relies on
 
@@ -30,6 +30,13 @@ and each merge becomes a card.
 - `spec.ts`: when a merge is recorded, it adds the landing's spec warnings to the merge note (changed files no claim
   maps, draft records left behind, hand-resolved §, orphaned evidence), in any project with a spec, mode on or off.
 
+- `landing.ts` (builtins only): the merge guard's store, `<state root>/landing.json` (the user's go-ahead
+  per branch and exact commit, and Not Yet), and the switch `"mainMerges": "go-ahead"` read from the
+  target branch's `.sova/offers.json` (§chat.worktrees/merge-guard). Sova writes the store (a Land It
+  click, `server/session-offers.ts`; the operator's Merge Branch, `server/project-overseer.ts`) and the
+  merge round's driver reads it; `worktree merge` refuses a guarded merge without a record, the merge
+  captain's session excepted.
+
 `create <name>` runs `git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>`
 (AGENTS.md's worktree rule) and tracks it, so workers may start there. The dev watcher doesn't watch this directory: an edit reaches a running server only at
 its restart.
@@ -40,4 +47,6 @@ its restart.
 - `git.ts`'s `reviewBase`, `mergedReviewBase` or `REVIEW_LIMITS`: show-changes' tests too
   (`cd pi-config/extensions/show-changes && node --test git.test.ts`) and `server/git-diff.test.ts`; the
   tool and the viewer must keep choosing the same base and limits.
+- `landing.ts`'s file shape or the switch: Sova's writers and readers above and
+  `.sova/playbooks/merge-round/scripts/round.mjs` (its `parseLanding`) in the same branch.
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).

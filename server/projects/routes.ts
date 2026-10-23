@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import { appendHistory } from "../project-settings";
 import type { ProjectList, ProjectRegistered } from "../../shared/projects";
 import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
@@ -113,7 +114,15 @@ export function registerProjectRoutes(app: Hono<any>): void {
     "/api/projects/:pid",
     handle(async (c) => {
       const b = await body(c);
-      return c.json(await editProject(pidOf(c), { name: b.name, root: b.root }, operatorBy(c)), 200, NO_STORE);
+      const pid = pidOf(c);
+      const before = readProject(pid).name;
+      const out = await editProject(pid, { name: b.name, root: b.root }, operatorBy(c));
+      // The settings history (§app.project-overseer/settings): a rename is a change of a Sova-kept setting.
+      if (out.name !== before) {
+        const by = operatorBy(c).via === "overseer" ? ({ kind: "overseer" } as const) : ({ kind: "operator", via: c.req.header("x-sova-token") !== undefined ? "script" : "page" } as const);
+        appendHistory(pid, [{ field: "project.name", from: before, to: out.name, by }]);
+      }
+      return c.json(out, 200, NO_STORE);
     }),
   );
 

@@ -395,7 +395,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
                     {s().title}
                   </span>
                   {/* The rail and the group heading show the state; this says it to a screen reader. */}
-                  <span class="visually-hidden">, {STATE_WORD[r().state]}</span>
+                  <span class="visually-hidden">, {r().word}</span>
                 </p>
               }
             >

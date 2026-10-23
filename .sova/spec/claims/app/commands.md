@@ -52,20 +52,32 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `models.favorite`, `usage.costs`, `usage.performance`, `usage.today`, `usage.session`,
   `usage.sessions`, `usage.prices`, `usage.prices.refresh`, `insights.usage`,
   `insights.usage.history`, `insights.agents`, `insights.worktrees`, `insights.session.workers`,
+  `insights.session.inbox`,
   `sova.health`, `settings.sova.get`, `settings.models.get`, `settings.provider-limits.get`,
   `settings.align.get`, `settings.delegate.get`, `settings.spec.get`, `settings.team.get`,
   `settings.summarizer.get`, `settings.overseer.get`, `settings.memory.get`,
   `settings.subagents.get`, `settings.align.set`, `push.test`, `chat.stop`, `chat.compact`,
   `chat.rewind`, `chat.regenerate`, `chat.queue.remove`, `chat.reload-code`, `audit.list`,
   `chat.mode-command`, `org.owner.request.chat`, `org.owner.request.done`,
-  `org.owner.request.decline`, `settings.assistant-default.set`.
+  `org.owner.request.decline`, `settings.assistant-default.set`, `session.offers.get`,
+  `session.offers.show`, `session.offers.choose`, `session.offers.snooze`,
+  `session.offers.unsnooze`, `project.offers.list`, `project.settings.get`,
+  `project.settings.history`, `project.settings.undo`, `project.settings.propose.withdraw`,
+  `project.overseer.settings.set`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
+  `insights.session.inbox` reads a team member's inbox (§app.subagents-pane/member-inbox).
   Running `audit.list` reads Sova's record of who ran what (§app.command-audit/list). The
   `org.owner.request.*` entries are an owner request's Start Chat, Mark Done and Decline
   (§app.project-assistant/request-chat). `settings.assistant-default.set` sets the Project
-  Assistant's default model (§app.project-assistant/models).
+  Assistant's default model (§app.project-assistant/models). The `session.offers.*` entries read
+  a session's offer cards, show one from another chat, click a button, and set or clear Not Now;
+  `project.offers.list` is the project page's Offers list (§chat/offers). Approving an offers
+  file's run buttons is a trust grant and no entry (§chat.offers/approval). The `project.settings.*`
+  entries read a project's settings and their history, undo a change and dismiss a Settings change card;
+  `project.overseer.settings.set` is the project overseer's settings PATCH (§app.project-overseer/settings).
+  Applying a card is a trust grant and no entry.
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,

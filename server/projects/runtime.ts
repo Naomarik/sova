@@ -394,14 +394,14 @@ export interface MergeRunOutcome {
  * Merge Branch on a proposed run (§app.project-runtime/merge): refused when `hash` is no longer the one its branch
  * proposes, then Merge Branch on its session with every refusal of its own.
  */
-export async function mergeRun(projectId: string, hash: string): Promise<MergeRunOutcome> {
+export async function mergeRun(projectId: string, hash: string, opts: { byPage: boolean } = { byPage: false }): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
-    await mergeCodingWorktree(projectId, review.sessionId);
+    await mergeCodingWorktree(projectId, review.sessionId, opts);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;
     return { view: await readRuntime(projectId), merged: false, refused: err.message };

@@ -603,8 +603,10 @@ user row.
   covers those powers (§chat.profiles/trust); a
   schedule's `when:`, `tz:` or `profile:` (§chat.schedules/approval); a project mode with tools,
   commands or hooks (§chat.mode-menu/project-modes); an offers file with run buttons
-  (§chat.offers/approval) whose run buttons aren't approved as they are; and any change to the services
-  file; the spec unfrozen; the project shown on the owner's page again. The overseer never approves one.
+  (§chat.offers/approval) whose run buttons aren't approved as they are; an offers file change that
+  turns the merge guard off (`mainMerges` no longer `"go-ahead"`, or the file removed,
+  §chat.worktrees/merge-guard), since it lets sessions merge into master without your go-ahead; and
+  any change to the services file; the spec unfrozen; the project shown on the owner's page again. The overseer never approves one.
 - **What narrows applies at once, in your turn.** In a turn the operator started, each Sova-kept
   change that is no grant (a power Off, a limit lowered, a model, its memory switch, the name, the
   spec frozen, the project hidden from the owner's page, the main stakeholder changed)

@@ -204,6 +204,10 @@ ordinary tool-call and tool-result.
 
 **tour.** A valid compact `record_tour` or `show_tour` projection (§app.tours/editions) renders its tour/progress card at the call's position and suppresses the paired result's duplicate row. It remains visible outside compressed thinking/tool groups. Hide tools also keeps every tour request, progress and failure row visible, even before a valid card projection exists, so waiting and cancellation never disappear into hidden work. Only a checked edition opens as a readable tour; malformed or failed results remain safe ordinary tool rows, never plausible finished tours.
 
+**offer.** An `offer` call that showed a card (§chat.offers/card) renders the card at the call's
+position, and the paired result draws nothing; Hide tools keeps it. A refused `offer` call stays an
+ordinary tool-call and tool-result.
+
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
 a machine event fired the turn, not the person. Same `.toolcard` shell as tool-call/tool-result
@@ -1370,7 +1374,8 @@ main-pane rows.
 - **Read once.** It reads when it appears, and again only if it is asked about a different
   session; then it disappears until both new answers are in. An answer that arrives after the
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
-  Refresh button, no timer, no anchors, and a commit's age is worked out when the card draws and
+  Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
+  pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
   doesn't tick. The loadout is redrawn in two cases only, both from
   /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
   chat says the switch window has opened after the first read, the loadout is read again,
@@ -1459,8 +1464,10 @@ The files pi puts into the prompt, in the order it loads them.
   with no role. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
   marked "appended to the system prompt". The role is muted caption text after the path, not a
   chip.
-- **The row.** The path with the home folder written `~` (the full path when it isn't under home,
-  or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
+- **The row.** A file inside the session's own folder is named by its path from that folder, with
+  no folder before it (`AGENTS.md`, `.pi/APPEND_SYSTEM.md`). Any other file is its path with the
+  home folder written `~` (the full path when it isn't under home, or before home is known). The
+  name is on one line and cut with an ellipsis when it doesn't fit. The full
   path is in the row's `title`. Then the role, if any, then its token estimate
   (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
@@ -1684,6 +1691,37 @@ skills it is offered, for this one session only.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
   it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
 
+## §chat.transcript/setup-card-open-file — Setup card: reading a context file or skill
+
+Each row's name in Context and Skills (/setup-card-context, /setup-card-skills), the
+`SYSTEM.md` and `APPEND_SYSTEM.md` rows included, is a button that opens that file in the
+markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on disk now.
+
+```html
+<span class="setup-name">
+  <button class="setup-path setup-open" type="button" aria-label="Read ~/AGENTS.md">~/AGENTS.md</button>
+</span>
+```
+
+- **What opens.** The viewer's title is the name as the row shows it (`~/AGENTS.md`, a skill's
+  name), its subtitle the full path. A skill opens its `SKILL.md` only, never the rest of its
+  folder. Source and Copy are the viewer's own, so Source shows the exact file, frontmatter
+  included.
+- **The look.** The name keeps its mono text and its place; it underlines on hover and takes the
+  standard focus ring. Its accessible name is "Read {name}". A row switched off
+  (/setup-card-toggles) still opens, and its switch stays a control of its own: pressing the name
+  never flips it.
+- **The read.** Pressing the name asks the server for that file's text,
+  `GET /api/sessions/context/file?path=<session file>&file=<listed path>`, then opens the viewer.
+  The server serves only a path that this session's own setup read lists (context, skills,
+  `SYSTEM.md`, `APPEND_SYSTEM.md`), so the request reads no other file on disk; any other path is a
+  404, "That file isn't in this session's system context." A remote session has no rows to press,
+  and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
+  show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the
+  server's reason; the viewer doesn't open.
+- **Not cached, not pre-read.** Nothing is read until a name is pressed, and each press reads the
+  file again.
+
 ## §chat.transcript/empty-worktrees — The worktrees line under a new session
 
 A new session's empty state (the "Empty (new session)" row of States, above) ends, below its
@@ -1824,7 +1862,7 @@ whole row as the target, and its Arguments and Output.
 
 The timeline breaks at anything that is the message rather than the working — a user or assistant
 message, a report, a card tool (`sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
-`session_send`, `sova_create_session`, or `show_changes` with valid successful details),
+`session_send`, `sova_create_session`, `show_changes` with valid successful details, or `offer` with a card, §chat.offers/card),
 a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step. Tour tools `record_tour` and `show_tour` also break the timeline, including their safe request/progress/failure rows before a valid card projection; Hide tools never conceals them (§app.tours/recording).
 No step summary draws as a card; the expanded thinking aside is the only subtly shaded content.
 

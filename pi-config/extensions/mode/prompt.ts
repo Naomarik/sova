@@ -230,12 +230,13 @@ export function buildModeNote(
 
 /**
  * The hidden note for a writing style changed after the model was told one (§chat.alignment/style):
- * the new style's paragraph, superseding the earlier one, or, back to Default, that it no longer applies.
+ * the new style's paragraph, superseding the earlier one, or, switching to Technical (no paragraph), that
+ * the earlier one no longer applies.
  */
 export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 	const paragraph = ALIGN_STYLE_PARAGRAPHS[to];
 	if (paragraph === undefined) {
-		return `Writing style change: the user set the align writing style back to Default. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments at your usual level of detail from now on.`;
+		return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on.`;
 	}
 	return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${paragraph}`;
 }
@@ -245,7 +246,7 @@ export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
  * here. The parent promotes; the worker's brief can say otherwise.
  */
-export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. List each foreign § you updated in your final report.`;
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
 
 /** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
 function buildWorkerMinorPrompt(mode: MinorMode): string {

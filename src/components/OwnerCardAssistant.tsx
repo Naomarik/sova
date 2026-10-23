@@ -1,24 +1,27 @@
 import { createResource, createSignal, For, Show } from "solid-js";
-import type { ModelInfo } from "../../shared/protocol";
 import type { AssistantInfo, PricedPick } from "../../shared/project-assistant";
-import type { WorkKind } from "../../shared/powers";
-import { ApiError, assistantInfo, listModels, openAssistantChat, setAssistantModels } from "../lib/api";
+import type { ModelPick, WorkKind } from "../../shared/powers";
+import { ApiError, assistantInfo, openAssistantChat, setAssistantModels } from "../lib/api";
+import { SHOWN_KINDS, WORK_LABEL } from "../lib/assistant-model-rows";
 import { orgTabHref } from "../lib/orgs-route";
 import { isOpenRequest, openRequestsLine } from "../lib/owner-requests";
 import { announce } from "../lib/ui-state";
 import { AssistantPowers } from "./PowersGrid";
+import { ModelPickButton, pickLabel } from "./ModelPickButton";
 import "./OwnerCardAssistant.css";
 
 /**
  * The Owner card's Project Assistant part (§app.owner-page/controls, §app/project-assistant): one
  * line linking the owner's open requests on the Requests tab, Open Assistant Chat, its models per kind of work
- * with their prices (per org; a project may override coding and gathering), and each project's
- * Project Assistant switches (powers-ui's AssistantPowers).
+ * (§app.project-assistant/models: the org's own pick, else the host's default; a project may override
+ * coding) as rows with `Change` (the composer's picker, saved at once with its thinking) and `Use
+ * Default` on the org's own pick (the gathering kind runs its feature request chats), and each project's Project Assistant
+ * switches (powers-ui's AssistantPowers).
  */
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
-export const WORK_LABEL: Record<WorkKind, string> = { reply: "Its replies", coding: "Fixes it starts", gathering: "Gatherings it starts" };
+export { SHOWN_KINDS, WORK_LABEL } from "../lib/assistant-model-rows";
 
 /** "$3 in / $15 out per million tokens", or that the price isn't known. */
 export function priceLine(p: PricedPick | null | undefined): string {
@@ -30,7 +33,6 @@ export function priceLine(p: PricedPick | null | undefined): string {
 
 export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) {
   const [info, { mutate, refetch }] = createResource(() => props.orgId, (id) => assistantInfo(id));
-  const [models] = createResource(() => listModels().catch((): ModelInfo[] => []));
   const [err, setErr] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const open = () => (info()?.requests ?? []).filter(isOpenRequest);
@@ -49,7 +51,9 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
       setBusy(false);
     }
   };
-  const setModel = (kind: WorkKind, ref: string) => void run(() => setAssistantModels(props.orgId, { [kind]: ref ? { model: ref } : null }), ref ? `${WORK_LABEL[kind]}: ${ref}.` : `${WORK_LABEL[kind]}: not set.`);
+  /** Save-on-pick: the model AND its thinking; null clears the org's pick (the kind follows the default). */
+  const setModel = (kind: WorkKind, pick: ModelPick | null) =>
+    void run(() => setAssistantModels(props.orgId, { [kind]: pick ? { model: pick.model, ...(pick.thinking ? { thinking: pick.thinking } : {}) } : null }), pick ? `${WORK_LABEL[kind]}: ${pickLabel(pick)}.` : `${WORK_LABEL[kind]}: follows the default.`);
   const openChat = async () => {
     try {
       const r = await openAssistantChat(props.orgId);
@@ -91,42 +95,75 @@ export function OwnerCardAssistant(props: { orgId: string; ownerName: string }) 
             </div>
             <div class="orgs-assistant-models">
               <h4 class="orgs-h4">Models</h4>
-              <div class="orgs-fields orgs-assistant-model-fields">
-              <For each={["reply", "coding", "gathering"] as WorkKind[]}>
-                {(kind) => (
-                  <label class="field">
-                    <span class="field-label">{WORK_LABEL[kind]}</span>
-                    <select class="select" disabled={busy()} onChange={(e) => setModel(kind, e.currentTarget.value)}>
-                      <option value="" selected={!i().models[kind]}>
-                        Not set
-                      </option>
-                      <Show when={i().models[kind] && !(models() ?? []).some((m) => m.ref === i().models[kind]!.model)}>
-                        <option value={i().models[kind]!.model} selected>
-                          {i().models[kind]!.model}
-                        </option>
-                      </Show>
-                      <For each={models() ?? []}>
-                        {(m) => (
-                          <option value={m.ref} selected={m.ref === i().models[kind]?.model}>
-                            {m.ref}
-                          </option>
-                        )}
-                      </For>
-                    </select>
-                    <span class="field-hint">{priceLine(i().models[kind])}</span>
-                    <Show when={kind === "reply" && i().seesPhotos === false}>
-                      <span class="field-hint">This model can't see photos: {first()} won't get an attach button.</span>
-                    </Show>
-                  </label>
-                )}
-              </For>
+              <div class="orgs-assistant-model-rows">
+                <For each={SHOWN_KINDS}>
+                  {(kind) => {
+                    const m = () => i().models[kind] ?? null;
+                    const labelId = `orgs-assistant-model-${kind}`;
+                    return (
+                      <div class="orgs-assistant-model-row" role="group" aria-labelledby={labelId}>
+                        <div class="orgs-assistant-model-main">
+                          <span class="field-label" id={labelId}>
+                            {WORK_LABEL[kind]}
+                          </span>
+                          <Show
+                            when={m()}
+                            fallback={
+                              <span class="orgs-line">
+                                Not set. <a href="#/settings/organizations">Set a default in Settings → Organizations.</a>
+                              </span>
+                            }
+                          >
+                            {(p) => (
+                              <>
+                                <span class="orgs-line">
+                                  <span class="orgs-assistant-model-source">{p().source === "org" ? "This organization" : "Default"}</span> · {pickLabel(p())}
+                                </span>
+                                <span class="field-hint">{priceLine(p())}</span>
+                              </>
+                            )}
+                          </Show>
+                          <Show when={kind === "reply" && m() && i().replyProblem}>
+                            {(why) => (
+                              <span class="field-error">
+                                {why() === "turned-off" ? `Settings → Models turned this model off: ${first()}'s assistant isn't ready.` : `This host can't run this model: ${first()}'s assistant isn't ready.`}
+                              </span>
+                            )}
+                          </Show>
+                          <Show when={kind === "reply" && !i().replyProblem && i().seesPhotos === false}>
+                            <span class="field-hint">This model can't see photos: {first()} won't get an attach button.</span>
+                          </Show>
+                        </div>
+                        <div class="button-row">
+                          <ModelPickButton
+                            id={`owner-assistant-${kind}`}
+                            label="Change"
+                            ariaLabel={`Change ${WORK_LABEL[kind]}`}
+                            value={m() ? { model: m()!.model, ...(m()!.thinking ? { thinking: m()!.thinking } : {}) } : null}
+                            busy={busy()}
+                            onPick={(pick) => setModel(kind, pick)}
+                          />
+                          <Show when={m()?.source === "org"}>
+                            <button
+                              type="button"
+                              class="button button-sm button-ghost"
+                              disabled={busy()}
+                              title={i().default ? `Use the default, ${pickLabel(i().default)}` : "No default is set in Settings → Organizations: this row would be not set."}
+                              onClick={() => setModel(kind, null)}
+                            >
+                              Use Default
+                            </button>
+                          </Show>
+                        </div>
+                      </div>
+                    );
+                  }}
+                </For>
               </div>
-              <For each={i().projects.filter((p) => p.coding.source === "project" || p.gathering.source === "project")}>
+              <For each={i().projects.filter((p) => p.coding.source === "project")}>
                 {(p) => (
                   <p class="field-hint">
-                    {p.name} uses its own model for{" "}
-                    {[p.coding.source === "project" ? `fixes (${p.coding.pick?.model}, ${priceLine(p.coding.pick)})` : "", p.gathering.source === "project" ? `gatherings (${p.gathering.pick?.model}, ${priceLine(p.gathering.pick)})` : ""].filter(Boolean).join(" and ")}
-                    .
+                    {p.name} uses its own model for fixes ({pickLabel(p.coding.pick)}, {priceLine(p.coding.pick).replace(/\.$/, "")}).
                   </p>
                 )}
               </For>

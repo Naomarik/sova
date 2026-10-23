@@ -269,7 +269,7 @@ provider and is still waiting on or receiving, from the moment it is issued unti
 ends, fails or is aborted. Time spent running tools between calls never counts, and neither does
 a request still queued for a provider-limits slot or sitting out a cooldown
 (§app/provider-limits): it counts from the moment the slot is granted. Every caller counts alike —
-a main thread's turn, a subagent's or team member's, and background work: titles, tags,
+a main thread's turn, a subagent's or team member's, and background work: titles,
 decisions, topic outlines, compaction, cache warming.
 
 - **Where it is measured.** Each process counts its own calls, at the boundary every model
@@ -681,7 +681,8 @@ and neither does one whose launches were never recorded.
   line under it, its cache hit rate (`96% from cache`; with no cache read or write in it, "No cache
   use reported"). A daily cost bar chart (local days). Tables by provider (tokens · hit rate ·
   cost), by model (input · cache · hit rate · output · cost), by kind and by project
-  (the org project, else the working directory). Top sessions, most expensive first; a click opens
+  (registered projects, code checkouts, the Overseer and Other folders, §app.insights/cost-by-project).
+  Top sessions, most expensive first; a click opens
   the session, and a row whose conversation re-sent its history says so under its name
   (§app.insights/usage-resend-display).
 - **Cache hit rate.** The share of input tokens read from cache: cache read ÷ (input + cache read +
@@ -696,6 +697,54 @@ and neither does one whose launches were never recorded.
   it never shows another count.
 - **This device.** The tab says it counts this device only.
 - Works at phone widths: tables stack under 560px of page width.
+
+## §app.insights/cost-by-project — The Costs tab's By project table
+
+**The Costs tab's By project table (§app.insights/cost-history) has one row per registered
+project, one per code checkout on this computer that is no project, one Overseer row and one
+Other folders row, and its rows add up to the tab's Total.** Every call is in exactly one row,
+decided from the folder it ran in (its working directory), once per distinct folder:
+
+- **Overseer.** A call that ran in the Overseer's folder (`<state root>/overseer`) or in an
+  attached organization's workspace (`<state root>/workspaces/<org>`, or the folder the org is
+  attached from) is the Overseer's: the global Overseer's conversations and each organization's
+  sessions are one row, "Overseer".
+- **Registered projects.** Otherwise a call belongs to the registered project whose folder it ran
+  in, by the same rule as the sidebar (§app.projects/folder-sessions): the project's root, a folder
+  inside it, or a folder inside one of its worktrees, a worktree that no longer exists included
+  (`<root's parent>/.worktrees/<root's name>-…`); the deepest root wins. Unlike the sidebar, a
+  worktree folder still on disk whose checkout is gone (its `.git` removed, a husk left, in no
+  checkout) counts as gone, so it is its project's too. A call the ledger records
+  with a project id is that project's. An archived project keeps its row, marked "archived". A
+  project overseer's conversation runs in its project's root, so it counts in its project's row. The
+  row shows the project's name.
+- **Any other Overseer call** (a call recorded as kind `overseer` whose folder is in no project)
+  is in the Overseer row.
+- **Code checkouts.** A folder in no project that sits in a git checkout on this computer gets that
+  checkout's row, named after the checkout's folder: walking up to the first `.git`, a folder there
+  is the checkout; a `.git` file names its main checkout, so a linked worktree and its subfolders
+  roll into the main checkout's row. A folder that no longer exists, or a husk in no checkout, is
+  the checkout's when it was one of its worktrees as Sova names them (`<x>/.worktrees/<name>-…`
+  beside an existing checkout `<x>/<name>`); a folder that no longer exists also when it sat inside
+  an existing checkout. Git is never run.
+- **Other folders.** Everything else is one row, "Other folders", always last whatever it cost:
+  temporary and scratch folders (the system's temp folders, even holding a repository), folders
+  that no longer exist and were never in a checkout, folders inside Sova's agent folder (a remote
+  session's stand-in folder), and calls that name no folder.
+- **Hover.** A project row's `title` says where its spend comes from: its root, then "Every
+  session in this project's folders, worktrees included.", since it counts every session there and
+  can be higher than the project page's Cost card (§app.project-costs/scope); an archived one adds
+  " Archived.". The archived mark is a muted `archived` line under the name.
+  A checkout row's: its path, then "Every session in this checkout, worktrees included." The
+  Overseer row's: "The Overseer's and your organizations' conversations." Other folders': "{n}
+  folders that are no project or checkout, and calls with no folder." (1: "1 folder …").
+- **Order.** Most expensive first, Other folders last.
+- **Unchanged.** The Total, the daily chart and every other table and stat are not affected by
+  this grouping.
+- **Wire.** Each row carries `kind` (`project` · `folder` · `overseer` · `other`), `name`, `path`
+  (a checkout's folder, a project's root), `folders` (how many distinct folders it holds) and
+  `archived` when it applies, beside `project` (the project id) and `cwd` (a checkout's folder) for
+  an older browser. A browser shows `name` when it is there, else as before.
 
 ## §app.insights/usage-model-rows — One row per real model
 
@@ -1491,13 +1540,22 @@ Sova that aren't archived.
 ```
 
 - **State.** One per row, on its rail (a colored left edge) and under its group's heading; no
-  row carries a state chip at any width. A row's state reaches screen readers as visually
-  hidden text after its title (", Needs you", ", Working", ", Idle", ", Archived"), so it is
-  never carried by the rail's color or the heading alone. The states: **Needs you** when the session waits on input or has an extension dialog open; else
-  **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
-  looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
-  open row says why a row needs you, in a line.
+  row carries a state chip or a second badge at any width. The states: **Needs you** when the
+  session waits on input or has an extension dialog open; else **Working** when its turn runs or
+  any of its workers works; else **Needs you** when its last turn failed or stopped on an error,
+  or it has open alignment questions, or its decision marks (a reply that waits on you, a reply
+  that says it is done without checking, §app.decisions/attention-signals) say so; else
+  **Idle**, or **Archived** for an archived session nothing runs in.
+- **The state's word.** Each row's state has one word, said to screen readers as visually hidden
+  text after its title (", Waiting on you: approval"), so it is never carried by the rail's color
+  or the heading alone: **Waiting on you** (an input request or a dialog), **Working**,
+  **Working (team)** (only its workers work), **Broken** (the last turn failed or stopped on an
+  error), **Waiting on you: decision** (open alignment questions, or a reply that asks you to
+  choose), **Waiting on you: approval** / **: info** (a reply that asks for an approval or for
+  information), **Done, unverified**, **Done** (an idle session whose last turn card says it did
+  what was asked), **Idle** and **Archived**. Broken, Working and Working (team) are counted in
+  code; only the waiting kind and the done words come from the turn card. The open row says why
+  a row needs you, in a line that ends with its source ("Guessed by Jev.", "From code.").
 - **Sort.** Needs you first, then Working, then the rest; within each, last active first.
 - **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
   "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),

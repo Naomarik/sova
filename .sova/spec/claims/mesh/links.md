@@ -156,8 +156,7 @@ not the user's message and the main transcript never shows it:
 - It still starts a turn (the check for tool calls that may still be running, turn boundaries),
   but it is not one of the user's inputs: never in the inputs count, the Timeline or the rewind
   targets. Regenerating a reply to it is refused, as for a wake.
-- It never titles the session, and session tags skip it (§app.decisions/session-tags), so a
-  partner's words never become the session's topic.
+- It never titles the session, so a partner's words never name it.
 - A turn it opened still counts as finished work the user hasn't seen, like any other finished
   turn. Whether its reply asks something is never checked (§app.decisions/asks-user), so a
   question to the partner never puts the session in Needs you.

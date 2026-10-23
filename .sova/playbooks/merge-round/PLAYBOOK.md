@@ -19,14 +19,14 @@ This file is the round's table of contents. Read each detail file when the round
 | When | Read |
 |---|---|
 | The start of every round: settings, the private-names interview, your topic | `references/start.md` |
-| Steps 1–3: find the branches, judge them, ask their owners | `references/round.md` |
+| Steps 1–3: find the branches, judge them, queue them for their Landing cards | `references/round.md` |
 | Step 4: check a branch | `references/check.md` |
 | Step 5: land it and clean up its worktree | `references/land.md` |
 | Steps 6–8: push, restart the live server, report | `references/push-restart.md` |
 | A merge, check or push fails oddly; a leak-scan hit to scrub | `references/traps.md` |
 
 ## Ask the user first
-Everything else you do without asking: a branch whose owner answered `READY` at its current head, checked green, lands and pushes. `READY` means the owner's user told it to merge that branch (the ask says so): that answer is the OK; no other permission is stored or needed, and you don't ask the user again for it. An owner's "ready to merge" without the user's go-ahead is `NOT READY`, however green, and a big feature never lands on checks alone. If you have reason to doubt an owner's READY carries that go-ahead (its transcript shows none), ask the user before landing.
+Everything else you do without asking: a branch the user pressed **Land It** on at its current head (or whose owner answered `READY` at its current head, for a branch the user named), checked green, lands and pushes. A branch is yours to queue when Sova's board reads it **Ready to land**: its work is finished and committed, nothing uncommitted, no conflicts with master, checks not failing, no open questions, its owner idle. `round.mjs ask` queues it and Sova shows its owner's session the Landing card; the user's Land It reaches you as a message and is the OK for that exact commit: no other permission is stored or needed, and you don't ask the user again. Not Yet means leave the branch until its head changes. Ready to merge, or Waiting for your OK, without Ready to land is not finished work, however green, and a big feature never lands on checks alone.
 - Rewriting unpushed commits to scrub a leak-scan hit, each case.
 - Waiving a leak-scan hit, each time it comes back.
 - What to do about names already public on origin.
@@ -34,4 +34,4 @@ Everything else you do without asking: a branch whose owner answered `READY` at 
 - Landing a branch with no live owner (owner archived, or no session tracks its worktree), or one whose owner hasn't confirmed it.
 
 ## Never
-Force-push or rewrite pushed history. `git filter-branch` or `read-tree` on master, or `update-ref` on it outside a scrub the user approved for that case. Push past a leak-scan hit the user hasn't waived. Touch another session's project instance, or change its worktree beyond the check's master merge (and a rebuilt `node_modules`), without its OK. Print a private name outside the start interview, write one inline in a command, or commit the private names or anything from the local settings. Ask a busy session. Find owners by reading session files or guessing from titles: the board names them. Filter `round.mjs status` through `grep`, `head` or `tail`. Restart the live server any other way than the line `restart-check` prints.
+Force-push or rewrite pushed history. `git filter-branch` or `read-tree` on master, or `update-ref` on it outside a scrub the user approved for that case. Push past a leak-scan hit the user hasn't waived. Touch another session's project instance, or change its worktree beyond the check's master merge (and a rebuilt `node_modules`), without its OK. Print a private name outside the start interview, write one inline in a command, or commit the private names or anything from the local settings. Ask a busy session. Find owners by reading session files or guessing from titles: the board names them. Filter `round.mjs status` through `grep`, `head` or `tail`. Restart the live server any other way than the line `restart-check` prints. Promote a branch's spec drafts, or land one whose drafts aren't promoted without the user's Merge Without Specs…: specs land with their code, promoted by the owner on its branch (`references/check.md`).

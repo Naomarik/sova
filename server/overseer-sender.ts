@@ -10,6 +10,14 @@ const SENDER_SECRET = randomBytes(32).toString("hex");
 /** The value the Overseer's own in-process calls carry (server/overseer.ts). */
 export const senderSecret = (): string => SENDER_SECRET;
 
+/** Whether `header` is the sender secret (the Overseer's own in-process call), whether or not an Overseer is current. */
+export function isSenderSecret(header: string | undefined): boolean {
+  if (!header) return false;
+  const got = Buffer.from(header);
+  const want = Buffer.from(SENDER_SECRET);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
 /** The current Overseer's id when `header` is the sender secret (a tool call of its own), else undefined. */
 export function overseerSender(header: string | undefined): string | undefined {
   if (!header) return undefined;

@@ -395,7 +395,9 @@ await flush();
 assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
 assert.deepEqual(getTools(), ["read", "bash", "grep", "align"], "restoring strict heavy reapplies the strict tool set, and align (on in the snapshot) brings its tool");
 assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: delegate/, "the restored mode shapes the prompt");
-assert.equal(entries.length, entriesBefore, "restoring appends nothing");
+// The head built with align on records its writing style: no mode-align.json means Project manager, which a
+// head records (mode-head); restoring itself appends nothing else.
+assert.deepEqual(entries.slice(entriesBefore), [{ type: "mode-head", data: { v: 1, style: "pm" } }], "restoring appends nothing; the Project manager head records its style");
 
 // An empty branch adopts the default as it is now, and still writes nothing
 writeDefault("normal", ["align"]);

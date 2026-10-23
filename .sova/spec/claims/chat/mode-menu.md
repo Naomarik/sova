@@ -404,8 +404,10 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
   (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
   brief and any remote instructions, followed by a short **worker note**: the brief is its
-  go-ahead; it works in the draft its brief names (or says which it started); it doesn't promote,
-  commit or record `--commit` evidence unless the brief says so — the parent promotes; and its final
+  go-ahead; it works in the draft its brief names (or says which it started); it promotes, commits
+  or records `--commit` evidence only when the brief says so, and then only on the brief's branch,
+  never by landing on the default branch — the parent promotes, on its own branch before calling it
+  ready; and its final
   report lists each foreign § it updated. Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
@@ -649,7 +651,9 @@ answer anything, and they never send a message into a chat.
   agent's or an extension's), its tools and commands work but its hooks
   stay inactive, and the mode's row says "Hooks need your approval" with **Approve Hooks**, which
   approves that exact version (refused, like a stale approval, when it changed since the row was
-  drawn). Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
+  drawn). **Apply and Approve** on a project overseer's Settings change card that grants a mode records your
+  own approval of the version it lands (§app.project-overseer/settings), under the same page-only rule.
+  Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
   the Overseer, by a chat's agent with its chat's key, by a script or extension sending Sova's token,
   or through a mesh peer is refused. An approval those callers give when turning a mode on is kept
   as theirs: its tools and commands run, its hooks wait for yours. Telling your page from a script is a heuristic (the

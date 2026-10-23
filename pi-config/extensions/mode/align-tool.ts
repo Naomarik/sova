@@ -83,7 +83,10 @@ const S = (description?: string, extra: Record<string, unknown> = {}) => Type.St
 const Strict = { additionalProperties: false } as const;
 
 const QID = S('A question id, e.g. "q3".', { pattern: "^q[1-9][0-9]*$" });
-const Option = Type.Object({ label: S("The choice, short."), tradeoff: S("What it costs and what it buys.") }, Strict);
+const Option = Type.Object(
+	{ label: S("The choice, short."), tradeoff: S('What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. "Old rows are deleted for good; the export runs twice as fast").') },
+	Strict,
+);
 const Recommendation = Type.Object(
 	{ choice: S("The answer you recommend (one of the options' labels when there are options)."), why: S("Why, in a sentence.") },
 	{ ...Strict, description: "Your recommended answer. Required: the user can accept it as is." },
@@ -101,7 +104,7 @@ const questionSchema = (visual: boolean) =>
 			topic: S('Short label, e.g. "Counter store".'),
 			ask: S("The question to the user, one sentence."),
 			context: Type.Optional(S("What the user needs to know to answer it (optional).")),
-			options: Type.Optional(Type.Array(Option, { description: "The real choices, each with its trade-off (optional)." })),
+			options: Type.Optional(Type.Array(Option, { description: "The real choices, each with a one-line consequence of picking it (optional)." })),
 			recommendation: Recommendation,
 			...(visual ? { visual: Type.Optional(Visual) } : {}),
 		},

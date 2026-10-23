@@ -4,15 +4,18 @@ import { dirname, join } from "node:path";
 import { WORK_KINDS, type ModelPick, type WorkKind, type WorkModels } from "../shared/powers";
 import {
   OWNER_REQUEST_KINDS,
+  type AssistantModelSource,
   OWNER_REQUEST_TEXT_MAX,
   OWNER_REQUEST_TITLE_MAX,
   type AssistantStore,
+  type FeatureChatRecord,
   type OwnerRequest,
   type OwnerRequestKind,
   type OwnerRequestStatus,
 } from "../shared/project-assistant";
 import { attentionChanged } from "./attention-memo";
-import { orgDir, OrgError, readProjects } from "./orgs";
+import { assistantDefault } from "./baton-settings";
+import { orgDir, OrgError, readIndex, readProjects } from "./orgs";
 
 /**
  * The Project Assistant's org-side records (§app.project-assistant/models, /requests), all in the
@@ -48,7 +51,8 @@ export function readAssistantStore(orgId: string): AssistantStore {
     const raw = JSON.parse(readFileSync(storeFile(orgId), "utf8"));
     const conversations: Record<string, string> = {};
     if (isObj(raw?.conversations)) for (const [k, v] of Object.entries(raw.conversations)) if (SAFE_ID.test(k) && typeof v === "string" && v) conversations[k] = v;
-    return { version: 1, models: modelsOf(raw?.models), conversations };
+    const featureChats = Array.isArray(raw?.featureChats) ? (raw.featureChats as unknown[]).map(featureChatOf).filter((r): r is FeatureChatRecord => !!r) : [];
+    return { version: 1, models: modelsOf(raw?.models), conversations, ...(featureChats.length ? { featureChats } : {}) };
   } catch {
     return { version: 1, models: {}, conversations: {} };
   }
@@ -70,7 +74,7 @@ function writeStore(orgId: string, s: AssistantStore): void {
   renameSync(tmp, f);
 }
 
-/** Set the org's models (the Owner card): every kind given replaces its pick; null clears it. A bad pick is refused. */
+/** Set the org's models (the Owner card): every kind given replaces its pick; null clears it (the kind follows the default). A bad pick is refused. */
 export function setAssistantModels(orgId: string, body: unknown): AssistantStore {
   if (!isObj(body) || !isObj(body.models)) throw new OrgError("Expected { models }.");
   const s = readAssistantStore(orgId);
@@ -85,6 +89,37 @@ export function setAssistantModels(orgId: string, body: unknown): AssistantStore
   }
   writeStore(orgId, s);
   return s;
+}
+
+function featureChatOf(v: unknown): FeatureChatRecord | null {
+  if (!isObj(v)) return null;
+  const ok = (k: string) => typeof v[k] === "string" && SAFE_ID.test(v[k] as string);
+  if (!ok("sessionId") || !ok("personId") || !ok("projectId") || !ok("requestId") || typeof v.at !== "string") return null;
+  const e = isObj(v.ended) && typeof v.ended.at === "string" && (v.ended.why === "owner-changed" || v.ended.why === "left") ? { at: v.ended.at, why: v.ended.why as "owner-changed" | "left" } : undefined;
+  return { sessionId: v.sessionId as string, personId: v.personId as string, projectId: v.projectId as string, requestId: v.requestId as string, at: v.at, ...(e ? { ended: e } : {}) };
+}
+
+/** The feature request chats the assistant opened (§app.project-assistant/feature-chats), oldest first. */
+export const featureChats = (orgId: string): FeatureChatRecord[] => readAssistantStore(orgId).featureChats ?? [];
+
+/** The record of one feature request chat, or null. */
+export const featureChatRecord = (orgId: string, sessionId: string): FeatureChatRecord | null => featureChats(orgId).find((r) => r.sessionId === sessionId) ?? null;
+
+/** Record a new feature request chat. */
+export function addFeatureChat(orgId: string, rec: FeatureChatRecord): void {
+  const s = readAssistantStore(orgId);
+  s.featureChats = [...(s.featureChats ?? []).filter((r) => r.sessionId !== rec.sessionId), rec];
+  writeStore(orgId, s);
+}
+
+/** Note why a feature request chat ended because its person stopped being the owner. */
+export function endFeatureChatRecord(orgId: string, sessionId: string, why: "owner-changed" | "left", now = Date.now()): void {
+  const s = readAssistantStore(orgId);
+  const r = s.featureChats?.find((x) => x.sessionId === sessionId);
+  if (!r || r.ended) return;
+  r.ended = { at: new Date(now).toISOString(), why };
+  writeStore(orgId, s);
+  attentionChanged();
 }
 
 /** The owner's conversation's session id, or null. */
@@ -102,11 +137,53 @@ export function ownerOfConversation(orgId: string, sessionId: string): string | 
   return null;
 }
 
-/** A coding or gathering model for a project: the project's override (its powers' assistantModels), else the org's. */
-export function assistantModelFor(orgId: string, kind: WorkKind, projectOverride?: WorkModels | null): { pick: ModelPick | null; source: "org" | "project" } {
+/**
+ * The one resolution every reader uses (§app.project-assistant/models): the project's override
+ * (coding and gathering only, its powers' assistantModels), else the org's own pick, else the host's
+ * default (Settings → Organizations). Null when none is set. `fallback` is the default as read now.
+ */
+export function effectiveAssistantModel(
+  orgId: string,
+  kind: WorkKind,
+  projectOverride?: WorkModels | null,
+  fallback: ModelPick | null = assistantDefault(),
+): { pick: ModelPick; source: AssistantModelSource } | null {
   const o = kind !== "reply" ? projectOverride?.[kind] : undefined;
   if (o) return { pick: o, source: "project" };
-  return { pick: readAssistantStore(orgId).models[kind] ?? null, source: "org" };
+  const own = readAssistantStore(orgId).models[kind];
+  if (own) return { pick: own, source: "org" };
+  return fallback ? { pick: fallback, source: "default" } : null;
+}
+
+/** Two picks are the same exactly: model and thinking (no thinking is not "medium"). */
+export const samePick = (a: ModelPick, b: ModelPick): boolean => a.model === b.model && (a.thinking ?? null) === (b.thinking ?? null);
+
+/**
+ * The first default adopts the picks equal to it (§app.project-assistant/models): in every org on
+ * this host, a kind whose own pick is exactly the default is cleared so it follows the default; every
+ * other pick stays. The memory switch and conversations are kept (writeStore). An org whose store
+ * can't be written is skipped. Returns how many picks were cleared.
+ */
+export function adoptDefaultPicks(pick: ModelPick, orgIds: readonly string[] = readIndex().orgs.map((o) => o.id)): number {
+  let cleared = 0;
+  for (const orgId of orgIds) {
+    try {
+      const s = readAssistantStore(orgId);
+      let changed = false;
+      for (const k of WORK_KINDS) {
+        const own = s.models[k];
+        if (own && samePick(own, pick)) {
+          delete s.models[k];
+          changed = true;
+          cleared++;
+        }
+      }
+      if (changed) writeStore(orgId, s);
+    } catch {
+      /* an org that can't be read or written keeps its picks */
+    }
+  }
+  return cleared;
 }
 
 // ---- requests ---------------------------------------------------------------------------------------

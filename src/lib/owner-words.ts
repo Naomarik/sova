@@ -72,6 +72,11 @@ export function conversationChip(s: OwnerConversationStatus): OwnerChipWord {
       return { word: "Finished", tone: "success" };
     case "closed":
       return { word: "Ended", tone: undefined };
+    // The owner's own feature request chat (§design.copy-deck/owner-page).
+    case "planning":
+      return { word: "Planning with you", tone: "warn" };
+    case "plan-agreed":
+      return { word: "Plan agreed", tone: "success" };
   }
 }
 

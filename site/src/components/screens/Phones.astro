@@ -1,34 +1,11 @@
 ---
 // Check in from your phone: the Access page on a phone with its one-use code, and a session on a
-// phone answering an open question. Both captured in Sova's folded layout. The second plays the
-// phone video over its still (a Needs you row opened, the question answered with one tap, the
-// session carrying on), as the hero does: AV1 first, H.264 as the fallback, its poster its first
-// frame, the still alone with reduced motion. Its line of page text sits under the phone
-// (VideoCaption.astro), as the hero's does.
-import { getImage } from "astro:assets";
+// phone waiting on an open question. Both captured in Sova's folded layout.
 import Screen from "../Screen.astro";
-import VideoCaption from "./VideoCaption.astro";
-import { video as videoOf } from "../../data/screens";
 
 const sizes = "(max-width: 599px) 78vw, 300px";
-const video = videoOf("phone");
-const poster = video ? await getImage({ src: video.poster, format: "webp", width: 640 }) : null;
 ---
 <div class="phones">
   <div class="phone"><div class="phone-screen screen-fill"><Screen at="feature.phone-access" sizes={sizes} /></div></div>
-  <figure class="phone-figure">
-    <div class="phone">
-      <div class="phone-screen screen-fill">
-        <div class="screen-stack">
-          <Screen at="feature.phone-question" sizes={sizes} />
-          {video && poster && (
-            <video id="phone-video" class="screen-video" autoplay muted loop playsinline preload="metadata" poster={poster.src} width={video.width} height={video.height} aria-label={video.alt}>
-              {video.sources.map((s) => <source media="(prefers-reduced-motion: no-preference)" type={s.type} src={s.file} />)}
-            </video>
-          )}
-        </div>
-      </div>
-    </div>
-    {video && poster && <figcaption><VideoCaption video={video} for="phone-video" class="video-caption-phone" /></figcaption>}
-  </figure>
+  <div class="phone"><div class="phone-screen screen-fill"><Screen at="feature.phone-question" sizes={sizes} /></div></div>
 </div>

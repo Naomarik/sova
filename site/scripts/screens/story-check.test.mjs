@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { cutReplies, formatProblems, checkStory, HERE, SCHEMA, STORY } from "./load-story.mjs";
 import { KNOWN_KEYWORDS, schemaKeywords } from "./story-check.mjs";
-import { cueProblems, cuesOf } from "./video-check.mjs";
+import { cueProblems, cuesOf, flickers } from "./video-check.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "story-check-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -236,4 +236,26 @@ test("the leak gate refuses a model or provider the story doesn't have", async (
   await leakGate(page("Opus 5.5 · zai · glm-5.3 · deepseek · deepseek-v4.1-flash · openai · gpt-6.1-sol · GLM-5.3 capped them."), patterns, "ok");
   for (const bad of ["deepseek · deepseek-v4-pro", "Sonnet 4.5", "openai-codex", "qwen3-coder", "Opus 5.4"])
     await assert.rejects(leakGate(page(`a row: ${bad} · 3k`), patterns, "bad"), /a model or provider the story doesn't have/, bad);
+});
+
+test("the flicker check flags a picture that changes for a frame and returns, and nothing else", () => {
+  // 12 frames of 320x200 grey; `paint(k, frame)` changes frame k. Encoded losslessly with ffmpeg.
+  const clip = (name, paint) => {
+    const [w, h] = [320, 200];
+    const raw = Buffer.alloc(w * h * 12, 40);
+    for (let k = 0; k < 12; k++) paint(k, raw.subarray(k * w * h, (k + 1) * w * h), w);
+    const file = join(dir, `${name}.mkv`);
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", `${w}x${h}`, "-r", "30", "-i", "-", "-c:v", "ffv1", file], { input: raw });
+    return flickers(file);
+  };
+  const box = (f, w, x0, y0, x1, y1, v) => {
+    for (let y = y0; y < y1; y++) f.fill(v, y * w + x0, y * w + x1);
+  };
+  // One frame shown zoomed (here: the whole picture brighter), then back: flagged at frame 6.
+  assert.deepEqual(clip("one-frame", (k, f) => k === 6 && f.fill(140)).map((x) => [x.frame, x.frames]), [[6, 1]]);
+  // Two frames, then back: flagged too.
+  assert.deepEqual(clip("two-frames", (k, f) => (k === 6 || k === 7) && f.fill(140)).map((x) => [x.frame, x.frames]), [[6, 2]]);
+  // A change that stays (a new screen), a pointer-sized box flashing: not flicker.
+  assert.deepEqual(clip("stays", (k, f) => k >= 6 && f.fill(140)), []);
+  assert.deepEqual(clip("pointer", (k, f, w) => k === 6 && box(f, w, 100, 80, 130, 120, 255)), []);
 });

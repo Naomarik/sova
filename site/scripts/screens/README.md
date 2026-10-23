@@ -141,7 +141,10 @@ picture), and `length` and `budget` what the finished files must meet.
 **How it is made.** record.mjs plays the beats in the page (the app's own animations on; scrollbars,
 spell-check marks, toasts and the Jump to Latest pill hidden) and films it with the CDP screencast,
 which sends a frame only when the page changes (the browser's tap highlight is off too: the drawn
-ring is the tap). It logs every event as an anchor; between anchors
+ring is the tap). Nothing else repaints the page while it films: `--stills` saves the screencast's
+own frames, because a `page.screenshot` mid-film reached the video as a frame flashing zoomed in or
+out. Each frame is cropped to the viewport at the film's pixel scale, and a frame whose picture
+disagrees with its metadata is dropped (record.mjs prints each one). It logs every event as an anchor; between anchors
 the video runs at the beat's nominal time (a hold its length, a travel its duration...), so a busy
 machine can't stretch it; only a reply arriving keeps its real length. video-compose.mjs then makes
 a constant 30 fps picture from the frames, draws the pointer and its ripples, and fades the end
@@ -150,6 +153,7 @@ into the first frame, which is also the poster (`src/assets/screens/video-<name>
 
 **Checks before a video is written** (video-check.mjs, again in `screens:verify`): every frame of
 both files decodes; enough distinct frames and no still stretch longer than any hold (not frozen);
+no flicker (15% or more of the picture changing for 1 or 2 frames, then returning);
 the frame just before the fade matches the page's own screenshot along its bottom and right edges
 (not cropped or offset); the shape, width, length and size are the story's; every hold met its
 reading time, every travel its range, and the pointer its 1.5 s after new content; the leak gate
@@ -169,7 +173,7 @@ pnpm run screens:check                 # a second; no server, browser or model
 pnpm run screens                       # shots whose inputs changed; --all for every one
 pnpm run screens -- --shot hero-desk   # one shot
 pnpm run screens:video                 # the video, if its inputs changed; --force to re-record
-pnpm run screens:video -- --video desk --force --stills /tmp/x   # one video, the page after every beat
+pnpm run screens:video -- --video desk --force --stills /tmp/x   # one video, the page after every beat (from the screencast)
 pnpm run screens:video -- --cues       # a caption reworded: the cue lists again, no filming
 pnpm run screens:verify                # before committing
 ```

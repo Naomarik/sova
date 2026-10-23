@@ -39,7 +39,9 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   Every service may declare `ports` (`{name: {base, stride?}}`, allocated per slot as
   `base + slot × stride`, stride default 1; or `{name: {fixed}}`, the same port for every slot;
   which `base`, `stride` or `fixed` a copy's port takes is the main checkout's,
-  §app.project-services/instances),
+  §app.project-services/instances; every slot of 0 to 18, the copies' fixed range and conformance's
+  scratch slots, must give each port at most 65535, and no two ports may meet in any of them, as
+  `base` 3040 and 3050 at stride 1 do in slot 10: either makes the file invalid),
   `requires` (services started first), `ready` (`{tcp: <port name>}` or `{http: <port name>,
   path?}`, answered below 500, with `timeout` seconds, default 60, at most 600), `reload`
   (`"restart"`, `"none"`, `{signal: HUP|USR1|USR2|INT|TERM}` or `{cmd: argv}`), `build` (`{run:
@@ -82,8 +84,9 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   so none can read as a flag.
 - **`hooks`**: `probe` (`{run: argv, timeout?}`), the optional isolation probe conformance calls as
   `<argv> write <token>` and `<argv> read <token>` (exit 0: the token is there).
-- **`slots`** (`{cap}`, 1–16, default 4: how many copies Sova runs besides the main checkout's; only
-  the main checkout's saved value is in force, §app.project-services/instances), **`host`**
+- **`slots`** (`{cap}`, 1–16, default 4: the project's default for how many copies may run at once
+  besides the main checkout's; only the main checkout's saved value counts, and this machine's own
+  copy limit, when one is set, overrides it, §app.project-services/instances), **`host`**
   (names of host variables the templates may read as `${host.NAME}`, kept in Sova's state, never
   in the repo), and **`deploy`**, how the project ships (§app.project-services/deploy).
 - **`share`** (optional): `{endpoints?, maxDays?, allow?}`, what a running copy may share
@@ -121,22 +124,38 @@ stable **id** (`<project folder slug>-<8 hex>`, random at create and never reuse
 **generation** that counts its starts from nothing, and a **slot**, a small number that is only an
 allocation and is reused after teardown. Slot 0 is the main checkout's and no other.
 
-The copy limit (`slots.cap`) and the port numbering (each port's `base` and `stride`, or `fixed`)
-come from the main checkout's `.sova/project.json` as saved in its folder, uncommitted edits
-included and never its HEAD, whichever checkout a copy is of and for conformance too; everything
-else in a copy's definition (services, commands, setup, data) comes from its own checkout. A port
-the copy's checkout declares and the main checkout's file does not is numbered from the copy's own;
-with the main checkout's file missing or invalid, the definition in use gives both. The limit
-counts the copies Sova runs for the project besides the main checkout's, conformance's scratch
-copies not counted. Conformance's two scratch slots are cap + 1 and cap + 2 of the limit in force,
-and no other copy takes them. Another checkout takes the slot asked for (at most 2 × cap + 2, never
-a scratch slot unless conformance asks), or the lowest free slot of 1 to 2 × cap + 2 that is not a
-scratch slot: a slot blocked by a listener, or by a port another instance holds, does not count
-against the limit, so the search goes on past the cap. A create when the project's copies already
-number the limit is refused `cap-reached`; one with room left under the limit but no free slot to
-take, `slots-blocked`. Either message names the limit and that it comes from the main checkout's
-`.sova/project.json` (or the definition in use, when that file is missing or invalid), the slots
-the project's copies hold, and for each blocked slot the port and its holder: a Sova instance's id,
+Every copy's slot comes from one fixed range, 1 to 16, whatever the limit; conformance's two
+scratch slots, 17 and 18, sit outside it, and no other copy takes them. So changing the limit never
+moves a copy, a port or a scratch slot, and never asks for a new conformance run. Another checkout
+takes the slot asked for (1 to 16; 17 or 18 only when conformance asks), or the lowest free slot of
+1 to 16: a slot blocked by a listener, or by a port another instance holds, is skipped. A stopped
+copy keeps its slot and its ports.
+
+The port numbering (each port's `base` and `stride`, or `fixed`) comes from the main checkout's
+`.sova/project.json` as saved in its folder, uncommitted edits included and never its HEAD,
+whichever checkout a copy is of and for conformance too; everything else in a copy's definition
+(services, commands, setup, data) comes from its own checkout. A port the copy's checkout declares
+and the main checkout's file does not is numbered from the copy's own; with the main checkout's
+file missing or invalid, the definition in use numbers it.
+
+The **copy limit** is how many of the project's copies may run at once on this host. One rule gives
+the limit in force, and every reader goes through it: this machine's own copy limit for the
+project when one is set (kept in Sova's state, `<state root>/project-services/copy-limits.json`, by
+project root; never in the project's files, never in `host.json`, never in the definition or its
+hash, set on the Branches tab or through the project's settings, §app.project-overseer/settings);
+else the main checkout's saved file's `slots.cap`; else, with that file missing or invalid, the
+definition in use's; else 4. Only **running** copies count: a copy other than the main checkout's
+(slot 0) and conformance's scratch copies, whose record wants a service running (an `up` that a
+`down` has not stopped since). A stopped copy keeps its place and doesn't count. The limit is
+checked when a copy would go from running nothing to running something: at create of a new copy,
+and at `up` (or a test run's start of what it requires) of a copy that runs nothing yet; the count
+and the copy's start are taken under the registry's lock, so two callers can't both pass it. At the
+limit it is refused `cap-reached`: "{n} copies are running, and this machine allows {cap} at
+once: stop one first."; above it (the limit was lowered under what runs, which stops nothing):
+"{n} running, {k} over the limit: no new copy starts until {k + 1 in words} stop." (one: "until one
+stops"). Either message goes on to name the running copies and where the limit comes from (set on
+this machine, or the project's file). A create with room under the limit but no free slot of 1 to
+16 is refused `slots-blocked`, naming for each slot the port and its holder: a Sova instance's id,
 or a listener's pid and folder when this user can read them.
 
 A slot is free when
@@ -462,8 +481,8 @@ started for it, and the log notes the server's start time and the commit its che
 
 `conform` (project, `ref` default the main checkout's HEAD) proves a definition with a fixed,
 versioned suite that no project can change, in two scratch instances A and B on new branches from
-the ref, in the scratch slots (cap + 1 and cap + 2 of the limit in force, the main checkout's saved
-`slots.cap` and never the ref's, §app.project-services/instances), which no other copy takes:
+the ref, in the scratch slots 17 and 18, outside the copies' fixed range whatever the copy limit
+(§app.project-services/instances), which no other copy takes:
 doctor; create A, and again
 (`changed: false`); every setup step run a second time exits 0; up A (ready), and again (same
 pids); every declared port of a service up started held by A's own (as §app.project-services/up counts them: its
@@ -646,7 +665,9 @@ The operator sees and drives every running copy from two places, both on this ho
   probes over HTTP (a static service's first port too, at `/`) and that path; per copy, its entry
   (`open: {endpoint, port, path}`) when the copy's own definition declares `open`
   (§app.project-services/contract) and the copy has that port; and whether the main
-  checkout's definition declares sensitive data. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
+  checkout's definition declares sensitive data; and the copy limit, `limit: {value, source (machine
+  or file), file (the file's own value, or null), copies, running, over (the over-limit sentence, or
+  null), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
@@ -656,6 +677,27 @@ The operator sees and drives every running copy from two places, both on this ho
   "by conformance"; the caller's tag is its title). While the main checkout has no copy, **Start
   Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
+- **The copy limit** (§app.project-services/instances) opens the tab, above the rows: "{n} copies on
+  this host, {r} running · up to {cap} at once on this machine" (the copies besides the main
+  checkout's and conformance's), then where the limit comes from, "set on this machine" or "from the
+  project's file", and **Change**. Change opens an inline editor in its place: a number field (1 to
+  16), **Save**, **Cancel**, and while this machine's value is set **Reset to File's Value**, with
+  the hint "The project's file says {n}." (or, with no valid file, "The project's file sets none: 4
+  applies."); a value outside 1 to 16 reads "The copy limit is a whole number from 1 to 16." under
+  the field and nothing is sent. Save and Reset run `PUT /api/projects/:pid/services/limit {cap | null}` from Sova's
+  own page only (as a Settings card's Apply, §app.project-overseer/settings: a chat's key, the token
+  in a header, the Overseer's sender mark, an extension's key or a peer is refused, 403), and each
+  change is a line of the project's Settings history. A value outside 1 to 16 is refused in words.
+  While more copies run than the limit allows, a warn line under it says "{r} running, {k} over the
+  limit: no new copy starts until {k + 1 in words} stop."; nothing is stopped.
+- **The cost line**, under the limit: "Each copy takes about {steady} (up to {peak} at peak), so {cap}
+  copies need about {cap × steady}. This machine: {total}, {available} available now." in the warn
+  tone when {cap × steady} is more than what is available now; a warning, never a refusal. The
+  per-copy figures are the larger of conformance's two scratch copies' steady and peak readings
+  (§app.project-services/conform) from the newest passing stamp of the main checkout's current
+  definition; with none, from the newest stamp of an older definition that has a reading, the line
+  then starting "Measured {date} on an older definition: each copy took about …"; with neither, "Not
+  measured yet: Run Again on the Software card measures it." (and still this machine's memory).
 - **Open**: while a copy has an entry and the entry's own service is ready, whatever the copy's
   state (Degraded or Starting included), Open is its row's first action and carries the row's one
   plain-button weight: a link that opens the copy's entry, `http://<this page's host>:<port><path>`,

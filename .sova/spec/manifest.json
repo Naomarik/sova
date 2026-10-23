@@ -7538,6 +7538,44 @@
         "§mesh.ui/page"
       ]
     },
+    "§app.teams/requests": {
+      "kind": "behavior",
+      "requires": [
+        "§app.teams/running-limit",
+        "§app.teams/seats"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/subagents/index.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      }
+    },
+    "§app.teams/running-limit": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/docs/native-teams.md",
+        "pi-config/extensions/subagents/index.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      }
+    },
     "§app.teams/seats": {
       "kind": "behavior",
       "authority": "accepted",
@@ -7652,7 +7690,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:17Z"
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
       }
     },
     "§teams.defaults/file": {
@@ -7683,8 +7722,14 @@
         "pi-config/extensions/subagents/member.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
-      ]
+        "pi-config/extensions/subagents/README.md",
+        "shared/profiles.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      }
     },
     "§teams.defaults/monitor": {
       "kind": "behavior",

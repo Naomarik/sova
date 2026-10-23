@@ -107,13 +107,19 @@ TeamMember {
   prompt,                                  // self-contained; the team header is prepended
   ownedPaths?,                             // ≤ 32 entries, ≤ 512 chars each, single line
   orchestrator?,                           // true: sibling-scoped team_roster/team_steer; pi or claude-code backend
-  backend?, model?, effort?, tools?, systemPrompt?, cwd?, wake?, backendOptions?
+  backend?, model?, effort?, tools?, systemPrompt?, cwd?, wake?, backendOptions?,
+  extensions?                              // agent_spawn's rules; loaded beside the team tools
 }
 ```
 
-- One role per member: `count`, `fork`, `extensions` and `agentType` are
-  rejected with a pointer to `agent_spawn` (which stays the tool for ad hoc
-  workers and Pi-only options).
+- One role per member: `count`, `fork` and `agentType` are rejected in plain
+  words that name the setting: `count` with "one member per role", `fork` and
+  `agentType` with a pointer to `agent_spawn` (which stays the tool for ad hoc
+  workers and those options). Any other unknown setting is refused the same
+  way, never dropped. A member takes `extensions` by `agent_spawn`'s rules.
+- `members` given as a JSON string of a list of objects is read as that list.
+  A missing role, prompt, name or objective is refused, never filled in. These
+  checks run before pi's schema check, so no refusal is in the schema's words.
 - **Atomicity:** the whole batch is validated before any worker starts; a
   failure on any member rolls the batch back (bounded 10s wait, workers stay
   owned until termination is confirmed, consumed IDs are never reused) and
@@ -333,8 +339,8 @@ Guarantees, enforced by `team-widget.test.ts`:
 | --- | --- |
 | Session teams / history teams | 16 / 16 |
 | Members per team (incl. finished and pending) | 24 |
-| Members per `team_create`/`team_add` call | 8 |
-| Live workers total (shared with `agent_spawn`) | 12 |
+| Members per `team_create`/`team_add` call | no limit of its own (bounded by the two rows around it) |
+| Live workers total (shared with `agent_spawn`; idle workers, coordinator and monitor included) | 24 |
 | Retained finished workers | 50 |
 | Recorded actions per team | 50 (ring; last 10 shown) |
 | Team name / role length | 64 chars, single line, no control characters |

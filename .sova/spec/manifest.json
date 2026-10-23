@@ -4742,9 +4742,9 @@
         "src/lib/input-count.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar",
+        "at": "2026-10-23T22:04Z",
+        "source": "pi-session:cb32c74b-7123-4902-acf1-37d2f19c83b9#c86a4620"
       }
     },
     "§chat/composer": {
@@ -23606,6 +23606,29 @@
       "agreed": {
         "by": "user",
         "at": "2026-10-17T21:58Z"
+      }
+    },
+    "§app.tours/one-card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/tour-rows.ts",
+        "src/lib/tour-rows.test.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "server/tour-one-card.integration.test.ts"
+      ],
+      "requires": [
+        "§app.tours/recording",
+        "§app.tours/editions",
+        "§chat.transcript/transcript-items",
+        "§chat.transcript/work-chain"
+      ],
+      "agreed": {
+        "by": "omar",
+        "at": "2026-10-23T21:42Z",
+        "source": "pi-session:cb32c74b-7123-4902-acf1-37d2f19c83b9#c86a4620"
       }
     },
     "§app.tours/recording": {

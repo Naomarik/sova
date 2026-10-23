@@ -114,8 +114,87 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .archive-date-label .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
 .archive-date[open] > .archive-date-label .icon-twist { transform: rotate(90deg); }
 .archive-date-name { flex: 1; min-width: 0; }
-/* Folder groups inside an open section: a hairline under the date row. */
-.archive-date[open] > .session-group:first-of-type { border-top: var(--stroke-thin) solid var(--color-border); }
+/* An open day: a hairline under its head, full width; its folders sit one step in beside its guide line. */
+.archive-date:not(.org-done)[open] > .archive-date-label { border-bottom: var(--stroke-thin) solid var(--color-border); }
+
+/* ---- Guide lines (§app.session-list/guide-lines). Every collapsible group inside a region has a line beside its
+   contents, and pressing it closes the group (lib/guide-line). The line is a transparent `--space-3`-wide box,
+   centred on a 2px `--color-border` line, a direct child of its group after the head.
+   - Under the arrow (an org, a user group, a Done, an Archive day): from the head's bottom to the group's end, its
+     centre on the head's chevron — the head's `--space-4` inset plus half the 16px icon — and the contents one
+     step in beside it.
+   - At the edge (a folder, a Projects-region project): the 2px rule the group's own border already draws; the box
+     only makes it pressable and stops at the group's left edge.
+   A folder's edge line inside a user group or an Archive day runs close beside that group's line: the two boxes
+   split at the midpoint between the lines, so they never overlap. */
+.sidebar-list {
+  /* An org's projects and a Done's rows: where an org's projects already sat. */
+  --guide-step: calc(var(--space-5) + var(--space-1));
+  /* A user group's and an Archive day's folders: far enough that their own edge line stands clear of the group's. */
+  --guide-nest: var(--space-6);
+  /* Half the gap between a group's line (its chevron's centre) and a nested folder's edge line (its 2px border). */
+  --guide-split: calc((var(--guide-nest) + var(--stroke-thin) - var(--space-4) - var(--space-2)) / 2);
+}
+.org-section,
+.group-section,
+.archive-date,
+.session-group,
+.org-project { position: relative; }
+.guide-line {
+  --guide-x: calc(var(--space-4) + var(--space-2));
+  --guide-before: calc(var(--space-3) / 2);
+  --guide-after: calc(var(--space-3) / 2);
+  position: absolute;
+  top: var(--row-height);
+  bottom: 0;
+  left: calc(var(--guide-x) - var(--guide-before));
+  width: calc(var(--guide-before) + var(--guide-after));
+  cursor: pointer;
+}
+.guide-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--guide-before) - var(--stroke-thin));
+  width: calc(var(--stroke-thin) * 2);
+  background: var(--color-border);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.guide-line:hover::before { background: var(--color-border-strong); }
+/* An org's padding under its last project is not its contents. */
+.org-section > .guide-line { bottom: var(--space-2); }
+/* The edge: the host's 2px border is the line, its centre a stroke left of the padding edge the box is placed from;
+   the box starts at the host's own left edge and runs the whole block (a sticky head on top keeps its own press). */
+.guide-line-edge {
+  --guide-x: calc(var(--stroke-thin) * -1);
+  --guide-before: var(--stroke-thin);
+  top: 0;
+}
+.guide-line-edge::before { content: none; }
+.session-group:has(> .guide-line:hover),
+.org-project:has(> .guide-line:hover) { border-left-color: var(--color-border-strong); }
+.session-group { transition: border-color var(--dur-fast) var(--ease-standard); }
+/* A group's line beside its nested folders, and those folders' edge lines: split at the midpoint. */
+.group-section:not(.org-section) > .guide-line,
+.archive-date:not(.org-done) > .guide-line { --guide-after: var(--guide-split); }
+.group-section:not(.org-section) > .session-group > .guide-line-edge,
+.archive-date:not(.org-done) > .session-group > .guide-line-edge { --guide-before: var(--guide-split); }
+/* The contents, one step in beside the line. */
+.org-done > .list { margin-left: var(--guide-step); }
+.group-section:not(.org-section) > .session-group,
+.group-section:not(.org-section) > .sidebar-region-note,
+.archive-date:not(.org-done) > .session-group { margin-left: var(--guide-nest); }
+/* What will close lights up while its line is hovered: the head takes the hover fill and full ink. */
+.org-section:has(> .guide-line:hover) > summary,
+.group-section:has(> .guide-line:hover) > summary,
+.archive-date:has(> .guide-line:hover) > summary,
+.session-group:has(> .guide-line:hover) > summary,
+.org-project:has(> .guide-line:hover) > .org-project-head {
+  background: var(--color-sunken);
+  color: var(--color-ink);
+}
+.session-group:has(> .guide-line:hover) > summary > .list-group-label { color: var(--color-ink); }
 
 /* Archive cleanup: one quiet button closing the open Archive. */
 .archive-tools {
@@ -472,14 +551,15 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink-muted);
 }
 .org-section[open] { padding-bottom: var(--space-2); }
-/* Projects: sticky labels, not sections — one level of sticking inside the pane. Under an org the
-   block steps in so its guide rule falls under the org's chevron; the Projects region has no org
-   level, so its blocks start at the edge. */
+/* Projects: sticky labels, not sections — one level of sticking inside the pane. The Projects region
+   has no org level, so its blocks start at the edge behind their own guide rule; under an org the
+   blocks step in beside the org's one guide line, centred under its chevron (§app.session-list/guide-lines),
+   and carry no rule of their own. */
 .org-project {
   padding-left: calc(var(--space-1) / 2);
   border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
 }
-.org-section > .org-project { margin-left: var(--space-5); }
+.org-section > .org-project { margin-left: var(--guide-step); padding-left: 0; border-left: 0; }
 .org-project + .org-project { margin-top: var(--space-3); }
 .org-project-label {
   position: sticky;

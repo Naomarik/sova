@@ -1451,12 +1451,14 @@
         "src/lib/model-pick.ts",
         "src/lib/model-pick.test.ts",
         "server/feature-chats.ts",
-        "server/assistant-would-act.ts"
+        "server/assistant-would-act.ts",
+        "src/lib/assistant-model-rows.ts",
+        "src/lib/assistant-model-rows.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "at": "2026-10-22T21:57Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#3ef3672c"
       }
     },
     "§app.project-assistant/never": {
@@ -10412,12 +10414,14 @@
         "server/person-page.ts",
         "server/org-routes.ts",
         "src/design/base.css",
-        "src/components/OwnerCardAssistant.tsx"
+        "src/components/OwnerCardAssistant.tsx",
+        "src/lib/assistant-model-rows.ts",
+        "src/lib/assistant-model-rows.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "at": "2026-10-22T21:57Z",
+        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#3ef3672c"
       }
     },
     "§app.owner-page/conversations": {

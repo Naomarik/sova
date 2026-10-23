@@ -53,10 +53,11 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   being written, an Enter or `Send` sends nothing and says "Wait for the answer first.", a line
   that goes once the answer is done; the box keeps the text, so the next Enter sends it.
   Hand-off pages keep their own keys (§app.baton/outsider-view).
-- **Nothing runs on a model nobody chose.** Its replies run on the org's assistant reply model
-  (§app.project-assistant/models), set on the chat at each owner message; with none set, or one this
-  host can't run, the chat does not answer: the page says it isn't ready yet and the owner's message
-  is not taken (409 `not-ready`).
+- **Nothing runs on a model nobody chose.** Its replies run on the org's resolved reply model, its
+  own pick or else the host's default (§app.project-assistant/models), set on the chat with its
+  thinking level at each owner message; with none resolved, one this host can't run, or one
+  Settings → Models turned off, the chat is not ready and does not answer: the page says it isn't
+  ready yet and the owner's message is not taken (409 `not-ready`).
 - **The operator in the chat.** The operator opens the same conversation in Sova (Owner card,
   `Open Assistant Chat`) and may write in it; a turn the operator starts is attended: its acts are
   never restricted (§app.project-overseer/autonomy-levels). The owner sees the operator's messages under the
@@ -70,19 +71,23 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 ## §app.project-assistant/photos — The owner's photos
 
 - **When.** The owner can send photos and screenshots only while photos are on (the outsider photo
-  settings, Settings → Organizations, §app.settings-dialog/organizations) and the assistant's reply
-  model sees images (its `input` lists `image`). Only then does the chat's view (`GET
+  settings, Settings → Organizations, §app.settings-dialog/organizations) and the assistant is ready
+  on a resolved reply model (the org's pick or the default, §app.project-assistant/models) that sees
+  images (its `input` lists `image`). Only then does the chat's view (`GET
   /api/i/<token>/assistant`) carry `photos {perMessage, maxBytes}` and the composer show its
   paperclip; otherwise it shows none, a pasted or dropped picture is not attached, and the upload
-  and message routes refuse a photo (409, code `no-photos`). The Owner card's reply-model row then
-  says "This model can't see photos: {first} won't get an attach button."
+  and message routes refuse a photo (409, code `no-photos`). The Owner card's reply row then
+  says "This model can't see photos: {first} won't get an attach button.", and Settings →
+  Organizations says "This model can't see photos: owners who follow it won't get an attach
+  button." under a default that can't.
 - **The hand-off page's composer** (§app.baton/images) with photos only, never files: the
   `Attach Photos` paperclip, paste and drop, the same on-device processing (orientation, 2000 px,
   re-encoded, metadata dropped), upload at attach, the pending strip with progress, Retry and
   Remove, "Waiting for photos to finish." while an upload runs, and the polite live region.
 - **Upload.** `POST /api/i/<token>/assistant/image` with the raw bytes and their type
   (`image/jpeg`, `image/png`, `image/webp` or `image/gif`), answering 201 `{id, size, mime}`; 404
-  and 410 for an unknown or dead owner link; 409 `not-ready` while the chat has no reply model;
+  and 410 for an unknown or dead owner link; 409 `not-ready` while the chat isn't ready (no reply
+  model resolves, or it can't run here or is turned off);
   409 `no-photos` (above); 413 over the largest photo; 400 when the bytes aren't the declared type;
   429 past 20 uploads a minute per link; 507 while the host's staging area is full, as on a hand-off
   page. The server strips metadata again as a backstop. A photo is staged host-local in the hand-off
@@ -187,7 +192,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Where.** Home's Project Assistant card, headed "What it can do for you", the chat's
   suggestions before its first message, and its `What Can I Ask?` sheet (§app.owner-page/content)
   list what the assistant can do for the owner: up to 6 lines, each a plain name and how it
-  happens (copy: §design.copy-deck/owner-page). While the assistant isn't ready (no reply model,
+  happens (copy: §design.copy-deck/owner-page). While the assistant isn't ready (no runnable reply model,
   §app.project-assistant/chat) the card shows the not-ready line and no list, and the chat no
   suggestions.
 - **Always, whatever the switches**: `Ask about your projects` (answers right away), `Report a
@@ -211,7 +216,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   asks, in this order, and the first that fails answers `team`: the project's settings are readable
   and its Project Assistant column is there; the act's switch is On; no brake holds the switches
   (paused by an attach, an empty roster), read as the project page reads it; for a fix, a coding
-  model is set (§app.project-assistant/models); for a feature, a gathering model is set; for a
+  model resolves (the project's, the org's or the default, §app.project-assistant/models); for a
+  feature, a gathering model resolves the same way; for a
   release, the project declares release steps
   (a deploy target in its definition, §app.project-services/deploy-callers); the project's engine
   would take that act from the assistant now, unattended (the same check the act gets: switch,
@@ -376,15 +382,38 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **Per kind of work**: the assistant's replies (`reply`), the coding sessions it starts
   (`coding`), the gatherings it starts (`gathering`); each a provider and model with an optional
   thinking level. The `gathering` pick runs the feature request chats it opens
-  (§app.project-assistant/feature-chats); with none set, `start_feature_chat` opens none.
-- **Per organization**, in `<workspace>/project-assistant.json` (`models`), set on the Owner card
-  (`PUT /api/orgs/:id/owner/assistant {models}`); for `coding` and `gathering` a project may
-  override it (its Project Assistant column's models, §app.project-overseer/autonomy-levels). The card
-  says which applies.
-- **Cost shown**: each picked model with its price per million input and output tokens
+  (§app.project-assistant/feature-chats); with none resolved, `start_feature_chat` opens none. The
+  Owner card doesn't show the gathering kind: it resolves like the others.
+- **One default for every organization**: the host's Project Assistant default, one model and
+  thinking level for all three kinds, set in Settings → Organizations
+  (§app.settings-dialog/organizations). Host state (`<stateRoot>/baton-settings.json`, `assistant`),
+  never the workspace, and never the new-chat default (§chat.model-menu/saved-default). It is set
+  only through `PUT /api/settings/project-assistant {assistant}` (`null` clears it; command
+  `settings.assistant-default.set`), which a mesh peer may call only with `admin`, as for an
+  organization's own pick (§mesh.peers/grants); `PUT /api/baton/settings`, which `sessions` reaches,
+  refuses an `assistant` key (400).
+- **An organization's own pick**, per kind, in `<workspace>/project-assistant.json` (`models`), set
+  on the Owner card (`PUT /api/orgs/:id/owner/assistant {models}`, each kind `{model, thinking?}`;
+  `null` clears the org's pick, so that kind follows the default again); for `coding` and
+  `gathering` a project may override it (its Project Assistant column's models,
+  §app.project-overseer/autonomy-levels).
+- **One resolution, read everywhere**: the project's override (coding and gathering only), else the
+  organization's pick, else the default, with its source (`project`, `org` or `default`). Replies,
+  readiness, the photo button and photo uploads, the chat's setup, fixes, feature request chats and
+  what the owner page says the assistant would do all read it, so a change of the default moves every organization
+  without its own pick from its next read.
+- **Ready** (§app.project-assistant/chat): a reply model resolves, this host can run it (it is in
+  the host's model list, so known and with credentials) and Settings → Models hasn't turned it off
+  (§app.settings-dialog/models). A default turned off later leaves every organization that follows
+  it not ready; Settings and the Owner card say so.
+- **The first default adopts matching picks, once.** The first time a default is saved on a host,
+  each organization's pick that equals it exactly (same model and same thinking; a pick with no
+  thinking never equals one with a level) is cleared, so it follows the default; every other pick
+  stays the organization's own. Later saves of the default never clear a pick.
+- **Cost shown**: each model with its price per million input and output tokens
   (§app.project-costs/price-table), or that its price isn't known.
-- **None set = not run**: no reply model, no reply (§app.project-assistant/chat); no coding model,
-  `start_fix` stays a request.
+- **None resolved = not run**: no reply model, no reply (§app.project-assistant/chat); no coding
+  model, `start_fix` stays a request.
 
 ## §app.project-assistant/never — What the owner and the assistant's model never get
 

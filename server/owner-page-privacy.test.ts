@@ -218,6 +218,8 @@ const ids = (): string[] => [
 // The Project Assistant's records: its models (a marker), one owner request (its id must never show).
 const paStore = await import("./project-assistant-store");
 paStore.setAssistantModels(org.id, { models: { reply: { model: M.assistantModel }, coding: { model: M.assistantModel } } });
+// Readiness asks whether this host runs the reply model: here it does (no real model runtime in this test).
+(await import("./project-assistant-ready")).setAssistantModelListForTests(async () => [{ ref: M.assistantModel }]);
 const ownerReq = paStore.fileRequest(org.id, { projectId: pa.id, kind: "bug", title: "The booking form is slow", text: "It takes a minute." });
 const idsWithRequest = () => [...ids(), ownerReq.id];
 

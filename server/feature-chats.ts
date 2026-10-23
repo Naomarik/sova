@@ -7,7 +7,7 @@ import { handleOf } from "./person-links";
 import { refreshShare } from "./share/hub";
 import { envelopeFor } from "./org-engine";
 import { OrgError, ownerOf, readRoster } from "./orgs";
-import { addFeatureChat, assistantModelFor, endFeatureChatRecord, featureChatRecord, featureChats, fileRequest, setRequestStatus } from "./project-assistant-store";
+import { addFeatureChat, effectiveAssistantModel, endFeatureChatRecord, featureChatRecord, featureChats, fileRequest, setRequestStatus } from "./project-assistant-store";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
 /**
@@ -109,7 +109,8 @@ export function setFeatureStartForTest(f: StartGathering | null): void {
 /** Starts in flight, per org and person: the one-chat check and the record are not atomic with the start. */
 const starting = new Set<string>();
 
-/** The gathering model a feature chat of this project runs on: the project's override, else the org's. */
+/** The gathering model a feature chat of this project runs on: the project's override, else the org's, else the
+    host's default (the one resolution, §app.project-assistant/models). */
 export function featureModelOf(orgId: string, projectId: string): ModelPick | null {
   let models = null;
   try {
@@ -117,7 +118,7 @@ export function featureModelOf(orgId: string, projectId: string): ModelPick | nu
   } catch {
     models = null;
   }
-  return assistantModelFor(orgId, "gathering", models).pick;
+  return effectiveAssistantModel(orgId, "gathering", models)?.pick ?? null;
 }
 
 /**

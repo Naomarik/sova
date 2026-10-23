@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 465 |
-| Routes a catalogue entry points at | 99 |
-| Catalogue entries | 126 |
+| Routes registered | 466 |
+| Routes a catalogue entry points at | 100 |
+| Catalogue entries | 127 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -148,6 +148,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `settings.memory.get` | Memory Settings | looks | `GET /api/settings/memory` | sessions |
 | `settings.subagents.get` | Subagent Profiles | looks | `GET /api/settings/subagents` | sessions |
 | `settings.align.set` | Save Alignment Settings | changes | `PUT /api/settings/align` | admin |
+| `settings.assistant-default.set` | Set the Project Assistant's Default Model | changes | `PUT /api/settings/project-assistant` | admin |
 | `push.test` | Send Test Notification | changes | `POST /api/push/test` | admin |
 | `audit.list` | List Who Ran What | looks | `GET /api/audit` | full |
 | `org.owner.request.chat` | Start Chat | changes | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin |
@@ -686,6 +687,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `GET /api/settings/memory` | sessions | `settings.memory.get` |
 | `GET /api/settings/models` | sessions | `settings.models.get` |
 | `GET /api/settings/overseer` | sessions | `settings.overseer.get` |
+| `PUT /api/settings/project-assistant` | admin | `settings.assistant-default.set` |
 | `GET /api/settings/provider-limits` | sessions | `settings.provider-limits.get` |
 | `GET /api/settings/spec` | sessions | `settings.spec.get` |
 | `GET /api/settings/subagents` | sessions | `settings.subagents.get` |

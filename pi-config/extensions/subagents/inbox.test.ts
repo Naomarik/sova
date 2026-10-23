@@ -84,12 +84,14 @@ test("a moved item keeps its id, sender and status, leaves the old inbox, record
 		const q = s.add({ teamId: "team_01", from: lead, to: dev, kind: "question", body: "which schema?" });
 		const other = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "fyi" });
 		s.markListed("ag_02", [q.id, other.id]);
+		s.setStatus("ag_02", [q.id], "read");
 		s.setStatus("ag_02", [other.id], "addressed");
 		const moved = s.moveOpen("ag_02", dev2, "handover");
 		assert.deepEqual(moved.map((i) => i.id), [q.id], "only open items move");
 		assert.deepEqual(moved[0].from, lead);
 		assert.deepEqual(moved[0].to, dev2);
 		assert.equal(moved[0].listedAt, undefined, "listed again to its new holder");
+		assert.deepEqual([moved[0].status, moved[0].readAt], ["new", undefined], "read by the old holder, new to the successor");
 		assert.deepEqual(moved[0].movedFrom?.map((m) => [m.workerId, m.why]), [["ag_02", "handover"]]);
 		assert.equal(s.holderOf(q.id), "ag_05");
 		assert.deepEqual(s.list("ag_02").map((i) => i.id), [other.id], "it left the old inbox");
@@ -97,6 +99,7 @@ test("a moved item keeps its id, sender and status, leaves the old inbox, record
 		assert.deepEqual(s.sentBy("ag_01").map((i) => [i.id, i.to.workerId]), [[q.id, "ag_02"], [other.id, "ag_02"]].map(([id, w]) => [id, id === q.id ? "ag_05" : w]));
 		const reload = new InboxStore(root);
 		assert.equal(reload.holderOf(q.id), "ag_05");
+		assert.equal(reload.get(q.id)!.status, "new", "persisted in the destination's add");
 		assert.deepEqual(readMemberItems(path.join(root, "team_01", "ag_02")).map((i) => i.id), [other.id]);
 		// A move torn after its first write (the destination add) keeps the newer holder.
 		const t = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "torn" });

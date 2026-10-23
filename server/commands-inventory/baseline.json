@@ -164,6 +164,7 @@
     "GET /api/session-shares/preview": {"need":"sessions","is":"pending"},
     "GET /api/session-shares/preview/img/:n": {"need":"sessions","is":"pending"},
     "GET /api/sessions": {"need":"sessions","is":"command","ids":["session.list"]},
+    "GET /api/sessions/align-triage": {"need":"sessions","is":"command","ids":["session.align.triage"]},
     "GET /api/sessions/by-id/:id": {"need":"sessions","is":"pending"},
     "GET /api/sessions/context": {"need":"sessions","is":"command","ids":["session.context"]},
     "GET /api/sessions/dir": {"need":"sessions","is":"pending"},

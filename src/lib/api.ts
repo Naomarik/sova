@@ -134,7 +134,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
-import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
+import type { AlignTriage, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { onAuthorized, onUnauthorized } from "./auth";
@@ -1119,6 +1119,9 @@ export async function putDecisionKey(key: string): Promise<DecisionKeyInfo> {
     throw err;
   }
 }
+
+/** The open alignment cards' triage (§app.decisions/align-triage): asked once per card version, only with attention signals on. */
+export const getAlignTriage = (path: string) => request<AlignTriage>(`/api/sessions/align-triage?path=${encodeURIComponent(path)}`);
 
 export const deleteDecisionKey = () => request<DecisionKeyInfo>("/api/settings/decisions/key", { method: "DELETE" });
 

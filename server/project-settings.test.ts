@@ -125,7 +125,8 @@ describe("b1: its own switches, in the operator's turn", async () => {
     const out = await run(pid, true, { op: "propose", why: "Look more.", edits: [{ setting: "overseer", patch: { holdMin: 0 } }] });
     const c = out.details.card;
     const a = app();
-    for (const headers of [{ [OVERSEER_SENDER_HEADER]: senderSecret() }, { "x-sova-token": "x" }, { "x-sova-caller": "k" }]) {
+    const callers: Record<string, string>[] = [{ [OVERSEER_SENDER_HEADER]: senderSecret() }, { "x-sova-token": "x" }, { "x-sova-caller": "k" }];
+    for (const headers of callers) {
       const r = await post(a, `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint }, headers);
       assert.equal(r.status, 403, JSON.stringify(headers));
     }

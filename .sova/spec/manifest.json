@@ -653,11 +653,17 @@
         "src/commands/view.ts",
         "src/commands/composers.ts",
         "src/lib/palette.test.ts",
-        "src/commands/view.test.ts"
+        "src/commands/view.test.ts",
+        "src/components/Composer.tsx"
       ],
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§app.command-palette/opening": {
       "kind": "behavior",
@@ -668,11 +674,20 @@
         "src/command-palette.css",
         "src/commands/keys.test.ts",
         "src/commands/palette-lazy.test.ts",
-        "src/commands/palette-key.test.ts"
+        "src/commands/palette-key.test.ts",
+        "src/commands/palette-open.ts",
+        "src/commands/palette-open.test.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx"
       ],
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§app.command-palette/picking": {
       "kind": "behavior",
@@ -681,13 +696,20 @@
         "src/components/CommandPalette.tsx",
         "src/commands/composers.ts",
         "src/components/Composer.tsx",
-        "src/lib/palette.test.ts"
+        "src/lib/palette.test.ts",
+        "src/App.tsx",
+        "src/lib/confirm-step.ts"
       ],
       "requires": [
         "§chat.slash-commands/keyboard-and-mouse"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§app.command-palette/rows": {
       "kind": "behavior",
@@ -700,13 +722,19 @@
         "src/lib/api.ts",
         "src/components/SettingsDialog.tsx",
         "src/lib/palette.test.ts",
-        "src/commands/view.test.ts"
+        "src/commands/view.test.ts",
+        "src/App.tsx"
       ],
       "requires": [
         "§chat/slash-commands"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§app.command-palette/shortcut-sheet": {
       "kind": "behavior",
@@ -2408,7 +2436,12 @@
         "src/App.tsx"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§app/commands": {
       "kind": "surface",
@@ -2839,8 +2872,14 @@
         "src/components/AlignChip.tsx",
         "src/design/align-viewer.css",
         "src/components/VoiceInput.tsx",
-        "src/design/voice.css"
-      ]
+        "src/design/voice.css",
+        "src/components/ComposerMenu.tsx"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§chat.composer/behavior": {
       "kind": "behavior",
@@ -2854,14 +2893,20 @@
         "src/components/VoiceInput.tsx",
         "src/design/base.css",
         "src/lib/release-control.ts",
-        "src/lib/release-control.test.ts"
+        "src/lib/release-control.test.ts",
+        "src/components/ComposerMenu.tsx"
       ],
       "requires": [
         "§chat.images/composer-attachments",
         "§chat.voice/button"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -2878,8 +2923,14 @@
         "src/lib/api.ts",
         "src/lib/sandbox.ts",
         "src/components/Composer.tsx",
-        "src/lib/sandbox.test.ts"
-      ]
+        "src/lib/sandbox.test.ts",
+        "src/commands/palette-open.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§chat.composer/disabled-states": {
       "kind": "behavior",
@@ -3021,7 +3072,7 @@
         "§design.copy-deck/images"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Composer.tsx",
         "src/lib/images.ts",
@@ -3029,8 +3080,15 @@
         "server/index.ts",
         "server/app.ts",
         "src/design/base.css",
-        "server/drafts.ts"
-      ]
+        "server/drafts.ts",
+        "src/components/CommandPalette.tsx",
+        "src/commands/composers.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§chat.images/lightbox": {
       "kind": "behavior",
@@ -3773,7 +3831,16 @@
     "§chat.slash-commands/commands-row": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      },
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ComposerMenu.tsx"
+      ]
     },
     "§chat.slash-commands/commands-that-need-the-terminal-ui": {
       "kind": "behavior",
@@ -3829,7 +3896,12 @@
         "src/components/Composer.tsx",
         "src/lib/input-mode.ts",
         "src/components/CommandPalette.tsx"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§chat.slash-commands/markup": {
       "kind": "behavior",
@@ -3941,12 +4013,13 @@
         "src/lib/input-count.test.ts",
         "shared/senders.ts",
         "src/lib/older-rows.test.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/CommandPalette.tsx"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T21:32Z",
-        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
       }
     },
     "§chat.timeline/rejected": {
@@ -3967,12 +4040,13 @@
         "src/components/ComposerMenu.tsx",
         "src/lib/inputs.ts",
         "src/lib/inputs.test.ts",
-        "src/lib/timeline.ts"
+        "src/lib/timeline.ts",
+        "src/components/CommandPalette.tsx"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T21:32Z",
-        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
       }
     },
     "§chat.timeline/rows": {
@@ -4334,7 +4408,8 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "src/components/ComposerMenu.tsx"
       ],
       "notOwned": [
         "§chat/slash-commands",
@@ -4343,8 +4418,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T00:49Z",
-        "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#e92e5471"
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
       }
     },
     "§chat/context-window": {
@@ -4450,17 +4525,19 @@
     "§chat/slash-commands": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "shared/protocol.ts",
         "src/lib/slash.ts",
         "src/components/SlashMenu.tsx",
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx"
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-13T00:19Z"
+        "at": "2026-10-22T15:35Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
       },
       "notOwned": [
         "§app/subagents-pane",
@@ -4518,7 +4595,7 @@
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/ComposerMenu.tsx"
       ],
@@ -4662,7 +4739,7 @@
     "§design.copy-deck/slash-commands": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "about": [
         "§chat/slash-commands"
       ]
@@ -5044,8 +5121,17 @@
       "evidence": "verified",
       "code": [
         "src/components/ComposerMenu.tsx",
-        "src/components/ChatView.tsx"
-      ]
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "src/commands/composers.ts",
+        "src/lib/palette.ts",
+        "src/components/CommandPalette.tsx"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§chat.playbooks/rules": {
       "kind": "behavior",
@@ -5305,7 +5391,7 @@
         "§chat/sandbox"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "public/icons/shield.svg",
         "server/chat-manager.ts",
@@ -5321,7 +5407,12 @@
         "public/icons/shield-off.svg",
         "src/components/ComposerMenu.tsx",
         "src/lib/sandbox.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T15:11Z",
+        "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      }
     },
     "§design.copy-deck/sandbox": {
       "kind": "behavior",

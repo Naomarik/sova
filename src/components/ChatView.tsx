@@ -132,7 +132,7 @@ import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
-import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
@@ -236,7 +236,7 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A rewind landed on this chat, whoever asked (a Timeline row, or the flyout's "Undo last
+  /** A rewind landed on this chat, whoever asked (a Timeline row, or the palette's "Undo last
       turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
       Success only — a refusal changed nothing. App mints the generation counter the pane watches.
       No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
@@ -1327,7 +1327,7 @@ export function ChatView(props: {
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
   /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
-      and the flyout's Undo row greys out while a rewind is. */
+      and the palette's Undo row greys out while a rewind is. */
   const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
     const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
@@ -1380,7 +1380,7 @@ export function ChatView(props: {
       countPending();
     });
   };
-  /** How many rewinds are out — the flyout's Undo row reads this. */
+  /** How many rewinds are out — the palette's Undo row reads this. */
   const rewindsPending = () => pending().rewind;
   /**
    * A refusal code from a server that may be newer than this build: anything it doesn't know is
@@ -1425,7 +1425,7 @@ export function ChatView(props: {
   onCleanup(() => noteLinks(props.path, null));
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
-  /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch
+  /** The palette's "Undo last turn": a rewind to just before the newest user message on the branch
       (never a link message: a partner's words are no rewind target). */
   const lastInput = () => {
     const list = items() ?? [];
@@ -1851,7 +1851,7 @@ export function ChatView(props: {
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
   const toolsKey = createMemo(() => toolsKeyOf(model(), modeState(), hellos()));
-  /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
+  /** The shield's Sandbox panel: the extension answers with a toast and a
       "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
@@ -2364,7 +2364,6 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
@@ -2437,7 +2436,6 @@ export function ChatView(props: {
         onAbort={abort}
         restored={restored()}
       />
-      </FlyoutSession.Provider>
       <Show when={showPlaybooks()}>
         <PlaybooksDialog
           path={props.path}
@@ -2450,8 +2448,8 @@ export function ChatView(props: {
           onSend={(text) => send(text, false, [])}
           onClose={(sent) => {
             setShowPlaybooks(false);
-            // After a send the next thing is the conversation; otherwise back
-            // to the trigger the dialog was opened from.
+            // After a send the next thing is the conversation; otherwise back to the "+" button
+            // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
             if (sent) focusComposer();
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}

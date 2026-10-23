@@ -123,7 +123,7 @@ describe("§mesh.links/transcript: exclusions", () => {
     const facts = (lastUser: string, tools = 0) => ({ turnId: "a", replyAt: 2, lastUser, assistantLast: "Should I merge it?", tools: Array.from({ length: tools }, () => ({ name: "bash", args: "{}", result: "" })), stopReason: "stop", durationMs: 1000 });
     assert.deepEqual(Object.keys(turnQuestions(facts(linkText()))), []);
     assert.deepEqual(Object.keys(turnQuestions(facts(linkText(), 50))), []);
-    assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), ["asks_user"], "the user's own turn is asked (§app.decisions/asks-user): the tag makes the difference");
+    assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), ["asks_user", "outcome", "ask_kind", "claims_unverified", "left_open"], "the user's own turn is asked (§app.decisions/asks-user): the tag makes the difference");
     // turnFacts reads the tagged message as the turn's opener, as the classifier needs.
     const branch = [msg("l1", null, "user", linkText()), msg("a1", "l1", "assistant", "Should I merge it?")];
     assert.ok(turnFacts(historyOf(branch))!.lastUser.startsWith("[link_msg "));

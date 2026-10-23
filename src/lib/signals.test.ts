@@ -14,6 +14,7 @@ import {
   signalTitle,
   signalTooltip,
   providerName,
+  askKindWord,
   signalWords,
   stalledPaths,
   tagSearchText,
@@ -93,7 +94,7 @@ test("the turn-error tooltip says the fact, then pi's message when there is one"
 });
 
 test("every kind has its own glyph, class and words", () => {
-  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "team-stalled", "looping"]);
+  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "team-stalled", "unverified", "looping"]);
   // Open questions show their count, no glyph: only the glyph kinds need distinct icons.
   const icons = SIGNAL_PRECEDENCE.filter((k) => k !== "questions").map((k) => SIGNAL_ICON[k]);
   const classes = SIGNAL_PRECEDENCE.map((k) => SIGNAL_CLASS[k]);
@@ -101,7 +102,7 @@ test("every kind has its own glyph, class and words", () => {
   assert.equal(new Set(icons).size, icons.length);
   assert.equal(new Set(classes).size, SIGNAL_PRECEDENCE.length);
   // A worker only ever speaks for "looping"; open questions and asks are the session's own, whatever the flag.
-  assert.equal(new Set(words).size, 5, "worker and session words differ except where one never applies");
+  assert.equal(new Set(words).size, 6, "worker and session words differ except where one never applies");
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
 
@@ -237,4 +238,18 @@ test("the mark's tooltip names its source: the provider that answered, or code",
   const stalled = rowNeedsYou(row(), { selected: null, busy: false, stalled: true })!;
   assert.equal(signalTooltip(stalled), "Waiting on subagents that have gone quiet. From code.");
   assert.equal(providerName("claude-code"), "the configured model");
+});
+
+test("an unverified mark and an ask's kind: the words, the glyph, the sentence", () => {
+  const row = (signals: SessionSignals) => ({ path: "/p", signals, seenAt: undefined, workerSignals: undefined, align: undefined }) as never;
+  const unverified = rowNeedsYou(row({ at: 2, turnId: "t", provider: "jev", kinds: ["unverified"] }), { selected: null, busy: false })!;
+  assert.equal(unverified.kind, "unverified");
+  assert.equal(signalWords(unverified), "Done, not checked. ");
+  assert.equal(SIGNAL_ICON.unverified, "check");
+  assert.equal(signalTooltip(unverified), "The last reply says it's done, but names something it didn't run or check. Guessed by Jev.");
+  const approval = rowNeedsYou(row({ at: 2, turnId: "t", provider: "jev", kinds: ["asks-you", "unverified"], card: { askKind: "approve-risky-action" } }), { selected: null, busy: false })!;
+  assert.deepEqual([approval.kind, approval.askKind], ["asks-you", "approve-risky-action"], "an ask outranks unverified");
+  assert.equal(signalTitle(approval), "The last reply waits on your approval.");
+  assert.equal(askKindWord("needs-info"), "info");
+  assert.equal(askKindWord("optional-offer"), null);
 });

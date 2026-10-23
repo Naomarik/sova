@@ -45,6 +45,28 @@ describe("asks-you cutoff and the restart go (§app.decisions/asks-user)", () =>
   });
 });
 
+describe("the turn card's kinds (§app.decisions/attention-signals)", () => {
+  const choice = (c: string): Answer => ({ type: "choice", choice: c, probabilities: { [c]: 1 }, confidence: 1 });
+  test("asks-you needs a waiting ask kind; an offer or none is no mark, whatever asks_user says", () => {
+    assert.deepEqual(store.signalKinds({ asks_user: asks(0.95), ask_kind: choice("approve-risky-action") }), ["asks-you"]);
+    assert.deepEqual(store.signalKinds({ asks_user: asks(0.95), ask_kind: choice("optional-offer") }), []);
+    assert.deepEqual(store.signalKinds({ asks_user: asks(0.95), ask_kind: choice("none") }), []);
+  });
+  test("unverified: did what was asked, and names something not run or checked at 0.8 or more", () => {
+    const done = { asks_user: asks(0.1), outcome: choice("did-what-was-asked"), ask_kind: choice("none") };
+    assert.deepEqual(store.signalKinds({ ...done, claims_unverified: asks(store.UNVERIFIED_MIN) }), ["unverified"]);
+    assert.deepEqual(store.signalKinds({ ...done, claims_unverified: asks(store.UNVERIFIED_MIN - 0.01) }), []);
+    assert.deepEqual(store.signalKinds({ ...done, outcome: choice("partial-stopped"), claims_unverified: asks(0.99) }), [], "not claimed done");
+  });
+  test("unverified is news: gone once seen; the card rides the wire", () => {
+    const t = { turnId: "t", replyAt: NOW - 10, at: NOW, provider: "jev" as const, model: "m", schema: 3 as const, answers: { asks_user: asks(0.1), outcome: choice("did-what-was-asked"), ask_kind: choice("none"), claims_unverified: asks(0.9), left_open: asks(0.3) } };
+    const d = { version: 1 as const, workers: {}, stalls: {}, sessions: { u: t } };
+    const ctx = { enabled: true, viewing: false, running: false };
+    assert.deepEqual(store.signalsOverlay("u", ctx, d)!.card, { outcome: "did-what-was-asked", askKind: "none", claimsUnverified: 0.9, leftOpen: 0.3 });
+    assert.equal(store.signalsOverlay("u", { ...ctx, seenAt: NOW + 1 }, d), undefined);
+  });
+});
+
 describe("thresholds, applied at read time", () => {
   test("each kind at and just below its threshold", () => {
     assert.deepEqual(store.signalKinds({ stuck: stuck(2, 1) }), [], "a stored stuck answer (the retired question) fires nothing");

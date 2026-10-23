@@ -6769,7 +6769,8 @@ a.subagent-row { text-decoration: none; }
 /* A reply that seems to ask and a team gone quiet are quiet marks, never the accent: neither is a
    Needs you item (§app.session-list/needs-you). */
 .session-signal-asks,
-.session-signal-stalled { color: var(--color-ink-muted); }
+.session-signal-stalled,
+.session-signal-unverified { color: var(--color-ink-muted); }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The merge-readiness badge joins line 3's facts, "2h ago · 2 of 3 · ready ✓ · model", in the meta's

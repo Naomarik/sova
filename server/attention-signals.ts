@@ -7,6 +7,7 @@ import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObj
 import { maySend, terminalSession } from "./decide-settings";
 import type { RawLiveRecord } from "./live";
 import { readSignals, signalsFile, type StoredStall, updateSignals } from "./signals-store";
+import { pruneTurnOutcomes, recordTurnOutcome } from "./turn-outcomes";
 import { joinedText, readTailBranch as readTail } from "./harness/pi/reader";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
@@ -16,11 +17,12 @@ import { withUsageContext } from "../pi-config/extensions/llm-inflight/attributi
  * provider answers) and the raw answers stored in signals.json (server/signals-store.ts, which also
  * owns the thresholds and the list overlay).
  *
- * A main session's turn is asked, when the session has no open alignment question (those are a
- * fact of its file, SessionSummary.align) and the reply's end looks like it asks (counted in code,
- * `looksLikeAsk`), whether it asks the user something (`asks_user`). A turn with nothing to ask
- * makes no model call and drops the turn before it. Neither a long turn ("stuck") nor a running
- * subagent is asked anything any more (§app.decisions/attention-signals).
+ * Each finished main-session turn gets ONE request, the turn card (`CARD_QUESTIONS`): does it ask
+ * the user (`asks_user`), how did it end (`outcome`), what kind of ask (`ask_kind`), does it say done
+ * without checking (`claims_unverified`), does it leave work open (`left_open`) — over the asks
+ * excerpt plus facts counted in code (`cardState`). A turn a link message or a topic batch opened
+ * gets no card. Neither a long turn ("stuck") nor a running subagent is asked anything any more
+ * (§app.decisions/attention-signals). Each card is also kept per turn (server/turn-outcomes.ts).
  *
  * Triggers:
  *  - a hosted chat's `agent_settled` (`turnSettled`, wired in index.ts from chat-manager);
@@ -246,14 +248,79 @@ export const ASKS_USER: Question = {
   },
 };
 
+export const OUTCOME: Question = {
+  type: "choice",
+  instructions: "How did this turn end, judged from `assistant_last` against `last_user_message`? `facts` are counted in code: trust them.",
+  options: {
+    "did-what-was-asked": "It did what the user asked and says so; nothing it needs from anyone.",
+    "partial-stopped": "It did part of it and stopped short, with work it says is not done.",
+    "waiting-on-user": "It cannot go on until the user answers, decides, approves or gives something.",
+    "waiting-on-team": "It waits on its subagents or another session to report back.",
+    "hit-unfixed-failure": "It ran into a failure (a test, a build, an error) that it did not fix.",
+    "progress-report": "A status update or round report; the work goes on by itself.",
+  },
+};
+
+export const ASK_KIND: Question = {
+  type: "choice",
+  instructions: "If the end of `assistant_last` asks the user for something, what kind of ask is it?",
+  options: {
+    "choose-between-options": "The user must choose between options or make a decision.",
+    "approve-risky-action": "The user must approve an action before it happens (deleting, spending, pushing, changing something shared).",
+    "needs-info": "The user must give information only they have (a value, an answer, a file, a login).",
+    "restart-or-merge-go": "It only asks for the go-ahead to restart a server, merge or push.",
+    "optional-offer": "A courtesy offer the user may ignore ('want me to also…', 'let me know if…').",
+    none: "It asks the user for nothing.",
+  },
+};
+
+export const CLAIMS_UNVERIFIED: Question = {
+  type: "boolean",
+  instructions: "Does `assistant_last` say the work is done while naming something it did not run, test or check?",
+  criteria: {
+    true: "It says done, but says (or plainly shows) that tests, a build, a check or a manual try were not run.",
+    false: "It says what it checked, or it does not claim to be done.",
+  },
+};
+
+export const LEFT_OPEN: Question = {
+  type: "boolean",
+  instructions: "Does `assistant_last` name work that is still to be done?",
+  criteria: {
+    true: "It lists remaining steps, deferred parts, known gaps or follow-ups.",
+    false: "Nothing is named as left to do.",
+  },
+};
+
+/** The turn card (§app.decisions/attention-signals): five questions over one state. */
+export const CARD_QUESTIONS: Record<string, Question> = { asks_user: ASKS_USER, outcome: OUTCOME, ask_kind: ASK_KIND, claims_unverified: CLAIMS_UNVERIFIED, left_open: LEFT_OPEN };
+
 /**
- * A main session's questions: `asks_user` only when the session has no open alignment question, a
- * partner's link message did not open the turn, and the reply's end looks like it asks. None: no
- * model call. (The `stuck` question is retired, §app.decisions/attention-signals.)
+ * A main session's questions: the whole turn card, unless a partner's link message or a topic batch
+ * opened the turn (its question is to the partner, or to an orchestrator): then none, and no call.
  */
-export function turnQuestions(f: TurnFacts, ctx: { openQuestions?: number } = {}): Record<string, Question> {
-  const asks = !(ctx.openQuestions && ctx.openQuestions > 0) && !isLinkMessage(f.lastUser) && !isTopicBatch(f.lastUser) && looksLikeAsk(f.assistantLast);
-  return asks ? { asks_user: ASKS_USER } : {};
+export function turnQuestions(f: TurnFacts): Record<string, Question> {
+  return isLinkMessage(f.lastUser) || isTopicBatch(f.lastUser) ? {} : CARD_QUESTIONS;
+}
+
+/** Facts counted in code that ride with the card's state. */
+export interface CardFacts {
+  openQuestions: number;
+  workersRunning: number;
+  restartPending: boolean;
+}
+
+/** The card's state: the asks excerpt plus the facts code already knows. */
+export function cardState(title: string, f: Pick<TurnFacts, "lastUser" | "assistantLast" | "stopReason">, facts: CardFacts): JsonObject {
+  return {
+    ...asksState(title, f),
+    facts: {
+      open_alignment_questions: facts.openQuestions,
+      subagents_working: facts.workersRunning,
+      server_restart_owed: facts.restartPending,
+      stop_reason: f.stopReason,
+    },
+  };
 }
 
 // ---- eligibility (pure) --------------------------------------------------------------------------
@@ -314,6 +381,8 @@ export interface SignalsDeps {
   /** The store changed: push (server/session-feed.ts). */
   changed: () => void;
   file?: string;
+  /** The per-turn outcomes file (server/turn-outcomes.ts); default under the state root. */
+  outcomesFile?: string;
   now?: () => number;
   home?: string;
   /** Delay between agent_settled and the read (the reply's line is flushed by then). */
@@ -415,7 +484,7 @@ export class AttentionSignals {
       return false;
     }
     if (!stored && now - facts.replyAt > FRESH_MS) return false;
-    const questions = turnQuestions(facts, { openQuestions: s.align?.openQuestions });
+    const questions = turnQuestions(facts);
     // A turn with nothing to ask: no model call, and like an errored turn it replaces the turn
     // before it, so an older mark does not stay on the row.
     if (!Object.keys(questions).length) {
@@ -423,26 +492,33 @@ export class AttentionSignals {
       return false;
     }
     const key = `${s.id}:${facts.turnId}`;
-    const state = asksState(s.title, facts);
+    const state = cardState(s.title, facts, {
+      openQuestions: s.align?.openQuestions ?? 0,
+      workersRunning: s.workers?.working ?? s.live?.workers?.working ?? 0,
+      restartPending: !!s.readiness?.restartPending,
+    });
     // The usage ledger: this decision is the session's one-shot.
     const result = await withUsageContext({ owner: s.id, cwd: s.cwd, kind: "oneshot" }, () => this.decide(key, "attention", state, questions));
     if (!result) return false;
     // The feature or the session's eligibility may have changed while the call ran: then drop it.
     if (exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home)) return true;
     const f = facts;
-    const detail = questions.asks_user ? this.d.redact(lastSentence(f.assistantLast)) : "";
+    const detail = this.d.redact(lastSentence(f.assistantLast));
+    const at = this.now();
     updateSignals((data) => {
       data.sessions[s.id] = {
         turnId: f.turnId,
         replyAt: f.replyAt,
-        at: this.now(),
+        at,
         provider: result.provider,
         model: result.model,
         answers: result.answers,
         ...(detail ? { detail } : {}),
-        schema: 2,
+        schema: 3,
       };
     }, this.file());
+    // The durable per-turn record a branch's readiness can read later (server/turn-outcomes.ts).
+    recordTurnOutcome(s.id, { turnId: f.turnId, replyAt: f.replyAt, at, provider: result.provider, model: result.model, answers: result.answers }, this.d.outcomesFile);
     this.d.changed();
     return true;
   }
@@ -530,6 +606,7 @@ export class AttentionSignals {
   private prune(list: readonly SessionSummary[]): void {
     if (!list.length) return; // an empty listing is a failed one, not an empty archive
     const ids = new Set(list.map((s) => s.id));
+    pruneTurnOutcomes(ids, this.d.outcomesFile);
     const data = readSignals(this.file());
     const gone = Object.keys(data.sessions).filter((id) => !ids.has(id));
     const goneWorkers = Object.entries(data.workers)

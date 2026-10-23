@@ -4242,7 +4242,24 @@ export interface DecisionProbeResult {
     "asks-you": the last reply of a turn with no open alignment question asks the user something
     (open alignment questions stay SessionSummary.align's deterministic count); "looping": the turn
     went in circles. */
-export type SignalKind = "asks-you" | "looping";
+export type SignalKind = "asks-you" | "looping" | "unverified";
+
+/** The turn card's outcome choice (§app.decisions/attention-signals). */
+export const TURN_OUTCOMES = ["did-what-was-asked", "partial-stopped", "waiting-on-user", "waiting-on-team", "hit-unfixed-failure", "progress-report"] as const;
+export type TurnOutcome = (typeof TURN_OUTCOMES)[number];
+/** The turn card's kind of ask. */
+export const ASK_KINDS = ["choose-between-options", "approve-risky-action", "needs-info", "restart-or-merge-go", "optional-offer", "none"] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+
+/** A finished turn's card as the wire carries it (additive): the chosen options and the two probabilities. */
+export interface TurnCard {
+  outcome?: TurnOutcome;
+  askKind?: AskKind;
+  /** P(it says it is done but names something not run, tested or checked). */
+  claimsUnverified?: number;
+  /** P(it names work still to do). */
+  leftOpen?: number;
+}
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -4258,6 +4275,8 @@ export interface SessionSignals {
   stuck?: { score: number; confidence: number };
   /** P(the last reply asks the user something), 0..1, when that turn was asked. */
   asksUser?: number;
+  /** The turn card's answers (additive; absent on records from before the card). */
+  card?: TurnCard;
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
       them. Visibility is server-computed too: `signals` (and `workerSignals`) are present on a
       SessionSummary / SessionMarks only while the mark should show (attention on, kinds non-empty,

@@ -3,14 +3,14 @@
 // its manual tags, plus the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
 // reads these, the tests pin them.
 
-import type { AttentionDigest, DecisionProviderId, SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
+import type { AskKind, AttentionDigest, DecisionProviderId, SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
 
 /** The line-1 mark's kinds: open alignment questions (§chat.alignment/session-mark), a signal, or a
     team gone quiet (§app.decisions/team-stall, the digest's decide item for the session). */
 export type NeedsYouKind = "questions" | SignalKind | "team-stalled";
 
 /** The mark's kinds, most urgent first: one mark per row, the first of these that applies. */
-export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "asks-you", "team-stalled", "looping"];
+export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "asks-you", "team-stalled", "unverified", "looping"];
 
 /** What a row's line-1 mark says: the kind, whether it is about a subagent rather than the session,
     and, for open questions, the session's counts. */
@@ -18,6 +18,8 @@ export interface NeedsYouMark {
   kind: NeedsYouKind;
   worker: boolean;
   align?: NonNullable<SessionSummary["align"]>;
+  /** An ask's kind, when the turn card gave one (asks-you only). */
+  askKind?: AskKind;
   /** Where the mark came from: "code" (counted from the file or the live records), or the decision
       provider that actually answered. Absent: unknown (a subagent's check). */
   source?: "code" | { provider: DecisionProviderId; model?: string };
@@ -78,7 +80,10 @@ export function rowNeedsYou(
       if (opts.stalled) return { kind, worker: false, source: "code" };
       continue;
     }
-    if (own.includes(kind) && s.signals) return { kind, worker: false, source: { provider: s.signals.provider, ...(s.signals.model ? { model: s.signals.model } : {}) } };
+    if (own.includes(kind) && s.signals) {
+      const askKind = kind === "asks-you" ? s.signals.card?.askKind : undefined;
+      return { kind, worker: false, ...(askKind ? { askKind } : {}), source: { provider: s.signals.provider, ...(s.signals.model ? { model: s.signals.model } : {}) } };
+    }
     if (workers.includes(kind)) return { kind, worker: true };
   }
   return null;
@@ -90,11 +95,12 @@ export const stalledPaths = (digest: Pick<AttentionDigest, "items"> | undefined)
   new Set((digest?.items ?? []).filter((i) => i.kind === "team-stalled" && i.path).map((i) => i.path));
 
 /** The mark's glyph and class (src/design/base.css, "DECISIONS"): the shape differs per kind, so hue isn't alone. */
-export const SIGNAL_ICON = { questions: "chat", "asks-you": "chat", "team-stalled": "clock", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
+export const SIGNAL_ICON = { questions: "chat", "asks-you": "chat", "team-stalled": "clock", unverified: "check", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
 export const SIGNAL_CLASS: Record<NeedsYouKind, string> = {
   questions: "session-signal session-signal-questions",
   "asks-you": "session-signal session-signal-asks",
   "team-stalled": "session-signal session-signal-stalled",
+  unverified: "session-signal session-signal-unverified",
   looping: "session-signal session-signal-looping",
 };
 
@@ -104,9 +110,26 @@ const questionsText = (n: number) => `${n} open question${n === 1 ? "" : "s"}`;
 export function signalWords(m: NeedsYouMark): string {
   if (m.kind === "questions") return `${questionsText(m.align?.openQuestions ?? 0)}. `;
   if (m.kind === "asks-you") return "Asks you something. ";
+  if (m.kind === "unverified") return "Done, not checked. ";
   if (m.kind === "team-stalled") return "Waiting on a quiet team. ";
   if (m.worker) return "A subagent may be stuck. ";
   return "May be looping. ";
+}
+
+/** An ask's sentence by its kind; a kind that isn't waiting (or none) keeps the plain sentence. */
+const ASK_TITLE: Partial<Record<AskKind, string>> = {
+  "choose-between-options": "The last reply waits on your decision.",
+  "approve-risky-action": "The last reply waits on your approval.",
+  "restart-or-merge-go": "The last reply waits on your approval.",
+  "needs-info": "The last reply waits on information from you.",
+};
+
+/** The word an ask's kind gives a waiting state: "decision", "approval", "info"; null when unknown. */
+export function askKindWord(kind: AskKind | undefined): "decision" | "approval" | "info" | null {
+  if (kind === "choose-between-options") return "decision";
+  if (kind === "approve-risky-action" || kind === "restart-or-merge-go") return "approval";
+  if (kind === "needs-info") return "info";
+  return null;
 }
 
 /** The mark's tooltip: the same fact, one sentence. Open questions name their alignment when one asks. */
@@ -116,7 +139,8 @@ export function signalTitle(m: NeedsYouMark): string {
     if (!a) return "Open questions";
     return a.questionDocs === 1 && a.lead ? `${questionsText(a.openQuestions)} in ${a.lead.id} ${a.lead.title}` : `${questionsText(a.openQuestions)} in ${a.questionDocs} alignments`;
   }
-  if (m.kind === "asks-you") return "The last reply asks you something.";
+  if (m.kind === "asks-you") return ASK_TITLE[m.askKind ?? "none"] ?? "The last reply asks you something.";
+  if (m.kind === "unverified") return "The last reply says it's done, but names something it didn't run or check.";
   if (m.kind === "team-stalled") return "Waiting on subagents that have gone quiet.";
   if (m.worker) return "A subagent looks stuck.";
   return "The last turn looks like it went in circles.";
@@ -125,7 +149,9 @@ export function signalTitle(m: NeedsYouMark): string {
 /** The mark's tooltip with its source: "The last reply asks you something. Guessed by Jev." */
 export function signalTooltip(m: NeedsYouMark): string {
   const src = signalSource(m);
-  return src ? `${signalTitle(m)} ${src}` : signalTitle(m);
+  const title = signalTitle(m);
+  if (!src) return title;
+  return /[.!?]$/.test(title) ? `${title} ${src}` : `${title}. ${src}`;
 }
 
 /** What the session search matches in a row's tags: the user's own tags only (automatic topics are

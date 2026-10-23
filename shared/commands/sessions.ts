@@ -257,6 +257,20 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.context.file",
+    label: "Read Context File",
+    summary: "The text of one context file or skill a session's setup lists; no other file.",
+    effect: "looks",
+    params: {
+      session: session("query", "path"),
+      file: { type: "string", description: "A path the session's setup lists (a context file, SKILL.md, SYSTEM.md or APPEND_SYSTEM.md)", in: "query", required: true },
+    },
+    route: { method: "GET", path: "/api/sessions/context/file" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.group.list",
     label: "List Groups",
     summary: "The sidebar's session groups and their members.",

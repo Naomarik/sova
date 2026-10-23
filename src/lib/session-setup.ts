@@ -88,6 +88,10 @@ export function flipped(s: Loaded, kind: "context" | "skill", key: string, on: b
 /** The switches' accessible names. */
 export const contextSwitchLabel = (label: string) => `Load ${label}`;
 export const skillSwitchLabel = (name: string) => `Offer ${name}`;
+/** A row name's accessible name: pressing it opens the file in the viewer (/setup-card-open-file). */
+export const openFileLabel = (name: string) => `Read ${name}`;
+/** The toast when a file can't be opened; the server's reason follows. */
+export const OPEN_FILE_FAILED = "Couldn't open that file.";
 
 /** What a set of files adds up to on disk, and — when any of them was estimated — what sending
     them would cost. */

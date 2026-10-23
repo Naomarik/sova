@@ -4394,6 +4394,21 @@ export interface SessionReadiness {
   /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
       names work: its weight and the reply's own line naming it. */
   followUp?: { weight: "small" | "significant"; cue: string };
+  /** The branch status line of the newest merge (additive): code only, no model. */
+  status?: BranchStatus;
+}
+
+/** "merged {commit} · pushed · live · spec promoted" (§chat.worktrees/readiness), as facts. */
+export interface BranchStatus {
+  branch: string;
+  /** The merge's commit, 7 characters. */
+  commit: string;
+  /** On the target's origin branch; absent when there is no origin to ask. */
+  pushed?: boolean;
+  /** This server already runs the merge (false: a restart is owed). */
+  live: boolean;
+  /** Spec drafts in the merged worktree not promoted yet; absent when it has none or is gone. */
+  specDrafts?: number;
 }
 
 export type TagsBackfillScope = "recent" | "all";

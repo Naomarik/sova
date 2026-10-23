@@ -123,8 +123,23 @@ test("01a0e82a: merged with a significant follow-up → a decide item quoting th
   // The groups regression in 01a0eb99 is the cue there; the restart line is routine, never one.
   assert.match(cueOf(EB99_REPLY, "feat/vis-round4"), /^Weak spot, groups/);
   assert.equal(cueOf("Merged.\n\nNot live yet: needs a restart.\n\nDeferred: §x — later", "feat/x"), "Deferred: §x — later");
-  // No line names the work (01a0e348's shape): point at the reply, never a bare branch name.
-  assert.equal(cueOf("Merged. Nothing else.", "feat/image-size"), "see the reply after merging feat/image-size");
+  // No line names the work (01a0e348's shape): no cue, and nothing shows, whatever the answer.
+  assert.equal(cueOf("Merged. Nothing else.", "feat/image-size"), "");
+  const sure = { follow_up: { type: "boolean" as const, p: 0.99 }, follow_up_weight: { type: "score" as const, score: 1.9, probabilities: [0, 0.1, 0.9], confidence: 0.9 } };
+  assert.equal(followUpOf({ at: 1, replyId: "x", cue: "", provider: "jev", model: "m", answers: sure }), undefined);
+  assert.equal(followUpOf({ at: 1, replyId: "x", cue: "see the reply after merging feat/old", provider: "jev", model: "m", answers: sure }), undefined, "a stored fallback pointer shows nothing either");
+});
+
+test("the follow-up check: its excerpt cuts the closing spec lines; captains' and Overseers' merges are never checked", async () => {
+  const { followUpState, MergeFollowUps } = await import("./merge-followup");
+  const reply = "Merged feat/x into master.\n\nAlso updates §chat.x/y — test mapping\nAlso changes: §a.b/c — mapping\nDeferred: §x — later";
+  const input = { sessionId: "s", cardId: "c", cwd: "/", terminal: false, card: { branch: "feat/x", target: "master", commits: 1, added: 1, removed: 0 }, reply: { id: "a1", at: Date.now(), text: reply }, routine: { restart_pending: false, push_pending: false, cleanup: 0 } };
+  const st = followUpState(input) as { reply: string; deferred?: string };
+  assert.equal(st.reply, "Merged feat/x into master.");
+  assert.equal(st.deferred, "Deferred: §x — later");
+  const f = new MergeFollowUps({ provider: () => { throw new Error("never asked"); }, settings: () => ({ version: 1, jev: { enabled: true }, fallback: null, features: { attention: true, tags: false }, exclusions: [], neverSendTui: false }), ready: () => true, file: () => "/nonexistent/merge-followups.json" });
+  assert.equal(f.skipReason({ ...input, skip: "captain" }), "captain");
+  assert.equal(f.skipReason({ ...input, skip: "overseer" }), "overseer");
 });
 
 test("the follow-up answer: small below 1.5 or unsure, none under the P and score floors", async () => {

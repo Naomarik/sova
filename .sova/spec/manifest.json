@@ -6582,8 +6582,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:46Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+        "at": "2026-10-23T06:55Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#55c824d4"
       }
     },
     "§app.overseer/caps": {
@@ -7252,8 +7252,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T01:56Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+        "at": "2026-10-23T06:55Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#55c824d4"
       }
     },
     "§app.decisions/attention-signals": {
@@ -11320,8 +11320,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T01:56Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+        "at": "2026-10-23T06:55Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#55c824d4"
       }
     },
     "§chat.alignment/chip": {

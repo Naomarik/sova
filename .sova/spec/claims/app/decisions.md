@@ -326,8 +326,8 @@ appends (one line each).
   in `<stateRoot>/align-triage.json`, so a card is asked once per version; a new version asks
   again. A failed or refused request stores nothing and the card shows no chips.
 - **What it shows.** A chip per open question, after its state chip (§chat.alignment/card):
-  "Low risk" in muted ink, or, flagged, "Deletes data", "Costs money" or "Changes architecture"
-  in warn. Its `title` names the source ("Guessed by Jev."). Accepting works exactly as before:
+  "Low risk" in muted ink (`--color-ink-muted`), or, flagged, "Deletes data", "Costs money" or
+  "Changes architecture" in the error tone (`chip-error`), never the warn tone of a state chip. Its `title` names the source ("Guessed by Jev."). Accepting works exactly as before:
   no new button, no warning, no change to Go With Recommendations or any answer.
 
 ## §app.decisions/worker-report — A worker's report check

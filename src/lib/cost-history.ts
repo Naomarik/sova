@@ -215,13 +215,38 @@ export const costWord = (s: Pick<UsageSpend, "usd" | "tokens" | "unpricedTokens"
 export const kindRows = <T extends { kind: UsageKind }>(rows: readonly T[]): T[] =>
   [...rows].sort((a, b) => USAGE_KIND_ORDER.indexOf(a.kind) - USAGE_KIND_ORDER.indexOf(b.kind));
 
-/** A project row's name: its project's (`name` looks it up), else the last part of its folder, else
-    "No project" for calls with neither (Sova's own decisions). */
-export function projectName(row: Pick<UsageProjectRow, "project" | "cwd">, name: (id: string) => string | undefined = () => undefined): string {
+/** A project row's name: the name the server gave it; else (an older server) its project's (`name` looks it up),
+    else the last part of its folder, else "No project" for calls with neither (Sova's own decisions). */
+export function projectName(row: Pick<UsageProjectRow, "project" | "cwd" | "name">, name: (id: string) => string | undefined = () => undefined): string {
+  if (row.name) return row.name;
   if (row.project) return name(row.project) ?? row.project;
   if (!row.cwd) return "No project";
   const parts = row.cwd.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? row.cwd;
+}
+
+/** The By project rows in their order: most expensive first, Other folders always last. */
+export function projectRows<T extends Pick<UsageProjectRow, "usd" | "tokens" | "project" | "cwd" | "name" | "kind">>(rows: readonly T[]): T[] {
+  const sorted = byCost(rows, (r) => r.name ?? r.project ?? r.cwd ?? "");
+  return [...sorted.filter((r) => r.kind !== "other"), ...sorted.filter((r) => r.kind === "other")];
+}
+
+/** A By project row's hover: where its spend comes from. An older server's row: its folder or project id. */
+export function projectRowTitle(row: Pick<UsageProjectRow, "project" | "cwd" | "kind" | "path" | "folders" | "archived">): string | undefined {
+  switch (row.kind) {
+    case "project":
+      return `${row.path ? `${row.path}\n` : ""}Every session in this project's folders, worktrees included.${row.archived ? " Archived." : ""}`;
+    case "folder":
+      return `${row.path ?? row.cwd ?? ""}\nEvery session in this checkout, worktrees included.`;
+    case "overseer":
+      return "The Overseer's and your organizations' conversations.";
+    case "other": {
+      const n = row.folders ?? 0;
+      return `${n} ${n === 1 ? "folder" : "folders"} that are no project or checkout, and calls with no folder.`;
+    }
+    default:
+      return row.cwd ?? row.project ?? undefined;
+  }
 }
 
 /** A date as the footer says it: `Oct 4`, or `Oct 4, 2025` in another year; null for none. */

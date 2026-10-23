@@ -958,6 +958,34 @@
       "authority": "accepted",
       "evidence": "unreviewed"
     },
+    "§app.insights/cost-by-project": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/cost-history",
+        "§app.insights/usage-ledger",
+        "§app.projects/folder-sessions"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-helper/project-fold.ts",
+        "server/usage-helper/project-fold.test.ts",
+        "server/project-folder.ts",
+        "server/usage-helper/query.ts",
+        "server/usage-helper/service.ts",
+        "server/usage-routes.ts",
+        "shared/usage/wire.ts",
+        "src/lib/cost-history.ts",
+        "src/lib/cost-history.test.ts",
+        "src/components/CostsTab.tsx",
+        "server/usage-helper/ledger.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-22T10:03Z",
+        "source": "pi-session:9036aa60-89be-4d56-a5e2-2a554f0bf09b#dcfc92f9"
+      }
+    },
     "§app.insights/insight-strip": {
       "kind": "behavior",
       "authority": "accepted",
@@ -19561,8 +19589,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T02:39Z",
-        "source": "pi-session:e1d4092c-fde7-4e3b-98b6-2e3413689e78#56f6249c"
+        "at": "2026-10-22T10:03Z",
+        "source": "pi-session:9036aa60-89be-4d56-a5e2-2a554f0bf09b#dcfc92f9"
       }
     },
     "§app.insights/usage-ledger": {

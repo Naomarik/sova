@@ -58,12 +58,13 @@ describe("the turn card's kinds (§app.decisions/attention-signals)", () => {
     assert.deepEqual(store.signalKinds({ ...done, claims_unverified: asks(store.UNVERIFIED_MIN - 0.01) }), []);
     assert.deepEqual(store.signalKinds({ ...done, outcome: choice("partial-stopped"), claims_unverified: asks(0.99) }), [], "not claimed done");
   });
-  test("unverified is news: gone once seen; the card rides the wire", () => {
+  test("unverified waits on the user: a look keeps it, a newer turn or 7 idle days clear it; the card rides the wire", () => {
     const t = { turnId: "t", replyAt: NOW - 10, at: NOW, provider: "jev" as const, model: "m", schema: 3 as const, answers: { asks_user: asks(0.1), outcome: choice("did-what-was-asked"), ask_kind: choice("none"), claims_unverified: asks(0.9), left_open: asks(0.3) } };
     const d = { version: 1 as const, workers: {}, stalls: {}, sessions: { u: t } };
     const ctx = { enabled: true, viewing: false, running: false };
     assert.deepEqual(store.signalsOverlay("u", ctx, d)!.card, { outcome: "did-what-was-asked", askKind: "none", claimsUnverified: 0.9, leftOpen: 0.3 });
-    assert.equal(store.signalsOverlay("u", { ...ctx, seenAt: NOW + 1 }, d), undefined);
+    assert.deepEqual(store.signalsOverlay("u", { ...ctx, seenAt: NOW + 1 }, d)!.kinds, ["unverified"], "seen keeps it");
+    assert.equal(store.signalsOverlay("u", ctx, d, NOW - 10 + store.GUESS_IDLE_MS), undefined, "7 idle days clear it");
   });
 });
 

@@ -17,6 +17,7 @@ import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
+import { ProjectOffersCard } from "./ProjectOffersCard";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -337,6 +338,8 @@ export function ProjectPage(props: {
           <Match when={tab() === "settings"}>
             <OverseerSettings po={po} placed={!!org} />
             {org?.settings()}
+            {/* The project's offers file, read now (§chat.offers/project-list). */}
+            <ProjectOffersCard projectId={projectId} />
             <section class="card orgs-section project-danger" aria-labelledby="project-danger">
               <h2 class="orgs-h2" id="project-danger">
                 Danger zone

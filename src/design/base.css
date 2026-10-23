@@ -6594,6 +6594,10 @@ a.subagent-row { text-decoration: none; }
 /* What an option's click approves, and what it wrote (§app.overseer/approvals). */
 .overseer-card-grant { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
 .overseer-card-permit { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+/* Offer cards (§chat.offers/card): the decision card's look, with the project's buttons; one another
+   chat showed stands at the thread's end, with who showed it under its title. */
+.offer-tray { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.offer-card-from { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
 /* The composer's "3 of 10 running" (§app.overseer/caps; a button to Settings → Overseer → Limits),
    first in the row's right-hand cluster, and the Approvals & Schedules body (§app.overseer/approvals):

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "offers": {
+    "landing": {
+      "when": "The Merge Captain queued this branch to land and waits for your go-ahead on its current commit.",
+      "why": "Saves writing the go-ahead to the captain by hand.",
+      "title": "Land {branch}?",
+      "shownBy": "another-chat",
+      "onlyIf": ["no-open-alignment"],
+      "repeat": "once-per-commit",
+      "buttons": [
+        { "label": "Land It", "about": "Sends the Merge Captain the go-ahead to land this branch at this commit.", "send": "Go ahead: land {branch} at {commit}.", "to": "shower" },
+        { "label": "Not Yet", "about": "Tells this session's agent to keep working on the branch.", "send": "Not yet: keep working on this branch." }
+      ]
+    }
+  }
+}

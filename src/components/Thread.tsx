@@ -52,6 +52,8 @@ import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
+import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
+import { OfferCardView } from "./OfferCard";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
 import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
@@ -598,6 +600,11 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
   };
+  /** An offer call's card, once it succeeded (§chat.offers/card). */
+  const offerOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? normalizeOfferDetails(detailsOf(r)) : undefined;
+  };
   const tourOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeTourCardDetails(detailsOf(r)) : undefined;
@@ -633,6 +640,7 @@ export function HistoryItems(props: {
   const asCard = (it: TranscriptItem): boolean => {
     if (it.kind !== "tool-call") return false;
     if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
+    if (it.text === OFFER_TOOL) return !!offerOf(it.toolCallId);
     if (TOUR_TOOLS.has(it.text ?? "")) return true;
     return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
   };
@@ -975,6 +983,9 @@ export function HistoryItems(props: {
               <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
                 {(details) => <ShowChangesCard details={details()} />}
               </Match>
+              <Match when={item.kind === "tool-call" && item.text === OFFER_TOOL && offerOf(item.toolCallId)}>
+                {(card) => <OfferCardView card={card()} />}
+              </Match>
               <Match when={item.kind === "tool-call"}>
                 {(() => {
                   const view = () => {
@@ -1149,7 +1160,9 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           /** A show_changes result: its card, as soon as the call finishes (§chat.changes/show-changes-card). */
           const changes = () => (b().name === SHOW_CHANGES_TOOL && status() === "done" ? normalizeShowChangesDetails(tool()?.details) : undefined);
           const tour = () => (TOUR_TOOLS.has(b().name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined);
+          const offer = () => (b().name === OFFER_TOOL && status() === "done" ? normalizeOfferDetails(tool()?.details) : undefined);
           return (
+            <Show when={!offer()} fallback={<OfferCardView card={offer()!} />}>
             <Show when={!tour()} fallback={<TourCard details={tour()!} />}>
             <Show when={!changes()} fallback={<ShowChangesCard details={changes()!} />}>
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
@@ -1178,6 +1191,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
+            </Show>
             </Show>
             </Show>
             </Show>
@@ -1242,6 +1256,10 @@ export function LiveEntries(props: {
       if (b.name === SHOW_CHANGES_TOOL) {
         const tool = props.live.tools[b.id];
         return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
+      }
+      if (b.name === OFFER_TOOL) {
+        const tool = props.live.tools[b.id];
+        return !(tool?.status === "done" && normalizeOfferDetails(tool.details));
       }
       if (TOUR_TOOLS.has(b.name)) return false;
       return !CARD_RENDER_NAMES.has(b.name);

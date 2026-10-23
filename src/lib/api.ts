@@ -1,5 +1,6 @@
 import type { AssistantInfo, AssistantView, PricedPick } from "../../shared/project-assistant";
 import type { ModelPick, WorkModels } from "../../shared/powers";
+import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1545,3 +1546,13 @@ export async function runCommandRequest(method: string, url: string, body?: Reco
   else if (res.ok) onAuthorized();
   return { status: res.status, body: parsed };
 }
+
+// ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------
+
+export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`/api/session-offers?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+export const chooseOfferButton = (path: string, card: string, button: number) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button }) });
+export const setOfferNotNow = (path: string, offer: string) => request<{ notNow: string[] }>("/api/session-offers/snooze", { method: "POST", body: JSON.stringify({ path, offer }) });
+export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
+export const approveProjectOfferRuns = (projectId: string, fingerprint: string) =>
+  request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers/approve`, { method: "POST", body: JSON.stringify({ fingerprint }) });

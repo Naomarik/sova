@@ -104,6 +104,7 @@ import type { ServerToolDecl } from "../shared/chat-runtime";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
+import { offerSignalText } from "./session-offers";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
@@ -351,7 +352,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         viewing: isViewing(s.id),
         activitySince: live?.since ?? 0,
         lastReplyAt: lastReplyAtOf(s.path),
-        ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
+        ...(s.signals || s.workerSignals ? { signalText: offerSignalText(s.id, signalTextOf(s.id, nowMs)) } : {}),
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),

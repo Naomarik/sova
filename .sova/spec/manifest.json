@@ -772,7 +772,7 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T02:12Z",
+        "at": "2026-10-23T04:43Z",
         "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       },
       "evidence": "verified"
@@ -3626,8 +3626,8 @@
       "evidence": "verified",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-20T09:31Z",
-        "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#2db8e784"
+        "at": "2026-10-23T04:43Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },
     "§chat.mode-menu/project-modes": {
@@ -3831,7 +3831,7 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T01:02Z",
+        "at": "2026-10-23T04:43Z",
         "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },
@@ -8962,8 +8962,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T09:38Z",
-        "source": "pi-session:4dbe354b-e46f-46a6-8617-0cedc16ff81f#4b53db3a"
+        "at": "2026-10-23T04:43Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },
     "§app.project-overseer/gaps": {
@@ -9075,6 +9075,43 @@
         "server/overseer-memory.integration.test.ts",
         "server/project-overseer.test.ts"
       ]
+    },
+    "§app.project-overseer/settings": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-settings.ts",
+        "server/project-settings-git.ts",
+        "server/project-settings-routes.ts",
+        "server/project-settings-tool.ts",
+        "server/page-only.ts",
+        "shared/project-settings.ts",
+        "shared/settings-reference.ts",
+        "server/project-settings.test.ts",
+        "shared/settings-reference.test.ts",
+        "src/components/SettingsChangeCard.tsx",
+        "src/components/ProjectSettingsCards.tsx",
+        "server/projects/routes.ts",
+        "server/project-overseer-routes.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-prompt.md",
+        "src/components/Thread.tsx",
+        "src/components/ProjectPage.tsx"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§chat.profiles/trust",
+        "§chat.schedules/approval",
+        "§chat.offers/approval"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T03:46Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
     },
     "§app.project-overseer/tools": {
       "kind": "behavior",
@@ -15374,8 +15411,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T18:28Z",
-        "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+        "at": "2026-10-23T04:43Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },
     "§chat.schedules/fire": {
@@ -16341,8 +16378,9 @@
         "src/lib/powers-view.ts"
       ],
       "agreed": {
-        "by": "Omar (operator)",
-        "at": "2026-10-17"
+        "by": "naomarik",
+        "at": "2026-10-23T04:43Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },
     "§chat.playbooks/bundles": {

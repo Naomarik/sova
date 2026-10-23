@@ -307,6 +307,11 @@ user row.
   the brakes a guard reads can't change between the check and the act
   (§app.project-overseer/statecharts). The same guards bind what the statecharts start on their own
   (§app.project-overseer/drive).
+- **It never widens itself.** The switches, limits and hold change only by the operator's own
+  writes or a Settings change card the operator applies (§app.project-overseer/settings); in the
+  operator's turn the overseer may narrow them at once. Its prompt states the powers in force ("On
+  your own you may: …", or the brake's reason), never a level, and says that nothing waits for its
+  own approval.
 - **Limits** (§app.project-overseer/limits): what it may start or send per message the operator
   sends, per day on its own, and at once. Over a limit a tool refuses and takes nothing. There is
   no token or cost budget; what the project's sessions cost is shown to the operator only
@@ -468,7 +473,8 @@ user row.
   whether its author owns it, so the check has what it needs. Reconcile is on by default, so
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
 - Each tool's power (§app.project-overseer/autonomy-levels), checked only in a run the operator did not
-  start. Always: `sova_note`, `sova_card`, `sova_idea`, `sova_decide` (a deliberate decision of its own,
+  start. Always: `sova_note`, `sova_card`, `sova_settings` (get, reference, propose, withdraw: it prepares
+  settings changes, applying a card is the operator's, §app.project-overseer/settings), `sova_idea`, `sova_decide` (a deliberate decision of its own,
   an abstention included, recorded in the history and changing no statechart,
   §app.org-history/negatives), `sova_reconcile`, `sova_hold` (cancel). `gather`: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_close_gathering`. `ownerUpdates`:
@@ -559,6 +565,95 @@ user row.
   from the new-session default first.
   A coding session's mode is never one of these settings: it is the one the call names, else this
   computer's default mode (§app.project-overseer/coding-mode).
+
+## §app.project-overseer/settings — It configures the whole project; you approve what widens
+
+- **Every project setting, one tool.** The project overseer knows and can change every setting of
+  its project, Sova-kept and in the project's files: its own settings (Watch, the powers in both
+  columns, the models, extra instructions, the limits and pace, the hold, its abilities, its memory
+  switch), the project's name, and the files `.sova/project.json` (services), `.sova/profiles/<id>.json`,
+  a playbook's `PLAYBOOK.md` with its schedule lines, a project mode's `MODE.md`
+  (`.sova/minor-modes/<id>/`) and `.sova/offers.json`. One tool does it, `sova_settings {op}`, always
+  allowed (like `sova_card`): `get` lists every setting with its state, the cards waiting and the
+  uncommitted settings edits in the project folder; `reference {setting}` gives one setting's full
+  entry (its keys, what each means, what needs your approval); `propose {why, edits}` makes a
+  change; `withdraw {card}` drops one of its cards. Its prompt carries the settings' short index.
+  No other chat, worker or the Project Assistant gets the tool or the knowledge.
+- **The reference comes from the parsers.** Each entry is generated from the key lists the
+  parsers accept (the services contract, the profile file, a playbook's frontmatter and schedule,
+  `MODE.md`, the offers file, the overseer's settings patch and the project's own patch): a key a
+  parser reads with no reference entry fails a test.
+- **Structured edits, checked by the same parsers.** `edits` name a setting, never a path:
+  `{setting: "overseer", patch}` (the overseer settings' fields), `{setting: "memory", on, type?,
+  size?}`, `{setting: "project", name}`, `{setting: "profile", id, profile | null}`, `{setting:
+  "playbook", id, text | null}`, `{setting: "mode", id, text | null}`, `{setting: "offers", file |
+  null}`, `{setting: "services", file | null}` (null removes the file). Each is checked exactly as
+  Sova reads it; the first problem is the refusal and nothing is written. Moving the project's
+  folder and archiving it are refused: they are yours on the project page, archiving with its own
+  confirm. File edits need the project root in Git ("The project folder isn't a Git repository, so
+  its settings files change by hand.").
+- **What widens is a grant, and only you grant.** A grant is any of: a power turned On in either
+  column; a limit raised (Unlimited included), the pace quickened, the hold shortened or the brake
+  lifted (Resume); Watch turned on; the extra instructions changed; its gathering abilities changed;
+  a profile that grants a session power or that the Overseer may start, unless its approval already
+  covers those powers (§chat.profiles/trust); a
+  schedule's `when:`, `tz:` or `profile:` (§chat.schedules/approval); a project mode with tools,
+  commands or hooks (§chat.mode-menu/project-modes); an offers file with run buttons
+  (§chat.offers/approval) whose run buttons aren't approved as they are; and any change to the services
+  file. The overseer never approves one.
+- **What narrows applies at once, in your turn.** In a turn the operator started, each Sova-kept
+  change that is no grant (a power Off, a limit lowered, a model, its memory switch, the name)
+  applies at once and its result says so, each with **Undo**. Everything else goes on a **Settings
+  change card**: grants, and every change to the project's files. In a run the operator did not start
+  (a look, Run Now, a wake-up) nothing applies: it only prepares a card.
+- **The card.** Under its reply in the overseer's chat, and on the project page's Settings tab while
+  it waits, the card `sc_<n>` says each setting in plain words with its before and after and where it
+  lands (Sova, or the file on the project's branch), marks each grant with what it allows, and shows
+  the exact file changes (**Show File Changes**). Its buttons: **Apply and Approve** when it holds a
+  grant, else **Apply**, and **Dismiss**. A propose writes nothing to the project folder: its file
+  changes are one commit on a Sova-owned ref, `refs/sova/settings/<pid>/<n>`, cut from the folder's
+  HEAD through a temporary index (the folder's files and index stay untouched). At most 10 cards
+  wait at once.
+- **Apply.** `POST /api/projects/:pid/settings/apply {card, fingerprint}` is your click on the card,
+  from Sova's own page only: a request with the Overseer's sender mark, a chat's key, the token in a
+  header (a script), an extension's key or a peer is refused, and so is a fingerprint that is not
+  the card's (it changed since you looked: what you approve is what you saw). It is a trust grant,
+  never a catalogue command. It applies the Sova-kept changes, then lands the file changes on the
+  project folder's checked-out branch as one commit ("Settings: …"), with the files and the folder's
+  index updated, so profiles, playbooks, modes and offers read the new files at once. In every
+  project, Sova's own included (the live checkout's master), and only settings files: a commit that
+  would touch anything else is refused. Then it records the approvals of exactly the card's grants:
+  each profile's powers as `project:<root>#<id>` (§chat.profiles/trust), each schedule's pin, each
+  mode's version as your own approval, the offers file's run-button fingerprint. A file that changed
+  on the branch since the card was made, a folder on no branch, or a grant set that differs from the
+  card's now (the settings changed since) is refused with a plain sentence and nothing applies.
+- **Uncommitted edits in the project folder.** Settings files edited in the project folder and not
+  committed (the overseer's own `write`/`edit`, or anyone's) show as one waiting card, "Uncommitted
+  settings edits in the project folder", with **Land** (commit them as they are, approving the
+  grants they hold, under the same rules as Apply; **Land and Approve** when it holds a grant, else
+  **Land Edits**) and **Discard Edits** (put them back as the branch has them; a file the branch lacks
+  is removed). Applying a card that touches a file with uncommitted
+  edits is refused: "{path} has uncommitted edits in the project folder: land or discard them on the
+  waiting card first."
+- **Settings history.** Each change to a Sova-kept setting, however made (the Settings tab, a
+  script, the global Overseer, this tool, a card), and each file a card landed is one line of
+  `settings-history.jsonl` beside `overseer.json`: `{id, at, field, from, to, by: {kind, via?},
+  revertOf?}` (a file line's from and to are the file's blob ids, with the commit). A model or thinking
+  name the overseer's settings take is at most 200 characters. The Settings tab
+  lists it newest first (`project.settings.history`). **Undo** (`project.settings.undo {id}`) puts a
+  Sova-kept field back, refused (409) when the field changed since ("{field} changed since: undo the
+  newer change first."); undoing a file change makes a new card that puts the file back, applied like
+  any other.
+- **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
+  Sova-kept and in the project's files (services, profiles, playbooks and their schedules, modes,
+  offers), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
+  where it is changed or approved (its section on the tab, Settings → Profiles, the Playbooks dialog,
+  a chat's mode menu, the Offers list, the Branches tab; a section of the tab itself scrolls into view).
+  The Offers list is one of its sections.
+- **Commands.** `project.settings.get`, `project.settings.history`, `project.settings.undo`,
+  `project.settings.propose.withdraw` (Dismiss; on the uncommitted edits' card it is Discard), and
+  `project.overseer.settings.set` (the existing `PATCH /api/projects/:pid/overseer`). Apply and Land
+  are trust grants, never commands.
 
 ## §app.project-overseer/coding-mode — The mode its coding sessions run in
 

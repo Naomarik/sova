@@ -1328,10 +1328,19 @@ export function registerSubagents(
 		registry.settled(a);
 		successionCheck(a);
 		retireCheck(a);
-		// Its turn ended: list the inbox items that wait (§app.teams/inbox).
-		wakes?.settled(a.id);
-		pruneFinished();
-		scheduleRefresh();
+		try {
+			announceSettle(a, seq);
+		} finally {
+			// Its turn ended: list the inbox items that wait (§app.teams/inbox). Only after the completion
+			// above is written: the list starts the member's next run at once, and a summary read after it
+			// would report that run ("running", its activity) instead of the one that settled.
+			wakes?.settled(a.id);
+			pruneFinished();
+			scheduleRefresh();
+		}
+	};
+	/** The parent's (or the coordinator's) copy of a settle, read from the worker as it settled. */
+	const announceSettle = (a: Worker, seq: number) => {
 		if (shuttingDown || !activeCtx) return;
 		const failed =
 			Boolean(a.error) ||

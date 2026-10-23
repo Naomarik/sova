@@ -2646,6 +2646,25 @@ test("member messages are queued as inbox items: answered at once, listed when a
 	} finally { await h.cleanup(); }
 });
 
+test("a member whose turn ends with items waiting: its completion reports that turn's answer, then the list wakes it (never a 'still working' copy)", async () => {
+	const h = teamHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "alpha", prompt: "ask" }, { role: "beta", prompt: "talk" }] });
+		const alpha = h.workers.find((w: any) => w.id === "ag_01");
+		// beta writes to the busy alpha: the item waits for alpha's turn end.
+		assert.equal((await h.ask("ag_02", { type: "message", to: "alpha", message: "HELLO from beta" })).ok, true);
+		alpha.transcript.push({ kind: "tool", toolName: "team_ask", text: '{"question":"ASK-MARK"}' });
+		h.messages.length = 0;
+		alpha.output = "ALPHA-FINAL";
+		alpha.settle();
+		await waitFor(() => alpha.steerCount === 1, "the list at the end of alpha's turn");
+		const done = h.messages.filter(([m]: any[]) => m.customType === "subagent-complete").map(([m]: any[]) => m.content as string);
+		assert.equal(done.length, 1, "one completion for the turn that ended");
+		assert.match(done[0], /^### ag_01 \(alpha\) — waiting\n[\s\S]*ALPHA-FINAL/, "the settle as it was: waiting, with its final answer");
+		assert.doesNotMatch(done[0], /Still working|ASK-MARK/, "never the next run's activity");
+	} finally { await h.cleanup(); }
+});
+
 test("orchestrator powers are sibling-scoped: roster and steer for orchestrators only, never spawn or kill", async () => {
 	const h = teamHarness();
 	try {
@@ -3588,6 +3607,22 @@ test("routing: a member's settle during the parent's run still reaches the coord
 		assert.match(coordinator.lastSteer.message, /- i_\w+ report from dev — finished: built it mid-run\n    \[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it mid-run/);
 		h.event("agent_end", { messages: [] });
 		assert.equal(h.parentMessages("subagent-complete").length, 0, "only the parent's copy is ever held");
+	} finally { await h.cleanup(); }
+});
+
+test("routing: a member woken by its inbox at its turn end still reports that turn's answer to the coordinator", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		assert.equal((await h.ask("ag_03", { type: "message", to: "dev", message: "HELLO from qa" })).ok, true);
+		coordinator.status = "waiting";
+		dev.output = "DEV-FINAL";
+		dev.settle();
+		await waitFor(() => dev.steerCount === 1, "the list at the end of dev's turn");
+		await waitFor(() => coordinator.lastSteer?.message.includes("report from dev"), "the report listed to the idle coordinator");
+		assert.match(coordinator.lastSteer.message, /report from dev — finished: DEV-FINAL[\s\S]*### ag_02 \(dev\) — waiting\n/);
+		assert.doesNotMatch(coordinator.lastSteer.message, /Still working/);
 	} finally { await h.cleanup(); }
 });
 

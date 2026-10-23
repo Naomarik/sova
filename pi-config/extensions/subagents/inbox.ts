@@ -26,6 +26,19 @@ const SEQ_FILE = "inbox-seq.json";
 
 export type InboxKind = "message" | "question" | "report" | "handover" | "notice" | "instruction";
 export type InboxStatus = "new" | "read" | "addressed";
+/** Who closed an addressed item: the member (`done`), a reply (`replyTo`), or Sova's safety net. */
+export type ClosedBy = "member" | "reply" | "auto";
+export const CLOSED_BY: readonly ClosedBy[] = ["member", "reply", "auto"];
+/** The measurement setting's two ways to close a seen item (§app.teams/inbox-measure). */
+export type AutoCloseMode = "turn-end" | "next-turn";
+export interface ClosedCounts { member: number; reply: number; auto: number }
+/**
+ * When a member saw an item: in a numbered task of its worker, or in the task a numbered steer
+ * (a wake) begins, which may not have begun yet (§app.teams/inbox-zero "Seen means opened, in a turn").
+ */
+export type SeenTag = { task: number } | { steer: number };
+/** Resolves a steer number to the task it was delivered in; undefined while its run has not begun. */
+export type SteerResolver = (steer: number) => number | undefined;
 export const INBOX_KINDS: readonly InboxKind[] = ["message", "question", "report", "handover", "notice", "instruction"];
 /** A member, or the main chat: `{ role: "main thread", workerId: "parent" }`, or Sova: `{ role: "Sova", workerId: "parent" }`. */
 export interface InboxParty { role: string; workerId: string }
@@ -55,10 +68,16 @@ export interface InboxItem {
 	listedAt?: number;
 	/** Sent back to its sender, not addressed: no longer open. */
 	returned?: { at: number; why: string };
+	/** How an addressed item was closed; absent on an addressed item = closed by the member. */
+	closedBy?: ClosedBy;
+	/** Seen with a turn record (this code): only such items are ever closed automatically. */
+	readTurn?: number;
 }
+/** How an addressed item was closed (absent: not addressed). */
+export const closedByOf = (item: InboxItem): ClosedBy | undefined => (item.status === "addressed" && !item.returned ? item.closedBy ?? "member" : undefined);
 export type InboxOp =
 	| { v: 1; op: "add"; item: InboxItem }
-	| { v: 1; op: "status"; id: string; status: InboxStatus; at: number; note?: string }
+	| { v: 1; op: "status"; id: string; status: InboxStatus; at: number; note?: string; by?: ClosedBy; turn?: number }
 	| { v: 1; op: "listed"; ids: string[]; at: number }
 	| { v: 1; op: "move"; id: string; to: InboxParty; at: number; why: "handover" | "forward" }
 	| { v: 1; op: "return"; id: string; at: number; why: string };
@@ -126,6 +145,8 @@ function decodeItem(v: unknown): InboxItem | undefined {
 	if (isStr(v.note, MAX_NOTE_CHARS * 2) && v.note) item.note = v.note;
 	if (isNum(v.listedAt)) item.listedAt = v.listedAt;
 	if (isRecord(v.returned) && isNum(v.returned.at) && isStr(v.returned.why, 500)) item.returned = { at: v.returned.at, why: v.returned.why };
+	if (CLOSED_BY.includes(v.closedBy as ClosedBy)) item.closedBy = v.closedBy as ClosedBy;
+	if (isNum(v.readTurn)) item.readTurn = v.readTurn;
 	return item;
 }
 
@@ -145,7 +166,10 @@ function applyOp(items: Map<string, InboxItem>, raw: unknown): void {
 			if (raw.status === "read") item.readAt = raw.at;
 			if (raw.status === "addressed") item.addressedAt = raw.at;
 			if (isStr(raw.note, MAX_NOTE_CHARS * 2) && raw.note) item.note = raw.note;
+			if (raw.status === "addressed" && CLOSED_BY.includes(raw.by as ClosedBy)) item.closedBy = raw.by as ClosedBy;
+			if (isNum(raw.turn)) item.readTurn = raw.turn;
 			return;
+
 		}
 		case "listed": {
 			if (!Array.isArray(raw.ids) || !isNum(raw.at)) return;
@@ -230,7 +254,29 @@ export function writeInboxCaps(memberDir: string): void {
 	fs.renameSync(tmp, file);
 }
 
+// ── The measurement setting (§app.teams/inbox-measure) ──────────────────────
+
+export const INBOX_ZERO_FILE = "inbox-zero.json";
+export type InboxGateSetting = "turn-start" | "off";
+export interface InboxZeroSettings { gate: InboxGateSetting; autoClose: AutoCloseMode }
+export const INBOX_ZERO_DEFAULTS: InboxZeroSettings = { gate: "turn-start", autoClose: "turn-end" };
+/** `<agent dir>/sova/inbox-zero.json`: a missing file, a missing key or an unknown value is the default. Never throws. */
+export function readInboxZeroSettings(agentDir: string): InboxZeroSettings {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(fs.readFileSync(path.join(agentDir, "sova", INBOX_ZERO_FILE), "utf8"));
+	} catch {
+		return { ...INBOX_ZERO_DEFAULTS };
+	}
+	const v = isRecord(raw) ? raw : {};
+	return {
+		gate: v.gate === "off" || v.gate === "turn-start" ? v.gate : INBOX_ZERO_DEFAULTS.gate,
+		autoClose: v.autoClose === "next-turn" || v.autoClose === "turn-end" ? v.autoClose : INBOX_ZERO_DEFAULTS.autoClose,
+	};
+}
+
 export interface NewItem {
+
 	teamId: string;
 	from: InboxParty;
 	to: InboxParty;
@@ -260,6 +306,11 @@ export class InboxStore {
 	/** Item id → worker ID holding it now. */
 	private readonly holder = new Map<string, string>();
 	private seq = 0;
+	/** When each item was seen, and last named in a Still open block, in this process (turn records). */
+	private readonly seen = new Map<string, SeenTag>();
+	private readonly reminded = new Map<string, SeenTag>();
+	/** The worker's task a numbered steer was delivered in (the manager sets it; closeSeen's default resolver). */
+	steerTask?: (workerId: string, steer: number) => number | undefined;
 
 	constructor(root: string, opts: { now?: () => number; keepClosed?: number } = {}) {
 		this.root = root;
@@ -413,8 +464,8 @@ export class InboxStore {
 		return [...this.members.values()].map((m) => ({ teamId: m.teamId, workerId: m.workerId }));
 	}
 
-	/** Mark items the member holds: read (only from new) or addressed (from any open state). */
-	setStatus(workerId: string, ids: readonly string[], status: "read" | "addressed", note?: string): StatusResult[] {
+	/** Mark items the member holds: read (only from new) or addressed (from any open state), closed by `by` (default the member). */
+	setStatus(workerId: string, ids: readonly string[], status: "read" | "addressed", note?: string, by: ClosedBy = "member", seenAt?: SeenTag): StatusResult[] {
 		const m = this.members.get(workerId);
 		const cleanNote = note === undefined ? undefined : oneLine(note, MAX_NOTE_CHARS) || undefined;
 		return ids.map((id): StatusResult => {
@@ -424,18 +475,112 @@ export class InboxStore {
 				return { id, ok: false, reason: now ? `${id} is not in your inbox (it is with ${this.members.get(now)?.items.get(id)?.to.role ?? now})` : `No item ${id}` };
 			}
 			if (item.kind === "instruction" || item.returned) return { id, ok: false, reason: `${id} is ${item.returned ? "returned" : "an instruction (history only)"}`, item: { ...item } };
-			if (status === "read" && item.status !== "new") return { id, ok: true, item: { ...item } };
+			if (status === "read" && item.status !== "new") {
+				// Seen again with no turn record in this process (read before this change, or before a reload): record it now.
+				if (seenAt && item.status === "read" && !this.seen.has(id) && item.readTurn === undefined) {
+					const turn = "task" in seenAt ? seenAt.task : -1;
+					this.append(m, { v: 1, op: "status", id, status: "read", at: item.readAt ?? this.now(), turn });
+					item.readTurn = turn;
+					this.seen.set(id, seenAt);
+				}
+				return { id, ok: true, item: { ...item } };
+			}
 			if (status === "addressed" && item.status === "addressed" && cleanNote === undefined) return { id, ok: true, item: { ...item } };
 			const at = this.now();
 			const wasOpen = isOpen(item);
-			this.append(m, { v: 1, op: "status", id, status, at, ...(cleanNote ? { note: cleanNote } : {}) });
+			const turn = status === "read" && seenAt ? ("task" in seenAt ? seenAt.task : -1) : undefined;
+			const closer = status === "addressed" ? (wasOpen ? by : item.closedBy) : undefined;
+			this.append(m, { v: 1, op: "status", id, status, at, ...(cleanNote ? { note: cleanNote } : {}), ...(closer ? { by: closer } : {}), ...(turn !== undefined ? { turn } : {}) });
 			item.status = status;
 			if (status === "read") item.readAt = at;
 			else item.addressedAt = at;
 			if (cleanNote) item.note = cleanNote;
+			if (closer) item.closedBy = closer;
+			if (turn !== undefined) {
+				item.readTurn = turn;
+				this.seen.set(id, seenAt!);
+			}
 			if (wasOpen && !isOpen(item)) m.closed++;
 			return { id, ok: true, item: { ...item } };
 		});
+	}
+
+	/** The member saw these items (opened, or the single item a wake showed in full) at `tag`. */
+	markSeen(workerId: string, ids: readonly string[], tag: SeenTag): StatusResult[] {
+		return this.setStatus(workerId, ids, "read", undefined, "member", tag);
+	}
+	/** These seen items were named in a delivered wake's Still open block at `tag` (the later reminder wins). */
+	markReminded(workerId: string, ids: readonly string[], tag: SeenTag): void {
+		const m = this.members.get(workerId);
+		for (const id of ids) if (m?.items.has(id)) this.reminded.set(id, tag);
+	}
+	/** Opened and still open, questions first, then oldest first: a wake's Still open block. */
+	stillOpen(workerId: string): InboxItem[] {
+		return this.list(workerId, { open: true }).filter((i) => i.status === "read").sort((a, b) => Number(b.kind === "question") - Number(a.kind === "question") || byId(a, b));
+	}
+	/** Seen with a turn record (in this process, or on disk from before a reload). */
+	hasTurnRecord(id: string): boolean {
+		const item = this.get(id);
+		return this.seen.has(id) || item?.readTurn !== undefined;
+	}
+
+	/**
+	 * The safety net (§app.teams/inbox-zero): close, as closed automatically, the member's open items
+	 * it saw in a task that has ended and did not close. `upto` is the task that just ended, or "all"
+	 * when the member ends (every task has ended; the setting does not matter). Never a question, an
+	 * instruction, an unseen or returned item, nor one read with no turn record (before this change),
+	 * nor one shown by a wake whose run has not begun. "next-turn" closes only items named in a Still
+	 * open block of a later task that has ended. Returns the closed items.
+	 */
+	closeSeen(workerId: string, upto: number | "all", mode: AutoCloseMode = "turn-end", resolve?: SteerResolver): InboxItem[] {
+		const m = this.members.get(workerId);
+		if (!m) return [];
+		resolve ??= (steer) => this.steerTask?.(workerId, steer);
+		const at = (tag: SeenTag | undefined): number | undefined => (!tag ? undefined : "task" in tag ? tag.task : resolve(tag.steer));
+		const ids: string[] = [];
+		for (const item of [...m.items.values()].sort(byId)) {
+			if (!isOpen(item) || item.status !== "read" || item.kind === "question") continue;
+			const tag = this.seen.get(item.id);
+			if (!tag && item.readTurn === undefined) continue; // Read before this change: never closed automatically.
+			// Seen before a reload: in a task that has ended.
+			const seenTask = tag ? at(tag) : Number.NEGATIVE_INFINITY;
+			if (seenTask === undefined) continue; // Its wake's run has not begun: not seen yet.
+			if (upto !== "all") {
+				if (mode === "turn-end" && seenTask > upto) continue;
+				if (mode === "next-turn") {
+					const reminded = at(this.reminded.get(item.id));
+					if (reminded === undefined || reminded <= seenTask || reminded > upto) continue;
+				}
+			}
+			ids.push(item.id);
+		}
+		const closed: InboxItem[] = [];
+		for (const id of ids) {
+			const role = m.items.get(id)!.to.role;
+			const r = this.setStatus(workerId, [id], "addressed", `closed automatically: seen, not closed by ${role}`, "auto")[0];
+			if (r?.ok && r.item) closed.push(r.item);
+		}
+		if (closed.length) this.maybeCompact(m);
+		return closed;
+	}
+
+	/** Addressed items held by the team's members, by how they were closed (returned items are not closed). */
+	closedCounts(teamId: string): ClosedCounts & { byWorker: Map<string, ClosedCounts> } {
+		const total: ClosedCounts = { member: 0, reply: 0, auto: 0 };
+		const byWorker = new Map<string, ClosedCounts>();
+		for (const m of this.members.values()) {
+			if (m.teamId !== teamId) continue;
+			const c: ClosedCounts = { member: 0, reply: 0, auto: 0 };
+			for (const item of m.items.values()) {
+				const by = item.kind === "instruction" ? undefined : closedByOf(item);
+				if (by) c[by]++;
+			}
+			byWorker.set(m.workerId, c);
+			total.member += c.member;
+			total.reply += c.reply;
+			total.auto += c.auto;
+		}
+		return { ...total, byWorker };
 	}
 
 	/** An accepted wake listed these items. */
@@ -461,7 +606,10 @@ export class InboxStore {
 		const item = src?.items.get(id);
 		if (!src || !item || to.workerId === src.workerId) return undefined;
 		const at = this.now();
-		const { listedAt: _listed, readAt: _read, ...rest } = item;
+		const { listedAt: _listed, readAt: _read, readTurn: _turn, ...rest } = item;
+		this.seen.delete(id);
+		this.reminded.delete(id);
+
 		const moved: InboxItem = { ...rest, ...(item.status === "read" ? { status: "new" as const } : item.readAt !== undefined && item.status === "addressed" ? { readAt: item.readAt } : {}), to: { ...to }, movedFrom: [...(item.movedFrom ?? []), { workerId: item.to.workerId, role: item.to.role, at, why }] };
 		const dst = this.member(src.teamId, to.workerId);
 		this.append(dst, { v: 1, op: "add", item: moved });

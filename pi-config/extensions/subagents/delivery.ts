@@ -93,45 +93,73 @@ export async function steerUntilTaken(
 
 // ── Wake text (§app.teams/inbox "The list") ─────────────────────────────────
 
+/** Item and Still open lines in one wake list, together. */
 export const WAKE_MAX_ITEMS = 20;
-export const WAKE_INLINE_CHARS = 600;
-export const WAKE_INLINE_TOTAL = 4000;
+/** Still open lines (its `… and M more` included). */
+export const WAKE_STILL_OPEN = 5;
+export const WAKE_HEADER = "[Team inbox: ";
+/** The wake list's last line (§app.teams/inbox-zero "The norm"). */
+export const WAKE_FOOTER = "(Handle each item and close it in the same step as the work: a team_msg with replyTo set to its id closes it; otherwise team_inbox done <ids> with a short note on what you did. End your turn with nothing you have handled left open.)";
+/** The gate's line in a wake that starts a turn (§app.teams/inbox-gate); member.ts reads it. */
+export const gateLine = (ids: readonly string[]) => `[Open your inbox first: team_inbox open ${ids.join(" ")} — other tools are refused until you open one]`;
+const GATE_LINE = /^\[Open your inbox first: team_inbox open ((?:i_[0-9a-z]{1,12} ?)+)/m;
+/** The unopened ids a gated wake names, or undefined when the text is no gated wake list. */
+export function gatedIds(text: string): string[] | undefined {
+	if (!text.startsWith(WAKE_HEADER)) return undefined;
+	const m = GATE_LINE.exec(text);
+	return m ? m[1].trim().split(/\s+/) : undefined;
+}
+/** The gate's refusal of any other tool call. */
+export const gateRefusal = (ids: readonly string[]) => `Open your inbox first (team_inbox open ${ids.join(" ")})`;
 
 const partyText = (p: { role: string; workerId: string }) => p.role;
 
-/** One item's list line: `! i_42 notice from monitor — Wrap up: context 78%`. */
-export function itemLine(item: InboxItem): string {
+/** One item's list line: `! i_42 notice from monitor — Wrap up: context 78%`; `unopened` marks one listed before. */
+export function itemLine(item: InboxItem, opts: { unopened?: boolean } = {}): string {
 	const first = item.movedFrom?.[0];
-	return `${item.urgent ? "!" : "-"} ${item.id} ${item.kind} from ${partyText(item.from)}${item.replyTo ? ` (re ${item.replyTo})` : ""}${first ? ` (sent to ${first.role})` : ""} — ${item.subject}`;
+	return `${item.urgent ? "!" : "-"} ${item.id} ${item.kind} from ${partyText(item.from)}${item.replyTo ? ` (re ${item.replyTo})` : ""}${first ? ` (sent to ${first.role})` : ""}${opts.unopened ? " (unopened)" : ""} — ${item.subject}`;
 }
 
 /**
- * The wake list for a member's unread items: urgent first, oldest first within each, at most 20;
- * short bodies in full up to 4,000 chars. Returns the ids listed and those shown in full (read).
+ * The wake list (§app.teams/inbox "The list"): the member's unread items, urgent first, oldest
+ * first within each, subject only (a member must open an item to see it), except a list of
+ * exactly one item, shown in full (it counts as opened). Then the Still open block (opened, not
+ * closed, questions first) and the close footer; with `gate`, the gate line naming the items not
+ * opened. Returns the ids listed, shown in full (seen), named in Still open, and left unopened.
  */
-export function wakeText(unread: readonly InboxItem[]): { text: string; listed: string[]; full: string[] } {
+export function wakeText(
+	unread: readonly InboxItem[],
+	opts: { stillOpen?: readonly InboxItem[]; gate?: boolean } = {},
+): { text: string; listed: string[]; full: string[]; reminded: string[]; unopened: string[] } {
 	const sorted = [...unread].sort((a, b) => Number(b.urgent) - Number(a.urgent) || parseInt(a.id.slice(2), 36) - parseInt(b.id.slice(2), 36));
-	const shown = sorted.slice(0, WAKE_MAX_ITEMS);
+	const open = opts.stillOpen ?? [];
+	const openShown = open.length <= WAKE_STILL_OPEN ? open : open.slice(0, WAKE_STILL_OPEN - 1);
+	const openLines = openShown.length + (open.length > openShown.length ? 1 : 0);
+	// Items never listed take the places first, so each wake lists every waiting item in turn.
+	const cap = Math.max(1, WAKE_MAX_ITEMS - openLines);
+	const picked = new Set([...sorted.filter((i) => i.listedAt === undefined), ...sorted.filter((i) => i.listedAt !== undefined)].slice(0, cap).map((i) => i.id));
+	const shown = sorted.filter((i) => picked.has(i.id));
+
 	const urgent = sorted.filter((i) => i.urgent).length;
-	const lines = [`[Team inbox: ${sorted.length} new${urgent ? ` (${urgent} urgent)` : ""} — team_inbox open <ids> to read, done <ids> to mark addressed]`];
+	const lines = [`${WAKE_HEADER}${sorted.length} new${urgent ? ` (${urgent} urgent)` : ""} — team_inbox open <ids> to read, done <ids> to mark addressed]`];
 	const full: string[] = [];
-	let used = 0;
 	for (const item of shown) {
-		lines.push(itemLine(item));
+		lines.push(itemLine(item, { unopened: item.listedAt !== undefined }));
+		if (sorted.length !== 1) continue;
 		const body = item.body.trim();
-		if (body === item.subject) {
-			full.push(item.id);
-			continue;
-		}
-		if (body.length <= WAKE_INLINE_CHARS && used + body.length <= WAKE_INLINE_TOTAL) {
-			used += body.length;
-			lines.push(...body.split("\n").map((l) => `    ${l}`));
-			full.push(item.id);
-		}
+		if (body !== item.subject) lines.push(...body.split("\n").map((l) => `    ${l}`));
+		full.push(item.id);
 	}
 	if (sorted.length > shown.length) lines.push(`… and ${sorted.length - shown.length} more`);
-	lines.push("(Items shown in full above count as read. Answer an item with team_msg and replyTo set to its id.)");
-	return { text: lines.join("\n"), listed: shown.map((i) => i.id), full };
+	if (openShown.length) {
+		lines.push("Still open (opened, not closed):");
+		for (const i of openShown) lines.push(`- ${i.id} ${i.kind} from ${partyText(i.from)} — opened, ${i.kind === "question" ? "not answered" : "not closed"}`);
+		if (open.length > openShown.length) lines.push(`… and ${open.length - openShown.length} more`);
+	}
+	const unopened = shown.filter((i) => !full.includes(i.id)).map((i) => i.id);
+	if (opts.gate && unopened.length) lines.push(gateLine(unopened));
+	lines.push(WAKE_FOOTER);
+	return { text: lines.join("\n"), listed: shown.map((i) => i.id), full, reminded: openShown.map((i) => i.id), unopened };
 }
 
 // ── Wake scheduler ──────────────────────────────────────────────────────────
@@ -146,7 +174,15 @@ export interface WakeHost {
 	unlisted(workerId: string): InboxItem[];
 	unread(workerId: string): InboxItem[];
 	markListed(workerId: string, ids: string[]): void;
+	/** The member saw these items (a wake showed them in full); the host records the wake's turn. */
 	markRead(workerId: string, ids: string[]): void;
+	/** Opened and not closed: the wake's Still open block. */
+	stillOpen?(workerId: string): InboxItem[];
+	/** Delivered wake named these items in its Still open block. */
+	markReminded?(workerId: string, ids: string[]): void;
+	/** Whether a wake that starts the member's turn gates its other tools (the measurement setting). */
+	gate?(workerId: string): boolean;
+
 	/** Deliver on the member's lane (mode undefined: a prompt when idle, a next-step steer when busy). */
 	deliver(workerId: string, text: string): Promise<LaneResult>;
 	/** A legacy member's full-text delivery of one item. */
@@ -237,7 +273,8 @@ export class WakeScheduler {
 		const urgent = unlisted.some((i) => i.urgent);
 		if (state === "idle") {
 			if (urgent || why === "settled" || why === "debounce" || why === "retry") {
-				this.fire(workerId, s, false);
+				// An idle member: this wake starts its turn (the gate may apply, §app.teams/inbox-gate).
+				this.fire(workerId, s, false, false, true);
 				return;
 			}
 			if (s.debounce === undefined) s.debounce = this.host.setTimer(() => {
@@ -251,7 +288,7 @@ export class WakeScheduler {
 		if (urgent && this.host.nextStep(workerId)) this.fire(workerId, s, false, true);
 	}
 
-	private fire(workerId: string, s: WakeSlot, legacy: boolean, urgentOnly = false): void {
+	private fire(workerId: string, s: WakeSlot, legacy: boolean, urgentOnly = false, turnStart = false): void {
 		if (s.debounce !== undefined) {
 			this.host.clearTimer(s.debounce);
 			s.debounce = undefined;
@@ -278,21 +315,24 @@ export class WakeScheduler {
 				this.evaluate(workerId, "retry");
 			}, delay);
 		};
-		const run = legacy ? this.fireLegacy(workerId) : this.fireList(workerId, urgentOnly);
+		const run = legacy ? this.fireLegacy(workerId) : this.fireList(workerId, urgentOnly, turnStart);
 		run.then(done, (error) => done({ ok: false, reason: String(error) }));
 	}
 
-	private async fireList(workerId: string, urgentOnly: boolean): Promise<LaneResult> {
+	private async fireList(workerId: string, urgentOnly: boolean, turnStart: boolean): Promise<LaneResult> {
 		const unread = this.host.unread(workerId);
-		const { text, listed, full } = wakeText(urgentOnly ? unread.filter((i) => i.urgent) : unread);
+		const gate = turnStart && (this.host.gate?.(workerId) ?? false);
+		const { text, listed, full, reminded } = wakeText(urgentOnly ? unread.filter((i) => i.urgent) : unread, { stillOpen: this.host.stillOpen?.(workerId) ?? [], gate });
 		if (!listed.length) return { ok: true };
 		const result = await this.host.deliver(workerId, text);
 		if (result.ok) {
 			this.host.markListed(workerId, listed);
 			if (full.length) this.host.markRead(workerId, full);
+			if (reminded.length) this.host.markReminded?.(workerId, reminded);
 		}
 		return result;
 	}
+
 
 	private async fireLegacy(workerId: string): Promise<LaneResult> {
 		for (const item of this.host.unlisted(workerId)) {

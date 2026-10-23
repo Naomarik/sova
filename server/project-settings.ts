@@ -10,6 +10,7 @@ import { isProjectModeId, ModeFileError, parseModeFile, PROJECT_MODE_ENTRY, PROJ
 import { scheduleOf, scheduleText } from "../shared/schedules";
 import { OFFERS_FILE, parseOffersFile, runButtonsOf } from "../shared/session-offers";
 import { SETTINGS_REFERENCE, type SettingId } from "../shared/settings-reference";
+import { PROJECT_EDIT_KEYS } from "../shared/project-settings";
 import { checkoutRootOf, discoverProjectModes, readProjectMode } from "../pi-config/extensions/mode/project-discovery.ts";
 import { OrgError } from "./org-error";
 import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";
@@ -51,6 +52,33 @@ const depsOrThrow = (): SettingsDeps => {
   return deps;
 };
 
+/**
+ * An organization's part of a project's settings: its main stakeholder, whether the owner's page shows it, and
+ * whether its spec is frozen (the org layer sets it, server/overseer-org-part.ts: this module imports nothing of orgs).
+ * Each write goes through the route's own store write (the placement PATCH, the spec PATCH), as the operator.
+ */
+export interface PlacementDeps {
+  /** The project's placement settings, or null: no organization places it. */
+  read(projectId: string): Record<PlacementField, unknown> | null;
+  /** Why `personId` can't be the main stakeholder, or null. */
+  stakeholderRefusal(projectId: string, personId: string): string | null;
+  /** A roster person's name, for the history in words, or null. */
+  nameOf(personId: string): string | null;
+  write(projectId: string, field: PlacementField, to: unknown): Promise<void>;
+}
+export const PLACEMENT_FIELDS = ["project.stakeholder", "project.ownerHidden", "project.frozen"] as const;
+export type PlacementField = (typeof PLACEMENT_FIELDS)[number];
+const isPlacementField = (f: string): f is PlacementField => (PLACEMENT_FIELDS as readonly string[]).includes(f);
+let placementDeps: PlacementDeps | null = null;
+export const setPlacementDeps = (d: PlacementDeps | null): void => void (placementDeps = d);
+const placementOf = (projectId: string): Record<PlacementField, unknown> | null => {
+  try {
+    return placementDeps?.read(projectId) ?? null;
+  } catch {
+    return null;
+  }
+};
+
 type Fields = Record<string, unknown>;
 
 /** The overseer's settings as one flat record of fields ("powers.overseer.gather", "caps.createPerDay", "watch"…). Pure. */
@@ -86,6 +114,9 @@ const LABEL: Record<string, string> = {
   memory: "Its memory",
   resume: "The brake",
   "project.name": "The project's name",
+  "project.stakeholder": "The main stakeholder",
+  "project.ownerHidden": "Shown on the owner's page",
+  "project.frozen": "Frozen spec",
 };
 
 export function fieldLabel(field: string): string {
@@ -111,6 +142,9 @@ export function valueText(field: string, v: unknown): string {
   if (field.endsWith("Thinking") || field === "thinking") return v === null ? "the default" : String(v);
   if (field.startsWith("file:")) return v === null ? "absent" : String(v).slice(0, 10);
   if (field === "resume") return String(v);
+  if (field === "project.frozen") return v === true ? "Frozen" : "Not frozen";
+  if (field === "project.ownerHidden") return v === true ? "Hidden" : "Shown";
+  if (field === "project.stakeholder") return typeof v === "string" && v ? (placementDeps?.nameOf(v) ?? v) : "None";
   return v === null || v === undefined ? "not set" : String(v);
 }
 
@@ -129,6 +163,8 @@ export function grantOf(field: string, from: unknown, to: unknown): string | und
   if (field === "extraSystemPrompt") return !same(from, to) ? "changes what the overseer is told (its extra instructions)" : undefined;
   if (field === "gatheringAbilities") return !same(from, to) ? "changes what its gathering sessions can do" : undefined;
   if (field === "resume") return "lifts the brake, so its switches act again";
+  if (field === "project.frozen") return from === true && to !== true ? "unfreezes the project's spec: its claims may be written outside the reconciler's promotion again" : undefined;
+  if (field === "project.ownerHidden") return from === true && to !== true ? "shows the project on the organization owner's page again" : undefined;
   return undefined;
 }
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
@@ -313,7 +349,7 @@ export function settingOfPath(rel: string): { setting: SettingId; id?: string } 
 export type SettingsEdit =
   | { setting: "overseer"; patch: Record<string, unknown> }
   | { setting: "memory"; on?: boolean; type?: string; size?: number }
-  | { setting: "project"; name?: string; root?: unknown; archived?: unknown }
+  | { setting: "project"; name?: string; root?: unknown; archived?: unknown; stakeholder?: unknown; ownerHidden?: unknown; frozen?: unknown }
   | { setting: "profile"; id: string; profile: Record<string, unknown> | null }
   | { setting: "playbook"; id: string; text: string | null }
   | { setting: "mode"; id: string; text: string | null }
@@ -577,6 +613,7 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   let body: Record<string, any> = {};
   let memory: { on?: boolean; type?: string; size?: number } | undefined;
   let name: string | undefined;
+  const placementTo: Partial<Record<PlacementField, unknown>> = {};
   const fileEdits: { rel: string; setting: SettingId; id?: string; text: string | null }[] = [];
   for (const raw of edits) {
     if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
@@ -596,10 +633,26 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
       if (!Object.keys(m).length) refuse("A memory edit names on, type or size.");
       memory = { ...(memory ?? {}), ...m };
     } else if (e.setting === "project") {
+      for (const k of Object.keys(e)) if (k !== "setting" && !(PROJECT_EDIT_KEYS as readonly string[]).includes(k)) refuse(`Unknown project setting "${k}" (sova_settings reference project.<setting> lists them).`);
       if (e.root !== undefined) refuse("Moving the project's folder is the operator's own, on the project page.");
       if (e.archived !== undefined) refuse("Archiving is the operator's own: Archive Project… on the project page, with its own confirm.");
-      if (typeof e.name !== "string" || !e.name.trim() || e.name.trim().length > 80) refuse("A project edit names the new name (1–80 characters).");
-      name = e.name!.trim();
+      const asked = PLACEMENT_FIELDS.filter((f) => (e as Record<string, unknown>)[f.slice(8)] !== undefined);
+      if (e.name === undefined && !asked.length) refuse("A project edit names what to change: name, stakeholder, ownerHidden or frozen.");
+      if (e.name !== undefined) {
+        if (typeof e.name !== "string" || !e.name.trim() || e.name.trim().length > 80) refuse("A project edit names the new name (1–80 characters).");
+        name = e.name!.trim();
+      }
+      if (asked.length) {
+        const now = placementOf(projectId);
+        if (!now) refuse("Only an organization's project has a main stakeholder, an owner's page and a frozen spec: this project is standalone.");
+        if (e.frozen !== undefined && typeof e.frozen !== "boolean") refuse("frozen must be true or false.");
+        if (e.ownerHidden !== undefined && typeof e.ownerHidden !== "boolean") refuse("ownerHidden must be true or false.");
+        if (e.stakeholder !== undefined && e.stakeholder !== null) {
+          const why = typeof e.stakeholder === "string" ? placementDeps!.stakeholderRefusal(projectId, e.stakeholder) : "Only an active person on the roster can be a project's main stakeholder.";
+          if (why) refuse(why);
+        }
+        for (const f of asked) placementTo[f] = (e as Record<string, unknown>)[f.slice(8)] ?? null;
+      }
     } else if (["profile", "playbook", "mode", "offers", "services"].includes(e.setting)) {
       const f = await fileEdit(project.root, e as never);
       if (fileEdits.some((x) => x.rel === f.rel)) refuse(`Two edits change ${f.rel}: make it one.`);
@@ -614,6 +667,8 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
     throw err;
   }
   const kept = keptChanges(flatten(current), flatten(next));
+  const placementNow = placementOf(projectId);
+  if (placementNow) kept.push(...keptChanges(placementNow, placementTo));
   if (body.resume === true) kept.push({ field: "resume", label: fieldLabel("resume"), from: "braked", to: "resumed", fromText: "on", toText: "lifted", grant: grantOf("resume", null, null)! });
   if (name === project.name) name = undefined;
 
@@ -648,7 +703,7 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
 
   const d = depsOrThrow();
   const appliedNow: SettingsHistoryRow[] = [];
-  if (atOnce.length) appliedNow.push(...(await d.patch(projectId, patchOf(atOnce), ctx.by)));
+  if (atOnce.length) appliedNow.push(...(await applyKept(projectId, atOnce, ctx.by)));
   if (memoryNow) appliedNow.push(...(await d.memory(projectId, memoryNow, ctx.by)));
   if (nameNow) appliedNow.push(...(await d.rename(projectId, nameNow, ctx.by)));
 
@@ -688,8 +743,23 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   return { card: await cardView(projectId, card, repo), appliedNow };
 }
 
+/** Apply Sova-kept changes: the overseer's own as one PATCH, then the placement's one by one; their history rows. */
+async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | "to">[], by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
+  const own = changes.filter((k) => !isPlacementField(k.field));
+  const rows: SettingsHistoryRow[] = own.length ? await depsOrThrow().patch(projectId, patchOf(own), by, meta) : [];
+  for (const k of changes) {
+    if (!isPlacementField(k.field)) continue;
+    const from = placementOf(projectId)?.[k.field] ?? null;
+    if (same(from, k.to)) continue;
+    if (!placementDeps) throw new OrgError("No organization places this project any more.", 409);
+    await placementDeps.write(projectId, k.field, k.to);
+    rows.push(...appendHistory(projectId, [{ field: k.field, from, to: k.to ?? null, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]));
+  }
+  return rows;
+}
+
 const settingOfField = (field: string): SettingId =>
-  field.startsWith("powers.") ? "overseer.powers" : field.startsWith("caps.") ? "overseer.limits" : field === "watch" ? "overseer.watch" : field === "holdMin" ? "overseer.hold" : field === "extraSystemPrompt" ? "overseer.extra" : field === "gatheringAbilities" ? "overseer.abilities" : field === "resume" ? "overseer.brake" : field === "watchGapMin" || field === "soonLookSec" ? "overseer.pace" : "overseer.models";
+  isPlacementField(field) ? field : field.startsWith("powers.") ? "overseer.powers" : field.startsWith("caps.") ? "overseer.limits" : field === "watch" ? "overseer.watch" : field === "holdMin" ? "overseer.hold" : field === "extraSystemPrompt" ? "overseer.extra" : field === "gatheringAbilities" ? "overseer.abilities" : field === "resume" ? "overseer.brake" : field === "watchGapMin" || field === "soonLookSec" ? "overseer.pace" : "overseer.models";
 
 function mergeBodies(a: Record<string, any>, b: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = { ...a };
@@ -775,12 +845,18 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
 
   // The kept part as it reads now: the grant set must be the card's.
   const current = readPoSettings(projectOverseerPaths(projectId));
-  const body = patchOf(c.kept);
+  const body = patchOf(c.kept.filter((k) => !isPlacementField(k.field)));
   let now: KeptChange[] = [];
   try {
     now = keptChanges(flatten(current), flatten(mergePoPatch(current, body)));
   } catch (err) {
     throw new OrgError(err instanceof Error ? err.message : String(err), 409);
+  }
+  const placed = c.kept.filter((k) => isPlacementField(k.field));
+  if (placed.length) {
+    const p = placementOf(projectId);
+    if (!p) throw new OrgError("No organization places this project any more: dismiss the card.", 409);
+    now.push(...keptChanges(p, Object.fromEntries(placed.map((k) => [k.field, k.to]))));
   }
   if (c.kept.some((k) => k.field === "resume")) now.push({ ...c.kept.find((k) => k.field === "resume")! });
   const grantsNow = now.filter((k) => k.grant).map((k) => `${k.field}:${k.grant}`).sort().join("|");
@@ -800,7 +876,7 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   const d = depsOrThrow();
   const meta = { card: cardId };
   const rows: SettingsHistoryRow[] = [];
-  if (now.length) rows.push(...(await d.patch(projectId, patchOf(now), by, meta)));
+  if (now.length) rows.push(...(await applyKept(projectId, now, by, meta)));
   if (c.memory) rows.push(...(await d.memory(projectId, c.memory, by, meta)));
   if (c.name) rows.push(...(await d.rename(projectId, c.name, by, meta)));
   const approved = [...c.grants.filter((g) => g.key.startsWith("overseer:")).map((g) => g.key), ...(await recordApprovals(root, c.grants.filter((g) => !g.key.startsWith("overseer:"))))];
@@ -901,8 +977,11 @@ const readText = (file: string): string | null => {
 
 // ---- undo ---------------------------------------------------------------------------------------------
 
-/** Undo a history row: a Sova-kept field back (409 when it changed since), or a file change as a new card. */
-export async function undoRow(projectId: string, rowId: unknown, opts: { fromOverseer: boolean }): Promise<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }> {
+/**
+ * Undo a history row: a Sova-kept field back (409 when it changed since), or a file change as a new card.
+ * A revert that is a grant (it widens) needs the operator's own page: `notPage` is why this request isn't (403).
+ */
+export async function undoRow(projectId: string, rowId: unknown, opts: { notPage: string | null }): Promise<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }> {
   const row = readHistory(projectId).find((r) => r.id === rowId);
   if (!row) throw new OrgError(`No settings history line ${String(rowId)}.`, 404);
   const by: SettingsBy = { kind: "operator", via: "undo" };
@@ -941,9 +1020,20 @@ export async function undoRow(projectId: string, rowId: unknown, opts: { fromOve
     if (nowName !== row.to) throw new OrgError("The project's name changed since: undo the newer change first.", 409);
     return { undone: await d.rename(projectId, String(row.from), by, meta) };
   }
+  if (isPlacementField(row.field)) {
+    const p = placementOf(projectId);
+    if (!p) throw new OrgError("No organization places this project any more.", 409);
+    if (!same(p[row.field], row.to)) throw new OrgError(`${fieldLabel(row.field)} changed since: undo the newer change first.`, 409);
+    if (opts.notPage && grantOf(row.field, row.to, row.from)) throw new OrgError(opts.notPage, 403);
+    if (row.field === "project.stakeholder" && typeof row.from === "string") {
+      const why = placementDeps!.stakeholderRefusal(projectId, row.from);
+      if (why) throw new OrgError(why, 409);
+    }
+    return { undone: await applyKept(projectId, [{ field: row.field, to: row.from }], by, meta) };
+  }
   const nowVal = flatten(readPoSettings(projectOverseerPaths(projectId)))[row.field];
   if (!same(nowVal, row.to)) throw new OrgError(`${fieldLabel(row.field)} changed since: undo the newer change first.`, 409);
-  if (opts.fromOverseer && grantOf(row.field, row.to, row.from)) throw new OrgError("Putting that back widens what the overseer may do: only the operator does that, on the project page.", 403);
+  if (opts.notPage && grantOf(row.field, row.to, row.from)) throw new OrgError(opts.notPage, 403);
   if (row.field === "memory") {
     const m = row.from as { on?: boolean; type?: string; size?: number } | null;
     return { undone: await d.memory(projectId, m ?? { on: true }, by, meta) };
@@ -974,6 +1064,13 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
   sova("overseer.hold", s.holdMin === 0 ? "No hold" : `${s.holdMin} min`, "limits");
   sova("overseer.memory", s.memory ? (s.memory.on ? "On" : "Off") : "On", "overseer");
   sova("project.name", project.name, "head");
+  const placement = placementOf(projectId);
+  if (placement) {
+    sova("project.stakeholder", valueText("project.stakeholder", placement["project.stakeholder"]), "head");
+    sova("project.ownerHidden", valueText("project.ownerHidden", placement["project.ownerHidden"]), "head");
+    sova("project.frozen", valueText("project.frozen", placement["project.frozen"]), "head");
+  }
+  sova("project.archive", project.archived ? "Archived" : "Not archived", "head");
 
   const file = (setting: SettingId, state: string, href: string, hrefLabel: string, extra: Partial<SettingsRow> = {}) =>
     rows.push({ setting, label: SETTINGS_REFERENCE[setting].label, state, where: "file", href, hrefLabel, ...extra });

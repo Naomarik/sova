@@ -10,6 +10,9 @@
 
 import type { SettingId } from "./settings-reference.ts";
 
+/** The keys `{setting: "project", …}` takes in sova_settings propose (root and archived only to refuse in words). */
+export const PROJECT_EDIT_KEYS = ["name", "root", "archived", "stakeholder", "ownerHidden", "frozen"] as const;
+
 /** Who made a change. `via`: through what. */
 export interface SettingsBy {
   kind: "operator" | "project-overseer" | "overseer";

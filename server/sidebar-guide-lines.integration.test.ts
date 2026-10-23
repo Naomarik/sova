@@ -1,8 +1,8 @@
 // A group's guide line collapses it (§app.session-list/guide-lines), in a real Chrome: the app's own build, served from
 // a scratch build with every request answered here (no server, no network). Measured, never hard-coded: each line's
-// centre against its head's chevron (an org, a user group, a Done, an Archive day), an org's line one piece down past
-// its projects, a folder's and a Projects-region project's edge line at the group's edge, nested lines' boxes split
-// at their midpoint; then a press 5px off a line's centre collapses its group (an org, a folder, a Done, a project)
+// centre against its head's chevron (every kind of group), and for a folder, a Projects-region project and its Done
+// against its rows' state-rail axis too (the line breaks around each rail item, ringed in the row's own ground); an
+// org's line one piece down past its projects; nested lines' boxes apart; then a press 5px off a line's centre collapses its group (an org, a folder, a Done, a project)
 // through the head's own path, the choice holds through a refresh (a folder's in sessionStorage), and the head ends up
 // in view: brought to the top when it had scrolled out, left where it was when it hadn't. At desktop and at 320px.
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
@@ -66,7 +66,13 @@ interface World {
 
 function world(): World {
   const sessions: SessionSummary[] = [];
-  for (let i = 0; i < 30; i++) sessions.push(row(`f${i}`, FOLDER, `Folder task ${i}`, 300 + i, i < 4 ? { groupId: GROUP.id } : {}));
+  // The first folder rows carry the rail's three items: Busy with a worker count, TUI with a count, Busy alone.
+  const rail: Partial<SessionSummary>[] = [
+    { busy: true, workers: { working: 2, total: 2 } },
+    { live: { pid: 4242, status: "idle", workers: { working: 3, total: 3 } } },
+    { busy: true },
+  ];
+  for (let i = 0; i < 30; i++) sessions.push(row(`f${i}`, FOLDER, `Folder task ${i}`, 300 + i, { ...(i < 4 ? { groupId: GROUP.id } : {}), ...(rail[i] ?? {}) }));
   for (let i = 0; i < 4; i++) sessions.push(row(`g${i}`, "/w/folders/side", `Side task ${i}`, 400 + i, { groupId: GROUP.id }));
   for (let a = 0; a < 6; a++) sessions.push(row(`a${a}`, `/w/old/old-${a % 2}`, `Old work ${a}`, 60 * 24 * 40 + a, { archived: true, origin: "external" }));
   const projects: ProjectSummary[] = [];
@@ -93,6 +99,9 @@ function world(): World {
   projects.push({ id: "prj_solo", name: "Solo", root: solo, origin: "folder", createdAt: iso(9999), space: { kind: "standalone" } } as unknown as ProjectSummary);
   for (let i = 0; i < 30; i++) {
     sessions.push(row(`solo-${i}`, solo, `Solo job ${i}`, 200 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding" } } as Partial<SessionSummary>));
+  }
+  for (let i = 0; i < 6; i++) {
+    sessions.push(row(`solo-done-${i}`, solo, `Solo merged ${i}`, 260 + i, { project: { projectId: "prj_solo", projectName: "Solo", kind: "coding", finished: true } } as Partial<SessionSummary>));
   }
   return { sessions, projects };
 }
@@ -147,6 +156,7 @@ const HOSTS = {
   day: ".sidebar-archive .archive-date",
   dayFolder: ".sidebar-archive .archive-date > .session-group",
   project: ".sidebar-projects .org-project",
+  projectDone: ".sidebar-projects .org-project .project-done",
 } as const;
 type Host = keyof typeof HOSTS;
 
@@ -169,11 +179,14 @@ async function openAll(page: Page) {
   await openHead(page, HOSTS.dayFolder);
   await openHead(page, HOSTS.folder);
   await openHead(page, HOSTS.done);
+  await openHead(page, HOSTS.projectDone);
 }
 
 interface Geometry {
-  /** The visible line's centre: an under-arrow line's drawn 2px, an edge line's host border. */
+  /** The visible line's centre: its drawn 2px. */
   line: number;
+  /** The first of its own rows' state-rail centre (null for a group whose rows are not its own). */
+  rail: number | null;
   /** The head's chevron centre. */
   chevron: number;
   /** The line's press box. */
@@ -183,8 +196,8 @@ interface Geometry {
   boxBottom: number;
   headBottom: number;
   hostLeft: number;
+  hostTop: number;
   hostBottom: number;
-  edge: boolean;
 }
 
 const geometry = (page: Page, sel: string) =>
@@ -195,11 +208,9 @@ const geometry = (page: Page, sel: string) =>
     const chev = head.querySelector(".icon-twist")!.getBoundingClientRect();
     const box = line.getBoundingClientRect();
     const hr = host.getBoundingClientRect();
-    const edge = line.classList.contains("guide-line-edge");
     const cs = getComputedStyle(line, "::before");
-    const hostCs = getComputedStyle(host);
-    const lineX = edge ? hr.left + parseFloat(hostCs.borderLeftWidth) / 2 : box.left + parseFloat(cs.left) + parseFloat(cs.width) / 2;
-    return { line: lineX, chevron: chev.left + chev.width / 2, boxLeft: box.left, boxRight: box.right, boxTop: box.top, boxBottom: box.bottom, headBottom: head.getBoundingClientRect().bottom, hostLeft: hr.left, hostBottom: hr.bottom, edge };
+    const rail = host.querySelector(":scope > ul .session-rail, :scope > .project-rows > ul .session-rail")?.getBoundingClientRect();
+    return { line: box.left + parseFloat(cs.left) + parseFloat(cs.width) / 2, rail: rail ? rail.left + rail.width / 2 : null, chevron: chev.left + chev.width / 2, boxLeft: box.left, boxRight: box.right, boxTop: box.top, boxBottom: box.bottom, headBottom: head.getBoundingClientRect().bottom, hostLeft: hr.left, hostTop: hr.top, hostBottom: hr.bottom };
   }, sel);
 
 /** A point on the line `dx` off its centre, inside the list's view; asserts the line is what is under it. */
@@ -217,10 +228,8 @@ async function pointOn(page: Page, sel: string, dx: number) {
         list = scroller.getBoundingClientRect();
         box = line.getBoundingClientRect();
       }
-      const edge = line.classList.contains("guide-line-edge");
       const cs = getComputedStyle(line, "::before");
-      const hr = host.getBoundingClientRect();
-      const x = (edge ? hr.left + parseFloat(getComputedStyle(host).borderLeftWidth) / 2 : box.left + parseFloat(cs.left) + parseFloat(cs.width) / 2) + dx;
+      const x = box.left + parseFloat(cs.left) + parseFloat(cs.width) / 2 + dx;
       // Below every sticky head (up to 3 deep), well inside the visible part of the line.
       const top = Math.max(box.top, list.top) + 3 * 44 + 10;
       const bottom = Math.min(box.bottom, list.bottom) - 10;
@@ -257,22 +266,41 @@ const scrollPastHead = (page: Page, sel: string, by: number) =>
   );
 
 for (const width of [1280, 320]) {
-  test(`${width}px: every line sits where it should: under its chevron, or at its group's edge`, async () => {
+  test(`${width}px: every line runs down from its chevron; a folder's and a project's also down its rows' rail`, async () => {
     const page = await open(world(), width);
     await openAll(page);
-    for (const k of ["org", "group", "done", "day"] as Host[]) {
+    for (const k of Object.keys(HOSTS) as Host[]) {
       const g = await geometry(page, HOSTS[k]);
-      assert.equal(g.edge, false, `${k}: an under-arrow line`);
       assert.ok(Math.abs(g.line - g.chevron) <= 0.5, `${k}: the line's centre ${g.line} is the chevron's ${g.chevron}`);
-      assert.ok(Math.abs(g.boxTop - g.headBottom) <= 1, `${k}: the line starts at the head's bottom`);
-      // The box is about 12px, centred, except where it splits with a nested line.
-      assert.ok(Math.abs(g.line - g.boxLeft - (g.boxRight - g.boxLeft) / 2) <= 0.5 || k === "group" || k === "day", `${k}: the box is centred on the line`);
+      assert.ok(Math.abs(g.line - g.boxLeft - (g.boxRight - g.boxLeft) / 2) <= 0.5, `${k}: the box is centred on the line`);
+      assert.ok(Math.abs(g.boxRight - g.boxLeft - 12) <= 0.5, `${k}: the box is 12px wide`);
+    }
+    for (const k of ["folder", "groupFolder", "dayFolder", "project", "projectDone"] as Host[]) {
+      const g = await geometry(page, HOSTS[k]);
+      assert.notEqual(g.rail, null, `${k}: has rows of its own`);
+      assert.ok(Math.abs(g.line - g.rail!) <= 0.5, `${k}: the line's centre ${g.line} is its rows' rail axis ${g.rail}`);
+      const edge = await page.evaluate((s) => getComputedStyle(document.querySelector(s)!).borderLeftWidth, HOSTS[k]);
+      assert.equal(edge, "0px", `${k}: no edge rule any more`);
     }
     for (const k of ["folder", "groupFolder", "dayFolder", "project"] as Host[]) {
+      // On screen first: elementFromPoint answers nothing outside the viewport.
+      await page.evaluate((s) => {
+        const list = document.querySelector<HTMLElement>(".sidebar-list")!;
+        list.scrollTop += document.querySelector(s)!.getBoundingClientRect().top - list.getBoundingClientRect().top - 20;
+      }, HOSTS[k]);
       const g = await geometry(page, HOSTS[k]);
-      assert.equal(g.edge, true, `${k}: an edge line`);
-      assert.ok(Math.abs(g.boxLeft - (k === "folder" || k === "project" ? g.hostLeft : g.boxLeft)) <= 0.5, `${k}: the box starts at the group's edge`);
-      assert.ok(Math.abs(g.boxTop - (await page.evaluate((s) => document.querySelector(s)!.getBoundingClientRect().top, HOSTS[k]))) <= 1, `${k}: the edge line runs the whole block`);
+      assert.ok(Math.abs(g.boxTop - g.hostTop) <= 1, `${k}: the line runs the block, under its sticky head`);
+      // The head is on top of the line where they meet: what is at the line's top is the head.
+      const top = await page.evaluate(({ s, x, y }) => {
+        const head = document.querySelector(s)!.querySelector(":scope > summary, :scope > .org-project-head")!;
+        const el = document.elementFromPoint(x, y);
+        return { ok: !!el && head.contains(el), what: el ? `${el.tagName}.${el.className}` : "none" };
+      }, { s: HOSTS[k], x: g.line, y: g.headBottom - 4 });
+      assert.ok(top.ok, `${k}: its head covers the line beside the chevron (found ${top.what})`);
+    }
+    for (const k of ["org", "group", "done", "day"] as Host[]) {
+      const g = await geometry(page, HOSTS[k]);
+      assert.ok(Math.abs(g.boxTop - g.headBottom) <= 1, `${k}: the line starts at the head's bottom`);
     }
     // The org's line is one piece down past its last project, not one per project.
     const org = await page.evaluate((sel) => {
@@ -283,13 +311,11 @@ for (const width of [1280, 320]) {
     assert.equal(org.lines, 1);
     assert.ok(org.projects >= 2);
     assert.ok(Math.abs(org.lineBottom - org.lastBottom) <= 1, `the org's line runs to its last project's end (${org.lineBottom} vs ${org.lastBottom})`);
-    // Nested lines' boxes never overlap: the group's ends where its folder's begins, at the midpoint between the lines.
-    for (const [outer, inner] of [["group", "groupFolder"], ["day", "dayFolder"]] as [Host, Host][]) {
+    // Nested lines' boxes never overlap.
+    for (const [outer, inner] of [["group", "groupFolder"], ["day", "dayFolder"], ["project", "projectDone"]] as [Host, Host][]) {
       const o = await geometry(page, HOSTS[outer]);
       const i = await geometry(page, HOSTS[inner]);
-      assert.ok(i.line - o.line >= 6, `${inner}'s line stands clear of ${outer}'s (${i.line - o.line}px apart)`);
-      assert.ok(Math.abs(o.boxRight - i.boxLeft) <= 0.5, `${outer}'s box ends where ${inner}'s begins`);
-      assert.ok(Math.abs(o.boxRight - (o.line + i.line) / 2) <= 0.5, "at the midpoint between the two lines");
+      assert.ok(o.boxRight <= i.boxLeft + 0.01, `${outer}'s box (to ${o.boxRight}) ends before ${inner}'s (from ${i.boxLeft})`);
     }
     // Folders-region titles lose nothing: a folder's rows start where they always did, 4px in.
     const rowLeft = await page.evaluate((sel) => {
@@ -297,6 +323,11 @@ for (const width of [1280, 320]) {
       return host.querySelector(".session-row-shell")!.getBoundingClientRect().left - document.querySelector(".sidebar-list")!.getBoundingClientRect().left;
     }, HOSTS.folder);
     assert.ok(Math.abs(rowLeft - 4) <= 0.5, `a Folders row starts 4px in (${rowLeft})`);
+    const projectRowLeft = await page.evaluate((sel) => {
+      const host = document.querySelector<HTMLElement>(sel)!;
+      return host.querySelector(".project-rows > ul .session-row-shell")!.getBoundingClientRect().left - document.querySelector(".sidebar-list")!.getBoundingClientRect().left;
+    }, HOSTS.project);
+    assert.ok(Math.abs(projectRowLeft - 4) <= 0.5, `a Projects-region row starts 4px in (${projectRowLeft})`);
     await page.context().close();
   });
 }
@@ -341,7 +372,7 @@ for (const width of [1280, 320]) {
   });
 }
 
-test("a press 5px off a folder's edge line collapses it, the choice is stored as the head's is, and its pinned head stays in view", async () => {
+test("a press 5px off a folder's rail line collapses it, the choice is stored as the head's is, and its pinned head stays in view", async () => {
   const page = await open(world(), 1280);
   await openHead(page, HOSTS.folder);
   await scrollPastHead(page, HOSTS.folder, 600);
@@ -384,7 +415,7 @@ test("a press 5px off a Done's line collapses it; with its head in view nothing 
   await page.context().close();
 });
 
-test("a press on a Projects-region project's edge line folds it as its arrow does", async () => {
+test("a press on a Projects-region project's rail line folds it as its arrow does", async () => {
   const page = await open(world(), 1280);
   await scrollPastHead(page, HOSTS.project, 500);
   const p = await pointOn(page, HOSTS.project, 5);
@@ -397,18 +428,18 @@ test("a press on a Projects-region project's edge line folds it as its arrow doe
   await page.context().close();
 });
 
-test("a group's line and its folder's split at the midpoint: each press goes to the nearer line", async () => {
+test("a group's line and its folder's stand apart: a press beside each goes to that line", async () => {
   const page = await open(world(), 1280);
   await openAll(page);
   const o = await geometry(page, HOSTS.group);
   const i = await geometry(page, HOSTS.groupFolder);
-  const mid = (o.line + i.line) / 2;
+  // Low in the folder's last row: below the title's line, where the rail has no item.
   const y = await page.evaluate((sel) => {
     const folder = document.querySelector<HTMLElement>(sel)!;
     const list = document.querySelector<HTMLElement>(".sidebar-list")!;
     list.scrollTop += folder.getBoundingClientRect().top - list.getBoundingClientRect().top - 100;
-    const r = folder.getBoundingClientRect();
-    return r.top + Math.min(r.height / 2, 200);
+    const rows = folder.querySelectorAll(".session-row-shell");
+    return rows[rows.length - 1]!.getBoundingClientRect().bottom - 6;
   }, HOSTS.groupFolder);
   const at = (x: number) =>
     page.evaluate(
@@ -418,7 +449,66 @@ test("a group's line and its folder's split at the midpoint: each press goes to 
       },
       { x, y },
     );
-  assert.equal(await at(mid - 1), "group");
-  assert.equal(await at(mid + 1), "folder");
+  assert.equal(await at(o.line + 5), "group");
+  assert.equal(await at(i.line - 5), "folder");
+  assert.equal(await at(i.line + 5), "folder");
+  assert.equal(await at((o.line + i.line) / 2), "other", "nothing presses between the two boxes");
   await page.context().close();
 });
+
+for (const width of [1280, 320]) {
+  test(`${width}px: the line runs behind the rail; each chip, dot and count sits on it in a ring of its row's ground`, async () => {
+    const page = await open(world(), width);
+    await openHead(page, HOSTS.folder);
+    await page.evaluate((sel) => {
+      const list = document.querySelector<HTMLElement>(".sidebar-list")!;
+      list.scrollTop += document.querySelector(sel)!.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    }, HOSTS.folder);
+    /** Per rail item in the folder's first three rows: the item is what is on the line at its centre, and its ring's
+        colour against the row's ground (the shell's tint, else the pane's surface). */
+    const read = () =>
+      page.evaluate((sel) => {
+        const host = document.querySelector<HTMLElement>(sel)!;
+        const line = host.querySelector<HTMLElement>(":scope > .guide-line")!;
+        const lb = line.getBoundingClientRect();
+        const x = lb.left + parseFloat(getComputedStyle(line, "::before").left) + 1;
+        const pane = getComputedStyle(document.querySelector(".app-sidebar")!).backgroundColor;
+        const out: { kind: string; onTop: boolean; ring: string; ground: string }[] = [];
+        for (const shell of [...host.querySelectorAll<HTMLElement>(".session-row-shell")].slice(0, 3)) {
+          const bg = getComputedStyle(shell).backgroundColor;
+          const ground = bg === "rgba(0, 0, 0, 0)" ? pane : bg;
+          for (const item of shell.querySelectorAll<HTMLElement>(".session-rail-item")) {
+            const r = item.getBoundingClientRect();
+            const hit = document.elementFromPoint(x, r.top + r.height / 2);
+            const kind = item.classList.contains("session-rail-tui") ? "tui" : item.classList.contains("session-rail-count") ? "count" : "busy";
+            const ring =
+              kind === "busy" ? getComputedStyle(item, "::before").backgroundColor : kind === "count" ? getComputedStyle(item).backgroundColor : getComputedStyle(item).boxShadow.replace(/\s[\d.]+px.*$/, "");
+            out.push({ kind, onTop: !!hit && item.contains(hit), ring, ground });
+          }
+        }
+        return out;
+      }, HOSTS.folder);
+    const check = async (state: string) => {
+      const items = await read();
+      assert.deepEqual([...new Set(items.map((i) => i.kind))].sort(), ["busy", "count", "tui"], `${state}: the rail's three items are drawn`);
+      for (const i of items) {
+        assert.ok(i.onTop, `${state}: the ${i.kind} sits on top of the line`);
+        assert.equal(i.ring, i.ground, `${state}: the ${i.kind}'s ring is its row's ground`);
+      }
+    };
+    await check("at rest");
+    // Hovered: the first row's ground is the hover fill, and so is its items' ring.
+    const r0 = await page.locator(`${HOSTS.folder} .session-row-shell a.session-row`).first().boundingBox();
+    await page.mouse.move(r0!.x + r0!.width / 2, r0!.y + 10);
+    await page.waitForTimeout(300);
+    await check("hovered");
+    await page.mouse.move(1, 1);
+    // The open session: its row's current tint, its items' ring too. (On a phone an open session puts the list away.)
+    if (width < 768) return void (await page.context().close());
+    await page.evaluate((p) => (location.hash = `#/s/${encodeURIComponent(p)}`), "/w/sessions/f1.jsonl");
+    await page.locator(`${HOSTS.folder} .session-row-shell-current`).waitFor({ timeout: 10_000 });
+    await page.waitForTimeout(300);
+    await check("selected");
+    await page.context().close();
+  });
+}

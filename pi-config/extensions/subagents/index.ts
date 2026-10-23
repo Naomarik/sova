@@ -105,6 +105,7 @@ import { goAheadRef, workerAgreeEnv } from "../mode/spec-agree.ts";
 import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
+import { usageOut } from "../provider-limits/usage-out.ts";
 import { PROJECT_TOOLS_FILE_ENV, writeWorkerToolsFile } from "../mode/project-tools.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
@@ -665,6 +666,12 @@ export const FINAL_ANSWER_PAGE_CHARS = 40_000;
 const TRANSCRIPT_HEADER_MAX_CHARS = 4_000;
 /** The completion message quotes this much of the summary. */
 const WAKE_PREVIEW_CHARS = 4_000;
+/** subagents-dead-tuple-v1: a model that ran out of usage at runtime (§teams.defaults/runtime-fallback). */
+const DEAD_TUPLE_ENTRY_TYPE = "subagents-dead-tuple-v1";
+/** How long a model that ran out stays out: new teams try it again after this. */
+const DEAD_TUPLE_MS = 3_600_000;
+/** Failed turns in a row of any kind that move a standing member to its fallback. */
+const FAILOVER_STREAK = 3;
 
 /** A private copy of `text` in a fresh temporary directory; returns its path. */
 function writeSnapshot(prefix: string, name: string, text: string): string {
@@ -1349,6 +1356,8 @@ export function registerSubagents(
 			a.status === "error" ||
 			a.status === "killed";
 		const verb = a.status === "killed" ? "stopped" : failed ? "failed" : "finished";
+		// A coordinator or monitor that fails at runtime moves to its fallback; that settle is said there, once.
+		if (standingSettle(a)) return;
 		// Coordinated teams: every member but the routing coordinator reports to it, never to the parent.
 		const route = completionRoute(a, failed);
 		if (route.kind === "drop") return;
@@ -1958,8 +1967,79 @@ export function registerSubagents(
 			return undefined;
 		}
 	};
+	// ── Runtime fallback (§teams.defaults/runtime-fallback) ─────────────────
+	// A (backend, model) whose turn ran out of usage is "out" for an hour: every tuple check treats it
+	// as refused. Persisted as subagents-dead-tuple-v1 entries, replayed at session_start.
+	/** By tupleKey. */
+	const deadTuples = new Map<string, { reason: string; at: number }>();
+	/** `<teamId>|<duty>` → the primary's tupleKey: that team's duty moved to its fallback and stays there. */
+	const teamFellBack = new Map<string, string>();
+	/** Failed turns in a row, by standing member. */
+	const failStreaks = new Map<string, number>();
+	/** Standing members already switched, stopped or reported (one failover per member). */
+	const failedOver = new Set<string>();
+	/** Standing members a failover is stopping: their own settles go nowhere. */
+	const failingOver = new Set<string>();
+	/** One key per model whichever backend names it: a Claude Code tuple as the pi worker it runs as. */
+	const tupleKey = (backend: string, model: string | undefined): string | undefined => {
+		if (!model) return undefined;
+		if (backend === CLAUDE_CODE_BACKEND) {
+			try {
+				return `pi|${claudeOnPi({ backend, model, effort: "medium" }).model}`;
+			} catch {
+				return `${backend}|${model}`;
+			}
+		}
+		return `${backend}|${model}`;
+	};
+	const deadDenial = (t: { backend: string; model: string }, now = Date.now()): string | undefined => {
+		const key = tupleKey(t.backend, t.model);
+		const mark = key ? deadTuples.get(key) : undefined;
+		if (!mark || now - mark.at >= DEAD_TUPLE_MS || now < mark.at - 60_000) return undefined;
+		return `it ran out at runtime ${fmtDur(Math.max(0, now - mark.at))} ago (${mark.reason}); it is tried again from ${new Date(mark.at + DEAD_TUPLE_MS).toISOString()}`;
+	};
+	/** Mark a model out (and, on a switch, the team's duty as moved): in memory and as a session entry. */
+	const markOut = (backend: string, model: string, reason: string, team?: { teamId: string; duty: MemberDuty; primaryKey: string }) => {
+		const key = tupleKey(backend, model);
+		if (!key) return;
+		const at = Date.now();
+		const why = reason.slice(0, 500);
+		deadTuples.set(key, { reason: why, at });
+		if (team) teamFellBack.set(`${team.teamId}|${team.duty}`, team.primaryKey);
+		try {
+			pi.appendEntry(DEAD_TUPLE_ENTRY_TYPE, { version: 1, backend, model, reason: why, at, ...(team ? { teamId: team.teamId, duty: team.duty } : {}) });
+		} catch {
+			/* Kept in memory; a reload forgets it. */
+		}
+	};
+	/** The marks a session recorded, newest per model; a team's switched duties. */
+	const restoreDeadTuples = (entries: readonly unknown[]) => {
+		deadTuples.clear();
+		teamFellBack.clear();
+		for (const raw of entries) {
+			const e = raw as { type?: unknown; customType?: unknown; data?: unknown };
+			if (e?.type !== "custom" || e.customType !== DEAD_TUPLE_ENTRY_TYPE) continue;
+			const d = e.data as { version?: unknown; backend?: unknown; model?: unknown; reason?: unknown; at?: unknown; teamId?: unknown; duty?: unknown } | null;
+			if (!d || d.version !== 1 || typeof d.backend !== "string" || typeof d.model !== "string" || typeof d.at !== "number" || !Number.isFinite(d.at)) continue;
+			const key = tupleKey(d.backend, d.model);
+			if (!key) continue;
+			const was = deadTuples.get(key);
+			if (!was || was.at <= d.at) deadTuples.set(key, { reason: typeof d.reason === "string" ? d.reason.slice(0, 500) : "out of usage", at: d.at });
+			if (typeof d.teamId === "string" && (d.duty === "coordinator" || d.duty === "monitor")) teamFellBack.set(`${d.teamId}|${d.duty}`, key);
+		}
+	};
+	/** The model a member runs on, as a tupleKey. */
+	const runningKey = (a: Worker, m: PersistedMember): string | undefined => {
+		const model = launches.get(a)?.model ?? m.model ?? a.model;
+		return tupleKey(model?.startsWith("claude-code-cli/") ? "pi" : m.backend, model);
+	};
+	/** Why a team's duty skips its primary for good: it moved to the fallback during this team. */
+	const fellBackDenial = (teamId: string, duty: MemberDuty, primary: WorkerTuple): string | undefined =>
+		teamFellBack.get(`${teamId}|${duty}`) === tupleKey(primary.backend, primary.model) ? `this team's ${duty} moved to its fallback when this primary failed, and stays on it` : undefined;
 	/** Why a team-defaults tuple cannot start here, by the checks spawnBatch applies; undefined when it can. */
 	const tupleDenial = (ctx: ExtensionContext, t: WorkerTuple): string | undefined => {
+		const dead = deadDenial(t);
+		if (dead) return dead;
 		const policy = readPolicy(options.policyFile);
 		if (t.backend === CLAUDE_CODE_BACKEND) {
 			const denied = policyDenial(policy, CLAUDE_CODE_BACKEND, claudeBareId(t.model));
@@ -1991,8 +2071,8 @@ export function registerSubagents(
 	};
 	const tupleText = (t: WorkerTuple) => `${t.backend}/${t.model}${t.effort ? `/${t.effort}` : ""}`;
 	/** Primary, else fallback; neither → the team is refused, naming both reasons. */
-	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null): { tuple: WorkerTuple; line: string } => {
-		const first = tupleDenial(ctx, primary);
+	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null, primaryDenied?: string): { tuple: WorkerTuple; line: string } => {
+		const first = primaryDenied ?? tupleDenial(ctx, primary);
 		if (!first) return { tuple: primary, line: `Team defaults: ${duty} ${role} added on ${tupleText(primary)} (primary).` };
 		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is configured";
 		if (fallback && !second) return { tuple: fallback, line: `Team defaults: ${duty} ${role} added on ${tupleText(fallback)} (fallback; primary ${tupleText(primary)} refused: ${first}).` };
@@ -3757,8 +3837,10 @@ export function registerSubagents(
 	/** Spawn the successor itself; `missing` says why its predecessor's note may not be there. */
 	const spawnSuccessor = async (
 		team: { id: string; name: string }, target: PersistedMember, me: PersistedMember, note: string, retireMinutes: number, missing?: string,
-		/** Who started it: the routing coordinator (team_succeed), or the main chat replacing an ended coordinator or monitor. */
-		source: "orchestrator" | "parent" = "orchestrator",
+		/** Who started it: the routing coordinator (team_succeed), the main chat replacing an ended coordinator or monitor, or a runtime fallback. */
+		source: "orchestrator" | "parent" | "system" = "orchestrator",
+		/** A runtime fallback (§teams.defaults/runtime-fallback): the primary it left and why, for the handover event. */
+		failover?: { primary: string; reason: string },
 	): Promise<{ text: string; successorId: string }> => {
 		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
 		const old = agents.find((a) => a.id === target.workerId);
@@ -3799,7 +3881,7 @@ export function registerSubagents(
 		if (!explicit?.model) {
 			const standing = target.duty && defaults?.[target.duty];
 			if (standing?.enabled) {
-				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback);
+				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback, fellBackDenial(team.id, target.duty!, standing.primary));
 				input.backend = pick.tuple.backend;
 				input.model = pick.tuple.model;
 				input.effort = pick.tuple.effort;
@@ -3827,7 +3909,9 @@ export function registerSubagents(
 			prepared.release();
 		}
 		const successor = added.group.agents[0];
-		const detail = `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
+		const detail = failover
+			? `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; fallback: primary ${failover.primary} ${failover.reason}`
+			: `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
 		appendTeamEvent(team.id, "handover", target, detail);
 		/** Whether the live old member took the "your successor has started" instruction: the result says so only when it did. */
 		let told: SteerResult | undefined;
@@ -3862,6 +3946,181 @@ export function registerSubagents(
 			// N8: the coordinator is shown, unasked, that these are the successor's binding assignment.
 			steers.length ? `\n${bindingSteersLabel(role, `${target.role} (${target.workerId})`)}\n${steers.map((t) => `> ${steerPreview(t)}`).join("\n")}` : ""}${memberNotes.length ? `\n${memberNotes.join("\n")}` : ""}`;
 		return { text, successorId: successor.id };
+	};
+	/** "Monitor", "Coordinator", or "Monitor watcher" for a role named apart from its duty. */
+	const dutyTitle = (duty: MemberDuty, role: string) => {
+		const title = duty === "monitor" ? "Monitor" : "Coordinator";
+		return role.toLowerCase() === duty ? title : `${title} ${role}`;
+	};
+	const firstErrorLine = (error: string | undefined) => {
+		const line = (error ?? "").split("\n").find((l) => l.trim())?.trim() ?? "";
+		return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+	};
+	const toMainChatNotice = (content: string) => {
+		try {
+			pi.sendMessage({ customType: TEAM_NOTICE_TYPE, display: true, content }, { deliverAs: "followUp", triggerTurn: false });
+		} catch {
+			/* Session replacement can invalidate the message API. */
+		}
+	};
+	const toastWarning = (text: string) => {
+		if (!activeCtx || !["tui", "rpc"].includes(activeCtx.mode)) return;
+		try {
+			activeCtx.ui.notify(text, "warning");
+		} catch {
+			/* Session replacement can invalidate the UI. */
+		}
+	};
+	/**
+	 * A standing member's settle, read before it is routed (§teams.defaults/runtime-fallback): a
+	 * failed turn that is out of usage, or the 3rd failed turn in a row, moves a coordinator or
+	 * monitor running its role's primary to the fallback (or stops/reports it when none can run).
+	 * True when the settle is handled here and must not be routed.
+	 */
+	const standingSettle = (a: Worker): boolean => {
+		if (failingOver.has(a.id)) return true;
+		const info = teams.memberInfo(a.id);
+		const duty = info?.member.duty;
+		if (!info || !duty || !info.team.coordination) return false;
+		const stopped = a.status === "killed" || a.status === "stopping" || a.taskOutcome === "aborted";
+		if (stopped) return false;
+		if (a.taskOutcome !== "error" && a.status !== "error") {
+			failStreaks.delete(a.id);
+			return false;
+		}
+		const streak = (failStreaks.get(a.id) ?? 0) + 1;
+		failStreaks.set(a.id, streak);
+		const out = usageOut(a.error);
+		const model = launches.get(a)?.model ?? info.member.model ?? a.model;
+		const backend = model?.startsWith("claude-code-cli/") ? "pi" : info.member.backend;
+		// Out of usage is a fact about the model, whoever runs it: new teams skip it for the hour.
+		if (out && model) markOut(backend, model, out.reason);
+		const reason = out ? out.reason : streak >= FAILOVER_STREAK ? `failed ${streak} turns in a row` : undefined;
+		const rearm = () => {
+			if (duty === "monitor") rearmMonitor(a);
+			return false;
+		};
+		if (!reason || failedOver.has(a.id)) return rearm();
+		let origin: string | undefined;
+		try {
+			origin = teams.find(info.team.id).origin;
+		} catch {
+			origin = undefined;
+		}
+		if (origin !== "session") return rearm();
+		if (pendingSuccessions.has(a.id) || [...handovers.values()].some((h) => h.oldId === a.id || h.newId === a.id)) return rearm();
+		const state = subagentsNow().teams;
+		const standing = state.state === "ok" ? state.value[duty] : undefined;
+		if (!standing?.enabled || runningKey(a, info.member) !== tupleKey(standing.primary.backend, standing.primary.model)) return rearm();
+		failedOver.add(a.id);
+		const error = firstErrorLine(a.error);
+		void failover(a, { id: info.team.id, name: info.team.name }, info.member, duty, standing.primary, standing.fallback, { reason, error, out: Boolean(out), backend, model: model ?? standing.primary.model });
+		return true;
+	};
+	/** A failed monitor check that moved nothing: its next check is scheduled by the parent, so it never goes silent. */
+	const rearmMonitor = (a: Worker) => {
+		if (a.isFinished() || !isLiveWorker(a.id)) return;
+		const state = nudgeState(a.id);
+		if (state.active.size || state.held) return;
+		const cfg = teamDefaultsNow();
+		const every = cfg.state === "ok" ? cfg.value.monitor.everyMinutes : 10;
+		const now = Date.now();
+		const id = `n${++state.seq}`;
+		const n: PendingNudge = { id, reason: "next check, scheduled by Sova after a failed check", fireAt: now + every * 60_000, createdAt: now };
+		n.timer = coordinationTimer(() => fireNudge(a.id, id), every * 60_000);
+		state.active.set(id, n);
+		saveNudges();
+		teams.settleAction(teams.recordAction(a.id, "followUp", "system", `next check re-armed in ${every} min after a failed check`), "accepted-or-queued");
+		scheduleRefresh();
+	};
+	const failover = async (
+		a: Worker, team: { id: string; name: string }, member: PersistedMember, duty: MemberDuty,
+		primary: WorkerTuple, fallback: WorkerTuple | null,
+		why: { reason: string; error: string; out: boolean; backend: string; model: string },
+	) => {
+		const ctx = activeCtx;
+		if (!ctx || shuttingDown) return;
+		const primaryText = tupleText(primary);
+		const primaryKey = tupleKey(primary.backend, primary.model)!;
+		const said = `${why.reason}${why.error ? ` (${why.error})` : ""}`;
+		const title = dutyTitle(duty, member.role);
+		const fallbackDenial = fallback ? tupleDenial(ctx, fallback) : "no fallback is set";
+		if (fallbackDenial) {
+			// Nothing to move to. A failure that wasn't about usage is still the model's, for this team.
+			if (!why.out) markOut(why.backend, why.model, why.reason);
+			const reasonLine = fallback ? `its fallback ${tupleText(fallback)} can't run (${fallbackDenial})` : "no fallback is set";
+			if (duty === "monitor") {
+				failingOver.add(a.id);
+				try {
+					await killWorker(a, `stopped: primary ${primaryText} ${why.reason}; ${reasonLine}`, "system");
+				} catch {
+					/* Its status says what happened. */
+				} finally {
+					failingOver.delete(a.id);
+				}
+				const text = `${title} ${member.role} (${member.workerId}) in ${team.id} stopped: its primary ${primaryText} ${said}, and ${reasonLine}. The team has no monitor now; the main chat can start one with team_succeed { team: "${team.id}", role: "${member.role}" } once a fallback is set.`;
+				const routing = teams.routingCoordinator(team.id, isLiveWorker);
+				if (routing) {
+					const queued = queueItem(routing, { kind: "notice", body: `[Monitor stopped in ${team.id}]\n${text}`, subject: `${title} stopped: ${primaryText} ${why.reason}` });
+					teams.settleAction(teams.recordAction(queued.ok ? queued.to.workerId : routing.workerId, "message", "system", text), queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason);
+				}
+				toMainChatNotice(text);
+				toastWarning(`${title} stopped: ${primaryText} ${why.reason}.`);
+			} else {
+				const text = `${title} ${member.role} (${member.workerId}) in ${team.id} can't run: its primary ${primaryText} ${said}, and ${reasonLine}. It keeps running and fails each turn until its model has usage again. To replace it: set a fallback in Settings → Subagents → Teams, stop it with agent_kill { id: "${member.workerId}" }, then start its successor with team_succeed { team: "${team.id}", role: "${member.role}" }.`;
+				teams.settleAction(teams.recordAction(member.workerId, "handover", "system", text), "failed", reasonLine);
+				toMainChatNotice(text);
+				toastWarning(`${title} can't run: ${primaryText} ${why.reason}.`);
+			}
+			scheduleRefresh();
+			return;
+		}
+		// The primary is out, so the successor's tuple check picks the fallback; the team stays on it.
+		markOut(why.backend, why.model, why.reason, { teamId: team.id, duty, primaryKey });
+		failingOver.add(a.id);
+		// Its open items wait for the successor (endInbox at onExit must not return them meanwhile).
+		succeeding.add(a.id);
+		let successorId: string | undefined;
+		let text: string;
+		try {
+			try {
+				await killWorker(a, `fallback: primary ${primaryText} ${why.reason}`, "system");
+			} catch {
+				/* checkReplacement says whether it ended. */
+			}
+			const coordination = teams.memberInfo(a.id)?.team.coordination;
+			if (!coordination) throw new Error(`${team.id} is no longer a coordinated team of this session`);
+			const { target } = teams.checkReplacement(team.id, a.id, notEnded);
+			// Its seat first: a full team still gets the successor.
+			if (teams.ejectedAt(a.id) === undefined) ejectMember(team.id, a.id, "system");
+			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
+			const missing = duty === "monitor" ? undefined : `${target.role} stopped when its primary ${primaryText} ${why.reason}, without writing a handover note`;
+			const state = teamDefaultsNow();
+			const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "system", { primary: primaryText, reason: said });
+			successorId = started.successorId;
+			const successor = agents.find((w) => w.id === successorId);
+			const fallbackModel = successor?.model ?? fallback!.model;
+			text = `${title} moved to its fallback ${fallback!.model}: ${why.model} ${why.reason}.`;
+			const routing = teams.routingCoordinator(team.id, isLiveWorker);
+			if (routing && routing.workerId !== successorId) {
+				const body = [`[Handover in ${team.id}: ${member.role} moved to its fallback]`, `${text} Its successor ${started.text.match(/^Started (\S+ \(ag_\d+\))/)?.[1] ?? successorId} runs on ${fallbackModel}${why.error ? `; the error was: ${why.error}` : ""}. Nothing is needed from you.`].join("\n");
+				const queued = queueItem(routing, { kind: "handover", body, subject: `Handover: ${member.role} moved to its fallback; successor ${successorId}` });
+				teams.settleAction(teams.recordAction(queued.ok ? queued.to.workerId : routing.workerId, "message", "system", body), queued.ok ? "accepted-or-queued" : "failed", queued.ok ? undefined : queued.reason);
+			}
+			toastWarning(text);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			text = `${title} ${member.role} (${member.workerId}) in ${team.id} stopped when its primary ${primaryText} ${said}, but its successor on the fallback ${tupleText(fallback!)} could not start: ${reason}. Start one with team_succeed { team: "${team.id}", role: "${member.role}" }.`;
+			teams.settleAction(teams.recordAction(member.workerId, "handover", "system", text), "failed", reason);
+			toMainChatNotice(text);
+		} finally {
+			succeeding.delete(a.id);
+			failingOver.delete(a.id);
+		}
+		// Nothing took its items: back to their senders.
+		if (!successorId && !isLiveWorker(a.id)) endInbox(a.id, "ended");
+		scheduleRefresh();
 	};
 	pi.registerTool({
 		name: "team_create",
@@ -4431,6 +4690,10 @@ export function registerSubagents(
 		// IDs are reserved across every branch; displayed history only from the active one.
 		teams.reserveCounter(ctx.sessionManager.getEntries());
 		teams.restoreHistory(ctx.sessionManager.getBranch?.() ?? []);
+		// Models that ran out of usage stay out for their hour across a reload (§teams.defaults/runtime-fallback).
+		restoreDeadTuples(ctx.sessionManager.getEntries());
+		failStreaks.clear();
+		failedOver.clear();
 		// A paused team stays paused across a reload: its resume check must still fire while it is idle.
 		pausedTeams.clear();
 		for (const teamId of pausedTeamsFrom(ctx.sessionManager.getBranch?.() ?? [])) pausedTeams.add(teamId);

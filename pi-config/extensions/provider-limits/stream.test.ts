@@ -134,6 +134,17 @@ test("after 5 re-queues the 429 reaches pi unchanged; a quota 429 and a 429 afte
 	const quota = scripted([() => fail("429 You exceeded your current quota")], { slots: [] }, dir);
 	await collect(gateStreamSimple(quota, { agentDir: () => dir, retry: true, sleep: async () => {} })(model, { messages: [] } as any));
 	assert.equal(quota.calls, 1);
+	// Ollama's monthly usage limit is out of usage, not a rate limit: never re-queued (§app.provider-limits/rate-limit).
+	for (const text of [
+		'429: {"message":"you (alex) have reached your monthly usage limit, add usage credits: …"}',
+		'429: {"message":"you (alex) have reached your monthly usage limit, upgrade for higher limits"}',
+		'429: {"message":"you have reached your weekly usage limit"}',
+	]) {
+		const monthly = scripted([() => fail(text)], { slots: [] }, dir);
+		const out = await collect(gateStreamSimple(monthly, { agentDir: () => dir, retry: true, sleep: async () => {} })(model, { messages: [] } as any));
+		assert.equal(monthly.calls, 1, text);
+		assert.equal((out[0] as any).error.errorMessage, text, "it reaches pi unchanged");
+	}
 
 	const midway = scripted([() => [...ok().slice(0, 3), ...fail(RATE)]], { slots: [] }, dir);
 	const partial = await collect(gateStreamSimple(midway, { agentDir: () => dir, retry: true, sleep: async () => {} })(model, { messages: [] } as any));

@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/reports.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decodeTeamEventData, parseReport, parseTeamMessage, teamEventOf, teamEventText } from "./reports";
+import { decodeTeamEventData, handoverSuccessor, parseReport, parseTeamMessage, teamEventOf, teamEventText } from "./reports";
 
 const report = (...lines: string[]) => parseReport("subagent-complete", lines.join("\n"));
 const HEAD = "### ag_01 (ui-review) — done · task success";
@@ -140,6 +140,11 @@ test("team events: every kind decodes to one sentence", () => {
   };
   assert.equal(text(ev("handover", "successor writer-2 (ag_04) on pi/zai/glm-5.3-flash; retire on team_ready or after 2 min")), "writer handed over to writer-2 (ag_04).");
   assert.equal(text(ev("handover", "something else")), "writer is handing over to a successor.");
+  // A runtime fallback (§teams.defaults/runtime-fallback): one line naming the fallback and why, the successor still found.
+  const fell = ev("handover", 'successor monitor-2 (ag_05) on pi/claude-code-cli/claude-sonnet-5-5; fallback: primary pi/ollama-cloud/deepseek-v4.1-flash/low hit its monthly usage limit (429: {"message":"you (x) have reached your monthly usage limit"})', { role: "monitor" });
+  assert.equal(text(fell), "Monitor moved to its fallback claude-sonnet-5-5: deepseek-v4.1-flash hit its monthly usage limit.");
+  assert.deepEqual(handoverSuccessor(decodeTeamEventData(fell)!), { role: "monitor-2", workerId: "ag_05" });
+  assert.equal(text(ev("handover", "successor coordinator-2 (ag_06) on pi/zai/glm-5.3; fallback: primary claude-code/opus[1m]/medium failed 3 turns in a row", { role: "coordinator" })), "Coordinator moved to its fallback glm-5.3: opus[1m] failed 3 turns in a row.");
   assert.equal(text(ev("retire", "retired: successor writer-2 (ag_04) confirmed the takeover")), "writer retired. writer-2 confirmed the takeover.");
   assert.equal(text(ev("retire", "retired: handover to monitor-2 (ag_05) timed out")), "writer retired. The handover to monitor-2 timed out.");
   assert.equal(text(ev("retire")), "writer retired.");

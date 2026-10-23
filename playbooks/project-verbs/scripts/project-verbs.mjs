@@ -178,7 +178,7 @@ async function loadContract() {
 }
 
 let slotsModule;
-/** Sova's slot-limit module (the one reader of the copy limit in force), or null outside a Sova checkout. */
+/** Sova's slot module (the fixed slot layout), or null outside a Sova checkout. */
 async function loadSlots() {
   if (slotsModule !== undefined) return slotsModule;
   try {
@@ -713,10 +713,10 @@ export async function check(file, root) {
   }
   const listen = new Map(listening().map((l) => [l.port, l]));
   const held = sovaHeld().ports;
-  // Every slot a copy may take (§app.project-services/instances): up to 2 × cap + 2 of the limit in force (the main
-  // checkout's saved file), or of this file's own cap when it raises it (it is main's once it lands).
+  // Every slot an instance may take (§app.project-services/instances): the copies' fixed range and
+  // conformance's scratch slots, whatever the copy limit.
   const slots = await loadSlots();
-  const top = slots ? Math.max(slots.slotLimitOf(mainOf(root ?? dirname(resolve(file))), def).top, slots.slotPlan(def.slots.cap).top) : def.slots.cap + 2;
+  const top = slots?.SLOT_LAYOUT?.top ?? 18;
   for (const s of def.services) {
     const at = `$.services.${s.name}`;
     if (takesIsolation && !isObj(raw.services?.[s.name]?.isolation)) problems.push(`${at}.isolation: record {method, why} (references/isolation.md)`);

@@ -11,12 +11,12 @@ Servers, watchers and REPLs that keep no state outside the checkout: the copy's 
 its own ports. `scope: "checkout"`, every port `{base, stride}`.
 - **base** = today's literal, so slot 0 keeps exactly the port the main checkout uses now.
 - **stride** ≥ 10 when a service has several ports (base 4000 stride 10 gives 4000, 4010, 4020…),
-  and wide enough that no two declared ports' ranges meet over slots 0…cap+2 (the parser refuses
+  and wide enough that no two declared ports' ranges meet over slots 0…18 (the parser refuses
   a meeting).
 - Declare a port only when the service listens on it for as long as it runs: conformance checks
   each one is held by the service. A port a config names but nothing opens (a disabled console)
   stays out of `ports`.
-- Check every slot from 1 to cap+2 against `inspect`'s "listening now" and "held by Sova
+- Check every slot from 1 to 18 against `inspect`'s "listening now" and "held by Sova
   instances": `check` reports a collision. Move the base (keep slot 0's literal by choosing the
   stride) rather than hope the port is free later.
 - An app that reads a port from a file or a literal needs the adapter: an env read

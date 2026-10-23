@@ -78,8 +78,8 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
     id: "trust-grants",
     label: "Trust grants",
-    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval) and applying a settings card with its approvals (§app.project-overseer/settings): the operator's own grant of trust, never an action a script or an agent runs.",
-    matches: (m, p) => m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply"),
+    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
+    matches: (m, p) => (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply")) || (m === "PUT" && p === "/api/projects/:pid/services/limit"),
   },
   {
     id: "middleware",

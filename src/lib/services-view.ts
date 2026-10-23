@@ -1,7 +1,7 @@
 // The Branches tab and Running branches (§app.project-services/services-ui) as words. Pure: no Solid, no DOM.
 
 import type { InstanceState, LinkView, ServiceState, VerbResult } from "../../shared/project-contract";
-import type { CopyView, EntryView, ServiceRowView } from "../../shared/services-view";
+import type { CopyLimitView, CopyView, EntryView, ServiceRowView } from "../../shared/services-view";
 import { bytesWord, type ChipTone } from "./project-software";
 import { expiresWord } from "./session-shares";
 
@@ -201,3 +201,42 @@ export function copyChip(state: InstanceState, starting: boolean): { word: strin
 
 /** The line under an adopted main's row. */
 export const adoptedLine = (unit: string): string => `Runs as ${unit}; Apply schedules a guarded restart.`;
+
+// ---- the copy limit (§app.project-services/services-ui) ---------------------------------------------------
+
+/** Memory in the cost line's words: one decimal under 10 GB, whole gigabytes above ("2.6 GB", "31 GB"). */
+export function gbWord(bytes: number): string {
+  const gb = bytes / 1e9;
+  if (gb < 0.1) return bytesWord(bytes);
+  return gb < 10 ? `${gb.toFixed(1)} GB` : `${Math.round(gb)} GB`;
+}
+
+/** The tab's opening line: "3 copies on this host, 2 running · up to 12 at once on this machine". */
+export const limitLine = (l: Pick<CopyLimitView, "copies" | "running" | "value">): string =>
+  `${l.copies === 1 ? "1 copy" : `${l.copies} copies`} on this host, ${l.running} running · up to ${l.value} at once on this machine`;
+
+/** Where the limit comes from, in words. */
+export const limitSource = (l: Pick<CopyLimitView, "source">): string => (l.source === "machine" ? "set on this machine" : "from the project's file");
+
+/** The editor's hint: what the project's file says. */
+export const limitHint = (l: Pick<CopyLimitView, "file">): string => (l.file === null ? "The project's file sets none: 4 applies." : `The project's file says ${l.file}.`);
+
+/** Why a typed limit can't be saved, or null. */
+export function limitInputProblem(text: string): string | null {
+  const n = Number(text.trim());
+  return text.trim() && Number.isInteger(n) && n >= 1 && n <= 16 ? null : "The copy limit is a whole number from 1 to 16.";
+}
+
+/** The cost line under the limit, and whether it warns (the copies at the limit need more than is available now). */
+export function costLine(l: Pick<CopyLimitView, "value" | "estimate" | "host">): { text: string; warn: boolean } {
+  const host = l.host ? ` This machine: ${gbWord(l.host.totalBytes)}, ${gbWord(l.host.availableBytes)} available now.` : "";
+  const e = l.estimate;
+  if (!e) return { text: `Not measured yet: Run Again on the Software card measures it.${host}`, warn: false };
+  const total = e.steadyBytes * l.value;
+  const copies = l.value === 1 ? "1 copy needs" : `${l.value} copies need`;
+  const head =
+    e.source === "current"
+      ? `Each copy takes about ${gbWord(e.steadyBytes)} (up to ${gbWord(e.peakBytes)} at peak)`
+      : `Measured ${new Date(e.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} on an older definition: each copy took about ${gbWord(e.steadyBytes)} (up to ${gbWord(e.peakBytes)} at peak)`;
+  return { text: `${head}, so ${copies} about ${gbWord(total)}.${host}`, warn: !!l.host && total > l.host.availableBytes };
+}

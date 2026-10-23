@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
+import { adoptedLine, copyChip, costLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -130,4 +130,28 @@ test("with Open on the row, Open is the one plain weight: the state's verb joins
   // Without Open the row is as it was: the state's verb plain.
   assert.deepEqual(verbGroups(running), { primary: "up", quiet: ["down", "apply"], destructive: ["reset", "teardown"] });
   assert.deepEqual(verbGroups(running, false), verbGroups(running));
+});
+
+test("the copy limit in words: the opening line, its source, the hint, the input check and the cost line", () => {
+  assert.equal(limitLine({ copies: 3, running: 2, value: 12 }), "3 copies on this host, 2 running · up to 12 at once on this machine");
+  assert.equal(limitLine({ copies: 1, running: 0, value: 4 }), "1 copy on this host, 0 running · up to 4 at once on this machine");
+  assert.equal(limitSource({ source: "machine" }), "set on this machine");
+  assert.equal(limitSource({ source: "file" }), "from the project's file");
+  assert.equal(limitHint({ file: 4 }), "The project's file says 4.");
+  assert.equal(limitHint({ file: null }), "The project's file sets none: 4 applies.");
+  for (const bad of ["", "0", "17", "2.5", "x"]) assert.equal(limitInputProblem(bad), "The copy limit is a whole number from 1 to 16.", bad);
+  for (const good of ["1", "16", " 12 "]) assert.equal(limitInputProblem(good), null, good);
+  const host = { totalBytes: 121e9, availableBytes: 30e9 };
+  assert.deepEqual(costLine({ value: 12, host, estimate: { steadyBytes: 2.6e9, peakBytes: 3.9e9, source: "current", at: "2026-10-20T10:00:00Z" } }), {
+    text: "Each copy takes about 2.6 GB (up to 3.9 GB at peak), so 12 copies need about 31 GB. This machine: 121 GB, 30 GB available now.",
+    warn: true,
+  });
+  assert.equal(costLine({ value: 4, host, estimate: { steadyBytes: 2.6e9, peakBytes: 3.9e9, source: "current", at: "x" } }).warn, false, "10 GB of 30 available: no warning");
+  assert.equal(
+    costLine({ value: 1, host, estimate: { steadyBytes: 1.5e9, peakBytes: 1.5e9, source: "older", at: "2026-10-10T10:00:00Z" } }).text,
+    "Measured Oct 10 on an older definition: each copy took about 1.5 GB (up to 1.5 GB at peak), so 1 copy needs about 1.5 GB. This machine: 121 GB, 30 GB available now.",
+  );
+  assert.deepEqual(costLine({ value: 4, host, estimate: null }), { text: "Not measured yet: Run Again on the Software card measures it. This machine: 121 GB, 30 GB available now.", warn: false });
+  assert.equal(gbWord(800e6), "0.8 GB");
+  assert.equal(gbWord(40e6), "40 MB");
 });

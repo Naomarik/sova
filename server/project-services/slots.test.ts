@@ -5,19 +5,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { exitOf, type VerbResult } from "../../shared/project-contract";
-import { numberedPorts, slotLimitOf, slotPlan } from "../../shared/project-slots";
+import { copyLimitOf, numberedPorts, overLimitSentence, SLOT_LAYOUT } from "../../shared/project-slots";
 import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
+import { machineCopyLimit, setMachineCopyLimit } from "./copy-limit";
 import { readRegistry } from "./store";
 
 /**
- * The copy limit and port numbering in force (§app.project-services/instances): the main checkout's
- * saved `.sova/project.json`, never a worktree's or HEAD's; the search past blocked slots, the scratch
- * slots it skips, `cap-reached` and `slots-blocked`; a bare create/up from the main checkout
- * (§app.project-services/callers); and conformance's scratch slots under a raised, uncommitted limit
- * (§app.project-services/conform). On a host in memory (fake-host.ts) with real git.
+ * Slots, port numbering and the copy limit (§app.project-services/instances): copies take slots from
+ * the fixed range 1 to 16 and conformance 17 and 18, whatever the limit; the port numbering is the main
+ * checkout's saved `.sova/project.json`, never a worktree's or HEAD's; the limit in force is this
+ * machine's own value, else that file's, and counts running copies only; `cap-reached` at create and at
+ * the start of a copy that runs nothing, `slots-blocked`; a bare create/up from the main checkout
+ * (§app.project-services/callers); conformance's scratch slots (§app.project-services/conform).
+ * On a host in memory (fake-host.ts) with real git.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-slots-agent-"));
@@ -60,37 +63,100 @@ const ok = (r: VerbResult) => {
   return r;
 };
 
-test("slotPlan: scratch slots are cap + 1 and cap + 2; ordinary copies search 1 to 2 × cap + 2 around them", () => {
-  assert.deepEqual(slotPlan(2), { cap: 2, scratch: [3, 4], top: 6, ordinary: [1, 2, 5, 6] });
-  assert.deepEqual(slotPlan(12).scratch, [13, 14]);
-  assert.equal(slotPlan(16).top, 34);
+test("the layout is fixed: copies search 1 to 16, conformance alone takes 17 and 18", () => {
+  assert.deepEqual(SLOT_LAYOUT.ordinary, Array.from({ length: 16 }, (_, i) => i + 1));
+  assert.deepEqual(SLOT_LAYOUT.scratch, [17, 18]);
+  assert.equal(SLOT_LAYOUT.top, 18);
 });
 
-test("slotLimitOf reads the main checkout's saved file, else the definition in use, else the default", () => {
+test("copyLimitOf: this machine's value, else the main checkout's saved file, else the definition in use, else 4", () => {
   const main = parseDefinition(JSON.stringify(defOf(12, 30_000)));
   const inUse = parseDefinition(JSON.stringify(defOf(4, 31_000)));
-  const saved = slotLimitOf("/m", inUse, () => JSON.stringify(defOf(12, 30_000)));
-  assert.equal(saved.cap, 12);
-  assert.match(saved.from, /the main checkout's \.sova\/project\.json \(\/m\/\.sova\/project\.json, as saved\)/);
+  const read = () => JSON.stringify(defOf(12, 30_000));
+  const saved = copyLimitOf("/m", { inUse, read });
+  assert.deepEqual([saved.cap, saved.source, saved.fileCap], [12, "file", 12]);
+  assert.match(saved.from, /from the project's file \(the main checkout's \.sova\/project\.json, as saved\)/);
   assert.deepEqual(numberedPorts(inUse, saved.numbering, 3), { web: { http: 30_003 } }, "main's numbering wins");
-  const missing = slotLimitOf("/m", inUse, () => {
-    throw Object.assign(new Error("no"), { code: "ENOENT" });
+  const machine = copyLimitOf("/m", { inUse, read, machine: 3 });
+  assert.deepEqual([machine.cap, machine.source, machine.from, machine.fileCap], [3, "machine", "set on this machine", 12]);
+  assert.deepEqual(numberedPorts(inUse, machine.numbering, 3), { web: { http: 30_003 } }, "the machine's value numbers nothing");
+  const missing = copyLimitOf("/m", {
+    inUse,
+    read: () => {
+      throw Object.assign(new Error("no"), { code: "ENOENT" });
+    },
   });
-  assert.equal(missing.cap, 4);
+  assert.deepEqual([missing.cap, missing.source, missing.fileCap, missing.numbering], [4, "in-use", null, null]);
   assert.match(missing.from, /the definition in use \(the main checkout's \.sova\/project\.json is missing\)/);
-  assert.equal(missing.numbering, null);
-  assert.equal(slotLimitOf("/m", null, () => "{not json").cap, 4);
-  assert.match(slotLimitOf("/m", null, () => "{not json").from, /is invalid/);
+  const broken = copyLimitOf("/m", { read: () => "{not json" });
+  assert.deepEqual([broken.cap, broken.source], [4, "default"]);
+  assert.match(broken.from, /is invalid/);
   // A port only the copy declares keeps its own numbering.
   const withSide = parseDefinition(JSON.stringify(defOf(4, 31_000, { side: { cmd: ["node", "web.mjs"], ports: { tcp: { base: 32_000 } } } })));
   assert.deepEqual(numberedPorts(withSide, main, 2), { web: { http: 30_002 }, side: { tcp: 32_002 } });
 });
 
-test("a worktree's own cap and port numbering are ignored: the main checkout's saved (uncommitted) definition is in force", async () => {
-  // Committed: cap 2. Saved in the main checkout, uncommitted: cap 3. The worktrees' branch says cap 1 and moves web's base.
-  const { project, git, engine } = fixture(defOf(2, 33_000), defOf(3, 33_000));
-  // Build the low branch's commit without touching the main checkout's saved file.
-  const low = JSON.stringify(defOf(1, 33_500, { side: { cmd: ["node", "web.mjs"], ports: { tcp: { base: 34_000 } } } }), null, 2);
+test("overLimitSentence: room, at the limit, and above it", () => {
+  assert.equal(overLimitSentence(1, 2), null);
+  assert.equal(overLimitSentence(12, 12), "12 copies are running, and this machine allows 12 at once: stop one first.");
+  assert.equal(overLimitSentence(1, 1), "1 copy is running, and this machine allows 1 at once: stop one first.");
+  assert.equal(overLimitSentence(14, 12), "14 running, 2 over the limit: no new copy starts until three stop.");
+  assert.equal(overLimitSentence(13, 12), "13 running, 1 over the limit: no new copy starts until two stop.");
+});
+
+test("b1: only running copies count; at the limit a stopped copy's start and a new create are refused with the sentence", async () => {
+  const { project, engine } = fixture(defOf(2, 33_000));
+  const a = ok(await engine.run("up", { project, branch: "sova/a" }, op));
+  const b = ok(await engine.run("up", { project, branch: "sova/b" }, op));
+  assert.deepEqual([a.slot, b.slot, a.state, b.state], [1, 2, "running", "running"]);
+  ok(await engine.run("down", { instance: a.instance }, op));
+  ok(await engine.run("down", { instance: b.instance }, op));
+  // Two copies exist, both stopped: they keep their places and don't count.
+  const c = ok(await engine.run("up", { project, branch: "sova/c" }, op));
+  assert.deepEqual([c.slot, c.state], [3, "running"], "a third copy is created and starts");
+  ok(await engine.run("up", { instance: a.instance }, op));
+  // Two run now (a and c): starting the stopped b is refused, and so is a new copy.
+  const startB = await engine.run("up", { instance: b.instance }, op);
+  assert.equal(startB.error?.code, "cap-reached", JSON.stringify(startB.error));
+  assert.equal(exitOf(startB), 2);
+  assert.ok(startB.error!.message.startsWith("2 copies are running, and this machine allows 2 at once: stop one first."), startB.error!.message);
+  assert.match(startB.error!.message, /Running: slot 1 \(sova\/a, .+\), slot 3 \(sova\/c, .+\)\. The limit of 2 is from the project's file/);
+  const bRec = readRegistry().instances.find((i) => i.id === b.instance)!;
+  assert.deepEqual(Object.values(bRec.desired), ["stopped"], "the refused start wanted nothing");
+  const d = await engine.run("create", { project, branch: "sova/d" }, op);
+  assert.equal(d.error?.code, "cap-reached");
+  assert.equal(readRegistry().instances.filter((i) => i.project === project).length, 3, "nothing was made");
+  // A copy that already runs is no new start: up of a running copy is fine.
+  ok(await engine.run("up", { instance: a.instance }, op));
+  ok(await engine.run("apply", { instance: a.instance }, op));
+});
+
+test("b2: this machine's limit overrides the file's (file 4, machine 12): a fifth running copy is created", async () => {
+  const { project, engine } = fixture(defOf(4, 34_000));
+  try {
+    for (const n of [1, 2, 3, 4]) ok(await engine.run("up", { project, branch: `sova/w${n}` }, op));
+    assert.equal((await engine.run("up", { project, branch: "sova/w5" }, op)).error?.code, "cap-reached", "the file's 4");
+    setMachineCopyLimit(project, 12);
+    assert.equal(machineCopyLimit(project), 12);
+    const fifth = ok(await engine.run("up", { project, branch: "sova/w5" }, op));
+    assert.deepEqual([fifth.slot, fifth.state], [5, "running"]);
+    // Lowered under what runs: nothing stops, and the next start says how far over it is.
+    setMachineCopyLimit(project, 3);
+    const regs = readRegistry().instances.filter((i) => i.project === project && i.slot !== 0);
+    assert.equal(regs.filter((i) => Object.values(i.desired).includes("running")).length, 5, "nothing was stopped");
+    const sixth = await engine.run("create", { project, branch: "sova/w6" }, op);
+    assert.equal(sixth.error?.code, "cap-reached");
+    assert.ok(sixth.error!.message.startsWith("5 running, 2 over the limit: no new copy starts until three stop."), sixth.error!.message);
+    assert.match(sixth.error!.message, /The limit of 3 is set on this machine/);
+  } finally {
+    setMachineCopyLimit(project, null);
+  }
+});
+
+test("a worktree's own port numbering is ignored: the main checkout's saved (uncommitted) definition numbers every copy", async () => {
+  // Committed: base 33500. Saved in the main checkout, uncommitted: base 33000. The worktrees' branch moves web's base and adds side.
+  const { project, git, engine } = fixture(defOf(2, 33_500), defOf(3, 33_200));
+  const low = JSON.stringify(defOf(1, 33_700, { side: { cmd: ["node", "web.mjs"], ports: { tcp: { base: 39_000 } } } }), null, 2);
   const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: project, input: low, encoding: "utf8" }).trim();
   const tree = execFileSync("git", ["mktree"], { cwd: project, input: `100644 blob ${blob}\tproject.json\n`, encoding: "utf8" }).trim();
   const top = execFileSync("git", ["ls-tree", "main"], { cwd: project, encoding: "utf8" }).split("\n").filter((l) => l && !l.endsWith("\t.sova")).join("\n");
@@ -98,56 +164,45 @@ test("a worktree's own cap and port numbering are ignored: the main checkout's s
   const commit = execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", root, "-p", "main", "-m", "low"], { cwd: project, encoding: "utf8" }).trim();
   git(["branch", "-f", "low", commit]);
   const made: VerbResult[] = [];
-  for (const n of [1, 2, 3]) made.push(ok(await engine.run("create", { project, branch: `sova/w${n}`, from: "low" }, op)));
-  assert.deepEqual(made.map((r) => r.slot), [1, 2, 3], "3 copies: main's saved cap, not the worktree's 1 nor HEAD's 2");
+  for (const n of [1, 2, 3]) made.push(ok(await engine.run("up", { project, branch: `sova/w${n}`, from: "low" }, op)));
+  assert.deepEqual(made.map((r) => r.slot), [1, 2, 3], "3 running copies: main's saved cap, not the worktree's 1 nor HEAD's 2");
   const rec = readRegistry().instances.find((i) => i.id === made[0]!.instance)!;
-  assert.deepEqual(rec.ports, { web: { http: 33_001 }, side: { tcp: 34_001 } }, "web numbered by main's base; side, which main lacks, by its own");
+  assert.deepEqual(rec.ports, { web: { http: 33_201 }, side: { tcp: 39_001 } }, "web numbered by main's saved base; side, which main lacks, by its own");
   const fourth = await engine.run("create", { project, branch: "sova/w4", from: "low" }, op);
   assert.equal(fourth.error?.code, "cap-reached");
-  assert.equal(exitOf(fourth), 2);
-  assert.match(fourth.error!.message, /the copy limit is 3 \(slots\.cap in the main checkout's \.sova\/project\.json \(.*\/demo\/\.sova\/project\.json, as saved\)\)/);
-  assert.match(fourth.error!.message, /already runs 3 copies of this project besides the main checkout's: slot 1 \(.+\), slot 2 \(.+\), slot 3 \(.+\)/);
+  assert.match(fourth.error!.message, /^3 copies are running, and this machine allows 3 at once: stop one first\./);
 });
 
-test("the search passes slots an outside listener blocks, skips the scratch slots, and refuses cap-reached once the copies number the limit", async () => {
+test("the search passes slots an outside listener blocks; an explicit slot is 1 to 16, never a scratch slot", async () => {
   const BASE = 35_000;
   const { project, host, engine } = fixture(defOf(2, BASE));
-  // cap 2: scratch slots 3 and 4; ordinary 1, 2, 5, 6.
   host.listen(BASE + 1, 4_242, "/elsewhere");
   host.listen(BASE + 2, 4_243, "/other");
   const a = ok(await engine.run("create", { project, branch: "sova/a" }, op));
-  assert.equal(a.slot, 5, "slots 1 and 2 are blocked and 3, 4 are conformance's: the next is 5");
-  const b = ok(await engine.run("create", { project, branch: "sova/b" }, op));
-  assert.equal(b.slot, 6, "a blocked slot is not counted against the limit");
-  const c = await engine.run("create", { project, branch: "sova/c" }, op);
-  assert.equal(c.error?.code, "cap-reached", JSON.stringify(c.error));
-  assert.match(c.error!.message, /the copy limit is 2/);
-  assert.match(c.error!.message, /slot 5 \(.+\), slot 6 \(.+\)/);
-  // An explicit slot: a scratch slot is never a copy's, and nothing past 2 × cap + 2.
-  ok(await engine.run("teardown", { instance: b.instance }, op));
-  const scratch = await engine.run("create", { project, branch: "sova/d", slot: 3 }, op);
+  assert.equal(a.slot, 3, "slots 1 and 2 are blocked: the next is 3, whatever the cap");
+  const scratch = await engine.run("create", { project, branch: "sova/d", slot: 17 }, op);
   assert.equal(scratch.error?.code, "invalid-request");
-  assert.match(scratch.error!.message, /slots 3 and 4 are conformance's scratch slots/);
-  const past = await engine.run("create", { project, branch: "sova/d", slot: 7 }, op);
+  assert.match(scratch.error!.message, /slot 17 is not given to a copy: slots 17 and 18 are conformance's scratch slots; copies take 1 to 16/);
+  const past = await engine.run("create", { project, branch: "sova/d", slot: 19 }, op);
   assert.equal(past.error?.code, "invalid-request");
-  assert.match(past.error!.message, /slot is at most 6 \(2 × the copy limit 2 \+ 2; the limit is slots\.cap in the main checkout's/);
+  assert.match(past.error!.message, /slot is at most 18: copies take 1 to 16/);
+  const high = ok(await engine.run("create", { project, branch: "sova/e", slot: 16 }, op));
+  assert.equal(high.slot, 16, "any slot of the fixed range, above the cap too");
 });
 
-test("every candidate slot blocked with room under the limit: slots-blocked, naming each holder", async () => {
+test("every slot of 1 to 16 blocked with room under the limit: slots-blocked, naming each holder", async () => {
   const BASE = 36_000;
   const { project, host, engine } = fixture(defOf(2, BASE));
-  for (const slot of [1, 2, 5]) host.listen(BASE + slot, 4_000 + slot, `/app${slot}`);
-  host.listen(BASE + 6, 4_006, "");
+  for (let slot = 1; slot <= 15; slot++) host.listen(BASE + slot, 4_000 + slot, `/app${slot}`);
+  host.listen(BASE + 16, 4_016, "");
   const r = await engine.run("create", { project, branch: "sova/a" }, op);
   assert.equal(r.error?.code, "slots-blocked", JSON.stringify(r.error));
   assert.equal(exitOf(r), 2);
   const m = r.error!.message;
-  assert.match(m, /Sova runs 0 of at most 2 copies of this project \(slots\.cap in the main checkout's \.sova\/project\.json/);
-  assert.match(m, /the project's copies hold: none/);
-  assert.match(m, /no slot up to 6 is free \(slots 3 and 4 are conformance's scratch slots\)/);
+  assert.match(m, /no slot of 1 to 16 is free for a copy \(slots 17 and 18 are conformance's scratch slots; the project's copies hold: none\)/);
   assert.match(m, /slot 1 needs port 36001, which pid 4001 \(\/app1\) is listening on/);
-  assert.match(m, /slot 5 needs port 36005, which pid 4005 \(\/app5\) is listening on/);
-  assert.match(m, /slot 6 needs port 36006, which pid 4006 is listening on/);
+  assert.match(m, /slot 16 needs port 36016, which pid 4016 is listening on/);
+  assert.doesNotMatch(m, /slot 17/);
   assert.equal(readRegistry().instances.filter((i) => i.project === project).length, 0, "nothing was made");
 });
 
@@ -164,27 +219,32 @@ test("a bare create/up from the main checkout names the session's tracked worktr
   ok(await engine.run("create", { project, checkout: wt.checkout! }, { kind: "session", id: "s1", root: project, own: [wt.checkout!] }));
 });
 
-test("conform under a raised, uncommitted limit: its scratch copies land above the limit in force, never in slots 1 to 12", async () => {
-  // Main checkout saved cap 12, committed cap 4; copies in slots 5 and 6 (the committed cap's scratch slots).
+test("conform takes slots 17 and 18 whatever the limit, with copies running at the limit and the limit changed", async () => {
   const BASE = 38_000;
-  const { project, engine } = fixture(defOf(4, BASE), defOf(12, BASE));
-  const five = ok(await engine.run("create", { project, branch: "sova/five", slot: 5 }, op));
-  const six = ok(await engine.run("create", { project, branch: "sova/six", slot: 6 }, op));
+  const { project, engine } = fixture(defOf(2, BASE));
+  const five = ok(await engine.run("up", { project, branch: "sova/five", slot: 5 }, op));
+  const six = ok(await engine.run("up", { project, branch: "sova/six", slot: 6 }, op));
   assert.deepEqual([five.slot, six.slot], [5, 6]);
-  const scratch: number[] = [];
+  const seen: number[][] = [];
   const run = engine.run.bind(engine);
-  engine.run = async (verb, body, caller, opts) => {
-    const r = await run(verb, body, caller, opts);
-    if (caller.kind === "conform" && (verb === "create" || verb === "up") && r.slot !== null && !scratch.includes(r.slot)) scratch.push(r.slot);
-    return r;
-  };
-  try {
-    const r = await engine.run("conform", { project }, op);
-    assert.equal(r.ok, true, JSON.stringify(r.conform?.checks.filter((c) => !c.ok)));
-    assert.deepEqual(scratch.sort((x, y) => x - y), [13, 14], "cap + 1 and cap + 2 of the main checkout's saved cap, not the committed 5 and 6");
-  } finally {
-    engine.run = run;
+  for (const machine of [null, 12]) {
+    setMachineCopyLimit(project, machine);
+    const scratch: number[] = [];
+    engine.run = async (verb, body, caller, opts) => {
+      const r = await run(verb, body, caller, opts);
+      if (caller.kind === "conform" && (verb === "create" || verb === "up") && r.slot !== null && !scratch.includes(r.slot)) scratch.push(r.slot);
+      return r;
+    };
+    try {
+      const r = await engine.run("conform", { project }, op);
+      assert.equal(r.ok, true, JSON.stringify(r.conform?.checks.filter((c) => !c.ok)));
+    } finally {
+      engine.run = run;
+    }
+    seen.push(scratch.sort((x, y) => x - y));
   }
+  setMachineCopyLimit(project, null);
+  assert.deepEqual(seen, [[17, 18], [17, 18]], "the same scratch slots under the file's 2 (both running) and the machine's 12");
   assert.deepEqual(
     readRegistry().instances.filter((i) => i.project === project).map((i) => i.slot).sort(),
     [5, 6],

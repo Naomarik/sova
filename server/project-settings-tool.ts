@@ -9,9 +9,9 @@ import { proposeSettings, settingsInfo, SettingsRefusal, withdrawCard } from "./
  */
 
 export const SETTINGS_TOOL_DESCRIPTION =
-  "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). " +
+  "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). " +
   "get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. " +
-  "propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). " +
+  "propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). " +
   "In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).";
 
 export const SETTINGS_TOOL_PARAMETERS = {
@@ -23,7 +23,7 @@ export const SETTINGS_TOOL_PARAMETERS = {
     edits: {
       type: "array",
       description: "propose: the changes, each an object naming its setting (see the description).",
-      items: { type: "object", properties: { setting: { type: "string", enum: ["overseer", "memory", "project", "profile", "playbook", "mode", "offers", "services"] } }, required: ["setting"] },
+      items: { type: "object", properties: { setting: { type: "string", enum: ["overseer", "memory", "project", "copies", "profile", "playbook", "mode", "offers", "services"] } }, required: ["setting"] },
     },
     card: { type: "string", description: "withdraw: the card's id (sc_…)." },
   },

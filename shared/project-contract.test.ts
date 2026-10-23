@@ -13,10 +13,10 @@ import {
   parseDefinition,
   portsFor,
   render,
+  SLOT_TOP,
   serviceOrder,
   type VerbResult,
 } from "./project-contract";
-import { slotPlan } from "./project-slots";
 
 const parse = (o: unknown) => parseDefinition(JSON.stringify(o));
 /** The JSON path a bad definition is refused at. */
@@ -37,7 +37,8 @@ test("a static site is one service with one port", () => {
   assert.equal(def.services[0]!.reload, "none");
   assert.deepEqual(portsFor(def, 0), { site: { http: 8731 } });
   assert.deepEqual(portsFor(def, 3), { site: { http: 8734 } });
-  assert.deepEqual(slotPlan(def.slots.cap).scratch, [5, 6]);
+  assert.deepEqual(def.slots, { cap: 4 });
+  assert.deepEqual(portsFor(def, SLOT_TOP), { site: { http: 8731 + 18 } });
 });
 
 test("a full definition parses with defaults filled in", () => {
@@ -65,7 +66,7 @@ test("a full definition parses with defaults filled in", () => {
   });
   assert.deepEqual(def.share, { endpoints: [], allow: false });
   assert.equal(def.deploy, undefined);
-  assert.equal(def.slots.cap, 2);
+  assert.deepEqual(def.slots, { cap: 2 });
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;
   assert.deepEqual(server.ready, { http: "http", path: "/api/health", timeout: 90 });
@@ -110,6 +111,27 @@ test("refusals name the JSON path of the first problem", () => {
   assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"] } }, setup: [{ id: "a", run: ["x"] }, { id: "a", run: ["y"] }] }), "$.setup");
   assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"] } }, hooks: { teardown: { run: ["x"] } } }), "$.hooks.teardown");
   assert.throws(() => parseDefinition("{not json"), (e) => e instanceof DefinitionError && e.path === "$");
+});
+
+test("ports are checked in every slot of 0 to 18, whatever the copy limit: a clash or a port past 65535 there refuses the file", () => {
+  assert.equal(SLOT_TOP, 18);
+  // web 3040 and api 3050 at stride 1 meet in slot 10 (web's 3050 is api's slot 0), far above cap + 2 of cap 4.
+  const meet = { version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3050 } } } } };
+  assert.throws(
+    () => parse(meet),
+    (e) => e instanceof DefinitionError && e.path === "$.services.web.ports.http" && /slot 10 gives it port 3050, which api\.http has in slot 0/.test(e.message),
+  );
+  assert.throws(
+    () => parse({ ...meet, slots: { cap: 1 } }),
+    (e) => e instanceof DefinitionError && /slot 10 gives it port 3050/.test(e.message),
+    "the cap moves nothing: the same clash at cap 1",
+  );
+  // 65520 + 18 is past 65535: refused, though slot cap + 2 would fit.
+  assert.throws(
+    () => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_520 } } } } }),
+    (e) => e instanceof DefinitionError && e.path === "$.services.w.ports.p" && /slot 18 would need port 65538/.test(e.message),
+  );
+  assert.doesNotThrow(() => parse({ version: 1, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3059 } } } } }), "3040..3058 and 3059.. never meet");
 });
 
 test("templates render every known variable and $$ as a literal $", () => {

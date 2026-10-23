@@ -111,8 +111,38 @@ test("Sova's own offers file parses, and gives no Sova chat the tool", () => {
   assert.deepEqual(f.offers.map((o) => [o.name, o.ok]), [["landing", true]]);
   const landing = f.offers[0]!.ok ? f.offers[0]!.def : null;
   assert.ok(landing && landing.shownBy === "another-chat");
-  assert.deepEqual(landing.buttons.map((b) => [b.label, !!b.send, b.to ?? null]), [["Land It", true, "shower"], ["Not Yet", true, null]]);
+  assert.deepEqual(
+    landing.buttons.map((b) => [b.label, !!b.send, b.to ?? null, b.onlyIf ?? [], b.landing ?? null, !!b.confirm]),
+    [
+      ["Land It", true, "shower", ["specs-promoted"], "go-ahead", false],
+      ["Merge Without Specs…", true, "shower", ["specs-left"], "go-ahead-without-specs", true],
+      ["Not Yet", true, null, [], "not-yet", false],
+    ],
+  );
+  assert.deepEqual(landing.onlyIf, ["no-open-alignment", "ready-to-land"]);
+  assert.equal(f.mainMerges, "go-ahead", "Sova's repository turns the merge guard on");
   assert.equal(snapshotOf(f), null);
+});
+
+test("mainMerges: absent or go-ahead; any other value breaks the whole file", () => {
+  const off = parseOffersFile(file({ a: offer() }));
+  assert.ok(off.state === "ok" && off.mainMerges === undefined);
+  const on = parseOffersFile(file({ a: offer() }, { mainMerges: "go-ahead" }));
+  assert.ok(on.state === "ok" && on.mainMerges === "go-ahead");
+  const bad = parseOffersFile(file({ a: offer() }, { mainMerges: true }));
+  assert.equal(bad.state, "broken");
+});
+
+test("a button's onlyIf, confirm and landing keys are checked like the offer's", () => {
+  const ok = parseOffersFile(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go {drafts}", onlyIf: ["specs-left", "specs-left"], confirm: "Sure? {drafts}", landing: "go-ahead" }] }) }));
+  assert.ok(ok.state === "ok" && ok.offers[0]!.ok);
+  const b = ok.state === "ok" && ok.offers[0]!.ok ? ok.offers[0]!.def.buttons[0]! : null;
+  assert.deepEqual(b && [b.onlyIf, b.confirm, b.landing], [["specs-left"], "Sure? {drafts}", "go-ahead"]);
+  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", onlyIf: ["nope"] }] }) }), "a"), /Unknown condition "nope"/);
+  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", landing: "maybe" }] }) }), "a"), /"landing" is one of/i);
+  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", run: "project.worktree.merge", landing: "go-ahead" }] }) }), "a"), /"landing" goes with "send" only/);
+  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", confirm: "Sure {nope}?" }] }) }), "a"), /uses \{nope\}/);
+  assert.equal(fillText("Left: {drafts}.", {}), "Left: its spec drafts.");
 });
 
 test("fills, details and the rarely-used hint", () => {

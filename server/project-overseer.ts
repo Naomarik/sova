@@ -81,6 +81,9 @@ import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
 import { OrgError } from "./org-error";
+import { goAheadFor, LANDING_REFUSAL, mergeNeedsGoAhead, recordGoAhead } from "../pi-config/extensions/worktrees/landing.ts";
+import { runGit } from "../pi-config/extensions/worktrees/git.ts";
+import { landingFileOf } from "./session-offers";
 import {
   ceilingOf,
   contributedBlockers,
@@ -1142,9 +1145,32 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
   return path;
 }
 
+/**
+ * The merge guard on Merge Branch (§chat.worktrees/merge-guard): in a project whose offers file, as the
+ * target branch holds it, says `"mainMerges": "go-ahead"`, a merge into main or master needs the user's
+ * go-ahead for the branch at its current head. Pressed on the operator's own page (`byPage`), the press
+ * is that go-ahead, and is recorded; asked any other way, it is refused without one.
+ */
+async function landingGuard(projectId: string, sessionId: unknown, byPage: boolean): Promise<void> {
+  if (typeof sessionId !== "string" || !sessionId) return;
+  const row = readBuild(projectId, sessionId);
+  if (!row) return;
+  const root = projectOf(projectId).root;
+  const w = await withWorktreePath(row, root).catch(() => null);
+  if (!w) return;
+  const { branch, target } = w.worktree;
+  if (!(await mergeNeedsGoAhead(runGit, root, target))) return;
+  const r = await runGit(["rev-parse", "--verify", "-q", `refs/heads/${branch}^{commit}`], root);
+  const head = r.code === 0 ? r.stdout.trim() : "";
+  if (!head) return;
+  if (byPage) return recordGoAhead({ branch, commit: head, session: sessionId, at: new Date().toISOString(), by: "page" }, landingFileOf());
+  if (!goAheadFor(branch, head, landingFileOf())) throw new OrgError(LANDING_REFUSAL, 409);
+}
+
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown, opts: { byPage: boolean } = { byPage: false }): Promise<ProjectWorktrees> {
   projectOf(projectId);
+  await landingGuard(projectId, sessionId, opts.byPage);
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
   // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
   await worktreeAct(projectId, sessionId, "build/merge");

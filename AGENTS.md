@@ -53,7 +53,8 @@ also update Y" list live in its guide: read the guide of every area your task to
 - Feature work never edits `~/webapps/sova`, the live tree. Each feature session works in its own
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses
   the `worktree` tool, whose `create <name>` does exactly that and tracks it so its workers may start
-  there); only a release merges it into master. Uncommitted edits in the live tree block a release.
+  there); a branch lands through its landing card (the merge captain lands it on your Land It; see
+  **Landing**). Uncommitted edits in the live tree block a release.
   One exception: applying a Project Overseer's Settings change card on Sova's own project
   (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
   at the operator's click; Sova refuses it when it would touch anything but settings files.
@@ -74,6 +75,24 @@ also update Y" list live in its guide: read the guide of every area your task to
   landing gate the merge round runs.
 - Editing `statecharts/`: start `pnpm statecharts:watch` first and run `pnpm statecharts:test`; never
   cold-compile in a loop (statecharts guide).
+
+## Landing
+
+- **Ready to land** is Sova's own reading of a branch's head commit: no uncommitted files at all, no
+  conflicts with master, the newest checks not failing, no open alignment questions, the session
+  idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
+  alone). It holds for that commit until the branch changes or lands.
+- **Who merges.** In Sova's repo the merge captain queues a Ready to land branch and Sova shows its
+  session the Landing card: **Land It** is your go-ahead for that exact commit, and the captain
+  lands, pushes and restarts; **Not Yet** leaves it until a new commit. A session's own `worktree
+  merge` into master is refused without that go-ahead (`"mainMerges": "go-ahead"` in
+  `.sova/offers.json`); typed git isn't guarded. A project without a captain declares its own
+  landing offer, or none.
+- **Specs land with the branch.** Sova tells a finished session once per commit to promote its spec
+  drafts on its branch and commit them; the branch reads Landing specs until then. If it can't,
+  the card offers Merge Without Specs… behind a confirmation.
+- **The one exception:** a Project Overseer's settings change card on Sova's own project lands its
+  settings files on master at your Apply (§app.project-overseer/settings).
 
 ## Live server restart
 

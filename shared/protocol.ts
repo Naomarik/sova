@@ -4389,6 +4389,20 @@ export interface WorktreeReadiness {
   /** Readable, unmerged, and no commit of its own past its base (what "no commits yet" says,
       whatever the state): the row has no Review Changes (§chat.changes/entry). Absent otherwise. */
   noCommits?: true;
+  /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
+  landing?: WorktreeLanding;
+}
+
+/** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
+export interface WorktreeLanding {
+  /** "ready": Ready to land; "specs": finished, with spec drafts left to promote (Landing specs). */
+  state: "ready" | "specs";
+  /** The full head sha it holds for. */
+  commit: string;
+  /** The spec drafts not promoted, by name (state "specs"). */
+  drafts?: string[];
+  /** The session's own reason it can't land them (its reply's `Can't land specs:` line). */
+  specsWhy?: string;
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */

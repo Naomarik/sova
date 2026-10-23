@@ -100,6 +100,18 @@ export function OfferCardView(props: { card: OfferCard }) {
   const card = () => ctx?.card(props.card.id) ?? props.card;
   const open = () => card().state === "open";
   const canAct = () => !!ctx && open() && !ctx.busy(card().id);
+  // A button with a confirm asks first (§chat.offers/buttons): its question, then Cancel or the label again.
+  const [asking, setAsking] = createSignal<number | null>(null);
+  const asked = () => {
+    const i = asking();
+    return i === null ? undefined : card().buttons[i];
+  };
+  const press = (i: number) => {
+    if (!canAct()) return;
+    if (card().buttons[i]?.confirm && asking() !== i) return void setAsking(i);
+    setAsking(null);
+    ctx!.choose(card(), i);
+  };
   return (
     <section class="card overseer-confirm overseer-card offer-card" data-offer-id={card().id} data-phase={card().state} aria-label={`Offer ${card().id}: ${card().title}`}>
       <div class="card-head overseer-card-head">
@@ -113,6 +125,22 @@ export function OfferCardView(props: { card: OfferCard }) {
       <div class="card-foot overseer-card-foot">
         <Show when={open()} fallback={<OfferOutcome card={card()} />}>
           <Show when={ctx} fallback={<span class="overseer-confirm-hint">Waiting for an answer: {card().buttons.map((b) => b.label).join(" · ")}.</span>}>
+          <Show when={asked()}>
+            {(b) => (
+              <div class="offer-card-confirm" role="group" aria-label={`Confirm ${b().label}`}>
+                <p class="overseer-confirm-detail">{b().confirm}</p>
+                <div class="overseer-card-buttons">
+                  <button type="button" class="button button-sm button-ghost" onClick={() => setAsking(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" class="button button-sm button-destructive" aria-disabled={canAct() ? undefined : "true"} onClick={() => press(asking()!)}>
+                    {b().label.replace(/…$/, "")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Show>
+          <Show when={asking() === null}>
           <div class="overseer-card-buttons">
             <For each={card().buttons}>
               {(b, i) => (
@@ -121,7 +149,7 @@ export function OfferCardView(props: { card: OfferCard }) {
                   class="button button-sm"
                   aria-disabled={canAct() ? undefined : "true"}
                   title={b.about}
-                  onClick={() => canAct() && ctx!.choose(card(), i())}
+                  onClick={() => press(i())}
                 >
                   {b.label}
                 </button>
@@ -131,6 +159,7 @@ export function OfferCardView(props: { card: OfferCard }) {
               Not Now
             </button>
           </div>
+          </Show>
           </Show>
         </Show>
       </div>

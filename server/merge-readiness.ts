@@ -11,7 +11,8 @@ import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { isCaptain } from "./merge-board";
-import { unpromotedDrafts } from "./spec-drafts-state";
+import { unpromotedDraftNames, unpromotedDrafts } from "./spec-drafts-state";
+import { type Finished, fileLandingStore, finishedOf, landingOf, type LandingStore, specsNudgeText, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -77,6 +78,8 @@ export interface TreeFacts {
   tempCommit?: string;
   /** When the newest commit was made (committer time, ms). */
   headAt?: number;
+  /** The branch's head commit (full sha). */
+  head?: string;
 }
 
 /** The session's facts the rules read. */
@@ -476,6 +479,15 @@ export interface ReadinessDeps {
   /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
       "gone" for a missing folder, null when it can't be read. */
   treeStamp?: (dir: string) => string | null;
+  /** Whether the session's last reply finished its work (§chat.worktrees/ready-to-land); "off" when
+      no outcome is ever recorded for it. */
+  finished: (sessionId: string, cwd: string, lastReplyId: string | undefined) => Finished;
+  /** The spec drafts a tree holds not promoted, by name. */
+  drafts: (dir: string) => string[] | undefined;
+  /** The heads kept Ready to land. */
+  landing: LandingStore;
+  /** Sova's message to a session (the specs nudge); absent: never sent. */
+  nudge?: (sessionPath: string, text: string) => Promise<void>;
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -487,6 +499,10 @@ const defaultDeps = (): ReadinessDeps => ({
   asksUser: (id) => asksUserOf(id),
   gone: (t, dirs) => goneTreeState(t, dirs),
   treeStamp: (dir) => worktreeInsights.quietStamp(dir),
+  finished: finishedOf,
+  drafts: (dir) => unpromotedDraftNames(dir),
+  landing: fileLandingStore(),
+  nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
 });
 
 let deps: ReadinessDeps = defaultDeps();
@@ -558,6 +574,7 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
     ...(st.conflicts ? { conflicts: st.conflicts } : {}),
     ...(st.subjects ? { tempCommit: tempCommitOf(st.subjects) } : {}),
     ...(st.headAt ? { headAt: st.headAt } : {}),
+    ...(st.head ? { head: st.head } : {}),
   };
 }
 
@@ -590,12 +607,27 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   }
   const sf: SessionFacts = { running, openQuestions: s.align?.openQuestions ?? 0, asks, ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}) };
   for (const t of own) deps.insights.dirtyLifetime?.(t.path, dirtyTtlFor(s, t.path, fresh));
+  // Ready to land (§chat.worktrees/ready-to-land): never for the merge captain's own trees, which it only checks.
+  const landingOn = !isCaptain(s);
+  const finished = landingOn ? deps.finished(s.id, s.cwd, reply?.id) : "no";
+  const specsWhy = specsWhyOf(reply?.text);
+  const writes = publishChecks();
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
   for (const t of own) {
     const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
+    let landing: WorktreeReadiness["landing"];
+    if (landingOn) {
+      const held = deps.landing.held(s.id, t.path);
+      const heldHere = !!held && held.commit === tf.head;
+      landing = landingOf(tf, sf, finished, heldHere, tf.readable && !tf.merged ? deps.drafts(t.path) : undefined, specsWhy);
+      if (writes) {
+        if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
+        else if (held && (tf.merged || (tf.readable && tf.head !== held.commit))) deps.landing.drop(s.id, t.path);
+      }
+    }
     trees.push({
       path: t.path,
       branch: tf.branch,
@@ -606,6 +638,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
+      ...(landing ? { landing } : {}),
     });
   }
   const cards = facts.merges;
@@ -780,10 +813,24 @@ async function refresh(input: RefreshInput): Promise<void> {
   if (!current()) return;
   const stamps = idleStamps(s, value, before);
   cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
+  if (value) nudgeSpecs(s, value);
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
     const again = await computeReadiness(s, facts, current);
     if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
+  }
+}
+
+/** Once per head commit, tell a session whose finished branch still holds spec drafts to land them on
+    its branch (§chat.worktrees/ready-to-land): never the user, never again for that commit. */
+function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
+  const send = deps.nudge;
+  if (!send || s.archived || s.live) return;
+  for (const t of value.trees) {
+    const l = t.landing;
+    if (l?.state !== "specs" || l.specsWhy || !l.drafts?.length) continue;
+    if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
+    void send(s.path, specsNudgeText(t.branch, l.commit, l.drafts)).catch((err) => console.warn(`[readiness] specs nudge to ${s.path}: ${(err as Error).message}`));
   }
 }
 

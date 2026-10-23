@@ -178,7 +178,15 @@ describe("a project's coding sessions", async () => {
       "a merged branch with a new commit is open again, and its last merge stays as history",
     );
     assert.equal(offersMerge(rowOf()!), true, "Merge Branch is offered again");
-    wt = await po.mergeCodingWorktree(project.id, started.sessionId);
+    // The merge guard (§chat.worktrees/merge-guard): with mainMerges on in master's own offers file, Merge Branch
+    // asked any way but the operator's page is refused without a go-ahead for the branch's head; the page's press is one.
+    mkdirSync(join(client, ".sova"), { recursive: true });
+    writeFileSync(join(client, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
+    git(client, "add", ".sova/offers.json");
+    git(client, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "guard on");
+    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /only with your go-ahead for this exact commit/);
+    assert.equal(existsSync(join(client, "logout.txt")), false, "nothing merged");
+    wt = await po.mergeCodingWorktree(project.id, started.sessionId, { byPage: true });
     assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge], ["merged", true, undefined]);
     assert.equal(offersMerge(rowOf()!), false);

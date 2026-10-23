@@ -257,7 +257,10 @@ test("queries: kinds, workers at any depth, side calls, projects, local days, fi
   assert.equal(c.daily.length, 7);
   assert.equal(c.daily.at(-1)!.day, "2026-10-05");
   assert.ok(c.byModel.find((m) => m.provider === "jev")?.status === "unpriced");
-  assert.deepEqual(c.byProject.map((p) => p.project ?? p.cwd).sort(), [null, "/w/a", "prj_x"].sort());
+  // A recorded project id is its row; a folder that doesn't exist and a call with none are Other folders.
+  assert.deepEqual(c.byProject.map((p) => p.kind), ["project", "other"]);
+  assert.equal(c.byProject[0]!.project, "prj_x");
+  assert.equal(c.byProject.reduce((a, p) => a + p.calls, 0), c.total.calls);
   assert.deepEqual(c.topSessions[0]!.sid.length > 0, true);
   // 23:30Z on the 4th is the 5th in Kolkata (+5:30).
   const k = s.queries.costs({ range: "7d", providers: [], models: [], tz: "Asia/Kolkata" });

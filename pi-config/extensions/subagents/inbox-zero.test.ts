@@ -9,13 +9,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ChatWorker, sessionDirName } from "./chat-worker.ts";
 import { FakeWorkerHost } from "./tests/fake-worker-host.ts";
-import { InboxStore, type AutoCloseMode, type SeenTag } from "./inbox.ts";
+import { InboxStore, type SeenTag } from "./inbox.ts";
 import { wakeText } from "./delivery.ts";
 
 const flush = (ms = 5) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const PARENT = { sessionId: "parent-1", path: "/sessions/parent-1.jsonl" };
 
-function rig(mode: AutoCloseMode = "turn-end") {
+function rig() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-inbox-zero-"));
 	const store = new InboxStore(root);
 	const host = new FakeWorkerHost();
@@ -26,7 +26,7 @@ function rig(mode: AutoCloseMode = "turn-end") {
 		{
 			onChange: () => {},
 			// The manager's sweep: the task that just ended, steers resolved by the fold.
-			onSettled: (w) => closedAt.push(store.closeSeen("ag_02", w.inboxTurn!().task, mode, (no) => w.steerTask!(no)).map((i) => i.id)),
+			onSettled: (w) => closedAt.push(store.closeSeen("ag_02", w.inboxTurn!().task, (no) => w.steerTask!(no)).map((i) => i.id)),
 			onExit: () => {},
 		},
 		{ host, parent: PARENT, start: { key: "parent-1:ag_02:x.1", defaultSessionDir: (cwd) => `/agent/sessions/${sessionDirName(cwd)}` } },
@@ -105,30 +105,5 @@ test("a mid-turn wake delivered inside the running run closes when that run ends
 		r.ev({ type: "agent_settled" });
 		assert.deepEqual(r.status(idle), ["addressed", "auto"]);
 		assert.deepEqual(r.status(q), ["read", undefined], "a question is never closed automatically");
-	} finally { r.cleanup(); }
-});
-
-test("next-turn: a seen item closes only when the turn after its Still open reminder ends; never without a reminder", async () => {
-	const r = rig("next-turn");
-	try {
-		await flush();
-		r.ev({ type: "agent_start" });
-		const a = r.add("FYI one");
-		const b = r.add("FYI two");
-		r.store.markSeen("ag_02", [a, b], { task: r.worker.inboxTurn().task });
-		r.ev({ type: "agent_end", messages: [] });
-		r.ev({ type: "agent_settled" });
-		assert.deepEqual(r.closedAt, [[]], "turn 0 ended: nothing closes yet in next-turn");
-		// The next wake names `a` in its Still open block (b is past the reminder's room, say).
-		assert.equal((await r.worker.steer("[Team inbox: 1 new]")).ok, true);
-		r.store.markReminded("ag_02", [a], r.wakeTag());
-		r.ev({ type: "agent_start" });
-		r.ev({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "[Team inbox: 1 new]" }] } });
-		r.ev({ type: "agent_end", messages: [] });
-		r.ev({ type: "agent_settled" });
-		assert.deepEqual(r.status(a), ["addressed", "auto"]);
-		assert.deepEqual(r.status(b), ["read", undefined], "never reminded: stays open");
-		// At the member's end every seen item closes, whatever the setting.
-		assert.deepEqual(r.store.closeSeen("ag_02", "all", "next-turn").map((i) => i.id), [b]);
 	} finally { r.cleanup(); }
 });

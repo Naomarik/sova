@@ -285,10 +285,9 @@ test("the list: the Still open block names opened items, questions first, at mos
 	assert.ok(r.text.includes("… and 2 more"));
 	const at = lines.indexOf("Still open (opened, not closed):");
 	assert.deepEqual(lines.slice(at + 1, at + 3), [`- ${opened[1].id} question from lead — opened, not answered`, `- ${opened[0].id} message from lead — opened, not closed`]);
-	assert.deepEqual(r.reminded, [opened[1].id, opened[0].id]);
 	const many = Array.from({ length: 8 }, () => item({ status: "read" }));
 	const r2 = wakeText([item()], { stillOpen: many });
-	assert.equal(r2.reminded.length, 4);
+	assert.equal(r2.text.split("\n").filter((l) => /opened, not closed$/.test(l)).length, 4);
 	assert.ok(r2.text.includes("… and 4 more"));
 	// Never-listed items take the places first, so each wake lists every waiting item in turn.
 	const old = Array.from({ length: 20 }, () => item({ listedAt: 1 }));
@@ -298,18 +297,15 @@ test("the list: the Still open block names opened items, questions first, at mos
 	assert.match(r3.text, /- i_\w+ message from lead \(unopened\) — hello/);
 });
 
-test("gate: only a wake that starts an idle member's turn carries the gate line, and only when the setting is on; reminders are recorded", async () => {
+test("gate: only a wake that starts an idle member's turn carries the gate line, never one reaching a busy member mid-turn", async () => {
 	const f = fakeHost();
-	let gateOn = true;
-	const reminded: string[][] = [];
 	const opened = item({ status: "read", subject: "seen" });
-	const wake: WakeHost = { ...f.wake, gate: () => gateOn, stillOpen: () => [opened], markReminded: (_w, ids) => { reminded.push(ids); } };
-	const s = new WakeScheduler(wake);
+	const s = new WakeScheduler({ ...f.wake, stillOpen: () => [opened] });
 	f.items.push(item({ subject: "a" }), item({ subject: "b" }));
 	s.notify("ag_02");
 	await f.fire(3000);
 	assert.match(f.sent[0], /\[Open your inbox first: team_inbox open i_\w+ i_\w+ /);
-	assert.deepEqual(reminded, [[opened.id]]);
+	assert.ok(f.sent[0].includes(`- ${opened.id} message from lead — opened, not closed`), "the Still open block names it");
 	// Mid-turn (urgent to a busy member): never gated.
 	f.host.state = "busy";
 	f.items.push(item({ urgent: true, subject: "u1" }), item({ urgent: true, subject: "u2" }));
@@ -317,12 +313,4 @@ test("gate: only a wake that starts an idle member's turn carries the gate line,
 	await tick();
 	assert.equal(f.sent.length, 2);
 	assert.doesNotMatch(f.sent[1], /Open your inbox first/);
-	// Setting off: never gated.
-	gateOn = false;
-	f.host.state = "idle";
-	f.items.push(item({ subject: "c" }));
-	s.settled("ag_02");
-	await tick();
-	assert.equal(f.sent.length, 3);
-	assert.doesNotMatch(f.sent[2], /Open your inbox first/);
 });

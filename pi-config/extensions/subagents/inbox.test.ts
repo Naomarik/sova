@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { InboxStore, MAIN_THREAD, SOVA, closedByOf, foldItemsFile, foldItemsText, isOpen, itemsFile, readInboxZeroSettings, readMemberItems, readTeamInboxes, subjectOf } from "./inbox.ts";
+import { InboxStore, MAIN_THREAD, SOVA, closedByOf, foldItemsFile, foldItemsText, isOpen, itemsFile, readMemberItems, readTeamInboxes, subjectOf } from "./inbox.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-inbox-"));
 const dev = { role: "dev", workerId: "ag_02" };
@@ -131,7 +131,7 @@ test("compaction keeps every open item and the newest addressed ones, and never 
 	} finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-// ── Inbox zero (§app.teams/inbox-zero, §app.teams/inbox-measure) ──────────
+// ── Inbox zero (§app.teams/inbox-zero) ──────────
 
 test("closedBy: written on the status op, folded from disk, kept by compaction; an old addressed line reads as closed by the member", () => {
 	const root = tmp();
@@ -168,12 +168,12 @@ test("closeSeen: only seen, open, non-question items with a turn record, seen in
 		s.markSeen("ag_02", [pending], { steer: 7 });
 		s.returnItem(returned, "not addressed: stopped");
 		const resolver = (no: number) => (no === 7 ? undefined : 0);
-		assert.deepEqual(s.closeSeen("ag_02", 0, "turn-end", resolver).map((i) => i.id), [seen0, report0, notice0]);
+		assert.deepEqual(s.closeSeen("ag_02", 0, resolver).map((i) => i.id), [seen0, report0, notice0]);
 		const st = (id: string) => s.get(id)!.status;
 		assert.deepEqual([st(question0), st(unseen), st(seen1), st(pending)], ["read", "new", "read", "read"], "never a question, an unseen item, a later task, a wake whose run has not begun");
 		assert.equal(s.get(returned)!.closedBy, undefined, "a returned item is not open: never closed");
 		// The steer's run began in task 1: it closes when task 1 ends.
-		assert.deepEqual(s.closeSeen("ag_02", 1, "turn-end", () => 1).map((i) => i.id), [seen1, pending]);
+		assert.deepEqual(s.closeSeen("ag_02", 1, () => 1).map((i) => i.id), [seen1, pending]);
 		// Read before this change: no turn record, never closed automatically, even at the member's end.
 		const pre = s.add({ teamId: "team_01", from: lead, to: dev, kind: "message", body: "old" }).id;
 		s.setStatus("ag_02", [pre], "read");
@@ -203,19 +203,4 @@ test("a moved item loses its turn record (its new holder has seen nothing)", () 
 		assert.deepEqual([moved.status, moved.readTurn], ["new", undefined]);
 		assert.deepEqual(s.closeSeen("ag_05", 9), []);
 	} finally { fs.rmSync(root, { recursive: true, force: true }); }
-});
-
-test("the measurement setting: <agent dir>/sova/inbox-zero.json, defaults for a missing file, key or unknown value", () => {
-	const dir = tmp();
-	try {
-		assert.deepEqual(readInboxZeroSettings(dir), { gate: "turn-start", autoClose: "turn-end" });
-		fs.mkdirSync(path.join(dir, "sova"));
-		const write = (v: string) => fs.writeFileSync(path.join(dir, "sova", "inbox-zero.json"), v);
-		write(JSON.stringify({ gate: "off", autoClose: "next-turn" }));
-		assert.deepEqual(readInboxZeroSettings(dir), { gate: "off", autoClose: "next-turn" });
-		write(JSON.stringify({ gate: "sometimes" }));
-		assert.deepEqual(readInboxZeroSettings(dir), { gate: "turn-start", autoClose: "turn-end" });
-		write("{broken");
-		assert.deepEqual(readInboxZeroSettings(dir), { gate: "turn-start", autoClose: "turn-end" });
-	} finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

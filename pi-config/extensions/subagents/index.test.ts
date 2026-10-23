@@ -5350,8 +5350,8 @@ test("inbox zero: the roster shows each member's unanswered question and its wai
 
 // ── Inbox zero: the safety net at a member's settle, both measurement settings (§app.teams/inbox-zero) ──
 
-for (const autoClose of ["turn-end", "next-turn"] as const) test(`inbox zero (${autoClose}): a seen item the member did not close closes automatically; a reply closes any item; needsReply is a question that waits`, async () => {
-	const h = teamHarness({ inboxZero: { autoClose } });
+test("inbox zero: a seen item the member did not close closes automatically when its turn ends; a reply closes any item; needsReply is a question that waits", async () => {
+	const h = teamHarness();
 	try {
 		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
@@ -5369,13 +5369,8 @@ for (const autoClose of ["turn-end", "next-turn"] as const) test(`inbox zero (${
 		const wake = dev.lastSteer.message;
 		assert.match(wake, new RegExp(`^\\[Team inbox: 2 new — [^\\n]*\\]\\n- ${ask} message from lead — Ping me when the parser builds\\n- ${q} question from lead — Which port\\?\\n`), "subjects only");
 		assert.match(wake, new RegExp(`\\[Open your inbox first: team_inbox open ${ask} ${q} `), "an idle member's turn starts with the gate");
-		if (autoClose === "turn-end") {
-			assert.deepEqual([item(fyi).status, item(fyi).closedBy, item(fyi).note], ["addressed", "auto", "closed automatically: seen, not closed by dev"]);
-			assert.doesNotMatch(wake, /Still open/);
-		} else {
-			assert.equal(item(fyi).status, "read", "next-turn: one more turn, after a reminder");
-			assert.match(wake, new RegExp(`Still open \\(opened, not closed\\):\\n- ${fyi} message from lead — opened, not closed\\n`));
-		}
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy, item(fyi).note], ["addressed", "auto", "closed automatically: seen, not closed by dev"]);
+		assert.doesNotMatch(wake, /Still open/);
 		// The member works its next turn: it opens both, answers one with replyTo, leaves the question.
 		await h.ask("ag_02", { type: "inbox", action: "open", ids: [ask, q] });
 		const reply = await h.ask("ag_02", { type: "message", to: "lead", message: "It builds.", replyTo: ask });
@@ -5384,24 +5379,11 @@ for (const autoClose of ["turn-end", "next-turn"] as const) test(`inbox zero (${
 		assert.match(item(ask).note!, /^answered in i_\w+$/);
 		dev.settle();
 		await pause(60);
-		assert.deepEqual([item(fyi).status, item(fyi).closedBy], ["addressed", "auto"], "closed by now in either setting");
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy], ["addressed", "auto"], "still closed");
 		assert.equal(item(q).status, "read", "a question is never closed automatically");
 		const sent = (await h.ask("ag_01", { type: "inbox", action: "sent" })).text;
 		assert.match(sent, new RegExp(`${fyi} → dev \\(ag_02\\) \\[closed automatically\\] message: FYI: CI is green$`, "m"));
 		assert.match(sent, new RegExp(`${ask} → dev \\(ag_02\\) \\[answered in i_\\w+\\] message: `));
 		assert.match(sent, new RegExp(`${q} → dev \\(ag_02\\) \\[read\\] question: Which port\\?$`, "m"));
-	} finally { await h.cleanup(); }
-});
-
-test("inbox zero: with the gate setting off, a wake that starts a member's turn carries no gate line", async () => {
-	const h = teamHarness({ inboxZero: { gate: "off" } });
-	try {
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
-		const dev = h.workers.find((w: any) => w.id === "ag_02");
-		await h.ask("ag_01", { type: "message", to: "dev", message: "one" });
-		await h.ask("ag_01", { type: "message", to: "dev", message: "two" });
-		dev.settle();
-		await waitFor(() => dev.steerCount === 1, "the wake");
-		assert.doesNotMatch(dev.lastSteer.message, /Open your inbox first/);
 	} finally { await h.cleanup(); }
 });

@@ -320,7 +320,7 @@ function anchors(c: CommandEntry): Anchor[] {
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
   }
-  if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real" }];
+  if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real", onlyWrongTypes: true }];
   // A folder that is no folder is refused whatever else the body says; one already registered (in the set-up) is the
   // route's own 409 after its checks of the body, so each case meets them and none registers a project.
   if (c.id === "project.create") {

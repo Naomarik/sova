@@ -444,9 +444,9 @@ The tab after Subagents, and the align mode's settings (§chat/alignment). It op
 Changes like every gated form (§app.settings-dialog/save-bar):
 
 - **Writing style**, a radiogroup of three, each option a label row with a one-line description:
-  **Default** "Today's detail: files, code and technical trade-offs.", **Simplified** "Short
-  sentences in everyday words, fewer items.", **Project manager** "Screens, wording and behaviour
-  only; no code. Technical detail folded into notes." Under it the hint "Reaches open chats at their
+  **Project manager** "Screens, wording and behaviour only; no code. Technical detail folded into
+  notes.", **Simplified** "Short sentences in everyday words, fewer items.", **Technical** "Files,
+  code and technical trade-offs in the plan." A saved `default` shows as Technical. Under it the hint "Reaches open chats at their
   next message."
 - **Visuals**, one switch, "Draw when it helps", with the hint "The align mode draws a wireframe or a
   flow on the alignment card when a picture explains faster than words. Applies to sessions you start
@@ -459,7 +459,7 @@ Changes like every gated form (§app.settings-dialog/save-bar):
 Under the groups one line says "A subagent profile can set its own writing style and visuals
 (Settings → Subagents)." Style and Visuals are stored in `<agent dir>/mode-align.json`
 (§chat.alignment/settings-file), Review in Sova's settings; one Save writes both, and a failure of
-either keeps the form's draft and shows the save-failed banner at its end. The defaults are Default,
+either keeps the form's draft and shows the save-failed banner at its end. The defaults are Project manager,
 Visuals off and Review off.
 
 ## §app.settings-dialog/profiles — Profiles

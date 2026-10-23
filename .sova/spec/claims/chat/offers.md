@@ -44,8 +44,10 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `buttons` (required): 1 to 4 buttons, each `{label, about}` with exactly one of `send` or
     `run` (§chat.offers/buttons). `label` is at most 32 characters, `about` at most 160 (one line:
     what the button does).
+- **`mainMerges`** (optional, top level): `"go-ahead"` turns on the merge guard
+  (§chat.worktrees/merge-guard); absent, merges are unchanged. Any other value makes the file broken.
 - **Strict, one offer at a time.** The file must be JSON with exactly the keys `version` (1) and
-  `offers`; anything else makes the whole file **broken**, and no offer shows. Inside, each offer
+  `offers`, and optionally `mainMerges`; anything else makes the whole file **broken**, and no offer shows. Inside, each offer
   is checked on its own: an unknown key, a missing or over-long field, a bad name, an unknown
   condition, placeholder or `repeat` value, or a bad button makes that offer **broken**, listed
   with its reason, and never hides the others. At most 8 offers count; those after the eighth are
@@ -95,6 +97,12 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `no-open-alignment`: no open alignment question (always enforced; naming it is allowed).
   - `has-merge-captain`: a session on the Merge Captain profile, not archived, works in the same
     project.
+  - `ready-to-land`: the worktree is Ready to land (§chat.worktrees/ready-to-land), or its specs
+    can't land and it says why (`Can't land specs:`).
+  - `specs-promoted`: the worktree holds no spec draft left unpromoted.
+  - `specs-left`: it holds one or more.
+  An offer shown for one worktree (the Merge Captain's queue, §chat.merge-round/round) reads these,
+  its branch and its commit from that worktree; otherwise from the session's folder.
 - **The repeat guard.** An offer shows at most once per **moment**, whatever happened to the card:
   `once-per-commit` is the session folder's current commit (a folder outside git falls back to
   once per reply), `once-per-reply` the user message the turn answers, `once-per-session` the whole
@@ -114,6 +122,15 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   project's id and the session's id. Any other id, an id the catalogue doesn't have, or a run
   button an offer from another chat would send elsewhere makes the offer broken. There is no
   "update from master" or "send to the captain" action: those are send buttons.
+- **A button's own conditions.** `"onlyIf": [...]` on a button (the same conditions) leaves the
+  button off the card when one doesn't hold; at least one button must remain, else nothing shows.
+- **Confirm first.** `"confirm": "<text>"` (at most 300 characters) makes the card ask before the
+  click counts: the text, then Cancel or the button's label again. `{drafts}`, the worktree's
+  spec drafts left unpromoted, may be filled in there and in `send`.
+- **Landing records.** `"landing": "go-ahead"` records the user's go-ahead to land this branch at
+  this exact commit (§chat.worktrees/merge-guard), `"go-ahead-without-specs"` the same with its
+  spec drafts left behind, and `"not-yet"` the user's Not Yet for this commit. Each is recorded
+  when the click's send succeeds, never on a refused one.
 - **To the chat that showed it.** A button of an `another-chat` offer may say `"to": "shower"`
   with `send`: its text goes to the session that showed the offer, not this one
   (§chat.offers/from-another-chat).
@@ -167,7 +184,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
 - `session.offers.show` (`POST /api/session-offers/show {path, offer, note?, from?}`) shows an
   offer in a target session on another chat's behalf (the Merge Captain, when it queues a branch):
   every rule of §chat.offers/tool applies, read from the target's project. An `another-chat` offer
-  shows only this way; an `agent` offer shows either way. `from` names the session that asks (by
+  shows only this way, or when Sova shows the Landing card itself on the Merge Captain's queue
+  (§chat.offers/sova-landing); an `agent` offer shows either way. `from` names the session that asks (by
   id or path); a button with `"to": "shower"` needs it.
 - It has no tool call in the target's transcript, so its card stands at the end of the target's
   transcript, above the composer, while it is open, and shows its choice there until the page is
@@ -187,6 +205,18 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
 ## §chat.offers/sova-landing — Sova's own offers file
 
 Sova's repository declares one offer, **landing**, `shownBy: another-chat`, so no Sova chat gets
-the tool from it: only the Merge Captain shows it, once its trigger exists. Its buttons are send
-buttons only: **Land It** sends the go-ahead for this branch's commit to the captain (`"to":
-"shower"`), and **Not Yet** tells this session's agent to keep working.
+the tool from it: Sova shows it itself when the Merge Captain queues a branch
+(§chat.merge-round/round), from the captain's chat, once per commit, and only while the branch is
+Ready to land (§chat.worktrees/ready-to-land). Its title is "Land {branch}?". Its buttons are send
+buttons only:
+
+- **Land It** (only when no spec draft is left): records the go-ahead for this commit and sends it
+  to the captain ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as
+  usual without asking again.
+- **Merge Without Specs…** (only when drafts are left and the session said why it can't land
+  them): asks first, naming the drafts that stay behind to promote later on a fresh branch from
+  master, then records the go-ahead without specs and sends the captain the go-ahead without them.
+- **Not Yet**: records Not Yet for this commit and tells this session's agent to keep working; the
+  captain leaves the branch until its head changes.
+
+The file also sets `"mainMerges": "go-ahead"` (§chat.worktrees/merge-guard).

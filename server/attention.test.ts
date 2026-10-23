@@ -305,6 +305,9 @@ describe("attention: decision signals (the list carries them only while unseen a
     const detail = (s: SessionSummary, t?: AttentionRow["signalText"]) =>
       sessionItems(row(s, t ? { signalText: t } : {}), NOW).map((i) => `${i.tier}:${i.kind}:${i.detail}`);
     assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), { sentence: "Shall I merge it into master?", stuckWorkers: [] }), ["decide:asks-you:Asks you: Shall I merge it into master?"]);
+    const q = "Which one?";
+    for (const [askKind, lead] of [["choose-between-options", "Needs your decision"], ["approve-risky-action", "Needs your approval"], ["restart-or-merge-go", "Needs your approval"], ["needs-info", "Needs info from you"]] as const)
+      assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), { sentence: q, askKind, stuckWorkers: [] }), [`decide:asks-you:${lead}: ${q}`], `the line names the kind of wait: ${askKind}`);
     assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) })), ["decide:asks-you:The last reply asks you something."]);
     const both = sessionItems(row(summary("a", { signals: signals(["asks-you"]), align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } })), NOW);
     assert.deepEqual(both.map((i) => i.kind), ["open-questions"]);

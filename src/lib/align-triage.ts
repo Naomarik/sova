@@ -12,9 +12,11 @@ const WORD: Record<AlignStakes, string> = {
   "changes-architecture-or-contract": "Changes architecture",
 };
 
-/** A question's chip: its words, whether it is flagged (warn) or low risk (muted), and its source. */
-export function stakesChip(stakes: AlignStakes, src: { provider: DecisionProviderId; model?: string }): { text: string; flagged: boolean; title: string } {
-  return { text: WORD[stakes], flagged: stakes !== "low-risk", title: `Guessed by ${providerName(src.provider, src.model)}.` };
+/** A question's chip: its words, whether it is flagged (the error tone) or low risk (muted ink),
+    its tone class, and its source. Never the warn tone of the state chip beside it. */
+export function stakesChip(stakes: AlignStakes, src: { provider: DecisionProviderId; model?: string }): { text: string; flagged: boolean; tone: "chip-error" | "text-muted"; title: string } {
+  const flagged = stakes !== "low-risk";
+  return { text: WORD[stakes], flagged, tone: flagged ? "chip-error" : "text-muted", title: `Guessed by ${providerName(src.provider, src.model)}.` };
 }
 
 /** The open cards' versions, "al_1@3 al_4@1": a new version (or a new open card) is a new read. */

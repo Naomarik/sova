@@ -271,12 +271,13 @@ export function asksUserOf(sessionId: string, data = readSignals()): { turnId: s
  * stored asking sentence, and the names of workers whose stuck check counts. Read only to word
  * items the list's overlay already decided to show.
  */
-export function signalTextOf(id: string, now = Date.now(), data = readSignals()): { sentence?: string; stuckWorkers: string[] } {
+export function signalTextOf(id: string, now = Date.now(), data = readSignals()): { sentence?: string; askKind?: AskKind; stuckWorkers: string[] } {
   const t = data.sessions[id];
   const stuckWorkers = Object.values(data.workers)
     .filter((w) => w.sessionId === id && workerStuck(w, now))
     .map((w) => w.name ?? "unnamed");
-  return { ...(t?.detail ? { sentence: t.detail } : {}), stuckWorkers };
+  const askKind = t ? cardOf(t.answers)?.askKind : undefined;
+  return { ...(t?.detail ? { sentence: t.detail } : {}), ...(askKind ? { askKind } : {}), stuckWorkers };
 }
 
 /** A session's stalled team (§app.decisions/team-stall), for the digest: when the quiet began and

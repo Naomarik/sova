@@ -105,6 +105,14 @@ describe("thresholds, applied at read time", () => {
   });
 });
 
+test("the digest's words carry the ask's kind, when the card named one (§app.overseer/attention-digest)", () => {
+  const choice = (c: string): Answer => ({ type: "choice", choice: c, probabilities: { [c]: 1 }, confidence: 1 });
+  const t = (answers: Record<string, Answer>) => ({ turnId: "t", replyAt: 1, at: 2, provider: "jev" as const, model: "m", answers, detail: "Which?", schema: 3 as const });
+  const data = { version: 1, workers: {}, stalls: {}, sessions: { k: t({ asks_user: asks(0.95), ask_kind: choice("needs-info") }), n: t({ asks_user: asks(0.95) }) } } as unknown as ReturnType<typeof store.readSignals>;
+  assert.deepEqual(store.signalTextOf("k", 3, data), { sentence: "Which?", askKind: "needs-info", stuckWorkers: [] });
+  assert.deepEqual(store.signalTextOf("n", 3, data), { sentence: "Which?", stuckWorkers: [] }, "no kind: none is invented");
+});
+
 describe("the overlay shows a mark only while it should", () => {
   const file = join(agentDir, "sova", "signals.json");
   store.updateSignals((d) => {

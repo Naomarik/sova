@@ -6,9 +6,12 @@
 // reduced motion no source matches and the still shows. data/screens.ts offers the video only when
 // its shape is the still's, so it fills the same screen area exactly: never cropped, never
 // letterboxed. The foldable pair moved to its own section below the hero (FoldDevice.astro).
+// Under it, one line of page text says what the video shows at that moment (VideoCaption.astro);
+// nothing is drawn into the picture.
 import { getImage } from "astro:assets";
 import Frame from "../Frame.astro";
 import Screen from "../Screen.astro";
+import VideoCaption from "./VideoCaption.astro";
 import { video as videoOf } from "../../data/screens";
 
 const video = videoOf("desk");
@@ -20,12 +23,12 @@ const poster = video ? await getImage({ src: video.poster, format: "webp", width
       <div class="screen-stack">
         <Screen at="hero.desk" sizes="(min-width: 1120px) 1040px, 920px" eager />
         {video && poster && (
-          <video class="screen-video" autoplay muted loop playsinline preload="metadata" poster={poster.src} width={video.width} height={video.height} aria-label={video.alt}>
+          <video id="hero-video-desk" class="screen-video" autoplay muted loop playsinline preload="metadata" poster={poster.src} width={video.width} height={video.height} aria-label={video.alt}>
             {video.sources.map((s) => <source media="(prefers-reduced-motion: no-preference)" type={s.type} src={s.file} />)}
           </video>
         )}
       </div>
     </Frame>
-    <figcaption class="dev-label">On your desk</figcaption>
+    {video && poster ? <figcaption class="dev-caption"><VideoCaption video={video} for="hero-video-desk" /></figcaption> : <figcaption class="dev-label">On your desk</figcaption>}
   </figure>
 </div>

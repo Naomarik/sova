@@ -105,6 +105,21 @@
    containment counts that content as 0 wide: the frame collapses to its 2 borders. */
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+/* The line under a session video (VideoCaption.astro): page text that follows the video's clock.
+   One line on a desktop; room for 2 on a phone, so the page never jumps when it changes. */
+.dev-caption { align-self: stretch; }
+.video-caption {
+  margin: 0; min-height: 1.45em; text-align: center; text-wrap: balance;
+  font-size: 15px; line-height: 1.45; color: var(--color-ink-2);
+}
+.video-caption-tag {
+  display: inline-block; margin-left: 8px; padding: 2px 8px; vertical-align: middle;
+  border-radius: 999px; border: var(--stroke-thin) solid var(--color-border-strong);
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.2; color: var(--color-ink-muted); white-space: nowrap;
+}
+.video-caption-tag[hidden] { display: none; }
+@media (max-width: 599px) { .video-caption { min-height: 2.9em; } }
+.video-caption-phone { font-size: 13px; min-height: 2.9em; }
 .dev-desk { width: min(920px, 100%); }
 
 /* ---- FOLDDEV. One foldable the visitor opens like a book, FoldDevice.astro, no script. --------
@@ -286,6 +301,9 @@
 /* Two phones share the column they sit in: each up to 300px wide, both shrinking with it, never
    wider than it (from 900px the feature column is narrower than two full-size phones). */
 .phones .phone { flex: 0 1 300px; width: auto; min-width: 0; }
+/* The phone with the video, and its caption under it: the figure takes the phone's share. */
+.phones .phone-figure { flex: 0 1 300px; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.phones .phone-figure > .phone { flex: none; width: 100%; }
 .phone {
   width: min(300px, 46vw); flex: none;
   border-radius: var(--r-xl); padding: 6px;
@@ -300,7 +318,7 @@
 .phone .m-thread { padding: 12px; }
 @media (max-width: 599px) {
   .phone { width: min(280px, 78vw); }
-  .phones .phone + .phone { display: none; }
+  .phones .phone + .phone, .phones .phone-figure { display: none; }
   .phones .phone { flex-basis: min(280px, 78vw); }
 }
 

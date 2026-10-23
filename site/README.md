@@ -8,7 +8,11 @@ Mesh and Organizations pages, and the phone lock screen beside the Overseer, are
 illustrations built from those classes.
 
 It ships static HTML and one stylesheet. The only JavaScript is two small inline scripts in
-`src/layouts/Base.astro` (the theme toggle and the copy button). No UI framework, no analytics,
+`src/layouts/Base.astro` (the theme toggle and the copy button) and the videos' caption script in
+`src/components/screens/VideoCaption.astro`: the line under each video says what it shows at that
+moment, from the cue list the recorder writes, following the video's own clock. Without
+JavaScript, with reduced motion or when a video can't play, the still shows with one fixed line;
+screen readers get the scene list once. No UI framework, no analytics,
 no web fonts from a CDN: Inter and JetBrains Mono are served from `public/fonts/` with their
 licenses.
 
@@ -61,8 +65,11 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   `pnpm run screens:check` (names each problem by line and column), `pnpm run screens` (the
   screenshots whose inputs changed, as lossless WebP masters in `src/assets/screens/` with their
   `manifest.json`), `pnpm run screens:video` (the hero and phone videos in `public/video/`, AV1
-  with an H.264 fallback, checked before they replace the old ones) and
-  `pnpm run screens:verify`. Commit the story with what they wrote. The pages take each image's
+  with an H.264 fallback, checked before they replace the old ones; nothing but the pointer is drawn
+  into them, their captions are page text from the cue lists in the manifest) and
+  `pnpm run screens:verify`. A reworded caption needs only `pnpm run screens:video -- --cues`, no new
+  recording. The videos show real provider and model names; the footer says the replies are
+  scripted and Sova isn't affiliated with the model makers. Commit the story with what they wrote. The pages take each image's
   alt text and size from the manifest; the build turns the masters into AVIF and WebP and never
   runs the capture, so a stale image builds without complaint. The capture needs the
   repository's root install and build, the playwright skill's browser and, for the video,

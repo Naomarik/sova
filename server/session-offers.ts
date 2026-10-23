@@ -79,8 +79,8 @@ export interface OfferDeps {
   /** The session's readiness once its turn ends (merge-readiness idleReadinessOf). */
   readiness(s: SessionSummary): Promise<SessionSummary["readiness"]>;
   sessions(): Promise<SessionSummary[]>;
-  /** The head of a session file: its id, cwd and the fork's parent path, as far as known. */
-  head(path: string): Promise<{ id?: string; cwd?: string; parent?: string } | null>;
+  /** The head of a session file: its id, cwd, the fork's parent path, and whether it holds a user message yet. */
+  head(path: string): Promise<{ id?: string; cwd?: string; parent?: string; started?: boolean } | null>;
   /** Path of a session by id. */
   pathOf(id: string): Promise<string | undefined>;
   /** An in-process request to the app, as the browser makes it. */
@@ -123,6 +123,7 @@ const defaults: OfferDeps = {
       ...(typeof header.id === "string" ? { id: header.id } : {}),
       ...(typeof header.cwd === "string" ? { cwd: header.cwd } : {}),
       ...(typeof header.parentSession === "string" ? { parent: header.parentSession } : {}),
+      started: h?.input === true,
     };
   },
   async pathOf(id) {
@@ -298,7 +299,12 @@ async function takeSnapshot(sessionId: string, path: string, cwd?: string): Prom
       inherited = true;
     }
   }
-  if (!inherited) {
+  // A session that already talked before its tools were snapshotted (it predates offers, or its record
+  // was lost) keeps the tools it had: none. Reading the file now would change its tools on its next
+  // reload, which restarts a Claude Code chat with lossy history.
+  if (!inherited && head?.started) {
+    // snapshot stays null
+  } else if (!inherited) {
     const root = await projectRootOf(cwd ?? head?.cwd).catch(() => null);
     snapshot = root ? snapshotOf(readOffersFile(root)) : null;
   }
@@ -424,6 +430,9 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   const facts = await factsOf(s.cwd, root);
   const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`);
+  // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, not open).
+  const open = rec.cards.find((c) => c.state === "open" && !!stillOffered(rec, c));
+  if (open) throw new OfferRefusal(`The offer "${open.name}" (${open.title}) is still open in this session; the user answers it first. ${projectWords}`);
   let from: OfferCard["from"];
   if (fromPath) {
     const f = await deps.summary(fromPath);
@@ -431,7 +440,6 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     from = { id: f.id, title: f.title || "Untitled" };
   }
   const card = makeCard(def, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
-  for (const c of rec.cards) if (c.state === "open") Object.assign(c, { state: "superseded", supersededBy: card.id });
   rec.cards.push(card);
   rec.path = input.path;
   saveRecord(rec);
@@ -506,10 +514,16 @@ export async function chooseOffer(path: string, sessionId: string, cardId: strin
     const text = card.sends[index] ?? "";
     const target = card.to[index] === "shower" ? card.fromPath : path;
     if (!target) throw new OfferRefusal("The chat this button sends to is not known. Nothing was sent.");
-    const sent = await send(target, text);
-    if (!sent.ok) throw new OfferRefusal(sent.error);
+    // Claimed before the send, so a second click at the same time finds it no longer open; reopened if the send fails.
     Object.assign(card, { state: "chosen", choice: { index, label: button.label, at } });
     saveRecord(rec);
+    const sent = await send(target, text).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
+    if (!sent.ok) {
+      card.state = "open";
+      delete card.choice;
+      saveRecord(rec);
+      throw new OfferRefusal(sent.error);
+    }
     bump(card.root, card.name, "used");
     return wireCard(card);
   }

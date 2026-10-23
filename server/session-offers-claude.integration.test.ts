@@ -95,7 +95,31 @@ describe("a Claude Code chat's offer tool across a resume", async () => {
     await disposeHeldChat(path, "test: done");
   });
 
-  test("control: with its snapshot dropped, the reopened chat sees the edit, so its tools change and it folds", async () => {
+  test("a chat that talked before it had a snapshot (no record), in a project with an offers file, reloads with no offer tool and resumes", async () => {
+    rmSync(join(project, ".sova", "offers.json"), { force: true });
+    const id = "01a2b3c4-0000-7000-8000-000000000003";
+    const path = session(id);
+    let chat = await acquireChat(path, true);
+    const before = turns().length;
+    await chat.acceptPrompt("hello", undefined, "server").turn;
+    assert.ok(!turns()[before]!.tools!.includes("offer"), "no file: no offer tool");
+
+    // As if it predated offers: no record at all; the project then gains its file.
+    await disposeHeldChat(path, "test: reopen");
+    rmSync(join(offersDir(), `${id}.json`), { force: true });
+    resetOffersForTest();
+    writeOffers(["alpha"]);
+    chat = await acquireChat(path, true);
+    await chat.acceptPrompt("again", undefined, "server").turn;
+    const second = turns()[before + 1]!;
+    assert.ok(second, "a second recorded turn");
+    assert.ok(!second.tools!.includes("offer"), `the older chat never gains the tool: ${second.tools}`);
+    assert.ok(second.argv!.includes("--resume"), `it resumes its Claude session: ${second.argv!.join(" ")}`);
+    assert.ok(!/condensed, lossy replay|started before you joined/.test(sent(second)), `no folded history: ${sent(second).slice(0, 300)}`);
+    await disposeHeldChat(path, "test: done");
+  });
+
+  test("control: with its snapshot dropped, the reopened chat's tools change (it has talked, so none), and it folds", async () => {
     writeOffers(["alpha"]);
     const path = session("01a2b3c4-0000-7000-8000-000000000002");
     let chat = await acquireChat(path, true);
@@ -110,7 +134,7 @@ describe("a Claude Code chat's offer tool across a resume", async () => {
     chat = await acquireChat(path, true);
     await chat.acceptPrompt("again", undefined, "server").turn;
     const second = turns()[before + 1]!;
-    assert.deepEqual(offerEnum(second), ["alpha", "charlie"], "a new snapshot reads the file as it is now");
+    assert.ok(!second.tools!.includes("offer"), "a new snapshot of a session that has talked is none");
     assert.ok(!second.argv!.includes("--resume"), "a changed tool set never resumes");
     await disposeHeldChat(path, "test: done");
   });

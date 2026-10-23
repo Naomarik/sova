@@ -1,0 +1,77 @@
+---
+// The line under a session video: what the video shows at this moment, as page text (nothing is
+// drawn into the picture). Its cues come from the recording (the screens manifest: each caption's
+// start and end in the video's own seconds, and the sped-up stretches), so the line follows the
+// video's own clock through loops, pauses and seeking. Without JavaScript, with reduced motion, or
+// when the video can't play, it keeps its fixed line, which describes the still shown then. The
+// line itself is hidden from screen readers; they get the scene list once, never each change.
+import type { Video } from "../../data/screens";
+
+interface Props {
+  video: Video;
+  /** The id of the <video> it follows. */
+  for: string;
+  class?: string;
+}
+const { video, for: target, class: cls } = Astro.props;
+---
+<p class:list={["video-caption", cls]} data-video-caption data-for={target} data-cues={JSON.stringify(video.cues)} data-tags={JSON.stringify(video.tags)} aria-hidden="true">
+  <span class="video-caption-text">{video.line}</span>
+  <span class="video-caption-tag" hidden></span>
+</p>
+<ol class="visually-hidden" aria-label="What the video shows, scene by scene">
+  {video.cues.map((c) => <li>{c.text}</li>)}
+</ol>
+
+<script>
+  interface Cue { a: number; b: number; text: string }
+  for (const cap of document.querySelectorAll<HTMLElement>("[data-video-caption]")) {
+    const video = document.getElementById(cap.dataset.for ?? "");
+    const text = cap.querySelector<HTMLElement>(".video-caption-text");
+    const tag = cap.querySelector<HTMLElement>(".video-caption-tag");
+    if (!(video instanceof HTMLVideoElement) || !text || !tag) continue;
+    const fixed = text.textContent ?? "";
+    const cues: Cue[] = JSON.parse(cap.dataset.cues ?? "[]");
+    const tags: Cue[] = JSON.parse(cap.dataset.tags ?? "[]");
+    if (!cues.length) continue;
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+    // With reduced motion no <source> matches and the still shows; a failed load shows it too.
+    let failed = false;
+    const playing = () => !reduce.matches && !failed && !video.error;
+    const at = (list: Cue[], t: number) => list.find((c) => t >= c.a && t < c.b) ?? null;
+    const show = (t: number) => {
+      if (!playing()) {
+        if (text.textContent !== fixed) text.textContent = fixed;
+        tag.hidden = true;
+        return;
+      }
+      // Past the last cue's end (a rounding at the loop's seam) the last one stays.
+      const c = at(cues, t) ?? (t >= cues[cues.length - 1]!.b ? cues[cues.length - 1]! : cues[0]!);
+      if (text.textContent !== c.text) text.textContent = c.text;
+      const g = at(tags, t);
+      tag.hidden = !g;
+      if (g && tag.textContent !== g.text) tag.textContent = g.text;
+    };
+    const now = () => show(video.currentTime);
+    for (const e of ["loadedmetadata", "timeupdate", "seeked", "seeking", "play", "pause", "emptied"]) video.addEventListener(e, now);
+    // The last <source> reports a load that failed for every source.
+    video.querySelector("source:last-of-type")?.addEventListener("error", () => {
+      failed = true;
+      now();
+    });
+    video.addEventListener("error", () => {
+      failed = true;
+      now();
+    });
+    reduce.addEventListener("change", now);
+    // Frame-accurate while it plays, where the browser offers it; timeupdate (about 4 a second) otherwise.
+    if ("requestVideoFrameCallback" in video) {
+      const tick = (_: number, meta: { mediaTime: number }) => {
+        show(meta.mediaTime);
+        video.requestVideoFrameCallback(tick);
+      };
+      video.requestVideoFrameCallback(tick);
+    }
+    now();
+  }
+</script>

@@ -8,7 +8,9 @@ import manifest from "../assets/screens/manifest.json";
 
 interface ShotEntry { file: string; width: number; height: number; viewport: string; alt: string }
 interface VideoSource { file: string; type: string; bytes: number }
-interface VideoEntry { sources: VideoSource[]; width: number; height: number; seconds: number; alt: string; slot: string; poster: { file: string } }
+/** A caption's or a sped-up stretch's place in the video, in its own seconds (record.mjs writes them). */
+export interface Cue { a: number; b: number; text: string }
+interface VideoEntry { sources: VideoSource[]; width: number; height: number; seconds: number; alt: string; slot: string; poster: { file: string }; line: string; cues: Cue[]; tags: Cue[] }
 interface Manifest { shots: Record<string, ShotEntry>; slots: Record<string, string>; videos?: Record<string, VideoEntry> }
 
 const m = manifest as unknown as Manifest;
@@ -41,6 +43,12 @@ export interface Video {
   poster: ImageMetadata;
   /** The slot's still, shown with reduced motion (and under the video). */
   still: Screen;
+  /** The fixed line under it where the video doesn't play: what the still shows. */
+  line: string;
+  /** The page's captions, in order, from 0 to the video's end. */
+  cues: Cue[];
+  /** The sped-up stretches ("Sped up 3×"), shown beside the caption. */
+  tags: Cue[];
 }
 
 /** A recorded video ("desk", "phone") with its poster and the still it plays over, when there is
@@ -53,7 +61,8 @@ export function video(name: string): Video | null {
   if (!poster) throw new Error(`video ${name}: no poster ${v.poster.file} in site/src/assets/screens/; run pnpm run screens:video`);
   const still = screen(v.slot);
   const same = Math.abs(v.width / v.height - still.image.width / still.image.height) < 0.005;
-  return same ? { sources: v.sources, width: v.width, height: v.height, seconds: v.seconds, alt: v.alt, poster, still } : null;
+  if (!v.line || !Array.isArray(v.cues)) throw new Error(`video ${name}: no caption cues in the screens manifest; run pnpm run screens:video -- --cues`);
+  return same ? { sources: v.sources, width: v.width, height: v.height, seconds: v.seconds, alt: v.alt, poster, still, line: v.line, cues: v.cues, tags: v.tags ?? [] } : null;
 }
 
 /** Whether the page shows any video (the footer says so). */

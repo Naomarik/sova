@@ -2406,7 +2406,9 @@ export type ChatServerMessage =
   /** `after` (only to a client that asked with `&have=`): the client's rows up to and including
       this row are the branch's first `older` rows, and `items` are the rows after it (possibly
       none); `olderSummary` sums up all `older` of them, the client's own included. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string }
+  /** `cwdFallback` (§app.shell/missing-folder-home): the chat runs in the home folder because its stored
+      local folder is gone; absent when it runs in its own folder. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
@@ -4421,6 +4423,14 @@ export interface SessionSummary {
 }
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
+/** A chat running in the home folder because its stored local working directory is gone
+    (§app.shell/missing-folder-home): `original` is the stored folder, unchanged in the file; `cwd` the
+    home folder of the machine the chat runs on. */
+export interface CwdFallback {
+  original: string;
+  cwd: string;
+}
+
 /** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
 export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval" | "removed";
 

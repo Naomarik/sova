@@ -37,7 +37,9 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
     on 127.0.0.1, with exactly one port and nothing else to run.
 
   Every service may declare `ports` (`{name: {base, stride?}}`, allocated per slot as
-  `base + slot × stride`, stride default 1; or `{name: {fixed}}`, the same port for every slot),
+  `base + slot × stride`, stride default 1; or `{name: {fixed}}`, the same port for every slot;
+  which `base`, `stride` or `fixed` a copy's port takes is the main checkout's,
+  §app.project-services/instances),
   `requires` (services started first), `ready` (`{tcp: <port name>}` or `{http: <port name>,
   path?}`, answered below 500, with `timeout` seconds, default 60, at most 600), `reload`
   (`"restart"`, `"none"`, `{signal: HUP|USR1|USR2|INT|TERM}` or `{cmd: argv}`), `build` (`{run:
@@ -80,7 +82,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   so none can read as a flag.
 - **`hooks`**: `probe` (`{run: argv, timeout?}`), the optional isolation probe conformance calls as
   `<argv> write <token>` and `<argv> read <token>` (exit 0: the token is there).
-- **`slots`** (`{cap}`, 1–16, default 4: how many instances besides the main checkout's), **`host`**
+- **`slots`** (`{cap}`, 1–16, default 4: how many copies Sova runs besides the main checkout's; only
+  the main checkout's saved value is in force, §app.project-services/instances), **`host`**
   (names of host variables the templates may read as `${host.NAME}`, kept in Sova's state, never
   in the repo), and **`deploy`**, how the project ships (§app.project-services/deploy).
 - **`share`** (optional): `{endpoints?, maxDays?, allow?}`, what a running copy may share
@@ -116,8 +119,27 @@ An instance is one checkout of one project. The project is the main checkout's r
 §chat.profiles/projects resolves it), and a checkout has at most one instance. Each instance has a
 stable **id** (`<project folder slug>-<8 hex>`, random at create and never reused), a
 **generation** that counts its starts from nothing, and a **slot**, a small number that is only an
-allocation and is reused after teardown. Slot 0 is the main checkout's and no other; another
-checkout takes the slot asked for, or the lowest of 1 to the cap that is free. A slot is free when
+allocation and is reused after teardown. Slot 0 is the main checkout's and no other.
+
+The copy limit (`slots.cap`) and the port numbering (each port's `base` and `stride`, or `fixed`)
+come from the main checkout's `.sova/project.json` as saved in its folder, uncommitted edits
+included and never its HEAD, whichever checkout a copy is of and for conformance too; everything
+else in a copy's definition (services, commands, setup, data) comes from its own checkout. A port
+the copy's checkout declares and the main checkout's file does not is numbered from the copy's own;
+with the main checkout's file missing or invalid, the definition in use gives both. The limit
+counts the copies Sova runs for the project besides the main checkout's, conformance's scratch
+copies not counted. Conformance's two scratch slots are cap + 1 and cap + 2 of the limit in force,
+and no other copy takes them. Another checkout takes the slot asked for (at most 2 × cap + 2, never
+a scratch slot unless conformance asks), or the lowest free slot of 1 to 2 × cap + 2 that is not a
+scratch slot: a slot blocked by a listener, or by a port another instance holds, does not count
+against the limit, so the search goes on past the cap. A create when the project's copies already
+number the limit is refused `cap-reached`; one with room left under the limit but no free slot to
+take, `slots-blocked`. Either message names the limit and that it comes from the main checkout's
+`.sova/project.json` (or the definition in use, when that file is missing or invalid), the slots
+the project's copies hold, and for each blocked slot the port and its holder: a Sova instance's id,
+or a listener's pid and folder when this user can read them.
+
+A slot is free when
 no instance of the project holds it and none of its allocated ports is held by any other instance
 on this host (any project) or has a listener right now. The registry is
 `<state root>/project-services/registry.json`, changed only under a file lock and written by an
@@ -141,12 +163,12 @@ Running a verb again with the same inputs gives the same object apart from `at`,
 `rssBytes` and a new generation.
 
 The error codes are a closed list: `not-found`, `invalid-request`, `invalid-definition`,
-`not-conformant`, `cap-reached`, `port-held`, `not-ready`, `start-failed`,
+`not-conformant`, `cap-reached`, `slots-blocked`, `port-held`, `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `dirty-worktree`, `busy`, `unsupported`, `refused-slot0`, `share-denied`,
 `forbidden`, `needs-confirm`, `deploy-refused`, `needs-override`, `deploy-failed`, `verify-failed`. Each maps to one exit class, the CLI's exit code and the route's
 status: **0** done, a no-op included (200); **1** failed part-way — `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `deploy-failed`, `verify-failed` — with `state` saying what runs, and a re-run converges from there (502); **2**
-refused, nothing changed — `not-conformant`, `cap-reached`, `port-held`,
+refused, nothing changed — `not-conformant`, `cap-reached`, `slots-blocked`, `port-held`,
 `dirty-worktree`, `unsupported`, `refused-slot0`, `share-denied`, `forbidden`, `needs-confirm`,
 `deploy-refused`, `needs-override` (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
 not-found); **4** `busy` (423). `status`, `logs` and `doctor` answer 0 when the app is unhealthy;
@@ -331,7 +353,7 @@ On an adopted slot 0, a run whose `requires` needs the adopted service is refuse
 
 ## §app.project-services/instance-note — What a builder is told about its instance
 
-Sova tells each coding session about its own running copies in a note rendered from the checkout's
+Sova tells each coding session, worker and team member (§app.project-services/callers) about its own running copies in a note rendered from the checkout's
 own `.sova/project.json` and the registry, never from a file in the checkout. It covers every
 checkout that is the session's own (§app.project-services/callers) except the main checkout, whose
 project has a definition. For a checkout with an instance it says: the checkout and branch, the
@@ -440,7 +462,9 @@ started for it, and the log notes the server's start time and the commit its che
 
 `conform` (project, `ref` default the main checkout's HEAD) proves a definition with a fixed,
 versioned suite that no project can change, in two scratch instances A and B on new branches from
-the ref, in slots above the cap so they never clash with real ones: doctor; create A, and again
+the ref, in the scratch slots (cap + 1 and cap + 2 of the limit in force, the main checkout's saved
+`slots.cap` and never the ref's, §app.project-services/instances), which no other copy takes:
+doctor; create A, and again
 (`changed: false`); every setup step run a second time exits 0; up A (ready), and again (same
 pids); every declared port of a service up started held by A's own (as §app.project-services/up counts them: its
 processes, or its container publishing the port), a port nothing holds yet waited for within that
@@ -508,10 +532,15 @@ The verbs are served by `POST /api/project-services/<verb>`, which acts as the o
 a thin client of those routes that prints the result and exits with its class. Two tools call the
 same engine in-process, never over HTTP:
 
-- **`project_verbs`**, in every ordinary hosted session: reads (status, logs, doctor) on its own
+- **`project_verbs`**, in every ordinary hosted session and in every worker and team member a
+  chat starts (an `agent_spawn` worker, a team member, coordinator, monitor or successor; never a
+  hidden chat), each under the same rules: reads (status, logs, doctor) on its own
   project; create, up, down, apply and test on instances of checkouts that are its own (its tracked
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
-  instances it created; conform of its project. Anything else is `forbidden`.
+  instances it created; conform of its project. Anything else is `forbidden`. A create, up or test
+  that names no instance, checkout or branch aims at its cwd's checkout when that is not the main
+  checkout; from the main checkout it is refused `invalid-request` naming its tracked worktrees
+  when it has any, and `forbidden` otherwise.
 - **`sova_project_verbs`** for the Overseers. The global Overseer reads any project and acts in a
   turn the user started; the project overseer acts only on its project: reads always, and every other verb only once its project statechart took the act (`services/down` always, `services/run` with `copiesRun` for create, up, apply, test and conform, `services/reset` with `copiesReset` for reset and teardown; any of them in a run the operator started; §app.project-overseer/tools). With its power Off (or a brake on) the statechart refuses with the power's sentence telling it to file it as an idea or raise a confirm card, and the engine never runs; the engine itself checks no power. For both, reset and teardown of an instance it did not
   create, stopping a shared service, and down of a copy with an active share link, answer

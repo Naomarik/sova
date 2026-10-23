@@ -134,7 +134,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
-import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
+import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { onAuthorized, onUnauthorized } from "./auth";
@@ -1124,15 +1124,6 @@ export const deleteDecisionKey = () => request<DecisionKeyInfo>("/api/settings/d
 
 /** One canned decision through the chain (the Test button). A provider failure is `ok: false`, not a throw. */
 export const probeDecisions = () => request<DecisionProbeResult>("/api/settings/decisions/probe", { method: "POST" });
-
-export const getTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill");
-
-/** Start tagging past sessions, or get the job already running. */
-export const startTagsBackfill = (scope: TagsBackfillScope) =>
-  request<TagsBackfillProgress>("/api/sessions/tags/backfill", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope }) });
-
-/** Stop the running backfill; what it tagged stays. */
-export const cancelTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill/cancel", { method: "POST" });
 
 // ---- organizations and baton sessions (§app/organizations, §app/baton) -------------------------------
 

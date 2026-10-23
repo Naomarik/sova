@@ -1,7 +1,6 @@
 // The session row's marks: line 1's leading state mark (the turn-error mark, else the unread dot)
-// and its "needs you" mark (open alignment questions, else attention signals), the tag status word
-// on line 3 (session tags), plus
-// the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
+// and its "needs you" mark (open alignment questions, else attention signals), the search text of
+// its manual tags, plus the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
 // reads these, the tests pin them.
 
 import type { AttentionDigest, DecisionProviderId, SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
@@ -129,22 +128,10 @@ export function signalTooltip(m: NeedsYouMark): string {
   return src ? `${signalTitle(m)} ${src}` : signalTitle(m);
 }
 
-/** Topic display words; a topic not listed shows as its id. */
-const TOPIC_WORD: Partial<Record<NonNullable<SessionTags["topic"]>, string>> = { bugfix: "bug fix" };
-
-/** The topic's display word, or null with no topic tag. */
-export const tagTopicWord = (tags: SessionTags | undefined): string | null => (tags?.topic ? TOPIC_WORD[tags.topic] ?? tags.topic : null);
-
-/** Line 3's tooltip when the session is tagged: "Topic: bug fix (tagged automatically)". */
-export function tagsTitle(tags: SessionTags | undefined): string | null {
-  const topic = tagTopicWord(tags);
-  return topic ? `Topic: ${topic} (tagged automatically)` : null;
-}
-
-/** What the session search matches in a row's tags: the topic, by id and by display word, and the user's own tags. */
+/** What the session search matches in a row's tags: the user's own tags only (automatic topics are
+    retired, §app.decisions/session-tags; one an older server sends is never matched). */
 export function tagSearchText(tags: SessionTags | undefined): string {
-  if (!tags) return "";
-  return [tags.topic, tagTopicWord(tags), ...(tags.user ?? [])].filter(Boolean).join(" ");
+  return (tags?.user ?? []).join(" ");
 }
 
 // ---- The live feed's overlay ---------------------------------------------------------------------

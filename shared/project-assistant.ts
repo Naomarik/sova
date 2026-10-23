@@ -15,7 +15,7 @@
  *
  * Operator routes (main listener only):
  * GET  /api/orgs/:id/owner/assistant              -> AssistantInfo
- * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo
+ * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo (a kind's null: follow the default)
  * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } -> AssistantInfo
  * POST /api/orgs/:id/owner/assistant/open         -> { sessionId, path } (Open Assistant Chat; makes it when none)
  * POST /api/orgs/:id/owner/requests/:rid/chat     -> { sessionId, path } (Start Chat, §app.project-assistant/request-chat)
@@ -206,12 +206,31 @@ export interface PricedPick extends ModelPick {
   price?: { input: number; output: number };
 }
 
+/** Where a kind's model comes from (§app.project-assistant/models): a project's override (coding and
+    gathering only), the organization's own pick, or the host's default. */
+export type AssistantModelSource = "project" | "org" | "default";
+
+/** A resolved model with its source. */
+export interface ResolvedPick extends PricedPick {
+  source: AssistantModelSource;
+}
+
+/** Why a resolved reply model doesn't run: this host can't run it (not in its model list, so unknown or
+    without credentials), or Settings → Models turned it off. */
+export type AssistantModelProblem = "unavailable" | "turned-off";
+
 /** The Owner card's Project Assistant part. */
 export interface AssistantInfo {
-  /** The org's models per kind of work. */
-  models: Partial<Record<WorkKind, PricedPick | null>>;
+  /** The org's resolved model per kind of work (its own pick, else the default); null when neither is set. */
+  models: Partial<Record<WorkKind, ResolvedPick | null>>;
+  /** The host's default (Settings → Organizations), or null. */
+  default: PricedPick | null;
+  /** The resolved reply model runs here: the assistant answers (§app.project-assistant/chat). */
+  ready: boolean;
+  /** Why the resolved reply model doesn't run, when one resolves and it doesn't. */
+  replyProblem?: AssistantModelProblem | null;
   /** Per project: which coding/gathering model applies and where it comes from. */
-  projects: { projectId: string; name: string; coding: { pick: PricedPick | null; source: "org" | "project" }; gathering: { pick: PricedPick | null; source: "org" | "project" } }[];
+  projects: { projectId: string; name: string; coding: { pick: PricedPick | null; source: AssistantModelSource | null }; gathering: { pick: PricedPick | null; source: AssistantModelSource | null } }[];
   /** The owner's conversation, once it exists. */
   sessionId: string | null;
   /** Whether the reply model sees images; null with no reply model (the card's "can't see photos" line). */

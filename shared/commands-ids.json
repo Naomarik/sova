@@ -126,7 +126,8 @@
     "chat.mode-command",
     "org.owner.request.chat",
     "org.owner.request.done",
-    "org.owner.request.decline"
+    "org.owner.request.decline",
+    "settings.assistant-default.set"
   ],
   "retired": [
     "settings.agents.get"

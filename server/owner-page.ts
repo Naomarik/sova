@@ -1,5 +1,6 @@
 import type { OwnerRequestRow, OwnerVersionRow } from "../shared/project-assistant";
-import { orgRequests, readAssistantStore } from "./project-assistant-store";
+import { orgRequests } from "./project-assistant-store";
+import { assistantReady } from "./project-assistant-ready";
 import { projectVersions, versionRows, type OwnerVersion } from "./owner-versions";
 import { assistantWouldAct } from "./assistant-would-act";
 import { existsSync } from "node:fs";
@@ -328,7 +329,7 @@ export async function ownerHome(orgId: string, now = Date.now()): Promise<OwnerH
   const ctx = contextOf(orgId, now);
   const all = await Promise.all(ctx.projects.map((p) => assemble(ctx, p)));
   const cards = all.map((a) => a.card).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.name.localeCompare(b.name));
-  const ready = assistantReady(orgId);
+  const ready = await assistantReady(orgId);
   return {
     org: { name: ctx.orgName },
     owner: nameOf(ctx, ctx.owner.id),
@@ -456,5 +457,5 @@ export function ownerView(orgId: string, what: { project?: string; conversation?
   return ownerHome(orgId, now);
 }
 
-/** The assistant takes messages: the org has a reply model (§app.project-assistant/models). */
-export const assistantReady = (orgId: string): boolean => !!readAssistantStore(orgId).models.reply;
+/** The assistant takes messages (§app.project-assistant/chat): the one readiness predicate. */
+export { assistantReady };

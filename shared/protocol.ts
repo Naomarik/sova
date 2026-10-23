@@ -1430,6 +1430,22 @@ export type SessionSetup =
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
+// GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
+//                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
+//                                  the text of ONE file the session's own setup read lists, for the
+//                                  markdown viewer. Any other path is a 404, so it reads nothing else
+//                                  on disk; a remote session or an unreadable setup is a 409; a file
+//                                  over SETUP_FILE_MAX_BYTES a 413. 400 a bad path, 404 a missing
+//                                  session file. Never cached.)
+// ---------------------------------------------------------------------------
+/** The largest file the setup card opens in the viewer. */
+export const SETUP_FILE_MAX_BYTES = 1024 * 1024;
+
+export interface SessionSetupFileText {
+  path: string;
+  text: string;
+}
+
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
 //                                  to its model now, in its order, with the descriptions as declared.

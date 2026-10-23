@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 466 |
-| Routes a catalogue entry points at | 100 |
-| Catalogue entries | 127 |
+| Routes registered | 467 |
+| Routes a catalogue entry points at | 101 |
+| Catalogue entries | 128 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -53,6 +53,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
+| `session.context.file` | Read Context File | looks | `GET /api/sessions/context/file` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
 | `session.group.rename` | Rename Group | changes | `PATCH /api/session-groups/:id` | sessions |
@@ -672,6 +673,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
 | `POST /api/sessions/configure` | sessions | `session.configure` |
 | `GET /api/sessions/context` | sessions | `session.context` |
+| `GET /api/sessions/context/file` | sessions | `session.context.file` |
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |
 | `POST /api/sessions/fork` | sessions | `session.fork` |

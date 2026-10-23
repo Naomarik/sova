@@ -1369,7 +1369,8 @@ main-pane rows.
 - **Read once.** It reads when it appears, and again only if it is asked about a different
   session; then it disappears until both new answers are in. An answer that arrives after the
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
-  Refresh button, no timer, no anchors, and a commit's age is worked out when the card draws and
+  Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
+  pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
   doesn't tick. The loadout is redrawn in two cases only, both from
   /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
   chat says the switch window has opened after the first read, the loadout is read again,
@@ -1682,6 +1683,37 @@ skills it is offered, for this one session only.
   switches show, is worked out for each session on every read.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
   it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
+
+## §chat.transcript/setup-card-open-file — Setup card: reading a context file or skill
+
+Each row's name in Context and Skills (/setup-card-context, /setup-card-skills), the
+`SYSTEM.md` and `APPEND_SYSTEM.md` rows included, is a button that opens that file in the
+markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on disk now.
+
+```html
+<span class="setup-name">
+  <button class="setup-path setup-open" type="button" aria-label="Read ~/AGENTS.md">~/AGENTS.md</button>
+</span>
+```
+
+- **What opens.** The viewer's title is the name as the row shows it (`~/AGENTS.md`, a skill's
+  name), its subtitle the full path. A skill opens its `SKILL.md` only, never the rest of its
+  folder. Source and Copy are the viewer's own, so Source shows the exact file, frontmatter
+  included.
+- **The look.** The name keeps its mono text and its place; it underlines on hover and takes the
+  standard focus ring. Its accessible name is "Read {name}". A row switched off
+  (/setup-card-toggles) still opens, and its switch stays a control of its own: pressing the name
+  never flips it.
+- **The read.** Pressing the name asks the server for that file's text,
+  `GET /api/sessions/context/file?path=<session file>&file=<listed path>`, then opens the viewer.
+  The server serves only a path that this session's own setup read lists (context, skills,
+  `SYSTEM.md`, `APPEND_SYSTEM.md`), so the request reads no other file on disk; any other path is a
+  404, "That file isn't in this session's system context." A remote session has no rows to press,
+  and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
+  show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the
+  server's reason; the viewer doesn't open.
+- **Not cached, not pre-read.** Nothing is read until a name is pressed, and each press reads the
+  file again.
 
 ## §chat.transcript/empty-worktrees — The worktrees line under a new session
 

@@ -28,9 +28,14 @@ const { readPoSettings, projectOverseerPaths } = await import("./project-oversee
 const { findProfile } = await import("./profile-sources");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { disposeAllChats } = await import("./chat-manager");
+const orgs = await import("./orgs");
+const reconcile = await import("./reconcile");
+const { runSettingsTool } = await import("./project-settings-tool");
+const { settled } = await import("./workspace-git");
 
 after(async () => {
   await disposeAllChats();
+  await settled(join(root, "ws"));
 });
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -119,6 +124,28 @@ describe("b1: its own switches, in the operator's turn", async () => {
     assert.equal(ok.status, 200);
     assert.equal(readPoSettings(projectOverseerPaths(pid)).caps.promptsPerTurn, 1);
     assert.equal(settings.readHistory(pid).at(-1)!.revertOf, newest.id);
+  });
+
+  test("Undo of a power turned Off is a grant: a chat's key, a script's token and the Overseer are refused (403) and it stays Off; the page puts it back", async () => {
+    await po.patchProjectOverseer(pid, { powers: { overseer: { codingStart: true } } });
+    await po.patchProjectOverseer(pid, { powers: { overseer: { codingStart: false } } });
+    const row = settings.readHistory(pid).at(-1)!;
+    assert.deepEqual([row.field, row.from, row.to], ["powers.overseer.codingStart", true, false]);
+    const a = app();
+    for (const headers of [{ "x-sova-caller": "k" }, { "x-sova-token": "x" }, { [OVERSEER_SENDER_HEADER]: senderSecret() }] as Record<string, string>[]) {
+      const r = await post(a, `/api/projects/${pid}/settings/undo`, { id: row.id }, headers);
+      assert.equal(r.status, 403, JSON.stringify(headers));
+      assert.equal(readPoSettings(projectOverseerPaths(pid)).powers.overseer.codingStart, false, "the power stays Off");
+    }
+    assert.equal(settings.readHistory(pid).at(-1)!.id, row.id, "nothing written");
+    const ok = await post(a, `/api/projects/${pid}/settings/undo`, { id: row.id });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    assert.equal(readPoSettings(projectOverseerPaths(pid)).powers.overseer.codingStart, true);
+    // A narrowing undo stays open to any caller, as today.
+    const on = settings.readHistory(pid).at(-1)!;
+    const narrow = await post(a, `/api/projects/${pid}/settings/undo`, { id: on.id }, { "x-sova-caller": "k" });
+    assert.equal(narrow.status, 200, await narrow.clone().text());
+    assert.equal(readPoSettings(projectOverseerPaths(pid)).powers.overseer.codingStart, false);
   });
 
   test("Apply is the operator's page only: the Overseer's sender mark, a script's token header and a chat's key are refused; a stale fingerprint is 409", async () => {
@@ -245,6 +272,78 @@ describe("a project that isn't in Git", async () => {
     const ref = await run(project.id, true, { op: "reference", setting: "profile" });
     assert.match(ref.content[0]!.text, /overseerMayStart/);
   });
+});
+
+describe("an organization's project: the main stakeholder, the owner's page and Frozen", async () => {
+  const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
+  mkdirSync(join(root, "orgproj"));
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "orgproj") });
+  const pid = project.id;
+  await po.ensureProjectOverseer(pid);
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT", decides: ["invoicing"] });
+  const placed = () => orgs.readProjects(org.id).find((p) => p.id === pid)!;
+
+  test("reference: project.frozen, project.stakeholder, project.ownerHidden and project.archive have entries", async () => {
+    for (const [setting, words] of [["project.frozen", /frozen/i], ["project.stakeholder", /stakeholder/i], ["project.ownerHidden", /owner's page/i], ["project.archive", /its own confirm/i]] as const) {
+      const out = await runSettingsTool(pid, { op: "reference", setting }, true);
+      assert.match(out.content[0]!.text, words, setting);
+    }
+  });
+
+  test("unfreezing the spec is a grant: a waiting card, applied only from the page", async () => {
+    await reconcile.setFrozen(org.id, pid, true);
+    const out = await run(pid, true, { op: "propose", why: "Let chats write the spec again.", edits: [{ setting: "project", frozen: false }] });
+    assert.equal(placed().spec?.frozen, true, "still frozen: a grant waits for the operator");
+    const c = out.details.card;
+    assert.equal(c.state, "waiting");
+    assert.deepEqual(c.kept.map((k: any) => [k.field, k.from, k.to]), [["project.frozen", true, false]]);
+    assert.equal(c.grants.length, 1);
+    assert.match(c.grants[0].what, /unfreez/i);
+    const a = app();
+    const refused = await post(a, `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint }, { "x-sova-caller": "k" });
+    assert.equal(refused.status, 403);
+    const r = await post(a, `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.equal(placed().spec?.frozen, false, "unfrozen by the page's Apply");
+    const last = settings.readHistory(pid).at(-1)!;
+    assert.deepEqual([last.field, last.from, last.to, last.by.kind, last.card], ["project.frozen", true, false, "operator", c.id]);
+  });
+
+  test("freezing, hiding from the owner's page and a stakeholder change apply at once in the operator's turn, with Undo; putting the page back is a grant", async () => {
+    const out = await run(pid, true, { op: "propose", why: "Freeze it, hide it, Tony decides.", edits: [{ setting: "project", frozen: true, ownerHidden: true, stakeholder: tony.id }] });
+    assert.equal(out.details.card, null, "nothing widens: no card");
+    assert.equal(placed().spec?.frozen, true);
+    assert.equal(placed().ownerHidden, true);
+    assert.equal(placed().stakeholder, tony.id);
+    assert.deepEqual(out.details.appliedNow.map((r: any) => r.field).sort(), ["project.frozen", "project.ownerHidden", "project.stakeholder"]);
+    // Unattended, even hiding only prepares a card (a7).
+    const later = await run(pid, false, { op: "propose", why: "None.", edits: [{ setting: "project", stakeholder: null }] });
+    assert.equal(placed().stakeholder, tony.id);
+    assert.equal(later.details.card.state, "waiting");
+    // Undo of the hide shows the project again: a grant, the page's only.
+    const hide = settings.readHistory(pid).find((r) => r.field === "project.ownerHidden" && r.to === true)!;
+    const a = app();
+    const no = await post(a, `/api/projects/${pid}/settings/undo`, { id: hide.id }, { "x-sova-token": "x" });
+    assert.equal(no.status, 403);
+    assert.equal(placed().ownerHidden, true);
+    const ok = await post(a, `/api/projects/${pid}/settings/undo`, { id: hide.id });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    assert.notEqual(placed().ownerHidden, true);
+    // Undo of the stakeholder change is no grant.
+    const st = settings.readHistory(pid).find((r) => r.field === "project.stakeholder")!;
+    const back = await post(a, `/api/projects/${pid}/settings/undo`, { id: st.id }, { "x-sova-caller": "k" });
+    assert.equal(back.status, 200, await back.clone().text());
+    assert.equal(placed().stakeholder ?? null, null);
+    // Unknown project keys and archiving are refused.
+    await assert.rejects(() => run(pid, true, { op: "propose", why: "x", edits: [{ setting: "project", owner: "x" }] }), /Unknown project setting "owner"/);
+    await assert.rejects(() => run(pid, true, { op: "propose", why: "x", edits: [{ setting: "project", archived: true }] }), /its own confirm/);
+    await assert.rejects(() => run(pid, true, { op: "propose", why: "x", edits: [{ setting: "project", stakeholder: "p_nobody00" }] }), /active person on the roster/);
+  });
+});
+
+test("a standalone project has no stakeholder, owner's page or Frozen: refused in words", async () => {
+  const { project } = await gitProject("lone");
+  await assert.rejects(() => run(project.id, true, { op: "propose", why: "x", edits: [{ setting: "project", frozen: true }] }), /only an organization's project/i);
 });
 
 test("only the project overseer has sova_settings, and its ops map to a power (propose always, apply the operator's)", async () => {

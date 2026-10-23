@@ -14,7 +14,7 @@ import { ABILITIES_PARAM, baseAbilities, FILES_PARAM, overseerAbilities, withFil
 import { actOrThrow, heldAt, holdRef, hostOf, isOrgHostOpen, onOrgHostOpened } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { OrgError } from "./org-error";
-import { decidePersonAct, onOrgAttached, operatorName, overseerPersonLine, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
+import { decidePersonAct, findPerson, onOrgAttached, operatorName, orgOfProject, overseerPersonLine, patchPlacement, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
 import { markSendsNoted, projectSends, sendsToNote } from "./outreach/log";
 import { updateIdea } from "./overseer-ideas";
 import { serverRedactor } from "./overseer-redact";
@@ -27,7 +27,8 @@ import { cut, link, obj, PREVIEW_IN_GATHERING, Refusal, str, strs, text } from "
 import { pipelineInfo } from "./project-pipeline";
 import { appendUpdate, cleanUpdateText } from "./project-updates";
 import { contributeProjectPart, type GapPart, type OtherSessions, type OverseerToolCtx } from "./projects/contributions";
-import { listDecisions, promoteDecisions, reconcileProject } from "./reconcile";
+import { listDecisions, promoteDecisions, reconcileProject, setFrozen } from "./reconcile";
+import { setPlacementDeps } from "./project-settings";
 import { renderTranscript, sessionRef } from "./session-guards";
 import { readView } from "./share/hub";
 import { specEntries } from "./spec-lookup";
@@ -901,6 +902,41 @@ export async function postOwnerUpdate(orgId: string, projectId: string, body: st
   if (fx?.error) throw new Error(fx.error);
   return { update: fx?.result as ProjectUpdate, owner: owner?.name ?? "" };
 }
+
+// ---- the project's settings: its placement's part (§app.project-overseer/settings) ---------------------------
+
+// The project overseer's sova_settings changes these through the routes' own writes, as the operator (it applies
+// only in a turn the operator started, or at their Apply on its card).
+setPlacementDeps({
+  read(projectId) {
+    const orgId = orgOfProject(projectId);
+    const p = orgId ? readProjects(orgId).find((x) => x.id === projectId) : undefined;
+    return p ? { "project.stakeholder": p.stakeholder ?? null, "project.ownerHidden": p.ownerHidden === true, "project.frozen": p.spec?.frozen === true } : null;
+  },
+  stakeholderRefusal(projectId, personId) {
+    const orgId = orgOfProject(projectId);
+    const p = orgId ? findPerson(orgId, personId) : undefined;
+    return p && p.status === "active" ? null : "Only an active person on the roster can be a project's main stakeholder.";
+  },
+  nameOf(personId) {
+    for (const o of readIndex().orgs) {
+      try {
+        const p = findPerson(o.id, personId);
+        if (p) return p.name;
+      } catch {
+        // an org that doesn't open: skipped
+      }
+    }
+    return null;
+  },
+  async write(projectId, field, to) {
+    const orgId = orgOfProject(projectId);
+    if (!orgId) throw new OrgError("No organization places this project any more.", 409);
+    if (field === "project.frozen") await setFrozen(orgId, projectId, to === true);
+    else if (field === "project.ownerHidden") await patchPlacement(orgId, projectId, { ownerHidden: to === true });
+    else await patchPlacement(orgId, projectId, { stakeholder: typeof to === "string" ? to : null });
+  },
+});
 
 // ---- the contribution ---------------------------------------------------------------------------------------
 

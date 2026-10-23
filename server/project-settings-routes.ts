@@ -1,6 +1,5 @@
 import type { Context, Hono } from "hono";
 import { OrgError } from "./org-error";
-import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { pageOnlyRefusal } from "./page-only";
 import { projectOf } from "./project-overseer-store";
 import { applyCard, fieldLabel, readHistory, valueText, settingsInfo, SettingsRefusal, undoRow, withdrawCard } from "./project-settings";
@@ -48,6 +47,14 @@ const APPLY_WORDS = {
   extension: "An extension can't apply a settings card: apply it yourself on its card.",
 };
 
+const UNDO_WORDS = {
+  overseer: "Putting that back widens what the overseer may do: only you do that, on the project page.",
+  local: "Putting that back widens what the overseer may do: only on this machine, on the project page.",
+  chat: "A chat can't put that back: it widens what the overseer may do. Undo it yourself on the project page.",
+  script: "A script can't put that back: it widens what the overseer may do. Undo it yourself on the project page.",
+  extension: "An extension can't put that back: it widens what the overseer may do. Undo it yourself on the project page.",
+};
+
 export function registerProjectSettingsRoutes(app: Hono<any>): void {
   const base = "/api/projects/:pid/settings";
   app.get(base, handle(async (c) => c.json(await settingsInfo(pid(c)), 200, NO_STORE)));
@@ -58,7 +65,8 @@ export function registerProjectSettingsRoutes(app: Hono<any>): void {
       const id = pid(c);
       const b = await body(c);
       if (typeof b.id !== "string") throw new OrgError("Expected {id}: a settings history line's id (h…).");
-      return c.json(await undoRow(id, b.id, { fromOverseer: !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER)) }));
+      // Putting back what widens (a power turned Off, a limit lowered, the hold, …) is a grant: the operator's page only.
+      return c.json(await undoRow(id, b.id, { notPage: pageOnlyRefusal(c, UNDO_WORDS) }));
     }),
   );
   app.post(

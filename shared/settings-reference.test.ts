@@ -8,6 +8,7 @@ import { POWERS, POWER_INFO } from "./powers";
 import { PO_PATCH_FIELDS, PO_CAP_LABEL } from "./project-overseer";
 import { BUTTON_KEYS, OFFER_KEYS, OFFERS_FILE_KEYS } from "./session-offers";
 import { MODE_KEYS } from "./project-modes";
+import { PROJECT_EDIT_KEYS } from "./project-settings";
 import { SETTINGS_REFERENCE, settingsIndex, type SettingId } from "./settings-reference";
 
 // The ratchet (§app.project-overseer/settings): every key a settings parser reads has a reference entry,
@@ -30,6 +31,21 @@ test("the project's own PATCH (name, root) has an entry", () => {
   const read = /editProject\([^,]+, \{ ([^}]*) \}/.exec(route)?.[1]?.split(",").map((x) => x.trim().split(":")[0]!) ?? [];
   assert.deepEqual(read.sort(), ["name", "root"]);
   assert.deepEqual(missing(read, keysOf("project.name")), []);
+});
+
+test("the project's other settings (stakeholder, owner's page, Frozen, archive) have entries, and the project edit takes each", () => {
+  const src = (f: string) => readFileSync(join(import.meta.dirname, "..", f), "utf8");
+  // PATCH /api/orgs/:id/projects/:pid/placement reads these; PATCH …/projects/:pid/spec reads frozen.
+  const placement = /projects\/:pid\/placement",[\s\S]*?patchPlacement\(([^\n]*)/.exec(src("server/org-routes.ts"))?.[1] ?? "";
+  const placementKeys = [...new Set([...placement.matchAll(/\bb\.(\w+) !== undefined/g)].map((m) => m[1]!))].sort();
+  assert.deepEqual(placementKeys, ["ownerHidden", "stakeholder"]);
+  const spec = /\$\{BASE\}\/spec`,\s*handle\(async[\s\S]*?\(await body\(c\)\)\.(\w+)/.exec(src("server/decisions-routes.ts"))?.[1];
+  assert.equal(spec, "frozen");
+  const project = keysOf("project.name", "project.stakeholder", "project.ownerHidden", "project.frozen", "project.archive");
+  assert.deepEqual(missing([...placementKeys, spec!, "archived"], project), []);
+  // The project edit of sova_settings propose names every one of them, and nothing without an entry.
+  assert.deepEqual(missing([...placementKeys, spec!, "archived", "name", "root"], new Set(PROJECT_EDIT_KEYS)), []);
+  assert.deepEqual(missing(PROJECT_EDIT_KEYS, project), []);
 });
 
 test("every profile field and limit has an entry", () => {

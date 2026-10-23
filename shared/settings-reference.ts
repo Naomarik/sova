@@ -27,6 +27,10 @@ export type SettingId =
   | "overseer.brake"
   | "overseer.memory"
   | "project.name"
+  | "project.stakeholder"
+  | "project.ownerHidden"
+  | "project.frozen"
+  | "project.archive"
   | "services"
   | "profile"
   | "playbook"
@@ -215,6 +219,46 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     keys: { name: "the name", root: "the project's folder: moving it is the operator's own, on the project page" },
     changedAt: "the project page's head",
   },
+  "project.stakeholder": {
+    id: "project.stakeholder",
+    label: "The main stakeholder",
+    where: "sova",
+    summary: "An organization's project only: the active roster person who decides every area of the project no one else on the roster decides by name (promotions and conflicts there go to them).",
+    edit: '{setting: "project", stakeholder: "<person id>" | null}',
+    grant: null,
+    keys: { stakeholder: "an active roster person's id (p_…), or null for none" },
+    changedAt: "the project page's Main stakeholder select",
+  },
+  "project.ownerHidden": {
+    id: "project.ownerHidden",
+    label: "Shown on the owner's page",
+    where: "sova",
+    summary: "An organization's project only, while the org has an owner: whether the project shows on the owner's page (Show this project on {name}'s page).",
+    edit: '{setting: "project", ownerHidden: true|false}',
+    grant: "Shown again (ownerHidden false after true): it widens who sees the project.",
+    keys: { ownerHidden: "true: hidden from the owner's page; false: shown (the default)" },
+    changedAt: "the project page's Owner Page card",
+  },
+  "project.frozen": {
+    id: "project.frozen",
+    label: "Frozen spec",
+    where: "sova",
+    summary: "An organization's project only: a frozen spec is written only by the reconciler's promotion; an edit outside it is reported.",
+    edit: '{setting: "project", frozen: true|false}',
+    grant: "Unfrozen (frozen false after true): its claims may be written outside promotion again.",
+    keys: { frozen: "true: only promotion writes the spec; false: not frozen" },
+    changedAt: "the project page's Frozen switch",
+  },
+  "project.archive": {
+    id: "project.archive",
+    label: "Archived",
+    where: "sova",
+    summary: "Archiving puts the project away, nothing deleted. It is the operator's own: Archive Project… on the project page, with its own confirm. sova_settings refuses it; say why you'd archive and let the operator do it.",
+    edit: "none: refused ({setting: \"project\", archived} is the operator's own, with its own confirm)",
+    grant: null,
+    keys: { archived: "refused here: Archive Project… on the project page keeps its own confirm" },
+    changedAt: "the project page's Danger zone (Archive Project…)",
+  },
   services: {
     id: "services",
     label: "Services",
@@ -337,7 +381,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
 export const SETTING_IDS = Object.keys(SETTINGS_REFERENCE) as SettingId[];
 
 /** Only an organization's project has these (a standalone project's index leaves them out). */
-const PLACED_ONLY: readonly SettingId[] = ["overseer.abilities"];
+const PLACED_ONLY: readonly SettingId[] = ["overseer.abilities", "project.stakeholder", "project.ownerHidden", "project.frozen"];
 
 /** The prompt's short index: one line per setting (`placed`: an organization places the project). */
 export function settingsIndex(placed = true): string {

@@ -3,7 +3,9 @@
 // replayed in memory, show_changes coverage, the align tool's own rules, privacy). Every problem is
 // { pointer, message, hint? }; load-story.mjs turns pointers into story.json:LINE:COL.
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { hostname, homedir, userInfo } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pointerOf } from "./json-pos.mjs";
@@ -156,10 +158,12 @@ export function schemaKeywords(schema, out = new Set()) {
 // ---- helpers shared with load-story --------------------------------------------------------------
 
 export const text = (t) => (Array.isArray(t) ? t.join("\n") : t);
-export const STEP_ACTIONS = ["user", "say", "read", "edit", "write", "bash", "align", "decide", "worktree", "spawn", "wait", "show_changes", "tool", "error", "hold"];
+export const STEP_ACTIONS = ["user", "say", "read", "edit", "write", "bash", "align", "decide", "worktree", "spawn", "wait", "show_changes", "tool", "error", "hold", "summary"];
 export const actionOf = (step) => STEP_ACTIONS.find((a) => a in step);
 /** Steps a static (written-to-disk) session may hold. */
-export const STATIC_ACTIONS = new Set(["user", "say", "read", "bash", "align", "decide", "error"]);
+export const STATIC_ACTIONS = new Set(["user", "say", "read", "bash", "align", "decide", "error", "summary"]);
+/** Steps that are not part of the conversation the model sees: markers between its turns. */
+export const MARKER_ACTIONS = new Set(["hold", "summary"]);
 const MODEL_ACTIONS = new Set(["say", "read", "edit", "write", "bash", "align", "decide", "worktree", "spawn", "wait", "show_changes", "tool"]);
 
 export function durationMs(d) {
@@ -181,7 +185,8 @@ export function offsetMs(o) {
  *   a new panel or new text: 1.5 s on screen before the pointer moves
  *   pointer travel 0.5–0.9 s (by distance, eased), 0.3 s rest on the target, a 0.35 s ripple,
  *   0.4 s still after; typing about 30 characters a second, a typed prompt at most 90 characters;
- *   a caption at most 5 words, on screen at least 2 s
+ *   a caption (page text under the video) at most 8 words and 48 characters, shown at least
+ *   max(2 s, its reading time)
  */
 export const PACE = {
   read: { base: 1, perWord: 0.3, min: 1.5, max: 5 },
@@ -192,7 +197,7 @@ export const PACE = {
   after: 0.4,
   typingMs: { min: 28, max: 40 },
   promptMax: 90,
-  caption: { words: 5, min: 2 },
+  caption: { words: 8, chars: 48, min: 2 },
   scroll: 0.8,
 };
 
@@ -201,6 +206,17 @@ export const meaningfulWords = (t) => t.split(/\s+/).filter((w) => /[\p{L}\p{N}]
 
 /** The reading time of `t` in ms: 1 s + 0.3 s a word, clamped to 1.5–5 s. */
 export const readingMs = (t) => Math.round(1000 * Math.min(PACE.read.max, Math.max(PACE.read.min, PACE.read.base + PACE.read.perWord * meaningfulWords(t))));
+
+/** How long a caption must stay on the page (ms): its reading time, never under PACE.caption.min. */
+export const captionMinMs = (t) => Math.max(PACE.caption.min * 1000, readingMs(t));
+
+/** A caption's own problems (words, characters), or []. */
+export function captionProblems(t) {
+  const out = [];
+  if (meaningfulWords(t) > PACE.caption.words) out.push(`${meaningfulWords(t)} words; a caption has at most ${PACE.caption.words}`);
+  if (t.length > PACE.caption.chars) out.push(`${t.length} characters; a caption has at most ${PACE.caption.chars}`);
+  return out;
+}
 
 /** What a beat that moves the pointer costs, travel to after (ms). A tap has no travel. */
 export const pressMs = (pointer) => Math.round(1000 * ((pointer === "tap" ? 0 : (PACE.travel.min + PACE.travel.max) / 2) + PACE.rest + PACE.ripple + PACE.after));
@@ -229,7 +245,7 @@ export function beatMs(b, { typingMs, loopMs, pointer }) {
 
 /** Beats after which something new is on screen (a page, a panel, streamed text): the pointer
     waits PACE.settle before it moves again. */
-const NEW_CONTENT = new Set(["link", "session-row", "workers", "worker", "close-panel", "review-changes", "changes-step"]);
+const NEW_CONTENT = new Set(["link", "session-row", "workers", "worker", "close-panel", "review-changes", "changes-step", "pane-tab"]);
 export const bringsNewContent = (b) => b.do === "release" || b.do === "scroll" || ((b.do === "click" || b.do === "tap") && NEW_CONTENT.has(b.target));
 const movesPointer = (b) => ["type", "click", "tap", "home"].includes(b.do);
 
@@ -271,6 +287,7 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   });
   for (const [id, w] of Object.entries(workers)) if (!models.has(w.model)) err(["workers", id, "model"], `unknown model "${w.model}"`, `models are: ${[...models].join(", ")}`);
   if (story.overseer && !models.has(story.overseer.model)) err(["overseer", "model"], `unknown model "${story.overseer.model}"`);
+  if (story.summarizer && !models.has(story.summarizer)) err(["summarizer"], `unknown model "${story.summarizer}"`, `models are: ${[...models].join(", ")}`);
 
   // file bodies
   const fileRef = (body, path) => {
@@ -315,6 +332,27 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
 
   const firstUser = new Map(); // first user text -> where
   const holdsOf = new Map(); // owner -> Set(hold)
+  // A summary: the session's topics so far (t1, t2… in order), its static ones anchored at a user step.
+  const topicsOf = new Map(); // owner -> number of topics
+  function summaryChecks(sc, step, at, k) {
+    const sum = step.summary;
+    let n = topicsOf.get(sc.owner) ?? 0;
+    if (sum.now.length > 60) err([...at, "summary", "now"], `${sum.now.length} characters; the summarizer writes "now" in at most 60`);
+    if (meaningfulWords(sum.overall) > 8) err([...at, "summary", "overall"], `${meaningfulWords(sum.overall)} words; the summarizer writes "overall" in at most 8`);
+    sum.topics.forEach((t, j) => {
+      const tp = [...at, "summary", "topics", j];
+      if (t.update) {
+        const m = /^t([1-9][0-9]*)$/.exec(t.update);
+        if (!m || Number(m[1]) > n) err([...tp, "update"], `no topic ${t.update} before this summary`, n ? `topics so far: ${Array.from({ length: n }, (_, i) => `t${i + 1}`).join(", ")}` : "there are none yet");
+      } else n++;
+      for (const [b, line] of t.summary.entries()) if (line.length > 70) err([...tp, "summary", b], `${line.length} characters; a summary bullet is at most 70`);
+      if (sc.kind === "static") {
+        if (t.from === undefined && !t.update) err(tp, 'a written-in topic needs "from": the index of the user step it starts at');
+        if (t.from !== undefined && (t.from >= k || actionOf(sc.steps[t.from] ?? {}) !== "user")) err([...tp, "from"], `step ${t.from} is not a user step before this summary`);
+      } else if (t.from !== undefined) err([...tp, "from"], 'a live summary takes its range from the summarizer\'s prompt; "from" is for written-in ones');
+    });
+    topicsOf.set(sc.owner, n);
+  }
   for (const sc of scripts) {
     const holds = new Set();
     holdsOf.set(sc.owner, holds);
@@ -325,6 +363,8 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
       if (sc.kind === "static" && !STATIC_ACTIONS.has(a)) err([...at, a], `a static session can't hold a ${a} step`, `static sessions take: ${[...STATIC_ACTIONS].join(", ")}`);
       if (sc.kind !== "static" && a === "error") err([...at, a], "error steps are for static sessions only");
       if (sc.kind === "worker" && ["user", "spawn", "wait"].includes(a)) err([...at, a], `a worker's script can't hold a ${a} step`, a === "user" ? "its task is its first message" : "workers can't start workers");
+      if ((sc.kind === "worker" || sc.kind === "overseer") && a === "summary") err([...at, a], "only a session's own steps take a summary (workers and the Overseer get none)");
+      if (a === "summary") summaryChecks(sc, step, at, k);
       if (sc.kind === "overseer" && ["spawn", "wait", "worktree", "edit", "write", "bash", "read", "show_changes", "align", "decide"].includes(a)) err([...at, a], `the Overseer has no ${a} tool`, "use a tool step with one of its sova_* tools");
       if (k === 0 && sc.kind !== "worker" && a !== "user") err(at, "must start with a user step");
       if (sc.kind === "then" && a === "say" && k === 0) err(at, "then starts with the user step the video sends");
@@ -338,16 +378,16 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
         if (holds.has(step.hold)) err([...at, "hold"], `hold "${step.hold}" appears twice in this script`);
         if (["end", "start"].includes(step.hold)) err([...at, "hold"], `"${step.hold}" is reserved`);
         holds.add(step.hold);
-        const next = sc.steps.slice(k + 1).find((x) => actionOf(x) !== "hold");
+        const next = sc.steps.slice(k + 1).find((x) => !MARKER_ACTIONS.has(actionOf(x)));
         if (sc.kind === "static") err([...at, "hold"], "holds belong in live scripts");
         else if (next && actionOf(next) === "hold") err([...at, "hold"], "two holds in a row");
         void next;
       }
       if (a === "edit" && text(step.edit.old) === text(step.edit.new)) err([...at, "edit"], "old and new are the same");
       if (a === "write") fileRef(step.write.content, [...at, "write", "content"]);
-      if (a !== "hold") prev = a;
+      if (!MARKER_ACTIONS.has(a)) prev = a;
     });
-    const last = [...sc.steps].reverse().find((x) => actionOf(x) !== "hold");
+    const last = [...sc.steps].reverse().find((x) => !MARKER_ACTIONS.has(actionOf(x)));
     if (last && !["say", "error"].includes(actionOf(last)) && sc.kind !== "static") err([...sc.path, sc.steps.length - 1], "the script ends in a tool call", "end it with a say step");
     if (sc.kind === "worker") {
       const key = norm(text(workers[sc.owner].task));
@@ -479,9 +519,9 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     const page = shot.session === "overseer" || shot.session === "access";
     if (shot.session === "overseer" && !story.overseer) err([...at, "session"], "the story has no overseer");
     if (!page && !byId.has(shot.session)) return err([...at, "session"], `unknown session "${shot.session}"`, `sessions are: ${[...byId.keys()].join(", ")}`);
-    const live = shot.session === "overseer" ? true : liveIds.has(shot.session);
+    const live = shot.session === "overseer" ? true : playable.has(shot.session);
     if (shot.at === "start") {
-      if (live && shot.session !== "overseer") err([...at, "at"], `"start" is for a static session or a page; ${shot.session} is live`, `its holds: ${[...holdsFor(shot.session)].join(", ") || "(none)"}, or "end"`);
+      if (liveIds.has(shot.session)) err([...at, "at"], `"start" is for a static session or a page; ${shot.session} is live`, `its holds: ${[...holdsFor(shot.session)].join(", ") || "(none)"}, or "end"`);
     } else if (!live) err([...at, "at"], `${shot.session} is static, so the only point is "start"`);
     else if (shot.at !== "end" && !holdsFor(shot.session === "overseer" ? "overseer" : shot.session).has(shot.at))
       err([...at, "at"], `no hold "${shot.at}" in ${shot.session}'s script or its workers'`, `holds: ${[...holdsFor(shot.session)].join(", ") || "(none)"}, or "end"`);
@@ -520,6 +560,8 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     const hi = durationMs(v.length.max);
     if (lo >= hi) err([...base, "length"], "min must be under max");
     const holds = holdsFor(v.session);
+    const openerHolds = holdsOf.get(`${name}-overseer`) ?? new Set();
+    if (!v.line?.trim()) err(base, 'a video needs "line": the fixed line under its still (reduced motion, no JS)');
     const workersOf = new Set([...spawnedBy].filter(([, o]) => o === v.session).map(([w]) => w));
     const steps = sess.script ?? sess.then;
     let pending = null; // what came on screen and hasn't had its settle time
@@ -527,13 +569,13 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     let ms = 0;
     const loopMs = durationMs(v.loop ?? "1s");
     const closeCaption = () => {
-      if (caption && caption.ms < PACE.caption.min * 1000) warn(caption.at, `caption "${caption.text}" is on screen about ${(caption.ms / 1000).toFixed(1)} s (estimated), under ${PACE.caption.min} s`);
+      if (caption && caption.ms < captionMinMs(caption.text)) warn(caption.at, `caption "${caption.text}" is on the page about ${(caption.ms / 1000).toFixed(1)} s (estimated), under its ${(captionMinMs(caption.text) / 1000).toFixed(1)} s`);
       caption = null;
     };
     v.beats.forEach((b, i) => {
       const at = [...base, "beats", i];
-      const allowed = { type: ["scene", "step"], click: ["target", "text", "worker", "q", "option", "n"], tap: ["target", "text", "worker", "q", "option", "n"], release: ["scene", "until", "speed"], hold: ["for", "read"], scroll: ["to"], home: [] }[b.do];
-      for (const k of ["scene", "step", "until", "speed", "target", "text", "worker", "q", "option", "n", "to", "for", "read"]) if (b[k] !== undefined && !allowed.includes(k)) err([...at, k], `"${k}" doesn't go with do "${b.do}"`);
+      const allowed = { type: ["scene", "step"], click: ["target", "text", "worker", "q", "option", "n"], tap: ["target", "text", "worker", "q", "option", "n"], release: ["scene", "until", "speed", "summary"], hold: ["for", "read"], scroll: ["to"], home: [] }[b.do];
+      for (const k of ["scene", "step", "until", "speed", "summary", "target", "text", "worker", "q", "option", "n", "to", "for", "read"]) if (b[k] !== undefined && !allowed.includes(k)) err([...at, k], `"${k}" doesn't go with do "${b.do}"`);
       if (b.do === "type" && b.step === undefined) err(at, 'do "type" needs "step"');
       if ((b.do === "click" || b.do === "tap") && !b.target) err(at, `do "${b.do}" needs "target"`);
       if (b.do === "release" && !b.until) err(at, 'do "release" needs "until"');
@@ -548,9 +590,10 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
         if (!st || actionOf(st) !== "user") err([...at, "step"], `step ${b.step} of ${b.scene === "overseer" ? "the opener" : sess.script ? `${v.session}'s script` : `${v.session}'s then`} is not a user step`);
         else if (text(st.user).length > PACE.promptMax) err([...at, "step"], `that prompt is ${text(st.user).length} characters; a typed prompt is at most ${PACE.promptMax}`);
       }
-      if (b.do === "release" && b.until && b.until !== "end" && (b.scene === "overseer" || !holds.has(b.until))) err([...at, "until"], `no hold "${b.until}" in ${b.scene === "overseer" ? "the opener" : `${v.session}'s script or its workers'`}`, `holds: ${[...holds].join(", ") || "(none)"}, or "end"`);
+      if (b.do === "release" && b.until && b.until !== "end" && !(b.scene === "overseer" ? openerHolds : holds).has(b.until)) err([...at, "until"], `no hold "${b.until}" in ${b.scene === "overseer" ? "the opener" : `${v.session}'s script or its workers'`}`, `holds: ${[...(b.scene === "overseer" ? openerHolds : holds)].join(", ") || "(none)"}, or "end"`);
+      if (b.summary && (b.scene === "overseer" || !steps.some((st) => actionOf(st) === "summary"))) err([...at, "summary"], `${v.session}'s ${sess.script ? "script" : "then"} has no summary step to wait for`);
       if (b.target === "worker" && (!b.worker || !workersOf.has(b.worker))) err([...at, "worker"], `"worker" must name one of ${v.session}'s workers: ${[...workersOf].join(", ") || "(none)"}`);
-      if (["link", "session-row"].includes(b.target) && !b.text) err(at, `target ${b.target} needs "text"`);
+      if (["link", "session-row", "pane-tab"].includes(b.target) && !b.text) err(at, `target ${b.target} needs "text"`);
       if (b.target === "align-option" && (b.q === undefined || b.option === undefined)) err(at, 'target align-option needs "q" and "option"');
       if (b.target === "changes-step" && !b.n) err(at, 'target changes-step needs "n"');
       if (b.speed && b.do !== "release") err([...at, "speed"], "only a release is sped up");
@@ -572,8 +615,7 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
       if (b.caption !== undefined) {
         closeCaption();
         if (b.caption !== null) {
-          const words = meaningfulWords(b.caption);
-          if (words > PACE.caption.words) err([...at, "caption"], `${words} words; a caption has at most ${PACE.caption.words}`);
+          for (const p of captionProblems(b.caption)) err([...at, "caption"], p);
           caption = { text: b.caption, ms: 0, at: [...at, "caption"] };
         }
       }
@@ -581,6 +623,7 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
       ms += dur;
     });
     closeCaption();
+    if (v.beats.some((b) => typeof b.caption === "string") && typeof v.beats[0]?.caption !== "string") err([...base, "beats", 0], "the first beat needs a caption: the page shows one from the video's first frame");
     if (v.beats.at(-1)?.do !== "home") err([...base, "beats"], 'the last beat is "home": the pointer goes back to its start and the video fades into its first frame');
     if (ms < lo || ms > hi) warn(base, `estimated length ${(ms / 1000).toFixed(1)} s is outside ${v.length.min}–${v.length.max} (the recording's own length is checked by screens:verify)`);
   }
@@ -608,10 +651,52 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   };
   each(story, []);
 
+  // Drawings: every ```vis fence in a reply parses with the app's own parser.
+  const fences = [];
+  const says = (steps, path) => steps.forEach((st, k) => actionOf(st) === "say" && fences.push(...visFences(text(st.say)).map((f) => ({ ...f, path: [...path, k, "say"] }))));
+  sessions.forEach((s, i) => ["messages", "script", "then"].forEach((key) => s[key] && says(s[key], ["sessions", i, key])));
+  for (const [id, w] of Object.entries(workers)) says(w.script, ["workers", id, "script"]);
+  if (story.overseer) says(story.overseer.script, ["overseer", "script"]);
+  for (const [name, v] of Object.entries(story.videos ?? {})) if (v.overseer) says(v.overseer.script, ["videos", name, "overseer", "script"]);
+  if (fences.length) {
+    const r = parseFences(fences, repoRoot);
+    if (r.skipped) warn([], `vis drawings not checked: ${r.skipped}`);
+    else r.results.forEach((x, i) => !x.ok && err(fences[i].path, `the vis ${fences[i].kind} drawing doesn't parse: line ${x.line}: ${x.message}`, "the app would show its source instead of the drawing"));
+  }
+
   return { errors, warnings, facts: { spawnedBy, holdsOf, worktreesOf, liveIds } };
 }
 
 const norm = (s) => s.replace(/\s+/g, " ").trim();
+
+/** The ```vis <kind> fences in a reply's text: { kind, body }. */
+export function visFences(t) {
+  const out = [];
+  for (const m of t.matchAll(/^```(vis(?:[-:][A-Za-z][\w-]*)?(?:[ \t]+[A-Za-z][\w-]*)?)[ \t]*\n([\s\S]*?)^```[ \t]*$/gm)) {
+    const info = m[1].trim().split(/\s+/);
+    const kind = /^vis[-:](.+)$/.exec(info[0])?.[1] ?? info[1] ?? "";
+    out.push({ kind: kind.toLowerCase(), body: m[2].replace(/\n$/, "") });
+  }
+  return out;
+}
+
+/** Parse the fences with src/vis/parse.ts. The app's TypeScript needs more than Node's type
+    stripping, so Bun (the repo's runtime) runs it; without Bun the check is skipped with a warning. */
+function parseFences(fences, repoRoot) {
+  const parser = join(repoRoot, "src", "vis", "parse.ts");
+  if (!existsSync(parser)) return { skipped: "src/vis/parse.ts not found" };
+  const dir = mkdtempSync(join(tmpdir(), "vis-lint-"));
+  try {
+    const script = join(dir, "lint.ts");
+    writeFileSync(script, `import { parseVis } from ${JSON.stringify(parser)};\nconst input = JSON.parse(await Bun.stdin.text());\nconsole.log(JSON.stringify(input.map((f) => { const r = parseVis(f.kind, f.body); return r.ok ? { ok: true } : r; })));\n`);
+    const out = execFileSync("bun", [script], { input: JSON.stringify(fences.map(({ kind, body }) => ({ kind, body }))), stdio: ["pipe", "pipe", "pipe"] }).toString();
+    return { results: JSON.parse(out) };
+  } catch (e) {
+    return { skipped: e.code === "ENOENT" ? "bun is not on PATH" : String(e.stderr ?? e.message).slice(0, 300) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 function closest(content, old) {
   const want = old.split("\n").find((l) => l.trim()) ?? old;

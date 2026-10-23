@@ -1,6 +1,7 @@
 // Assembly: the screencast's frames (which arrive only when the page changes) become a constant
-// 30 fps picture, and the pointer, its click ripples, the captions and the "sped up" tag are drawn
-// onto it here rather than in the page, so they move smoothly whatever the page's frame rate was.
+// 30 fps picture, and the pointer and its click ripples are drawn onto it here rather than in the
+// page, so they move smoothly whatever the page's frame rate was. Nothing else is drawn: captions
+// and the "sped up" tag are page text under the video (record.mjs writes their cue list).
 // Then the closing fade into the first frame (the loop has no seam), and the encodes: AV1 first,
 // H.264 as the fallback, each at the best quality that fits its byte budget.
 //
@@ -9,15 +10,12 @@
 // seconds from the first frame) runs slower than it there; toOut/fromOut convert.
 
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SITE } from "./load-story.mjs";
 import { siteSharp } from "./harness.mjs";
 import { PACE } from "./story-check.mjs";
 
 export const FPS = 30;
 const ACCENT = [0x8e, 0x88, 0xff]; // --color-accent in Sova's dark theme
-const CAPTION_FADE = 0.25;
 
 export const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -103,49 +101,6 @@ async function pressSprites(sharp, scale, pointer) {
   return { ripple, touch };
 }
 
-/**
- * Caption and tag images, drawn by Chromium in the site's own Inter (so they read as the page's
- * type), at the video's pixels per CSS px. Returns text → { data (RGBA), w, h } and the CSS size.
- */
-export async function renderLabels(browser, labels, scale, fontPx) {
-  const sharp = siteSharp();
-  const font = readFileSync(join(SITE, "public", "fonts", "Inter-Variable.woff2")).toString("base64");
-  const ctx = await browser.newContext({ viewport: { width: 1200, height: 300 }, deviceScaleFactor: scale });
-  const page = await ctx.newPage();
-  const out = new Map();
-  try {
-    for (const { text, kind } of labels) {
-      const esc = text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
-      await page.setContent(
-        `<style>@font-face{font-family:InterSite;src:url(data:font/woff2;base64,${font}) format("woff2");font-weight:100 900}` +
-          `html,body{margin:0;background:transparent}` +
-          `#l{display:inline-block;margin:12px;font-family:InterSite;letter-spacing:-0.01em;white-space:nowrap}` +
-          `.caption{font-weight:600;font-size:${fontPx}px;line-height:1.25;color:#fff;background:rgb(17,17,24);padding:${Math.round(fontPx * 0.5)}px ${Math.round(fontPx * 0.8)}px;border-radius:${Math.round(fontPx * 0.6)}px;border:1px solid rgba(255,255,255,.14);box-shadow:0 3px 14px rgba(0,0,0,.4)}` +
-          `.tag{font-weight:600;font-size:${Math.round(fontPx * 0.76)}px;line-height:1.2;color:#fff;background:rgba(74,67,216,.92);padding:${Math.round(fontPx * 0.32)}px ${Math.round(fontPx * 0.62)}px;border-radius:999px;box-shadow:0 3px 12px rgba(0,0,0,.35)}</style>` +
-          `<span id="l" class="${kind}">${esc}</span>`,
-      );
-      await page.evaluate(() => document.fonts.ready);
-      const family = await page.evaluate(() => document.fonts.check("600 16px InterSite"));
-      if (!family) throw new Error("the site's Inter font didn't load for the captions");
-      const png = await page.locator("#l").screenshot({ omitBackground: true });
-      const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-      out.set(`${kind}:${text}`, { data, w: info.width, h: info.height, cssW: info.width / scale, cssH: info.height / scale });
-    }
-  } finally {
-    await ctx.close();
-  }
-  return out;
-}
-
-/** An opaque plate (CSS rect at `scale`), in the captions' colour, with a hairline edge. */
-async function plateSprite(sharp, scale, r) {
-  const w = Math.max(1, Math.round((r.x1 - r.x0) * scale));
-  const h = Math.max(1, Math.round((r.y1 - r.y0) * scale));
-  const rad = Math.round(10 * scale);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" rx="${rad}" fill="rgb(17,17,24)" stroke="rgba(255,255,255,0.14)" stroke-width="${Math.max(1, Math.round(scale))}"/></svg>`;
-  return svgRaw(sharp, svg);
-}
-
 // ---- drawing ----------------------------------------------------------------------------------
 
 /** src (RGBA) over dst (RGB, W x H) with its top-left at (x, y), times `opacity`. */
@@ -176,23 +131,12 @@ function mix(a, b, t) {
   return out;
 }
 
-/** Fade in over the first CAPTION_FADE s of [a, b] and out over its last. */
-const fade = (o, a, b) => (o < a || o >= b ? 0 : Math.min(1, (o - a) / CAPTION_FADE, (b - o) / CAPTION_FADE));
-
-/** Where a caption sits (CSS px), and where the tag sits after it. */
-export function captionBox(v, label) {
-  const m = 14;
-  const x = m;
-  const y = v.captions === "top-left" ? v.captionTop : v.vp.height - m - label.cssH;
-  return { x, y, w: label.cssW, h: label.cssH };
-}
-
 /**
  * Compose the video: every output frame at FPS, piped as raw RGB into a lossless intermediate.
  * `frames` are the screencast's frames cropped to the viewport ({ file, t }), `track` what the
  * recorder logged. Returns the intermediate's path, its size and length, and frame 0 (the poster).
  */
-export async function compose({ frames, track, v, labels, root }) {
+export async function compose({ frames, track, v, root }) {
   const sharp = siteSharp();
   const W = v.width;
   const H = Math.round((W * v.vp.height) / v.vp.width / 2) * 2;
@@ -206,15 +150,6 @@ export async function compose({ frames, track, v, labels, root }) {
   const arrow = v.pointer === "arrow" ? await arrowSprite(sharp, s) : null;
   const press = await pressSprites(sharp, s, v.pointer);
   const presses = (v.pointer === "tap" ? track.taps : track.clicks).map((c) => ({ ...c, o: toOut(c.t) }));
-  const caps = track.captions.map((c) => ({ ...c, oa: toOut(c.a), ob: toOut(c.b), img: labels.get(`caption:${c.text}`) }));
-  // Each caption on its own opaque plate. Back to back, the plates swap at once (no fade between
-  // them), so nothing behind shows; the text fades as usual.
-  const runs = caps.map((c, k) => ({ oa: c.oa, ob: c.ob, x0: c.plate.x, y0: c.plate.y, x1: c.plate.x + c.plate.w, y1: c.plate.y + c.plate.h, joinPrev: k > 0 && c.oa - caps[k - 1].ob < 0.05, joinNext: k < caps.length - 1 && caps[k + 1].oa - c.ob < 0.05 }));
-  for (const r of runs) r.img = await plateSprite(sharp, s, r);
-  // The tag shows over the sped-up stretch, and stays long enough to read (a short stretch of
-  // three times the speed is over in well under a second).
-  const tags = track.speed.map((x) => ({ oa: toOut(x.a), ob: Math.max(toOut(x.b), toOut(x.a) + PACE.caption.min), img: labels.get(`tag:${v.tagText}`) }));
-
   // Each screencast frame, scaled once to the output size; frames sorted by time.
   const times = frames.map((f) => f.t);
   const indexAt = (r) => {
@@ -255,18 +190,6 @@ export async function compose({ frames, track, v, labels, root }) {
     } else {
       r = track.end;
       frame = mix(last, first, ease(clamp((o - endOut) / loop, 0, 1)));
-    }
-    for (const r of runs) {
-      if (o < r.oa || o >= r.ob) continue;
-      const op = Math.min(r.joinPrev ? 1 : (o - r.oa) / CAPTION_FADE, r.joinNext ? 1 : (r.ob - o) / CAPTION_FADE, 1);
-      over(frame, W, H, r.img, r.x0 * s, r.y0 * s, op);
-    }
-    for (const c of caps) if (c.img) over(frame, W, H, c.img, c.box.x * s, c.box.y * s, fade(o, c.oa, c.ob));
-    for (const t of tags) {
-      const cap = caps.find((c) => c.oa <= o && o < c.ob);
-      if (!t.img || !cap?.img) continue;
-      // Above the caption, inside its plate.
-      over(frame, W, H, t.img, cap.box.x * s, (cap.box.y - t.img.cssH - 6) * s, fade(o, t.oa, t.ob));
     }
     for (const p of presses) {
       if (v.pointer === "tap" && o >= p.o - PACE.rest && o < p.o) over(frame, W, H, press.touch, p.x * s - press.touch.hx, p.y * s - press.touch.hy, ease((o - (p.o - PACE.rest)) / PACE.rest));

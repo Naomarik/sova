@@ -7,7 +7,9 @@
 //     match the story (a story edited since the capture fails: run the capture again)
 //   - each video: its AV1 and H.264 files and their shas, every frame decoded, not frozen, its
 //     length, size and shape, its poster, and its recorded timeline against the pacing rules (every
-//     hold its reading time, captions, the leak gate at every beat, the edge check against the page)
+//     hold its reading time, the leak gate at every beat, the edge check against the page); its
+//     cue list (the page's captions) against the story's captions, in order, inside the video, each
+//     on the page at least its reading time
 //   - which images differ from the last commit, by changed-pixel count, so a reviewer looks at those
 //   - the build (pnpm run build, docs leak guard included) and the built images' byte budgets
 //   - no sideways page scroll at 320, 360, 390, 768, 1119 and 1120 px (needs the playwright skill's
@@ -20,7 +22,7 @@ import { join } from "node:path";
 import { loadStory, REPO, SITE } from "./load-story.mjs";
 import { freePort, makeRoot, siteSharp, OUT_DIR, removeRoot, sleep, startBrowser, VIDEO_DIR, waitFor } from "./harness.mjs";
 import { fileSha, inputHashes, videoHash } from "./hashes.mjs";
-import { decodeAll, fileProblems, probe, sourceType, timelineProblems } from "./video-check.mjs";
+import { cueProblems, cuesOf, decodeAll, fileProblems, probe, sourceType, timelineProblems } from "./video-check.mjs";
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
@@ -69,6 +71,12 @@ for (const [name, pv] of Object.entries(plan.videos)) {
   if (!existsSync(poster)) bad(`video ${name}: its poster ${vid.poster.file} is missing`);
   else if (vid.poster.sha !== sha(readFileSync(poster))) bad(`video ${name}: ${vid.poster.file} doesn't match its manifest entry`);
   for (const p of timelineProblems(vid.timeline, v)) bad(`video ${name}: ${p}`);
+  // The page's captions: the cue list matches the story's captions and the recorded beat times.
+  for (const p of cueProblems(vid, v, vid.timeline.seconds)) bad(`video ${name}: ${p}`);
+  const fresh = cuesOf(v, vid.timeline);
+  if (JSON.stringify({ cues: fresh.cues, tags: fresh.tags }) !== JSON.stringify({ cues: vid.cues, tags: vid.tags })) bad(`video ${name}: its cue list isn't what the story's captions and its recorded beats give: run pnpm run screens:video -- --cues`);
+  if (vid.line !== pv.line) bad(`video ${name}: its fixed line changed in story.json: run pnpm run screens:video -- --cues`);
+  else console.log(`cues     ${name}: ${vid.cues.length} captions${vid.tags.length ? `, ${vid.tags.length} sped-up tag` : ""}, in order, each at least its reading time`);
   const kinds = vid.sources.map((x) => (x.type.includes("av01") ? "av1" : x.type.includes("avc1") ? "h264" : "?"));
   if (kinds[0] !== "av1" || kinds[1] !== "h264") bad(`video ${name}: its sources should be AV1 first, then H.264 (have ${kinds.join(", ")})`);
   for (const [k, src] of vid.sources.entries()) {

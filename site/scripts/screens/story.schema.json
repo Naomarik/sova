@@ -29,7 +29,7 @@
     },
     "provider": {
       "$ref": "#/$defs/Id",
-      "description": "The provider name the director is registered under in the capture's models.json. Shows wherever Sova prints a full model ref."
+      "description": "The default provider name for a model without its own `provider`. Every provider is registered in the capture's models.json at the director, which answers for all of them."
     },
     "models": {
       "type": "object",
@@ -87,7 +87,7 @@
     },
     "videos": {
       "type": "object",
-      "description": "The recorded clips, by name: `desk` is the landing page's hero loop, `phone` the phone section's clip. Each is filmed from a live session (or a static session's `then`), its pointer and captions drawn when the video is assembled.",
+      "description": "The recorded clips, by name: `desk` is the landing page's hero loop, `phone` the phone section's clip. Each is filmed from a live session (or a static session's `then`), its pointer drawn when the video is assembled; its captions are page text, from the cue list the recorder writes.",
       "propertyNames": {
         "$ref": "#/$defs/Id"
       },
@@ -104,6 +104,10 @@
       "additionalProperties": {
         "$ref": "#/$defs/Id"
       }
+    },
+    "summarizer": {
+      "$ref": "#/$defs/Id",
+      "description": "A key of `models`: the model Sova's topic-outline summarizer runs on in the capture. The director answers it with the story's `summary` steps."
     }
   },
   "$defs": {
@@ -186,6 +190,10 @@
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9.-]*$",
           "description": "What the model is called. Sova labels Claude ids by name: claude-opus-5-5 reads \"Opus 5.5\"."
+        },
+        "provider": {
+          "$ref": "#/$defs/Id",
+          "description": "The provider Sova shows with the model (\"zai\", \"openai\"). Default: the story's `provider`. Use real names only with the footer's note that the replies are scripted."
         },
         "name": {
           "type": "string",
@@ -440,6 +448,9 @@
         },
         {
           "$ref": "#/$defs/StepHold"
+        },
+        {
+          "$ref": "#/$defs/StepSummary"
         }
       ]
     },
@@ -1083,7 +1094,8 @@
         "pointer",
         "captions",
         "alt",
-        "beats"
+        "beats",
+        "line"
       ],
       "additionalProperties": false,
       "properties": {
@@ -1167,10 +1179,9 @@
         },
         "captions": {
           "enum": [
-            "bottom-left",
-            "top-left"
+            "page"
           ],
-          "description": "Where captions sit."
+          "description": "Captions are page text under the video, from the cue list the recorder writes (nothing is drawn into the picture)."
         },
         "loop": {
           "$ref": "#/$defs/Duration",
@@ -1262,7 +1273,7 @@
               "speed": {
                 "type": "integer",
                 "minimum": 2,
-                "description": "release: play this stretch this many times faster; the video shows a \"sped up\" tag over it."
+                "description": "release: play this stretch this many times faster; the page shows a \"Sped up\" tag beside its caption over it."
               },
               "target": {
                 "enum": [
@@ -1276,14 +1287,15 @@
                   "worker",
                   "close-panel",
                   "review-changes",
-                  "changes-step"
+                  "changes-step",
+                  "pane-tab"
                 ],
-                "description": "click, tap: what to press."
+                "description": "click, tap: what to press. pane-tab: a tab of the session detail pane, by its text."
               },
               "text": {
                 "type": "string",
                 "minLength": 1,
-                "description": "link, session-row: its text."
+                "description": "link, session-row, pane-tab: its text."
               },
               "worker": {
                 "$ref": "#/$defs/Id",
@@ -1308,9 +1320,10 @@
                 "enum": [
                   "align",
                   "align-end",
+                  "vis",
                   "latest"
                 ],
-                "description": "scroll: the alignment card from its title (align), the card's answer row at the bottom of the view (align-end), or the end of the transcript."
+                "description": "scroll: the alignment card from its title (align), the card's answer row at the bottom of the view (align-end), the latest drawing in the chat (vis), or the end of the transcript."
               },
               "for": {
                 "$ref": "#/$defs/Duration",
@@ -1331,16 +1344,25 @@
                     "type": "null"
                   }
                 ],
-                "description": "A caption that starts with this beat and stays until the next caption (null: none from here). At most 5 words, on screen at least 2 s."
+                "description": "A caption that starts with this beat and stays until the next caption (null: none from here). Page text under the video: at most 8 words and 48 characters, on the page at least max(2 s, its reading time). The first beat has one."
               },
               "note": {
                 "$ref": "#/$defs/Note"
+              },
+              "summary": {
+                "const": true,
+                "description": "release: also wait until Sova's summarizer has written the session's summary (a `summary` step the director answers with)."
               }
             }
           }
         },
         "note": {
           "$ref": "#/$defs/Note"
+        },
+        "line": {
+          "type": "string",
+          "minLength": 10,
+          "description": "The fixed line under the still where the video doesn't play (reduced motion, no JavaScript, a failed load): what the still shows."
         }
       }
     },
@@ -1373,6 +1395,77 @@
         "mobile": {
           "const": true,
           "description": "A touch device: mobile layout rules and touch events."
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepSummary": {
+      "type": "object",
+      "required": [
+        "summary"
+      ],
+      "additionalProperties": false,
+      "description": "The session's summary (the Current goal strip and the Timeline's chapters) at this point. In a static session's messages it is written into the file as the summarizer would have; in a live script or `then` it is what the director answers when Sova's summarizer next asks.",
+      "properties": {
+        "summary": {
+          "type": "object",
+          "required": [
+            "now",
+            "overall",
+            "topics"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "now": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Where things stand, at most 60 characters."
+            },
+            "overall": {
+              "type": "string",
+              "minLength": 1,
+              "description": "What the session is for, at most 8 words."
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "heading",
+                  "summary"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "heading": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "1-4 plain words naming the subject."
+                  },
+                  "summary": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "1-3 bullets of at most 70 characters."
+                  },
+                  "update": {
+                    "type": "string",
+                    "pattern": "^t[1-9][0-9]*$",
+                    "description": "The topic (t1, t2... in the order they were first written) this replaces; omitted for a new one."
+                  },
+                  "from": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Written-in summaries only: the index of the user step in `messages` the topic starts at."
+                  }
+                }
+              }
+            }
+          }
         },
         "note": {
           "$ref": "#/$defs/Note"

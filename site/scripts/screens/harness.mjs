@@ -398,8 +398,8 @@ export async function cropToViewport(frames, vp, outDir) {
   return { frames: out, width: size[0], height: size[1] };
 }
 
-/** Where debug output of a failed run goes: the worktree's ignored .agent/screens/. */
-export const DEBUG_DIR = join(REPO, ".agent", "screens", "debug");
+/** Where debug output of a failed run goes: the worktree's ignored .agent/screens/ (or $SCREENS_DEBUG_DIR). */
+export const DEBUG_DIR = process.env.SCREENS_DEBUG_DIR ?? join(REPO, ".agent", "screens", "debug");
 export const OUT_DIR = join(SITE, "src", "assets", "screens");
 
 /**

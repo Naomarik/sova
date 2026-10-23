@@ -2,7 +2,7 @@ import { createMemo, For, Show } from "solid-js";
 import type { TeamInboxItemInfo } from "../../shared/protocol";
 import { fetchTeamInbox, fetchTeamInboxBody } from "../lib/api";
 import { agoTime, stampTime } from "../lib/format";
-import { createInboxReader, emptyInboxText, fromWord, kindWord, movedWord, statusChip } from "../lib/team-inbox";
+import { createInboxReader, emptyInboxText, fromWord, inboxSummary, kindWord, movedWord, statusChip } from "../lib/team-inbox";
 import { Banner, Chip } from "./ui";
 
 const Sep = () => (
@@ -43,7 +43,7 @@ export function TeamInbox(props: { path: string; teamId: string; workerId: strin
     const chip = () => statusChip(it());
     const bodyId = `inbox-body-${props.workerId}-${it().id}`.replace(/[^A-Za-z0-9_-]/g, "_");
     return (
-      <li class="inbox-item" data-status={it().returned ? "returned" : it().status}>
+      <li class="inbox-item" data-status={it().returned ? "returned" : it().status} data-closed-by={it().status === "addressed" ? (it().closedBy ?? "member") : undefined}>
         <button type="button" class="inbox-item-line" aria-expanded={reader.isOpen(it().id) ? "true" : "false"} aria-controls={bodyId} onClick={() => reader.toggle(it().id)}>
           <span class="inbox-item-head">
             <Show when={it().urgent}>
@@ -126,6 +126,9 @@ export function TeamInbox(props: { path: string; teamId: string; workerId: strin
             </div>
           }
         >
+          <Show when={inboxSummary(reader.view()?.counts, props.name)}>
+            {(line) => <p class="text-caption inbox-more inbox-summary">{line()}</p>}
+          </Show>
           <ul class="inbox-list" aria-label={`${props.name} inbox items`}>
             <For each={ids()}>{(id) => item(id)}</For>
           </ul>

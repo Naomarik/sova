@@ -42,6 +42,31 @@ const reachedIdle = new Map(); // hold -> Set<scene id>
 const errors = [];
 const unmatched = [];
 const side = [];
+const summaries = []; // { at, scene, n }: the summarizer requests answered with a story summary
+
+/**
+ * The summarizer's prompt (topic-outline's buildPrompt) names the session by its earliest request
+ * ("SESSION ANCHOR") and lists the new messages as [m1]…[mN]. The answer is the scene's next
+ * summary step as the summarizer's JSON: each topic gets a consecutive share of m1…mN as its range.
+ */
+function summaryAnswer(prompt) {
+  if (!prompt.startsWith("You maintain a live outline")) return null;
+  const anchor = norm(prompt.split("SESSION ANCHOR")[1]?.split("EXISTING OUTLINE")[0] ?? "");
+  const scene = scenes.find((s) => s.kind === "session" && s.summaries?.length && anchor.includes(s.normKey));
+  if (!scene) return null;
+  const k = Math.min(scene.summariesServed ?? 0, scene.summaries.length - 1);
+  scene.summariesServed = k + 1;
+  const sum = scene.summaries[k];
+  const refs = [...new Set([...(prompt.split("NEW MESSAGES:").at(-1) ?? "").matchAll(/^\[(m\d+)\]/gm)].map((m) => m[1]))];
+  if (!refs.length) return null;
+  const n = sum.topics.length;
+  const topicUpdates = sum.topics.map((t, i) => {
+    const lo = Math.floor((i * refs.length) / n);
+    const hi = Math.max(lo, Math.floor(((i + 1) * refs.length) / n) - 1);
+    return { kind: t.update ? "update" : "new", ...(t.update ? { topicId: t.update } : {}), heading: t.heading, from: refs[lo], to: refs[Math.min(hi, refs.length - 1)], summary: t.summary };
+  });
+  return { scene: scene.id, n: k + 1, json: JSON.stringify({ now: sum.now, overall: sum.overall, topicUpdates }) };
+}
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const listeners = new Set();
 const changed = () => {
@@ -71,13 +96,17 @@ function sceneDone(id) {
 
 const contentText = (c) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => p.text ?? "").join("") : "");
 
+/** The scene of the first user message that names one. Usually that is the very first message;
+    the Overseer's chat opens with a memory index the app writes, so its key is in a later one. */
 function matchScene(messages) {
-  const first = messages.find((m) => m.role === "user");
-  if (!first) return null;
-  const t = norm(contentText(first.content));
-  let best = null;
-  for (const s of scenes) if (t.includes(s.normKey) && (!best || s.normKey.length > best.normKey.length)) best = s;
-  return best;
+  for (const m of messages) {
+    if (m.role !== "user") continue;
+    const t = norm(contentText(m.content));
+    let best = null;
+    for (const s of scenes) if (t.includes(s.normKey) && (!best || s.normKey.length > best.normKey.length)) best = s;
+    if (best) return best;
+  }
+  return null;
 }
 
 /** Worker ids as agent_spawn reported them ("ag_01  <name>  running  backend=pi ..."), by name. */
@@ -114,8 +143,9 @@ function resolveArgs(args, messages) {
   return walk(args);
 }
 
-/** A tool result that says it failed, in the words Sova's tools use. */
-const looksFailed = (t) => /^(Error|Validation failed)|Nothing was (changed|shown|archived)|refused|not found|No such file|Unknown action|Could not find/i.test(t);
+/** A tool result that says it failed, in the words Sova's tools use, on its first line (a
+    successful result may go on to explain what a later refusal would do). */
+const looksFailed = (t) => /^(Error|Validation failed)|Nothing was (changed|shown|archived)|refused|not found|No such file|Unknown action|Could not find/i.test(t.split("\n")[0]);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -151,10 +181,20 @@ async function answer(req, res, body) {
     }
   };
 
-  // A request without tools is a side call (a title, a summary): never part of a scene.
+  // A request without tools is a side call (a title, a summary): never part of a scene. Sova's
+  // summarizer is answered with the story's next `summary` step for the session it summarizes.
   if (!Array.isArray(body.tools) || body.tools.length === 0) {
-    side.push({ at: Date.now(), first: contentText(messages.find((m) => m.role === "user")?.content).slice(0, 80) });
+    const prompt = contentText(messages.find((m) => m.role === "user")?.content);
+    side.push({ at: Date.now(), first: prompt.slice(0, 80) });
+    const outline = summaryAnswer(prompt);
     delta({ role: "assistant", content: "" });
+    if (outline) {
+      log(`${outline.scene}: summary ${outline.n}`);
+      delta({ content: outline.json });
+      summaries.push({ at: Date.now(), scene: outline.scene, n: outline.n });
+      changed();
+      return finish("stop", Math.round(outline.json.length / 4));
+    }
     delta({ content: "Okay." });
     return finish("stop", 2);
   }
@@ -191,7 +231,9 @@ async function answer(req, res, body) {
   log(`${scene.id}: reply ${n + 1}/${scene.replies.length}${reply.calls[0] ? ` (${reply.calls[0].name})` : ""}${reply.hold ? ` gated on ${reply.hold}` : ""}`);
   delta({ role: "assistant", content: "" });
 
-  const words = pieces(reply.text);
+  // "$session:<id>" inside a reply's text (an Overseer's sova://s/ link) becomes the session's id.
+  const replyText = reply.text.replace(/\$session:([a-z][a-z0-9-]*)/g, (_, sid) => sessionIds.get(sid) ?? storyUuid("session", sid));
+  const words = pieces(replyText);
   if (reply.hold && GATES) {
     // Stream the first words, then wait mid-reply until the capture releases this hold.
     const head = words.slice(0, Math.min(3, words.length));
@@ -208,8 +250,20 @@ async function answer(req, res, body) {
     await stream(words.slice(head.length).join(""));
   } else {
     if (reply.hold) gate(reply.hold).passed.add(scene.id);
-    await stream(reply.text);
+    await stream(replyText);
   }
+  if (reply.textHold && GATES) {
+    // The text is out whole; the tool call waits for the capture to release this hold.
+    const g = gate(reply.textHold);
+    if (!g.released) {
+      g.waiters.add(scene.id);
+      changed();
+      await new Promise((resolve) => g.resolvers.push(resolve));
+      g.waiters.delete(scene.id);
+    }
+    g.passed.add(scene.id);
+    changed();
+  } else if (reply.textHold) gate(reply.textHold).passed.add(scene.id);
 
   reply.calls.forEach((call, i) => {
     const args = JSON.stringify(resolveArgs(call.args, messages));
@@ -224,7 +278,7 @@ async function answer(req, res, body) {
     if (!reachedIdle.has(h)) reachedIdle.set(h, new Set());
     reachedIdle.get(h).add(scene.id);
   }
-  finish(reply.calls.length ? "tool_calls" : "stop", Math.max(1, Math.round(reply.text.length / 4)));
+  finish(reply.calls.length ? "tool_calls" : "stop", Math.max(1, Math.round(replyText.length / 4)));
   changed();
 }
 
@@ -236,6 +290,7 @@ function state() {
     errors,
     unmatched,
     side: side.length,
+    summaries,
   };
 }
 

@@ -132,8 +132,8 @@ Several alignments can be open at once, one per concern: each has its own id (al
 Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that plainly confirm, and prompts where the user says to skip alignment. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing. When the ask already looks fully specified, still record a short alignment with your reading of it and ask the user to confirm. Bias heavily toward asking.`;
 
 /**
- * The writing style's paragraph after the align block (§chat.alignment/style): none for Default, so a
- * Default session's block is exactly ALIGN_INSTRUCTIONS. Keyed by align-settings.ts's AlignStyle.
+ * The writing style's paragraph after the align block (§chat.alignment/style): none for Technical
+ * (stored "default"), so a Technical session's block is exactly ALIGN_INSTRUCTIONS. Keyed by align-settings.ts's AlignStyle.
  */
 export const ALIGN_STYLE_PARAGRAPHS: Record<AlignStyle, string | undefined> = {
 	default: undefined,

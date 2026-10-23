@@ -230,12 +230,13 @@ export function buildModeNote(
 
 /**
  * The hidden note for a writing style changed after the model was told one (§chat.alignment/style):
- * the new style's paragraph, superseding the earlier one, or, back to Default, that it no longer applies.
+ * the new style's paragraph, superseding the earlier one, or, switching to Technical (no paragraph), that
+ * the earlier one no longer applies.
  */
 export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 	const paragraph = ALIGN_STYLE_PARAGRAPHS[to];
 	if (paragraph === undefined) {
-		return `Writing style change: the user set the align writing style back to Default. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments at your usual level of detail from now on.`;
+		return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on.`;
 	}
 	return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${paragraph}`;
 }

@@ -10,8 +10,9 @@
  *
  *     { "version": 1, "style": "pm", "visuals": true }
  *
- * `style` is "default" (today's alignments, no added text), "simplified" or "pm" (Project manager).
- * A missing or malformed file reads as Default with Visuals off. A subagent profile may override
+ * `style` is "pm" (Project manager), "simplified" or "default" (shown as Technical: the files, code
+ * and technical trade-offs, no added text; stored as "default", never migrated). A missing or
+ * malformed file reads as Project manager with Visuals off. A subagent profile may override
  * either field (AlignOverride, carried by subagent-profiles.ts); resolveAlign applies it.
  */
 import { readFileSync } from "node:fs";
@@ -20,10 +21,10 @@ import { statCachedReader, writeJsonAtomic } from "./delegate.ts";
 export const ALIGN_SETTINGS_FILE = "mode-align.json";
 
 export type AlignStyle = "default" | "simplified" | "pm";
-/** The styles, in the order Settings lists them. */
-export const ALIGN_STYLES: readonly AlignStyle[] = ["default", "simplified", "pm"];
+/** The styles, in the order Settings lists them (Technical last). */
+export const ALIGN_STYLES: readonly AlignStyle[] = ["pm", "simplified", "default"];
 /** Each style as the user reads it (Settings, the card's meta mark, the notes). */
-export const ALIGN_STYLE_LABELS: Record<AlignStyle, string> = { default: "Default", simplified: "Simplified", pm: "Project manager" };
+export const ALIGN_STYLE_LABELS: Record<AlignStyle, string> = { default: "Technical", simplified: "Simplified", pm: "Project manager" };
 
 export const isAlignStyle = (value: unknown): value is AlignStyle => typeof value === "string" && (ALIGN_STYLES as readonly string[]).includes(value);
 
@@ -46,7 +47,7 @@ export interface AlignResolved {
 }
 
 export function alignSettingsDefaults(): AlignSettings {
-	return { version: 1, style: "default", visuals: false };
+	return { version: 1, style: "pm", visuals: false };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -56,7 +57,7 @@ const KEYS = ["version", "style", "visuals"];
 
 /** Strict parse of a whole file (Sova's PUT, the mesh): both fields, nothing unknown. The error names the field. */
 export function parseAlignSettings(value: unknown): AlignSettings | { error: string } {
-	if (!isRecord(value)) return { error: 'Expected { version: 1, style: "default" | "simplified" | "pm", visuals: boolean }' };
+	if (!isRecord(value)) return { error: 'Expected { version: 1, style: "pm" | "simplified" | "default", visuals: boolean }' };
 	if (value.version !== 1) return { error: "version must be 1" };
 	const unknown = Object.keys(value).find((key) => !KEYS.includes(key));
 	if (unknown !== undefined) return { error: `unknown field "${unknown}"` };
@@ -77,7 +78,7 @@ export function parseAlignSettingsText(text: string): { ok: true; value: AlignSe
 	return "error" in parsed ? { ok: false, error: parsed.error } : { ok: true, value: parsed };
 }
 
-/** Read the file; missing or malformed reads as the defaults (Default, Visuals off). Never throws. */
+/** Read the file; missing or malformed reads as the defaults (Project manager, Visuals off). Never throws. */
 export function loadAlignSettings(path: string): AlignSettings {
 	try {
 		const parsed = parseAlignSettings(JSON.parse(readFileSync(path, "utf8")));

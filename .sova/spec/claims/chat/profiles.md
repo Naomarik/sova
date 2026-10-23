@@ -360,9 +360,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   `{version: 1, approved: {<identity>: {grant: [...], overseerMayStart, at}}}`, outside every repo.
   Approving records the powers the file has at that moment. `POST /api/profiles/approve {cwd, id,
   grant, overseerMayStart}` is refused when those aren't the powers the file has now (it changed
-  since you looked), so what you approve is what you saw. **Apply and Approve** on a project overseer's
-  Settings change card (§app.project-overseer/settings) records the same approval, of the powers the card
-  showed, for each profile the card grants; the overseer itself never approves one.
+  since you looked), so what you approve is what you saw.
 - **Where.** In the picker, an unapproved project profile reads **Needs approval**. Picking it
   changes nothing and shows a warn alert, "{label} comes from {project}'s files and can {powers}.
   Approve it to use it.", with **Approve** and **Pick Another Profile**. Settings → Profiles shows

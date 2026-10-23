@@ -79,7 +79,7 @@ death: nothing is reported and nothing is resumed.
 An ordinary chat receives `record_tour` and `show_tour` only while vis is on; align's Visuals alone does not enable either tool. A hand-off's already-reviewed, scoped `show_tour` is separate baseline context, never recording access (§app.tours/authoring).
 
 A few tools act on the server's own state: an ordinary chat's `project_verbs` (a project's running
-instances), `queue_push` (a topic's queue), `offer` (a project's offer cards, §chat.offers/tool) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
+instances), `queue_push` (a topic's queue) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
 baton session, their file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) included; and a
 powers chat's `queue_open`. Some of what a chat does without a tool acts on it too: a baton
 composer's message (who sent it, and the statechart's note of it), saving the model or thinking a
@@ -93,7 +93,7 @@ before you try it again." Stopping the reply cancels the call on the server. The
 to the model as if they ran in the chat, so the chat's prompt and tool list don't change. A baton
 composer's message whose outcome is unknown fails with that sentence; a powers send whose outcome is
 unknown keeps what it spent of its limits. What else an ordinary chat reads of the server (a project's
-instance note, an offer button's outcome note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
+instance note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
 when needed; while no server is connected it reads as none. A special chat's run-start, compaction
 and reply-end hooks, and a powers chat's reads (sessions, a transcript, an insight, whether a session
 is busy, a project's root), wait for a server instead, and are asked again of the next one: after

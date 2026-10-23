@@ -278,7 +278,8 @@ open at once. It holds a title, a one-line summary, findings (`fN`), approach
 steps (`aN`), rejected alternatives with why (`xN`), technical notes (`tN`,
 optional: the detail a plan for a non-coding reader keeps out of its other
 fields) and questions (`qN`). It records the writing style in effect at its
-latest change (`style`, absent for Default), and in a session started with
+latest change (`style`: `default` for Technical, `simplified` or `pm`; absent
+on documents written before Technical was recorded), and in a session started with
 Visuals on a question, and the document once, can carry a `visual`
 (`{kind, source}`, a `vis` drawing; at most 3 per alignment). A
 question has a topic, the ask, optional context and options (a label and its
@@ -605,13 +606,14 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
 { "version": 1, "style": "pm", "visuals": true }
 ```
 
-- `style` is `default` (no added text: the align block is today's),
-  `simplified` (short sentences in everyday words, about 5 findings and 6
-  steps, files only when the user must recognise them, each question's context
-  saying what changes for the user) or `pm` (Project manager: the fields the
-  user reads describe only screens, controls, wording, states and flows, no
-  code; technical choices with a user-visible effect are asked as product
-  questions; the technical detail goes in technical notes). Its paragraph
+- `style` is `pm` (Project manager, the default: the fields the user reads
+  describe only screens, controls, wording, states and flows, no code; technical
+  choices with a user-visible effect are asked as product questions; the
+  technical detail goes in technical notes), `simplified` (short sentences in
+  everyday words, about 5 findings and 6 steps, files only when the user must
+  recognise them, each question's context saying what changes for the user) or
+  `default`, shown as **Technical** (no added text: files, code and technical
+  trade-offs in the plan). A saved `default` stays `default`, never migrated. Its paragraph
   (`ALIGN_STYLE_PARAGRAPHS` in `minor.ts`) follows the align block when the head
   is built; a later change reaches an open chat as one hidden `mode-note` at its
   next run (`buildAlignStyleNote`), once per change, its details recording the
@@ -628,7 +630,9 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
   `vis_check` follows too).
 - A subagent profile's optional `alignment` (`{style?, visuals?}`) overrides the
   file field by field for chats on it (`resolveAlign`).
-- Missing or malformed reads as Default with Visuals off; the strict parse
+- Missing or malformed reads as Project manager with Visuals off; a head that
+  nothing records was still built in Technical (`restoreHead`), so an older
+  chat rebuilds its head byte for byte and gets Project manager as one note; the strict parse
   (`parseAlignSettings`) refuses an unknown key or value, and the mesh checks
   with it before writing.
 

@@ -147,61 +147,73 @@
         {
           "a": 0,
           "text": "Ask the Overseer about past work",
+          "chapter": "Overseer",
           "b": 3.3
         },
         {
           "a": 3.3,
           "text": "It finds the session by what was said",
+          "chapter": "Overseer",
           "b": 6.83
         },
         {
           "a": 6.83,
           "text": "Then ask what's waiting on you",
+          "chapter": "Overseer",
           "b": 11.33
         },
         {
           "a": 11.33,
           "text": "Every waiting session, and why it waits",
+          "chapter": "Overseer",
           "b": 15.01
         },
         {
           "a": 15.01,
           "text": "Open one: a drawing shows the problem",
+          "chapter": "Drawings",
           "b": 21.11
         },
         {
           "a": 21.11,
           "text": "Agree on the plan before work starts",
+          "chapter": "Alignment",
           "b": 25.09
         },
         {
           "a": 25.09,
           "text": "Your call, in one click",
+          "chapter": "Alignment",
           "b": 30.87
         },
         {
           "a": 30.87,
           "text": "Each worker runs on its own model",
+          "chapter": "Delegate",
           "b": 38.19
         },
         {
           "a": 38.19,
           "text": "Three models, one finished job",
+          "chapter": "Delegate",
           "b": 41.53
         },
         {
           "a": 41.53,
           "text": "Review every change as steps",
+          "chapter": "Review",
           "b": 47.32
         },
         {
           "a": 47.32,
           "text": "Each step with its reason",
+          "chapter": "Review",
           "b": 54.09
         },
         {
           "a": 54.09,
           "text": "Its timeline and summary at a glance",
+          "chapter": "Timeline",
           "b": 60.81
         }
       ],

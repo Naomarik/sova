@@ -622,6 +622,23 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
       ms += dur;
     });
     closeCaption();
+    // Chapters (the page's chapter bar): on caption beats only, on all of them or none, each one run.
+    const capBeats = v.beats.map((b, i) => [b, i]).filter(([b]) => typeof b.caption === "string");
+    for (const [b, i] of v.beats.map((b, i) => [b, i])) if (b.chapter !== undefined && typeof b.caption !== "string") err([...base, "beats", i, "chapter"], "a chapter goes on a beat that starts a caption");
+    if (capBeats.some(([b]) => b.chapter !== undefined)) {
+      const done = new Set();
+      let last = null;
+      for (const [b, i] of capBeats) {
+        if (typeof b.chapter !== "string" || !b.chapter.trim()) {
+          err([...base, "beats", i], "when one caption names a chapter, every caption does: the page's bar has no segment for it otherwise");
+          continue;
+        }
+        if (b.chapter.length > 16) err([...base, "beats", i, "chapter"], `chapter "${b.chapter}" is ${b.chapter.length} characters; a chapter name has at most 16 (one word above the caption)`);
+        if (b.chapter !== last && done.has(b.chapter)) err([...base, "beats", i, "chapter"], `chapter "${b.chapter}" comes back after another: a chapter's captions are consecutive`);
+        if (last !== null && b.chapter !== last) done.add(last);
+        last = b.chapter;
+      }
+    }
     if (v.beats.some((b) => typeof b.caption === "string") && typeof v.beats[0]?.caption !== "string") err([...base, "beats", 0], "the first beat needs a caption: the page shows one from the video's first frame");
     if (v.beats.at(-1)?.do !== "home") err([...base, "beats"], 'the last beat is "home": the pointer goes back to its start and the video fades into its first frame');
     if (ms < lo || ms > hi) warn(base, `estimated length ${(ms / 1000).toFixed(1)} s is outside ${v.length.min}–${v.length.max} (the recording's own length is checked by screens:verify)`);

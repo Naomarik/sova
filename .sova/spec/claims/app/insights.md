@@ -269,7 +269,7 @@ provider and is still waiting on or receiving, from the moment it is issued unti
 ends, fails or is aborted. Time spent running tools between calls never counts, and neither does
 a request still queued for a provider-limits slot or sitting out a cooldown
 (§app/provider-limits): it counts from the moment the slot is granted. Every caller counts alike —
-a main thread's turn, a subagent's or team member's, and background work: titles,
+a main thread's turn, a subagent's or team member's, and background work: titles, tags,
 decisions, topic outlines, compaction, cache warming.
 
 - **Where it is measured.** Each process counts its own calls, at the boundary every model
@@ -1540,22 +1540,13 @@ Sova that aren't archived.
 ```
 
 - **State.** One per row, on its rail (a colored left edge) and under its group's heading; no
-  row carries a state chip or a second badge at any width. The states: **Needs you** when the
-  session waits on input or has an extension dialog open; else **Working** when its turn runs or
-  any of its workers works; else **Needs you** when its last turn failed or stopped on an error,
-  or it has open alignment questions, or its decision marks (a reply that waits on you, a reply
-  that says it is done without checking, §app.decisions/attention-signals) say so; else
-  **Idle**, or **Archived** for an archived session nothing runs in.
-- **The state's word.** Each row's state has one word, said to screen readers as visually hidden
-  text after its title (", Waiting on you: approval"), so it is never carried by the rail's color
-  or the heading alone: **Waiting on you** (an input request or a dialog), **Working**,
-  **Working (team)** (only its workers work), **Broken** (the last turn failed or stopped on an
-  error), **Waiting on you: decision** (open alignment questions, or a reply that asks you to
-  choose), **Waiting on you: approval** / **: info** (a reply that asks for an approval or for
-  information), **Done, unverified**, **Done** (an idle session whose last turn card says it did
-  what was asked), **Idle** and **Archived**. Broken, Working and Working (team) are counted in
-  code; only the waiting kind and the done words come from the turn card. The open row says why
-  a row needs you, in a line that ends with its source ("Guessed by Jev.", "From code.").
+  row carries a state chip at any width. A row's state reaches screen readers as visually
+  hidden text after its title (", Needs you", ", Working", ", Idle", ", Archived"), so it is
+  never carried by the rail's color or the heading alone. The states: **Needs you** when the session waits on input or has an extension dialog open; else
+  **Working** when its turn runs or any of its workers works; else **Needs you** when its last
+  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
+  looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
+  open row says why a row needs you, in a line.
 - **Sort.** Needs you first, then Working, then the rest; within each, last active first.
 - **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
   "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),

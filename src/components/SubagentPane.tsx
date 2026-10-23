@@ -22,6 +22,8 @@ import { createSessionSpend } from "./SessionUsage";
 import { LinkedAgentMeta, LinkedAgentRow, LinkStateChip, LinkThreadView } from "./LinkedAgents";
 import { HistoryItems, ToolSourceContext, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
+import { TeamInbox } from "./TeamInbox";
+import { inboxTabLabel, openChip, openChipTitle } from "../lib/team-inbox";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 
@@ -167,6 +169,19 @@ export function SubagentPane(props: {
     const m = t?.members.find((x) => x.workerId === w.id);
     return t && m ? memberBadges(m, t) : [];
   };
+  /** A team member's own roster row, for its inbox counts; none for a plain subagent. */
+  const memberOf = (w: WorkerInfo) => teamOf(w)?.members.find((x) => x.workerId === w.id);
+  /** The open member's view: its transcript (the default) or its inbox. Back to the transcript
+      whenever another worker opens. */
+  const [memberTab, setMemberTab] = createSignal<"transcript" | "inbox">("transcript");
+  createEffect(on(() => props.selected, () => setMemberTab("transcript"), { defer: true }));
+  const onMemberTabKey = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const next = memberTab() === "transcript" ? "inbox" : "transcript";
+    setMemberTab(next);
+    queueMicrotask(() => body.querySelector<HTMLElement>(`.subagents-view-tabs > [data-tab="${next}"]`)?.focus());
+  };
   /** The row carries the duty only: the row is narrow, and the head of the open worker says the rest. */
   const dutyOf = (w: WorkerInfo) => {
     const d = badgesOf(w).find((b) => b.label === "Coordinator" || b.label === "Monitor");
@@ -301,6 +316,13 @@ export function SubagentPane(props: {
               )}
             </Show>
             <StatusChip worker={w()} liveSource={liveSource()} />
+            <Show when={openChip(memberOf(w())?.inbox)}>
+              {(c) => (
+                <span class="chip chip-count" title={openChipTitle(memberOf(w())?.inbox?.open ?? 0)}>
+                  {c()}
+                </span>
+              )}
+            </Show>
           </span>
           <WorkerMeta worker={w()} spend={workerRowSpend(props.spend, w().id)} liveSource={liveSource()} class="subagent-row-meta" />
           <Icon name="chevron-right" small class="subagent-row-go" />
@@ -308,6 +330,14 @@ export function SubagentPane(props: {
       )}
     </Show>
   );
+
+  /** The team whose inbox the open member's view shows, by id (a string, so a poll's fresh team
+      object never remounts the inbox); null while it shows the transcript, or for a plain subagent. */
+  const inboxTeam = createMemo(() => {
+    const w = selected();
+    const t = w ? teamOf(w) : undefined;
+    return t && memberTab() === "inbox" ? t.id : null;
+  });
 
   let list: HTMLUListElement | undefined;
   /** Up/Down move between rows; Tab and Enter work as for any button. */
@@ -550,6 +580,45 @@ export function SubagentPane(props: {
               <Show when={w().status === "restored"}>
                 <RestoredBar worker={w()} />
               </Show>
+              {/* A team member's two views: its transcript, and its inbox (read-only). */}
+              <Show when={teamOf(w())}>
+                {(t) => (
+                  <div class="tabs subagents-view-tabs" role="tablist" aria-label={label(w())}>
+                    <button
+                      type="button"
+                      role="tab"
+                      data-tab="transcript"
+                      class={memberTab() === "transcript" ? "tab tab-active" : "tab"}
+                      id="subagents-tab-transcript"
+                      aria-selected={memberTab() === "transcript" ? "true" : "false"}
+                      tabindex={memberTab() === "transcript" ? 0 : -1}
+                      onClick={() => setMemberTab("transcript")}
+                      onKeyDown={onMemberTabKey}
+                    >
+                      Transcript
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      data-tab="inbox"
+                      class={memberTab() === "inbox" ? "tab tab-active" : "tab"}
+                      id="subagents-tab-inbox"
+                      aria-selected={memberTab() === "inbox" ? "true" : "false"}
+                      aria-controls={memberTab() === "inbox" ? "subagents-inbox-panel" : undefined}
+                      tabindex={memberTab() === "inbox" ? 0 : -1}
+                      data-team={t().id}
+                      onClick={() => setMemberTab("inbox")}
+                      onKeyDown={onMemberTabKey}
+                    >
+                      {inboxTabLabel(memberOf(w())?.inbox)}
+                    </button>
+                  </div>
+                )}
+              </Show>
+              <Show when={inboxTeam()} keyed>
+                {(teamId) => <TeamInbox path={props.path} teamId={teamId} workerId={w().id} name={label(w())} panelId="subagents-inbox-panel" tabId="subagents-tab-inbox" />}
+              </Show>
+              <Show when={!inboxTeam()}>
               <Show
                 when={sourceKey(w())}
                 keyed
@@ -585,6 +654,7 @@ export function SubagentPane(props: {
                     onContext={(c) => setWatchedContext(transcriptContext(c, w()) ?? null)}
                   />
                 )}
+              </Show>
               </Show>
             </>
           )}

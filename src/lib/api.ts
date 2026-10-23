@@ -62,6 +62,8 @@ import type {
   BatchRefusal,
   SessionGroup,
   SessionHiddenWorkers,
+  TeamInboxBody,
+  TeamInboxView,
   SessionInsight,
   SessionSetup,
   SessionTools,
@@ -948,6 +950,16 @@ export const fetchSessionInsight = (path: string) =>
 /** The workers the session's live record doesn't list, read from its file on request. */
 export const fetchHiddenWorkers = (path: string) =>
   request<SessionHiddenWorkers>(`/api/insights/session/workers?path=${encodeURIComponent(path)}`);
+
+/** One team member's inbox, read-only (§app.subagents-pane/member-inbox): its items, newest first,
+    without bodies. Polled while the pane's Inbox tab is open. */
+export const fetchTeamInbox = (path: string, teamId: string, workerId: string) =>
+  request<TeamInboxView>(`/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}`);
+/** One inbox item's whole message, read when it is opened. */
+export const fetchTeamInboxBody = (path: string, teamId: string, workerId: string, id: string) =>
+  request<TeamInboxBody>(
+    `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
+  );
 
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */

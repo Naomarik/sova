@@ -116,17 +116,16 @@
                    Then at most ONE needs-you mark, the most urgent kind first:
                      questions    count alone, --color-accent    "3 open questions. "  (§chat.alignment/session-mark)
                      asks-you     chat,         --color-accent   "Asks you something. "  (§app.decisions/asks-user)
-                     unverified   check,        muted ink        "Done, not checked. "  (§app.decisions/attention-signals)
-                   Open questions come from the session's `align` counts; asks-you from the server's
-                   attention signals (the session's `signals.kinds`, §app.decisions/attention-signals);
-                   kind precedence first. The glyph sits in a span whose `title` says the fact in one
-                   sentence, then its source ("3 open questions in 2 alignments. From code.", "The
-                   last reply waits on your approval. Guessed by Jev.", "The last reply says it's
-                   done, but names something it didn't run or check. Guessed by Jev."). An ask's
-                   sentence names its kind when the turn card gave one (decision, approval,
-                   information), else "The last reply asks you something.". Done, not checked is
-                   news: gone once the session is seen after it was classified.
-                   Kinds differ in shape as well as tone: questions are the bare accent count, no glyph. Asks-you stays until the user answers (their next turn replaces it); open questions stay until they are answered, the user moves on, or align is turned off. No
+                     looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
+                   Open questions come from the session's `align` counts; asks-you and looping from the server's
+                   attention signals (the session's `signals.kinds`, and its subagents'
+                   `workerSignals` counts, §app.decisions/attention-signals); kind precedence first,
+                   then the session's own signal over its subagents'. The glyph sits in a span whose
+                   `title` says the fact in one sentence ("3 open questions in 2 alignments", "The
+                   last reply asks you something.", "The last turn looks like it went in circles.",
+                   "A subagent looks stuck.").
+                   Kinds differ in shape as well as tone: questions are the bare accent count, no glyph. The looping mark is gone once the session
+                   is seen after it was classified; asks-you stays until the user answers (their next turn replaces it); open questions stay until they are answered, the user moves on, or align is turned off. No
                    mark shows while this tab runs a turn there.
                    Every line-1 mark is hidden on the open session,
                    so this row (the open one) has none; on another row line 1 reads:
@@ -691,12 +690,10 @@ label a person reads says "sessions pane".
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you), and a tour recording waiting for you to sign in (§app.tours/sites); a roster proposal stays a decide item. Then, as a
-**softer tier** under the blockers, the turn card's guesses (§app.overseer/attention-digest, soft
-items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
-without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
-on its row. Neither is a worktree ready to merge or waiting for your OK: that is the row's
-worktree count, lit (§chat.worktrees/readiness). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
+their link, §app.baton/needs-you), and a tour recording waiting for you to sign in (§app.tours/sites); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
+a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
+never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
+worktree count, lit (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -727,16 +724,12 @@ thing it waits on being done.
 </details>
 ```
 
-- **Which sessions.** Every session with at least one act item or soft item in the digest, **one
-  row per session** however many items it has, joined by path to the sidebar's search-hit list. So the
+- **Which sessions.** Every session with at least one act item in the digest, **one row per
+  session** however many act items it has, joined by path to the sidebar's search-hit list. So the
   search and the host filter narrow it like every other region, and a digest session the list
   doesn't carry is not listed. **The count in the head is the rows**, and the region never lists a
   row the rest of the pane hides.
-- **Order: blockers first, then the softer tier**, each newest first by the session's newest
-  item (`since`); ties break on path. A session with a blocker lists among the blockers. The
-  softer tier sits under its own quiet label, "Maybe waiting on you", read as the name of its
-  list. The head's count is every row, both tiers, by the same rule as the Overseer's "need you"
-  count, so the two agree but for the organization sessions the Overseer also counts.
+- **Order: newest first**, by each session's newest act item (`since`); ties break on path.
 - **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
   to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
   search (project, folder or sentence): the project's name, the digest's sentence and the folder, each
@@ -2172,7 +2165,8 @@ record whose transcript is gone.
 ## §app.session-list/search — Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, `model`, and the session's
-  manual tags (§app.decisions/session-tags; never a topic), filtered on the client as
+  tags (§app.decisions/session-tags: its topic, as stored and as displayed — `bugfix` and
+  "bug fix" — and its manual tags), filtered on the client as
   the user types (no debounce needed for fewer than 2k rows). Without tags, a row matches as before.
 - **Empty groups.** A group with no matching rows is hidden, and so is a region with none.
 - **Organization rows** also match on the org's name, the project's name and the baton holder's

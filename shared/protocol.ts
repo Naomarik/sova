@@ -2979,6 +2979,47 @@ export interface TeamMember {
   /** The newest `retire` event for this member. `reason`: the successor confirmed, or the handover
       timed out; absent when the event's detail says neither. */
   retired?: { at: string; reason?: "confirmed" | "timeout" };
+  /** The member's team inbox (§app.subagents-pane/member-inbox), counted from the items file the
+      main chat's subagents extension keeps for it. `open`: new or read, not returned, not an
+      instruction copy; `urgent`: the open ones marked urgent; `total`: every item its file folds
+      to. Absent when the member has no items file, and from older servers. */
+  inbox?: TeamInboxCounts;
+}
+export interface TeamInboxCounts { open: number; urgent: number; total: number }
+export type TeamInboxKind = "message" | "question" | "report" | "handover" | "notice" | "instruction";
+export type TeamInboxStatus = "new" | "read" | "addressed";
+/** One item in a member's inbox, without its body (GET /api/insights/session/inbox). `from` is
+    the sender (`workerId` "parent" for the main thread and for Sova); `movedFrom`: the members it
+    was first sent to, oldest first, when a handover or a forward moved it here; `returned`: it was
+    sent back to its sender and is no longer open. Times are epoch ms. */
+export interface TeamInboxItemInfo {
+  id: string;
+  from: { role: string; workerId: string };
+  kind: TeamInboxKind;
+  subject: string;
+  urgent: boolean;
+  status: TeamInboxStatus;
+  sentAt: number;
+  readAt?: number;
+  addressedAt?: number;
+  note?: string;
+  replyTo?: string;
+  movedFrom?: { role: string; workerId: string; at: number; why: "handover" | "forward" }[];
+  returned?: { at: number; why: string };
+}
+/** GET /api/insights/session/inbox?path=&team=&worker=: one member's items, newest first.
+    `items` is capped at the newest 500; `total` counts them all. */
+export interface TeamInboxView {
+  teamId: string;
+  workerId: string;
+  items: TeamInboxItemInfo[];
+  total: number;
+  counts: TeamInboxCounts;
+}
+/** GET /api/insights/session/inbox?path=&team=&worker=&item=<id>: one item's whole message. */
+export interface TeamInboxBody {
+  id: string;
+  body: string;
 }
 export type TeamDuty = "coordinator" | "monitor";
 export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";

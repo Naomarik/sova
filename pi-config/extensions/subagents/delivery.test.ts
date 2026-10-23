@@ -151,7 +151,9 @@ test("busy on the pi backend: urgent at its next step, normal at the turn's end;
 	s.notify("ag_02");
 	await tick();
 	assert.equal(f.sent.length, 1, "urgent: at its next step (a mid-turn steer)");
-	assert.match(f.sent[0], /! i_\w+ message from lead — urgent one\n- i_\w+ message from lead — later/, "urgent first; the waiting normal item joins the list");
+	assert.match(f.sent[0], /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ message from lead — urgent one\n\(Items/, "only the urgent item mid-turn; the normal one waits for the turn's end");
+	await tick();
+	assert.equal(f.sent.length, 1, "the waiting normal item is not sent mid-turn after the urgent wake either");
 	// Another normal item while busy: listed when the turn ends, at once (no gathering).
 	f.items.push(item({ subject: "third" }));
 	s.notify("ag_02");
@@ -161,7 +163,7 @@ test("busy on the pi backend: urgent at its next step, normal at the turn's end;
 	s.settled("ag_02");
 	await tick();
 	assert.equal(f.sent.length, 2);
-	assert.match(f.sent[1], /^\[Team inbox: 1 new — .*\]\n- i_\w+ message from lead — third/);
+	assert.match(f.sent[1], /^\[Team inbox: 2 new — .*\]\n- i_\w+ message from lead — later\n- i_\w+ message from lead — third\n/, "the turn's end lists every normal item that waited");
 	// No next-step delivery on this backend: urgent waits for the turn's end too.
 	const g = fakeHost({ state: "busy", nextStep: false });
 	const s2 = new WakeScheduler(g.wake);

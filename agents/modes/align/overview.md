@@ -28,6 +28,10 @@ request chat (§app.project-assistant/feature-chats) gets a Sova-served `align` 
 on `applyAlignCall` with no `technical`, `import`, `status` or `exempt`; its results' documents become the owner
 page's plan card (`server/baton-view.ts` `planOf`). A change to `applyAlignCall`'s op table or the details shape
 reaches both.
+- **An option's `tradeoff` is its consequence line**: one plain line on what happens if the user picks it. Sova
+  sends it, with the ask and the recommendation, to the alignment card's triage (`server/align-triage.ts`,
+  §app.decisions/align-triage: a stakes chip per open question, one decision per card version). Renaming the field
+  or dropping the line breaks that reader; accepting never depends on it.
 - The hidden `align-state` / `align-nudge` custom messages must stay hidden in Sova (`display: false`).
 - An older session's `align-doc` custom entries are read-only.
 

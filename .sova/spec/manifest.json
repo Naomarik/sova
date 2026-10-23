@@ -3191,7 +3191,12 @@
       "evidence": "unreviewed",
       "code": [
         "src/lib/markdown.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T18:13Z",
+        "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#d0b1f86c"
+      }
     },
     "§chat.markdown/element-styling": {
       "kind": "behavior",
@@ -11635,7 +11640,8 @@
       "code": [
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
-        "src/lib/markdown-fence-viewer.test.ts"
+        "src/lib/markdown-fence-viewer.test.ts",
+        "src/design/base.css"
       ],
       "requires": [
         "§app/markdown-viewer",
@@ -11643,8 +11649,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T09:33Z",
-        "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#3b743586"
+        "at": "2026-10-23T18:13Z",
+        "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#d0b1f86c"
       }
     },
     "§chat.markdown/visuals": {
@@ -15204,7 +15210,12 @@
       "notOwned": [
         "§chat/markdown",
         "§chat.images/lightbox"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T18:14Z",
+        "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#27729e19"
+      }
     },
     "§chat.profiles/live-commit": {
       "kind": "behavior",

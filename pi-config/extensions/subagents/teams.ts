@@ -184,7 +184,9 @@ export type TeamActionKind =
 	// Coordinated teams (team defaults): a coordinator's team_report, a successor start and the
 	// old member's retirement, and the monitor's notices.
 	| "eject"
-	| "report" | "handover" | "retire" | "wrap-up" | "pause" | "resume";
+	| "report" | "handover" | "retire" | "wrap-up" | "pause" | "resume"
+	// The team inbox: a member's wake that did not get through (retried while it is live).
+	| "wake retry";
 /** member = a sibling's team_msg/team_ask; orchestrator = a sibling orchestrator's team_steer (a coordinator is one); monitor = the monitor's notices; system = this extension on its own (a handover timeout, an automatic eject). */
 export type TeamActionSource = "parent" | "user" | "member" | "orchestrator" | "monitor" | "system";
 /** A coordinated team's fixed facts, set at team_create. */

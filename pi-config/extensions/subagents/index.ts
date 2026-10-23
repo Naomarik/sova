@@ -64,7 +64,7 @@ import {
 	type MailboxResponse,
 	type MemberDuty,
 } from "./mailbox.ts";
-import { InboxStore, MAIN_THREAD, SOVA, hasInboxCaps, isOpen, type InboxItem, type InboxKind, type InboxParty } from "./inbox.ts";
+import { INBOX_ZERO_DEFAULTS, InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, readInboxZeroSettings, type InboxItem, type InboxKind, type InboxParty, type InboxZeroSettings, type SeenTag } from "./inbox.ts";
 import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResult } from "./delivery.ts";
 import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
 import { describeTeamDefaults, type TeamDefaultsState, type WorkerTuple } from "./team-defaults.ts";
@@ -605,6 +605,8 @@ export interface SubagentsOptions {
 	/** Team inbox wakes (tests): the idle gathering time (default 3 s) and the failed-wake backoff. */
 	inboxDebounceMs?: number;
 	inboxRetryMs?: readonly number[];
+	/** The inbox measurement setting (tests); default: read from `<agentDir>/sova/inbox-zero.json` at session start. */
+	inboxZero?: Partial<InboxZeroSettings>;
 }
 /** A lifecycle fact of a coordinated team, appended to the owner session (the action history is memory only). */
 export { TEAM_EVENT_ENTRY_TYPE };
@@ -665,6 +667,8 @@ export const FINAL_ANSWER_PAGE_CHARS = 40_000;
 const TRANSCRIPT_HEADER_MAX_CHARS = 4_000;
 /** The completion message quotes this much of the summary. */
 const WAKE_PREVIEW_CHARS = 4_000;
+/** At most this many items on a report's `[Left open: …]` line, then "… and N more". */
+const LEFT_OPEN_MAX = 10;
 
 /** A private copy of `text` in a fresh temporary directory; returns its path. */
 function writeSnapshot(prefix: string, name: string, text: string): string {
@@ -1329,6 +1333,8 @@ export function registerSubagents(
 		successionCheck(a);
 		retireCheck(a);
 		try {
+			// The safety net, before the report names what is left open (§app.teams/inbox-zero).
+			sweepSettled(a, seq);
 			announceSettle(a, seq);
 		} finally {
 			// Its turn ended: list the inbox items that wait (§app.teams/inbox). Only after the completion
@@ -1368,7 +1374,10 @@ export function registerSubagents(
 			// A worker the parent stopped itself does not need to wake the parent.
 			const wake = route.wake;
 			// The landed line goes after the (possibly cut) answer, never cut with it.
-			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : withLanded(a, text);
+			const base = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : withLanded(a, text);
+			// A team member's completion (the coordinator's own included) names what it left open.
+			const left = leftOpenLine(a.id);
+			const content = left ? `${base}\n${left}` : base;
 			// An agent_wait in this run (or one collecting this worker) may return this settle itself; hold it
 			// until the run's release point (or the wait) shows whether it did.
 			if (parentLoops > 0 || (collecting.get(a.id) ?? 0) > 0) {
@@ -1862,9 +1871,11 @@ export function registerSubagents(
 			}
 			text = `${withLanded(a, text.slice(0, WAKE_PREVIEW_CHARS))}\n[Cut at ${count(WAKE_PREVIEW_CHARS)} of ${count(text.length)} chars.${where} Ask ${info.member.role} with team_msg for more.]`;
 		}
+		const left = leftOpenLine(a.id);
 		const body = [
 			`[Team report from ${info.member.role} (${a.id}), ${info.team.id}: ${verb} — routed to you as coordinator]`,
 			text,
+			...(left ? [left] : []),
 		].join("\n");
 		const first = a.finalOutput().split("\n").find((l) => l.trim())?.trim();
 		const subject = `${verb}: ${first || "no final answer"}`;
@@ -2292,11 +2303,15 @@ export function registerSubagents(
 	 * newest live successor (ids and senders kept, listed to it), else — once it has ended for good —
 	 * returned to their senders, one "not addressed" notice per sender. `retire` only moves (the old
 	 * member still runs); `ended` and `restored` return what no successor takes.
+	 * Every end is the end of a turn (§app.teams/inbox-zero): first every item it opened in a recorded
+	 * turn that is not a question closes automatically, whatever the autoClose setting, so handled
+	 * news is never returned as "not addressed" nor listed again to a successor.
 	 */
 	const endInbox = (workerId: string, how: "retire" | "ended" | "restored") => {
 		const teamId = teams.teamOf(workerId);
 		if (!teamId || shuttingDown || (!inbox && !mailboxRoot)) return;
 		const store = inboxStore();
+		if (store.closeSeen(workerId, "all").length) scheduleRefresh();
 		if (!store.openCount(workerId)) return;
 		const next = liveSuccessor(workerId);
 		if (next) {
@@ -2404,7 +2419,33 @@ export function registerSubagents(
 		return true;
 	};
 	const partyOf = (m: { role: string; workerId: string }): InboxParty => ({ role: m.role, workerId: m.workerId });
+	// ── Inbox zero (§app.teams/inbox-zero, §app.teams/inbox-measure) ─────────
+	/** The measurement setting, read when a main chat's session starts. */
+	let inboxZeroSettings: InboxZeroSettings | undefined;
+	const loadInboxZero = () => {
+		inboxZeroSettings = { ...readInboxZeroSettings(agentDir()), ...options.inboxZero };
+	};
+	const inboxZero = (): InboxZeroSettings => inboxZeroSettings ?? { ...INBOX_ZERO_DEFAULTS, ...options.inboxZero };
+	/**
+	 * The member's turn an item is seen in. An opened item: the task running now. A wake's items:
+	 * the task its steer begins, which is unknown while that run has not begun (a wake accepted after
+	 * the member's turn ended but before its settle was handled belongs to the next turn). A worker
+	 * without a turn record counts its settles.
+	 */
+	const seenTag = (workerId: string, how: "wake" | "open"): SeenTag => {
+		const w = workerOf(workerId);
+		const t = w?.inboxTurn?.();
+		if (!t) return { task: settleSeq.get(workerId) ?? 0 };
+		return how === "wake" && t.steer !== undefined ? { steer: t.steer } : { task: t.task };
+	};
+	/** At a member's settle: close what it saw in a turn that has ended and did not close. */
+	const sweepSettled = (a: Worker, seq: number) => {
+		if (!inbox || !teams.teamOf(a.id)) return;
+		const upto = a.inboxTurn ? a.inboxTurn().task : seq - 1;
+		if (inbox.closeSeen(a.id, upto, inboxZero().autoClose).length) scheduleRefresh();
+	};
 	const wakeHost = {
+
 		state: (workerId: string) => {
 			const w = workerOf(workerId);
 			if (!w || isRestored(w) || !isLiveWorker(workerId) || teams.ejectedAt(workerId) !== undefined) return "gone" as const;
@@ -2416,7 +2457,11 @@ export function registerSubagents(
 		unlisted: (workerId: string) => inbox?.unlisted(workerId) ?? [],
 		unread: (workerId: string) => inbox?.unread(workerId) ?? [],
 		markListed: (workerId: string, ids: string[]) => inbox?.markListed(workerId, ids),
-		markRead: (workerId: string, ids: string[]) => void inbox?.setStatus(workerId, ids, "read"),
+		markRead: (workerId: string, ids: string[]) => void inbox?.markSeen(workerId, ids, seenTag(workerId, "wake")),
+		stillOpen: (workerId: string) => inbox?.stillOpen(workerId) ?? [],
+		markReminded: (workerId: string, ids: string[]) => inbox?.markReminded(workerId, ids, seenTag(workerId, "wake")),
+		gate: () => inboxZero().gate === "turn-start",
+
 		deliver: async (workerId: string, text: string): Promise<LaneResult> => {
 			const w = workerOf(workerId);
 			if (!w) return { ok: false, reason: "not live" };
@@ -2561,10 +2606,48 @@ export function registerSubagents(
 		if (!inbox) return;
 		wakes?.notify(workerId);
 	};
+	/**
+	 * What a team member left open, after the turn-end safety net ran, for the end of its report and
+	 * of the coordinator's own completion (§app.teams/inbox-zero): `[Left open: i_7 question from
+	 * writer (opened); i_9 report (unopened)]`; empty when nothing is open or it is on no team.
+	 */
+	const leftOpenLine = (workerId: string): string => {
+		if (!inbox || !teams.teamOf(workerId)) return "";
+		const open = inbox.list(workerId, { open: true });
+		if (!open.length) return "";
+		const shown = open.slice(0, LEFT_OPEN_MAX).map((i) => `${i.id} ${i.kind} from ${i.from.role} (${i.status === "new" ? "unopened" : "opened"})`);
+		const more = open.length - shown.length;
+		return `[Left open: ${shown.join("; ")}${more > 0 ? `; … and ${more} more` : ""}]`;
+	};
 	/** Each live member's open-item count line (`3 open items`), empty when it has none. */
 	const openItemsText = (workerId: string): string => {
 		const n = inbox?.openCount(workerId) ?? 0;
-		return n ? ` · ${n} open item${n === 1 ? "" : "s"}` : "";
+		if (!n) return "";
+		// Its unanswered questions and how long the oldest has waited (§teams.defaults/roster-context).
+		const questions = inbox!.list(workerId, { open: true }).filter((i) => i.kind === "question");
+		const oldest = questions.length ? Math.min(...questions.map((i) => i.sentAt)) : undefined;
+		const waited = oldest === undefined ? "" : questions.length === 1
+			? ` (1 question unanswered ${waitText(Date.now() - oldest)})`
+			: ` (${questions.length} questions unanswered, oldest ${waitText(Date.now() - oldest)})`;
+		return ` · ${n} open item${n === 1 ? "" : "s"}${waited}`;
+	};
+	/** A question's wait: `20 min`, `2 h 5 min`, `under 1 min`. */
+	const waitText = (ms: number): string => {
+		const min = Math.floor(Math.max(0, ms) / 60_000);
+		if (min < 1) return "under 1 min";
+		if (min < 60) return `${min} min`;
+		const h = Math.floor(min / 60);
+		return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+	};
+	/** The team's inbox line: `Inbox: 4 open · closed by members 12 · automatically 3`; none before any item. */
+	const teamInboxLine = (teamId: string, indent = ""): string[] => {
+		if (!inbox) return [];
+		let open = 0;
+		for (const n of inbox.openCounts(teamId).values()) open += n;
+		const c = inbox.closedCounts(teamId);
+		const byMembers = c.member + c.reply;
+		if (!open && !byMembers && !c.auto) return [];
+		return [`${indent}Inbox: ${open} open · closed by members ${byMembers} · automatically ${c.auto}`];
 	};
 	const ensureMailbox = (): string => {
 		if (!mailboxRoot) {
@@ -2575,6 +2658,7 @@ export function registerSubagents(
 		}
 		if (!inbox) {
 			inbox = new InboxStore(mailboxRoot);
+			inbox.steerTask = (workerId, steer) => workerOf(workerId)?.steerTask?.(steer);
 			wakes = new WakeScheduler(wakeHost, { debounceMs: options.inboxDebounceMs, retryMs: options.inboxRetryMs });
 		}
 		if (!nudgesLoaded) {
@@ -2662,6 +2746,7 @@ export function registerSubagents(
 			...standing,
 			...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
 			"States are observations; accepted-or-queued never means executed. Context is the last reply's size over the spawned model's window.",
+			...teamInboxLine(t.id),
 		].join("\n");
 	};
 	/** How a recipient can answer, by what it really has. */
@@ -2731,27 +2816,38 @@ export function registerSubagents(
 		}
 		if (action === "sent") {
 			const items = store.sentBy(me.workerId, request.limit ?? 50);
+			// How each addressed item was closed: `closed by builder`, `answered in i_52`, `closed automatically`.
+			const how = (i: InboxItem): string => {
+				const by = closedByOf(i);
+				if (by === "auto") return "closed automatically";
+				if (by === "reply") return i.note?.startsWith("answered in ") ? i.note : "answered";
+				return by ? `closed by ${i.to.role}` : i.returned ? `returned: ${i.returned.why}` : i.status;
+			};
 			const text = items.length
-				? ["Items you sent (newest last):", ...items.map((i) => `${i.id} → ${i.to.role} (${i.to.workerId}) [${i.returned ? `returned: ${i.returned.why}` : i.status}] ${i.kind}: ${i.subject}${i.note ? ` · note: ${i.note}` : ""}`)].join("\n")
+				? ["Items you sent (newest last):", ...items.map((i) => `${i.id} → ${i.to.role} (${i.to.workerId}) [${how(i)}] ${i.kind}: ${i.subject}${i.note && closedByOf(i) !== "auto" && closedByOf(i) !== "reply" ? ` · note: ${i.note}` : ""}`)].join("\n")
 				: "You have sent no items.";
 			return { text, details: { action, items: items.map(({ body: _b, ...rest }) => rest) } };
 		}
 		const ids = request.ids ?? [];
 		if (!ids.length) throw new Error(`team_inbox ${action} needs ids.`);
+		const openLeft = () => {
+			const n = store.openCount(me.workerId);
+			return `${n} open left`;
+		};
 		if (action === "open") {
-			const results = store.setStatus(me.workerId, ids, "read");
+			const results = store.markSeen(me.workerId, ids, seenTag(me.workerId, "open"));
 			const out = results.map((r) => r.item && store.holderOf(r.id) === me.workerId
 				? [`${r.item.urgent ? "! " : ""}${r.item.id} ${r.item.kind} from ${r.item.from.role}${r.item.from.workerId !== "parent" ? ` (${r.item.from.workerId})` : ""}${r.item.replyTo ? `, re ${r.item.replyTo}` : ""}${r.item.movedFrom?.length ? `, first sent to ${r.item.movedFrom[0].role} (${r.item.movedFrom[0].workerId})` : ""} · ${new Date(r.item.sentAt).toISOString()} · ${r.item.returned ? "returned" : r.item.status}`, `Subject: ${r.item.subject}`, r.item.body].join("\n")
 				: `${r.id}: ${r.reason ?? "not in your inbox"}`);
-			return { text: out.join("\n\n---\n\n"), details: { action, results: results.map(({ item: _i, ...rest }) => rest) } };
+			return { text: `${out.join("\n\n---\n\n")}\n\n(${openLeft()})`, details: { action, open: store.openCount(me.workerId), results: results.map(({ item: _i, ...rest }) => rest) } };
 		}
 		const results = store.setStatus(me.workerId, ids, "addressed", request.note);
 		const done = results.filter((r) => r.ok).map((r) => r.id);
 		const failed = results.filter((r) => !r.ok);
 		scheduleRefresh();
 		return {
-			text: [done.length ? `Marked addressed: ${done.join(", ")}${request.note ? ` (note: ${request.note})` : ""}.` : "", ...failed.map((r) => `${r.id}: ${r.reason}`)].filter(Boolean).join("\n") || "Nothing to mark.",
-			details: { action, results: results.map(({ item: _i, ...rest }) => rest) },
+			text: [done.length ? `Marked addressed: ${done.join(", ")}${request.note ? ` (note: ${request.note})` : ""}. ${openLeft()}.` : "", ...failed.map((r) => `${r.id}: ${r.reason}`)].filter(Boolean).join("\n") || "Nothing to mark.",
+			details: { action, open: store.openCount(me.workerId), results: results.map(({ item: _i, ...rest }) => rest) },
 		};
 	};
 	const handleMemberRequest = async (teamId: string, workerId: string, dir: string, request: MailboxRequest): Promise<void> => {
@@ -2810,7 +2906,8 @@ export function registerSubagents(
 					const queued = targets.map((target) => {
 						const action = teams.recordAction(target.workerId, notice ?? "message", notice ? "monitor" : "member", request.message!);
 						const r = queueItem(target, {
-							kind: notice ? "notice" : "message", body: request.message!, from: itemFrom(me),
+							// needsReply: it waits for an answer like a team_ask question (§app.teams/inbox "Questions").
+							kind: notice ? "notice" : request.needsReply ? "question" : "message", body: request.message!, from: itemFrom(me),
 							...(notice ? { subject: request.subject ?? `${notice.toUpperCase()}: ${request.message!.split("\n").find((l) => l.trim()) ?? ""}`, urgent: true } : { ...(request.subject ? { subject: request.subject } : {}), ...(request.urgent ? { urgent: true } : {}) }),
 							...(request.replyTo ? { replyTo: request.replyTo } : {}), ...(broadcastId ? { broadcastId } : {}),
 						});
@@ -2822,12 +2919,13 @@ export function registerSubagents(
 						to: r.ok ? r.to.role : target.role, workerId: r.ok ? r.to.workerId : target.workerId, ok: r.ok,
 						...(r.ok ? { item: r.item.id, ...(r.forwardedFrom ? { forwardedFrom: r.forwardedFrom.workerId } : {}) } : { reason: r.reason }),
 					}));
-					// A reply that points back to a question this member holds marks that question addressed.
+					// A reply that points back to an open item this member holds, of any kind, closes it (closed by a reply).
 					if (request.replyTo && outcomes.some((o) => o.ok)) {
 						const answered = inbox!.get(request.replyTo);
-						if (answered && answered.kind === "question" && inbox!.holderOf(answered.id) === me.workerId && isOpen(answered))
-							inbox!.setStatus(me.workerId, [answered.id], "addressed", `answered in ${queued.flatMap(({ r }) => (r.ok ? [r.item.id] : []))[0]}`);
+						if (answered && inbox!.holderOf(answered.id) === me.workerId && isOpen(answered))
+							inbox!.setStatus(me.workerId, [answered.id], "addressed", `answered in ${queued.flatMap(({ r }) => (r.ok ? [r.item.id] : []))[0]}`, "reply");
 					}
+
 					if (notice === "wrap-up") recordWrapUps(info.team.id, queued.flatMap(({ r }) => (r.ok ? [r.to] : [])), outcomes);
 					const failed = queued.filter(({ r }) => !r.ok);
 					const lines = queued.map(({ target, r }) => (r.ok ? queuedLine(r) : `Not queued for ${target.role} (${target.workerId}): ${r.reason}`));
@@ -3552,7 +3650,7 @@ export function registerSubagents(
 	});
 
 	const MEMBER_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask (messages to teammates are delivered by this extension; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team.";
+		"Members have team_msg/team_inbox/team_ask (messages to teammates are queued in each member's inbox, which it opens and closes item by item; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team.";
 	/** In a coordinated team the generic question paragraph is wrong: members ask the coordinator. */
 	const COORDINATED_TOOLS_NOTE =
 		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge.";
@@ -3868,7 +3966,7 @@ export function registerSubagents(
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; delivered by this extension), team_inbox, team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Members (pi or claude-code) load them as a Pi extension. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
+			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Members (pi or claude-code) load them as a Pi extension. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
 		promptSnippet: "Create a team of role-based background workers with declared ownership",
 		promptGuidelines: [
 			"Use team_create when the user wants a coordinated team with distinct roles and ownership; use agent_spawn for ad hoc independent workers.",
@@ -4065,6 +4163,7 @@ export function registerSubagents(
 					`  ${m.workerId} ${m.role}${dutyMark(m)} [${m.backend}] ${m.state}${m.status ? ` (${m.status}${m.taskOutcome ? `/${m.taskOutcome}` : ""})` : ""}${m.available ? ` · ${memberContext(m)}${openItemsText(m.workerId)}` : ""} · owns: ${m.ownedPaths.join(", ") || "none declared"}${m.error ? ` · error: ${m.error}` : ""}${m.available ? "" : ` · unavailable: ${m.reason}`}${ejectedText(m)}`,
 				),
 				...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
+				...teamInboxLine(t.id, "  "),
 			].join("\n"));
 			// N6: where members' questions go depends on whether the team is coordinated.
 			const coordinatedCount = selected.filter((t) => t.coordinated).length;
@@ -4408,6 +4507,7 @@ export function registerSubagents(
 	};
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
+		loadInboxZero();
 		parentLoops = 0;
 		discoverBackends();
 		for (const entry of ctx.sessionManager.getEntries()) {

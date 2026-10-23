@@ -24,6 +24,7 @@ import { ChatWorker } from "./chat-worker.ts";
 import type { WorkerHost } from "./worker-host.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 import { readMemberItems, writeInboxCaps, type InboxItem } from "./inbox.ts";
+import { WAKE_FOOTER } from "./delivery.ts";
 
 import { BACKEND_DIALOG_EVENT, BACKEND_REGISTER_EVENT, BACKEND_DISCOVER_EVENT, registerBackend, type BackendRegistration } from "./contracts.ts";
 
@@ -2449,11 +2450,11 @@ async function waitFor(pred: () => unknown, what: string, ms = 2000): Promise<vo
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** One member's inbox as [id, kind, from role, status] rows. */
 const itemRows = (dir: string) => readMemberItems(dir).map((i) => [i.id, i.kind, i.from.role, i.status]);
-const INBOX_FOOT = "(Items shown in full above count as read. Answer an item with team_msg and replyTo set to its id.)";
+const INBOX_FOOT = WAKE_FOOTER;
 
-function teamHarness() {
+function teamHarness(extra: SubagentsOptions = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-index-mailbox-"));
-	const h = harness(eventBus(), { mailboxRoot: root, mailboxPollMs: 10, inboxDebounceMs: 30, inboxRetryMs: [30, 60] });
+	const h = harness(eventBus(), { mailboxRoot: root, mailboxPollMs: 10, inboxDebounceMs: 30, inboxRetryMs: [30, 60], ...extra });
 	/** Identity of any worker: pi members carry it in env, Claude members in their MCP server's env. */
 	const memberOf = (id: string, claude: any[] = []) => {
 		const w = [...h.workers, ...claude].find((w: any) => w.id === id);
@@ -2581,10 +2582,11 @@ test("member messages are queued as inbox items: answered at once, listed when a
 			"[Team inbox: 2 new — team_inbox open <ids> to read, done <ids> to mark addressed]",
 			"- i_2 message from lead — Document the API",
 			"- i_3 message from lead — Docs",
-			"    Second",
-			"    line",
+			"[Open your inbox first: team_inbox open i_2 i_3 — other tools are refused until you open one]",
 			INBOX_FOOT,
-		].join("\n"));
+		].join("\n"), "two items: subjects only (a member must open an item to see it); the wake starts its turn, so it is gated");
+		assert.deepEqual(itemRows(writerDir).map((r) => r[3]), ["new", "new"], "listed is not opened");
+
 		await pause(60);
 		assert.equal(writerWorker.steerCount, 1, "one wake for the gathered items");
 		// The Claude member answers through the same mailbox: sender identity comes from its directory.
@@ -3718,8 +3720,10 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 			assert.equal(s.ok, true, `fire ${i}`);
 			h.timers.at(-1)!.fn();
 		}
-		await waitFor(() => monitor.lastSteer?.message.includes("Wake limit"), "the 30th fire listed");
-		assert.match(monitor.lastSteer.message, /Wake limit \(30 fires with no teammate working\) reached: do not schedule more nudges/);
+		// Many fires wait at once: listed by subject (opened with team_inbox), every one in turn.
+		await waitFor(() => readMemberItems(h.memberOf("ag_03")!.dir).some((i) => i.body.includes("Wake limit") && i.listedAt !== undefined), "the 30th fire listed");
+		assert.match(readMemberItems(h.memberOf("ag_03")!.dir).find((i) => i.body.includes("Wake limit"))!.body, /Wake limit \(30 fires with no teammate working\) reached: do not schedule more nudges/);
+
 		assert.match((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).text, /Wake limit/);
 		dev.status = "running";
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).ok, true, "a working teammate resets the count");
@@ -4974,19 +4978,19 @@ test("team_inbox is served by the parent, the inbox's only writer: list, open, d
 		assert.equal(list.ok, true);
 		assert.match(list.text, /^2 open items:\n- i_1 \[new\] message from lead — Task 1 \(\d\d:\d\d:\d\d\)\n- i_2 \[new\] message from lead — FYI \(\d\d:\d\d:\d\d\)\nteam_inbox open <ids>/);
 		const opened = await h.ask("ag_02", { type: "inbox", action: "open", ids: ["i_1"] });
-		assert.match(opened.text, /^i_1 message from lead \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.$/);
+		assert.match(opened.text, /^i_1 message from lead \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.\n\n\(2 open left\)$/, "open ends with the count of open items left");
 		// The race: dev marks both addressed while lead's next message is being delivered, in the same poll.
 		const doneId = requestId(), msgId = requestId();
 		writeRequest(devDir, { version: 1, id: doneId, at: Date.now(), type: "inbox", action: "done", ids: ["i_1", "i_2"], note: "handled" });
 		writeRequest(leadDir, { version: 1, id: msgId, at: Date.now(), type: "message", to: "dev", message: "A new task" });
 		const [done, sent] = await Promise.all([awaitResponse(devDir, doneId, 3000, undefined, 5), awaitResponse(leadDir, msgId, 3000, undefined, 5)]);
-		assert.equal(done!.text, "Marked addressed: i_1, i_2 (note: handled).");
+		assert.match(done!.text, /^Marked addressed: i_1, i_2 \(note: handled\)\. [01] open left\.$/);
 		assert.equal(sent!.text, "Queued for dev (ag_02): item i_3");
 		assert.deepEqual(readMemberItems(devDir).map((i) => [i.id, i.status, i.note ?? ""]), [["i_1", "addressed", "handled"], ["i_2", "addressed", "handled"], ["i_3", "new", ""]], "the new item is kept");
 		// The sender looks up status and note; it is never woken for it.
 		const steersBefore = h.workers[0].steerCount;
 		const lookup = await h.ask("ag_01", { type: "inbox", action: "sent" });
-		assert.match(lookup.text, /^Items you sent \(newest last\):\ni_1 → dev \(ag_02\) \[addressed\] message: Task 1 · note: handled\ni_2 → dev \(ag_02\) \[addressed\] message: FYI · note: handled\ni_3 → dev \(ag_02\) \[new\] message: A new task$/);
+		assert.match(lookup.text, /^Items you sent \(newest last\):\ni_1 → dev \(ag_02\) \[closed by dev\] message: Task 1 · note: handled\ni_2 → dev \(ag_02\) \[closed by dev\] message: FYI · note: handled\ni_3 → dev \(ag_02\) \[new\] message: A new task$/);
 		await pause(50);
 		assert.equal(h.workers[0].steerCount, steersBefore);
 		// Marks only what the member holds.
@@ -5034,7 +5038,8 @@ test("a question moved to a successor keeps its id and sender; the successor's r
 		const answer = await h.ask("ag_05", { type: "message", to: "dev", message: "Use v2.", replyTo: qid });
 		assert.equal(answer.ok, true, answer.text);
 		const lookup = await h.ask("ag_02", { type: "inbox", action: "sent" });
-		assert.match(lookup.text, new RegExp(`${qid} → coordinator-2 \\(ag_05\\) \\[addressed\\] question: Which schema\\? · note: answered in i_\\w+`));
+		assert.match(lookup.text, new RegExp(`${qid} → coordinator-2 \\(ag_05\\) \\[answered in i_\\w+\\] question: Which schema\\?$`, "m"));
+
 		assert.deepEqual(readMemberItems(nextDir).find((i) => i.id === ownId), ownBefore, "its other items are unchanged");
 		// A message to the retired coordinator now reaches its successor, and the sender is told.
 		await waitFor(() => coordinator.status === "killed", "the old coordinator retired");
@@ -5182,6 +5187,8 @@ test("inbox lifecycle: at retirement the old member's open items move to its suc
 		const devDir = h.memberOf("ag_02")!.dir;
 		const sent = await h.ask("ag_03", { type: "message", to: "dev", message: "Found a bug in parse()" });
 		const id = /item (i_\w+)/.exec(sent.text)![1];
+		// A second item, so the wake at dev's turn end lists both by subject (a lone item would show in full, opened).
+		const other = /item (i_\w+)/.exec((await h.ask("ag_03", { type: "message", to: "dev", message: "And the lexer" })).text)![1];
 		await h.ask("ag_01", { type: "succeed", to: "dev" });
 		h.writeNote("dev");
 		dev.status = "running";
@@ -5197,7 +5204,8 @@ test("inbox lifecycle: at retirement the old member's open items move to its suc
 		const moved = readMemberItems(h.memberOf("ag_05")!.dir).find((i) => i.id === id)!;
 		assert.deepEqual([moved.from, moved.to, moved.movedFrom?.map((m) => [m.workerId, m.role, m.why])], [{ role: "qa", workerId: "ag_03" }, { role: "dev-2", workerId: "ag_05" }, [["ag_02", "dev", "handover"]]]);
 		assert.ok(!readMemberItems(devDir).some((i) => i.id === id), "gone from dev's inbox");
-		assert.equal(moved.status, "new", "new to its new holder, though dev had read it");
+		assert.equal(moved.status, "new", "new to its new holder");
+		assert.ok(readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === other), "both listed-but-unopened items moved");
 		successor.settle(); // busy on its first task: a normal item is listed when that turn ends
 		await waitFor(() => (successor.steered ?? []).some((s: any) => s.message.includes(`${id} message from qa (sent to dev) — Found a bug in parse()`)), "listed to dev-2");
 		await waitFor(() => dev.status === "killed", "dev retired");
@@ -5241,4 +5249,159 @@ test("a message to a member that ended while its successor is still to start is 
 			}
 		} finally { await h.cleanup(); }
 	}
+});
+
+// ── Inbox zero at every end (§app.teams/inbox "Moving and returning", §app.teams/inbox-zero) ──
+
+test("inbox zero: a member stopped with an opened item gets no not-addressed notice for it; it closes automatically, the question and the unopened item go back", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const qa = h.worker("ag_03");
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const news = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "FYI: the schema moved" }));
+		const question = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "Which port?", needsReply: true }));
+		const unopened = idOf(await h.ask("ag_02", { type: "message", to: "qa", message: "Later: the docs" }));
+		// qa opens the news and the question in its running turn, closes neither, and is stopped.
+		assert.equal((await h.ask("ag_03", { type: "inbox", action: "open", ids: [news, question] })).ok, true);
+		qa.exit();
+		const back = await assertItem(h, "ag_02", "notice", /^\[Not addressed: 2 item\(s\) returned from qa \(ag_03\)/);
+		assert.doesNotMatch(back.body, new RegExp(`${news}\\b`), "handled news is never returned as not addressed");
+		assert.match(back.body, new RegExp(`${question} question`));
+		assert.match(back.body, new RegExp(`${unopened} message`));
+		const items = readMemberItems(h.memberOf("ag_03")!.dir);
+		const closed = items.find((i) => i.id === news)!;
+		assert.deepEqual([closed.status, closed.closedBy, closed.note, closed.returned], ["addressed", "auto", "closed automatically: seen, not closed by qa", undefined]);
+		assert.ok(items.find((i) => i.id === question)?.returned, "an unanswered question always goes back");
+		assert.ok(items.find((i) => i.id === unopened)?.returned, "an unopened item is never closed for it");
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: at retirement an item the old member opened closes automatically and never reaches the successor; an unopened one moves", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		// Three items: the wake at dev's turn end lists them by subject (none opened); dev opens one in that turn.
+		const seen = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const unseen = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Found a bug in parse()" }));
+		const unseen2 = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "And the lexer" }));
+		await h.ask("ag_01", { type: "succeed", to: "dev" });
+		h.writeNote("dev");
+		dev.status = "running";
+		dev.settle();
+		await waitFor(() => h.worker("ag_05"), "dev-2 started");
+		const successor = h.worker("ag_05");
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [seen] });
+		assert.equal((await h.ask("ag_05", { type: "ready" })).ok, true);
+		dev.settle();
+		await waitFor(() => readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === unseen), "the unopened item moved to dev-2");
+		assert.ok(readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === unseen2));
+		assert.ok(!readMemberItems(h.memberOf("ag_05")!.dir).some((i) => i.id === seen), "handled news never moves to the successor");
+		const closed = readMemberItems(devDir).find((i) => i.id === seen)!;
+		assert.deepEqual([closed.status, closed.closedBy], ["addressed", "auto"]);
+		successor.settle();
+		await waitFor(() => (successor.steered ?? []).some((s: any) => s.message.includes(unseen)), "listed to dev-2");
+		assert.ok(!(successor.steered ?? []).some((s: any) => s.message.includes(seen)), "never listed to dev-2");
+		assert.ok(!readMemberItems(h.memberOf("ag_03")!.dir).some((i) => /Not addressed/.test(i.body)));
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: a report names what its member left open after the safety net; nothing open, no line", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const dev = h.worker("ag_02"), qa = h.worker("ag_03");
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const news = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const question = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Which port?", needsReply: true }));
+		const unopened = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Later: docs" }));
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [news, question] });
+		dev.output = "built it";
+		dev.settle();
+		const report = await assertItem(h, "ag_01", "report", /Team report from dev/);
+		assert.ok(report.body.endsWith(`[Left open: ${question} question from qa (opened); ${unopened} message from qa (unopened)]`), report.body);
+		assert.doesNotMatch(report.body, new RegExp(`${news}\\b`), "the news closed at the turn's end, before the report");
+		qa.output = "tested";
+		qa.settle();
+		const second = await assertItem(h, "ag_01", "report", /Team report from qa/);
+		assert.doesNotMatch(second.body, /Left open/);
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: the roster shows each member's unanswered question and its wait, and one team line split by who closed", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		await h.ask("ag_03", { type: "message", to: "dev", message: "Which port?", needsReply: true });
+		const fyi = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "FYI" }));
+		const other = idOf(await h.ask("ag_03", { type: "message", to: "dev", message: "Another" }));
+		await h.ask("ag_02", { type: "inbox", action: "done", ids: [fyi] });
+		const roster = (await h.ask("ag_01", { type: "roster" })).text;
+		assert.match(roster, /ag_02 dev \[pi, has team tools\] working \(running\) · context — · 2 open items \(1 question unanswered under 1 min\) · owns/);
+		assert.match(roster, /\nInbox: \d+ open · closed by members 1 · automatically 0$/);
+		assert.match((await h.call("team_list")).content[0].text, /\n {2}Inbox: \d+ open · closed by members 1 · automatically 0(\n|$)/);
+		assert.ok(other);
+	} finally { await h.cleanup(); }
+});
+
+// ── Inbox zero: the safety net at a member's settle, both measurement settings (§app.teams/inbox-zero) ──
+
+for (const autoClose of ["turn-end", "next-turn"] as const) test(`inbox zero (${autoClose}): a seen item the member did not close closes automatically; a reply closes any item; needsReply is a question that waits`, async () => {
+	const h = teamHarness({ inboxZero: { autoClose } });
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
+		const dev = h.workers.find((w: any) => w.id === "ag_02");
+		const devDir = h.memberOf("ag_02")!.dir;
+		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
+		const fyi = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "FYI: CI is green" }));
+		const ask = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "Ping me when the parser builds" }));
+		const q = idOf(await h.ask("ag_01", { type: "message", to: "dev", message: "Which port?", needsReply: true }));
+		const item = (id: string) => readMemberItems(devDir).find((i) => i.id === id)!;
+		assert.equal(item(q).kind, "question", "needsReply makes it a question");
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [fyi] });
+		// dev's first turn ends without closing it.
+		dev.settle();
+		await waitFor(() => dev.steerCount === 1, "the wake for what still waits");
+		const wake = dev.lastSteer.message;
+		assert.match(wake, new RegExp(`^\\[Team inbox: 2 new — [^\\n]*\\]\\n- ${ask} message from lead — Ping me when the parser builds\\n- ${q} question from lead — Which port\\?\\n`), "subjects only");
+		assert.match(wake, new RegExp(`\\[Open your inbox first: team_inbox open ${ask} ${q} `), "an idle member's turn starts with the gate");
+		if (autoClose === "turn-end") {
+			assert.deepEqual([item(fyi).status, item(fyi).closedBy, item(fyi).note], ["addressed", "auto", "closed automatically: seen, not closed by dev"]);
+			assert.doesNotMatch(wake, /Still open/);
+		} else {
+			assert.equal(item(fyi).status, "read", "next-turn: one more turn, after a reminder");
+			assert.match(wake, new RegExp(`Still open \\(opened, not closed\\):\\n- ${fyi} message from lead — opened, not closed\\n`));
+		}
+		// The member works its next turn: it opens both, answers one with replyTo, leaves the question.
+		await h.ask("ag_02", { type: "inbox", action: "open", ids: [ask, q] });
+		const reply = await h.ask("ag_02", { type: "message", to: "lead", message: "It builds.", replyTo: ask });
+		assert.equal(reply.ok, true, reply.text);
+		assert.deepEqual([item(ask).status, item(ask).closedBy], ["addressed", "reply"], "a reply closes any item, not only a question");
+		assert.match(item(ask).note!, /^answered in i_\w+$/);
+		dev.settle();
+		await pause(60);
+		assert.deepEqual([item(fyi).status, item(fyi).closedBy], ["addressed", "auto"], "closed by now in either setting");
+		assert.equal(item(q).status, "read", "a question is never closed automatically");
+		const sent = (await h.ask("ag_01", { type: "inbox", action: "sent" })).text;
+		assert.match(sent, new RegExp(`${fyi} → dev \\(ag_02\\) \\[closed automatically\\] message: FYI: CI is green$`, "m"));
+		assert.match(sent, new RegExp(`${ask} → dev \\(ag_02\\) \\[answered in i_\\w+\\] message: `));
+		assert.match(sent, new RegExp(`${q} → dev \\(ag_02\\) \\[read\\] question: Which port\\?$`, "m"));
+	} finally { await h.cleanup(); }
+});
+
+test("inbox zero: with the gate setting off, a wake that starts a member's turn carries no gate line", async () => {
+	const h = teamHarness({ inboxZero: { gate: "off" } });
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
+		const dev = h.workers.find((w: any) => w.id === "ag_02");
+		await h.ask("ag_01", { type: "message", to: "dev", message: "one" });
+		await h.ask("ag_01", { type: "message", to: "dev", message: "two" });
+		dev.settle();
+		await waitFor(() => dev.steerCount === 1, "the wake");
+		assert.doesNotMatch(dev.lastSteer.message, /Open your inbox first/);
+	} finally { await h.cleanup(); }
 });

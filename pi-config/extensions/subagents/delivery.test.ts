@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DeliveryLanes, WakeScheduler, steerUntilTaken, wakeText, type LaneResult, type WakeHost, type WakeState } from "./delivery.ts";
+import { DeliveryLanes, WAKE_FOOTER, WakeScheduler, gatedIds, steerUntilTaken, wakeText, type LaneResult, type WakeHost, type WakeState } from "./delivery.ts";
+
 import type { InboxItem } from "./inbox.ts";
 
 const deferred = <T>() => {
@@ -131,12 +132,12 @@ test("idle: normal items are gathered (~3 s) into one list; an urgent item wakes
 	await f.fire(3000);
 	assert.equal(f.sent.length, 1);
 	assert.match(f.sent[0], /^\[Team inbox: 2 new — .*\]\n- i_\w+ message from lead — first\n- i_\w+ message from lead — second\n/);
-	assert.deepEqual(f.items.map((i) => [i.status, i.listedAt]), [["read", 1], ["read", 1]]);
+	assert.deepEqual(f.items.map((i) => [i.status, i.listedAt]), [["new", 1], ["new", 1]], "two items: subjects only, nothing counts as opened");
 	f.items.push(item({ urgent: true, subject: "now", body: "now" }));
 	s.notify("ag_02");
 	await tick();
 	assert.equal(f.sent.length, 2, "urgent: no gathering");
-	assert.match(f.sent[1], /^\[Team inbox: 1 new \(1 urgent\) — .*\]\n! i_\w+ message from lead — now/);
+	assert.match(f.sent[1], /^\[Team inbox: 3 new \(1 urgent\) — .*\]\n! i_\w+ message from lead — now\n- i_\w+ message from lead \(unopened\) — first\n/, "items listed before and still unopened come again, marked");
 });
 
 test("busy on the pi backend: urgent at its next step, normal at the turn's end; elsewhere urgent waits for the end too", async () => {
@@ -151,7 +152,7 @@ test("busy on the pi backend: urgent at its next step, normal at the turn's end;
 	s.notify("ag_02");
 	await tick();
 	assert.equal(f.sent.length, 1, "urgent: at its next step (a mid-turn steer)");
-	assert.match(f.sent[0], /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ message from lead — urgent one\n\(Items/, "only the urgent item mid-turn; the normal one waits for the turn's end");
+	assert.match(f.sent[0], /^\[Team inbox: 1 new \(1 urgent\) — [^\n]*\]\n! i_\w+ message from lead — urgent one\n\(Handle each item/, "only the urgent item mid-turn; the normal one waits for the turn's end");
 	await tick();
 	assert.equal(f.sent.length, 1, "the waiting normal item is not sent mid-turn after the urgent wake either");
 	// Another normal item while busy: listed when the turn ends, at once (no gathering).
@@ -243,18 +244,85 @@ test("legacy members (older code, no caps marker) get each item in full at once,
 	assert.deepEqual(f.items.map((i) => i.status), ["read", "read"]);
 });
 
-test("the list: at most 20 lines, urgent first, short bodies in full up to 4,000 characters, '… and M more'", () => {
+test("the list: at most 20 lines, urgent first, subjects only whatever the length, '… and M more'", () => {
 	const items = [
-		...Array.from({ length: 22 }, (_, i) => item({ subject: `s${i}`, body: `s${i}\n${"x".repeat(i === 0 ? 700 : 300)}` })),
+		...Array.from({ length: 22 }, (_, i) => item({ subject: `s${i}`, body: `s${i}\nshort` })),
 		item({ urgent: true, subject: "U", body: "U" }),
 	];
-	const { text, listed, full } = wakeText(items);
+	const { text, listed, full, unopened } = wakeText(items);
 	const lines = text.split("\n");
 	assert.match(lines[0], /^\[Team inbox: 23 new \(1 urgent\) — team_inbox open <ids> to read, done <ids> to mark addressed\]$/);
 	assert.match(lines[1], /^! i_\w+ message from lead — U$/);
 	assert.equal(listed.length, 20);
 	assert.ok(text.includes("… and 3 more"));
-	assert.ok(!full.includes(items[0].id), "over 600 characters: subject only");
-	const inline = full.filter((id) => id !== items.at(-1)!.id);
-	assert.equal(inline.length, 13, "13 × 304 characters fit the 4,000 budget, the 14th does not");
+	assert.deepEqual(full, [], "a member must open an item to see it: no body, however short");
+	assert.ok(!text.includes("    short"));
+	assert.equal(unopened.length, 20);
+	assert.equal(lines.at(-1), WAKE_FOOTER);
+	assert.doesNotMatch(text, /Open your inbox first/, "no gate unless asked");
+});
+
+test("the list: exactly one item is shown in full and counts as opened, however long", () => {
+	const long = item({ subject: "report", body: `report\n${"y".repeat(5000)}` });
+	const { text, full, unopened } = wakeText([long], { gate: true });
+	assert.deepEqual(full, [long.id]);
+	assert.deepEqual(unopened, []);
+	assert.ok(text.includes(`    ${"y".repeat(5000)}`));
+	assert.doesNotMatch(text, /Open your inbox first/, "a single-item wake never gates: it showed the item");
+	const two = wakeText([item({ subject: "a" }), item({ subject: "b" })], { gate: true });
+	assert.equal(two.full.length, 0);
+	assert.match(two.text, /\n\[Open your inbox first: team_inbox open i_\w+ i_\w+ — other tools are refused until you open one\]\n/);
+	assert.deepEqual(gatedIds(two.text), two.unopened);
+	assert.equal(gatedIds(`quoted: ${two.text}`), undefined, "only a wake list itself");
+});
+
+test("the list: the Still open block names opened items, questions first, at most 5 lines inside the 20-line cap", () => {
+	const fresh = Array.from({ length: 20 }, (_, i) => item({ subject: `n${i}` }));
+	const opened = [item({ status: "read", subject: "m1" }), item({ status: "read", kind: "question", subject: "q1" })];
+	const r = wakeText(fresh, { stillOpen: [opened[1], opened[0]] });
+	const lines = r.text.split("\n");
+	assert.equal(r.listed.length, 18, "two Still open lines take two of the 20 places");
+	assert.ok(r.text.includes("… and 2 more"));
+	const at = lines.indexOf("Still open (opened, not closed):");
+	assert.deepEqual(lines.slice(at + 1, at + 3), [`- ${opened[1].id} question from lead — opened, not answered`, `- ${opened[0].id} message from lead — opened, not closed`]);
+	assert.deepEqual(r.reminded, [opened[1].id, opened[0].id]);
+	const many = Array.from({ length: 8 }, () => item({ status: "read" }));
+	const r2 = wakeText([item()], { stillOpen: many });
+	assert.equal(r2.reminded.length, 4);
+	assert.ok(r2.text.includes("… and 4 more"));
+	// Never-listed items take the places first, so each wake lists every waiting item in turn.
+	const old = Array.from({ length: 20 }, () => item({ listedAt: 1 }));
+	const newer = item({ subject: "latest" });
+	const r3 = wakeText([...old, newer]);
+	assert.ok(r3.listed.includes(newer.id));
+	assert.match(r3.text, /- i_\w+ message from lead \(unopened\) — hello/);
+});
+
+test("gate: only a wake that starts an idle member's turn carries the gate line, and only when the setting is on; reminders are recorded", async () => {
+	const f = fakeHost();
+	let gateOn = true;
+	const reminded: string[][] = [];
+	const opened = item({ status: "read", subject: "seen" });
+	const wake: WakeHost = { ...f.wake, gate: () => gateOn, stillOpen: () => [opened], markReminded: (_w, ids) => { reminded.push(ids); } };
+	const s = new WakeScheduler(wake);
+	f.items.push(item({ subject: "a" }), item({ subject: "b" }));
+	s.notify("ag_02");
+	await f.fire(3000);
+	assert.match(f.sent[0], /\[Open your inbox first: team_inbox open i_\w+ i_\w+ /);
+	assert.deepEqual(reminded, [[opened.id]]);
+	// Mid-turn (urgent to a busy member): never gated.
+	f.host.state = "busy";
+	f.items.push(item({ urgent: true, subject: "u1" }), item({ urgent: true, subject: "u2" }));
+	s.notify("ag_02");
+	await tick();
+	assert.equal(f.sent.length, 2);
+	assert.doesNotMatch(f.sent[1], /Open your inbox first/);
+	// Setting off: never gated.
+	gateOn = false;
+	f.host.state = "idle";
+	f.items.push(item({ subject: "c" }));
+	s.settled("ag_02");
+	await tick();
+	assert.equal(f.sent.length, 3);
+	assert.doesNotMatch(f.sent[2], /Open your inbox first/);
 });

@@ -247,10 +247,11 @@ export class WakeScheduler {
 			return;
 		}
 		// Busy: urgent at its next step where the backend has one; everything else at the turn's end.
-		if (urgent && this.host.nextStep(workerId)) this.fire(workerId, s, false);
+		// Only the urgent items go at its next step; normal ones wait for the turn's end (settled).
+		if (urgent && this.host.nextStep(workerId)) this.fire(workerId, s, false, true);
 	}
 
-	private fire(workerId: string, s: WakeSlot, legacy: boolean): void {
+	private fire(workerId: string, s: WakeSlot, legacy: boolean, urgentOnly = false): void {
 		if (s.debounce !== undefined) {
 			this.host.clearTimer(s.debounce);
 			s.debounce = undefined;
@@ -277,12 +278,13 @@ export class WakeScheduler {
 				this.evaluate(workerId, "retry");
 			}, delay);
 		};
-		const run = legacy ? this.fireLegacy(workerId) : this.fireList(workerId);
+		const run = legacy ? this.fireLegacy(workerId) : this.fireList(workerId, urgentOnly);
 		run.then(done, (error) => done({ ok: false, reason: String(error) }));
 	}
 
-	private async fireList(workerId: string): Promise<LaneResult> {
-		const { text, listed, full } = wakeText(this.host.unread(workerId));
+	private async fireList(workerId: string, urgentOnly: boolean): Promise<LaneResult> {
+		const unread = this.host.unread(workerId);
+		const { text, listed, full } = wakeText(urgentOnly ? unread.filter((i) => i.urgent) : unread);
 		if (!listed.length) return { ok: true };
 		const result = await this.host.deliver(workerId, text);
 		if (result.ok) {

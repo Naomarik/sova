@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DecisionProviderId, SessionSignals, SessionSummary, SignalKind } from "../shared/protocol";
+import { ASK_KINDS, type AskKind, type DecisionProviderId, type SessionSignals, type SessionSummary, type SignalKind, TURN_OUTCOMES, type TurnCard, type TurnOutcome } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -46,9 +46,10 @@ export interface StoredTurn {
   /** The reply's asking sentence (when `asks_user` was asked), redacted and capped: the digest's
       detail. Local only: never on the list or the feed. */
   detail?: string;
-  /** 2: written since `asks_user` came back (§app.decisions/asks-user). An older record's
-      `asks_user` answer (asked of every turn, before 28 Sep 2026) is dropped on load. */
-  schema?: 2;
+  /** 2: written since `asks_user` came back (§app.decisions/asks-user); 3: a turn card (every
+      finished turn, five questions). An older record's `asks_user` answer (asked of every turn,
+      before 28 Sep 2026, schema absent) is dropped on load. */
+  schema?: 2 | 3;
 }
 
 /** One "stuck" check of a running subagent worker's current turn (repeated while it runs). */
@@ -108,7 +109,7 @@ function load(file: string): SignalsFile {
     if (isRec(v.sessions))
       for (const [k, t] of Object.entries(v.sessions))
         if (isRec(t) && typeof t.turnId === "string" && typeof t.at === "number" && isRec(t.answers)) {
-          if (t.schema !== 2 && "asks_user" in t.answers) {
+          if (t.schema !== 2 && t.schema !== 3 && "asks_user" in t.answers) {
             const { asks_user: _old, ...answers } = t.answers;
             out.sessions[k] = { ...(t as StoredTurn), answers };
           } else out.sessions[k] = t as StoredTurn;
@@ -166,9 +167,27 @@ export function isLooping(answers: Record<string, Answer>): boolean {
   return !!s && s.score >= STUCK_SCORE_MIN && s.confidence >= STUCK_CONFIDENCE_MIN;
 }
 
+/** claims_unverified.p at or above, on a turn whose outcome is did-what-was-asked → "unverified". */
+export const UNVERIFIED_MIN = 0.8;
+
+const choiceOf = (a: Answer | undefined) => (a?.type === "choice" ? a.choice : undefined);
+
+/** Ask kinds that never put a turn waiting on the user (a courtesy offer, no ask at all). */
+const NOT_AN_ASK = new Set(["optional-offer", "none"]);
+
+/** asks_user at the cutoff, and — on a turn card — an ask kind that waits on the user. A record from
+    before the card (no `ask_kind`) needs only the first. */
 export function asksUser(answers: Record<string, Answer>): boolean {
   const p = boolP(answers.asks_user);
-  return p !== undefined && p >= ASKS_USER_MIN;
+  if (p === undefined || p < ASKS_USER_MIN) return false;
+  const kind = choiceOf(answers.ask_kind);
+  return kind === undefined || !NOT_AN_ASK.has(kind);
+}
+
+/** It says it did what was asked, and names something it didn't run, test or check. */
+export function doneUnverified(answers: Record<string, Answer>): boolean {
+  const p = boolP(answers.claims_unverified);
+  return choiceOf(answers.outcome) === "did-what-was-asked" && p !== undefined && p >= UNVERIFIED_MIN;
 }
 
 /** A worker check that counts: fresh, and looping for the WORKER_STRIKES-th time in a row. */
@@ -181,6 +200,7 @@ export function workerStuck(w: StoredWorker, now: number): boolean {
 export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
   const out: SignalKind[] = [];
   if (asksUser(answers)) out.push("asks-you");
+  else if (doneUnverified(answers)) out.push("unverified");
   return out;
 }
 
@@ -195,10 +215,26 @@ export const isRestartGo = (sentence: string | undefined): boolean => !!sentence
 export function withoutRestartAsk<R extends Pick<SessionSummary, "id" | "signals" | "readiness">>(row: R, data = readSignals()): R {
   const sig = row.signals;
   if (!sig?.kinds.includes("asks-you") || !row.readiness?.restartPending) return row;
-  if (!isRestartGo(data.sessions[row.id]?.detail)) return row;
+  const stored = data.sessions[row.id];
+  if (!stored || !(choiceOf(stored.answers.ask_kind) === "restart-or-merge-go" || isRestartGo(stored.detail))) return row;
   const kinds = sig.kinds.filter((k) => k !== "asks-you");
   const { signals: _drop, ...rest } = row;
   return (kinds.length ? { ...rest, signals: { ...sig, kinds } } : rest) as R;
+}
+
+/** The turn card's answers on the wire, or undefined for a record from before the card. */
+export function cardOf(answers: Record<string, Answer>): TurnCard | undefined {
+  const outcome = choiceOf(answers.outcome);
+  const askKind = choiceOf(answers.ask_kind);
+  const cu = boolP(answers.claims_unverified);
+  const lo = boolP(answers.left_open);
+  const card: TurnCard = {
+    ...(outcome && (TURN_OUTCOMES as readonly string[]).includes(outcome) ? { outcome: outcome as TurnOutcome } : {}),
+    ...(askKind && (ASK_KINDS as readonly string[]).includes(askKind) ? { askKind: askKind as AskKind } : {}),
+    ...(cu !== undefined ? { claimsUnverified: cu } : {}),
+    ...(lo !== undefined ? { leftOpen: lo } : {}),
+  };
+  return Object.keys(card).length ? card : undefined;
 }
 
 /** A stored turn as the wire carries it. */
@@ -211,6 +247,7 @@ export function toWire(t: StoredTurn): SessionSignals {
     provider: t.provider,
     ...(t.model ? { model: t.model } : {}),
     ...(p !== undefined ? { asksUser: p } : {}),
+    ...(cardOf(t.answers) ? { card: cardOf(t.answers)! } : {}),
     ...(s ? { stuck: { score: s.score, confidence: s.confidence } } : {}),
     kinds: signalKinds(t.answers),
   };

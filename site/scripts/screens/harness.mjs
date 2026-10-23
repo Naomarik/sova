@@ -395,11 +395,26 @@ export async function cropToViewport(frames, vp, outDir) {
   mkdirSync(outDir, { recursive: true });
   let size = null;
   const out = [];
+  const metas = [];
+  for (const f of frames) metas.push(await sharp(f.file).metadata());
+  // The film's pixel scale: the one most frames have. A frame painted at another (a repaint for
+  // something else, such as a screenshot, can reach the screencast with its picture at one size and
+  // its metadata at another) would be cropped wrong and flash zoomed in or out for one frame: it is
+  // dropped, and the frame before it simply stays on screen longer.
+  const scaleOf = (f, m) => Math.round((m.width / f.w) * 100) / 100;
+  const counts = new Map();
+  frames.forEach((f, i) => counts.set(scaleOf(f, metas[i]), (counts.get(scaleOf(f, metas[i])) ?? 0) + 1));
+  const film = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+  const dropped = [];
   for (const [i, f] of frames.entries()) {
     const top = f.top ?? 0;
     if (f.w + 0.5 < vp.width || f.h - top + 0.5 < vp.height)
       throw new Error(`frame ${i} shows ${Math.round(f.w)}x${Math.round(f.h - top)} CSS px, less than the ${vp.width}x${vp.height} viewport; nothing was encoded`);
-    const meta = await sharp(f.file).metadata();
+    const meta = metas[i];
+    if (Math.abs(scaleOf(f, meta) - film) > 0.02 || Math.abs(meta.height / f.h - film) > 0.02) {
+      dropped.push({ i, t: f.t, size: `${meta.width}x${meta.height}`, css: `${Math.round(f.w)}x${Math.round(f.h)}` });
+      continue;
+    }
     const s = meta.width / f.w;
     const box = { left: 0, top: Math.round(top * s), width: Math.min(Math.round(vp.width * s), meta.width), height: 0 };
     box.height = Math.min(Math.round(vp.height * s), meta.height - box.top);
@@ -409,7 +424,8 @@ export async function cropToViewport(frames, vp, outDir) {
     await sharp(f.file).extract(box).resize(size[0], size[1], { fit: "fill" }).png({ compressionLevel: 1 }).toFile(file);
     out.push({ ...f, file });
   }
-  return { frames: out, width: size[0], height: size[1] };
+  if (!out.length) throw new Error("no screencast frame is at the film's pixel scale");
+  return { frames: out, width: size[0], height: size[1], scale: film, dropped };
 }
 
 /** Where debug output of a failed run goes: the worktree's ignored .agent/screens/ (or $SCREENS_DEBUG_DIR). */

@@ -36,7 +36,7 @@ export function sourceType(p) {
 /**
  * Decode EVERY frame (a file that probes but can't be decoded fails here) and hash each one: how
  * many there are, how many are distinct (a frozen or blank recording has 1), and the longest run of
- * identical frames in seconds (a stuck page shows as a run far past any hold).
+ * identical frames in seconds (a stuck page shows as a run far past any hold); then `flickers`.
  */
 export function decodeAll(file, fps = 30) {
   let out;
@@ -52,7 +52,41 @@ export function decodeAll(file, fps = 30) {
     run = hashes[i] === hashes[i - 1] ? run + 1 : 1;
     longest = Math.max(longest, run);
   }
-  return { frames: hashes.length, distinct: new Set(hashes).size, longestStill: longest / fps };
+  return { frames: hashes.length, distinct: new Set(hashes).size, longestStill: longest / fps, flickers: flickers(file, { fps }) };
+}
+
+/**
+ * Flicker: a large part of the picture (at least `area` of it) changes for 1 or 2 frames, then
+ * returns to what it was, as a frame filmed mid-repaint or cropped at the wrong scale does. Every
+ * frame is decoded small (160x100 grey, 10 px tiles), so the pointer, a ripple or a line of text
+ * streaming in never counts. Returns each one's frame and second.
+ */
+export function flickers(file, { fps = 30, area = 0.15, changed = 8, back = 2.5 } = {}) {
+  const [W, H, T] = [160, 100, 10];
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-map", "0:v:0", "-vf", `scale=${W}:${H}:flags=area`, "-f", "rawvideo", "-pix_fmt", "gray", "-"], { maxBuffer: 512 * 1024 * 1024 });
+  const n = Math.floor(raw.length / (W * H));
+  const frame = (k) => raw.subarray(k * W * H, (k + 1) * W * H);
+  const tiles = (a, b) => {
+    const out = new Float64Array((W / T) * (H / T));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) out[Math.floor(y / T) * (W / T) + Math.floor(x / T)] += Math.abs(a[y * W + x] - b[y * W + x]);
+    return out.map((s) => s / (T * T));
+  };
+  const found = [];
+  for (let t = 1; t < n - 1; t++) {
+    const before = frame(t - 1);
+    const into = tiles(before, frame(t));
+    const hit = [...into.keys()].filter((i) => into[i] > changed);
+    if (hit.length < area * into.length) continue;
+    for (const k of [1, 2]) {
+      if (t + k >= n) break;
+      const after = tiles(before, frame(t + k));
+      if (hit.reduce((s, i) => s + after[i], 0) / hit.length < back) {
+        found.push({ frame: t, frames: k, sec: Number((t / fps).toFixed(2)), area: Number((hit.length / into.length).toFixed(2)) });
+        break;
+      }
+    }
+  }
+  return found;
 }
 
 /** One frame of `file` at `atSec`, or an image file, as raw RGB at w x h. */
@@ -97,6 +131,7 @@ export function fileProblems(name, p, decoded, v, budget) {
   if (Math.abs(p.width / p.height - v.vp.width / v.vp.height) > 0.005) out.push(`${name}: ${p.width}x${p.height} is not the ${v.vp.width}:${v.vp.height} viewport's shape`);
   if (p.duration * 1000 < v.lengthMs.min || p.duration * 1000 > v.lengthMs.max) out.push(`${name}: ${p.duration.toFixed(1)} s long, outside ${v.length.min}–${v.length.max}`);
   if (p.bytes > budget) out.push(`${name}: ${(p.bytes / 1e6).toFixed(2)} MB, over its ${(budget / 1e6).toFixed(2)} MB budget`);
+  for (const f of decoded.flickers ?? []) out.push(`${name}: flicker at ${f.sec} s (frame ${f.frame}): ${Math.round(f.area * 100)}% of the picture changes for ${f.frames} frame(s), then returns`);
   return out;
 }
 

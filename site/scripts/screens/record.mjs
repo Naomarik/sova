@@ -190,6 +190,7 @@ async function recordOne(name, v, hash) {
       const m = document.querySelector("main")?.getBoundingClientRect() ?? { left: 0, top: 0, width: innerWidth, height: innerHeight };
       return { x: Math.round(m.left + m.width * 0.58), y: Math.round(m.top + m.height * 0.42) };
     }) : { x: -100, y: -100 };
+    const stillsAt = [];
     const track = { t0: 0, end: 0, p0, anchors: [], moves: [], clicks: [], taps: [], speed: [], holds: [], beats: [], privacy: { checked: 0, beats: v.beats.length } };
     // The video's own clock: every event is an anchor, and the stretch before it lasts its nominal
     // time in the video (a hold its length, a travel its duration, a rest 0.3 s...), whatever this
@@ -364,7 +365,13 @@ async function recordOne(name, v, hash) {
       track.beats.push({ i: b.index, do: b.do, a, b: track.anchors.at(-1).r, news: bringsNewContent(b), moves: ["type", "click", "tap", "home"].includes(b.do) });
       await leakGate(page, patterns, `video ${name} ${beatNow}`);
       track.privacy.checked++;
-      if (stillsDir) await page.screenshot({ path: join(stillsDir, `${name}-${String(b.index).padStart(2, "0")}-${b.do}${b.target ? `-${b.target}` : ""}.png`) });
+      // The page after the beat, from the screencast's own latest frame: a page.screenshot here
+      // repaints the page mid-film, and that repaint reached the video as a frame flashing zoomed
+      // in or out at the next beat's start.
+      if (stillsDir) {
+        await sleep(120);
+        stillsAt.push({ t: frames.at(-1)?.t ?? 0, file: join(stillsDir, `${name}-${String(b.index).padStart(2, "0")}-${b.do}${b.target ? `-${b.target}` : ""}.png`) });
+      }
     }
     track.end = track.anchors.at(-1).r;
     // The page's own picture at the end, for the edge check (taken after the end, so its repaint
@@ -398,7 +405,12 @@ async function recordOne(name, v, hash) {
     if (frames.length < 10) throw new Error(`only ${frames.length} screencast frames arrived`);
     beatNow = "assembly";
     const cropped = await cropToViewport(frames, v.vp, join(root, "frames-viewport"));
-    console.log(`frames: ${frames.length}, ${Math.round(frames[0].w)}x${Math.round(frames[0].h)} CSS px filmed, cropped to ${cropped.width}x${cropped.height} px`);
+    console.log(`frames: ${frames.length}, ${Math.round(frames[0].w)}x${Math.round(frames[0].h)} CSS px filmed at ${cropped.scale}x, cropped to ${cropped.width}x${cropped.height} px`);
+    if (cropped.dropped.length) console.log(`dropped ${cropped.dropped.length} frame(s) at another pixel scale: ${cropped.dropped.map((d) => `#${d.i} ${d.size} px for ${d.css} CSS px at ${toOut(d.t).toFixed(2)} s`).join("; ")}`);
+    for (const s of stillsAt) {
+      const at = cropped.frames.filter((f) => f.t <= s.t).at(-1) ?? cropped.frames[0];
+      copyFileSync(at.file, s.file);
+    }
     // Filmed at least at the encoded size: never an upscaled picture.
     if (cropped.width < v.width) throw new Error(`the frames hold ${cropped.width} px across the viewport, under the ${v.width} px the video is encoded at: the screencast filmed at too low a scale`);
     const composed = await compose({ frames: cropped.frames, track, v, root });
@@ -416,7 +428,7 @@ async function recordOne(name, v, hash) {
       const p = probe(file);
       const decoded = decodeAll(file);
       files[kind] = { p, decoded };
-      console.log(`  ${kind}: ${p.width}x${p.height}, ${p.duration.toFixed(2)} s, ${(p.bytes / 1e6).toFixed(2)} MB, ${decoded.frames} frames decoded (${decoded.distinct} distinct, longest still ${decoded.longestStill.toFixed(1)} s)`);
+      console.log(`  ${kind}: ${p.width}x${p.height}, ${p.duration.toFixed(2)} s, ${(p.bytes / 1e6).toFixed(2)} MB, ${decoded.frames} frames decoded (${decoded.distinct} distinct, longest still ${decoded.longestStill.toFixed(1)} s, ${decoded.flickers?.length ?? 0} flicker(s))`);
       problems.push(...fileProblems(`${base}${kind === "av1" ? ".av1" : ""}.mp4`, p, decoded, v, kind === "av1" ? v.budget.modern : v.budget.fallback));
     }
     if (problems.length) {

@@ -29,8 +29,6 @@ export type InboxStatus = "new" | "read" | "addressed";
 /** Who closed an addressed item: the member (`done`), a reply (`replyTo`), or Sova's safety net. */
 export type ClosedBy = "member" | "reply" | "auto";
 export const CLOSED_BY: readonly ClosedBy[] = ["member", "reply", "auto"];
-/** The measurement setting's two ways to close a seen item (§app.teams/inbox-measure). */
-export type AutoCloseMode = "turn-end" | "next-turn";
 export interface ClosedCounts { member: number; reply: number; auto: number }
 /**
  * When a member saw an item: in a numbered task of its worker, or in the task a numbered steer
@@ -254,27 +252,6 @@ export function writeInboxCaps(memberDir: string): void {
 	fs.renameSync(tmp, file);
 }
 
-// ── The measurement setting (§app.teams/inbox-measure) ──────────────────────
-
-export const INBOX_ZERO_FILE = "inbox-zero.json";
-export type InboxGateSetting = "turn-start" | "off";
-export interface InboxZeroSettings { gate: InboxGateSetting; autoClose: AutoCloseMode }
-export const INBOX_ZERO_DEFAULTS: InboxZeroSettings = { gate: "turn-start", autoClose: "turn-end" };
-/** `<agent dir>/sova/inbox-zero.json`: a missing file, a missing key or an unknown value is the default. Never throws. */
-export function readInboxZeroSettings(agentDir: string): InboxZeroSettings {
-	let raw: unknown;
-	try {
-		raw = JSON.parse(fs.readFileSync(path.join(agentDir, "sova", INBOX_ZERO_FILE), "utf8"));
-	} catch {
-		return { ...INBOX_ZERO_DEFAULTS };
-	}
-	const v = isRecord(raw) ? raw : {};
-	return {
-		gate: v.gate === "off" || v.gate === "turn-start" ? v.gate : INBOX_ZERO_DEFAULTS.gate,
-		autoClose: v.autoClose === "next-turn" || v.autoClose === "turn-end" ? v.autoClose : INBOX_ZERO_DEFAULTS.autoClose,
-	};
-}
-
 export interface NewItem {
 
 	teamId: string;
@@ -306,9 +283,8 @@ export class InboxStore {
 	/** Item id → worker ID holding it now. */
 	private readonly holder = new Map<string, string>();
 	private seq = 0;
-	/** When each item was seen, and last named in a Still open block, in this process (turn records). */
+	/** When each item was seen, in this process (turn records). */
 	private readonly seen = new Map<string, SeenTag>();
-	private readonly reminded = new Map<string, SeenTag>();
 	/** The worker's task a numbered steer was delivered in (the manager sets it; closeSeen's default resolver). */
 	steerTask?: (workerId: string, steer: number) => number | undefined;
 
@@ -509,11 +485,6 @@ export class InboxStore {
 	markSeen(workerId: string, ids: readonly string[], tag: SeenTag): StatusResult[] {
 		return this.setStatus(workerId, ids, "read", undefined, "member", tag);
 	}
-	/** These seen items were named in a delivered wake's Still open block at `tag` (the later reminder wins). */
-	markReminded(workerId: string, ids: readonly string[], tag: SeenTag): void {
-		const m = this.members.get(workerId);
-		for (const id of ids) if (m?.items.has(id)) this.reminded.set(id, tag);
-	}
 	/** Opened and still open, questions first, then oldest first: a wake's Still open block. */
 	stillOpen(workerId: string): InboxItem[] {
 		return this.list(workerId, { open: true }).filter((i) => i.status === "read").sort((a, b) => Number(b.kind === "question") - Number(a.kind === "question") || byId(a, b));
@@ -529,10 +500,9 @@ export class InboxStore {
 	 * it saw in a task that has ended and did not close. `upto` is the task that just ended, or "all"
 	 * when the member ends (every task has ended; the setting does not matter). Never a question, an
 	 * instruction, an unseen or returned item, nor one read with no turn record (before this change),
-	 * nor one shown by a wake whose run has not begun. "next-turn" closes only items named in a Still
-	 * open block of a later task that has ended. Returns the closed items.
+	 * nor one shown by a wake whose run has not begun. Returns the closed items.
 	 */
-	closeSeen(workerId: string, upto: number | "all", mode: AutoCloseMode = "turn-end", resolve?: SteerResolver): InboxItem[] {
+	closeSeen(workerId: string, upto: number | "all", resolve?: SteerResolver): InboxItem[] {
 		const m = this.members.get(workerId);
 		if (!m) return [];
 		resolve ??= (steer) => this.steerTask?.(workerId, steer);
@@ -545,13 +515,7 @@ export class InboxStore {
 			// Seen before a reload: in a task that has ended.
 			const seenTask = tag ? at(tag) : Number.NEGATIVE_INFINITY;
 			if (seenTask === undefined) continue; // Its wake's run has not begun: not seen yet.
-			if (upto !== "all") {
-				if (mode === "turn-end" && seenTask > upto) continue;
-				if (mode === "next-turn") {
-					const reminded = at(this.reminded.get(item.id));
-					if (reminded === undefined || reminded <= seenTask || reminded > upto) continue;
-				}
-			}
+			if (upto !== "all" && seenTask > upto) continue;
 			ids.push(item.id);
 		}
 		const closed: InboxItem[] = [];
@@ -608,7 +572,6 @@ export class InboxStore {
 		const at = this.now();
 		const { listedAt: _listed, readAt: _read, readTurn: _turn, ...rest } = item;
 		this.seen.delete(id);
-		this.reminded.delete(id);
 
 		const moved: InboxItem = { ...rest, ...(item.status === "read" ? { status: "new" as const } : item.readAt !== undefined && item.status === "addressed" ? { readAt: item.readAt } : {}), to: { ...to }, movedFrom: [...(item.movedFrom ?? []), { workerId: item.to.workerId, role: item.to.role, at, why }] };
 		const dst = this.member(src.teamId, to.workerId);

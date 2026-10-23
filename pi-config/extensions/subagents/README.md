@@ -616,10 +616,6 @@ refused because the member is busy, starting or asleep, and none is lost.
   `member.ts` then refuses every tool but `team_inbox`, `team_msg` and
   `team_ask` (`tool_call` block) until an item is opened. A later user message
   that is not a wake (a direct instruction) lifts it for the turn.
-- **Measurement setting** (§app.teams/inbox-measure, temporary):
-  `<agent dir>/sova/inbox-zero.json` `{ "gate": "turn-start" | "off", "autoClose":
-  "turn-end" | "next-turn" }`, read at session start; `next-turn` closes a seen
-  item only after the turn following its Still open reminder ends.
 - **Older member code**: `member.ts` writes `caps.json` (`{"inbox":1}`) into its
   directory at load. A member picked back up without it (or on a backend without
   team tools) gets each item in full on the lane, plus the legacy `inbox.jsonl`

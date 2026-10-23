@@ -64,7 +64,7 @@ import {
 	type MailboxResponse,
 	type MemberDuty,
 } from "./mailbox.ts";
-import { INBOX_ZERO_DEFAULTS, InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, readInboxZeroSettings, type InboxItem, type InboxKind, type InboxParty, type InboxZeroSettings, type SeenTag } from "./inbox.ts";
+import { InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, type InboxItem, type InboxKind, type InboxParty, type SeenTag } from "./inbox.ts";
 import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResult } from "./delivery.ts";
 import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
 import { describeTeamDefaults, type TeamDefaultsState, type WorkerTuple } from "./team-defaults.ts";
@@ -605,8 +605,6 @@ export interface SubagentsOptions {
 	/** Team inbox wakes (tests): the idle gathering time (default 3 s) and the failed-wake backoff. */
 	inboxDebounceMs?: number;
 	inboxRetryMs?: readonly number[];
-	/** The inbox measurement setting (tests); default: read from `<agentDir>/sova/inbox-zero.json` at session start. */
-	inboxZero?: Partial<InboxZeroSettings>;
 }
 /** A lifecycle fact of a coordinated team, appended to the owner session (the action history is memory only). */
 export { TEAM_EVENT_ENTRY_TYPE };
@@ -2419,13 +2417,7 @@ export function registerSubagents(
 		return true;
 	};
 	const partyOf = (m: { role: string; workerId: string }): InboxParty => ({ role: m.role, workerId: m.workerId });
-	// ── Inbox zero (§app.teams/inbox-zero, §app.teams/inbox-measure) ─────────
-	/** The measurement setting, read when a main chat's session starts. */
-	let inboxZeroSettings: InboxZeroSettings | undefined;
-	const loadInboxZero = () => {
-		inboxZeroSettings = { ...readInboxZeroSettings(agentDir()), ...options.inboxZero };
-	};
-	const inboxZero = (): InboxZeroSettings => inboxZeroSettings ?? { ...INBOX_ZERO_DEFAULTS, ...options.inboxZero };
+	// ── Inbox zero (§app.teams/inbox-zero) ─────────
 	/**
 	 * The member's turn an item is seen in. An opened item: the task running now. A wake's items:
 	 * the task its steer begins, which is unknown while that run has not begun (a wake accepted after
@@ -2442,7 +2434,7 @@ export function registerSubagents(
 	const sweepSettled = (a: Worker, seq: number) => {
 		if (!inbox || !teams.teamOf(a.id)) return;
 		const upto = a.inboxTurn ? a.inboxTurn().task : seq - 1;
-		if (inbox.closeSeen(a.id, upto, inboxZero().autoClose).length) scheduleRefresh();
+		if (inbox.closeSeen(a.id, upto).length) scheduleRefresh();
 	};
 	const wakeHost = {
 
@@ -2459,8 +2451,6 @@ export function registerSubagents(
 		markListed: (workerId: string, ids: string[]) => inbox?.markListed(workerId, ids),
 		markRead: (workerId: string, ids: string[]) => void inbox?.markSeen(workerId, ids, seenTag(workerId, "wake")),
 		stillOpen: (workerId: string) => inbox?.stillOpen(workerId) ?? [],
-		markReminded: (workerId: string, ids: string[]) => inbox?.markReminded(workerId, ids, seenTag(workerId, "wake")),
-		gate: () => inboxZero().gate === "turn-start",
 
 		deliver: async (workerId: string, text: string): Promise<LaneResult> => {
 			const w = workerOf(workerId);
@@ -4507,7 +4497,6 @@ export function registerSubagents(
 	};
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
-		loadInboxZero();
 		parentLoops = 0;
 		discoverBackends();
 		for (const entry of ctx.sessionManager.getEntries()) {

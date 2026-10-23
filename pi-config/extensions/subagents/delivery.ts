@@ -130,7 +130,7 @@ export function itemLine(item: InboxItem, opts: { unopened?: boolean } = {}): st
 export function wakeText(
 	unread: readonly InboxItem[],
 	opts: { stillOpen?: readonly InboxItem[]; gate?: boolean } = {},
-): { text: string; listed: string[]; full: string[]; reminded: string[]; unopened: string[] } {
+): { text: string; listed: string[]; full: string[]; unopened: string[] } {
 	const sorted = [...unread].sort((a, b) => Number(b.urgent) - Number(a.urgent) || parseInt(a.id.slice(2), 36) - parseInt(b.id.slice(2), 36));
 	const open = opts.stillOpen ?? [];
 	const openShown = open.length <= WAKE_STILL_OPEN ? open : open.slice(0, WAKE_STILL_OPEN - 1);
@@ -159,7 +159,7 @@ export function wakeText(
 	const unopened = shown.filter((i) => !full.includes(i.id)).map((i) => i.id);
 	if (opts.gate && unopened.length) lines.push(gateLine(unopened));
 	lines.push(WAKE_FOOTER);
-	return { text: lines.join("\n"), listed: shown.map((i) => i.id), full, reminded: openShown.map((i) => i.id), unopened };
+	return { text: lines.join("\n"), listed: shown.map((i) => i.id), full, unopened };
 }
 
 // ── Wake scheduler ──────────────────────────────────────────────────────────
@@ -178,10 +178,6 @@ export interface WakeHost {
 	markRead(workerId: string, ids: string[]): void;
 	/** Opened and not closed: the wake's Still open block. */
 	stillOpen?(workerId: string): InboxItem[];
-	/** Delivered wake named these items in its Still open block. */
-	markReminded?(workerId: string, ids: string[]): void;
-	/** Whether a wake that starts the member's turn gates its other tools (the measurement setting). */
-	gate?(workerId: string): boolean;
 
 	/** Deliver on the member's lane (mode undefined: a prompt when idle, a next-step steer when busy). */
 	deliver(workerId: string, text: string): Promise<LaneResult>;
@@ -321,14 +317,13 @@ export class WakeScheduler {
 
 	private async fireList(workerId: string, urgentOnly: boolean, turnStart: boolean): Promise<LaneResult> {
 		const unread = this.host.unread(workerId);
-		const gate = turnStart && (this.host.gate?.(workerId) ?? false);
-		const { text, listed, full, reminded } = wakeText(urgentOnly ? unread.filter((i) => i.urgent) : unread, { stillOpen: this.host.stillOpen?.(workerId) ?? [], gate });
+		// A wake that starts the member's turn gates its other tools until it opens an item (§app.teams/inbox-gate).
+		const { text, listed, full } = wakeText(urgentOnly ? unread.filter((i) => i.urgent) : unread, { stillOpen: this.host.stillOpen?.(workerId) ?? [], gate: turnStart });
 		if (!listed.length) return { ok: true };
 		const result = await this.host.deliver(workerId, text);
 		if (result.ok) {
 			this.host.markListed(workerId, listed);
 			if (full.length) this.host.markRead(workerId, full);
-			if (reminded.length) this.host.markReminded?.(workerId, reminded);
 		}
 		return result;
 	}

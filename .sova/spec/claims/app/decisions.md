@@ -304,9 +304,30 @@ appends (one line each).
   while a backfill runs. The same socket also carries the LLM calls in flight
   (`llm_inflight`, §app.insights/llm-inflight): a snapshot on every connect, then one frame per
   change of the total or its coverage; it never prompts a list read.
-- Changes are sent when a store is written or a pane attaches, and the server compares every 5 s
-  while a feed is connected, or while Sova's event stream has a subscriber (§app.events/idle: it
-  observes through these same comparisons), so a turn that starts in a TUI clears its mark.
+- The server compares only when something a row reads changed, while a feed is connected,
+  Sova's event stream has a subscriber (§app.events/idle: it observes through these same
+  comparisons), or the Overseer's background loop reads the attention digest (an Overseer exists,
+  or a phone waits for its notifications; the loop reads the digest from these comparisons' list): a store written or a pane attached; anything that starts the next listing afresh
+  (§app.session-list/listing-reuse); a session file written, added or removed in a session folder
+  (an organization's included); an organization's statecharts changing; merge readiness reading a
+  new answer, including for a worktree whose Git state moved with no session-file write (a commit,
+  add, checkout or branch switch there, or its base branch moving: every 5 s, the index, HEAD and
+  branch and base refs of each worktree a row's readiness tracks are compared as file stamps, with
+  no Git run, and only a row whose stamps moved is read again; rows whose worktrees are all merged
+  or removed, and archived ones not open anywhere, are not compared); and a live record whose
+  owner, status or activity changed, or whose process died (the live-record folder is watched, and
+  its records re-judged every 5 s; a heartbeat alone is no change). A burst of changes is one comparison, and comparisons run at most once a second, so a
+  change reaches the feed within about 5 s, and a turn that starts in a TUI clears its mark. A
+  safety-net comparison runs once a minute while a feed is connected, for a change none of these
+  tell of (a file written by another program outside the watched folders). With nothing
+  changing, no comparison runs and the list is not built between safety nets.
+- The same socket pushes the attention digest and the Overseer's state, so no window polls them:
+  `attention` (the digest, as `GET /api/overseer/attention` returns it,
+  §app.overseer/attention-digest) and `overseer` (as `GET /api/overseer` returns it: its unread
+  count, "need you" badge, busy state, history and proactivity), each only when its value differs
+  from the last one sent, built from the comparison's own list. Neither is sent on connect: the
+  app reads both once when the feed opens (first connect and every reconnect) and once when the
+  tab becomes visible again, then takes each pushed value as it comes.
 - The same comparison sends `list_changed` (no payload; never on connect) when a session appears
   in or leaves the list, or a row's live record, running state, last activity, archived flag or
   title changes (a stored title changes in Sova's title store, never in the file: the Overseer's
@@ -323,7 +344,8 @@ appends (one line each).
 - The sidebar holds the feed open while it is mounted. Once the snapshot arrives, the feed's
   signals, tags and turn error replace the list's on this server's rows, matched by session path (rows from mesh peers keep their list
   fields); each change applies at once, and a cleared field is removed. While the socket is not
-  open the overlay is dropped and the list poll is the truth again; after the socket stops
+  open the overlay is dropped and the list poll is the truth again: the app's re-read of the list
+  every 5 s while a row is busy runs only then, since an open feed says when a row changes; after the socket stops
   retrying, it tries again when the window regains focus.
 - The feed never writes and ignores anything the client sends.
 

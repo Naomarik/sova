@@ -768,10 +768,11 @@ thing it waits on being done.
 - **Omitted entirely** when it has no rows — an empty "Needs you · 0" is a standing alarm at rest —
   and while Overseer proactivity is **Off** (§app.overseer/proactivity), or not yet read. The
   region appearing and going is the signal; Recent's divider moves up with it.
-- **Freshness.** App reads the digest once for the page, on the Overseer entry button's 10-second
-  cadence (paused while the tab is hidden, again on window focus, and at once when a view's action
-  asks for the session list — a baton strip's Get Link, hand-off, Take Back or Approve), and hands
-  that read to this region. The server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
+- **Freshness.** App holds the digest once for the page, with no timer: it reads it when the
+  session feed opens (and after every reconnect), when the tab becomes visible again, and at once
+  when a view's action asks for the session list — a baton strip's Get Link, hand-off, Take Back or
+  Approve; between reads the feed pushes each changed digest (`attention`, §app.decisions/push),
+  within about 5 s of the change. It hands that value to this region. The server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
   after one says what it changed.
 - **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
   (§app.session-list/spine).
@@ -2428,6 +2429,12 @@ hands a finished list to further callers for up to **1 second** after its build 
 session feed's comparison, the attention scan, the Overseer, the profile, schedule and share routes
 and `GET /api/sessions` all read the same list then. A change made outside this server (a TUI writing
 a session, another server's stores) therefore reaches a listing up to 1 second later.
+
+The merge board's rebuild and the schedule's discovery, which run on timers, read the session
+feed's last list instead while a feed is connected and nothing it watches has changed since that
+list was built (§app.decisions/push), a list at most two minutes old (the feed's safety net
+renews it every minute); otherwise they list as above. So an idle
+server with windows open builds the list only for the feed's safety net.
 
 A change a caller makes through this server is never missed that way. Any request other than a
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it

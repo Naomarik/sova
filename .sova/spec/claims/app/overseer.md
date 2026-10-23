@@ -1174,7 +1174,10 @@ Three tools let the Overseer make and end links between sessions on different ho
 A server-side digest, built with no model call from live records, summaries, held-chat state, the
 seen store and — when attention signals are on — the signals store (§app.decisions/attention-signals),
 which it reads and never fills. It is memoised for about 3 seconds and never includes the Overseer
-itself.
+itself. The session feed builds it from each comparison's own list and pushes it when it changed
+(§app.decisions/push), so its rows read no list of their own, and the next request within those
+3 seconds gets the same value. Any other read (a request, the Overseer's background loop) takes the
+feed's last list while nothing has changed since it was built, and builds a list only otherwise.
 
 - **Needs you (act):** a dialog open (`activity.state` needs-input, own and foreign, or a hosted
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error

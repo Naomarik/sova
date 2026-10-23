@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { ReadinessState, SessionReadiness, SessionSummary, WorktreeLanding } from "../shared/protocol";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
@@ -173,16 +173,26 @@ export interface BoardSourceDeps {
   file: string;
   now(): number;
   waitMs?: number;
+  /** An unchanged board is still rewritten once its file is this old (default BOARD_REFRESH_MS). */
+  refreshMs?: number;
 }
+
+/** Readers take a board older than 5 minutes for a stopped server: an unchanged one is rewritten well within that. */
+export const BOARD_REFRESH_MS = 2 * 60_000;
+/** The board's content, without when it was built. */
+const boardKey = (b: MergeBoard): string => JSON.stringify({ ...b, at: undefined });
 
 /**
  * The server's board: rebuilt on demand (a listing asks for every stale readiness read, the
- * rebuild waits up to BOARD_WAIT_MS for them) and written to the file each time. Concurrent asks
+ * rebuild waits up to BOARD_WAIT_MS for them) and written to the file when its content changed
+ * (or the file is BOARD_REFRESH_MS old, so readers still see it fresh). Concurrent asks
  * share one rebuild; one younger than `maxAgeMs` is reused.
  */
 export class BoardSource {
   private last: { at: number; board: MergeBoard } | null = null;
   private flight: Promise<MergeBoard> | null = null;
+  /** The last board written to the file: its content and when. */
+  private written: { key: string; at: number } | null = null;
   constructor(readonly deps: BoardSourceDeps) {}
 
   get(maxAgeMs = 0): Promise<MergeBoard> {
@@ -202,8 +212,14 @@ export class BoardSource {
     await Promise.race([this.deps.idle(), waited]);
     clearTimeout(timer);
     const board = buildBoard(sessions, this.deps.inputs, this.deps.now());
+    const key = boardKey(board);
+    const now = this.deps.now();
+    const fresh = this.written && this.written.key === key && now - this.written.at < (this.deps.refreshMs ?? BOARD_REFRESH_MS) && existsSync(this.deps.file);
     try {
-      writeBoard(this.deps.file, board);
+      if (!fresh) {
+        writeBoard(this.deps.file, board);
+        this.written = { key, at: now };
+      }
     } catch (err) {
       console.warn("[merge-board] not written:", err instanceof Error ? err.message : String(err));
     }

@@ -70,7 +70,7 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
-import { applyLoadout, getSessionSetup } from "./session-setup";
+import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
@@ -189,7 +189,7 @@ export function buildApp(deps: AppDeps) {
   built = true;
   /** The chat a person's action on it needs: open, or opened now, as a send opens a chat closed while
       quiet (§chat.transcript/instant-open), never "open the chat first". A missing file is a 404; a
-      session that can't open (a TUI holds it, its folder is gone) is refused with why. */
+      session that can't open (a TUI holds it, its remote placeholder folder is gone) is refused with why. */
   async function chatFor(path: string): Promise<{ chat: ChatHandle } | { status: 404 | 409; error: string }> {
     if (!existsSync(path)) return { status: 404, error: "Session file not found" };
     try {
@@ -812,6 +812,18 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
+  });
+
+  // One file the session's setup lists, for the markdown viewer (§chat.transcript/setup-card-open-file):
+  // a path the list doesn't name is a 404 before any read. Never cached.
+  app.get("/api/sessions/context/file", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    const file = c.req.query("file");
+    if (!file) return c.json({ error: "Missing ?file=" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const r = await readSetupFile(path, file);
+    return r.ok ? c.json(r.file, 200, { "Cache-Control": "no-store" }) : c.json({ error: r.error }, r.status);
   });
 
   // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open

@@ -248,16 +248,25 @@ md.renderer.rules.table_open = () => '<div class="md-table-wrap"><table>\n';
 md.renderer.rules.table_close = () => "</table></div>\n";
 
 // ---- Code blocks: head with language + Copy Code, highlight when known ------------------
+/** The fence words whose closed block gets the Rendered toggle: its markdown drawn in place. */
+const MARKDOWN_FENCE = /^(?:markdown|md)$/;
 const renderCode = (source: string, info: string, env: RenderEnv, plain: boolean, head?: string, extra = "") => {
   const label = head ?? info.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
   const lang = resolveLanguage(label);
   const index = env.codes.push(source) - 1;
+  // Only a closed fence: half a document is never opened. `head` is a vis fence's source fallback.
+  const viewable = !plain && head === undefined && MARKDOWN_FENCE.test(label);
+  const view = viewable
+    ? `<button class="button button-sm button-ghost md-code-render" type="button" aria-pressed="false" data-code-index="${index}">` +
+      `<span class="icon icon-sm" style="--icon: url(/icons/eye.svg)" aria-hidden="true"></span><span class="md-code-render-label">Rendered</span></button>`
+    : "";
   const known = !plain && highlightable(lang);
   const body = known ? hljs.highlight(source, { language: lang, ignoreIllegals: true }).value : esc(source);
   const cls = known ? ` class="hljs language-${esc(lang)}"` : "";
   return (
     `<div class="md-code${extra}"><div class="md-code-head">` +
     `<span class="md-code-lang">${esc(label || "text")}</span>` +
+    view +
     `<button class="button button-sm button-ghost md-code-copy" type="button" data-code-index="${index}">` +
     `<span class="icon icon-sm" style="--icon: url(/icons/copy.svg)" aria-hidden="true"></span>` +
     `<span class="md-code-copy-label">Copy Code</span></button></div>` +

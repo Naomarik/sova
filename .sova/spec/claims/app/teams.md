@@ -252,7 +252,9 @@ Each member keeps its own inbox at zero, and Sova closes for it only what it has
   (`team_inbox open`, or the single item a wake showed in full). Sova records the member's turn
   in which it was seen, on disk with the read, so after a main-chat reload an item seen before it
   closes at the member's next turn end. A wake accepted after the member's turn ended but before Sova handled that
-  end belongs to the next turn, never to the one that ended.
+  end belongs to the next turn, never to the one that ended. An item shown by a wake whose turn
+  Sova cannot place (one whose run had not begun before a main-chat reload) counts as not seen,
+  even when the member ends, until the member opens it again.
 - **The safety net.** When a member's turn ends, every item it saw in a turn that has ended and
   did not close is marked addressed, closed automatically, with the note `closed automatically:
   seen, not closed by <role>`. Never a question, never an `instruction`, never an item it has not
@@ -270,8 +272,10 @@ Each member keeps its own inbox at zero, and Sova closes for it only what it has
 When a wake starts a member's turn (an idle member woken by its inbox) and its list names items
 the member has not opened, every tool call other than `team_inbox`, `team_msg` and `team_ask` is
 refused with `Open your inbox first (team_inbox open <ids>)`, naming those items, until the member
-opens at least one item. Such a wake list says so in its last line: `[Open your inbox first:
-team_inbox open <ids> — other tools are refused until you open one]`. The gate never applies mid-turn (urgent items reaching a busy member at
+opens at least one item: an `open` naming an item the gate names, or any `open` that succeeds
+(one that fails or names no item of its inbox does not count). Such a wake list says so in its
+last line: `[Open your inbox first: team_inbox open <ids> — other tools are refused until you
+open one]`. The gate never applies mid-turn (urgent items reaching a busy member at
 its next step), never to a wake of exactly one item (it shows it in full), and never to a turn
 started by anything else. Direct instructions (the main chat's `agent_steer`, the coordinator's
 `team_steer`, Sova's handover instructions; kind `instruction`) never trigger it, and once one is

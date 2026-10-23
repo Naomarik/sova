@@ -84,6 +84,33 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   offer stops it at once, in running chats too. A chat's tool keeps the offers it started with: new
   ones reach new chats. **Not Now** on a card hides that offer for the rest of that session.
 
+## The Project Overseer sets up the project for you
+
+The Project Overseer (Open Overseer on a project page) knows every setting of its project and can
+change any of them for you: its own (Watch, what may happen without you, models, limits, the hold,
+extra instructions, its memory), the project's name, and the project's files: services
+(`.sova/project.json`), session profiles (`.sova/profiles/`), playbooks and their schedules, project
+modes (`.sova/minor-modes/`) and offers (`.sova/offers.json`). Ask it in plain words ("add an offer
+that asks to carry on", "let the Reviewer profile read other sessions").
+
+- **What narrows it applies at once.** Turning a power off, lowering a limit or picking a model
+  applies in your turn, with **Undo** on its card and in the Settings history.
+- **Everything else waits for your click.** A change that widens what can happen without you (a
+  power on, a limit raised, the hold shortened, a profile, schedule, mode or offer that needs
+  approval, the services file) and every change to the project's files waits on a **Settings change
+  card**: each setting with its before and after, what approving it allows, and **Show File Changes**.
+  **Apply and Approve** applies it, lands the file changes on the project folder's branch as one
+  commit (settings files only, Sova's own project included) and records the approvals of exactly
+  what the card showed. The overseer never approves anything itself, and on its own looks it only
+  prepares cards.
+- **Uncommitted settings edits** in the project folder show as one card too: **Land** commits them,
+  **Discard Edits** puts them back.
+- **The Settings tab** lists every project setting under **All settings**, with its state and where
+  it is changed or approved, the cards waiting, and the **Settings history** with **Undo**. From a
+  script: `sova run project.settings.get --pid <id>`, `project.settings.history`,
+  `project.settings.undo`, `project.settings.propose.withdraw` and `project.overseer.settings.set`;
+  applying a card is yours, on the page.
+
 ## Optional extensions
 
 Parallel web sessions, shared prompts, branching, and transcript browsing are Sova features.

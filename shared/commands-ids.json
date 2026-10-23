@@ -128,7 +128,8 @@
     "org.owner.request.done",
     "org.owner.request.decline",
     "settings.assistant-default.set",
-    "session.align.triage"
+    "session.align.triage",
+    "session.workers.checks"
   ],
   "retired": [
     "settings.agents.get"

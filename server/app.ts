@@ -139,6 +139,7 @@ import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoEr
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile } from "./extensions";
 import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { alignTriage } from "./align-triage";
+import { workerChecks } from "./worker-checks";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
@@ -818,6 +819,22 @@ export function buildApp(deps: AppDeps) {
     const branch = await readBranch(path).catch(() => []);
     return c.json(
       await alignTriage(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
+  // The check of each worker's newest done report (§app.decisions/worker-report): an Untested chip
+  // on the worker row, asked once per report and only with attention signals on. Same 400/404.
+  app.get("/api/sessions/worker-checks", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await workerChecks(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
       200,
       { "Cache-Control": "no-store" },
     );

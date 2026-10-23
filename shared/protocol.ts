@@ -4258,6 +4258,15 @@ export interface AlignTriage {
   docs: Record<string, { rev: number; provider: DecisionProviderId; model: string; stakes: Record<string, AlignStakes> }>;
 }
 
+/** A worker report check's outcome choice (§app.decisions/worker-report). */
+export const WORKER_REPORT_OUTCOMES = ["finished", "partial", "blocked", "failed"] as const;
+export type WorkerReportOutcome = (typeof WORKER_REPORT_OUTCOMES)[number];
+/** GET /api/sessions/worker-checks: per worker id, the check of its newest done report. `report` is
+    the report's entry id; `unverified`: it reads finished but doesn't say it ran tests or checks. */
+export interface WorkerChecks {
+  workers: Record<string, { report: string; provider: DecisionProviderId; model: string; outcome: WorkerReportOutcome; unverified: boolean }>;
+}
+
 /** The turn card's outcome choice (§app.decisions/attention-signals). */
 export const TURN_OUTCOMES = ["did-what-was-asked", "partial-stopped", "waiting-on-user", "waiting-on-team", "hit-unfixed-failure", "progress-report"] as const;
 export type TurnOutcome = (typeof TURN_OUTCOMES)[number];

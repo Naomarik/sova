@@ -1456,6 +1456,9 @@ export function Sidebar(props: {
   /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
   const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
   const needsYouCount = () => needsYou().length + needsYouProject().length;
+  /** The blockers, then the softer tier (the turn card's guesses) under its own label. */
+  const needsYouHard = createMemo(() => needsYou().filter((r) => !r.soft));
+  const needsYouSoft = createMemo(() => needsYou().filter((r) => r.soft));
   createEffect(() => setStalled(stalledPaths(props.attention)));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
@@ -2553,7 +2556,7 @@ export function Sidebar(props: {
               </summary>
               <ul class="list">
                 {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
-                <ForKey each={needsYou()} by={(r) => r.session.path}>
+                <ForKey each={needsYouHard()} by={(r) => r.session.path}>
                   {(r) => (
                     <>
                       <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />
@@ -2593,6 +2596,17 @@ export function Sidebar(props: {
                   )}
                 </ForKey>
               </ul>
+              {/* The softer tier: guesses from the last reply (§app.overseer/attention-digest), under the blockers. */}
+              <Show when={needsYouSoft().length > 0}>
+                <p class="sidebar-region-note" id="r-needs-you-soft">
+                  Maybe waiting on you
+                </p>
+                <ul class="list" aria-labelledby="r-needs-you-soft">
+                  <ForKey each={needsYouSoft()} by={(r) => r.session.path}>
+                    {(r) => <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />}
+                  </ForKey>
+                </ul>
+              </Show>
               <Show when={needsYouCutNote()}>
                 <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
               </Show>

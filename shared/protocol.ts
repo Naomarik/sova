@@ -3359,8 +3359,10 @@ export interface OverseerInfo {
   id: string;
   /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
-  /** Attention counts for the entry button (from the digest). act = needs you; decide = finished/look. */
-  badge: { act: number; decide: number };
+  /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
+      needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
+      you" (additive: absent from older servers, then read `act`). */
+  badge: { act: number; decide: number; needsYou?: number };
   /** Overseer assistant messages newer than the Overseer's own seenAt: the chat-unread badge on the
       entry button, separate from `badge`. */
   unread: number;
@@ -3393,7 +3395,8 @@ export type AttentionKind =
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
-  | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "asks-you"        // decide tier, soft: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "unverified"      // decide tier, soft: decisions' guess that the last reply says it is done but names something it didn't run or check
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
@@ -3408,6 +3411,9 @@ export type AttentionKind =
 export interface AttentionItem {
   /** Session id. */
   id: string;
+  /** A guess of the turn card (§app.overseer/attention-digest, the softer tier): listed in Needs
+      you and counted in "need you", never a brief or a phone notification. Additive. */
+  soft?: true;
   path: string;
   title: string;
   /** cwd (or target:remoteCwd), home-shortened. */

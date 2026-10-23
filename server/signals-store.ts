@@ -27,6 +27,8 @@ export const ASKS_USER_MIN = 0.85;
 /** stuck score (0..2) at or above, with confidence at or above STUCK_CONFIDENCE_MIN → "looping". */
 export const STUCK_SCORE_MIN = 1.5;
 export const STUCK_CONFIDENCE_MIN = 0.5;
+/** A turn card's guess (asks-you, unverified) stops showing once its reply is this old: 7 idle days. */
+export const GUESS_IDLE_MS = 7 * 86_400_000;
 /** A worker's "looping" is current only this long after its check (checks repeat every 5 min while it runs). */
 export const WORKER_STUCK_FRESH_MS = 11 * 60_000;
 /** A worker counts as looping after this many looping answers in a row in one turn. */
@@ -305,10 +307,12 @@ const unseen = (at: number, ctx: OverlayContext) => !ctx.viewing && (ctx.seenAt 
  * user answers — the user has not looked since (seen stamp, or a pane open now). "Present" =
  * "show the mark", for the sidebar, the feed and the digest alike.
  */
-export function signalsOverlay(id: string, ctx: OverlayContext, data = readSignals()): SessionSignals | undefined {
+export function signalsOverlay(id: string, ctx: OverlayContext, data = readSignals(), now = Date.now()): SessionSignals | undefined {
   if (!ctx.enabled || ctx.running) return undefined;
   const t = data.sessions[id];
   if (!t) return undefined;
+  // A guess goes after 7 idle days (§app.overseer/attention-digest): no reply since it was made.
+  if (now - t.replyAt >= GUESS_IDLE_MS) return undefined;
   const wire = toWire(t);
   // A reply that asks waits on the user until they answer (a newer turn replaces or drops it), like
   // open questions: a look does not clear it. The other kinds are news, gone once seen.

@@ -1225,8 +1225,7 @@ itself.
   (`unverified`) — are decide items marked `soft`. Needs you lists them and the Overseer's "need
   you" count counts them, after the blockers; they never wake the Overseer with a brief and
   never send a phone notification. A soft item goes when the thing it guessed is acted on: the
-  next turn replaces it, archiving drops it, `unverified` goes once the session is seen after it
-  was judged, and either goes after **7 idle days** (no reply since). A blocker never expires:
+  next turn replaces it, archiving drops it, and either goes after **7 idle days** (no reply since); looking at the session never clears either. A blocker never expires:
   it stays until it is handled.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
   no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier

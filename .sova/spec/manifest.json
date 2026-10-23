@@ -319,8 +319,9 @@
         "§app/tours"
       ],
       "agreed": {
-        "by": "user (guided-tours build brief)",
-        "at": "2026-10-15T04:40:29.961829+00:00"
+        "by": "naomarik",
+        "at": "2026-10-23T02:12Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       },
       "evidence": "verified"
     },
@@ -763,13 +764,16 @@
         "shared/commands-path-dots.test.ts",
         "server/commands-routes.ts",
         "server/commands-fuzz.test.ts",
-        "shared/commands-retired.test.ts"
+        "shared/commands-retired.test.ts",
+        "shared/commands/sessions.ts",
+        "shared/commands/projects.ts",
+        "docs/commands.md"
       ],
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T16:16Z",
-        "source": "pi-session:87598864-8f7e-4f16-bca5-5f1f284cf82c#6eb7dbee"
+        "at": "2026-10-23T02:12Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       },
       "evidence": "verified"
     },
@@ -3811,6 +3815,192 @@
         "src/components/ModelMenu.tsx"
       ]
     },
+    "§chat.offers/approval": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-offers-trust.ts",
+        "server/session-offers-routes.ts",
+        "server/commands-inventory/scan.ts",
+        "server/commands-inventory/baseline.json",
+        "server/session-offers.test.ts"
+      ],
+      "requires": [
+        "§chat.offers/buttons"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/buttons": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/session-offers.ts",
+        "server/session-offers.ts",
+        "server/index.ts",
+        "shared/session-offers.test.ts",
+        "server/session-offers.test.ts"
+      ],
+      "requires": [
+        "§app.commands/catalogue"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OfferCard.tsx",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/hidden-rows.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "shared/protocol.ts",
+        "server/session-offers.ts"
+      ],
+      "requires": [
+        "§app.overseer/confirm",
+        "§app.decisions/asks-user"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/conditions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-offers.ts",
+        "server/merge-readiness.ts",
+        "server/session-offers.test.ts"
+      ],
+      "requires": [
+        "§chat.worktrees/readiness"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/session-offers.ts",
+        "server/session-offers.ts",
+        "shared/session-offers.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/projects"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/from-another-chat": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-offers-routes.ts",
+        "server/app.ts",
+        "server/mesh/access.ts",
+        "src/components/OfferCard.tsx",
+        "server/session-offers.test.ts"
+      ],
+      "requires": [
+        "§chat.offers/tool"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/project-list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectOffersCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/projects.css",
+        "server/session-offers-routes.ts",
+        "server/session-offers.ts"
+      ],
+      "requires": [
+        "§chat.offers/approval"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/sova-landing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/offers.json",
+        "shared/session-offers.test.ts"
+      ],
+      "requires": [
+        "§chat.offers/from-another-chat"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:03Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
+    "§chat.offers/tool": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-offers-tool.ts",
+        "server/session-offers.ts",
+        "server/chat-handle.ts",
+        "server/chat-host.ts",
+        "server/chat-manager.ts",
+        "server/served-tools.ts",
+        "server/project-services/note.ts",
+        "server/chat-runtime/host.ts",
+        "shared/chat-runtime-wire.ts",
+        "server/session-offers-claude.integration.test.ts",
+        "server/chat-handle.test.ts",
+        "server/session-offers.test.ts",
+        "scripts/fake-claude.mjs"
+      ],
+      "requires": [
+        "§app.claude-code-provider/continuity",
+        "§chat.offers/file"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
+    },
     "§chat.slash-commands/announcements": {
       "kind": "behavior",
       "authority": "migrated",
@@ -4427,8 +4617,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T21:36Z",
-        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+        "at": "2026-10-23T02:12Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
       }
     },
     "§chat/composer": {
@@ -4549,6 +4739,28 @@
         "§app.claude-code-provider/model-names",
         "§app/model-levels"
       ]
+    },
+    "§chat/offers": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/session-offers.ts",
+        "server/session-offers.ts",
+        "shared/protocol.ts"
+      ],
+      "notOwned": [
+        "§app.overseer/confirm",
+        "§chat/alignment",
+        "§chat.worktrees/readiness",
+        "§app.decisions/asks-user",
+        "§app.extensions/offers"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-23T01:02Z",
+        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      }
     },
     "§chat/slash-commands": {
       "kind": "surface",
@@ -13539,11 +13751,15 @@
         "server/signals-store.test.ts",
         "server/attention.test.ts",
         "src/lib/signals.test.ts",
-        "src/lib/agents-board.test.ts"
+        "src/lib/agents-board.test.ts",
+        "server/sessions-index.ts",
+        "server/session-offers.ts",
+        "server/overseer.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
-        "§chat.alignment/session-mark"
+        "§chat.alignment/session-mark",
+        "§chat.offers/card"
       ]
     },
     "§app.decisions/call-ledger": {

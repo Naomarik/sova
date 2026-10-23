@@ -209,6 +209,10 @@ appends (one line each).
   ink, never the accent, §app.session-list/anatomy) and a line in the
   Overseer's digest. It is not in Needs you, not in the Overseer's "need you" count, never wakes
   the Overseer with a brief and never sends a phone notification.
+- **An open offer asks too.** While an idle session shows an open offer card (§chat.offers/card),
+  its row carries `asks-you` as if its last reply asked, with no model call, while the feature is
+  on; the digest's line is "Asks you: {the offer's title}". It clears when the card is answered,
+  replaced, set to Not Now or no longer offered, and open alignment questions still take its place.
 
 ## §app.decisions/team-stall — A team gone quiet
 

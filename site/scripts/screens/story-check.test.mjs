@@ -44,7 +44,7 @@ test("a trailing comma is called one", async () => {
 });
 
 test("a duplicate key is refused, with both places", async () => {
-  const out = await broken((s) => s.replace('"provider": "demo",', '"provider": "demo",\n  "provider": "other",'));
+  const out = await broken((s) => s.replace('"provider": "anthropic",', '"provider": "anthropic",\n  "provider": "other",'));
   assert.match(out, /^story\.json:7:3 \/provider: duplicate key "provider" \(first at line 6:3\)/);
 });
 
@@ -226,4 +226,14 @@ test("check.mjs exits 1 with the problem line on a broken copy", () => {
     out = String(e.stderr);
   }
   assert.match(out, /^cli\.json:3:14 \/version: must be 1$/m);
+});
+
+test("the leak gate refuses a model or provider the story doesn't have", async () => {
+  const { leakGate, leakPatterns } = await import("./harness.mjs");
+  const story = JSON.parse(original);
+  const patterns = { ...leakPatterns(null, story.models), lits: [], res: [], visible: [] };
+  const page = (text) => ({ evaluate: async () => ({ all: text, visible: text, shown: text }) });
+  await leakGate(page("Opus 5.5 · zai · glm-5.3 · deepseek · deepseek-v4.1-flash · openai · gpt-6.1-sol · GLM-5.3 capped them."), patterns, "ok");
+  for (const bad of ["deepseek · deepseek-v4-pro", "Sonnet 4.5", "openai-codex", "qwen3-coder", "Opus 5.4"])
+    await assert.rejects(leakGate(page(`a row: ${bad} · 3k`), patterns, "bad"), /a model or provider the story doesn't have/, bad);
 });

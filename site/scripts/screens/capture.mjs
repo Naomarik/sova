@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { HERE, loadStory, REPO, whereIn } from "./load-story.mjs";
 import { actionOf, text } from "./story-check.mjs";
-import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, ui, waitFor, writeJson } from "./harness.mjs";
+import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, modelsSeen, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, ui, waitFor, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, inputHashes } from "./hashes.mjs";
 
@@ -62,7 +62,7 @@ try {
   await titleStatic(server, plan, seeded);
   console.log(`root ${root}\nserver ${server.base}, director ${director.url}`);
 
-  const patterns = leakPatterns(root);
+  const patterns = leakPatterns(root, plan.models);
   let browser = null;
   if (!flag("--no-browser")) {
     browser = await startBrowser({ root });
@@ -163,6 +163,7 @@ try {
     }
     writeJson(MANIFEST, next);
     console.log(`wrote ${Object.keys(results).length} image(s) and ${MANIFEST.slice(REPO.length + 1)}`);
+    console.log(`model names on screen (each one of the story's models): ${[...modelsSeen].sort().join(", ") || "(none)"}`);
   }
 } catch (e) {
   failed = true;

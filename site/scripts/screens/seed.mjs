@@ -82,7 +82,7 @@ export async function seed(plan, root, { directorPort, now = Date.now() } = {}) 
   // soon after a turn ends; no Claude Code fallback. The director answers with `summary` steps.
   writeJson(join(agent, "topic-outline.json"), plan.summarizer
     ? { summarizers: [{ backend: "pi", model: plan.summarizer, timeoutMs: 30_000 }], trigger: { debounceMs: 300, minNewMessages: 2 } }
-    : { summarizers: [{ backend: "pi", model: `${plan.provider}/none`, timeoutMs: 1_000 }], trigger: { debounceMs: 3_000, minNewMessages: 1_000_000 } });
+    : { summarizers: [{ backend: "pi", model: Object.values(plan.models)[0].ref, timeoutMs: 1_000 }], trigger: { debounceMs: 3_000, minNewMessages: 1_000_000 } });
 
   // Delegate's routes: every profile on the pi backend, on the story's models.
   const route = (key) => {

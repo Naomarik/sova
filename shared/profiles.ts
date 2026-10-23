@@ -280,7 +280,8 @@ function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 10_000 ? v : fallback;
 }
 
-const PROFILE_FIELDS = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "minorModes", "model", "thinking", "subagents", "firstMessage", "overseerMayStart"];
+/** Every field a profile file may hold (profileFileError refuses any other; the settings reference covers each). */
+export const PROFILE_FIELDS: readonly string[] = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "minorModes", "model", "thinking", "subagents", "firstMessage", "overseerMayStart"];
 /** Keys an older Sova wrote that this one accepts and ignores (§chat.profiles/playbook): profiles sync
     between devices, so a file still naming its playbook must keep parsing. */
 export const RETIRED_PROFILE_FIELDS: readonly string[] = ["playbook"];

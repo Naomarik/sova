@@ -133,7 +133,12 @@
     "session.offers.choose",
     "session.offers.snooze",
     "session.offers.unsnooze",
-    "project.offers.list"
+    "project.offers.list",
+    "project.settings.get",
+    "project.settings.history",
+    "project.settings.undo",
+    "project.settings.propose.withdraw",
+    "project.overseer.settings.set"
   ],
   "retired": [
     "settings.agents.get"

@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 473 |
-| Routes a catalogue entry points at | 106 |
-| Catalogue entries | 133 |
+| Routes registered | 478 |
+| Routes a catalogue entry points at | 111 |
+| Catalogue entries | 138 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,12 +24,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 1 |
+| Class: Trust grants | 2 |
 | Class: Middleware and fallbacks | 2 |
-| Pending (not yet a command) | 308 |
+| Pending (not yet a command) | 307 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 119 |
+| Hand-written tool specs | 120 |
 
 ## Catalogue entries
 
@@ -110,6 +110,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.worktree.remove` | Remove Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/remove` | admin |
 | `project.files.list` | List Project Files | looks | `GET /api/projects/:pid/files` | sessions |
 | `project.offers.list` | List Project Offers | looks | `GET /api/projects/:pid/offers` | sessions |
+| `project.settings.get` | Show Project Settings | looks | `GET /api/projects/:pid/settings` | sessions |
+| `project.settings.history` | Show Settings History | looks | `GET /api/projects/:pid/settings/history` | sessions |
+| `project.settings.undo` | Undo Settings Change | changes | `POST /api/projects/:pid/settings/undo` | admin |
+| `project.settings.propose.withdraw` | Dismiss Settings Card | changes | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin |
+| `project.overseer.settings.set` | Set Project Overseer Settings | changes | `PATCH /api/projects/:pid/overseer` | admin |
 | `project.costs` | Show Project Costs | looks | `GET /api/projects/:pid/costs` | sessions |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -349,7 +354,6 @@ class, leaves it, and a new route never joins it.
 | `GET /api/projects/:pid/files/:id` | sessions |
 | `POST /api/projects/:pid/held/:holdId/cancel` | admin |
 | `GET /api/projects/:pid/overseer` | sessions |
-| `PATCH /api/projects/:pid/overseer` | admin |
 | `POST /api/projects/:pid/overseer` | admin |
 | `GET /api/projects/:pid/overseer/actions` | sessions |
 | `POST /api/projects/:pid/overseer/clear` | admin |
@@ -597,13 +601,14 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (1)
+### Trust grants (2)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval) and applying a settings card with its approvals (§app.project-overseer/settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
 | `POST /api/projects/:pid/offers/approve` | admin |
+| `POST /api/projects/:pid/settings/apply` | admin |
 
 ### Middleware and fallbacks (2)
 
@@ -660,6 +665,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
 | `GET /api/projects/:pid/offers` | sessions | `project.offers.list` |
+| `PATCH /api/projects/:pid/overseer` | admin | `project.overseer.settings.set` |
 | `GET /api/projects/:pid/overseer/idea` | sessions | `project.overseer.idea.get` |
 | `PATCH /api/projects/:pid/overseer/idea` | admin | `project.overseer.idea.update` |
 | `GET /api/projects/:pid/overseer/ideas` | sessions | `project.overseer.idea.list` |
@@ -674,6 +680,10 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/projects/:pid/overseer/worktrees/merge` | admin | `project.worktree.merge` |
 | `POST /api/projects/:pid/overseer/worktrees/remove` | admin | `project.worktree.remove` |
 | `GET /api/projects/:pid/services` | sessions | `project.services.view` |
+| `GET /api/projects/:pid/settings` | sessions | `project.settings.get` |
+| `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin | `project.settings.propose.withdraw` |
+| `GET /api/projects/:pid/settings/history` | sessions | `project.settings.history` |
+| `POST /api/projects/:pid/settings/undo` | admin | `project.settings.undo` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |
@@ -772,7 +782,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
 | `server/project-assistant-tools.ts` | 8 | `report_issue`, `owner_requests`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
-| `server/project-overseer-tools.ts` | 17 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_todo` |
+| `server/project-overseer-tools.ts` | 18 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |
 | `server/project-services/tools.ts` | 4 | `<computed: o.name>`, `project_verbs`, `sova_project_verbs`, `sova_project_verbs` |
 | `server/session-offers-tool.ts` | 1 | `<computed: OFFER_TOOL>` |
 | `server/session-powers.ts` | 4 | `session_list`, `session_detail`, `session_read`, `session_send` |

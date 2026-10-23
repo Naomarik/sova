@@ -59,7 +59,7 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, turnErrorTitle } from "../lib/signals";
 import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
@@ -611,7 +611,7 @@ export function SessionRow(props: {
                 </span>
               )}
             </Show>
-            <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
+            <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
               {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
                   badge and the model. Muted, and lit while one of them is ready to merge. The

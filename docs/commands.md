@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 466 |
+| Routes registered | 463 |
 | Routes a catalogue entry points at | 100 |
 | Catalogue entries | 127 |
 | Class: Peer protocol | 38 |
@@ -25,7 +25,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
 | Class: Middleware and fallbacks | 2 |
-| Pending (not yet a command) | 308 |
+| Pending (not yet a command) | 305 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
 | Hand-written tool specs | 118 |
@@ -392,9 +392,6 @@ class, leaves it, and a new route never joins it.
 | `POST /api/sessions/loadout` | sessions |
 | `POST /api/sessions/profile` | sessions |
 | `POST /api/sessions/shorten-titles` | sessions |
-| `GET /api/sessions/tags/backfill` | sessions |
-| `POST /api/sessions/tags/backfill` | sessions |
-| `POST /api/sessions/tags/backfill/cancel` | sessions |
 | `PUT /api/settings` | admin |
 | `GET /api/settings/claude-status` | sessions |
 | `GET /api/settings/decisions` | sessions |

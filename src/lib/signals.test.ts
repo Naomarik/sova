@@ -17,8 +17,6 @@ import {
   signalWords,
   stalledPaths,
   tagSearchText,
-  tagsTitle,
-  tagTopicWord,
   turnErrorTitle,
 } from "./signals";
 import { reuseUnchanged } from "./summary-diff";
@@ -107,24 +105,13 @@ test("every kind has its own glyph, class and words", () => {
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
 
-test("topic words: every topic has one, and absent means none", () => {
-  assert.equal(tagTopicWord({ user: ["x"] }), null);
-  assert.equal(tagTopicWord(undefined), null);
-  for (const t of TAG_TOPICS) assert.ok(tagTopicWord({ topic: t }));
-  assert.equal(tagTopicWord({ topic: "bugfix" }), "bug fix");
-});
-
-test("search matches a tag by id and by its display word, and the user's own tags", () => {
+test("search matches the user's own tags, never a topic (automatic tags are retired)", () => {
   const text = tagSearchText({ topic: "bugfix", user: ["release"] });
-  for (const q of ["bugfix", "bug fix", "release"]) assert.ok(text.includes(q), q);
+  assert.ok(text.includes("release"));
+  assert.equal(text.includes("bug"), false);
   assert.equal(tagSearchText(undefined), "");
 });
 
-test("line 3's title names what is tagged, and nothing when nothing is", () => {
-  assert.equal(tagsTitle({ topic: "bugfix" }), "Topic: bug fix (tagged automatically)");
-  assert.equal(tagsTitle({ user: ["x"] }), null);
-  assert.equal(tagsTitle(undefined), null);
-});
 
 test("the feed: nothing applies before a full snapshot; then it is the whole truth for this host", () => {
   const listed = row({ signals: sig(["looping"]), tags: { topic: "docs" } });

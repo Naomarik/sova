@@ -78,7 +78,6 @@ function harness(over: Partial<import("./attention-signals").SignalsDeps> = {}, 
     held: () => false,
     liveRecords: () => [],
     decodeWorkers: () => [],
-    adapters: () => new WorkerTranscriptAdapters(),
     redact: <T>(v: T): T => JSON.parse(JSON.stringify(v).replaceAll("hunter2-secret", "[redacted]")),
     changed: () => void changed++,
     file: storeFile,
@@ -133,30 +132,13 @@ describe("turnFacts: the last finished turn of a branch", () => {
     assert.equal(f.assistantLast, "Reading the file.");
   });
 
-  test("repeats are counted in code: the longest identical run, distinct files", () => {
-    const t = (name: string, args: E) => ({ name, args: JSON.stringify(args), result: "" });
-    const r = sig.repeats([t("read", { path: "a" }), t("read", { path: "a" }), t("read", { path: "a" }), t("bash", { command: "x" }), t("edit", { file_path: "b" })]);
-    assert.deepEqual(r, { same_tool_and_args_in_a_row: 3, distinct_files_touched: 2 });
-  });
 });
 
 describe("failure is a fact of the file, never a question", () => {
-  test("the excerpt carries no tool-failure counts or per-call failed marks (an exit-1 grep misled the classifier)", () => {
-    const facts = turnFactsOf(finishedTurn())!;
-    assert.equal(facts.tools[0]!.ok, false, "the fixture does hold a failed call");
-    const st = sig.turnState("t", facts) as any;
-    assert.equal(st.tool_failures, undefined);
-    assert.ok(st.tool_calls_recent.every((t: any) => Object.keys(t).sort().join() === "summary,tool"));
-    const ws = sig.workerState({ name: "w", status: "done" }, { lastAssistantText: "x", partialTurn: false, items: [
-      { kind: "tool", toolName: "bash", text: '{"command":"make"}' }, { kind: "tool-result", text: "Command exited with code 2" },
-    ] }, NOW) as any;
-    assert.equal(ws.tool_failures, undefined);
-  });
-
   test("no question asks whether the work failed, for a turn or a worker", () => {
     const f = turnFactsOf(finishedTurn())!;
-    const all = { ...sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS }) };
-    assert.deepEqual(Object.keys(all), ["stuck", "asks_user"]);
+    const all = { ...sig.turnQuestions(f) };
+    assert.deepEqual(Object.keys(all), ["asks_user"]);
     assert.doesNotMatch(JSON.stringify(all), /fail/i);
     assert.equal((sig as any).OUTCOME, undefined);
     assert.equal((sig as any).WORK_FAILED, undefined);
@@ -168,12 +150,12 @@ describe("failure is a fact of the file, never a question", () => {
     const path = file(turn);
     assert.equal(await h.s.classifySession(summary(path), true), true);
     const id = summary(path).id;
-    assert.deepEqual(store.toWire(h.stored().sessions[id]!).kinds, ["asks-you", "looping"]);
+    assert.deepEqual(store.toWire(h.stored().sessions[id]!).kinds, ["asks-you"]);
     writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 5000), assistant("a9", "u9", NOW - 1000, [], "error", { errorMessage: "529 overloaded" })].map((e) => JSON.stringify(e)).join("\n") + "\n");
     const told = h.changed();
     assert.equal(await h.s.classifySession(summary(path), true), false);
     assert.equal(h.provider.calls.length, 1, "no call for the errored turn");
-    assert.equal(h.stored().sessions[id], undefined, "the previous turn's looping is gone");
+    assert.equal(h.stored().sessions[id], undefined, "the previous turn's ask is gone");
     assert.equal(h.changed(), told + 1, "and the feed was told");
   });
 
@@ -189,23 +171,10 @@ describe("failure is a fact of the file, never a question", () => {
 });
 
 describe("state and questions", () => {
-  test("every text field is capped; the reply keeps its END (where it asks)", () => {
-    const f = { ...turnFactsOf(finishedTurn())!, lastUser: "u".repeat(10_000), assistantLast: `${"x".repeat(10_000)} DECIDE?` };
-    f.tools = Array.from({ length: 30 }, (_, i) => ({ name: "bash", args: "{}", ok: true, result: "r".repeat(1000) + i }));
-    const st = sig.turnState("t".repeat(1000), f) as any;
-    assert.equal(st.last_user_message.length, sig.CAP.user);
-    assert.equal(st.assistant_last.length, sig.CAP.assistant);
-    assert.match(st.assistant_last, /DECIDE\?$/);
-    assert.equal(st.tool_calls_recent.length, sig.CAP.tools);
-    assert.ok(st.tool_calls_recent.every((t: any) => t.summary.length <= sig.CAP.tool));
-    assert.ok(JSON.stringify(st).length < 8000);
-  });
-
-  test("the stuck question is asked only of a long turn; asks_user only of a reply that looks like it asks", () => {
+  test("no stuck question, however long the turn; asks_user only of a reply that looks like it asks", () => {
     const f = { ...turnFactsOf(finishedTurn(NOW - 60_000, 60_000))!, assistantLast: "Done: the build passes." };
-    assert.deepEqual(Object.keys(sig.turnQuestions(f)), [], "a short turn that asks nothing has no question at all");
-    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS })), ["stuck"]);
-    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, tools: Array.from({ length: sig.LONG_TURN_TOOLS }, () => f.tools[0]!) })), ["stuck"]);
+    assert.deepEqual(Object.keys(sig.turnQuestions(f)), [], "a turn that asks nothing has no question at all");
+    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: 60 * 60_000, tools: Array.from({ length: 50 }, () => f.tools[0]!) })), [], "a long turn is not asked stuck");
     const asking = { ...f, assistantLast: "Built and tested. Should I merge it into master?" };
     assert.deepEqual(Object.keys(sig.turnQuestions(asking)), ["asks_user"]);
   });
@@ -218,20 +187,6 @@ describe("state and questions", () => {
     assert.deepEqual(Object.keys(sig.turnQuestions(linked)), [], "its question is to the partner (§mesh.links/transcript)");
   });
 
-  test("a long turn that mostly waited on workers is not asked stuck", () => {
-    const f = turnFactsOf(finishedTurn())!;
-    const w = (name: string) => ({ name, args: "{}", result: "" });
-    const waits = [w("agent_wait"), w("team_inbox"), w("wake_nudge"), w("mcp__team__team_msg"), w("bash")];
-    assert.equal(sig.mostlyWaits(waits), true);
-    assert.equal(sig.mostlyWaits([w("agent_wait"), w("bash")]), false, "half is not mostly");
-    assert.equal(sig.turnQuestions({ ...f, assistantLast: "Done.", tools: waits }).stuck, undefined);
-    assert.ok(sig.turnQuestions({ ...f, assistantLast: "Done." }).stuck);
-  });
-
-  test("STUCK says waiting is not looping, and judges only this turn", () => {
-    assert.match(sig.STUCK.instructions as string, /Waiting is not looping/);
-    assert.match(sig.STUCK.instructions as string, /Judge only this turn/);
-  });
 });
 
 describe("looksLikeAsk: the mechanical pre-filter (labelled cases from the Jev audit)", () => {
@@ -339,14 +294,14 @@ describe("AttentionSignals: classify each finished turn once", () => {
     assert.equal(h.provider.calls.length, 1);
     const req = h.provider.calls[0]!;
     assert.equal(req.purpose, "attention");
-    assert.deepEqual(Object.keys(req.questions), ["stuck", "asks_user"]);
-    assert.ok("tool_calls_recent" in (req.state as any), "with stuck, the one request carries the stuck excerpt");
+    assert.deepEqual(Object.keys(req.questions), ["asks_user"]);
+    assert.equal("tool_calls_recent" in (req.state as any), false, "no stuck excerpt: tool calls never leave");
     const id = summary(path).id;
     const t = h.stored().sessions[id]!;
     assert.equal(t.turnId, "a3");
     assert.equal(t.replyAt, NOW - 60_000);
-    assert.equal(t.answers.stuck?.type, "score");
-    assert.deepEqual(store.toWire(t).kinds, ["asks-you", "looping"]);
+    assert.equal(t.answers.stuck, undefined, "never asked stuck");
+    assert.deepEqual(store.toWire(t).kinds, ["asks-you"]);
     assert.equal(t.detail, "The type is wrong. Should I widen it to number | string, or change the caller?".slice("The type is wrong. ".length));
     assert.deepEqual(store.signalTextOf(id, NOW, h.stored()).sentence, t.detail);
     assert.equal(h.changed(), 1);
@@ -403,7 +358,7 @@ describe("AttentionSignals: classify each finished turn once", () => {
     h.replyAt.set(path, NOW - 60_000);
     assert.equal(await h.s.classifySession(summary(path), false), false);
     // A new reply.
-    writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 7 * 60_000), assistant("a9", "u9", NOW - 1000, [{ type: "text", text: "Done: widened." }])].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 7 * 60_000), assistant("a9", "u9", NOW - 1000, [{ type: "text", text: "Done: widened. Should I push it?" }])].map((e) => JSON.stringify(e)).join("\n") + "\n");
     h.replyAt.set(path, NOW - 1000);
     assert.equal(await h.s.classifySession(summary(path), false), true);
     assert.equal(h.stored().sessions[summary(path).id]!.turnId, "a9");
@@ -486,166 +441,6 @@ describe("AttentionSignals: classify each finished turn once", () => {
     h.deps.list = async () => [other];
     await h.s.tick();
     assert.deepEqual(Object.keys(h.stored().sessions), []);
-  });
-});
-
-describe("AttentionSignals: workers", () => {
-  const parentPath = join(dir, "parent.jsonl");
-  const parent = summary(parentPath, { id: "parent" });
-  const worker = (over: Partial<WorkerInfo>): WorkerInfo => ({ id: "w1", name: "builder", status: "running", working: true, backend: "pi", sessionFile: "/w/w1.jsonl", ...over });
-  type Item = import("../pi-config/extensions/subagents/worker-transcript.ts").WorkerTranscriptItem;
-  /** A current turn started `ago` ms before NOW, retrying the same build 6 times (the pre-gate passes). */
-  const looping = (ago = 6 * 60_000, opener = "build it"): Item[] => [
-    { kind: "task", text: opener, at: NOW - ago },
-    ...Array.from({ length: 6 }, () => [{ kind: "tool" as const, toolName: "bash", text: '{"command":"pnpm build"}' }, { kind: "tool-result" as const, text: "error" }]).flat(),
-  ];
-  function workerHarness(workers: () => WorkerInfo[], reply: any = { stuck: { probabilities: [0, 0.1, 0.9] } }, items: () => Item[] = () => looping(), over: Partial<import("./attention-signals").SignalsDeps> = {}) {
-    const reads: string[] = [];
-    const adapters = new WorkerTranscriptAdapters([
-      {
-        protocol: 1,
-        backend: "pi",
-        capabilities: () => ({ read: true, usage: "none", perModel: false, cost: false, items: true, resume: "none" }),
-        locate: (ref) => ({ file: ref.locator }),
-        read: async (ref) => {
-          reads.push(ref.locator);
-          return {
-            ref, found: true, state: "in-progress", partialTurn: false, compactions: 0, lastAssistantText: "Retrying the build again.",
-            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, byModel: [], source: "none" },
-            items: items(),
-          };
-        },
-      },
-    ]);
-    const h = harness({
-      list: async () => [parent],
-      liveRecords: () => [{ sessionFile: parentPath, pid: 1, rec: { presence: {} } }],
-      decodeWorkers: () => workers(),
-      adapters: () => adapters,
-      ...over,
-    }, reply);
-    return { ...h, reads };
-  }
-  const key = store.workerKey("parent", "w1");
-
-  test("a current turn running > 5 min gets a stuck check, again only after 5 min; it counts after two looping answers", async () => {
-    const h = workerHarness(() => [worker({ startedAt: NOW - 6 * 60_000 })]);
-    assert.equal(await h.s.tick(), 1);
-    const req = h.provider.calls[0]!;
-    assert.equal(req.purpose, "worker");
-    assert.deepEqual(Object.keys(req.questions), ["stuck"]);
-    assert.equal((req.state as any).repeats.same_tool_and_args_in_a_row, 6);
-    assert.equal((req.state as any).worker.turn_running_min, 6);
-    assert.equal((req.state as any).worker.turn_started_by, "task");
-    assert.equal((req.state as any).worker.running_min, undefined);
-    const first = h.stored().workers[key]!;
-    assert.equal(first.kind, "stuck");
-    assert.equal(first.strikes, 1);
-    assert.equal(store.workerSignalsOverlay("parent", { enabled: true, viewing: false }, NOW, h.stored()), undefined, "one looping answer is not enough");
-    h.setNow(NOW + 60_000);
-    assert.equal(await h.s.tick(), 0);
-    h.setNow(NOW + sig.WORKER_STUCK_EVERY_MS);
-    assert.equal(await h.s.tick(), 1);
-    assert.equal(h.stored().workers[key]!.strikes, 2);
-    assert.deepEqual(store.signalTextOf("parent", NOW + sig.WORKER_STUCK_EVERY_MS, h.stored()).stuckWorkers, ["builder"]);
-    assert.deepEqual(store.workerSignalsOverlay("parent", { enabled: true, viewing: false }, NOW + sig.WORKER_STUCK_EVERY_MS, h.stored()), { stuck: 1 });
-  });
-
-  test("the gate is the CURRENT turn's age, not the first spawn: a monitor-like wake of a 3-hour-old worker is not checked", async () => {
-    const h = workerHarness(() => [worker({ startedAt: NOW - 190 * 60_000 })], undefined, () => looping(8_000));
-    assert.equal(await h.s.tick(), 0);
-    assert.equal(h.provider.calls.length, 0);
-    assert.equal(h.reads.length, 1);
-    // Not read again until the turn could be 5 minutes old.
-    h.setNow(NOW + 60_000);
-    await h.s.tick();
-    assert.equal(h.reads.length, 1);
-  });
-
-  test("the excerpt holds only the current turn's items (an earlier turn's burst is not evidence)", async () => {
-    const earlier: Item[] = [
-      { kind: "task", text: "first task", at: NOW - 40 * 60_000 },
-      ...Array.from({ length: 5 }, () => [{ kind: "tool" as const, toolName: "team_inbox", text: '{"limit":2}' }, { kind: "tool-result" as const, text: "Nothing new" }]).flat(),
-    ];
-    const h = workerHarness(() => [worker({})], undefined, () => [...earlier, ...looping(7 * 60_000, "now fix the verifier")]);
-    await h.s.tick();
-    const st = h.provider.calls[0]!.state as any;
-    assert.ok(st.tool_calls_recent.every((t: any) => t.tool === "bash"));
-    assert.equal(st.task, "now fix the verifier");
-  });
-
-  test("the pre-gate: a turn that neither repeats nor keeps failing is stored as progress without a call", async () => {
-    const varied: Item[] = [
-      { kind: "task", text: "build it", at: NOW - 20 * 60_000 },
-      ...["a", "b", "c", "d"].flatMap((f) => [{ kind: "tool" as const, toolName: "read", text: JSON.stringify({ path: f }) }, { kind: "tool-result" as const, text: "ok" }]),
-    ];
-    const h = workerHarness(() => [worker({})], undefined, () => varied);
-    assert.equal(await h.s.tick(), 0);
-    assert.equal(h.provider.calls.length, 0);
-    const w = h.stored().workers[key]!;
-    assert.equal(w.mechanical, true);
-    assert.deepEqual(w.answers, {});
-    assert.equal(sig.workerSuspect(sig.workerTools(varied), 20 * 60_000), false);
-    // Erroring for 15 minutes passes the gate; 14 minutes does not.
-    const erroring: Item[] = ["a", "b", "c"].flatMap((f) => [{ kind: "tool" as const, toolName: "bash", text: JSON.stringify({ command: f }) }, { kind: "tool-result" as const, text: "Error: nope" }]);
-    assert.equal(sig.workerSuspect(sig.workerTools(erroring), sig.WORKER_ERRORING_MS), true);
-    assert.equal(sig.workerSuspect(sig.workerTools(erroring), sig.WORKER_ERRORING_MS - 60_000), false);
-  });
-
-  test("a non-looping answer resets the strikes, and a new turn starts them over", async () => {
-    let n = 0;
-    const answers = [[0, 0.1, 0.9], [0.9, 0.1, 0], [0, 0.1, 0.9]];
-    let turnAgo = 6 * 60_000;
-    const h = workerHarness(() => [worker({})], () => ({ stuck: { probabilities: answers[n++] } }), () => looping(turnAgo));
-    await h.s.tick();
-    assert.equal(h.stored().workers[key]!.strikes, 1);
-    h.setNow(NOW + sig.WORKER_STUCK_EVERY_MS);
-    await h.s.tick();
-    assert.equal(h.stored().workers[key]!.strikes, 0);
-    h.setNow(NOW + 2 * sig.WORKER_STUCK_EVERY_MS);
-    await h.s.tick();
-    assert.equal(h.stored().workers[key]!.strikes, 1);
-  });
-
-  test("monitors and coordinators are never checked, nor a turn a wake nudge started", async () => {
-    const h = workerHarness(() => [worker({ id: "w1" }), worker({ id: "w2", sessionFile: "/w/w2.jsonl" })], undefined, () => looping(), {
-      duties: async () => new Map([["w1", "monitor" as const], ["w2", "coordinator" as const]]),
-    });
-    assert.equal(await h.s.tick(), 0);
-    assert.deepEqual(h.reads, [], "not even read");
-    const wake = workerHarness(() => [worker({})], undefined, () => looping(20 * 60_000, "[wake_nudge n6] Scheduled wakeup fired (set 10m ago).\nReason: (none)\nCheck the roster."));
-    assert.equal(await wake.s.tick(), 0);
-    assert.equal(wake.provider.calls.length, 0);
-  });
-
-  test("the same ag_NN in two sessions: two records, keyed by parent and worker id", async () => {
-    const otherPath = join(dir, "other.jsonl");
-    const other = summary(otherPath, { id: "other" });
-    const h = workerHarness(() => [worker({})], undefined, () => looping(), {
-      list: async () => [parent, other],
-      liveRecords: () => [{ sessionFile: parentPath, pid: 1, rec: { presence: {} } }, { sessionFile: otherPath, pid: 2, rec: { presence: {} } }],
-    });
-    assert.equal(await h.s.tick(), 2);
-    assert.deepEqual(Object.keys(h.stored().workers).sort(), [store.workerKey("other", "w1"), key].sort());
-    assert.equal(h.stored().workers[store.workerKey("other", "w1")]!.sessionId, "other");
-  });
-
-  test("a worker that ended is never checked (its error is worker-error, in code)", async () => {
-    let w = worker({});
-    const h = workerHarness(() => [w]);
-    for (const status of ["done", "error"] as const) {
-      w = worker({ startedAt: NOW - 10 * 60_000, status, working: false, endedAt: NOW - 1000 });
-      assert.equal(await h.s.tick(), 0);
-    }
-    assert.equal(h.provider.calls.length, 0);
-    assert.deepEqual(h.reads, []);
-  });
-
-  test("workers of an excluded parent are never read or sent", async () => {
-    const h = workerHarness(() => [worker({ startedAt: NOW - 6 * 60_000 })]);
-    h.deps.settings = () => on({ exclusions: ["/work"] });
-    assert.equal(await h.s.tick(), 0);
-    assert.deepEqual(h.reads, []);
   });
 });
 

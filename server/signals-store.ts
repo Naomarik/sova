@@ -10,8 +10,8 @@ import { sessionsChanged } from "./list-generation";
  * finished turn (one per session, the latest) and of every worker check (one per parent session and
  * worker id: `workerKey`; `ag_NN` alone repeats across sessions, and records keyed by it alone are
  * dropped on load).
- * Written only by server/attention-signals.ts; read by the session list's overlay (`signalsOverlay`,
- * `workerSignalsOverlay`). Never a byte of this goes into a session file.
+ * Written only by server/attention-signals.ts; read by the session list's overlay (`signalsOverlay`; a stored worker check is
+ * kept readable and shown nowhere: subagents are no longer checked). Never a byte of this goes into a session file.
  *
  * The thresholds live here and are applied at READ time, so moving one needs no re-classification.
  * Whether a turn FAILED is not a question here: that is the file's own stopReason, read by the
@@ -176,11 +176,11 @@ export function workerStuck(w: StoredWorker, now: number): boolean {
   return w.kind === "stuck" && now - w.at <= WORKER_STUCK_FRESH_MS && isLooping(w.answers) && (w.strikes ?? 1) >= WORKER_STRIKES;
 }
 
-/** The kinds that fire for one turn's raw answers, most urgent first. */
+/** The kinds that fire for one turn's raw answers, most urgent first. A stored `stuck` answer
+    (the retired question) fires nothing. */
 export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
   const out: SignalKind[] = [];
   if (asksUser(answers)) out.push("asks-you");
-  if (isLooping(answers)) out.push("looping");
   return out;
 }
 
@@ -279,17 +279,3 @@ export function signalsOverlay(id: string, ctx: OverlayContext, data = readSigna
   return kinds.length ? { ...wire, kinds } : undefined;
 }
 
-/**
- * `SessionSummary.workerSignals`: this session's workers whose latest "stuck" check counts (fresh:
- * a worker that stopped being checked stopped running; and looping twice in a row in one turn),
- * counting only checks newer than the user's last look. Absent when 0.
- */
-export function workerSignalsOverlay(id: string, ctx: Omit<OverlayContext, "running">, now = Date.now(), data = readSignals()): { stuck: number } | undefined {
-  if (!ctx.enabled) return undefined;
-  let stuck = 0;
-  for (const w of Object.values(data.workers)) {
-    if (w.sessionId !== id || !unseen(w.at, { ...ctx, running: false })) continue;
-    if (workerStuck(w, now)) stuck++;
-  }
-  return stuck ? { stuck } : undefined;
-}

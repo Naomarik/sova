@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { JsonPosError, parseWithPositions } from "./json-pos.mjs";
-import { actionOf, beatMs, crossCheck, durationMs, fileBody, makeValidator, offsetMs, readingMs, text } from "./story-check.mjs";
+import { actionOf, beatMs, crossCheck, durationMs, fileBody, makeValidator, MARKER_ACTIONS, offsetMs, readingMs, text } from "./story-check.mjs";
 
 export const HERE = import.meta.dirname;
 export const SITE = resolve(HERE, "../..");
@@ -122,6 +122,8 @@ export function cutReplies(steps, basePath, ctx) {
   steps.forEach((step, k) => {
     const pointer = `${basePath}/${k}`;
     const a = actionOf(step);
+    // A summary is no part of the conversation: the director answers the summarizer with it.
+    if (a === "summary") return;
     if (a === "user") {
       flushSay(pointer);
       if (hold) {
@@ -138,7 +140,7 @@ export function cutReplies(steps, basePath, ctx) {
     if (a === "hold") {
       // Between a say and a tool step, the hold falls inside that reply: its text streams whole,
       // then it waits there before the tool call (a viewer reads what the agent found first).
-      const next = steps.slice(k + 1).find((x) => actionOf(x) !== "hold");
+      const next = steps.slice(k + 1).find((x) => !MARKER_ACTIONS.has(actionOf(x)));
       if (say.length && next && !["user", "say", "error"].includes(actionOf(next))) {
         textHold = step.hold;
         return;
@@ -209,7 +211,11 @@ function toolCall(step, a, ctx) {
 
 function compile(story, facts, storyDir, pos) {
   const provider = story.provider;
-  const ref = (m) => `${provider}/${story.models[m].id}`;
+  const providerOf = (m) => story.models[m].provider ?? provider;
+  const ref = (m) => `${providerOf(m)}/${story.models[m].id}`;
+  // The summaries the director answers Sova's summarizer with, in order: a live script's or a
+  // static session's `then` (a static session's own are written into its file).
+  const summariesOf = (steps) => (steps ?? []).filter((st) => actionOf(st) === "summary").map((st) => st.summary);
   const workers = story.workers ?? {};
   const workerSpec = (id) => {
     const w = workers[id];
@@ -237,6 +243,7 @@ function compile(story, facts, storyDir, pos) {
       offsetMs: offsetMs(s.at),
       model: ref(s.model),
       modelId: story.models[s.model].id,
+      provider: providerOf(s.model),
       effort: story.models[s.model].effort ?? null,
       contextWindow: story.models[s.model].contextWindow ?? 200_000,
       modes: s.modes ?? [],
@@ -249,11 +256,11 @@ function compile(story, facts, storyDir, pos) {
       // static messages' replies too, so the scene is cut from both (their pointers stay apart).
       const pre = cutReplies(s.messages, `/sessions/${i}/messages`, ctx);
       const post = cutReplies(s.then, `/sessions/${i}/then`, ctx);
-      scenes.push({ id: s.id, kind: "session", key: pre.users[0].text, model: ref(s.model), contextWindow: base.contextWindow, replies: [...pre.replies, ...post.replies], users: [...pre.users, ...post.users.map((u) => ({ ...u, afterReply: u.afterReply + pre.replies.length }))] });
+      scenes.push({ id: s.id, kind: "session", key: pre.users[0].text, model: ref(s.model), contextWindow: base.contextWindow, summaries: summariesOf(s.then), replies: [...pre.replies, ...post.replies], users: [...pre.users, ...post.users.map((u) => ({ ...u, afterReply: u.afterReply + pre.replies.length }))] });
       return { ...base, live: false, then: true, messages, users: post.users };
     }
     const cut = cutReplies(s.script, `/sessions/${i}/script`, ctx);
-    scenes.push({ id: s.id, kind: "session", key: cut.users[0].text, model: ref(s.model), contextWindow: base.contextWindow, ...cut });
+    scenes.push({ id: s.id, kind: "session", key: cut.users[0].text, model: ref(s.model), contextWindow: base.contextWindow, summaries: summariesOf(s.script), ...cut });
     return { ...base, live: true, users: cut.users };
   });
   for (const [id, w] of Object.entries(workers)) {
@@ -284,8 +291,10 @@ function compile(story, facts, storyDir, pos) {
   const positions = Object.fromEntries([...pos].map(([p, v]) => [p, [v.line, v.col]]));
   return {
     provider,
+    providers: [...new Set(Object.keys(story.models).map(providerOf))],
+    summarizer: story.summarizer ? ref(story.summarizer) : null,
     viewports: story.viewports,
-    models: Object.fromEntries(Object.entries(story.models).map(([k, m]) => [k, { ...m, ref: ref(k) }])),
+    models: Object.fromEntries(Object.entries(story.models).map(([k, m]) => [k, { ...m, provider: providerOf(k), ref: ref(k) }])),
     project: { name: story.project.name, path: story.project.path, commits: story.project.commits.map((c) => ({ message: c.message, files: Object.fromEntries(Object.entries(c.files).map(([p, b]) => [p, fileBody(b, storyDir)])) })) },
     files,
     sessions,

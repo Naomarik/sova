@@ -78,27 +78,39 @@ try {
     console.log(`  shot ${shot.id}: ${results[shot.id].width}x${results[shot.id].height}`);
   };
 
-  // Static sessions and pages first, while nothing is live.
-  for (const shot of todo.filter((s) => s.at === "start")) await take(shot);
-
-  // Each live session in story order, its holds in the order the story reaches them.
-  for (const s of plan.sessions.filter((x) => x.live)) {
-    const mine = todo.filter((x) => x.session === s.id);
-    if (!mine.length) continue;
-    console.log(`playing ${s.id}`);
-    const created = await server.call("POST", "/api/sessions", { cwd: seeded.repo });
-    sessionPath.set(s.id, created.path);
-    await director.api.pace(4);
-    await fetch(`${director.url}/bind`, { method: "POST", body: JSON.stringify({ id: s.id, uuid: created.id }) });
+  // A session's modes, model and sandbox, as the user would have set them.
+  const configure = async (s, path) => {
     await server.call("POST", "/api/sessions/configure", {
-      path: created.path,
-      model: s.model,
-      ...(s.effort ? { thinking: s.effort } : {}),
+      path,
+      // A static session's file already names its model and modes (seed.mjs): only a live one
+      // is told them, so the Timeline shows no switch that never happened.
+      ...(s.live ? { model: s.model, ...(s.effort ? { thinking: s.effort } : {}) } : {}),
       mode: s.modes.includes("delegate") ? "delegate" : "normal",
       minorModes: s.modes.filter((m) => m !== "delegate"),
     });
-    await server.call("POST", "/api/sessions/title", { path: created.path, title: s.title });
-    await server.call("POST", `/api/sandbox?path=${encodeURIComponent(created.path)}`, { state: "off" }).catch((e) => console.warn(`  sandbox off: ${e.message}`));
+    await server.call("POST", `/api/sandbox?path=${encodeURIComponent(path)}`, { state: "off" }).catch((e) => console.warn(`  sandbox off: ${e.message}`));
+  };
+  // A static session the director carries on (`then`) has its modes on from the start, so its
+  // stills show what the user sees: an open alignment card with its answer row, say.
+  for (const s of plan.sessions.filter((x) => x.then)) await configure(s, seeded.sessions[s.id]);
+
+  // Static sessions and pages first, while nothing is live.
+  for (const shot of todo.filter((s) => s.at === "start")) await take(shot);
+
+  // Each live session (and static one with `then`) in story order, its holds in the order the
+  // story reaches them.
+  for (const s of plan.sessions.filter((x) => x.live || x.then)) {
+    const mine = todo.filter((x) => x.session === s.id && x.at !== "start");
+    if (!mine.length) continue;
+    console.log(`playing ${s.id}`);
+    await director.api.pace(4);
+    const created = s.live ? await server.call("POST", "/api/sessions", { cwd: seeded.repo }) : { path: seeded.sessions[s.id], id: s.uuid };
+    if (s.live) {
+      sessionPath.set(s.id, created.path);
+      await fetch(`${director.url}/bind`, { method: "POST", body: JSON.stringify({ id: s.id, uuid: created.id }) });
+      await configure(s, created.path);
+      await server.call("POST", "/api/sessions/title", { path: created.path, title: s.title });
+    }
 
     for (const ev of events(s.id)) {
       if (ev.user !== undefined) {
@@ -198,7 +210,7 @@ function events(sessionId) {
   const out = [];
   const seen = new Set();
   const hold = (h) => !seen.has(h) && (seen.add(h), out.push({ hold: h }));
-  for (const step of s.script) {
+  for (const step of s.script ?? s.then) {
     const a = actionOf(step);
     if (a === "user") out.push({ user: text(step.user) });
     if (a === "hold") hold(step.hold);

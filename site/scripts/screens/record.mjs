@@ -4,24 +4,28 @@
 // Record the story's `videos`, each in a fresh root: the director paced at the video's chunk, the
 // page played beat by beat and filmed with the CDP screencast, the pointer moved by the pacing
 // rules (story-check.mjs PACE) and logged as a track. Assembly (video-compose.mjs) then draws the
-// pointer, ripples, captions and the "sped up" tag at a constant 30 fps, fades the end into the
-// first frame, and encodes AV1 and H.264 within the video's byte budgets. The leak gate runs at the
-// start and after every beat. Nothing reaches site/public/video until the checks pass
-// (video-check.mjs: every frame decodes, not frozen, not cropped, every hold its reading time, the
-// length in range, the size in budget). Its manifest entry records the input hash; an unchanged
-// video is not re-recorded unless --force. --stills <dir> saves the page after every beat (and the
-// finished video at 2 frames a second); --timing records and prints the timeline, writing nothing.
+// pointer and ripples at a constant 30 fps, fades the end into the first frame, and encodes AV1 and
+// H.264 within the video's byte budgets. Nothing else is drawn into the picture: the captions are
+// page text, from the cue list this writes beside the video (each caption's start and end in the
+// video's own seconds, and the "Sped up" stretches). The leak gate runs at the start and after
+// every beat. Nothing reaches site/public/video until the checks pass (video-check.mjs: every
+// frame decodes, not frozen, not cropped, every hold its reading time, every cue its reading time,
+// the length in range, the size in budget). Its manifest entry records the input hash (captions
+// left out); an unchanged video is not re-recorded unless --force. --stills <dir> saves the page
+// after every beat (and the finished video at 2 frames a second); --timing records and prints the
+// timeline, writing nothing; --cues rewrites only the cue lists, from the story's captions and each
+// video's recorded beat times, with no filming (a caption's wording changed).
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { loadStory, REPO } from "./load-story.mjs";
-import { bringsNewContent, PACE, readingMs } from "./story-check.mjs";
+import { actionOf, bringsNewContent, PACE, readingMs } from "./story-check.mjs";
 import { contextOptions, cropToViewport, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, saveDebug, siteSharp, sleep, startBrowser, startDirector, startServer, TOKEN, ui, VIDEO_DIR, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, videoHash } from "./hashes.mjs";
-import { captionBox, clock, compose, encodeWithin, ease, renderLabels } from "./video-compose.mjs";
-import { decodeAll, edgeDiff, fileProblems, probe, sourceType, timelineProblems } from "./video-check.mjs";
+import { clock, compose, encodeWithin, ease } from "./video-compose.mjs";
+import { cueProblems, cuesOf, decodeAll, edgeDiff, fileProblems, probe, sourceType, timelineProblems } from "./video-check.mjs";
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
@@ -42,12 +46,41 @@ await loadAlignModule();
 
 const names = opt("--video") ? [opt("--video")] : Object.keys(plan.videos);
 for (const n of names) if (!plan.videos[n]) throw new Error(`no video "${n}" in story.json; videos: ${Object.keys(plan.videos).join(", ")}`);
+
+// --cues: the cue lists again from the story's captions and the recorded beat times; no filming.
+if (flag("--cues")) {
+  const manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, "utf8")) : null;
+  let bad = false;
+  for (const name of names) {
+    const vid = manifest?.videos?.[name];
+    if (!vid?.timeline) {
+      console.error(`video ${name} has no recording yet: run screens:video -- --video ${name}`);
+      bad = true;
+      continue;
+    }
+    if (vid.timeline.beats.length !== plan.videos[name].beats.length) {
+      console.error(`video ${name}: the story has ${plan.videos[name].beats.length} beats, the recording ${vid.timeline.beats.length}: record it again`);
+      bad = true;
+      continue;
+    }
+    Object.assign(vid, cuesOf(plan.videos[name], vid.timeline), { line: plan.videos[name].line });
+    const problems = cueProblems(vid, plan.videos[name], vid.timeline.seconds);
+    if (problems.length) {
+      console.error(`video ${name}: ${problems.join("; ")}`);
+      bad = true;
+      continue;
+    }
+    console.log(`video ${name}: ${vid.cues.length} cues rewritten`);
+  }
+  if (!bad) writeJson(MANIFEST, manifest);
+  process.exit(bad ? 1 : 0);
+}
 const stillsDir = opt("--stills");
 if (stillsDir) mkdirSync(stillsDir, { recursive: true });
 
 let failed = false;
 for (const name of names) {
-  const v = { ...plan.videos[name], vp: plan.viewports[plan.videos[name].viewport], tagText: "Sped up" };
+  const v = { ...plan.videos[name], vp: plan.viewports[plan.videos[name].viewport] };
   const hash = videoHash(story, plan, name);
   const manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, "utf8")) : null;
   const have = manifest?.videos?.[name];
@@ -93,18 +126,19 @@ async function recordOne(name, v, hash) {
     } else [path, sessionId] = [seeded.sessions[s.id], s.uuid];
     await server.call("POST", "/api/sessions/configure", {
       path,
-      model: s.model,
-      ...(s.effort ? { thinking: s.effort } : {}),
+      // A static session's file already names its model and modes (seed.mjs): only a live one
+      // is told them, so the Timeline shows no switch that never happened.
+      ...(s.live ? { model: s.model, ...(s.effort ? { thinking: s.effort } : {}) } : {}),
       mode: s.modes.includes("delegate") ? "delegate" : "normal",
       minorModes: s.modes.filter((m) => m !== "delegate"),
     });
     await server.call("POST", `/api/sandbox?path=${encodeURIComponent(path)}`, { state: "off" }).catch(() => {});
 
-    // Captions and the tag, drawn in the site's Inter at the video's pixels per CSS px.
-    const scale = v.width / v.vp.width;
-    const fontPx = v.pointer === "tap" ? 20 : 17;
-    const texts = [...new Set(v.beats.map((b) => b.caption).filter((c) => typeof c === "string"))];
-    const labels = await renderLabels(browser.browser, [...texts.map((text) => ({ text, kind: "caption" })), { text: v.tagText, kind: "tag" }], scale, fontPx);
+    // The summaries the director answers during the video, in order (a `release` with `summary`
+    // waits until the next one shows in the Current goal strip).
+    const told = story.sessions.find((x) => x.id === s.id);
+    const summaries = (told.script ?? told.then ?? []).filter((st) => actionOf(st) === "summary").map((st) => st.summary);
+    let summariesSeen = 0;
 
     const ctx = await browser.browser.newContext(contextOptions(v.vp));
     page = await ctx.newPage();
@@ -124,8 +158,6 @@ async function recordOne(name, v, hash) {
     await page.mouse.move(1, 1);
     if (v.prefill) await ui.composer(page).fill(v.prefillText);
     await page.waitForTimeout(1500);
-    // The top of a phone's caption: just under the app's own header.
-    v.captionTop = v.captions === "top-left" ? await page.evaluate(() => Math.round((document.querySelector("header, .app-header, .session-head")?.getBoundingClientRect().bottom ?? 56) + 10)) : 0;
 
     // The screencast: every frame with its timestamp, acknowledged so the next one comes. The
     // window is made larger than the viewport and each frame cropped to it (cropToViewport).
@@ -158,7 +190,7 @@ async function recordOne(name, v, hash) {
       const m = document.querySelector("main")?.getBoundingClientRect() ?? { left: 0, top: 0, width: innerWidth, height: innerHeight };
       return { x: Math.round(m.left + m.width * 0.58), y: Math.round(m.top + m.height * 0.42) };
     }) : { x: -100, y: -100 };
-    const track = { t0: 0, end: 0, p0, anchors: [], moves: [], clicks: [], taps: [], captions: [], speed: [], holds: [], beats: [], privacy: { checked: 0, beats: v.beats.length } };
+    const track = { t0: 0, end: 0, p0, anchors: [], moves: [], clicks: [], taps: [], speed: [], holds: [], beats: [], privacy: { checked: 0, beats: v.beats.length } };
     // The video's own clock: every event is an anchor, and the stretch before it lasts its nominal
     // time in the video (a hold its length, a travel its duration, a rest 0.3 s...), whatever this
     // machine took; only a reply streaming in keeps its real length (divided by any speed-up).
@@ -168,7 +200,6 @@ async function recordOne(name, v, hash) {
     };
     const sinceMark = (r) => r - (track.anchors.at(-1)?.r ?? r);
     let pos = { ...p0 };
-    let caption = null;
     if (v.pointer === "arrow") await page.mouse.move(p0.x, p0.y);
     await leakGate(page, patterns, `video ${name} start`);
     track.privacy.checked++;
@@ -208,10 +239,6 @@ async function recordOne(name, v, hash) {
       const to = at(box);
       to.x = Math.round(to.x);
       to.y = Math.round(to.y);
-      if (caption) {
-        const c = caption.plate;
-        if (to.x >= c.x - 6 && to.x <= c.x + c.w + 6 && to.y >= c.y - 6 && to.y <= c.y + c.h + 6) throw new Error(`the caption "${caption.text}" covers ${what}: move the caption or the target`);
-      }
       if (v.pointer === "arrow") {
         await travel(to);
         await sleep(PACE.rest * 1000);
@@ -254,51 +281,15 @@ async function recordOne(name, v, hash) {
           return ui.reviewChanges(page);
         case "changes-step":
           return page.locator(".changes-step-row").filter({ has: page.locator(".changes-step-n", { hasText: new RegExp(`^${b.n}$`) }) }).first();
+        case "pane-tab":
+          return page.locator("#session-pane [role=tab]", { hasText: b.text }).first();
         default:
           throw new Error(`no target ${b.target}`);
       }
     };
     const sceneOf = (b) => (b.scene === "overseer" ? v.overseerScene : v.session);
-    // A caption's opaque plate: its box, grown once to cover every line of the page's text it
-    // touches (measured at each beat while the caption shows), so no app text peeks around it.
-    const union = (p, q) => {
-      const x = Math.min(p.x, q.x);
-      const y = Math.min(p.y, q.y);
-      return { x, y, w: Math.max(p.x + p.w, q.x + q.w) - x, h: Math.max(p.y + p.h, q.y + q.h) - y };
-    };
-    const plateOver = (box) =>
-      page.evaluate(({ box, pad, vw, vh, rowMax }) => {
-        const b = { x0: box.x - pad, y0: box.y - pad, x1: box.x + box.w + pad, y1: box.y + box.h + pad };
-        const r = { ...b };
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        const range = document.createRange();
-        for (let t = walker.nextNode(); t; t = walker.nextNode()) {
-          if (!t.textContent.trim()) continue;
-          range.selectNodeContents(t);
-          for (const q of range.getClientRects()) {
-            if (!q.width || !q.height || q.right < b.x0 || q.left > b.x1 || q.bottom < b.y0 || q.top > b.y1) continue;
-            const el = t.parentElement;
-            const st = el && getComputedStyle(el);
-            if (st && (st.visibility === "hidden" || Number(st.opacity) === 0)) continue;
-            // The whole row it sits in (the largest ancestor that is still a row: at most `rowMax`
-            // of the viewport wide and 140px tall), so no neighbour on that row peeks past the
-            // plate. A phone's rows span the screen, so there it takes the whole row.
-            let row = q;
-            for (let e = el; e && e !== document.body; e = e.parentElement) {
-              const er = e.getBoundingClientRect();
-              if (er.width > vw * rowMax || er.height > 140) break;
-              row = er;
-            }
-            r.x0 = Math.min(r.x0, row.left - 4);
-            r.y0 = Math.min(r.y0, row.top - 4);
-            r.x1 = Math.max(r.x1, row.right + 4);
-            r.y1 = Math.max(r.y1, row.bottom + 4);
-          }
-        }
-        const x0 = Math.max(0, r.x0);
-        const y0 = Math.max(0, r.y0);
-        return { x: x0, y: y0, w: Math.min(vw, r.x1) - x0, h: Math.min(vh, r.y1) - y0 };
-      }, { box, pad: 8, vw: v.vp.width, vh: v.vp.height, rowMax: v.vp.width < 768 ? 1 : 0.45 });
+    // A hold where a turn ends (before a user step or at the end): its reply may still be streaming.
+    const endsTurn = (h) => (plan.holds[h] ?? []).some((x) => x.kind === "idle" && x.scene === v.session);
 
     track.t0 = now();
     mark(track.t0, 0);
@@ -308,18 +299,6 @@ async function recordOne(name, v, hash) {
       const a = now();
       // Between beats: the leak gate (and any still) take real time the video doesn't need.
       mark(a, Math.min(sinceMark(a), 0.04));
-      if (b.caption !== undefined) {
-        if (caption) track.captions.push({ ...caption, b: a });
-        if (b.caption !== null) {
-          const box = captionBox(v, labels.get(`caption:${b.caption}`));
-          // The tag sits after the caption when a sped-up stretch falls inside it.
-          const until = v.beats.findIndex((x, k) => k > b.index && x.caption !== undefined);
-          const sped = v.beats.slice(b.index, until < 0 ? undefined : until).some((x) => x.speed);
-          const tag = labels.get(`tag:${v.tagText}`);
-          const reach = sped ? { x: box.x, y: box.y - tag.cssH - 6, w: Math.max(box.w, tag.cssW), h: box.h + tag.cssH + 6 } : box;
-          caption = { text: b.caption, a, box, reach, plate: await plateOver(reach) };
-        } else caption = null;
-      }
       if (b.do === "type") {
         const input = ui.composer(page);
         await press(input, "the composer", (box) => ({ x: box.x + Math.min(60, box.width / 4), y: box.y + box.height / 2 }));
@@ -339,12 +318,20 @@ async function recordOne(name, v, hash) {
         for (const h of (await director.api.state()).waiting) if (h !== b.until) await director.api.release(h);
         if (b.until === "end") await director.api.idle(sceneOf(b), 180_000);
         else await director.api.reached(b.until, 180_000);
-        if (b.until === "end" && b.scene !== "overseer")
+        if ((b.until === "end" || endsTurn(b.until)) && b.scene !== "overseer")
           for (let i = 0; i < 60; i++) {
             const row = (await server.call("GET", "/api/sessions")).find((x) => x.path === path);
             if (!row?.streaming) break;
             await sleep(100);
           }
+        if (b.summary) {
+          // Sova's summarizer runs once the turn has settled; the director answers it with the
+          // next summary step. Done when the Current goal strip shows it.
+          const want = summaries[summariesSeen++];
+          await page.locator(".outline-now", { hasText: want.now }).first().waitFor({ state: "attached", timeout: 60_000 }).catch(async () => {
+            throw new Error(`the summary "${want.now}" never reached the Current goal strip; director: ${JSON.stringify((await director.api.state()).summaries)}`);
+          });
+        }
         await sleep(350);
         mark(now(), sinceMark(now()) / (b.speed ?? 1));
         if (b.speed) track.speed.push({ a, b: now(), k: b.speed });
@@ -354,7 +341,11 @@ async function recordOne(name, v, hash) {
         track.holds.push({ i: b.index, a, b: now(), needMs: b.read ? readingMs(b.read) : 0, read: b.read });
       } else if (b.do === "scroll") {
         if (b.to === "latest") await page.evaluate(() => document.querySelector("main .transcript, main [data-transcript]")?.scrollTo({ top: 1e9, behavior: "smooth" }));
-        else {
+        else if (b.to === "vis") {
+          const fig = page.locator("main figure.vis").last();
+          await fig.waitFor({ state: "visible", timeout: 10_000 });
+          await fig.evaluate((el) => el.scrollIntoView({ block: "center", behavior: "smooth" }));
+        } else {
           const card = page.locator("article.align-doc").last();
           await card.waitFor({ state: "visible", timeout: 10_000 });
           await card.evaluate((el, block) => el.scrollIntoView({ block, behavior: "smooth" }), b.to === "align" ? "start" : "end");
@@ -366,14 +357,12 @@ async function recordOne(name, v, hash) {
         await sleep(PACE.rest * 1000);
         mark(now(), PACE.rest);
       }
-      if (caption) caption.plate = union(caption.plate, await plateOver(caption.reach));
       track.beats.push({ i: b.index, do: b.do, a, b: track.anchors.at(-1).r, news: bringsNewContent(b), moves: ["type", "click", "tap", "home"].includes(b.do) });
       await leakGate(page, patterns, `video ${name} ${beatNow}`);
       track.privacy.checked++;
       if (stillsDir) await page.screenshot({ path: join(stillsDir, `${name}-${String(b.index).padStart(2, "0")}-${b.do}${b.target ? `-${b.target}` : ""}.png`) });
     }
     track.end = track.anchors.at(-1).r;
-    if (caption) track.captions.push({ ...caption, b: track.end });
     // The page's own picture at the end, for the edge check (taken after the end, so its repaint
     // can't hide a crop from the frames before it).
     await sleep(200);
@@ -389,15 +378,16 @@ async function recordOne(name, v, hash) {
       seconds: toOut(track.end) + v.loopMs / 1000,
       holds: track.holds.map((h) => ({ ...h, a: toOut(h.a), b: toOut(h.b) })),
       moves: track.moves.map((m) => ({ a: toOut(m.a), b: toOut(m.b) })),
-      captions: track.captions.map((c) => ({ text: c.text, a: toOut(c.a), b: toOut(c.b) })),
       sped: track.speed.map((x) => ({ a: toOut(x.a), b: toOut(x.b), k: x.k })),
       settles: settles(track, toOut),
       privacy: track.privacy,
       beats: track.beats.map((x) => ({ i: x.i, do: x.do, a: Number(toOut(x.a).toFixed(2)), b: Number(toOut(x.b).toFixed(2)) })),
     };
     console.log(`timeline (output s): ${timeline.beats.map((x) => `${x.i}:${x.do} ${(x.b - x.a).toFixed(1)}`).join(" · ")}`);
+    const cues = cuesOf(v, timeline);
+    console.log(`cues: ${cues.cues.map((c) => `${c.a.toFixed(1)}–${c.b.toFixed(1)} ${c.text}`).join(" | ")}${cues.tags.length ? `; tags ${cues.tags.map((x) => `${x.a.toFixed(1)}–${x.b.toFixed(1)} ${x.text}`).join(", ")}` : ""}`);
     if (flag("--timing")) {
-      console.log(`timing only: ${timeline.seconds.toFixed(1)} s; ${timelineProblems({ ...timeline, edges: { bottom: 0, right: 0, threshold: 40 } }, v).join("; ") || "no pacing problems"}`);
+      console.log(`timing only: ${timeline.seconds.toFixed(1)} s; ${[...timelineProblems({ ...timeline, edges: { bottom: 0, right: 0, threshold: 40 } }, v), ...cueProblems(cues, v, timeline.seconds)].join("; ") || "no pacing problems"}`);
       return true;
     }
     if (frames.length < 10) throw new Error(`only ${frames.length} screencast frames arrived`);
@@ -406,7 +396,7 @@ async function recordOne(name, v, hash) {
     console.log(`frames: ${frames.length}, ${Math.round(frames[0].w)}x${Math.round(frames[0].h)} CSS px filmed, cropped to ${cropped.width}x${cropped.height} px`);
     // Filmed at least at the encoded size: never an upscaled picture.
     if (cropped.width < v.width) throw new Error(`the frames hold ${cropped.width} px across the viewport, under the ${v.width} px the video is encoded at: the screencast filmed at too low a scale`);
-    const composed = await compose({ frames: cropped.frames, track, v, labels, root });
+    const composed = await compose({ frames: cropped.frames, track, v, root });
     console.log(`composed ${composed.frames} frames, ${composed.seconds.toFixed(1)} s at ${composed.width}x${composed.height}`);
 
     const base = name === "desk" ? "session-desk" : `session-${name}`;
@@ -415,7 +405,7 @@ async function recordOne(name, v, hash) {
     const h264 = encodeWithin("h264", composed.file, outs.h264, v.budget.fallback, console.log);
 
     timeline.edges = edgeDiff(outs.h264, Math.max(0, composed.endOut - 0.25), reference, { width: composed.width, height: composed.height });
-    const problems = [...timelineProblems(timeline, v)];
+    const problems = [...timelineProblems(timeline, v), ...cueProblems(cues, v, timeline.seconds)];
     const files = {};
     for (const [kind, file] of Object.entries(outs)) {
       const p = probe(file);
@@ -455,6 +445,8 @@ async function recordOne(name, v, hash) {
       slot: v.slot,
       poster: { file: posterFile, sha: fileSha(posterBuf) },
       hash,
+      line: v.line,
+      ...cues,
       timeline,
     } };
     writeJson(MANIFEST, manifest);

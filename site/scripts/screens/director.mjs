@@ -42,6 +42,31 @@ const reachedIdle = new Map(); // hold -> Set<scene id>
 const errors = [];
 const unmatched = [];
 const side = [];
+const summaries = []; // { at, scene, n }: the summarizer requests answered with a story summary
+
+/**
+ * The summarizer's prompt (topic-outline's buildPrompt) names the session by its earliest request
+ * ("SESSION ANCHOR") and lists the new messages as [m1]…[mN]. The answer is the scene's next
+ * summary step as the summarizer's JSON: each topic gets a consecutive share of m1…mN as its range.
+ */
+function summaryAnswer(prompt) {
+  if (!prompt.startsWith("You maintain a live outline")) return null;
+  const anchor = norm(prompt.split("SESSION ANCHOR")[1]?.split("EXISTING OUTLINE")[0] ?? "");
+  const scene = scenes.find((s) => s.kind === "session" && s.summaries?.length && anchor.includes(s.normKey));
+  if (!scene) return null;
+  const k = Math.min(scene.summariesServed ?? 0, scene.summaries.length - 1);
+  scene.summariesServed = k + 1;
+  const sum = scene.summaries[k];
+  const refs = [...new Set([...(prompt.split("NEW MESSAGES:").at(-1) ?? "").matchAll(/^\[(m\d+)\]/gm)].map((m) => m[1]))];
+  if (!refs.length) return null;
+  const n = sum.topics.length;
+  const topicUpdates = sum.topics.map((t, i) => {
+    const lo = Math.floor((i * refs.length) / n);
+    const hi = Math.max(lo, Math.floor(((i + 1) * refs.length) / n) - 1);
+    return { kind: t.update ? "update" : "new", ...(t.update ? { topicId: t.update } : {}), heading: t.heading, from: refs[lo], to: refs[Math.min(hi, refs.length - 1)], summary: t.summary };
+  });
+  return { scene: scene.id, n: k + 1, json: JSON.stringify({ now: sum.now, overall: sum.overall, topicUpdates }) };
+}
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const listeners = new Set();
 const changed = () => {
@@ -156,10 +181,20 @@ async function answer(req, res, body) {
     }
   };
 
-  // A request without tools is a side call (a title, a summary): never part of a scene.
+  // A request without tools is a side call (a title, a summary): never part of a scene. Sova's
+  // summarizer is answered with the story's next `summary` step for the session it summarizes.
   if (!Array.isArray(body.tools) || body.tools.length === 0) {
-    side.push({ at: Date.now(), first: contentText(messages.find((m) => m.role === "user")?.content).slice(0, 80) });
+    const prompt = contentText(messages.find((m) => m.role === "user")?.content);
+    side.push({ at: Date.now(), first: prompt.slice(0, 80) });
+    const outline = summaryAnswer(prompt);
     delta({ role: "assistant", content: "" });
+    if (outline) {
+      log(`${outline.scene}: summary ${outline.n}`);
+      delta({ content: outline.json });
+      summaries.push({ at: Date.now(), scene: outline.scene, n: outline.n });
+      changed();
+      return finish("stop", Math.round(outline.json.length / 4));
+    }
     delta({ content: "Okay." });
     return finish("stop", 2);
   }
@@ -255,6 +290,7 @@ function state() {
     errors,
     unmatched,
     side: side.length,
+    summaries,
   };
 }
 

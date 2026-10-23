@@ -6,7 +6,7 @@
 
 import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
-import { meaningfulWords, PACE } from "./story-check.mjs";
+import { captionMinMs, captionProblems, PACE } from "./story-check.mjs";
 
 /** ffprobe's view of a file's video stream, with the codec string a <source type> names. */
 export function probe(file) {
@@ -100,11 +100,52 @@ export function fileProblems(name, p, decoded, v, budget) {
   return out;
 }
 
+const r2 = (x) => Number(x.toFixed(2));
+
+/**
+ * The page's captions for a video, from the story's beats and the recorded beat times (output
+ * seconds): a caption runs from the start of its beat (the first from 0) to the start of the next
+ * beat that sets one, the last to the end of the video (its loop fade included). `tags` are the
+ * sped-up stretches, each shown at least PACE.caption.min s. Wording is the story's: a changed
+ * caption needs only these again (record.mjs --cues), never a new recording.
+ */
+export function cuesOf(v, timeline) {
+  const at = new Map(timeline.beats.map((b) => [b.i, b.a]));
+  const cues = [];
+  let cur = null;
+  v.beats.forEach((b, i) => {
+    if (b.caption === undefined) return;
+    const a = i === 0 ? 0 : at.get(i);
+    if (cur) cues.push({ ...cur, b: r2(a) });
+    cur = b.caption === null ? null : { a: r2(a), text: b.caption };
+  });
+  if (cur) cues.push({ ...cur, b: r2(timeline.seconds) });
+  const tags = timeline.sped.map((x) => ({ a: r2(x.a), b: r2(Math.min(timeline.seconds, Math.max(x.b, x.a + PACE.caption.min))), text: `Sped up ${x.k}×` }));
+  return { cues, tags };
+}
+
+/** The cue list against the story and the pacing rules: [] when it is good. */
+export function cueProblems({ cues, tags }, v, seconds) {
+  const out = [];
+  const want = v.beats.map((b) => b.caption).filter((c) => typeof c === "string");
+  if (!Array.isArray(cues)) return ["no cue list: run screens:video -- --cues"];
+  if (cues.map((c) => c.text).join("\n") !== want.join("\n")) out.push(`the cues (${cues.map((c) => `"${c.text}"`).join(", ")}) are not the story's captions: run screens:video -- --cues`);
+  if (want.length && cues[0]?.a !== 0) out.push("the first cue doesn't start at 0 s: the page would show no caption on the first frame");
+  cues.forEach((c, k) => {
+    for (const p of captionProblems(c.text)) out.push(`caption "${c.text}": ${p}`);
+    if (c.b <= c.a || c.a < 0 || c.b > seconds + 0.05) out.push(`caption "${c.text}": ${c.a}–${c.b} s is not inside the video's ${seconds.toFixed(2)} s`);
+    if (k > 0 && c.a < cues[k - 1].b - 0.01) out.push(`caption "${c.text}" starts before "${cues[k - 1].text}" ends`);
+    if (c.b - c.a + 0.06 < captionMinMs(c.text) / 1000) out.push(`caption "${c.text}" is on the page ${(c.b - c.a).toFixed(2)} s, under its ${(captionMinMs(c.text) / 1000).toFixed(1)} s`);
+  });
+  for (const t of tags ?? []) if (t.b <= t.a || t.b > seconds + 0.05) out.push(`tag "${t.text}": ${t.a}–${t.b} s is not inside the video`);
+  return out;
+}
+
 /**
  * The pacing rules on the recorded timeline (output seconds): every hold at least its reading time
  * and a reading hold at most 5 s, the pointer still for 1.5 s after new content, travel 0.5–0.9 s,
- * captions of at most 5 words on screen at least 2 s, the leak gate passed at the start and after
- * every beat, and the edges matching the page's own screenshot.
+ * the leak gate passed at the start and after every beat, and the edges matching the page's own
+ * screenshot. The captions are page text: cueProblems checks them.
  */
 export function timelineProblems(t, v) {
   const out = [];
@@ -118,10 +159,6 @@ export function timelineProblems(t, v) {
   for (const m of t.moves) {
     const d = m.b - m.a;
     if (d + 0.02 < PACE.travel.min || d - 0.05 > PACE.travel.max) out.push(`a pointer travel at ${m.a.toFixed(2)} s took ${d.toFixed(2)} s (${PACE.travel.min}–${PACE.travel.max} s)`);
-  }
-  for (const c of t.captions) {
-    if (meaningfulWords(c.text) > PACE.caption.words) out.push(`caption "${c.text}" has over ${PACE.caption.words} words`);
-    if (c.b - c.a + slack < PACE.caption.min) out.push(`caption "${c.text}" is on screen ${(c.b - c.a).toFixed(2)} s, under ${PACE.caption.min} s`);
   }
   if (t.privacy.checked !== t.privacy.beats + 1) out.push(`the leak gate ran ${t.privacy.checked} times, not at the start and after each of the ${t.privacy.beats} beats`);
   if (t.seconds * 1000 < v.lengthMs.min || t.seconds * 1000 > v.lengthMs.max) out.push(`the timeline is ${t.seconds.toFixed(1)} s, outside ${v.length.min}–${v.length.max}`);

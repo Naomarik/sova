@@ -25,6 +25,10 @@ test("usage-out: what says a provider is out of usage or can't sign in, and what
 		assert.deepEqual(usageOut(text), { kind: "auth", reason: "can't sign in" }, text);
 		assert.equal(isUsageExhausted(text), false, `${text}: a sign-in failure is not a spent quota`);
 	}
-	for (const text of [undefined, "", '429: {"code":"1302","message":"Rate limit reached for requests"}', "Too many requests", "Connection reset by peer", "500 internal error", "overloaded_error", "used 4010 tokens", "load balancer timeout"])
+	for (const text of [undefined, "", '429: {"code":"1302","message":"Rate limit reached for requests"}', "Too many requests", "Connection reset by peer", "500 internal error", "overloaded_error", "used 4010 tokens", "load balancer timeout",
+		// A short-window quota is a rate limit, not spent usage.
+		"429 RESOURCE_EXHAUSTED: Quota exceeded for metric x, limit: 15 per minute",
+		"429 Rate limit: quota of 200000 tokens per minute (TPM) exceeded",
+		"429 You exceeded your quota of requests per day: 50 RPM"])
 		assert.equal(usageOut(text), undefined, String(text));
 });

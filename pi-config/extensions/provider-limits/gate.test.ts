@@ -209,6 +209,7 @@ test("rate limits: which 429s count, the cooldown, and lowering by one below the
 	assert.ok(!isRateLimit("429 You exceeded your current quota, please check your plan and billing details"));
 	assert.ok(!isRateLimit('429: {"code":"1113","message":"Insufficient balance or no resource package"}'));
 	assert.ok(!isRateLimit("500 internal error"));
+	assert.ok(isRateLimit("429 RESOURCE_EXHAUSTED: Quota exceeded for metric x, limit: 15 per minute"), "a short-window quota is a rate limit");
 	assert.ok(!isRateLimit('429: {"message":"you (alex) have reached your monthly usage limit, upgrade for higher limits"}'), "a monthly usage limit is out of usage");
 	assert.ok(!isRateLimit('429: {"message":"you (alex) have reached your monthly usage limit, add usage credits: …"}'));
 	assert.ok(!isRateLimit("429 Usage limit reached for 5 hour. Your limit will reset at 2026-10-24 15:00:00"));

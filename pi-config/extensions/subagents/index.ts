@@ -672,6 +672,8 @@ const DEAD_TUPLE_ENTRY_TYPE = "subagents-dead-tuple-v1";
 const DEAD_TUPLE_MS = 3_600_000;
 /** Failed turns in a row of any kind that move a standing member to its fallback. */
 const FAILOVER_STREAK = 3;
+/** The efforts a tuple's text may end with (`<backend>/<model>/<effort>`). */
+const TUPLE_EFFORTS: ReadonlySet<string> = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /** A private copy of `text` in a fresh temporary directory; returns its path. */
 function writeSnapshot(prefix: string, name: string, text: string): string {
@@ -1968,8 +1970,10 @@ export function registerSubagents(
 		}
 	};
 	// ── Runtime fallback (§teams.defaults/runtime-fallback) ─────────────────
-	// A (backend, model) whose turn ran out of usage is "out" for an hour: every tuple check treats it
-	// as refused. Persisted as subagents-dead-tuple-v1 entries, replayed at session_start.
+	// A (backend, model) whose turn ran out of usage (usageOut, never a streak of other failures) is
+	// "out" for an hour: every tuple check treats it as refused. Persisted as subagents-dead-tuple-v1
+	// entries, replayed at session_start. A team whose duty switched (for any reason) stays on its
+	// fallback: teamFellBack, scoped to that team.
 	/** By tupleKey. */
 	const deadTuples = new Map<string, { reason: string; at: number }>();
 	/** `<teamId>|<duty>` → the primary's tupleKey: that team's duty moved to its fallback and stays there. */
@@ -2026,6 +2030,26 @@ export function registerSubagents(
 			const was = deadTuples.get(key);
 			if (!was || was.at <= d.at) deadTuples.set(key, { reason: typeof d.reason === "string" ? d.reason.slice(0, 500) : "out of usage", at: d.at });
 			if (typeof d.teamId === "string" && (d.duty === "coordinator" || d.duty === "monitor")) teamFellBack.set(`${d.teamId}|${d.duty}`, key);
+		}
+		// A team's own switch (any reason, a streak included) is read back from its handover event:
+		// "successor <role> (<ag_NN>) on <b>/<m>; fallback: primary <backend>/<model>[/<effort>] <reason>".
+		for (const raw of entries) {
+			const e = raw as { type?: unknown; customType?: unknown; data?: unknown };
+			if (e?.type !== "custom" || e.customType !== TEAM_EVENT_ENTRY_TYPE) continue;
+			const d = e.data as { kind?: unknown; teamId?: unknown; workerId?: unknown; detail?: unknown } | null;
+			if (d?.kind !== "handover" || typeof d.teamId !== "string" || typeof d.workerId !== "string" || typeof d.detail !== "string") continue;
+			const tuple = /; fallback: primary (\S+) /.exec(d.detail)?.[1];
+			const parts = tuple?.split("/") ?? [];
+			if (parts.length < 2) continue;
+			if (parts.length > 2 && TUPLE_EFFORTS.has(parts[parts.length - 1]!)) parts.pop();
+			const key = tupleKey(parts[0]!, parts.slice(1).join("/"));
+			let duty: MemberDuty | undefined;
+			try {
+				duty = teams.find(d.teamId).members.find((m) => m.workerId === d.workerId)?.duty;
+			} catch {
+				duty = undefined;
+			}
+			if (key && duty) teamFellBack.set(`${d.teamId}|${duty}`, key);
 		}
 	};
 	/** The model a member runs on, as a tupleKey. */
@@ -4046,8 +4070,8 @@ export function registerSubagents(
 		const title = dutyTitle(duty, member.role);
 		const fallbackDenial = fallback ? tupleDenial(ctx, fallback) : "no fallback is set";
 		if (fallbackDenial) {
-			// Nothing to move to. A failure that wasn't about usage is still the model's, for this team.
-			if (!why.out) markOut(why.backend, why.model, why.reason);
+			// Nothing to move to. Only a real out-of-usage failure marks the model out (standingSettle did);
+			// a streak of other failures says nothing about the model for other teams.
 			const reasonLine = fallback ? `its fallback ${tupleText(fallback)} can't run (${fallbackDenial})` : "no fallback is set";
 			if (duty === "monitor") {
 				failingOver.add(a.id);
@@ -4075,8 +4099,12 @@ export function registerSubagents(
 			scheduleRefresh();
 			return;
 		}
-		// The primary is out, so the successor's tuple check picks the fallback; the team stays on it.
-		markOut(why.backend, why.model, why.reason, { teamId: team.id, duty, primaryKey });
+		// This team's duty moves to its fallback and stays there (the successor's tuple check skips the
+		// primary). Out of usage also marks the model out for the chat's new teams for the hour; a streak
+		// of other failures is this team's alone: no chat-wide mark, no dead-tuple entry. The handover
+		// event's "fallback: primary <tuple>" detail is what a reload reads it back from.
+		if (why.out) markOut(why.backend, why.model, why.reason, { teamId: team.id, duty, primaryKey });
+		else teamFellBack.set(`${team.id}|${duty}`, primaryKey);
 		failingOver.add(a.id);
 		// Its open items wait for the successor (endInbox at onExit must not return them meanwhile).
 		succeeding.add(a.id);

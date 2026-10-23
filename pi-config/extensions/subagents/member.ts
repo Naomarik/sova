@@ -230,8 +230,8 @@ const userText = (message: unknown): string => {
 
 /**
  * The inbox gate (§app.teams/inbox-gate): a run whose first user message is a gated wake list (the
- * main chat adds the gate line only to a wake that starts the member's turn, when the setting is
- * on) refuses every tool but team_inbox, team_msg and team_ask until the member opens an item.
+ * main chat adds the gate line only to a wake that starts the member's turn and lists unopened
+ * items) refuses every tool but team_inbox, team_msg and team_ask until the member opens an item.
  * Any later user message that is not a wake list (a direct instruction) lifts it for the turn.
  */
 export function registerInboxGate(pi: ExtensionAPI): { state(): string[] | undefined } {

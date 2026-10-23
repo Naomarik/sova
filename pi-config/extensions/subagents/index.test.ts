@@ -712,7 +712,7 @@ test("backend validation is atomic across mixed batches and fails closed without
 		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli", model: "invalid" }] }), /Invalid Claude model/);
 		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "claude", backend: "native-cli" }, { prompt: "pi", model: "missing/model" }] }), /Unknown model/);
 		assert.equal(h.workers.length, 0); assert.equal(created.length, 0);
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], backend: "pi" }), /Shorthand/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x", backend: "native-cli" }], backend: "pi" }), /^Error: backend is set beside agents and differently in agents\[0\]/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", backendOptions: {} }), /not supported/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "native-cli", fork: true }), /Unsupported/);
 		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "native-cli", model: "claude-opus-5-5" }] });
@@ -1554,11 +1554,12 @@ test("reject ambiguous spawn modes, fractions, missing definitions and blank tas
 			{},
 			{ prompt: "x", agents: [{ prompt: "x" }] },
 			{ prompt: "x", count: 1.5 },
-			{ prompt: "x", count: 9 },
+			{ prompt: "x", count: 0 },
 			{ prompt: " " },
 			{ agents: [{ prompt: "x", agentType: "../outside" }] },
 			{ agents: [{ prompt: "x", agentType: "definitely-does-not-exist-734892" }] },
-			{ agents: [{ prompt: "x" }], model: "test/model" },
+			{ agents: [{ prompt: "x", model: "other/model" }], model: "test/model" },
+			{ agents: [{ prompt: "x" }], name: "shared" },
 		]) {
 			await assert.rejects(h.call("agent_spawn", params));
 		}
@@ -1571,10 +1572,10 @@ test("reject ambiguous spawn modes, fractions, missing definitions and blank tas
 test("live cap includes waiting workers", async () => {
 	const h = harness();
 	try {
+		await h.call("agent_spawn", { prompt: "x", count: 16 });
 		await h.call("agent_spawn", { prompt: "x", count: 8 });
-		await h.call("agent_spawn", { prompt: "x", count: 4 });
 		h.workers.forEach((w) => w.settle());
-		await assert.rejects(h.call("agent_spawn", { prompt: "x" }), /cap/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x" }), /A chat runs at most 24 workers at once/);
 	} finally {
 		await h.close();
 	}
@@ -1948,10 +1949,10 @@ test("cancelled rollback wait returns promptly but ownership lasts until confirm
 		await assert.rejects(spawning, /factory failure; rollback termination wait cancelled for ag_01, ag_02 \(still owned/);
 		assert.ok(created.every((w) => w.killCalls === 1));
 		assert.equal((await h.call("agent_list")).details.agents.length, 0, "never published");
-		await h.call("agent_spawn", { prompt: "fill", count: 8 });
-		await assert.rejects(h.call("agent_spawn", { prompt: "over", count: 3 }), /Live-agent cap is 12 \(10 alive/);
+		await h.call("agent_spawn", { prompt: "fill", count: 20 });
+		await assert.rejects(h.call("agent_spawn", { prompt: "over", count: 3 }), /This request starts 3 workers\. A chat runs at most 24 workers at once .*; 22 are live now, so 2 more fit\. Stop 1 with agent_kill first/);
 		const killed = await h.call("agent_kill", { all: true });
-		assert.equal(killed.details.killed.length, 8, "unpublished IDs are not public targets");
+		assert.equal(killed.details.killed.length, 20, "unpublished IDs are not public targets");
 		assert.ok(!killed.details.killed.some((id: string) => ["ag_01", "ag_02"].includes(id)));
 		assert.equal(killed.details.rollbackPending, 2);
 		assert.match(killed.content[0].text, /2 unpublished worker\(s\) from a failed spawn are still terminating/);
@@ -2074,7 +2075,7 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 	try {
 		// Whole-batch schema/shape validation happens inside TeamStore before any spec resolves.
 		await assert.rejects(h.call("team_create", { name: "Dup", objective: "o", members: [{ role: "a", prompt: "x" }, { role: " A ", prompt: "y" }] }), /Duplicate role/);
-		await assert.rejects(h.call("team_create", { name: "Count", objective: "o", members: [{ role: "a", prompt: "x", count: 2 }] }), /Unsupported team member option count/);
+		await assert.rejects(h.call("team_create", { name: "Count", objective: "o", members: [{ role: "a", prompt: "x", count: 2 }] }), /^Error: members\[0\] \(a\): count is not a member setting; a member is one role/);
 		await assert.rejects(h.call("team_create", { name: "Keys", objective: "o", members: [{ role: "a", prompt: "x" }], defaults: { count: 2 } }), /Unsupported team default count/);
 		assert.equal(h.workers.length, 0);
 		assert.equal(created.length, 0);
@@ -2105,13 +2106,13 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 		assert.equal(next.details.teamId, "team_03");
 		assert.equal(next.details.members[0].workerId, "ag_03");
 		// The shared live cap applies to team batches before any worker starts.
-		await h.call("agent_spawn", { prompt: "slot", count: 8 });
-		assert.equal(h.workers.length, 9);
+		await h.call("agent_spawn", { prompt: "slot", count: 20 });
+		assert.equal(h.workers.length, 21);
 		await assert.rejects(h.call("team_create", {
 			name: "Over", objective: "o",
 			members: Array.from({ length: 4 }, (_, i) => ({ role: `m${i}`, prompt: "p" })),
-		}), /Live-agent cap is 12 \(9 alive/);
-		assert.equal(h.workers.length, 9);
+		}), /^Error: This team needs 4 workers running: the 4 members you named\. A chat runs at most 24 workers at once .*; 21 are live now, so 3 more fit\. Stop 1 with agent_kill first/);
+		assert.equal(h.workers.length, 21);
 	} finally { await h.close(); }
 });
 
@@ -2327,7 +2328,8 @@ test("/team <objective> while streaming queues the identical followUp and says s
 		const longObjective = `edge ${"x".repeat(6000)}`;
 		await h.commands.get("team").handler(longObjective, h.ctx);
 		const longContent = h.messages.at(-1)[0].content;
-		assert.ok(longContent.length < longObjective.length, "objective is truncated");
+		const objectiveLine = longContent.split("\n").find((line: string) => line.startsWith("Objective: "));
+		assert.ok(objectiveLine && objectiveLine.length < longObjective.length, "objective is truncated");
 		assert.match(longContent, /truncated to the 4000-character team objective limit/);
 		// Without a UI the planning message is still sent; notices are skipped.
 		h.ctx.mode = "print";
@@ -3257,7 +3259,8 @@ test("team defaults: no file changes nothing; a malformed file turns them off vi
 	const none = coordinatedHarness();
 	try {
 		const r = await none.call("team_create", { name: "Plain", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.doesNotMatch(r.content[0].text, /Team defaults|coordinator/);
+		assert.doesNotMatch(r.content[0].text, /Team defaults/);
+		assert.match(r.content[0].text, /Standing roles: none; this chat's subagent settings give teams no coordinator or monitor\./);
 		assert.equal(none.workers.length, 1);
 		assert.equal(none.workers[0].wake, true);
 		assert.equal(none.memberOf("ag_01")!.coordinated, undefined);
@@ -3324,7 +3327,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.equal(h.worker("ag_05").wake, false);
 		assert.equal(h.memberOf("ag_05")!.coordinated, true);
 		assert.match(h.worker("ag_05").task, /This team has a coordinator, coordinator/);
-		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }), /has a coordinator; it cannot take another orchestrator/);
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }), /^Error: Team team_01 has a coordinator, coordinator \(ag_01\), and only the coordinator is a team's orchestrator: boss can't join with orchestrator: true\. The coordinator hands a member, itself included, over to a successor with its own team_succeed step\. A member that only watches or reports needs no orchestrator mark: add boss without it\. The coordinator coordinator \(ag_01\) is live, so it hands over itself/);
 	} finally { await h.cleanup(); }
 });
 
@@ -3376,7 +3379,7 @@ async function registerAgain(p: ReturnType<typeof coordinatedHarness>, policyFil
 	} finally { await h.close(); }
 }
 
-test("team defaults: the caller's orchestrator is the coordinator; conflicts and the per-call limit are refused; monitor escape hatch", async () => {
+test("team defaults: the caller's orchestrator is the coordinator; conflicts are refused; no per-call limit; monitor escape hatch", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
 		const r = await h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: true }, { role: "dev", prompt: "p" }] });
@@ -3387,12 +3390,16 @@ test("team defaults: the caller's orchestrator is the coordinator; conflicts and
 		await assert.rejects(h.call("team_create", { name: "Two", objective: "o", members: [{ role: "a", prompt: "p", orchestrator: true }, { role: "b", prompt: "p", orchestrator: true }] }), /at most one member may have orchestrator: true \(got a, b\)/);
 		await assert.rejects(h.call("team_create", { name: "Clash", objective: "o", members: [{ role: "Coordinator", prompt: "p" }] }), /Role Coordinator is the team-defaults coordinator's role \(coordinator\); rename that member, or pass defaults\.coordinator: false/);
 		await assert.rejects(h.call("team_create", { name: "Clash2", objective: "o", members: [{ role: "monitor", prompt: "p" }] }), /team-defaults monitor's role/);
-		await assert.rejects(
-			h.call("team_create", { name: "Big", objective: "o", members: Array.from({ length: 8 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) }),
-			/Team defaults add 2 member\(s\) \(coordinator\/monitor\), making 10; at most 8 members start per call/,
-		);
+		// No per-call limit: 10 named members start with the coordinator and monitor Sova adds.
+		const before = h.workers.length + h.created.length;
+		const big = await h.call("team_create", { name: "Big", objective: "o", members: Array.from({ length: 10 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
+		assert.equal(big.details.members.length, 12);
+		assert.deepEqual(big.details.members.filter((m: any) => m.duty).map((m: any) => m.duty), ["coordinator", "monitor"]);
+		assert.equal(h.workers.length + h.created.length, before + 12);
+		assert.match(big.content[0].text, /Standing roles — coordinator: "coordinator", added by Sova; monitor: "monitor", added by Sova\./);
 		const noMonitor = await h.call("team_create", { name: "Quiet", objective: "o", defaults: { monitor: false }, members: [{ role: "dev", prompt: "p" }] });
 		assert.match(noMonitor.content[0].text, /monitor turned off for this team \(defaults\.monitor: false\)/);
+		assert.match(noMonitor.content[0].text, /Standing roles — coordinator: "coordinator", added by Sova; monitor: off for this team \(defaults\.monitor: false\)\./);
 		assert.deepEqual(noMonitor.details.members.map((m: any) => m.role), ["coordinator", "dev"]);
 		const workers = h.workers.length + h.created.length;
 		await assert.rejects(h.call("team_create", { name: "X", objective: "o", defaults: { coordinator: "no" }, members: [{ role: "dev", prompt: "p" }] }), /^Error: defaults\.coordinator must be true or false\.$/);
@@ -4380,7 +4387,8 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		// Refused: not a pi worker, no tracked worktree, no .agent.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", useWorktreeConfig: true }), /needs a cwd inside an active worktree/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: path.join(root, "plain"), useWorktreeConfig: true }), /has no \.agent directory/);
-		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], useWorktreeConfig: true }), /Shorthand options cannot be combined/);
+		// Beside agents it is a shared setting, applied to each agent (and so checked like one).
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], useWorktreeConfig: true }), /useWorktreeConfig needs a cwd inside an active worktree/);
 	} finally {
 		await h.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
@@ -4600,4 +4608,223 @@ test("mode: a worker with bash gets the parent's project mode tools (the -e hook
 		await h.close();
 		fs.rmSync(agentDir, { recursive: true, force: true });
 	}
+});
+
+// ── al_1: limits said up front, lenient reads, refusals in Sova's words ─────────────────────
+
+/** The tool results a real session recorded, in order. */
+const toolResults = (s: Awaited<ReturnType<typeof realSession>>) => s.session.sessionManager.getEntries()
+	.filter((e: any) => e.type === "message" && e.message.role === "toolResult")
+	.map((e: any) => ({ name: e.message.toolName, isError: e.message.isError, text: e.message.content.map((c: any) => c.text ?? "").join("") }));
+
+test("through pi's own argument check: members and agents as JSON strings are read as lists, shared settings beside agents are filled in, and refusals are Sova's own words", async () => {
+	const s = await realSession();
+	try {
+		s.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Text", objective: "o", members: JSON.stringify([{ role: "a", prompt: "pa" }, { role: "b", prompt: "pb" }]) }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Count", objective: "o", members: [{ role: "a", prompt: "p", count: 2 }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Odd", objective: "o", members: [{ role: "a", prompt: "p", colour: "red" }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "Defaults", objective: "o", defaults: { tools: ["read"] }, members: [{ role: "a", prompt: "p" }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("team_create", { name: "One", objective: "o", members: { role: "a", prompt: "p" } }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: [{ prompt: "x" }, { prompt: "y", effort: "low" }], effort: "low", tools: ["read"] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: [{ prompt: "x", effort: "high" }, { prompt: "y" }], effort: "low" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: JSON.stringify([{ prompt: "z" }]) }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("agent_spawn", { agents: [{}, {}], prompt: "shared" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+		await s.session.prompt("go");
+		await s.session.waitForIdle?.();
+		const r = toolResults(s);
+		assert.equal(r.length, 9);
+		for (const one of r) assert.doesNotMatch(one.text, /schema is false|must be object|must be array/, "never pi's schema words");
+		assert.equal(r[0].isError, false, r[0].text);
+		assert.match(r[0].text, /^Created team_01 \(Text\) with 2 member\(s\)/);
+		assert.equal(r[1].isError, true);
+		assert.match(r[1].text, /^members\[0\] \(a\): count is not a member setting; a member is one role\. Add one member per role instead/);
+		assert.equal(r[2].isError, true);
+		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+		assert.equal(r[3].isError, true);
+		assert.match(r[3].text, /^Unsupported team default tools; defaults accept backend, model, effort, backendOptions, coordinator and monitor\. Put tools on each member that needs it\.$/);
+		assert.equal(r[4].isError, true);
+		assert.match(r[4].text, /^members must be a list of member objects, \[\{"role": "\.\.\.", "prompt": "\.\.\."\}, \.\.\.\], even for one member\.$/);
+		assert.equal(r[5].isError, false, r[5].text);
+		assert.equal(r[6].isError, true);
+		assert.match(r[6].text, /^effort is set beside agents and differently in agents\[0\]: set it in one place/);
+		assert.equal(r[7].isError, false, r[7].text);
+		assert.equal(r[8].isError, false, r[8].text);
+		// Team Text (2), the shared-settings pair, the JSON-string agent, the shared-prompt pair; nothing for the refusals.
+		assert.equal(s.workers.length, 7);
+		assert.deepEqual(s.workers.slice(2, 4).map((w: any) => [w.task, w.effort, w.tools]), [["x", "low", ["read"]], ["y", "low", ["read"]]]);
+		assert.equal(s.workers[4].task, "z");
+		assert.deepEqual(s.workers.slice(5).map((w: any) => w.task), ["shared", "shared"]);
+	} finally { await s.close(); }
+});
+
+test("lenient reads stay intent-preserving: every conflict and every missing role, task, name or objective is refused before anything starts", async () => {
+	const h = harness();
+	try {
+		const refusals: [string, any, RegExp][] = [
+			["agent_spawn", { agents: [{ prompt: "x", extensions: ["./a.ts"] }, { prompt: "y" }], extensions: ["./b.ts"] }, /^extensions is set beside agents and differently in agents\[0\]/],
+			["agent_spawn", { agents: [{ prompt: "x", cwd: "a" }, { prompt: "y", cwd: "b" }], cwd: "c" }, /^cwd is set beside agents and differently in agents\[0\], agents\[1\]: set it in one place, or give those agents the same value\.$/],
+			["agent_spawn", { agents: [{}, { prompt: "own" }], prompt: "shared" }, /^A prompt beside agents is used only when no agent has its own, and agents\[1\] has one: put each task inside its agent\.$/],
+			["agent_spawn", { agents: [{ prompt: "x" }, {}] }, /^agents\[1\] has no prompt/],
+			["agent_spawn", { agents: [{ prompt: "x" }], count: 2 }, /^count cannot sit beside agents: put it inside each agent that needs it\.$/],
+			["agent_spawn", { agents: [{ prompt: "x" }], name: "n", fork: true }, /^name, fork cannot sit beside agents/],
+			["agent_spawn", { agents: "not json" }, /^agents must be a list of agent objects/],
+			["agent_spawn", { agents: "[1, 2]" }, /^agents must be a list of agent objects/],
+			["agent_spawn", { agents: [{ prompt: "x", role: "r" }] }, /^agents\[0\]: unknown setting "role"/],
+			["agent_spawn", { prompt: "x", members: [] }, /^Unknown setting "members"/],
+			["team_create", { name: "T", objective: "o", members: "a, b" }, /^members must be a list of member objects/],
+			["team_create", { name: "T", objective: "o", members: "{\"role\": \"a\", \"prompt\": \"p\"}" }, /^members must be a list of member objects/],
+			["team_create", { name: "T", objective: "o", members: [{ prompt: "p" }] }, /^members\[0\] has no role: every member needs a unique role, which Sova never makes up\.$/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a" }] }, /^members\[0\] \(a\) has no prompt/],
+			["team_create", { name: "T", members: [{ role: "a", prompt: "p" }] }, /^Missing objective: give it explicitly; Sova never makes it up\.$/],
+			["team_create", { objective: "o", members: [{ role: "a", prompt: "p" }] }, /^Missing name/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a", prompt: "p", fork: true }] }, /^members\[0\] \(a\): fork is for agent_spawn only/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a", prompt: "p", agentType: "x" }] }, /^members\[0\] \(a\): agentType is for agent_spawn only/],
+			["team_create", { name: "T", objective: "o", model: "test/model", members: [{ role: "a", prompt: "p" }] }, /^model is a member setting: put it inside each member that needs it\.$/],
+			["team_create", { name: "T", objective: "o", members: [{ role: "a", prompt: "p", extensions: "npm:x" }] }, /^members\[0\] \(a\): extensions must be a list of extension sources/],
+			["team_add", { team: "T", members: "nope" }, /^members must be a list of member objects/],
+		];
+		for (const [tool, params, expected] of refusals) {
+			const prepared = (() => { try { h.tools.get(tool).prepareArguments(params); return undefined; } catch (error) { return (error as Error).message; } })();
+			assert.ok(prepared, `${tool} ${JSON.stringify(params)} is refused before pi's schema check`);
+			assert.match(prepared!, expected);
+			await assert.rejects(h.call(tool, params), (err: Error) => expected.test(err.message), `${tool} ${JSON.stringify(params)}`);
+		}
+		assert.equal(h.workers.length, 0, "nothing started");
+		// The same value beside and inside is no conflict; a list given as text changes nothing else.
+		await h.call("agent_spawn", { agents: [{ prompt: "x", effort: "low" }, { prompt: "y" }], effort: "low", wake: false });
+		assert.deepEqual(h.workers.map((w) => [w.task, w.effort, w.wake]), [["x", "low", false], ["y", "low", false]]);
+		const team = await h.call("team_create", { name: "Text", objective: "o", members: JSON.stringify([{ role: "a", prompt: "pa", ownedPaths: ["src"] }]) });
+		assert.equal(team.details.members.length, 1);
+		assert.match(team.content[0].text, /ag_03 {2}a {2}running .*owns=src/);
+	} finally { await h.close(); }
+});
+
+test("running limit: 24 per chat, idle workers included; the refusal names the need per caller, the live count, the idle workers and how many to stop", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("agent_spawn", { prompt: "x", count: 20 });
+		h.worker("ag_01").settle();
+		h.worker("ag_02").settle();
+		const tail = "Stop 1 with agent_kill first, then retry. Idle (waiting) workers you could stop: ag_01 (agent-1), ag_02 (agent-2). Sova stops nothing itself.";
+		await assert.rejects(h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "a", prompt: "p" }, { role: "b", prompt: "p" }, { role: "c", prompt: "p" }] }), (err: Error) => {
+			assert.equal(err.message, `This team needs 5 workers running: the 3 members you named + the coordinator "coordinator" and monitor "monitor" Sova adds from this chat's team defaults. A chat runs at most 24 workers at once (idle ones, and a team's coordinator and monitor, count); 20 are live now, so 4 more fit. ${tail}`);
+			return true;
+		});
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", count: 5 }), (err: Error) => {
+			assert.equal(err.message, `This request starts 5 workers. A chat runs at most 24 workers at once (idle ones count); 20 are live now, so 4 more fit. ${tail}`);
+			return true;
+		});
+		assert.equal(h.workers.length + h.created.length, 20, "nothing started, nothing stopped");
+		assert.ok(h.workers.every((w) => w.status !== "killed"), "Sova stops nothing itself");
+		// Two named members + coordinator + monitor fit exactly.
+		const team = await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "a", prompt: "p" }, { role: "b", prompt: "p" }] });
+		assert.equal(team.details.members.length, 4);
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "c", prompt: "p" }] }), (err: Error) => {
+			assert.equal(err.message, `Adding this member needs 1 worker running. A chat runs at most 24 workers at once (idle ones count); 24 are live now, so 0 more fit. ${tail}`);
+			assert.doesNotMatch(err.message, /coordinator|monitor/, "team_add never mentions roles it does not add");
+			return true;
+		});
+		// With nobody idle the refusal says so.
+		h.worker("ag_01").status = "running";
+		h.worker("ag_02").status = "running";
+		await assert.rejects(h.call("agent_spawn", { prompt: "x" }), /This request starts 1 worker\. .*Stop 1 with agent_kill first, then retry\. None is idle: every live worker is busy, so stopping one ends work in progress\. Sova stops nothing itself\.$/);
+	} finally { await h.cleanup(); }
+});
+
+test("seats: team_create past 24 members, the standing roles included, is refused before anything starts", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await assert.rejects(
+			h.call("team_create", { name: "Huge", objective: "o", members: Array.from({ length: 23 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) }),
+			/^Error: A team seats 24 members, and this one would have 25: the 23 you named \+ the coordinator "coordinator" and monitor "monitor" Sova adds from this chat's team defaults\. Name at most 22 members/,
+		);
+		assert.equal(h.workers.length + h.created.length, 0);
+		const full = await h.call("team_create", { name: "Full", objective: "o", members: Array.from({ length: 22 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
+		assert.equal(full.details.members.length, 24);
+	} finally { await h.cleanup(); }
+});
+
+test("team members take extensions by agent_spawn's rules, beside their team tools", async () => {
+	const h = harness();
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-member-ext-"));
+	try {
+		const ext = path.join(dir, "web.ts");
+		fs.writeFileSync(ext, "export default () => {};\n");
+		const r = await h.call("team_create", { name: "Web", objective: "o", members: [{ role: "researcher", prompt: "p", extensions: [ext] }, { role: "plain", prompt: "p" }] });
+		assert.ok(h.workers[0].extensions.includes(MEMBER_EXTENSION), "still its team tools");
+		assert.ok(h.workers[0].extensions.includes(ext), "and the extension it was given");
+		assert.ok(!h.workers[1].extensions.includes(ext));
+		assert.match(r.content[0].text, new RegExp(`ag_01 {2}researcher .*extensions=${esc(ext)}`));
+		const self = path.join(path.dirname(new URL(import.meta.url).pathname), "index.ts");
+		await assert.rejects(h.call("team_add", { team: "Web", members: [{ role: "nested", prompt: "p", extensions: [self] }] }), /do not nest/);
+		await assert.rejects(h.call("team_add", { team: "Web", members: [{ role: "uninstalled", prompt: "p", extensions: ["npm:definitely-not-installed-xyz"] }] }), /isn't installed/);
+		assert.equal(h.workers.length, 2);
+	} finally { await h.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the main chat's team_succeed replaces an ended coordinator or monitor, only when none with that duty is live", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), monitor = h.worker("ag_03");
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator" }), /^Error: coordinator \(ag_01\) is team_01's live coordinator\. A live coordinator hands over itself with its own team_succeed step \(tell it with agent_steer if it should\), so two coordinators are never live at once\./);
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "dev" }), /^Error: dev is not team_01's coordinator or monitor: the main chat replaces only those, once none is live\. The coordinator coordinator \(ag_01\) succeeds other members/);
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "monitor" }), /monitor \(ag_03\) is team_01's live monitor/);
+		// A second orchestrator is refused while the coordinator is live, saying how a handover works.
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "p", orchestrator: true }] }), /only the coordinator is a team's orchestrator[\s\S]*A member that only watches or reports needs no orchestrator mark[\s\S]*The coordinator coordinator \(ag_01\) is live, so it hands over itself/);
+		coordinator.exit();
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "p", orchestrator: true }] }), /No coordinator is live now: the main chat can start a replacement with team_succeed \{ team: "team_01", role: "coordinator" \}\.$/);
+		const r = await h.call("team_succeed", { team: "team_01", role: "coordinator" });
+		assert.match(r.content[0].text, /^Started coordinator-2 \(ag_04\) to succeed coordinator \(ag_01\) on pi\/claude-code-cli\/claude-opus-5-5\/medium\. coordinator has already ended; the successor works from the handover note\. The note may be missing \(coordinator had already ended without writing it\); the successor was told so\. It routes team_01 from now on: members report to it, and only it reaches you\.$/);
+		const successor = h.worker("ag_04");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.successorOf, h.memberOf("ag_04")!.orchestrator], ["coordinator", "coordinator", true]);
+		assert.match(successor.task, /coordinator has already ended: there is nobody to ask and no team_ready to call/);
+		assert.match(successor.task, /Its assignment from the main thread:\nCoordinate this team toward the objective/);
+		const events = h.appended.filter((e) => e.customType === "subagents-team-v1").map((e) => e.data.op);
+		assert.deepEqual(events, ["create", "add", "eject"], "the ended coordinator's seat is released");
+		assert.equal(r.details.successorId, "ag_04");
+		// Exactly one live coordinator: the replaced one is ejected, the new one is live.
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator" }), /coordinator \(ag_01\) was ejected from team_01/);
+		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator-2" }), /coordinator-2 \(ag_04\) is team_01's live coordinator/);
+		// Members now report to the new coordinator.
+		const dev = h.worker("ag_02");
+		dev.output = "built";
+		dev.settle();
+		await h.tick();
+		assert.match(successor.lastSteer?.message ?? "", /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]/);
+		// The monitor: replaced once it has ended, told nobody is left to ask.
+		monitor.exit();
+		const m = await h.call("team_succeed", { team: "Crew", role: "ag_03" });
+		assert.match(m.content[0].text, /^Started monitor-2 \(ag_05\) to succeed monitor \(ag_03\)/);
+		assert.match(h.worker("ag_05").task, /You take over from the monitor monitor \(ag_03\), which has already ended: there is nobody to ask and no team_ready to call\. Run your standing instruction now/);
+		assert.equal(h.memberOf("ag_05")!.duty, "monitor");
+	} finally { await h.cleanup(); }
+});
+
+test("every limit is said up front: team_create, team_add and agent_spawn descriptions and the /team planning text", async () => {
+	const h = harness();
+	try {
+		for (const name of ["team_create", "team_add"]) {
+			const d = h.tools.get(name).description as string;
+			assert.match(d, /no per-request limit/, name);
+			assert.match(d, /A team seats 24 members, the coordinator and monitor Sova adds included/, name);
+			assert.match(d, /This chat runs at most 24 workers at once, idle ones and every team member \(coordinator and monitor included\) counted/, name);
+			assert.match(d, /members must be a list of member objects/, name);
+			assert.match(d, /count, fork and agentType are refused/, name);
+			assert.match(d, /Only the coordinator hands a member over to a successor \(its team_succeed\); once no coordinator is live, the main chat can start a replacement with team_succeed\./, name);
+		}
+		const spawn = h.tools.get("agent_spawn");
+		assert.match(spawn.description, /Limits: no per-request limit; this chat runs at most 24 workers at once, idle ones and team members/);
+		assert.match(spawn.description, /name, count, fork and agentType go inside each agent/);
+		assert.doesNotMatch(JSON.stringify(spawn.parameters), /maxItems|"maximum"/, "no per-request cap in the schema");
+		assert.doesNotMatch(JSON.stringify(h.tools.get("team_create").parameters), /maxItems":8|"maximum":8/);
+		assert.equal(typeof h.tools.get("team_succeed").execute, "function", "the main chat's replacement tool");
+		await h.commands.get("team").handler("Ship the thing", h.ctx);
+		const plan = h.messages.at(-1)[0].content as string;
+		assert.match(plan, /Limits: no per-request limit\. A team seats 24 members/);
+		assert.match(plan, /at most 24 workers at once/);
+	} finally { await h.close(); }
 });

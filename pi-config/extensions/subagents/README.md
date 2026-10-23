@@ -38,6 +38,7 @@ the parent session so old references cannot target unrelated new workers.
 | `team_add`         | Add members to a live session team; history teams remain read-only.             |
 | `team_list`        | Inspect teams, actual member state, declared scope, and bounded actions.         |
 | `team_eject`       | Release an ended member's seat in a session team (parent only; see below).       |
+| `team_succeed`     | Replace a team's ended coordinator or monitor, once none with that duty is live. |
 
 Team members additionally get `team_msg`, `team_inbox`, `team_ask`, and for an
 orchestrator member `team_roster` and `team_steer`, through a restricted member
@@ -80,8 +81,14 @@ Spawn a batch:
 
 Agent options work both inside `agents` and in the single-worker shorthand:
 
-- `count`: positive integer; default 1. At most 8 workers per call and 12 live
-  workers overall. Idle, steerable workers still consume a live slot.
+- `count`: positive integer; default 1. There is no per-request limit; a chat runs at most
+  24 workers at once. Idle, steerable workers and every team member (a team's coordinator
+  and monitor included) still consume a live slot. A request that would pass 24 is refused
+  before anything starts: the refusal says how many the request needs, how many are live,
+  how many more fit and how many to stop with `agent_kill`, and names the idle workers.
+  It is worded for the caller (`team_create` names the members asked for and the coordinator
+  or monitor it adds; `team_add`, `agent_spawn`, a successor and a resume count only what
+  they start). Nothing is ever stopped to make room.
 - `backend`: default `pi`; `claude-code` runs a Claude model on Sova's tools (below). Its
   defaults and validation apply; it does not inherit the parent's model/tools/effort.
 - `backendOptions`: options owned by the selected backend (unsupported for Pi; for
@@ -129,7 +136,15 @@ Agent options work both inside `agents` and in the single-worker shorthand:
   in the copy; Pi inserts a synthetic empty result for it. Requires a persisted
   parent session; an ephemeral (`--no-session`) parent cannot fork.
 
-Do not mix `agents` with shorthand options. The whole batch is validated before
+Beside `agents`, the settings `backend`, `model`, `effort`, `cwd`, `wake`, `tools`,
+`systemPrompt`, `backendOptions`, `extensions` and `useWorktreeConfig` are shared: each
+applies to every agent that leaves it out, and the call is refused (naming the setting and
+the `agents[i]` that differ) if an agent sets a different value. A `prompt` beside `agents`
+is every agent's prompt only when no agent has its own. `name`, `count`, `fork` and
+`agentType` stay inside each agent and are refused beside `agents`. `agents` (and a team's
+`members`) given as a JSON string of a list of objects is read as that list. These reads run
+before pi's schema check (`prepareArguments`), and every refusal is a plain sentence naming
+the setting, never the schema's own words. The whole batch is validated before
 any child starts (including backend checks such as a Claude spawn's model, tools and options).
 If a factory throws during creation, already-created batch members are stopped;
 no partial run or completion wake is published. The failed `agent_spawn` waits
@@ -438,6 +453,14 @@ exact-member stop (`x`, then `x` again), and the monitor's `o` code-fold toggle.
 parent editor while any team has a member that has not been stopped (killed members drop out of it;
 `team_list` and `/team` keep them).
 
+A member takes `role`, `prompt`, `ownedPaths`, `orchestrator`, `backend`, `model`, `effort`,
+`tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and `extensions` (by `agent_spawn`'s
+rules, loaded beside its team tools; a successor keeps them). `count`, `fork`, `agentType` and
+unknown settings are refused, naming the setting; a missing role, prompt, team name or objective
+is refused, never filled in. `team_create`'s result has a `Standing roles` line naming the
+coordinator and monitor Sova added and each one turned off, and by what. A team created past 24
+members, the added coordinator and monitor included, is refused before anything starts.
+
 Teams reuse `agent_spawn`'s caps, validation, rollback, permission prompts, wake
 behavior, retention, and shutdown. There is no separate process manager, and
 ownership is not a filesystem lock. Members can message each other and ask the
@@ -578,7 +601,10 @@ for that call with a warning line in the result; the extension never writes the 
   `orchestrator: true` on the first tuple that passes the spawn checks (backend loaded, model
   policy, pi registry / backend validation): primary, then fallback; neither → the team is not
   created. A single caller orchestrator becomes the coordinator instead; two are refused, as is a
-  caller member on a synthesized role. It does no implementation (its header says so) and gains
+  caller member on a synthesized role, and so is an orchestrator `team_add`ed to a team with a
+  coordinator. The refusal says only the coordinator is the orchestrator, that it hands over with
+  `team_succeed`, that a member that only watches needs no mark, and (when no coordinator is
+  live) that the main chat can start a replacement. It does no implementation (its header says so) and gains
   `team_report` and `team_succeed`. It routes the work the main thread assigned and never invents
   tasks: its header quotes each teammate's prompt (first 1,500 chars, then a marker), and its
   `team_roster` lists every non-duty member's assignment with every main-thread steer to it (up to
@@ -645,9 +671,14 @@ for that call with a warning line in the result; the extension never writes the 
   session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
   header. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
   its successor's task is the monitor task ("you take over from <old>"), with `team_ready` like any
-  successor. `team_succeed { role }` (routing coordinator only, itself included) starts
+  successor (an ended monitor's successor is told nobody is left to ask). `team_succeed { role }`
+  (routing coordinator only, itself included) starts
   `<base>-<n+1>` (`builder` → `builder-2` → `builder-3`) on the same backend, model, effort, tools,
-  system prompt, cwd, backend options, ownership and duty. **A live worker writes its note
+  system prompt, cwd, backend options, extensions, ownership and duty. The main chat's own
+  `team_succeed { team, role }` does the same for a coordinator or monitor only, only for the
+  newest one with that duty and only while none with that duty is live (working, idle or
+  stopping), so two coordinators are never live at once; the old member has ended, so the
+  successor starts at once and the old member's seat is released (action source `parent`). **A live worker writes its note
   first:** it is told, as a redirect so the instruction lands ahead of anything queued for it, to
   finish its step, write the note and end its turn, and the successor starts as soon as the note
   file exists (checked at every mailbox poll and every settle: no settle is needed, since

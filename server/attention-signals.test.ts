@@ -357,13 +357,13 @@ describe("AttentionSignals: classify each finished turn once", () => {
     assert.equal(t.detail, "Which docs do you mean: the README or the spec?");
     // It stays after a look (the overlay keeps asks-you when seen) and clears on the user's next turn.
     const id = summary(path).id;
-    assert.deepEqual(store.signalsOverlay(id, { enabled: true, viewing: false, running: false, seenAt: NOW + 1 }, h.stored())?.kinds, ["asks-you"]);
+    assert.deepEqual(store.signalsOverlay(id, { enabled: true, viewing: false, running: false, seenAt: NOW + 1 }, h.stored(), NOW)?.kinds, ["asks-you"]);
     writeFileSync(path, readFileSync(path, "utf8") + [user("u2", "a1", "the README", NOW + 1000), assistant("a2", "u2", NOW + 2000, [{ type: "text", text: "Updated the README." }])].map((e) => JSON.stringify(e)).join("\n") + "\n");
     const done = harness({}, { ...ANSWERS, asks_user: { p: 0.05 }, ask_kind: { probabilities: { none: 1 } }, outcome: { probabilities: { "did-what-was-asked": 1 } } });
     done.deps.file = h.storeFile;
     const s2 = new sig.AttentionSignals(done.deps);
     assert.equal(await s2.classifySession(summary(path), true), true);
-    assert.equal(store.signalsOverlay(id, { enabled: true, viewing: false, running: false }, store.readSignals(h.storeFile)), undefined, "the answered ask is gone");
+    assert.equal(store.signalsOverlay(id, { enabled: true, viewing: false, running: false }, store.readSignals(h.storeFile), NOW), undefined, "the answered ask is gone");
     const q = harness();
     const align = { openDocs: 1, openQuestions: 2, questionDocs: 1 } as SessionSummary["align"];
     assert.equal(await q.s.classifySession(summary(file(turn), { align }), true), true);

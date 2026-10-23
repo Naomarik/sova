@@ -450,8 +450,9 @@ export class InboxStore {
 	}
 
 	/**
-	 * Move an item to another member (a successor): it keeps its id, sender and status, records
-	 * whom it moved from, and is listed to its new holder (listedAt cleared). The destination is
+	 * Move an item to another member (a successor): it keeps its id and sender, records whom it
+	 * moved from, and is listed to its new holder: listedAt cleared, and an open item is new again
+	 * (its new holder has read nothing; an addressed one stays addressed). The destination is
 	 * written first, so a torn move leaves it in both files and the fold keeps the newer holder.
 	 */
 	move(id: string, to: InboxParty, why: "handover" | "forward"): InboxItem | undefined {
@@ -460,8 +461,8 @@ export class InboxStore {
 		const item = src?.items.get(id);
 		if (!src || !item || to.workerId === src.workerId) return undefined;
 		const at = this.now();
-		const { listedAt: _listed, ...rest } = item;
-		const moved: InboxItem = { ...rest, to: { ...to }, movedFrom: [...(item.movedFrom ?? []), { workerId: item.to.workerId, role: item.to.role, at, why }] };
+		const { listedAt: _listed, readAt: _read, ...rest } = item;
+		const moved: InboxItem = { ...rest, ...(item.status === "read" ? { status: "new" as const } : item.readAt !== undefined && item.status === "addressed" ? { readAt: item.readAt } : {}), to: { ...to }, movedFrom: [...(item.movedFrom ?? []), { workerId: item.to.workerId, role: item.to.role, at, why }] };
 		const dst = this.member(src.teamId, to.workerId);
 		this.append(dst, { v: 1, op: "add", item: moved });
 		dst.items.set(id, moved);

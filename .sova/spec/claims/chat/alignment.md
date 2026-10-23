@@ -251,7 +251,7 @@ an `align` call: it is the message, not its working.
       <p class="align-q-head"><span class="text-mono">q3</span> <strong>Pace limit</strong>
         <span class="chip"><i class="chip-dot"></i>Open</span>
         <!-- triage (§app.decisions/align-triage), open questions only, while it has an answer -->
-        <span class="chip chip-warn align-q-stakes" title="Guessed by Jev.">Deletes data</span></p>
+        <span class="chip chip-error align-q-stakes" title="Guessed by Jev.">Deletes data</span></p>
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
       <ol class="align-q-options">

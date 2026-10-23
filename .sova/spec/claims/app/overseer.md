@@ -1233,8 +1233,10 @@ itself.
   failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` (soft) when the last reply asks the user something (§app.decisions/asks-user) and the
-  session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
-  asks you something.", dated by the classification; `unverified` (soft) when the last reply says
+  session has no `open-questions` item, worded by the ask's kind: "Needs your decision: {the
+  asking sentence}" (a choice), "Needs your approval: {…}" (a risky action or a restart or merge
+  go), "Needs info from you: {…}" (information), and "Asks you: {…}" when no kind is known (an
+  older record); without a sentence, "The last reply asks you something.", dated by the classification; `unverified` (soft) when the last reply says
   it is done but names something it didn't run or check, "Says it's done, but didn't run or check
   everything.", unless the session has an `asks-you` or `open-questions` item; `team-stalled` when the session waits on
   subagents that have all been quiet 15 minutes (§app.decisions/team-stall), "Waiting on {names},

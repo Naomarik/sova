@@ -1,7 +1,6 @@
 import { createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown, type RenderedVisual } from "../lib/markdown";
-import { openMarkdown } from "../lib/markdown-viewer";
 import { activatePathChip } from "../lib/path-attachments";
 import { sessionIndexVersion } from "../lib/session-links";
 import { announce, openLightbox, toast } from "../lib/ui-state";
@@ -53,6 +52,51 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
   });
   onCleanup(() => patcher?.dispose());
 
+  // A markdown block's Rendered side (§chat.markdown/view-rendered): its source drawn by this same
+  // component, in place of its `pre`. Kept per block while that block is on screen; a block the
+  // patcher replaced takes its drawing with it.
+  const drawn = new Map<HTMLElement, () => void>();
+  const sweep = () => {
+    for (const [block, dispose] of drawn) {
+      if (el.contains(block)) continue;
+      dispose();
+      drawn.delete(block);
+    }
+  };
+  createEffect(() => {
+    rendered();
+    queueMicrotask(sweep);
+  });
+  onCleanup(() => {
+    for (const dispose of drawn.values()) dispose();
+    drawn.clear();
+  });
+  const toggleRendered = (button: HTMLButtonElement) => {
+    const block = button.closest<HTMLElement>(".md-code");
+    const pre = block?.querySelector<HTMLElement>(":scope > pre");
+    const source = rendered().codes[Number(button.dataset.codeIndex)];
+    if (!block || !pre || source === undefined) return;
+    const on = button.getAttribute("aria-pressed") !== "true";
+    button.setAttribute("aria-pressed", String(on));
+    const label = button.querySelector<HTMLElement>(".md-code-render-label");
+    if (label) label.textContent = on ? "Source" : "Rendered";
+    button.querySelector<HTMLElement>(".icon")?.style.setProperty("--icon", `url(/icons/${on ? "terminal" : "eye"}.svg)`);
+    pre.hidden = on;
+    if (on) {
+      const host = document.createElement("div");
+      host.className = "md-code-rendered";
+      block.appendChild(host);
+      const dispose = render(() => <Markdown text={source} />, host);
+      drawn.set(block, () => {
+        dispose();
+        host.remove();
+      });
+    } else {
+      drawn.get(block)?.();
+      drawn.delete(block);
+    }
+  };
+
   const copy = async (button: HTMLButtonElement) => {
     const source = rendered().codes[Number(button.dataset.codeIndex)];
     if (source === undefined) return;
@@ -79,14 +123,12 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
       class="message-body md"
       onClick={(e) => {
         const target = e.target as HTMLElement;
+        // A markdown block drawn in place is a Markdown of its own: its clicks are its own.
+        if (target.closest(".md") !== el) return;
         const copyButton = target.closest<HTMLButtonElement>(".md-code-copy");
         if (copyButton) return void copy(copyButton);
-        const viewButton = target.closest<HTMLButtonElement>(".md-code-view");
-        if (viewButton) {
-          const source = rendered().codes[Number(viewButton.dataset.codeIndex)];
-          if (source !== undefined) openMarkdown({ title: "Markdown", markdown: source });
-          return;
-        }
+        const renderButton = target.closest<HTMLButtonElement>(".md-code-render");
+        if (renderButton) return toggleRendered(renderButton);
         const chip = target.closest<HTMLElement>(".path-chip");
         if (chip) return activatePathChip(chip);
         // A card ref jumps to the card in this chat's thread; it never moves the route.

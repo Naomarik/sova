@@ -1,25 +1,27 @@
-// View Rendered on a markdown code block (src/lib/markdown.ts): which blocks carry it, and that it
-// points at the block's own raw source, the text the viewer opens.
+// The Rendered toggle on a markdown code block (src/lib/markdown.ts, §chat.markdown/view-rendered):
+// which blocks carry it, its starting state, and that it points at the block's own raw source, the
+// text drawn in place.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderMarkdown } from "./markdown";
 
 const DOC = "# Plan\n\n| A | B |\n|---|---|\n| 1 | 2 |\n";
-const VIEW = /<button class="button button-sm button-ghost md-code-view" type="button" data-code-index="(\d+)">/g;
-const views = (html: string) => [...html.matchAll(VIEW)].map((m) => Number(m[1]));
+const TOGGLE = /<button class="button button-sm button-ghost md-code-render" type="button" aria-pressed="false" data-code-index="(\d+)">/g;
+const toggles = (html: string) => [...html.matchAll(TOGGLE)].map((m) => Number(m[1]));
 
-test("a closed markdown or md fence, any case, gets View Rendered before Copy Code", () => {
+test("a closed markdown or md fence, any case, gets the toggle before Copy Code, unpressed, reading Rendered", () => {
   for (const word of ["markdown", "md", "Markdown", "MD"]) {
     const r = renderMarkdown("```" + word + "\n" + DOC + "```");
-    assert.deepEqual(views(r.html), [0], word);
-    assert.ok(r.html.indexOf("md-code-view") < r.html.indexOf("md-code-copy"), "before Copy Code");
-    assert.match(r.html, /View Rendered<\/button>/);
+    assert.deepEqual(toggles(r.html), [0], word);
+    assert.ok(r.html.indexOf("md-code-render") < r.html.indexOf("md-code-copy"), "before Copy Code");
+    assert.match(r.html, /<span class="md-code-render-label">Rendered<\/span><\/button>/);
+    assert.match(r.html, /<pre><code[^>]*>/, "the block opens on its source");
   }
 });
 
 test("its index names that block's raw source, among other blocks", () => {
   const r = renderMarkdown("```ts\nconst a = 1;\n```\n\n```md\n" + DOC + "```\n\n```md\nsecond\n```");
-  const at = views(r.html);
+  const at = toggles(r.html);
   assert.deepEqual(at, [1, 2]);
   assert.equal(r.codes[at[0]!], DOC);
   assert.equal(r.codes[at[1]!], "second\n");
@@ -27,12 +29,12 @@ test("its index names that block's raw source, among other blocks", () => {
 
 test("other fence words, indented code, and no word get none", () => {
   for (const md of ["```ts\nx\n```", "```\nx\n```", "```markdownish\nx\n```", "    # indented\n", "```text\n# x\n```"]) {
-    assert.deepEqual(views(renderMarkdown(md).html), [], md);
+    assert.deepEqual(toggles(renderMarkdown(md).html), [], md);
   }
 });
 
 test("a markdown fence still open mid-stream has none until it closes", () => {
   const open = "Here:\n\n```markdown\n# Plan\n";
-  assert.deepEqual(views(renderMarkdown(open, true).html), []);
-  assert.deepEqual(views(renderMarkdown(open + "```\n", true).html), [0]);
+  assert.deepEqual(toggles(renderMarkdown(open, true).html), []);
+  assert.deepEqual(toggles(renderMarkdown(open + "```\n", true).html), [0]);
 });

@@ -36,6 +36,7 @@ import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
+import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
 import { onFeedPush, sessionFeedOpen } from "./lib/session-feed";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
@@ -66,7 +67,7 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, focusMoving, focusView, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, focusMoving, focusView, groupSendAll, hideThinking, hideTools, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
@@ -458,7 +459,8 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
-  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
+  const paletteOpen = () => paletteRequest() !== null;
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
   // "Configure Delegate" (lib/settings-nav.ts holds which tab, so either can open it).
@@ -566,7 +568,7 @@ export function App() {
   const offPaletteKey = bindKey("palette.open", (e) => {
     const act = paletteKeyAction(e, IS_MAC);
     if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
-    if (act === "toggle") setPaletteOpen((open) => !open);
+    if (act === "toggle") togglePaletteFromKey();
     return true; // a held key's repeats are swallowed: it toggles once
   });
   const offShortcutsKey = bindKey("shortcuts.open", () => {
@@ -726,6 +728,8 @@ export function App() {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;
   });
+  /** The chat the palette's rows act on: the one whose "+" opened it, else the focused one. */
+  const palettePath = () => paletteRequest()?.path ?? focusedPath();
   /** The group the route names, once its name is known; the workspace needs the group itself. */
   const openGroup = createMemo(() => {
     const id = groupRoute()?.id;
@@ -1439,16 +1443,33 @@ export function App() {
             openShortcuts: () => setShortcutsOpen(true),
             settingsTabs: () => SETTINGS_TAB_LABELS,
           }}
+          origin={paletteRequest()?.origin ?? "key"}
+          returnTo={paletteRequest()?.trigger ?? null}
           context={() => {
-            const s = summary();
-            const c = composerOf(focusedPath());
+            // Opened from a pane's "+", every row about the chat acts on that pane's chat, which
+            // need not be the workspace's focused one (§app.command-palette/opening).
+            const path = palettePath();
+            const s = path ? (summaryOf(path) ?? null) : null;
+            const c = composerOf(path);
             return {
               session: s ? { path: s.path, id: s.id, title: s.title, terminal: !!s.live } : null,
-              composer: c ? { commands: c.commands(), off: c.off(), hasDraft: c.hasDraft() } : null,
+              composer:
+                c && path
+                  ? {
+                      commands: c.commands(),
+                      off: c.off(),
+                      hasDraft: c.hasDraft(),
+                      hideTools: hideTools(path),
+                      hideThinking: hideThinking(path),
+                      playbooks: c.canPlaybooks(),
+                      undo: c.undoBlocked(),
+                    }
+                  : null,
             };
           }}
-          composer={() => composerOf(focusedPath())}
-          onClose={() => setPaletteOpen(false)}
+          chatPath={palettePath}
+          composer={() => composerOf(palettePath())}
+          onClose={closePalette}
         />
       </Show>
       <Show when={shortcutsOpen()}>

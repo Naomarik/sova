@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall, validateToolArguments } from "@earendil-works/pi-ai";
 import * as os from "node:os";
 import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
@@ -4827,4 +4827,26 @@ test("every limit is said up front: team_create, team_add and agent_spawn descri
 		assert.match(plan, /Limits: no per-request limit\. A team seats 24 members/);
 		assert.match(plan, /at most 24 workers at once/);
 	} finally { await h.close(); }
+});
+
+test("the declared schema lets members and agents be a list or a string (as a host that checks it, the Claude Code CLI, sees it), so readList judges the string", () => {
+	const h = harness();
+	const list = JSON.stringify([{ role: "a", prompt: "p" }]);
+	const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
+		["team_create", { name: "T", objective: "o", members: list }, { name: "T", objective: "o", members: [{ role: "a" }] }],
+		["team_add", { team: "T", members: list }, { team: "T", members: [{ role: "a" }] }],
+		["agent_spawn", { agents: JSON.stringify([{ prompt: "x" }]) }, { agents: [{ name: "x" }] }],
+	];
+	for (const [name, ok, bad] of cases) {
+		const tool = h.tools.get(name);
+		// The schema as declared to a model or an MCP host: JSON, typebox's symbols gone.
+		for (const parameters of [tool.parameters, JSON.parse(JSON.stringify(tool.parameters))]) {
+			const asTool = { name, description: "", parameters };
+			assert.doesNotThrow(() => validateToolArguments(asTool as any, { type: "toolCall", id: "1", name, arguments: ok } as any), `${name} accepts a string`);
+			assert.throws(() => validateToolArguments(asTool as any, { type: "toolCall", id: "1", name, arguments: bad } as any), `${name} still checks the list form (an item without its prompt)`);
+		}
+		const key = name === "agent_spawn" ? "agents" : "members";
+		const declared = JSON.parse(JSON.stringify(tool.parameters)).properties[key];
+		assert.deepEqual(declared.anyOf.map((s: any) => s.type).sort(), ["array", "string"], `${name}.${key} is array | string`);
+	}
 });

@@ -213,10 +213,12 @@ const TeamDefaultsSpec = Type.Object(
 		description: "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coordinator/monitor: false turn off the team-defaults roles for this team.",
 	},
 );
-const TeamMembers = Type.Array(TeamMemberSpec, {
-	minItems: 1,
+// A union with a string, so a host that checks the declared schema (the Claude Code CLI over MCP) lets a
+// JSON-string list through to readList, which is the only judge of it.
+const TeamMembers = Type.Union([Type.Array(TeamMemberSpec, { minItems: 1 }), Type.String()], {
 	description: "A list of member objects, one per role (no per-request limit; a team seats 24, and a chat runs at most 24 workers). A JSON string of that list is read as the list.",
 });
+type MemberList = Static<typeof TeamMemberSpec>[];
 const TEAM_MEMBER_KEYS = new Set(Object.keys(TeamMemberSpec.properties));
 const TEAM_DEFAULT_KEYS = new Set(Object.keys(TeamDefaultsSpec.properties));
 const AGENT_KEYS = new Set(Object.keys(AgentSpec.properties));
@@ -2880,7 +2882,7 @@ export function registerSubagents(
 			{
 				...AgentSpec.properties,
 				prompt: Type.Optional(Nonempty),
-				agents: Type.Optional(Type.Array(AgentSpec, { minItems: 1, description: "A list of agent objects (a JSON string of that list is read as the list)." })),
+				agents: Type.Optional(Type.Union([Type.Array(AgentSpec, { minItems: 1 }), Type.String()], { description: "A list of agent objects (a JSON string of that list is read as the list)." })),
 				groupLabel: Type.Optional(Nonempty),
 			},
 			{ additionalProperties: false },
@@ -2889,7 +2891,7 @@ export function registerSubagents(
 		async execute(_id, raw, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
-			const params = readSpawnArgs(raw) as typeof raw;
+			const params = readSpawnArgs(raw) as Omit<typeof raw, "agents"> & { agents?: Spec[] };
 			if (Boolean(params.agents) === Boolean(params.prompt))
 				throw new Error("Provide exactly one of agents or prompt.");
 			if (
@@ -3468,7 +3470,7 @@ export function registerSubagents(
 		async execute(_id, raw, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
-			const params = readTeamArgs(raw, TEAM_CREATE_KEYS) as typeof raw;
+			const params = readTeamArgs(raw, TEAM_CREATE_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
 			// Team defaults (team-defaults.json), read now: a coordinator and a monitor, enforced here.
 			const { coordinator: coordinatorSwitch, monitor: monitorSwitch, ...storeDefaults } = params.defaults ?? {};
 			const subagentsForTeam = subagentsNow(ctx);
@@ -3545,7 +3547,7 @@ export function registerSubagents(
 		async execute(_id, raw, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
-			const params = readTeamArgs(raw, TEAM_ADD_KEYS) as typeof raw;
+			const params = readTeamArgs(raw, TEAM_ADD_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
 			// Re-read now: a coordinated team's new members get the current standing text; a malformed file is reported.
 			const now = subagentsNow(ctx);
 			const state = now.teams;

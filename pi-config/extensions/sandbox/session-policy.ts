@@ -27,6 +27,8 @@ export interface SessionPolicyInput {
 	worktreeRoots?: readonly string[];
 	/** A worker's parent scope (`--sandbox-parent`); never set for a top-level session. */
 	parent?: ParentScope;
+	/** false: the cwd is a stand-in (a home folder for a folder that is gone), never a writable root. */
+	cwdWritable?: boolean;
 	/** The session tmp, when the caller already made it; else `sessionTmpDir(sessionId)`. */
 	tmpDir?: string;
 	home?: string;
@@ -73,6 +75,7 @@ export function resolveSessionPolicy(input: SessionPolicyInput): Result<Resolved
 		shadowSource,
 		git: gitProtectedPaths,
 		parent: input.parent,
+		...(input.cwdWritable === false ? { cwdWritable: false } : {}),
 		extraWritable: roots,
 		extraReadOnly: roots.map((r) => join(r, ".agent")),
 	});

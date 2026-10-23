@@ -435,6 +435,8 @@ const FIXTURES: Record<string, Fixture> = {
   "session.draft.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.tools.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.context": { values: () => ({ session: session()[0] }), status: 200 },
+  // A path the setup doesn't list: refused before any read.
+  "session.context.file": { values: () => ({ session: session()[0], file: "/etc/hostname" }), status: 404 },
   "session.align.triage": { values: () => ({ session: session()[0] }), status: 200 },
   "session.workers.checks": { values: () => ({ session: session()[0] }), status: 200 },
   "session.insights": { values: () => ({ session: session()[0] }), status: 200 },

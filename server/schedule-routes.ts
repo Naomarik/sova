@@ -14,6 +14,7 @@ import { DEFAULT_TICK_MS, ScheduleKeeper, scheduleKeeper, scheduleRunsFile, sche
 import { readSeen } from "./seen";
 import { writeAutoTitle } from "./session-titles";
 import { listSessions } from "./sessions-index";
+import { sessionFeed } from "./session-feed";
 import { BOARD_EVERY_MS, BoardSource, mergeBoardFile, rowsIn } from "./merge-board";
 import { readinessCovers, readinessIdle, readinessReading } from "./merge-readiness";
 import type { HEntry } from "../shared/harness";
@@ -33,6 +34,8 @@ import { readAutomations } from "./automation-files";
  */
 
 const DISCOVER_MS = 5 * 60_000;
+/** The feed's clean list while windows hold it (no change since, under a minute old), else a fresh one. */
+const feedOrList = () => sessionFeed()?.cleanList() ?? listSessions();
 
 type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Response>;
 
@@ -98,7 +101,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
   const speed = Math.max(1, Number(process.env.SOVA_SCHEDULE_SPEED) || 1);
   const t0 = Date.now();
   const board = new BoardSource({
-    list: () => listSessions(),
+    list: feedOrList,
     idle: readinessIdle,
     inputs: { reading: readinessReading, covers: readinessCovers, queued: heldBusy },
     file: mergeBoardFile(),
@@ -147,7 +150,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
   setScheduleKeeper(keeper);
   const tick = () => void keeper.tick().catch((err) => console.warn("[schedules] tick failed:", err instanceof Error ? err.message : String(err)));
   const discover = async () => {
-    const cwds = new Set((await listSessions()).filter((s) => !s.archived).map((s) => s.cwd));
+    const cwds = new Set((await feedOrList()).filter((s) => !s.archived).map((s) => s.cwd));
     const roots: string[] = [];
     for (const cwd of cwds) {
       const root = await projectRootOf(cwd).catch(() => null);

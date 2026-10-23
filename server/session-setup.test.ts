@@ -276,3 +276,38 @@ test("two sessions in one folder share one read, and each gets only its own off 
   const sb2 = await S.getSessionSetup(b, {}, deps);
   assert.deepEqual(sb2, sb);
 });
+
+// ---------------------------------------------------------------------------
+// reading one listed file (§chat.transcript/setup-card-open-file)
+
+test("a listed file's text is served, from every group the setup lists", async () => {
+  const dir = fresh({ "AGENTS.md": "# ctx\n", "s/SKILL.md": "skill\n", "SYS.md": "sys\n", "APP.md": "app\n" });
+  const lo = loadout({ context: [{ path: join(dir, "AGENTS.md") }], skills: [{ name: "s", filePath: join(dir, "s/SKILL.md") }], systemPrompt: join(dir, "SYS.md"), appendSystemPrompt: [join(dir, "APP.md")] });
+  const deps: SetupDeps = { runtime: () => lo };
+  const session = sessionFile(dir);
+  for (const [rel, text] of [["AGENTS.md", "# ctx\n"], ["s/SKILL.md", "skill\n"], ["SYS.md", "sys\n"], ["APP.md", "app\n"]] as const) {
+    assert.deepEqual(await S.readSetupFile(session, join(dir, rel), deps), { ok: true, file: { path: join(dir, rel), text } }, rel);
+  }
+});
+
+test("a path the setup doesn't list is refused before it is read, even one that exists beside them", async () => {
+  const dir = fresh({ "AGENTS.md": "ctx\n", "secret.txt": "no\n" });
+  const deps: SetupDeps = { runtime: () => loadout({ context: [{ path: join(dir, "AGENTS.md") }] }) };
+  const session = sessionFile(dir);
+  for (const file of [join(dir, "secret.txt"), `${dir}/./AGENTS.md`, `${dir}/x/../AGENTS.md`, "/etc/passwd"]) {
+    assert.deepEqual(await S.readSetupFile(session, file, deps), { ok: false, status: 404, error: "That file isn't in this session's system context." }, file);
+  }
+});
+
+test("a file over the cap is refused with the size in words", async () => {
+  const dir = fresh({ "AGENTS.md": "x".repeat(1024 * 1024 + 1) });
+  const r = await S.readSetupFile(sessionFile(dir), join(dir, "AGENTS.md"), { runtime: () => loadout({ context: [{ path: join(dir, "AGENTS.md") }] }) });
+  assert.deepEqual(r, { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." });
+});
+
+test("a remote session's files are never read", async () => {
+  const placeholder = T.targetDir("box", "/home/user/proj");
+  mkdirSync(placeholder, { recursive: true });
+  const r = await S.readSetupFile(sessionFile(placeholder), join(placeholder, "AGENTS.md"), { runtime: () => { throw new Error("must not be asked"); } });
+  assert.deepEqual(r, { ok: false, status: 409, error: "This session's files are on another machine." });
+});

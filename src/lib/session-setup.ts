@@ -68,8 +68,15 @@ function layered(s: Loaded): { file: SessionSetupFile; role: string | null }[] {
   ];
 }
 
+/** A row's name: a file in the session's own folder by its path from there (`AGENTS.md`), any
+    other with home written `~`. */
+export function contextLabel(path: string, cwd: string, home: string | null): string {
+  const dir = cwd.replace(/\/+$/, "");
+  return dir && path.startsWith(`${dir}/`) ? path.slice(dir.length + 1) : tildePath(path, home);
+}
+
 export function contextRows(s: Loaded, home: string | null): ContextRow[] {
-  return layered(s).map(({ file, role }) => ({ file, label: tildePath(file.path, home), role, switchable: role === null }));
+  return layered(s).map(({ file, role }) => ({ file, label: contextLabel(file.path, s.cwd, home), role, switchable: role === null }));
 }
 
 /** A row this session keeps out: listed, and counted by no total. */

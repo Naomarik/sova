@@ -408,4 +408,14 @@ describe("unverified: the turn card's done-but-unchecked guess", () => {
     assert.deepEqual(kinds(row(summary("u", { signals: sig(["asks-you", "unverified"]) }))), ["decide:asks-you"]);
     assert.deepEqual(kinds(row(summary("u", { signals: sig(["unverified"]), archived: true }))), []);
   });
+
+  test("a look does not clear unverified: viewing the session keeps it, like asks-you", async () => {
+    const { signalsOverlay } = await import("./signals-store");
+    const t = { turnId: "t", replyAt: NOW - 60_000, at: NOW - 58_000, provider: "jev" as const, model: "jev-1.14.0", schema: 3 as const,
+      answers: { outcome: { type: "choice" as const, choice: "did-what-was-asked", probabilities: { "did-what-was-asked": 1 }, confidence: 1 }, claims_unverified: { type: "boolean" as const, p: 0.95 } } };
+    const data = { version: 1 as const, workers: {}, stalls: {}, sessions: { u: t } };
+    assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: false, running: false }, data, NOW)?.kinds, ["unverified"], "fires");
+    assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: true, running: false }, data, NOW)?.kinds, ["unverified"], "viewing keeps it");
+    assert.deepEqual(signalsOverlay("u", { enabled: true, viewing: false, running: false, seenAt: NOW }, data, NOW)?.kinds, ["unverified"], "seen keeps it");
+  });
 });

@@ -303,8 +303,8 @@ const unseen = (at: number, ctx: OverlayContext) => !ctx.viewing && (ctx.seenAt 
 
 /**
  * `SessionSummary.signals`, present only while it should show: the feature is on, some kind
- * fires, no newer turn is running, and — for every kind but "asks-you", which stays until the
- * user answers — the user has not looked since (seen stamp, or a pane open now). "Present" =
+ * fires, no newer turn is running, and — for every kind but "asks-you" and "unverified", which
+ * stay until the user acts — the user has not looked since (seen stamp, or a pane open now). "Present" =
  * "show the mark", for the sidebar, the feed and the digest alike.
  */
 export function signalsOverlay(id: string, ctx: OverlayContext, data = readSignals(), now = Date.now()): SessionSignals | undefined {
@@ -314,9 +314,10 @@ export function signalsOverlay(id: string, ctx: OverlayContext, data = readSigna
   // A guess goes after 7 idle days (§app.overseer/attention-digest): no reply since it was made.
   if (now - t.replyAt >= GUESS_IDLE_MS) return undefined;
   const wire = toWire(t);
-  // A reply that asks waits on the user until they answer (a newer turn replaces or drops it), like
-  // open questions: a look does not clear it. The other kinds are news, gone once seen.
-  const kinds = unseen(t.at, ctx) ? wire.kinds : wire.kinds.filter((k) => k === "asks-you");
+  // A reply that asks, or says it is done unchecked, waits on the user until they act (a newer turn
+  // replaces or drops it), like open questions: a look does not clear it. The other kinds are news,
+  // gone once seen.
+  const kinds = unseen(t.at, ctx) ? wire.kinds : wire.kinds.filter((k) => k === "asks-you" || k === "unverified");
   return kinds.length ? { ...wire, kinds } : undefined;
 }
 

@@ -897,7 +897,9 @@ virtualized.
   left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
   at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
   Latest · N new" counting the rows below it, unless they're short enough that the view is still
-  within 80px of the end. One that gained none stays at the end, following, as does one whose last
+  within 80px of the end: a transcript that fits on screen with them, or overflows it by less than
+  80px, counts as within 80px and stays at the end, following, with no Jump to Latest. One that
+  gained none stays at the end, following, as does one whose last
   row read isn't among its rows, or one the reader has scrolled or touched first. A kept
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this

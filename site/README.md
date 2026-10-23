@@ -9,9 +9,10 @@ illustrations built from those classes.
 
 It ships static HTML and one stylesheet. The only JavaScript is two small inline scripts in
 `src/layouts/Base.astro` (the theme toggle and the copy button) and the hero video's caption script in
-`src/components/screens/VideoCaption.astro`: the line under the video says what it shows at that
-moment, from the cue list the recorder writes, following the video's own clock. Without
-JavaScript, with reduced motion or when the video can't play, the still shows with one fixed line;
+`src/components/screens/VideoCaption.astro`: under the video, a chapter bar (each segment a button
+that jumps to its chapter) and the chapter's name and caption say what it shows at that moment,
+from the cue list the recorder writes, following the video's own clock. Without JavaScript, with
+reduced motion or when the video can't play, the still shows with one fixed line and no bar;
 screen readers get the scene list once. No UI framework, no analytics,
 no web fonts from a CDN: Inter and JetBrains Mono are served from `public/fonts/` with their
 licenses.
@@ -68,7 +69,7 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   with an H.264 fallback, checked before it replaces the old one; nothing but the pointer is drawn
   into it, its captions are page text from the cue list in the manifest; the phone section shows
   stills only) and
-  `pnpm run screens:verify`. A reworded caption needs only `pnpm run screens:video -- --cues`, no new
+  `pnpm run screens:verify`. A reworded caption or chapter needs only `pnpm run screens:video -- --cues`, no new
   recording. The video shows real provider and model names; the footer says the replies are
   scripted and Sova isn't affiliated with the model makers. Commit the story with what they wrote. The pages take each image's
   alt text and size from the manifest; the build turns the masters into AVIF and WebP and never

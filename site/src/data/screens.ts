@@ -8,8 +8,9 @@ import manifest from "../assets/screens/manifest.json";
 
 interface ShotEntry { file: string; width: number; height: number; viewport: string; alt: string }
 interface VideoSource { file: string; type: string; bytes: number }
-/** A caption's or a sped-up stretch's place in the video, in its own seconds (record.mjs writes them). */
-export interface Cue { a: number; b: number; text: string }
+/** A caption's or a sped-up stretch's place in the video, in its own seconds (record.mjs writes them).
+    A caption's `chapter` names the bar segment it belongs to (story.json). */
+export interface Cue { a: number; b: number; text: string; chapter?: string }
 interface VideoEntry { sources: VideoSource[]; width: number; height: number; seconds: number; alt: string; slot: string; poster: { file: string }; line: string; cues: Cue[]; tags: Cue[] }
 interface Manifest { shots: Record<string, ShotEntry>; slots: Record<string, string>; videos?: Record<string, VideoEntry> }
 
@@ -45,7 +46,7 @@ export interface Video {
   still: Screen;
   /** The fixed line under it where the video doesn't play: what the still shows. */
   line: string;
-  /** The page's captions, in order, from 0 to the video's end. */
+  /** The page's captions, in order, from 0 to the video's end, each with its chapter. */
   cues: Cue[];
   /** The sped-up stretches ("Sped up 3×"), shown beside the caption. */
   tags: Cue[];

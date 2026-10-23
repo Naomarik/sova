@@ -2,6 +2,7 @@ import { createResource, createSignal, For, Show } from "solid-js";
 import type { AssistantInfo, PricedPick } from "../../shared/project-assistant";
 import type { ModelPick, WorkKind } from "../../shared/powers";
 import { ApiError, assistantInfo, openAssistantChat, setAssistantModels } from "../lib/api";
+import { SHOWN_KINDS, WORK_LABEL } from "../lib/assistant-model-rows";
 import { orgTabHref } from "../lib/orgs-route";
 import { isOpenRequest, openRequestsLine } from "../lib/owner-requests";
 import { announce } from "../lib/ui-state";
@@ -14,16 +15,13 @@ import "./OwnerCardAssistant.css";
  * line linking the owner's open requests on the Requests tab, Open Assistant Chat, its models per kind of work
  * (§app.project-assistant/models: the org's own pick, else the host's default; a project may override
  * coding) as rows with `Change` (the composer's picker, saved at once with its thinking) and `Use
- * Default` on the org's own pick (the gatherings row isn't shown), and each project's Project Assistant
+ * Default` on the org's own pick (the gathering kind runs its feature request chats), and each project's Project Assistant
  * switches (powers-ui's AssistantPowers).
  */
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
-export const WORK_LABEL: Record<WorkKind, string> = { reply: "Its replies", coding: "Fixes it starts", gathering: "Gatherings it starts" };
-
-/** The kinds the card shows: gatherings aren't (no tool starts one); their pick is kept. */
-export const SHOWN_KINDS: WorkKind[] = ["reply", "coding"];
+export { SHOWN_KINDS, WORK_LABEL } from "../lib/assistant-model-rows";
 
 /** "$3 in / $15 out per million tokens", or that the price isn't known. */
 export function priceLine(p: PricedPick | null | undefined): string {

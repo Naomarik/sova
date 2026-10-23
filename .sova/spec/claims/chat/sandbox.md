@@ -141,7 +141,8 @@ services, and sends the network through an allowlisting proxy, on Linux and on m
 On means the policy file's `level`: `workspace-write` by default, `read-only` if the file says
 so. It is not a choice in the UI. Under `workspace-write`:
 
-- **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd, a
+- **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd (not
+  when it is the home folder standing in for a folder that is gone, §app.shell/missing-folder-home), a
   per-session tmp mounted as `/tmp`, the policy's `writable` roots (`~/.local/state/mise` in
   the shipped policy), and the session's active tracked worktrees, each with its `.agent`
   read-only (§chat.worktrees/sandbox). `read-only` drops the cwd, the `writable` roots and the

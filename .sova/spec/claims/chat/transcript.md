@@ -1109,7 +1109,8 @@ unchanged.
   (`GET /api/settings/subagents?path=`) and its memory outline come from its file.
 - **Refusals after the paint.** A chat that turns out to be open in a TUI, or written by an unknown
   process, reopens read only over the rows already shown (§chat.transcript/live-watch). A chat that
-  can't open (its folder is gone) shows the open-failure banner (§app.shell/the-open-failure-banner)
+  can't open (its remote placeholder folder is gone, its folder can't be reached; a local folder
+  that is gone opens in the home folder instead, §app.shell/missing-folder-home) shows the open-failure banner (§app.shell/the-open-failure-banner)
   over them. A start that fails for now keeps them and retries: once on the server, quietly; if
   that fails too, the tab shows "This chat didn't start." and keeps reconnecting.
 

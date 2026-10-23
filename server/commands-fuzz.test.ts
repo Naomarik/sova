@@ -707,6 +707,9 @@ function todoId(text: string): string {
 async function settle(values: Record<string, unknown>): Promise<Record<string, unknown>> {
   for (const s of pendingSetup.splice(0)) await s();
   for (const p of archived.splice(0)) await sendTo(app, "POST", "/api/sessions/archive", JSON.stringify({ path: p, archived: true }));
+  // Every project made so far, by this set-up or an earlier one, has its software registry started and
+  // read now: that read otherwise lands SETTLE_MS later, behind whichever case's hash is current then.
+  await (await import("./projects/runtime")).settleRuntimeForTest();
   return Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typeof v === "string" && v.startsWith("@todo:") ? todoIds[v.slice(6)] : v]));
 }
 

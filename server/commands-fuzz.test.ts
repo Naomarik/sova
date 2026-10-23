@@ -286,6 +286,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "chat.reload-code": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.mode-command": "acquires a chat handle, which starts the chat's process, and runs a project's program",
   "org.owner.request.chat": "a valid call starts a coding session in the request's project, which starts its chat process",
+  "session.offers.choose": "a valid click on a send button sends its text as the user's message, which starts the session's chat process for the turn",
 };
 
 /**
@@ -611,7 +612,41 @@ const FIXTURES: Record<string, Fixture> = {
   ...Object.fromEntries(["sova", "models", "provider-limits", "align", "delegate", "spec", "team", "summarizer", "overseer", "memory", "subagents"].map((d) => [`settings.${d}.get`, { values: () => ({}), status: 200 }])),
   "settings.align.set": { values: () => ({ style: "default", visuals: true }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/settings/align")).settings as { visuals: boolean }).visuals, true) },
   "settings.assistant-default.set": { values: () => ({ assistant: { model: "zai/glm-5.3", thinking: "high" } }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/baton/settings")).assistant as { model: string }).model, "zai/glm-5.3") },
+  "session.offers.get": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.offers.show": {
+    values: () => ({ session: offersSession(), offer: "hello" }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).cards as unknown[]).length, 1),
+  },
+  "session.offers.snooze": {
+    values: () => ({ session: session()[0], offer: "hello" }),
+    status: 200,
+    oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, ["hello"]),
+  },
+  "session.offers.unsnooze": {
+    values: () => ({ session: session()[0], offer: "hello" }),
+    status: 200,
+    oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, []),
+  },
+  "project.offers.list": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
 };
+/** A session whose folder's project declares one offer, `hello`, with a send button (§chat/offers). */
+function offersSession(): string {
+  const d = join(root, `offers-project-${++n}`);
+  mkdirSync(join(d, ".sova"), { recursive: true });
+  writeFileSync(join(d, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: { hello: { when: "Always.", title: "Say hello?", repeat: "once-per-session", buttons: [{ label: "Hello", about: "Sends hello.", send: "hello" }] } } }));
+  const id = `fuzz-${++n}`;
+  const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+  return canonicalPath(path);
+}
 // Set-up a fixture needs before its hash is taken, done by the fixture's own `values`.
 const pendingSetup: (() => Promise<void>)[] = [];
 const archived: string[] = [];

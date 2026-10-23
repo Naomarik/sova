@@ -127,7 +127,8 @@ When a rule changes, change its test in the same change; a rule without a test i
 - Anything at a door the operator keeps closed: the peer listener's routes, `/api/auth/*`, the
   share pages, `/ext/*` (an extension's own actions are `ext.*`, reached through the proxy).
 - Settings writes that grant power, trust or reach, or that show a secret: autonomy and permits,
-  profile and schedule approvals, logins, keys, decisions settings, mesh grants. A plain preference
+  profile and schedule approvals, logins, keys, decisions settings, mesh grants, and an offers
+  file's run-button approval (`POST /api/projects/:pid/offers/approve`, the inventory's Trust grants class). A plain preference
   a person sets (`settings.align.set`, the Overseer's own notes `overseer.notes.set`) is a command.
   A write to a file the runtime no longer reads is left out (`settings.spec.set`, `settings.delegate.set`).
 - A public link that is minted or lengthened (`project.preview.create|extend`) or a list that

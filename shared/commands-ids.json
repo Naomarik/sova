@@ -127,7 +127,13 @@
     "org.owner.request.chat",
     "org.owner.request.done",
     "org.owner.request.decline",
-    "settings.assistant-default.set"
+    "settings.assistant-default.set",
+    "session.offers.get",
+    "session.offers.show",
+    "session.offers.choose",
+    "session.offers.snooze",
+    "session.offers.unsnooze",
+    "project.offers.list"
   ],
   "retired": [
     "settings.agents.get"

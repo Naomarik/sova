@@ -47,6 +47,43 @@ The policy is saved in `~/.pi/agent/model-policy.json`. The optional
 restrictions in the terminal. Model favorites are read from the command palette's
 `~/.pi/agent/model-favorites.json`.
 
+## Offers: button cards for your project's chats
+
+A project can give its chats a few named **offers**: button cards the agent shows under its reply,
+so you answer "merge it" or "go on" with a click. Declare them in `.sova/offers.json` on the
+project's main checkout (a branch's own copy is never read, so a branch can't give itself offers):
+
+```json
+{ "version": 1, "offers": { "merge": {
+  "when": "The branch's work is finished, committed and its checks passed.",
+  "why": "Saves typing 'merge it'.",
+  "onlyIf": ["branch-ready", "no-open-alignment"],
+  "repeat": "once-per-commit",
+  "title": "Merge {branch} into {base}?",
+  "buttons": [
+    { "label": "Merge", "about": "Sova merges this branch into main now.", "run": "project.worktree.merge" },
+    { "label": "Not yet", "about": "Keep working on this branch.", "send": "Not yet, keep going." } ] } } }
+```
+
+- **The agent picks an offer by name**, with at most a one-sentence note; it never writes a button.
+  It learns each offer only from its `when`, `why` and the buttons' `about` lines. Only ordinary chats
+  get the `offer` tool (pi and Claude Code alike), never workers or the overseers, and only in a
+  project whose file has an offer the agent may show; every other chat's tools are unchanged.
+- **Buttons** either `send` a message as you (`{branch}`, `{base}`, `{commit}`, `{project}` are
+  filled in) or `run` one of Sova's own actions on the session's branch (today only
+  `project.worktree.merge`, for a coding session a project's overseer tracks). A file with any run
+  button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
+  Changing a run button asks again.
+- **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
+  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `has-merge-captain`; `repeat` is
+  `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
+  one off; `"shownBy": "another-chat"` keeps it for another chat to show
+  (`sova run session.offers.show --session <path> --offer <name> --from <its own session>`). A
+  broken offer is listed with its reason on the project page and never hides the others.
+- **The file is the only switch.** Sova reads it again at every show and click, so removing an
+  offer stops it at once, in running chats too. A chat's tool keeps the offers it started with: new
+  ones reach new chats. **Not Now** on a card hides that offer for the rest of that session.
+
 ## Optional extensions
 
 Parallel web sessions, shared prompts, branching, and transcript browsing are Sova features.

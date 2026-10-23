@@ -244,6 +244,8 @@ export interface ChatAsks {
   singleton: { args: { key: string; path: string }; result: { id: string; path: string; title: string } | null };
   /** A session's measured replies by entry (server/reply-facts.ts), for its rows' `reply` fact. */
   "reply.timings": { args: { sessionId: string }; result: { v: string; timings: Record<string, ReplyTiming> } | null };
+  /** The offer tool's note of a run button's outcome (§chat.offers/card), server/session-offers.ts. */
+  "offers.note": { args: { sessionId: string }; result: string | null };
   // proto 2, policy "wait":
   "special.runStart": { args: { leafId: string | null; images: boolean }; result: RunStartAnswer };
   "special.compact": { args: { leafId: string | null }; result: RunStartAnswer["message"] | null };
@@ -270,6 +272,7 @@ export const ASK_POLICY: Record<ChatAskMethod, "nothing" | "wait"> = {
   links: "nothing",
   singleton: "nothing",
   "reply.timings": "nothing",
+  "offers.note": "nothing",
   "special.runStart": "wait",
   "special.compact": "wait",
   "special.agentEnd": "wait",

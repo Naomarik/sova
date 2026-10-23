@@ -29,6 +29,7 @@ import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
+import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
@@ -913,7 +914,8 @@ function decisionFields(
   const data = readSignals();
   const ctx = { enabled: true, seenAt: seen[s.id], viewing: isViewing(s.id) };
   const running = isSessionBusy(s.path) || (l?.activity ?? activityOf(own?.rec))?.state === "working";
-  const signals = signalsOverlay(s.id, { ...ctx, running }, data);
+  // An open offer card asks the user too (§app.decisions/asks-user, §chat.offers/card).
+  const signals = withOpenOffer(s.id, signalsOverlay(s.id, { ...ctx, running }, data), running);
   const workerSignals = workerSignalsOverlay(s.id, ctx, Date.now(), data);
   return {
     ...(signals ? { signals } : {}),

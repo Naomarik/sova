@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 466 |
-| Routes a catalogue entry points at | 100 |
-| Catalogue entries | 127 |
+| Routes registered | 473 |
+| Routes a catalogue entry points at | 106 |
+| Catalogue entries | 133 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,11 +24,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
+| Class: Trust grants | 1 |
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 308 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 118 |
+| Hand-written tool specs | 119 |
 
 ## Catalogue entries
 
@@ -61,6 +62,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.group.send` | Send to Group | changes | `POST /api/session-groups/:id/prompt` | sessions |
 | `session.insights` | Show Session Insight | looks | `GET /api/insights/session` | sessions |
 | `worker.resume` | Resume Worker | changes | `POST /api/workers/resume` | sessions |
+| `session.offers.get` | Show Offer Cards | looks | `GET /api/session-offers` | sessions |
+| `session.offers.show` | Show Offer | changes | `POST /api/session-offers/show` | admin |
+| `session.offers.choose` | Choose Offer Button | changes | `POST /api/session-offers/choose` | admin |
+| `session.offers.snooze` | Not Now | changes | `POST /api/session-offers/snooze` | admin |
+| `session.offers.unsnooze` | Offer Again | changes | `POST /api/session-offers/unsnooze` | admin |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -103,6 +109,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.worktree.merge` | Merge Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/merge` | admin |
 | `project.worktree.remove` | Remove Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/remove` | admin |
 | `project.files.list` | List Project Files | looks | `GET /api/projects/:pid/files` | sessions |
+| `project.offers.list` | List Project Offers | looks | `GET /api/projects/:pid/offers` | sessions |
 | `project.costs` | Show Project Costs | looks | `GET /api/projects/:pid/costs` | sessions |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -590,6 +597,14 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
+### Trust grants (1)
+
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval): the operator's own grant of trust, never an action a script or an agent runs.
+
+| Route | Mesh need |
+| --- | --- |
+| `POST /api/projects/:pid/offers/approve` | admin |
+
 ### Middleware and fallbacks (2)
 
 `app.use` gates and the `/api` not-found answer: they run around routes, they are not routes.
@@ -644,6 +659,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `POST /api/projects/:pid/archive` | admin | `project.archive` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
+| `GET /api/projects/:pid/offers` | sessions | `project.offers.list` |
 | `GET /api/projects/:pid/overseer/idea` | sessions | `project.overseer.idea.get` |
 | `PATCH /api/projects/:pid/overseer/idea` | admin | `project.overseer.idea.update` |
 | `GET /api/projects/:pid/overseer/ideas` | sessions | `project.overseer.idea.list` |
@@ -667,6 +683,11 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `PATCH /api/session-groups/:id` | sessions | `session.group.rename` |
 | `POST /api/session-groups/:id/prompt` | sessions | `session.group.send` |
 | `POST /api/session-groups/assign` | sessions | `session.group.assign` |
+| `GET /api/session-offers` | sessions | `session.offers.get` |
+| `POST /api/session-offers/choose` | admin | `session.offers.choose` |
+| `POST /api/session-offers/show` | admin | `session.offers.show` |
+| `POST /api/session-offers/snooze` | admin | `session.offers.snooze` |
+| `POST /api/session-offers/unsnooze` | admin | `session.offers.unsnooze` |
 | `GET /api/sessions` | sessions | `session.list` |
 | `POST /api/sessions` | sessions | `session.create` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
@@ -753,6 +774,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/project-assistant-tools.ts` | 8 | `report_issue`, `owner_requests`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
 | `server/project-overseer-tools.ts` | 17 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_todo` |
 | `server/project-services/tools.ts` | 4 | `<computed: o.name>`, `project_verbs`, `sova_project_verbs`, `sova_project_verbs` |
+| `server/session-offers-tool.ts` | 1 | `<computed: OFFER_TOOL>` |
 | `server/session-powers.ts` | 4 | `session_list`, `session_detail`, `session_read`, `session_send` |
 | `server/spec-lookup.ts` | 2 | `spec_lookup`, `code_read` |
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |

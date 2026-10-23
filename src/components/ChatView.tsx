@@ -23,6 +23,7 @@ import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } f
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -1622,6 +1623,9 @@ export function ChatView(props: {
   const listHere = createMemo(() => !!items());
   /** The connection's own reason to wait, or null (lib/chat-wait waitReason). */
   const waitingReason = (): ComposerReason | null => waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
+  // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
+  const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
+  if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -2265,6 +2269,7 @@ export function ChatView(props: {
                   focusComposer();
                 },
               }}>
+              <OfferContext.Provider value={offers}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -2287,6 +2292,8 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              <OfferTray />
+              </OfferContext.Provider>
               </TourSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>

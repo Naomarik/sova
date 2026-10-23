@@ -716,6 +716,25 @@ const parked = (s: SessionSummary) => !!s.archived && !s.live && !runningNow(s);
 /** Sessions readiness never covers. */
 const excluded = (s: SessionSummary) => !!(s.workerSession || s.overseer || s.projectOverseer || s.baton || s.target);
 
+/**
+ * The session's readiness as it will read once its turn ends: its file read now, with nothing running
+ * (an offer's conditions are asked mid-turn, §chat.offers/conditions). Publishes nothing and caches
+ * nothing; undefined when readiness doesn't cover the session or it tracks no worktree.
+ */
+export async function idleReadinessOf(s: SessionSummary): Promise<SessionReadiness | undefined> {
+  if (excluded(s)) return undefined;
+  let size: number;
+  try {
+    size = statSync(s.path).size;
+  } catch {
+    return undefined;
+  }
+  const { facts } = await readReadinessScan(s.path, size, null);
+  if (!facts) return undefined;
+  const idle: SessionSummary = { ...s, busy: false, activity: undefined, workers: undefined, ...(s.live ? { live: { ...s.live, workers: undefined } } : {}) };
+  return computeReadiness(idle, facts, () => false);
+}
+
 async function refresh(input: RefreshInput): Promise<void> {
   const s = input.row;
   const current = () => {

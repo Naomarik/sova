@@ -44,6 +44,7 @@ import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
 import { setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { setOffersDispatch } from "./session-offers";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
@@ -197,6 +198,8 @@ try {
 
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
+// An offer card's buttons call the same routes in-process (§chat.offers/buttons).
+setOffersDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));

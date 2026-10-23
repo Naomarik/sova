@@ -83,6 +83,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   changes("project.worktree.merge", "Merge Worktree", "Merge a coding session's worktree branch into its target.", "POST", "/api/projects/:pid/overseer/worktrees/merge", { pid, "session-id": codingSession }),
   changes("project.worktree.remove", "Remove Worktree", "Remove a coding session's worktree; its branch goes too only when merged.", "POST", "/api/projects/:pid/overseer/worktrees/remove", { pid, "session-id": codingSession }),
   looks("project.files.list", "List Project Files", "The files a project keeps.", "/api/projects/:pid/files"),
+  looks("project.offers.list", "List Project Offers", "A project's offers file, read now: each offer, its buttons, run approval and shown/used counts.", "/api/projects/:pid/offers"),
   looks("project.costs", "Show Project Costs", "A project's cost card: the last count at once, or a new one with --fresh 1.", "/api/projects/:pid/costs", {
     pid,
     fresh: { type: "string", description: "1: wait for a new count", in: "query", enum: ["1"] },

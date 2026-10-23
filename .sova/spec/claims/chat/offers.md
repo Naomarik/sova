@@ -69,7 +69,10 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   the tool names and their lines (a **snapshot**, or "none") in its own state, keyed by the session
   id (`<state root>/session-offers/<session id>.json`), never in the session's file. Every later
   build reads that record: a reopen, a reload onto new code, a reconnect after a server restart,
-  a resumed Claude Code chat. A fork starts with its parent's record. The file changing later
+  a resumed Claude Code chat. A fork starts with its parent's record. A session with no record
+  that already holds a user message (it started before offers existed, or before its project had
+  the file) records "none" instead of reading the file, so it never gains the tool on a reload.
+  The file changing later
   never changes a session's tool or instructions, so a Claude Code chat keeps resuming its own
   Claude session (§app.claude-code-provider/continuity) instead of replaying its history; an offer
   added later reaches new sessions only.
@@ -77,8 +80,9 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   disabled or broken now; its run buttons are not approved (§chat.offers/approval); the session has
   an open alignment question; a condition doesn't hold; the repeat guard already showed it for
   this moment; or the user chose Not Now on it in this session. Each refusal says which, and
-  "Nothing was shown." A shown offer replaces the session's open one (one open offer at a time);
-  the call never ends the agent's turn.
+  "Nothing was shown." One open offer at a time: while another offer's card is open in the
+  session, nothing shows and the refusal names the open offer in one line (a card whose offer left
+  the file is withdrawn, not open). The call never ends the agent's turn.
 
 ## §chat.offers/conditions — Conditions and the repeat guard
 
@@ -141,10 +145,12 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   A send button's text is sent as your message; when sending is refused (a terminal holds the
   session), the card stays open and says why. A run button shows "Running…", then its outcome
   ("Done: {action} done." or "Failed: " and the route's own words); the agent gets one hidden note
-  at the start of its next turn naming the card, the button and the outcome.
+  at the start of its next turn naming the card, the button and the outcome. The first click claims
+  the card before anything is sent or run, so a second click at the same moment does nothing; a
+  send that fails reopens it.
 - **Not Now** hides that offer for the rest of the session: the card reads "Not now", and the agent
   can't show that offer here again. It sends nothing. `session.offers.unsnooze` brings it back.
-- **Other ends.** A card replaced by a newer offer reads "Replaced by of_N". One whose offer left
+- **Other ends.** A card whose offer left
   the file reads "No longer offered" on its next click or read, and the click does nothing.
 - **Read only.** A view that can't act on the session (watching a terminal session, a shared page)
   shows the cards with their choices and no controls; an open one reads "Waiting for an answer:"

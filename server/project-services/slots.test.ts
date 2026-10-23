@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { exitOf, type VerbResult } from "../../shared/project-contract";
-import { copyLimitOf, numberedPorts, overLimitSentence, SLOT_LAYOUT } from "../../shared/project-slots";
+import { copyLimitOf, numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence } from "../../shared/project-slots";
 import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
 import { ProjectEngine, type Caller } from "./engine";
@@ -63,10 +63,44 @@ const ok = (r: VerbResult) => {
   return r;
 };
 
-test("the layout is fixed: copies search 1 to 16, conformance alone takes 17 and 18", () => {
-  assert.deepEqual(SLOT_LAYOUT.ordinary, Array.from({ length: 16 }, (_, i) => i + 1));
-  assert.deepEqual(SLOT_LAYOUT.scratch, [17, 18]);
-  assert.equal(SLOT_LAYOUT.top, 18);
+/** Motorsaif's shape: web's nrepl (7850, stride 20) meets cljs's test-http (8020, stride 11) only in slots 14 and 10. */
+const MOTORSAIF_SHAPE = {
+  version: 1,
+  services: {
+    db: { cmd: ["x"], ports: { port: { base: 4334, stride: 20 }, h2: { base: 4335, stride: 20 } } },
+    redis: { cmd: ["x"], ports: { port: { base: 6375, stride: 20 } } },
+    cljs: { cmd: ["x"], ports: { nrepl: { base: 9100, stride: 20 }, http: { base: 9830, stride: 20 }, "test-http": { base: 8020, stride: 11 } } },
+    web: { cmd: ["x"], ports: { http: { base: 4100, stride: 20 }, nrepl: { base: 7850, stride: 20 } } },
+    "test-repl": { cmd: ["x"], ports: { nrepl: { base: 7852, stride: 20 } } },
+  },
+};
+
+test("the layout: copies take the usable slots of 1 to 16, conformance the two lowest clear slots from 17", () => {
+  const plain = slotLayoutOf(parseDefinition(JSON.stringify(defOf(4, 30_000))), null);
+  assert.deepEqual([plain.ordinary, plain.unavailable, plain.scratch, plain.scratchNote], [Array.from({ length: 16 }, (_, i) => i + 1), [], [17, 18], null]);
+  // Motorsaif: web's nrepl in slot 14 (8130) is cljs's test-http in slot 10.
+  const m = slotLayoutOf(parseDefinition(JSON.stringify(MOTORSAIF_SHAPE)), null);
+  assert.ok(m.ordinary.includes(10) && !m.ordinary.includes(14), JSON.stringify(m));
+  assert.deepEqual(m.unavailable.find((u) => u.slot === 14), { slot: 14, why: "its ports overlap slot 10's" });
+  assert.equal(unavailableSentence({ slot: 14, why: "its ports overlap slot 10's" }), "Slot 14 is unavailable: its ports overlap slot 10's.");
+  // 3000/3010 at stride 1: slot 10 meets slot 0, 11 meets 1, …: only 1 to 9 are usable.
+  const tight = parseDefinition(JSON.stringify({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3000 } } }, api: { cmd: ["y"], ports: { http: { base: 3010 } } } } }));
+  const t = slotLayoutOf(tight, null);
+  assert.deepEqual(t.ordinary, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(t.unavailable[0], { slot: 10, why: "its ports overlap slot 0's" });
+  // Its scratch slots meet no usable place's ports nor each other's.
+  const portsOf = (slot: number) => [3000 + slot, 3010 + slot];
+  const used = new Set([0, ...t.ordinary].flatMap(portsOf));
+  for (const sl of t.scratch) for (const p of portsOf(sl)) assert.ok(!used.has(p), `scratch ${sl} port ${p}`);
+  assert.ok(t.scratch[0] >= 17 && t.scratch[1] > t.scratch[0] && portsOf(t.scratch[0]).every((p) => !portsOf(t.scratch[1]).includes(p)), JSON.stringify(t.scratch));
+  assert.equal(t.scratchNote, null);
+  // Fixed ports are the same everywhere by design and never make a place unusable.
+  const fixed = parseDefinition(JSON.stringify(defOf(2, 30_000, { side: { cmd: ["x"], scope: "shared", ports: { p: { fixed: 30_005 } } } })));
+  assert.equal(slotLayoutOf(fixed, null).ordinary.length, 16);
+  // No two clear slots within 65535: 17 and 18, said so.
+  const top = slotLayoutOf(parseDefinition(JSON.stringify({ version: 1, slots: { cap: 1 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_518 } } } } })), null);
+  assert.deepEqual(top.scratch, [17, 18]);
+  assert.match(top.scratchNote ?? "", /conformance uses 17 and 18, whose ports overlap/);
 });
 
 test("copyLimitOf: this machine's value, else the main checkout's saved file, else the definition in use, else 4", () => {
@@ -100,8 +134,8 @@ test("overLimitSentence: room, at the limit, and above it", () => {
   assert.equal(overLimitSentence(1, 2), null);
   assert.equal(overLimitSentence(12, 12), "12 copies are running, and this machine allows 12 at once: stop one first.");
   assert.equal(overLimitSentence(1, 1), "1 copy is running, and this machine allows 1 at once: stop one first.");
-  assert.equal(overLimitSentence(14, 12), "14 running, 2 over the limit: no new copy starts until three stop.");
-  assert.equal(overLimitSentence(13, 12), "13 running, 1 over the limit: no new copy starts until two stop.");
+  assert.equal(overLimitSentence(14, 12), "14 running, 2 over the limit of 12: no new copy starts until 3 stop.");
+  assert.equal(overLimitSentence(13, 12), "13 running, 1 over the limit of 12: no new copy starts until 2 stop.");
 });
 
 test("b1: only running copies count; at the limit a stopped copy's start and a new create are refused with the sentence", async () => {
@@ -146,7 +180,7 @@ test("b2: this machine's limit overrides the file's (file 4, machine 12): a fift
     assert.equal(regs.filter((i) => Object.values(i.desired).includes("running")).length, 5, "nothing was stopped");
     const sixth = await engine.run("create", { project, branch: "sova/w6" }, op);
     assert.equal(sixth.error?.code, "cap-reached");
-    assert.ok(sixth.error!.message.startsWith("5 running, 2 over the limit: no new copy starts until three stop."), sixth.error!.message);
+    assert.ok(sixth.error!.message.startsWith("5 running, 2 over the limit of 3: no new copy starts until 3 stop."), sixth.error!.message);
     assert.match(sixth.error!.message, /The limit of 3 is set on this machine/);
   } finally {
     setMachineCopyLimit(project, null);
@@ -185,9 +219,22 @@ test("the search passes slots an outside listener blocks; an explicit slot is 1 
   assert.match(scratch.error!.message, /slot 17 is not given to a copy: slots 17 and 18 are conformance's scratch slots; copies take 1 to 16/);
   const past = await engine.run("create", { project, branch: "sova/d", slot: 19 }, op);
   assert.equal(past.error?.code, "invalid-request");
-  assert.match(past.error!.message, /slot is at most 18: copies take 1 to 16/);
+  assert.match(past.error!.message, /slot is at most 16: copies take 1 to 16, and slots 17 and 18 are conformance/);
   const high = ok(await engine.run("create", { project, branch: "sova/e", slot: 16 }, op));
   assert.equal(high.slot, 16, "any slot of the fixed range, above the cap too");
+});
+
+test("an unusable slot is skipped and refused when asked for, naming the overlap", async () => {
+  const { project, host, engine } = fixture({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["node", "web.mjs"], ports: { http: { base: 42_000 } } }, api: { cmd: ["node", "web.mjs"], ports: { http: { base: 42_010 } } } } });
+  const asked = await engine.run("create", { project, branch: "sova/ten", slot: 10 }, op);
+  assert.equal(asked.error?.code, "invalid-request");
+  assert.match(asked.error!.message, /^Slot 10 is unavailable: its ports overlap slot 0's\./);
+  for (let slot = 1; slot <= 9; slot++) host.listen(42_000 + slot, 5_000 + slot, `/x${slot}`);
+  const r = await engine.run("create", { project, branch: "sova/a" }, op);
+  assert.equal(r.error?.code, "slots-blocked", JSON.stringify(r.error));
+  assert.match(r.error!.message, /no usable slot of 1 to 16 is free for a copy/);
+  assert.match(r.error!.message, /Slot 10 is unavailable: its ports overlap slot 0's/);
+  assert.doesNotMatch(r.error!.message, /slot 10 needs port/, "slot 10 was never tried");
 });
 
 test("every slot of 1 to 16 blocked with room under the limit: slots-blocked, naming each holder", async () => {
@@ -199,7 +246,7 @@ test("every slot of 1 to 16 blocked with room under the limit: slots-blocked, na
   assert.equal(r.error?.code, "slots-blocked", JSON.stringify(r.error));
   assert.equal(exitOf(r), 2);
   const m = r.error!.message;
-  assert.match(m, /no slot of 1 to 16 is free for a copy \(slots 17 and 18 are conformance's scratch slots; the project's copies hold: none\)/);
+  assert.match(m, /no usable slot of 1 to 16 is free for a copy \(slots 17 and 18 are conformance's scratch slots; the project's copies hold: none\)/);
   assert.match(m, /slot 1 needs port 36001, which pid 4001 \(\/app1\) is listening on/);
   assert.match(m, /slot 16 needs port 36016, which pid 4016 is listening on/);
   assert.doesNotMatch(m, /slot 17/);

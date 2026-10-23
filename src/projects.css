@@ -622,3 +622,4 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-limit-over { margin: 0; }
 .services-limit-cost { margin: 0; }
 .services-limit-cost-warn { color: var(--status-warn); }
+.services-limit-places { margin: 0; }

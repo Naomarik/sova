@@ -240,3 +240,7 @@ export function costLine(l: Pick<CopyLimitView, "value" | "estimate" | "host">):
       : `Measured ${new Date(e.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} on an older definition: each copy took about ${gbWord(e.steadyBytes)} (up to ${gbWord(e.peakBytes)} at peak)`;
   return { text: `${head}, so ${copies} about ${gbWord(total)}.${host}`, warn: !!l.host && total > l.host.availableBytes };
 }
+
+/** While the definition's usable slots number fewer than the limit: what the limit can reach, else null. */
+export const usableLine = (l: Pick<CopyLimitView, "usable" | "value">): string | null =>
+  l.usable < l.value ? `Only ${l.usable} slot${l.usable === 1 ? " is" : "s are"} usable, so at most ${l.usable} cop${l.usable === 1 ? "y runs" : "ies run"} at once.` : null;

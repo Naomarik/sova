@@ -43,8 +43,12 @@ export interface CopyLimitView {
   copies: number;
   /** Those of them that run (wanting a service running). */
   running: number;
-  /** "{n} running, {k} over the limit: …" while more run than the limit allows, else null. */
+  /** "{n} running, {k} over the limit of {cap}: …" while more run than the limit allows, else null. */
   over: string | null;
+  /** How many slots of 1 to 16 the main checkout's definition can use (its layout). */
+  usable: number;
+  /** One sentence per slot of 1 to 16 it can't ("Slot 14 is unavailable: its ports overlap slot 10's."). */
+  unavailable: string[];
   /** Per copy, the larger of conformance's two scratch copies' readings; null: none measured. */
   estimate: { steadyBytes: number; peakBytes: number; source: "current" | "older"; at: string } | null;
   /** This machine's memory now, or null when it can't be read. */

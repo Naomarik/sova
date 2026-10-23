@@ -302,10 +302,8 @@ export const SLOT_CAP_DEFAULT = 4;
 export const SLOT_CAP_MAX = 16;
 /** Every copy's slot is one of 1 to COPY_SLOT_TOP, whatever the copy limit (§app.project-services/instances). */
 export const COPY_SLOT_TOP = 16;
-/** Conformance's two scratch slots, outside the copies' range, so the limit never moves them. */
-export const SCRATCH_SLOTS: readonly [number, number] = [COPY_SLOT_TOP + 1, COPY_SLOT_TOP + 2];
-/** The highest slot any instance takes: the parser checks every port in every slot up to it. */
-export const SLOT_TOP = SCRATCH_SLOTS[1];
+/** Conformance's scratch slots are searched from here up (shared/project-slots.ts slotLayoutOf). */
+export const SCRATCH_FROM = COPY_SLOT_TOP + 1;
 export const READY_TIMEOUT_DEFAULT = 60;
 export const READY_TIMEOUT_MAX = 600;
 export const HOOK_TIMEOUT_DEFAULT = 120;
@@ -845,9 +843,10 @@ export function parseDefinition(text: string): ProjectDef {
   serviceOrder(def);
   const adopting = services.filter((s) => s.adopt);
   if (adopting.length > 1) throw new DefinitionError(`$.services.${adopting[1]!.name}.adopt`, "at most one service adopts a unit");
-  // Ports: every allocated port, in every slot of the fixed range and the scratch slots, must fit,
-  // and no two ports of one instance may coincide.
-  const top = SLOT_TOP;
+  // Ports: every allocated port, in every slot up to cap + 2, must fit, and no two ports of one
+  // instance may coincide. Higher slots (the copies' fixed range, the scratch slots) never make a
+  // file invalid: a slot whose ports overlap is only a place no copy takes (shared/project-slots.ts slotLayoutOf).
+  const top = cap + 2;
   for (const s of services)
     for (const [k, p] of Object.entries(s.ports))
       if ("base" in p && p.base + top * p.stride > 65535) throw new DefinitionError(`$.services.${s.name}.ports.${k}`, `slot ${top} would need port ${p.base + top * p.stride}`);
@@ -1064,6 +1063,8 @@ export interface ConformReport {
   /** On a failed run: the last lines of each service (or step) that was not ready or failed, read before teardown. */
   logs?: ConformLog[];
   memory?: ConformMemory;
+  /** What the run says besides its checks: its scratch slots' ports overlapping other places' (§app.project-services/instances). */
+  notes?: string[];
 }
 export interface TestFailure {
   name: string;

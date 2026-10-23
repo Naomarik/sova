@@ -17,7 +17,8 @@ import {
   type ProjectDef,
   type VerbResult,
 } from "../../shared/project-contract";
-import { SLOT_LAYOUT } from "../../shared/project-slots";
+import { slotLayoutOf } from "../../shared/project-slots";
+import { limitInForce } from "./copy-limit";
 import { projectOf } from "../project-root";
 import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
 import { rssOf } from "./drivers";
@@ -304,8 +305,10 @@ async function runSuite(
   const s = new Suite(engine, confCaller);
   const { project, commit, def } = t;
   const memory = new Memory(engine, def.services.filter((x) => x.scope === "checkout" && x.cmd && !x.container).map((x) => x.name));
-  // The scratch slots sit outside the copies' fixed range, whatever the limit (§app.project-services/conform).
-  const [slotA, slotB] = SLOT_LAYOUT.scratch;
+  // The scratch slots sit above the copies' fixed range, whatever the limit, where their ports meet no
+  // other place's (§app.project-services/conform, /instances).
+  const layout = slotLayoutOf(def, limitInForce(project, def).numbering);
+  const [slotA, slotB] = layout.scratch;
   const branchA = `sova/conform-${runId}-a`;
   const branchB = `sova/conform-${runId}-b`;
   const token = `sova-conform-${runId}`;
@@ -605,6 +608,7 @@ async function runSuite(
       leaks,
       ...(logs.length ? { logs } : {}),
       ...(recA ? { memory: memory.report() } : {}),
+      ...(layout.scratchNote ? { notes: [layout.scratchNote] } : {}),
     },
     envelopes: s.envelopes,
     failure: s.firstFailure,

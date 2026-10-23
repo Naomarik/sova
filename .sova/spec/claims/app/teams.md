@@ -186,9 +186,13 @@ they join the main chat's own queue, which never refuses.
 - **A replaced member.** An item (or a `team_steer`) to a member that has been succeeded
   (§teams.defaults/handover) goes to its newest live successor, and the sender's answer says so
   (`forwarded to builder-2 (ag_31)`); the item keeps its id and its original sender, and records
-  whom it was first sent to.
-  A message to a stopped or ejected member with no live successor is refused, saying it stopped
-  (or was ejected) and, for a stopped member, that `agent_resume` brings it back.
+  whom it was first sent to. A message to a member that has ended while its successor is still
+  starting is queued in its inbox, and the answer says the item moves to the successor; it moves
+  once the successor starts, or is returned to its sender if none does. A `team_steer` in that
+  window is refused, saying the successor is still starting: a direct instruction has no inbox to
+  wait in.
+  A message to a stopped or ejected member with no live or starting successor is refused, saying
+  it stopped (or was ejected) and, for a stopped member, that `agent_resume` brings it back.
 - **Moving and returning.** When a member is retired by its successor, its open items move to the
   successor, keeping their ids and senders, and are listed to it; a moved item leaves the old
   member's inbox and records whom it moved from, when and why; status lookups and `replyTo`

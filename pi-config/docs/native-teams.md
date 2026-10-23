@@ -315,10 +315,11 @@ Guarantees, enforced by `team-widget.test.ts`:
   The mailbox, each member's inbox (`items.jsonl`) and pending nudges are
   kept beside the team's handover notes. After a reload every inbox is folded
   from disk: live members are woken for items never listed, and a member found
-  ended returns its open items to their senders ("not addressed"; Sova's own
+  ended first closes automatically what it opened and didn't close (never a
+  question), then returns its open items to their senders ("not addressed"; Sova's own
   to the coordinator, the main thread's to the main chat as a `team-notice`
-  message that starts no turn). At a handover the retired member's open items
-  move to its successor, keeping their ids.
+  message that starts no turn). At a handover the retired member's opened items
+  close the same way and its other open items move to its successor, keeping their ids.
 - **History is per branch.** On session start, team entries
   (`subagents-team-v1`, versioned create/add operations) restore from the
   **active branch only**; a `/tree` jump re-restores. History teams are

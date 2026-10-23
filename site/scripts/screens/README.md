@@ -69,10 +69,14 @@ those must differ. `$session:<id>` anywhere in an argument, or inside a reply's 
 `sova://s/$session:<id>` link), becomes that session's id at run time. Workers are started with `wake: false`, and Delegate's routes all point at the story's
 models on the pi backend.
 
-Each model names its `provider` (`anthropic`, `zai`, `deepseek`, `openai`): the run's
+Each model names its `provider` (`anthropic`, `zai`, `deepseek`, `openai`; the story's own
+`provider`, the default for a model that names none, is `anthropic`): the run's
 `models.json` registers every one at the director, so the real provider and model names show on
 screen while nothing leaves the machine and no subscription is used. The page's footer says the
 names are real, the replies are scripted, and Sova isn't affiliated with the model makers.
+Only the story's models may show: today Claude Opus 5.5 (anthropic, `claude-opus-5-5`), zai
+`glm-5.3`, openai `gpt-6.1-sol` and deepseek `deepseek-v4.1-flash`. The leak gate (below) refuses
+any other model or provider name on the page, and each run prints the model names it saw.
 
 ## The videos
 
@@ -89,7 +93,7 @@ session detail pane sits beside the chat instead of covering it). Its storyboard
 | 0:16 | Open one: a drawing shows the problem | Retry backoff opens; its last reply's chart: waits doubling to 64 s. |
 | 0:22 | Agree on the plan before work starts | The alignment card from its title, naming the found session. |
 | 0:27 | Your call, in one click | The recommended 30 s, then Send; Decided: 30 s. |
-| 0:32 | Each worker runs on its own model | 3 workers; the Agents tab: zai glm-5.3, deepseek deepseek-v4-pro, openai gpt-6.1-sol. |
+| 0:32 | Each worker runs on its own model | 3 workers; the Agents tab: zai glm-5.3, deepseek deepseek-v4.1-flash, openai gpt-6.1-sol. |
 | 0:40 | Three models, one finished job | Sped up 3x: the workers finish, All 3 are back with 2 steps to review, the live summary lands. |
 | 0:44 | Review every change as steps | Review Changes: the changes viewer, one numbered step per worker that changed code, each with its reason; step 1's diff (GLM-5.3: the 30 s cap and its test). |
 | 0:50 | Each step with its reason | Step 2 clicked: DeepSeek's README line. The server check (GPT-6.1 Sol) changed no code, so it has no step; the reply before says so. |
@@ -210,6 +214,8 @@ The repository is public, so:
   titles, labels, links and form values, and refuses the real home directory, user name, host
   name, the capture root's own path, any `.ts.net` name other than `example.ts.net`, any
   100.64.0.0/10 address, and the tailnet
-  name `tailscale status` reports when it runs.
+  name `tailscale status` reports when it runs. It also refuses, in the text, titles and labels,
+  any model or provider name (a known family's word: claude, gpt, glm, deepseek, gemini, qwen,
+  openai, …) that isn't part of one of the story's models' ids, names or providers.
 - The Access page's pairing response is mocked (`sova.example.ts.net`): the real one names this
   machine's tailnet.

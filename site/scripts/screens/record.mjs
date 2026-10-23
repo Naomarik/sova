@@ -21,7 +21,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { loadStory, REPO } from "./load-story.mjs";
 import { actionOf, bringsNewContent, PACE, readingMs } from "./story-check.mjs";
-import { contextOptions, cropToViewport, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, saveDebug, siteSharp, sleep, startBrowser, startDirector, startServer, TOKEN, ui, VIDEO_DIR, writeJson } from "./harness.mjs";
+import { contextOptions, cropToViewport, leakGate, leakPatterns, modelsSeen, makeRoot, OUT_DIR, removeRoot, saveDebug, siteSharp, sleep, startBrowser, startDirector, startServer, TOKEN, ui, VIDEO_DIR, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, videoHash } from "./hashes.mjs";
 import { clock, compose, encodeWithin, ease } from "./video-compose.mjs";
@@ -112,7 +112,7 @@ async function recordOne(name, v, hash) {
     // Filmed at 2x pixels (the page's own scale for a phone's 3x), whatever the screen's scale.
     const browser = await startBrowser({ root, deviceScale: Math.min(2, v.vp.scale) === v.vp.scale ? v.vp.scale : 2 });
     stops.push(browser.stop);
-    patterns = leakPatterns(root);
+    patterns = leakPatterns(root, plan.models);
 
     // The session: a live one is created empty (and titled); a static one with `then` is its file.
     const s = plan.sessions.find((x) => x.id === v.session);
@@ -387,6 +387,7 @@ async function recordOne(name, v, hash) {
       privacy: track.privacy,
       beats: track.beats.map((x) => ({ i: x.i, do: x.do, a: Number(toOut(x.a).toFixed(2)), b: Number(toOut(x.b).toFixed(2)) })),
     };
+    console.log(`model names on screen (each one of the story's models): ${[...modelsSeen].sort().join(", ") || "(none)"}`);
     console.log(`timeline (output s): ${timeline.beats.map((x) => `${x.i}:${x.do} ${(x.b - x.a).toFixed(1)}`).join(" · ")}`);
     const cues = cuesOf(v, timeline);
     console.log(`cues: ${cues.cues.map((c) => `${c.a.toFixed(1)}–${c.b.toFixed(1)} ${c.text}`).join(" | ")}${cues.tags.length ? `; tags ${cues.tags.map((x) => `${x.a.toFixed(1)}–${x.b.toFixed(1)} ${x.text}`).join(", ")}` : ""}`);

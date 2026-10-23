@@ -308,7 +308,14 @@ export const FREEZE_CSS = "*, *::before, *::after { animation-duration: 0s !impo
 
 /** What must never reach an image: this machine's home, user and host, tailnet names and
     addresses, and the capture root itself. Held in memory only. */
-export function leakPatterns(root) {
+/** Model and provider names as they show on screen: a known family's word and what is glued to it
+    ("glm-5.3", "GPT-6.1", "Opus 5.5"). Every one the page shows must be part of one of the
+    story's own models (its id, name or provider), so no other model ever appears. */
+const MODEL_WORD = /\b(?:claude|opus|sonnet|haiku|gpt|codex|gemini|gemma|kimi|moonshot|ollama|qwen|glm|zai|z\.ai|deepseek|mistral|mixtral|codestral|llama|openrouter|groq|cerebras|bedrock|vertex|anthropic|openai|minimax)[\w.-]*(?: \d[\d.]*)?/gi;
+/** Every model name the gate has passed, for the run's summary. */
+export const modelsSeen = new Set();
+
+export function leakPatterns(root, models = {}) {
   const lits = [];
   const add = (v, what) => v && v.length >= 3 && !["demo", "root", "localhost"].includes(v) && lits.push({ v, what });
   add(homedir(), "the real home directory");
@@ -323,6 +330,7 @@ export function leakPatterns(root) {
   } catch {}
   return {
     lits,
+    models: Object.values(models).flatMap((m) => [m.id, m.name, m.provider]).filter(Boolean).map((x) => x.toLowerCase()),
     res: [
       [/(?<!\bexample)\.ts\.net\b/i, "a .ts.net name"],
       [/\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/, "a tailnet (100.64.0.0/10) address"],
@@ -339,7 +347,7 @@ export function leakPatterns(root) {
 
 /** Every visible string, attribute and link on the page, checked against the patterns. Throws. */
 export async function leakGate(page, patterns, where) {
-  const { all, visible } = await page.evaluate(() => {
+  const { all, visible, shown } = await page.evaluate(() => {
     const text = [document.body.innerText];
     const seen = [document.title];
     const attrs = [location.href.replace(/#t=[^&]*/, "")];
@@ -354,12 +362,18 @@ export async function leakGate(page, patterns, where) {
       }
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) text.push(el.value, el.placeholder);
     }
-    return { visible: text.join("\n"), all: [...text, ...seen, ...attrs].join("\n") };
+    return { visible: text.join("\n"), shown: [...text, ...seen].join("\n"), all: [...text, ...seen, ...attrs].join("\n") };
   });
   const hits = [];
   for (const { v, what } of patterns.lits) if (all.toLowerCase().includes(v.toLowerCase())) hits.push(what);
   for (const [re, what] of patterns.res) if (re.test(all)) hits.push(what);
   for (const { v, what } of patterns.visible ?? []) if (visible.includes(v)) hits.push(what);
+  if (patterns.models?.length)
+    for (const w of shown.match(MODEL_WORD) ?? []) {
+      const t = w.replace(/[.-]+$/, "");
+      if (patterns.models.some((m) => m.includes(t.toLowerCase()))) modelsSeen.add(t);
+      else hits.push(`a model or provider the story doesn't have ("${t}")`);
+    }
   if (hits.length) throw new Error(`leak gate at ${where}: the page shows ${[...new Set(hits)].join(", ")}. Nothing was written.`);
 }
 

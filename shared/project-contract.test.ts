@@ -13,7 +13,6 @@ import {
   parseDefinition,
   portsFor,
   render,
-  SLOT_TOP,
   serviceOrder,
   type VerbResult,
 } from "./project-contract";
@@ -38,7 +37,6 @@ test("a static site is one service with one port", () => {
   assert.deepEqual(portsFor(def, 0), { site: { http: 8731 } });
   assert.deepEqual(portsFor(def, 3), { site: { http: 8734 } });
   assert.deepEqual(def.slots, { cap: 4 });
-  assert.deepEqual(portsFor(def, SLOT_TOP), { site: { http: 8731 + 18 } });
 });
 
 test("a full definition parses with defaults filled in", () => {
@@ -113,25 +111,32 @@ test("refusals name the JSON path of the first problem", () => {
   assert.throws(() => parseDefinition("{not json"), (e) => e instanceof DefinitionError && e.path === "$");
 });
 
-test("ports are checked in every slot of 0 to 18, whatever the copy limit: a clash or a port past 65535 there refuses the file", () => {
-  assert.equal(SLOT_TOP, 18);
-  // web 3040 and api 3050 at stride 1 meet in slot 10 (web's 3050 is api's slot 0), far above cap + 2 of cap 4.
-  const meet = { version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3050 } } } } };
+/** Motorsaif's shape: web's nrepl (7850, stride 20) meets cljs's test-http (8020, stride 11) only in slots 14 and 10. */
+const MOTORSAIF_SHAPE = {
+  version: 1,
+  services: {
+    db: { cmd: ["x"], ports: { port: { base: 4334, stride: 20 }, h2: { base: 4335, stride: 20 } } },
+    redis: { cmd: ["x"], ports: { port: { base: 6375, stride: 20 } } },
+    cljs: { cmd: ["x"], ports: { nrepl: { base: 9100, stride: 20 }, http: { base: 9830, stride: 20 }, "test-http": { base: 8020, stride: 11 } } },
+    web: { cmd: ["x"], ports: { http: { base: 4100, stride: 20 }, nrepl: { base: 7850, stride: 20 } } },
+    "test-repl": { cmd: ["x"], ports: { nrepl: { base: 7852, stride: 20 } } },
+  },
+};
+
+test("ports are checked over slots 0 to cap + 2 only: a meeting further up never makes a file invalid", () => {
+  // Valid before the copies' fixed range existed, valid now: the meetings are past cap + 2.
+  assert.doesNotThrow(() => parse(MOTORSAIF_SHAPE), "Motorsaif's definition (slot 14 meets slot 10)");
+  assert.doesNotThrow(() => parse({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3000 } } }, api: { cmd: ["y"], ports: { http: { base: 3010 } } } } }), "3000/3010 meet in slot 10, past cap + 2 of 4");
+  assert.doesNotThrow(() => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_520 } } } } }), "slot 18 would pass 65535, but cap + 2 is 4");
+  // Within cap + 2 the old rule holds.
   assert.throws(
-    () => parse(meet),
-    (e) => e instanceof DefinitionError && e.path === "$.services.web.ports.http" && /slot 10 gives it port 3050, which api\.http has in slot 0/.test(e.message),
+    () => parse({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3044 } } } } }),
+    (e) => e instanceof DefinitionError && e.path === "$.services.web.ports.http" && /slot 4 gives it port 3044, which api\.http has in slot 0/.test(e.message),
   );
   assert.throws(
-    () => parse({ ...meet, slots: { cap: 1 } }),
-    (e) => e instanceof DefinitionError && /slot 10 gives it port 3050/.test(e.message),
-    "the cap moves nothing: the same clash at cap 1",
+    () => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_532 } } } } }),
+    (e) => e instanceof DefinitionError && /slot 4 would need port 65536/.test(e.message),
   );
-  // 65520 + 18 is past 65535: refused, though slot cap + 2 would fit.
-  assert.throws(
-    () => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_520 } } } } }),
-    (e) => e instanceof DefinitionError && e.path === "$.services.w.ports.p" && /slot 18 would need port 65538/.test(e.message),
-  );
-  assert.doesNotThrow(() => parse({ version: 1, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3059 } } } } }), "3040..3058 and 3059.. never meet");
 });
 
 test("templates render every known variable and $$ as a literal $", () => {

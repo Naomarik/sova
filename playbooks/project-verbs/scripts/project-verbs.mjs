@@ -178,7 +178,7 @@ async function loadContract() {
 }
 
 let slotsModule;
-/** Sova's slot module (the fixed slot layout), or null outside a Sova checkout. */
+/** Sova's slot module (a definition's slot layout), or null outside a Sova checkout. */
 async function loadSlots() {
   if (slotsModule !== undefined) return slotsModule;
   try {
@@ -713,17 +713,20 @@ export async function check(file, root) {
   }
   const listen = new Map(listening().map((l) => [l.port, l]));
   const held = sovaHeld().ports;
-  // Every slot an instance may take (§app.project-services/instances): the copies' fixed range and
-  // conformance's scratch slots, whatever the copy limit.
+  // Every slot an instance may take (§app.project-services/instances): slot 0, this definition's usable
+  // slots of 1 to 16 and its scratch slots, whatever the copy limit. A slot whose ports overlap another
+  // place's is no copy's: a note, never a problem.
   const slots = await loadSlots();
-  const top = slots?.SLOT_LAYOUT?.top ?? 18;
+  const layout = slots?.slotLayoutOf ? slots.slotLayoutOf(def, null) : null;
+  const places = layout ? [0, ...layout.ordinary, ...layout.scratch] : Array.from({ length: 19 }, (_, i) => i);
+  for (const u of layout?.unavailable ?? []) notes.push(`slot ${u.slot} is unavailable: ${u.why} (no copy takes it)`);
   for (const s of def.services) {
     const at = `$.services.${s.name}`;
     if (takesIsolation && !isObj(raw.services?.[s.name]?.isolation)) problems.push(`${at}.isolation: record {method, why} (references/isolation.md)`);
     if (Object.keys(s.ports).length && !s.about) notes.push(`${at}.about: say how a builder uses it (a client command with its port)`);
     for (const [k, p] of Object.entries(s.ports)) {
       if ("fixed" in p && s.scope === "checkout") problems.push(`${at}.ports.${k}: a fixed port on a checkout service gives every instance the same port; use {base, stride}`);
-      for (let slot = 0; slot <= top; slot++) {
+      for (const slot of places) {
         const n = c.portFor(p, slot);
         if (n > 65535) break;
         const l = listen.get(n);

@@ -38,7 +38,8 @@ import {
   type TestsReport,
   type VerbResult,
 } from "../../shared/project-contract";
-import { numberedPorts, overLimitSentence, SLOT_LAYOUT, type CopyLimit } from "../../shared/project-slots";
+import { numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
+import { COPY_SLOT_TOP } from "../../shared/project-contract";
 import { countsAsRunning, limitInForce, runningCopies } from "./copy-limit";
 import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
@@ -914,12 +915,16 @@ export class ProjectEngine {
     // main checkout's saved definition's (§app.project-services/instances).
     const limit = limitInForce(project, def);
     const conforming = run.caller.kind === "conform";
-    const [scratchA, scratchB] = SLOT_LAYOUT.scratch;
+    // This definition's places: the usable slots of 1 to 16 and its scratch slots (§app.project-services/instances).
+    const layout = slotLayoutOf(def, limit.numbering);
+    const [scratchA, scratchB] = layout.scratch;
     const scratchWords = `slots ${scratchA} and ${scratchB} are conformance's scratch slots`;
-    if (run.req.slot !== undefined && run.req.slot > SLOT_LAYOUT.top)
-      throw new VerbFailure("invalid-request", `slot is at most ${SLOT_LAYOUT.top}: copies take 1 to ${SLOT_LAYOUT.ordinary.length}, and ${scratchWords}`);
-    if (!main && !conforming && run.req.slot !== undefined && SLOT_LAYOUT.scratch.includes(run.req.slot))
-      throw new VerbFailure("invalid-request", `slot ${run.req.slot} is not given to a copy: ${scratchWords}; copies take 1 to ${SLOT_LAYOUT.ordinary.length}`);
+    if (!main && !conforming && run.req.slot !== undefined) {
+      if (layout.scratch.includes(run.req.slot)) throw new VerbFailure("invalid-request", `slot ${run.req.slot} is not given to a copy: ${scratchWords}; copies take 1 to ${COPY_SLOT_TOP}`);
+      if (run.req.slot > COPY_SLOT_TOP) throw new VerbFailure("invalid-request", `slot is at most ${COPY_SLOT_TOP}: copies take 1 to ${COPY_SLOT_TOP}, and ${scratchWords}`);
+      const off = layout.unavailable.find((u) => u.slot === run.req.slot);
+      if (off) throw new VerbFailure("invalid-request", `${unavailableSentence(off)} No copy takes it; ask for another slot, or none`);
+    }
     const numbered = (slot: number) => numberedPorts(def, limit.numbering, slot);
     const checkoutPorts = (slot: number) => def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(numbered(slot)[s.name] ?? {}));
     // No slot's allocation gives an adopted unit's port (§app.project-services/adopt).
@@ -938,13 +943,13 @@ export class ProjectEngine {
         if (!main && !conforming) this.refuseOverLimit(runningCopies(r, project), limit);
         const copies = r.instances.filter((i) => i.project === project && i.slot !== 0 && !i.createdBy.startsWith("conform:")).sort((x, y) => x.slot - y.slot);
         const held = copies.length ? copies.map((i) => `slot ${i.slot} (${i.id}, ${i.checkout})`).join(", ") : "none";
-        const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, [...SLOT_LAYOUT.ordinary], listening, run.req.slot);
+        const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, layout.ordinary, listening, run.req.slot);
         if ("refused" in pick)
           throw new VerbFailure(
             "slots-blocked",
             run.req.slot !== undefined
               ? `${pick.refused} (the project's copies hold: ${held})`
-              : `no slot of 1 to ${SLOT_LAYOUT.ordinary.length} is free for a copy (${scratchWords}; the project's copies hold: ${held}): ${pick.refused.replace(/^no free slot: /, "")}. Free one of those ports, or tear down a copy`,
+              : `no usable slot of 1 to ${COPY_SLOT_TOP} is free for a copy (${scratchWords}${layout.unavailable.length ? `; ${layout.unavailable.map(unavailableSentence).join(" ").replace(/\.$/, "")}` : ""}; the project's copies hold: ${held}): ${pick.refused.replace(/^no free slot: /, "")}. Free one of those ports, or tear down a copy`,
           );
         const all = numbered(pick.slot);
         const ports: Record<string, Record<string, number>> = {};
@@ -2123,7 +2128,7 @@ export class ProjectEngine {
 
   /** The folders `def`'s dir resources copy, as the main checkout would render them. */
   dataSources(def: ProjectDef, project: string): string[] {
-    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: SLOT_LAYOUT.scratch[0], ports: {}, data: {} };
+    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: slotLayoutOf(def, limitInForce(project, def).numbering).scratch[0], ports: {}, data: {} };
     return def.data.flatMap((d) => (d.kind === "dir" && d.from !== "empty" ? [render(d.from, this.vars(def, scope))] : []));
   }
 

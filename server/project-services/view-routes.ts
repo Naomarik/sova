@@ -3,7 +3,8 @@ import { freemem, totalmem } from "node:os";
 import { basename, join } from "node:path";
 import type { Context, Hono } from "hono";
 import { adoptedService, CONTRACT_FILE, httpStatusOf, parseDefinition, type InstanceSummary, type ProjectDef, type ServiceView } from "../../shared/project-contract";
-import { copyLimitOf, overLimitSentence } from "../../shared/project-slots";
+import { COPY_SLOT_TOP } from "../../shared/project-contract";
+import { copyLimitOf, overLimitSentence, slotLayoutOf, unavailableSentence } from "../../shared/project-slots";
 import { isStarting, SERVICES_UI_VERBS, type CopyLimitView, type CopyView, type EntryView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
 import { OrgError } from "../org-error";
 import { canonicalPath } from "../paths";
@@ -152,6 +153,10 @@ export function limitView(root: string, registry: Registry, opts: { host?: CopyL
     copies: mine.length,
     running,
     over: running > limit.cap ? overLimitSentence(running, limit.cap) : null,
+    ...(() => {
+      const layout = main ? slotLayoutOf(main, limit.numbering) : null;
+      return { usable: layout ? layout.ordinary.length : COPY_SLOT_TOP, unavailable: (layout?.unavailable ?? []).map(unavailableSentence) };
+    })(),
     estimate: copyEstimate(stamps, main ? defHashOf(main) : null),
     host: opts.host !== undefined ? opts.host : hostMemory(),
   };

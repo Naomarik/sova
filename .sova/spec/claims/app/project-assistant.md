@@ -383,7 +383,8 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   (`coding`), the gatherings it starts (`gathering`); each a provider and model with an optional
   thinking level. The `gathering` pick runs the feature request chats it opens
   (§app.project-assistant/feature-chats); with none resolved, `start_feature_chat` opens none. The
-  Owner card doesn't show the gathering kind: it resolves like the others.
+  Owner card shows all three kinds as rows (§app.owner-page/controls), the gathering kind as
+  "Feature request chats it starts".
 - **One default for every organization**: the host's Project Assistant default, one model and
   thinking level for all three kinds, set in Settings → Organizations
   (§app.settings-dialog/organizations). Host state (`<stateRoot>/baton-settings.json`, `assistant`),

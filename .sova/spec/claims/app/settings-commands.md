@@ -16,7 +16,9 @@ for word. The entries are:
 - **Settings, read:** `settings.<doc>.get` for `sova`, `models`,
   `provider-limits`, `align`, `delegate`, `spec`, `team`, `summarizer`, `overseer`, `memory` and
   `subagents`.
-- **Settings, written:** only `settings.align.set`, sending version 1 with the style and Visuals.
+- **Settings, written:** `settings.align.set`, sending version 1 with the style and Visuals, and
+  `settings.assistant-default.set`, the Project Assistant's default model and thinking, or `null`
+  to clear it (§app.project-assistant/models; mesh `admin`).
   `settings.delegate.get` and `settings.spec.get` read the legacy files (`mode-delegate.json`,
   `mode-spec.json`) that seed the subagent profile library and are its fallback, not what
   Settings → Subagents shows; nothing on the catalogue writes them.

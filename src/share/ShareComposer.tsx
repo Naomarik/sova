@@ -376,6 +376,9 @@ export function ShareComposer(props: {
             class="button button-icon share-send"
             aria-label={props.sending() ? "Sending" : "Send"}
             title={props.sending() ? "Sending" : "Send"}
+            // Pressing Send leaves the focus (and a phone's keyboard) in the box. Taking it moved the page under
+            // the finger (the owner page's bar comes back when the box loses focus) and the release missed Send.
+            onMouseDown={(e) => e.preventDefault()}
             aria-disabled={props.sending() || uploading() || props.blocked?.() || (!props.draft().trim() && !ready().length) ? "true" : undefined}
           >
             <span class="icon share-icon-send" aria-hidden="true" />

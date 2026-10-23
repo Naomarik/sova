@@ -749,6 +749,63 @@ would list master's changes instead.
     The existing stamps' source on this branch resolves to a user message.
   - Upgrade: see UPGRADING step 10, "`agree` resolves pi-session references".
 
+### 2026-10-22
+
+- **Docs land with the code they describe, with no separate permission.**
+  - Commit: on branch `feat/spec-lands-with-code` (folds in the unlanded `feat/promote-before-landing`,
+    d202e854); not on master yet: the merge round folds it in.
+  - Why: since 42c63467 nobody made a branch's drafts official at landing. Sessions were told their
+    go-ahead didn't cover committing and to promote on the default branch after landing; the merge round
+    promoted none and removed the worktree, so about 1 in 4 landings since 2026-10-08 left docs
+    unpromoted, and sessions asked the user for a second, docs-only merge.
+  - Changed:
+    - `mode/spec-mode.md`: "A branch isn't done or ready to land until its drafts are promoted on it,
+      by you, after its checks pass; nothing at landing promotes for you." The go-ahead paragraph: "A
+      go-ahead to build or merge covers committing them with the code, never asked separately; told
+      not to commit, leave evidence pending". It names no project's merge process (constraint 1);
+      word cap 906 → 944 (942 words). The worker note: the parent promotes on its own branch; a
+      worker promotes, commits or records `--commit` evidence only when its brief says to, and then
+      only on its brief's branch, never by landing on the default branch;
+    - `PROMOTE.md`: the go-ahead covers committing the docs; promote on your own branch before you call
+      it ready; a draft whose branch landed without it is promoted on a fresh branch, never on the
+      default branch itself; drafts are deleted with `prune --official` or an approved list;
+    - `sova-spec-draft.mjs prune --official [--from DIR]`: deletes only drafts the tool confirms are
+      already official (own drafts read `promoted`; with `--from`, copies kept outside the project read
+      against the current spec alone, every changed record already current); keeps and lists the rest.
+      The `git-requires-commit` refusal no longer says "without permission to commit";
+    - `worktrees/spec.ts`: a merge into the default branch with the worktree's own drafts unpromoted
+      says they didn't land with the code and stay in the worktree's drafts folder until promoted on a
+      fresh branch, never on it directly (was "so promote them now"); into another branch, promote
+      them on it before it lands;
+    - the merge round (Sova's playbook, `round.mjs`): `ask` names drafts not confirmed promoted; a
+      `READY` with them left, or a `check` that finds them (`docs not promoted: …`, a need), is handed
+      back to the owner with the text to send; a merge of master that conflicts in the spec
+      (`claims/*.md`, or a manifest `merge-manifest` refuses) is aborted and handed back to re-promote
+      on top of master (was "resolve, commit, then check"); `landed` keeps a copy of drafts not
+      confirmed promoted under `<state root>/playbooks/merge-round/drafts/<head>/`, withholds the clean
+      up if the copy fails, and prunes earlier copies the draft tool confirms official. The captain
+      never promotes; a branch whose owner is gone stays the user's call;
+    - GOALS.md gains the rule "Docs land with their code" and a goal-4 measure; the site page says the same.
+    - review B1 (c0639814): `drafts` rows list `promotedConflict` (ids the draft promoted before that current
+      now says differently; state unchanged). The merge round's hold-back counts them as not promoted, so a
+      branch that took master's spec in a conflict without promoting again is handed back, and
+      `prune --official` keeps such a draft. §chat.merge-round/driver, §tools.spec/draft-hygiene (draft
+      `b1-promoted-conflict`, f8a6f806).
+    - A/B B7 (e96c8470): `mode/spec-mode.md` "Before finishing" adds "A draft whose branch already landed is
+      promoted on a fresh branch from the default branch, never on the default branch itself." (it was only
+      in PROMOTE.md; 1 of 8 runs promoted on master). Word cap 944 → 966 (964 words). §tools.spec/mode-reading
+      (draft `landed-draft-fresh-branch`).
+  - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check, §tools.spec/draft-hygiene, §tools/spec,
+    §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card,
+    §chat.mode-menu/workers reworded (draft `spec-lands-with-code`, promoted on the branch at 005f437f;
+    `foreign --base 11459693 --head 005f437f`). Base: 2aa27857.
+  - Goal 4 (code and spec agree after building), measured L0: the merge round's tests on master's
+    `round.mjs` with this branch's tests: 6 of 38 fail (the hand-back of a READY with drafts left, the
+    check need, the spec-conflict hand-back for claims and for a refused manifest, the kept-copy prune,
+    the notice wording); 38/38 on this branch. `tests/draft-hygiene.test.mjs`: 3 new tests (the prune
+    mode). Constraint 5 (light): the mode text grows 37 words.
+  - Upgrade: see UPGRADING step 11.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -917,3 +974,9 @@ The tools are Node standard library only. Nothing is installed.
       0.036 or stale. A hook of your own that parses the unread line reads "; lower-ranked: <command>"
       (was "; +N more: <command>") and "none read first; lower-ranked: <command>" (was "N unread:
       <command>"): no count.
+11. **The 2026-10-22 mode text** (branch `feat/spec-lands-with-code`). Copy `core/sova-spec-draft.mjs` again
+    (step 1). A project that points its agents at `mode/spec-mode.md` gets the new rule: a branch isn't
+    done or ready to land until its drafts are promoted on it, and the go-ahead to build or merge covers
+    committing them. A merge process of your own that promoted drafts at landing stops doing so; one that
+    removed worktrees should keep a copy of their unpromoted drafts first. New: `prune --official [--from
+    DIR]` deletes only drafts the tool confirms are already official.

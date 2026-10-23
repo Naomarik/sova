@@ -137,6 +137,9 @@ writer**).
   changed, leaves none of them unclaimed, reads before finishing each § the
   census note's one `Unread § your change landed in` line marks read first
   (its command lists the rest), and promotes what it verified (or says why it could not).
+  A branch isn't done or ready to land until its drafts are promoted on it, and the
+  go-ahead to build or merge covers committing them; a draft whose branch already
+  landed is promoted on a fresh branch, never on the default branch.
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
@@ -750,7 +753,8 @@ cannot compile without deciding):
   parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
   then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
-  the brief says otherwise; the final report lists each foreign § it updated).
+  the brief says otherwise, and then only on its branch, never on the default
+  branch; the final report lists each foreign § it updated).
   Never the Delegate block, the align block or bridge, the vis guide, or the
   writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the

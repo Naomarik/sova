@@ -15,7 +15,7 @@
  *
  * Operator routes (main listener only):
  * GET  /api/orgs/:id/owner/assistant              -> AssistantInfo
- * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo
+ * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo (a kind's null: follow the default)
  * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } -> AssistantInfo
  * POST /api/orgs/:id/owner/assistant/open         -> { sessionId, path } (Open Assistant Chat; makes it when none)
  * POST /api/orgs/:id/owner/requests/:rid/chat     -> { sessionId, path } (Start Chat, §app.project-assistant/request-chat)
@@ -106,6 +106,9 @@ export interface OwnerRequestRow {
   title: string;
   status: OwnerRequestStatus;
   at: string;
+  /** A `feature` request's feature request chat, as it stands now (§app.project-assistant/feature-chats):
+      "planning" while it is open, "agreed" once done; worked out at read time. */
+  plan?: "planning" | "agreed";
 }
 
 /** A version the owner can try (§app.project-assistant/versions). */
@@ -147,6 +150,9 @@ export interface AssistantMessage {
   /** On the assistant's message after a start_version that started or found a copy: that version,
       resolved at each read (§app.project-assistant/versions). */
   versions?: OwnerVersionRow[];
+  /** On the assistant's message after a start_feature_chat that opened one: that chat, while it is
+      the owner's to read (§app.project-assistant/feature-chats). */
+  featureChat?: { conversation: string; title: string };
 }
 
 export interface AssistantView {
@@ -162,7 +168,27 @@ export interface AssistantView {
   photos?: { perMessage: number; maxBytes: number };
 }
 
-export type AssistantServerMessage = { type: "view"; view: AssistantView } | { type: "streaming"; text: string } | { type: "error"; code: string; message: string };
+export type AssistantServerMessage =
+  | { type: "view"; view: AssistantView }
+  | { type: "streaming"; text: string }
+  | { type: "error"; code: string; message: string }
+  /** One of the owner's feature request chats changed: read it again (§app.project-assistant/feature-chats). */
+  | { type: "conversation"; conversation: string }
+  /** Its reply so far, filtered as a hand-off page's streaming text. */
+  | { type: "conversation-streaming"; conversation: string; text: string };
+
+/** A feature request chat the Project Assistant opened (§app.project-assistant/feature-chats): who it belongs to. */
+export interface FeatureChatRecord {
+  sessionId: string;
+  /** The owner who opened it (a person id). */
+  personId: string;
+  projectId: string;
+  /** Its `feature` request. */
+  requestId: string;
+  at: string;
+  /** Closed because its person stopped being the owner. */
+  ended?: { at: string; why: "owner-changed" | "left" };
+}
 
 /** `<workspace>/project-assistant.json`: the org's assistant models and its conversation per owner. */
 export interface AssistantStore {
@@ -170,6 +196,8 @@ export interface AssistantStore {
   models: WorkModels;
   /** Owner person id -> their conversation's session id (the newest; earlier ones stay in the workspace, closed). */
   conversations: Record<string, string>;
+  /** The feature request chats it opened, oldest first. */
+  featureChats?: FeatureChatRecord[];
 }
 
 /** A model as the Owner card shows it: the pick, its price per million tokens when known. */
@@ -178,12 +206,31 @@ export interface PricedPick extends ModelPick {
   price?: { input: number; output: number };
 }
 
+/** Where a kind's model comes from (§app.project-assistant/models): a project's override (coding and
+    gathering only), the organization's own pick, or the host's default. */
+export type AssistantModelSource = "project" | "org" | "default";
+
+/** A resolved model with its source. */
+export interface ResolvedPick extends PricedPick {
+  source: AssistantModelSource;
+}
+
+/** Why a resolved reply model doesn't run: this host can't run it (not in its model list, so unknown or
+    without credentials), or Settings → Models turned it off. */
+export type AssistantModelProblem = "unavailable" | "turned-off";
+
 /** The Owner card's Project Assistant part. */
 export interface AssistantInfo {
-  /** The org's models per kind of work. */
-  models: Partial<Record<WorkKind, PricedPick | null>>;
+  /** The org's resolved model per kind of work (its own pick, else the default); null when neither is set. */
+  models: Partial<Record<WorkKind, ResolvedPick | null>>;
+  /** The host's default (Settings → Organizations), or null. */
+  default: PricedPick | null;
+  /** The resolved reply model runs here: the assistant answers (§app.project-assistant/chat). */
+  ready: boolean;
+  /** Why the resolved reply model doesn't run, when one resolves and it doesn't. */
+  replyProblem?: AssistantModelProblem | null;
   /** Per project: which coding/gathering model applies and where it comes from. */
-  projects: { projectId: string; name: string; coding: { pick: PricedPick | null; source: "org" | "project" }; gathering: { pick: PricedPick | null; source: "org" | "project" } }[];
+  projects: { projectId: string; name: string; coding: { pick: PricedPick | null; source: AssistantModelSource | null }; gathering: { pick: PricedPick | null; source: AssistantModelSource | null } }[];
   /** The owner's conversation, once it exists. */
   sessionId: string | null;
   /** Whether the reply model sees images; null with no reply model (the card's "can't see photos" line). */

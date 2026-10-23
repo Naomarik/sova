@@ -1,6 +1,7 @@
-// The chat composers on screen, by session path, for the command palette's "This chat" rows
-// (§app.command-palette/rows): what the slash menu would list there, and the composer's own way to
-// put "/name " in its textarea. A composer registers while mounted; the palette only reads.
+// The chat composers on screen, by session path, for the command palette's This chat and Slash
+// commands rows (§app.command-palette/rows): what the slash menu would list there, the composer's
+// own way to put "/name " in its textarea, and its file picker, Playbooks and Undo last turn. A
+// composer registers while mounted; the palette only reads and asks.
 //
 // Kept tiny and DOM-free: Composer is in the main bundle, the palette is not.
 
@@ -15,6 +16,16 @@ export interface ComposerHandle {
   hasDraft(): boolean;
   /** Puts `/name ` in the textarea and focuses it; sends nothing. */
   insert(name: string): void;
+  /** Opens the composer's file picker, synchronously: call it from the click (or key) itself, as
+      a phone's browser opens a picker only from the gesture that asked for it. */
+  attach(): void;
+  /** A Sova chat holds it, so `playbooks()` opens the Playbooks dialog (a watch view can't). */
+  canPlaybooks(): boolean;
+  playbooks(): void;
+  /** Why Undo last turn can't run: null when it can, "" when not yet with nothing to say;
+      undefined where no Sova chat holds it (a watch view). */
+  undoBlocked(): string | null | undefined;
+  undo(): void;
 }
 
 const handles = new Map<string, ComposerHandle[]>();

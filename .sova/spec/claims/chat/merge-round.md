@@ -63,7 +63,11 @@ after each landing, since every other branch is then checked against the new mas
   chat, or one with no card (Sova refused to show it and said why), is asked the old way: with
   `session_send`, for a `READY <branch> <sha>` or `NOT READY: <why>` pushed with `queue_push` to
   the captain's own topic (`queue_open merge`, the same each round while the session lives,
-  §chat.topics/open), piped into the driver's `reply`. It never asks a busy session. Notes arrive
+  §chat.topics/open), piped into the driver's `reply`. In a project whose master turns the merge
+  guard on (`"mainMerges": "go-ahead"`, Sova's own), that READY alone lands nothing: only the user's
+  Land It at that head, or the user naming the branch to the captain, lets it be checked and landed;
+  without either the branch stays queued for the card and the captain tells the user why. It never
+  asks a busy session. Notes arrive
   only between turns, so the captain reads the owner again just before landing; a hold that arrives
   after a landing is reported to the owner and the user, never undone. A session that needs to
   reach the captain is told the topic's name by `session_send`, never given a second topic; the
@@ -194,6 +198,12 @@ shell and under a timeout.
   `<state root>/landing.json`) for the branch at its current head counts as the owner's READY: the
   branch goes to "to check"; one recorded without specs also lets its check pass with drafts left,
   naming them. A recorded Not Yet at the current head puts it in "not ready" until the head moves.
+  **The merge guard.** When master's own copy of `.sova/offers.json` says `"mainMerges": "go-ahead"`
+  (§chat.worktrees/merge-guard, read through git, never a working tree), a branch goes to "to check",
+  and a green check to "to land", only with the user's go-ahead at its current head: a recorded go-ahead,
+  or the user having named the branch (`note … source=user`) with its owner's READY at that head. An
+  owner's own READY alone is no go-ahead there: the branch stays to queue, or card shown, for the
+  Landing card. With the guard off, an owner's READY at the current head goes to "to check" as before.
   **`reply <branch>`** reads the
   delivered topic batches on stdin (§chat.topics/delivery) — every batch piped, when several arrive
   together — or the owner's `session_read` output. A batch is read only against a recorded ask:

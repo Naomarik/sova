@@ -5242,3 +5242,226 @@ test("a message to a member that ended while its successor is still to start is 
 		} finally { await h.cleanup(); }
 	}
 });
+
+// ── Runtime fallback of standing roles (§teams.defaults/runtime-fallback) ─────────────────────
+/** The real Ollama error a monitor whose monthly quota ran out ends every turn with. */
+const OLLAMA_MONTHLY = '429: {"message":"you (alex) have reached your monthly usage limit, add usage credits: …"}';
+/** The text a Claude Code member's turn ends with once the bridge has tried every Claude login (the CLI's own synthetic message, claude-code/tests/fixtures/failures/limit-rejected.ndjson; session-bridge.ts fail()). */
+const CLAUDE_ALL_LOGINS_OUT = "You've hit your limit · resets 3pm";
+/** A plain rate limit: retried where it happens, never a switch. */
+const PLAIN_429 = '429: {"code":"1302","message":"Rate limit reached for requests"}';
+const MONITOR_PRIMARY = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+const FALLBACK_FILE = {
+	...DEFAULTS_FILE,
+	coordinator: { ...DEFAULTS_FILE.coordinator, fallback: { backend: "pi", model: "test/model", effort: "high" } },
+	monitor: { ...DEFAULTS_FILE.monitor, primary: MONITOR_PRIMARY, fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" } },
+};
+/** A coordinated harness whose registry also knows the Ollama model the monitor's primary names. */
+function fallbackHarness(file: unknown = FALLBACK_FILE) {
+	const h = coordinatedHarness(file);
+	h.ctx.modelRegistry.find = (p: string, m: string) => ((p === "test" && m === "model") || (p === "ollama-cloud" && m === "deepseek-v4.1-flash") ? { provider: p, id: m } : undefined);
+	return h;
+}
+/** One failed turn, as the fold settles it: parked in `waiting`, task outcome "error", the provider's errorMessage as the error. */
+const failTurn = (w: any, error: string) => {
+	w.status = "running";
+	w.taskOutcome = "error";
+	w.settle(error);
+};
+const okTurn = (w: any) => {
+	w.status = "running";
+	w.taskOutcome = "success";
+	w.output = "checked";
+	w.settle();
+};
+const itemsOf = (h: { memberOf(id: string): { dir: string } | undefined }, id: string, kind?: string) => readMemberItems(h.memberOf(id)!.dir).filter((i) => !kind || i.kind === kind);
+const teamOps = (h: { appended: any[] }) => h.appended.filter((e) => e.customType === "subagents-team-v1").map((e) => e.data.op);
+const deadEntries = (h: { appended: any[] }) => h.appended.filter((e) => e.customType === "subagents-dead-tuple-v1").map((e) => e.data);
+
+test("runtime fallback: a monitor out of its monthly Ollama usage moves to its fallback once, its seat freed first; the coordinator gets one item", async () => {
+	const h = fallbackHarness();
+	try {
+		const created = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		assert.match(created.content[0].text, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		const monitor = h.worker("ag_03");
+		assert.equal(monitor.model, "ollama-cloud/deepseek-v4.1-flash");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the monitor's successor");
+		const successor = h.worker("ag_04");
+		assert.equal(successor.name, "monitor-2");
+		assert.equal(successor.model, "claude-code-cli/claude-sonnet-5-5", "on the fallback");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.successorOf], ["monitor", "monitor"]);
+		assert.equal(monitor.status, "killed", "the failed monitor is stopped");
+		assert.match(successor.task, /You take over from the monitor monitor \(ag_03\), which has already ended: there is nobody to ask and no team_ready to call\. Run your standing instruction now/, "its first check runs at once");
+		// The seat is released before the successor is added (a full team still gets it).
+		assert.deepEqual(teamOps(h), ["create", "eject", "add"]);
+		const ev = h.appended.filter((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").map((e) => e.data);
+		assert.equal(ev.length, 1);
+		assert.equal(ev[0].workerId, "ag_03");
+		assert.match(ev[0].detail, /^successor monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5; fallback: primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low hit its monthly usage limit \(429: /);
+		assert.deepEqual(deadEntries(h).map((d) => [d.backend, d.model, d.teamId, d.duty]), [["pi", "ollama-cloud/deepseek-v4.1-flash", undefined, undefined], ["pi", "ollama-cloud/deepseek-v4.1-flash", "team_01", "monitor"]]);
+		const list = (await h.call("team_list")).content[0].text;
+		assert.match(list, /system handover → ag_03 \(monitor\): accepted-or-queued — old member already ended; nothing to retire/, "a team action row");
+		await h.tick(60);
+		// One item about the switch, and no "failed" report for the turn.
+		const handover = itemsOf(h, "ag_01", "handover");
+		assert.equal(handover.length, 1);
+		assert.match(handover[0].body, /Monitor moved to its fallback claude-sonnet-5-5: ollama-cloud\/deepseek-v4\.1-flash hit its monthly usage limit\./);
+		assert.equal(itemsOf(h, "ag_01", "report").length, 0, "no urgent failed report");
+		// Its stop is said nowhere else: still one item.
+		await h.tick(60);
+		assert.equal(itemsOf(h, "ag_01").length, 1);
+		// The successor runs the fallback: its own failure is routed as before, never a second switch.
+		failTurn(successor, OLLAMA_MONTHLY);
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 4, "a member not on its primary is not switched");
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: 3 failed turns in a row of any kind switch; a single 429 rate limit or a streak broken by a good turn doesn't; the backstop re-arms the check", async () => {
+	const h = fallbackHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const monitor = h.worker("ag_03");
+		const armed = () => h.timers.filter((t) => t.ms === 10 * 60_000).length;
+		failTurn(monitor, PLAIN_429);
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 3, "a single rate limit is not a switch");
+		assert.equal(itemsOf(h, "ag_01", "report").length, 1, "it is reported as before");
+		assert.equal(armed(), 1, "the parent schedules the monitor's next check itself");
+		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "list" } })).text.match(/scheduled by Sova after a failed check/g)?.length, 1);
+		failTurn(monitor, "Connection reset by peer");
+		await h.tick(60);
+		assert.equal(armed(), 1, "a pending check is not doubled");
+		okTurn(monitor);
+		failTurn(monitor, "Connection reset by peer");
+		failTurn(monitor, "Connection reset by peer");
+		await h.tick(60);
+		assert.equal(h.workers.length + h.created.length, 3, "a good turn starts the count again");
+		failTurn(monitor, "Connection reset by peer");
+		await waitFor(() => h.worker("ag_04"), "the successor after 3 failures in a row");
+		assert.equal(h.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5");
+		const ev = h.appended.find((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").data;
+		assert.match(ev.detail, /fallback: primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low failed 3 turns in a row \(Connection reset by peer\)$/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: with no fallback the dead monitor is stopped and said once; a dead coordinator is said to the main chat once", async () => {
+	const none = { ...FALLBACK_FILE, monitor: { ...FALLBACK_FILE.monitor, fallback: null }, coordinator: { ...FALLBACK_FILE.coordinator, fallback: null } };
+	const h = fallbackHarness(none);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), monitor = h.worker("ag_03");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => monitor.status === "killed", "the monitor stopped");
+		await h.tick(60);
+		const items = itemsOf(h, "ag_01");
+		assert.equal(items.length, 1, "one item, no failed report");
+		assert.equal(items[0].kind, "notice");
+		assert.match(items[0].body, /Monitor monitor \(ag_03\) in team_01 stopped: its primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low hit its monthly usage limit \(429: .*\), and no fallback is set\./);
+		const notices = () => h.parentMessages("team-notice").map(([m, o]: any[]) => [m.content, o.triggerTurn]);
+		assert.equal(notices().length, 1);
+		assert.equal(notices()[0][1], false, "displayed, no turn");
+		// Stopped: its timers are gone, so nothing wakes the coordinator again.
+		for (const t of [...h.timers]) t.fn();
+		await h.tick(60);
+		assert.equal(itemsOf(h, "ag_01").length, 1, "no repeated follow-ups");
+		assert.equal(h.workers.length + h.created.length, 3, "nothing started");
+		// The coordinator: not stopped, said to the main chat once.
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await h.tick(60);
+		assert.notEqual(coordinator.status, "killed");
+		assert.equal(notices().length, 2);
+		assert.match(notices()[1][0], /^Coordinator coordinator \(ag_01\) in team_01 can't run: its primary claude-code\/claude-opus-5-5\/medium hit its usage limit \(You've hit your limit · resets 3pm\), and no fallback is set\. .*team_succeed \{ team: "team_01", role: "coordinator" \}/);
+		assert.equal(completions(h).length, 0, "that turn's completion is the notice");
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await h.tick(60);
+		assert.equal(notices().length, 2, "once per member");
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: a team with all 24 seats taken still gets the successor", async () => {
+	const h = fallbackHarness();
+	try {
+		const members = Array.from({ length: 22 }, (_, i) => ({ role: `m${i}`, prompt: `p${i}` }));
+		await h.call("team_create", { name: "Full", objective: "o", members });
+		await assert.rejects(h.call("team_add", { team: "Full", members: [{ role: "extra", prompt: "p" }] }), /would exceed 24 members/, "full");
+		const monitor = h.worker("ag_24");
+		assert.equal(h.memberOf("ag_24")!.duty, "monitor");
+		failTurn(monitor, OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_25"), "the successor of a full team's monitor");
+		assert.equal(h.worker("ag_25").name, "monitor-2");
+		const team = (await h.call("team_list")).content[0].text;
+		assert.match(team, /ag_24 monitor \(monitor\).*ejected/);
+		assert.match(team, /ag_25 monitor-2 \(monitor\)/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: a claude-code coordinator with every login out switches, and routing moves to its successor", async () => {
+	const h = fallbackHarness();
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01");
+		assert.equal(coordinator.model, "claude-code-cli/claude-opus-5-5");
+		failTurn(coordinator, CLAUDE_ALL_LOGINS_OUT);
+		await waitFor(() => h.worker("ag_04"), "the coordinator's successor");
+		const next = h.worker("ag_04");
+		assert.equal(next.name, "coordinator-2");
+		assert.deepEqual([next.model, next.effort], ["test/model", "high"], "on the fallback");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, h.memberOf("ag_04")!.orchestrator], ["coordinator", true]);
+		assert.equal(coordinator.status, "killed");
+		assert.match(next.task, /coordinator stopped when its primary claude-code\/claude-opus-5-5\/medium hit its usage limit, without writing a handover note/);
+		assert.match(next.task, /Its assignment from the main thread:\nCoordinate this team toward the objective/);
+		assert.match(next.task, /- dev: none declared\n {2}Assigned task \(from the main thread\):\n {2}\| build/, "every teammate's assignment");
+		assert.equal(completions(h).length, 0, "the failed turn reaches nobody");
+		const ev = h.appended.find((e) => e.customType === "subagents-team-event-v1" && e.data.kind === "handover").data;
+		assert.match(ev.detail, /^successor coordinator-2 \(ag_04\) on pi\/test\/model; fallback: primary claude-code\/claude-opus-5-5\/medium hit its usage limit \(You've hit your limit · resets 3pm\)$/);
+		// Members now report to the successor.
+		const dev = h.worker("ag_02");
+		dev.output = "built";
+		dev.settle();
+		await assertItem(h, "ag_04", "report", /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\]/);
+	} finally { await h.cleanup(); }
+});
+
+test("runtime fallback: the out primary survives a reload; new teams, the members default and replacements skip it; after an hour it is tried again", async () => {
+	const h = fallbackHarness();
+	let entries: any[];
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		failTurn(h.worker("ag_03"), OLLAMA_MONTHLY);
+		await waitFor(() => h.worker("ag_04"), "the switch");
+		entries = h.appended.map((e, i) => ({ type: "custom", id: `e${i}`, customType: e.customType, data: e.data }));
+	} finally { await h.cleanup(); }
+	const reloaded = (at?: number) => {
+		const r = fallbackHarness();
+		const list = entries.map((e) => (e.customType === "subagents-dead-tuple-v1" && at !== undefined ? { ...e, data: { ...e.data, at } } : e));
+		r.ctx.sessionManager.getEntries = () => list;
+		return r;
+	};
+	const r = reloaded();
+	try {
+		await r.start();
+		const created = (await r.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(created, /monitor monitor added on claude-code\/claude-sonnet-5-5\/low \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low refused: it ran out at runtime .* ago \(hit its monthly usage limit\); it is tried again from /);
+		// The members default is a tuple check too.
+		await r.commands.get("team").handler("defaults", r.ctx);
+		const libPath = path.join(r.agentDir, "subagent-profiles.json");
+		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
+		lib.profiles[0].members = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const added = (await r.call("team_add", { team: "Next", members: [{ role: "late", prompt: "p" }] })).content[0].text;
+		assert.match(added, /Members default pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(subagent profile "My setup"\) can't run here — it ran out at runtime/);
+		// A replacement from the main chat skips it as well.
+		const monitorId = (await r.call("team_list", { team: "Next" })).content[0].text.match(/(ag_\d+) monitor \(monitor\)/)[1];
+		r.worker(monitorId).exit();
+		const replaced = (await r.call("team_succeed", { team: "Next", role: "monitor" })).content[0].text;
+		assert.match(replaced, /^Started monitor-2 \(ag_\d+\) to succeed monitor \(ag_\d+\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/);
+	} finally { await r.cleanup(); }
+	const later = reloaded(Date.now() - 61 * 60_000);
+	try {
+		await later.start();
+		const created = (await later.call("team_create", { name: "Later", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
+		assert.match(created, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "after the hour the primary is tried again");
+	} finally { await later.cleanup(); }
+});

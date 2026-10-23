@@ -104,7 +104,7 @@ Each section says once what happens without a fallback:
 | Section | Without a fallback, when the primary can't run |
 |---|---|
 | Delegate routing | The agent asks you which model to use. |
-| Teams | The team isn't created. |
+| Teams | The team isn't created. With one, a coordinator or monitor whose primary runs out of usage while the team runs moves to it. |
 | Spec writer | The session writes the spec itself. |
 | Reviewer | The review is recorded incomplete. |
 

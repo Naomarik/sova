@@ -1061,15 +1061,40 @@ async function windowResolver(): Promise<WindowResolver | undefined> {
 
 /** One summary. `resolveWindow` is optional on purpose: without it the context gauge has no
  *  window (tests and any caller that must not spin up a ModelRuntime). */
-export async function getSessionSummary(path: string, resolveWindow?: WindowResolver): Promise<SessionSummary | null> {
+/** The stores a single-row summary reads besides its file, read once and shared by every row of
+    one request (the Overseer's history, a batch of refreshes). */
+export interface SummaryReads {
+  live: Map<string, LiveRecord>;
+  own: Map<string, RawLiveRecord>;
+  groups: Record<string, string>;
+  titles: ReturnType<typeof readSessionTitleRecords>;
+  seen: Record<string, number>;
+  attention: boolean;
+  fields: ReturnType<typeof fieldLookup>;
+}
+
+export function summaryReads(): SummaryReads {
+  return {
+    live: readLive(),
+    own: readOwnLiveRecords(),
+    groups: readAssignments(),
+    titles: readSessionTitleRecords(),
+    seen: readSeen(),
+    attention: readDecisionSettings().features.attention,
+    fields: fieldLookup(),
+  };
+}
+
+export async function getSessionSummary(path: string, resolveWindow?: WindowResolver, reads?: SummaryReads): Promise<SessionSummary | null> {
   const s = await summarize(path, resolveWindow);
   if (!s) return null;
-  const l = readLive().get(path);
-  const ownRec = readOwnLiveRecords().get(path);
-  const groupId = readAssignments()[s.id];
+  const r = reads ?? summaryReads();
+  const l = r.live.get(path);
+  const ownRec = r.own.get(path);
+  const groupId = r.groups[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
   const row: SessionSummary = {
-    ...withTitle(s, readSessionTitleRecords()),
+    ...withTitle(s, r.titles),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
@@ -1079,9 +1104,9 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
-    ...attentionFields(s, l, ownRec, readSeen()),
-    ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
-    ...fieldLookup()(s.path, s.id, s.cwd),
+    ...attentionFields(s, l, ownRec, r.seen),
+    ...decisionFields(s, l, ownRec, r.seen, r.attention),
+    ...r.fields(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
   return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row)));

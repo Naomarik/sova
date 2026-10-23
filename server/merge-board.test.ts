@@ -108,6 +108,26 @@ test("the source waits for readiness, writes the file whole at 0600, and shares 
   assert.equal(lists, 2);
 });
 
+test("the source rewrites the file only when the board changed, or once it is refreshMs old", async () => {
+  const file = join(root, "state-unchanged", "merge-board.json");
+  let t = 1000;
+  const readings: Record<string, SessionReadiness | null> = { a: readiness(tree("/w/x", "feat/x", "ready")) };
+  const src = new BoardSource({ list: async () => [session("a")], idle: async () => {}, inputs: inputs(readings), file, now: () => t, refreshMs: 120_000 });
+  const writtenAt = () => JSON.parse(readFileSync(file, "utf8")).at as string;
+  await src.get();
+  const first = writtenAt();
+  t += 60_000;
+  await src.get();
+  assert.equal(writtenAt(), first, "same content: not rewritten");
+  readings.a = readiness(tree("/w/x", "feat/x", "blocked"));
+  await src.get();
+  assert.notEqual(writtenAt(), first, "changed: rewritten");
+  const second = writtenAt();
+  t += 120_000;
+  await src.get();
+  assert.notEqual(writtenAt(), second, "unchanged but old: rewritten so readers see it fresh");
+});
+
 test("a row carries its landing (§chat.worktrees/ready-to-land) when the tree has one, and none otherwise", () => {
   const landing = { state: "specs" as const, commit: "a".repeat(40), drafts: ["d"], specsWhy: "no tools" };
   const b = buildBoard([session("a")], inputs({ a: readiness({ ...tree("/w/l", "feat/l", "ready"), landing }, tree("/w/m", "feat/m", "ready")) }), 0);

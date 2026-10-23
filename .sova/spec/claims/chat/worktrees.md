@@ -444,7 +444,9 @@ and a reading stands for a while before it is read again:
   therefore also take up to 5 minutes to show, as "In progress · 3 uncommitted files" or as a
   caveat on ready.
 - Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
-  reading at once: the tree's index and HEAD are part of what it was read from.
+  reading at once: the tree's index and HEAD are part of what it was read from. While the session
+  feed runs (§app.decisions/push), such a change, or its base branch moving, is noticed within
+  5 s with no session-file write: that row alone is read again and the list says so.
 - A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
   confirm, or `sova_archive`'s removal) ends the reading at once for every session that tracks
   the removed tree: the cleanup answers only once those sessions are read again, so the very next
@@ -478,7 +480,9 @@ and no HTTP call (the merge round's driver, §chat.merge-round/driver); the sche
   as the merge captain's profile (`merge-captain`), which attach worktrees only to check them. When
   several sessions track one path, one not archived wins, then the most recently active. An owner
   is busy while its turn runs, a worker is working, or it holds a queued message.
-- **When it is written.** Every minute while the server runs (first about 10 seconds after start),
-  replaced whole by atomic rename, mode 0600. A rebuild lists the sessions and waits up to 20
+- **When it is written.** Rebuilt every minute while the server runs (first about 10 seconds after
+  start); the file is replaced whole by atomic rename, mode 0600, only when its content (all but
+  `at`) changed, and at least every 2 minutes, so a reader never takes a running server's board for
+  stale. A rebuild lists the sessions and waits up to 20
   seconds for the readiness reads that listing asked for; concurrent asks share one rebuild. A
   write that fails is logged and the board is still used in-process.

@@ -31,7 +31,7 @@ export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
     excludes them by exact name even when an extension registers one after load. */
 export const KNOWN_REMOVABLE_TOOLS = [
   "agent_spawn", "agent_resume", "agent_models", "agent_list", "agent_transcript", "agent_steer", "agent_kill", "agent_wait",
-  "team_create", "team_add", "team_eject", "team_list",
+  "team_create", "team_add", "team_eject", "team_succeed", "team_list",
 ] as const;
 
 /** The tools each grant adds (registered by the server's `sova-session-powers` extension). */

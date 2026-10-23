@@ -19,6 +19,8 @@ import type {
   TeamEvent,
   TeamInfo,
   TeamMember,
+  TeamInboxBody,
+  TeamInboxView,
   ClaudeLoginRow,
   ClaudePoolInfo,
   ClaudePoolLogin,
@@ -55,6 +57,7 @@ import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
+import { addInboxCounts, inboxBody, inboxView, itemsFileOf, mailboxRootOf, readItems, validSegment } from "./team-inbox";
 import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
@@ -1257,6 +1260,27 @@ async function linkRows(sessionId: string | null, path: string): Promise<Pick<Se
   return links.length ? { links } : {};
 }
 
+/** One team member's inbox (§app.subagents-pane/member-inbox), read-only: its items without bodies,
+    or with `item` one item's whole message. Only a member of one of this session's teams is read.
+    `path` must already be validated with resolveSessionPath(). */
+export async function getMemberInbox(
+  path: string,
+  teamId: string,
+  workerId: string,
+  item?: string,
+): Promise<{ ok: true; body: TeamInboxView | TeamInboxBody } | { ok: false; status: 400 | 404; error: string }> {
+  if (!validSegment(teamId) || !validSegment(workerId)) return { ok: false, status: 400, error: "Invalid ?team= or ?worker=" };
+  if (item !== undefined && !validSegment(item)) return { ok: false, status: 400, error: "Invalid ?item=" };
+  const facts = await sessionFacts(path);
+  const team = facts.teams.find((t) => t.id === teamId);
+  if (!team || !team.members.some((m) => m.workerId === workerId)) return { ok: false, status: 404, error: "No such member in this session's teams" };
+  const root = mailboxRootOf(agentRoot(), facts.sessionId);
+  const items = (root ? await readItems(itemsFileOf(root, teamId, workerId)) : null) ?? [];
+  if (item === undefined) return { ok: true, body: inboxView(teamId, workerId, items) };
+  const one = inboxBody(items, item);
+  return one ? { ok: true, body: one } : { ok: false, status: 404, error: "No such item in this inbox" };
+}
+
 /** `path` must already be validated with resolveSessionPath(). Never throws. */
 export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const facts = await sessionFacts(path);
@@ -1279,6 +1303,8 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const workerTotal = workers && counted !== undefined && counted > workers.length ? counted : undefined;
   // What the session spent is the usage ledger's (/api/usage/session), never counted here.
   const teams = joinTeams(facts, path, workers);
+  // Each member's inbox counts, folded from the main chat's items files (server/team-inbox.ts).
+  await addInboxCounts(teams, mailboxRootOf(agentRoot(), facts.sessionId));
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
   // mtime-cached, because this endpoint is polled every 3s while the pane is open.
   const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;

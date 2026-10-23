@@ -2302,7 +2302,7 @@ export function registerSubagents(
 	 * returned to their senders, one "not addressed" notice per sender. `retire` only moves (the old
 	 * member still runs); `ended` and `restored` return what no successor takes.
 	 * Every end is the end of a turn (§app.teams/inbox-zero): first every item it opened in a recorded
-	 * turn that is not a question closes automatically, whatever the autoClose setting, so handled
+	 * turn that is not a question closes automatically (no later turn follows), so handled
 	 * news is never returned as "not addressed" nor listed again to a successor.
 	 */
 	const endInbox = (workerId: string, how: "retire" | "ended" | "restored") => {

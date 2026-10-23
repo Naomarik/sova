@@ -11484,6 +11484,9 @@
         "src/lib/transcript-cache.ts",
         "src/lib/transcript-cache.test.ts",
         "src/lib/jump.ts",
+        "src/lib/read-hold.ts",
+        "src/lib/read-hold.test.ts",
+        "scripts/e2e/transcript-follow.mjs",
         "src/components/Thread.tsx",
         "src/components/ChatView.tsx",
         "src/components/WatchView.tsx",
@@ -11551,8 +11554,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-19T21:36Z",
-        "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+        "at": "2026-10-23T21:57Z",
+        "source": "pi-session:9fc149bf-e001-4a3b-8e47-eb5d66c0e509#4e42752d"
       }
     },
     "§app.subagents-pane/hidden-workers": {

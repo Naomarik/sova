@@ -7,7 +7,8 @@ import { join } from "node:path";
  * status line), read from the drafts' own files: never a spec tool, never a subprocess. A draft
  * (`<dir>/.sova/spec/drafts/<name>/`) records in its `draft.json` the hash of every spec file it
  * started from; a file whose draft copy differs from that hash is one it changed. The draft counts
- * as promoted when each file it changed reads the same in the worktree's current `.sova/spec/`.
+ * as promoted when each file it changed reads the same in the worktree's current `.sova/spec/`, or
+ * a promotion its `draft.json` records wrote that file after the draft's last edit to it.
  * Cached per folder until a stat of anything it read changes.
  */
 
@@ -24,6 +25,15 @@ const mtime = (path: string): number => {
     return statSync(path).mtimeMs;
   } catch {
     return -1;
+  }
+};
+/** What the cache compares: the modification time and the size, so a rewrite within one tick still shows. */
+const stamp = (path: string): string => {
+  try {
+    const st = statSync(path);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return "-";
   }
 };
 
@@ -49,9 +59,15 @@ export function draftPromoted(specRoot: string, draftDir: string): { promoted: b
   const raw = readOr(join(draftDir, "draft.json"));
   if (!raw) return undefined;
   let base: Record<string, string>;
+  /** Each recorded promotion: when it ran and the spec files it wrote. */
+  let promotions: { at: number; files: Set<string> }[] = [];
   try {
     const d = JSON.parse(raw.toString("utf8"));
     base = d?.base?.files && typeof d.base.files === "object" ? d.base.files : {};
+    if (Array.isArray(d?.promotions))
+      promotions = d.promotions
+        .map((p: any) => ({ at: Date.parse(p?.at), files: new Set<string>(Array.isArray(p?.files) ? p.files.filter((f: unknown) => typeof f === "string") : []) }))
+        .filter((p: { at: number }) => Number.isFinite(p.at));
   } catch {
     return undefined;
   }
@@ -65,7 +81,13 @@ export function draftPromoted(specRoot: string, draftDir: string): { promoted: b
     const cur = join(specRoot, rel);
     read.push(join(draftSpec, rel), cur);
     const now = readOr(cur);
-    if (!now || sha(now) !== h) return { promoted: false, read };
+    if (now && sha(now) === h) continue;
+    // Promoted into a spec that had moved (master's edits merged in): the current file is the
+    // merge, not the draft's bytes. It counts when a recorded promotion wrote this file after the
+    // draft's last edit to it.
+    const edited = mtime(join(draftSpec, rel));
+    if (now && promotions.some((p) => p.files.has(rel) && p.at >= Math.floor(edited))) continue;
+    return { promoted: false, read };
   }
   return { promoted: true, read };
 }
@@ -93,7 +115,7 @@ export function unpromotedDrafts(dir: string): number | undefined {
     read.push(...r.read);
     if (!r.promoted) count++;
   }
-  const stamps = JSON.stringify(read.map((p) => [p, mtime(p)]));
+  const stamps = JSON.stringify(read.map((p) => [p, stamp(p)]));
   if (cache.size > 200) cache.clear();
   cache.set(dir, { stamps, count });
   return count;
@@ -102,8 +124,8 @@ export function unpromotedDrafts(dir: string): number | undefined {
 /** The same stamps re-read now: equal means nothing that was read has changed. */
 function stampOf(stamps: string): string {
   try {
-    const list = JSON.parse(stamps) as [string, number][];
-    return JSON.stringify(list.map(([p]) => [p, mtime(p)]));
+    const list = JSON.parse(stamps) as [string, string][];
+    return JSON.stringify(list.map(([p]) => [p, stamp(p)]));
   } catch {
     return "";
   }

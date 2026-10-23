@@ -578,11 +578,17 @@ A worker that belongs to no team, or a member with no inbox file yet, shows none
 - **Each item.** Newest first, one row each: the urgent mark when urgent (a warn chip, dot and
   the word "Urgent"), the subject, then a meta line: its kind (Message, Question, Report,
   Handover, Notice, Instruction) · who sent it (`from builder`, `from main thread`, `from Sova`)
-  · its status as a chip with its word (New, Read, Addressed, or "Returned to sender") · when it
+  · its status as a chip with its word (New, Read, Addressed, "Closed automatically" for an item
+  addressed by Sova's safety net (§app.teams/inbox-zero), a plain chip unlike Addressed's, or
+  "Returned to sender") · when it
   was sent, in relative time with the full time in `title`. An item that came from another
   member's inbox (moved at a handover or forwarded) says "Moved from {role}"; an item that moved
   away no longer shows in the old member's inbox. The member's note, when it set one, is on its
   own line.
+- **The summary line.** Above the list, one line counts the inbox: `{o} open · {m} closed by
+  {role} · {a} closed automatically` (a reply counts as closed by the member; a part at 0 is
+  left out; no line when every part is 0). A server that doesn't send the split shows no summary line, and every closed item
+  reads Addressed.
 - **Opening.** A press on an item opens it (`aria-expanded`) and shows its whole message, read
   from the server only then; a second press closes it. Opening an item here never changes its
   status: only the member marks its items.

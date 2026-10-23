@@ -433,6 +433,19 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "admin",
   },
   {
+    id: "settings.assistant-default.set",
+    label: "Set the Project Assistant's Default Model",
+    summary: "Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own.",
+    effect: "changes",
+    params: {
+      assistant: { type: "json", description: "The default: {model: \"provider/model\", thinking?}, or null to clear it", in: "body", required: true },
+    },
+    route: { method: "PUT", path: "/api/settings/project-assistant" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
     id: "push.test",
     label: "Send Test Notification",
     summary: "Send the test notification to every registered device.",

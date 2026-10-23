@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 465 |
-| Routes a catalogue entry points at | 99 |
-| Catalogue entries | 126 |
+| Routes registered | 466 |
+| Routes a catalogue entry points at | 100 |
+| Catalogue entries | 127 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -28,7 +28,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 308 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 8 |
-| Hand-written tool specs | 116 |
+| Hand-written tool specs | 118 |
 
 ## Catalogue entries
 
@@ -148,6 +148,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `settings.memory.get` | Memory Settings | looks | `GET /api/settings/memory` | sessions |
 | `settings.subagents.get` | Subagent Profiles | looks | `GET /api/settings/subagents` | sessions |
 | `settings.align.set` | Save Alignment Settings | changes | `PUT /api/settings/align` | admin |
+| `settings.assistant-default.set` | Set the Project Assistant's Default Model | changes | `PUT /api/settings/project-assistant` | admin |
 | `push.test` | Send Test Notification | changes | `POST /api/push/test` | admin |
 | `audit.list` | List Who Ran What | looks | `GET /api/audit` | full |
 | `org.owner.request.chat` | Start Chat | changes | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin |
@@ -686,6 +687,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `GET /api/settings/memory` | sessions | `settings.memory.get` |
 | `GET /api/settings/models` | sessions | `settings.models.get` |
 | `GET /api/settings/overseer` | sessions | `settings.overseer.get` |
+| `PUT /api/settings/project-assistant` | admin | `settings.assistant-default.set` |
 | `GET /api/settings/provider-limits` | sessions | `settings.provider-limits.get` |
 | `GET /api/settings/spec` | sessions | `settings.spec.get` |
 | `GET /api/settings/subagents` | sessions | `settings.subagents.get` |
@@ -736,6 +738,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/chat-handle.ts` | 4 | `<computed: shorthand name>`, `<computed: spec.name>`, `@powers.send`, `trial_served_sleep` |
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
+| `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
@@ -747,7 +750,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
 | `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
-| `server/project-assistant-tools.ts` | 7 | `report_issue`, `owner_requests`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `requirement_agree` |
+| `server/project-assistant-tools.ts` | 8 | `report_issue`, `owner_requests`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
 | `server/project-overseer-tools.ts` | 17 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_todo` |
 | `server/project-services/tools.ts` | 4 | `<computed: o.name>`, `project_verbs`, `sova_project_verbs`, `sova_project_verbs` |
 | `server/session-powers.ts` | 4 | `session_list`, `session_detail`, `session_read`, `session_send` |

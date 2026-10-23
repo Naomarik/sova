@@ -27,8 +27,10 @@ This page is the extension's guide; each mode has its own below.
 **Imports.** The server imports `state.ts`, `minor.ts`, `delegate.ts`, `spec.ts` and `align-settings.ts`:
 `server/mode-state.ts`, `server/delegate.ts`, `server/spec-settings.ts`, `server/align-settings.ts` and
 `server/sync/docs.ts` (the files' mesh registration). `server/vis-check.ts` and `server/chat-manager.ts` take
-`visToolsWanted`, the one rule for the vis tools, from `minor.ts`. `server/transcript.ts` and `server/align-state.ts`
-import `align.ts`. Keep all of them pi-runtime-free: node builtins, each other, and (for `delegate.ts`)
+`visToolsWanted`, the one rule for the vis tools, from `minor.ts`. `server/transcript.ts`, `server/align-state.ts`,
+`server/baton-view.ts`, `server/baton-loadout.ts` and `server/feature-chat-align.ts` (a feature request chat's
+served `align` and its plan card, §app.project-assistant/feature-chats) import `align.ts`; `src/lib/plan-answers.ts`
+words the owner page's plan answers with `src/lib/align-picks.ts`. Keep all of them pi-runtime-free: node builtins, each other, and (for `delegate.ts`)
 claude-code's `catalog.ts`, which imports nothing. `minor.ts` also reads its
 sibling `spec-mode.md` once at load and refuses to load if that file's shell block is malformed, so a malformed
 guide stops pi and the server alike.

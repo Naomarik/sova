@@ -204,6 +204,26 @@ test("390px on a touch screen: the bar hides while the owner types and comes bac
   await ctx.close();
 });
 
+// Found driving a real owner page on a phone: pressing Send took the focus from the box, the bar came back,
+// the composer dropped under the finger and the release landed on a tab, so nothing was sent.
+for (const how of ["tap", "click"] as const) {
+  test(`390px on a touch screen: a ${how} on Send sends what was typed, and the box keeps the keyboard`, async () => {
+    const { page, ctx } = await open(390, "#a", { touch: true });
+    const input = page.locator("#assistant-text");
+    await input.waitFor({ timeout: 10_000 });
+    const posts: string[] = [];
+    page.on("request", (r) => r.method() === "POST" && posts.push(r.postData() ?? ""));
+    await input.focus();
+    await page.keyboard.type("Can we add online booking?");
+    await page.getByRole("button", { name: "Send", exact: true })[how]();
+    await page.waitForTimeout(500);
+    assert.deepEqual(posts.map((b) => (JSON.parse(b) as { text: string }).text), ["Can we add online booking?"]);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "assistant-text", "the box keeps the focus");
+    assert.equal(page.url().endsWith("#a"), true, "no tab took the press");
+    await ctx.close();
+  });
+}
+
 test("1280px: the tabs are a left sidebar, the page beside it, no bottom bar", async () => {
   const { page, ctx } = await open(1280, "");
   await page.getByText("What it can do for you").waitFor({ timeout: 10_000 });

@@ -15,9 +15,13 @@ import {
   moveActive,
   NO_ROW,
   panelStep,
+  ACTION_COPY,
+  CHAT_ACTIONS,
+  GROUPS,
   REASON,
   UNKNOWN_TEXT,
   valuesOf,
+  type PaletteComposer,
   type PaletteContext,
   type PaletteRow,
   type ViewRowInput,
@@ -29,7 +33,15 @@ const views: ViewRowInput[] = [
 ];
 const slash = (name: string, description = ""): SlashCommand => ({ name, description, source: "extension" }) as SlashCommand;
 const session = { path: "/s/a.jsonl", id: "sid-a", title: "Fix the build", terminal: false };
-const composer = { commands: [slash("compact", "Compact the context"), slash("tree"), slash("compact")], off: null, hasDraft: false };
+const composer: PaletteComposer = {
+  commands: [slash("compact", "Compact the context"), slash("tree"), slash("compact")],
+  off: null,
+  hasDraft: false,
+  hideTools: false,
+  hideThinking: false,
+  playbooks: true,
+  undo: null,
+};
 const ctx = (over: Partial<PaletteContext> = {}): PaletteContext => ({ session, composer, ...over });
 const ext: CommandEntry = {
   id: "ext.tickets.create",
@@ -79,10 +91,14 @@ test("a command's row is never a run: acting on it names the entry, whose panel 
 
 // ---- the list ----
 
-test("the list: the view rows, then the open chat's commands once each, then the served list, extensions last", () => {
+test("the list: the chat's own actions, the view rows, the chat's commands once each, then the served list, extensions last", () => {
   const rows = rowsOf();
   const groups = [...new Set(rows.map((r) => r.group))];
-  assert.deepEqual(groups, ["go", "chat", "commands", "extensions"]);
+  assert.deepEqual(groups, ["this", "go", "chat", "commands", "extensions"]);
+  // the rows come in the order their groups show, so an unfiltered list reads group by group
+  assert.deepEqual(groups, GROUPS.map((g) => g.id));
+  assert.deepEqual(GROUPS.map((g) => g.label), ["This chat", "Go to", "Slash commands", "Commands", "Extensions"]);
+  assert.deepEqual(rows.filter((r) => r.group === "this").map((r) => r.label), ["Attach images", "Hide tool calls", "Hide thinking", "Playbooks", "Undo last turn"]);
   assert.deepEqual(rows.filter((r) => r.group === "go").map((r) => r.label), ["Open Overseer", "Collapse Sessions Pane"]);
   assert.deepEqual(rows.filter((r) => r.group === "chat").map((r) => r.label), ["/compact", "/tree"]);
   const cmds = rows.filter((r) => r.group === "commands");
@@ -94,6 +110,63 @@ test("the list: the view rows, then the open chat's commands once each, then the
 test("the list: no chat rows without a composer; no command rows before the served list arrives", () => {
   const rows = buildRows(views, null, ctx({ composer: null }), none);
   assert.deepEqual(rows.map((r) => r.group), ["go", "go"]);
+});
+
+// ---- This chat ----
+
+const thisRows = (c: Partial<PaletteComposer> = {}, armed = false) => buildRows([], [], ctx({ composer: { ...composer, ...c } }), none, armed).filter((r) => r.group === "this");
+
+test("This chat: the five actions, in order, each acting by its id; never a sandbox row", () => {
+  const rows = thisRows();
+  assert.deepEqual(rows.map((r) => r.key), CHAT_ACTIONS.map((id) => `this:${id}`));
+  assert.deepEqual(CHAT_ACTIONS, ["attach", "hide-tools", "hide-thinking", "playbooks", "undo"]);
+  for (const r of rows) assert.deepEqual(r.act, { kind: "action", id: r.key.slice(5) });
+  // the shield is the sandbox's one place: nothing in the whole list sets it
+  const all = rowsOf();
+  assert.deepEqual(all.filter((r) => /sandbox/i.test(`${r.key} ${r.label}`) && r.group !== "commands" && r.group !== "extensions").map((r) => r.key), []);
+  for (const r of rows) assert.equal(r.disabled, null, r.key);
+});
+
+test("This chat: the hide rows say what a pick will do, flipping with the preference", () => {
+  const label = (c: Partial<PaletteComposer>, key: string) => thisRows(c).find((r) => r.key === key)!.label;
+  assert.equal(label({}, "this:hide-tools"), "Hide tool calls");
+  assert.equal(label({ hideTools: true }, "this:hide-tools"), "Show tool calls");
+  assert.equal(label({ hideTools: true }, "this:hide-thinking"), "Hide thinking"); // independent
+  assert.equal(label({ hideThinking: true }, "this:hide-thinking"), "Show thinking");
+});
+
+test("This chat: Undo last turn's first pick shows its confirm, never while it can't run", () => {
+  const undo = (c: Partial<PaletteComposer>, armed: boolean) => thisRows(c, armed).find((r) => r.key === "this:undo")!;
+  assert.deepEqual([undo({}, false).label, undo({}, false).detail], [ACTION_COPY.undo, ACTION_COPY.undoDetail]);
+  assert.deepEqual([undo({}, true).label, undo({}, true).detail], ["Confirm: undo last turn", "Pick it again to rewind."]);
+  // armed but blocked meanwhile: the plain row with its reason, no confirm left standing
+  const blocked = undo({ undo: "Stop the turn first, then undo." }, true);
+  assert.deepEqual([blocked.label, blocked.disabled], [ACTION_COPY.undo, "Stop the turn first, then undo."]);
+  // the key stays: the active row is the same row armed or not
+  assert.equal(undo({}, true).key, undo({}, false).key);
+});
+
+test("disabled: a watched (read-only) chat keeps its hide rows; attach, playbooks and undo say the composer's reason", () => {
+  const off = "This session is open in a terminal, so Sova won't write to it.";
+  const rows = thisRows({ off, playbooks: false, undo: undefined, hasDraft: false });
+  const why = Object.fromEntries(rows.map((r) => [r.key, r.disabled]));
+  assert.deepEqual(why, { "this:attach": off, "this:hide-tools": null, "this:hide-thinking": null, "this:playbooks": off, "this:undo": off });
+});
+
+test("disabled: playbooks and undo with no Sova chat behind them, undo's own reasons, and a draft blocks none of these", () => {
+  const why = (c: Partial<PaletteComposer>, key: string) => thisRows(c).find((r) => r.key === key)!.disabled;
+  assert.equal(why({ playbooks: false }, "this:playbooks"), REASON.noPlaybooks);
+  assert.equal(why({ undo: undefined }, "this:undo"), REASON.noRewind);
+  assert.equal(why({ undo: "" }, "this:undo"), REASON.loading); // never a silent gray-out
+  assert.equal(why({ undo: "Nothing to undo yet." }, "this:undo"), "Nothing to undo yet.");
+  for (const r of thisRows({ hasDraft: true })) assert.equal(r.disabled, null, r.key);
+});
+
+test("filter: This chat rows match by their words, ahead of every other group", () => {
+  const rows = rowsOf();
+  assert.deepEqual(filterRows(rows, "attach").map((r) => r.key).slice(0, 1), ["this:attach"]);
+  assert.equal(filterRows(rows, "rewind")[0]!.key, "this:undo"); // by its description
+  assert.equal(filterRows(rows, "thinking")[0]!.key, "this:hide-thinking");
 });
 
 test("the list: one row per id, whatever the server sent", () => {
@@ -133,7 +206,7 @@ test("disabled: a required JSON param needs the command line, unless the entry h
   assert.equal(reasonOf(rowsOf(), "cmd:settings.align.set"), null);
 });
 
-test("disabled: chat rows while the composer holds a draft, or with the composer's own reason while it's off", () => {
+test("disabled: slash command rows while the composer holds a draft, or with the composer's own reason while it's off", () => {
   assert.equal(reasonOf(rowsOf(ctx({ composer: { ...composer, hasDraft: true } })), "chat:compact"), REASON.draft);
   assert.equal(reasonOf(rowsOf(ctx({ composer: { ...composer, off: "Connecting…", hasDraft: true } })), "chat:tree"), "Connecting…");
   assert.equal(reasonOf(rowsOf(), "chat:tree"), null);

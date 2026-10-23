@@ -21,7 +21,9 @@ An alignment has an id `al_N` (the next number on the branch), a title, a one-li
 the concern, findings, approach steps, rejected alternatives (each with why), and questions. Items
 have ids that are never reused within the document: findings `fN`, approach steps `aN`, rejected
 alternatives `xN`, questions `qN`. A question has a topic, the ask, optional context, optional
-options (each a label and its trade-off), a **recommendation** (the choice and why), and, once
+options (each a label and its trade-off: one plain line saying what happens if the user picks it —
+what they will see, what it costs and what it buys; the tool's field asks the agent for exactly that),
+a **recommendation** (the choice and why), and, once
 answered, a **decision**: its text, who made it (`user`, or `accepted-recommendation` when the user
 took the recommendation), and when. A question can also be dropped, with why, and reopened.
 
@@ -247,7 +249,9 @@ an `align` call: it is the message, not its working.
   <ol class="align-questions">
     <li class="align-q" data-state="open">
       <p class="align-q-head"><span class="text-mono">q3</span> <strong>Pace limit</strong>
-        <span class="chip"><i class="chip-dot"></i>Open</span></p>
+        <span class="chip"><i class="chip-dot"></i>Open</span>
+        <!-- triage (§app.decisions/align-triage), open questions only, while it has an answer -->
+        <span class="chip chip-warn align-q-stakes" title="Guessed by Jev.">Deletes data</span></p>
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
       <ol class="align-q-options">
@@ -467,7 +471,7 @@ change parses only the lines appended since (a file that shrank or was rewritten
   is hidden from assistive tech, and the hidden words "3 open questions. " (1: "1 open question. ")
   carry it. The title is "3 open questions in 2 alignments", or, when one alignment asks,
   "3 open questions in al_4 {its title}". It takes precedence over the
-  asks-you and looping marks, never clears on a visit (it is a fact of the session, not news), hides on the open
+  asks-you mark, never clears on a visit (it is a fact of the session, not news), hides on the open
   session like every line-1 mark, and hides while this tab runs a turn there.
 - **Needs you.** An idle, unarchived session with open questions is an act item of the attention
   digest, kind `open-questions` ("3 open questions in al_3 Autonomy settings" or "… in 2

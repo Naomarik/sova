@@ -296,9 +296,21 @@ routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
 so the Overseer reads the same answer.
 
+**The branch status line**, counted in code with no model call, for the session's newest merge:
+"merged {sha7} · pushed (or not pushed) · live (or restart owed) · spec promoted (or {n} spec
+draft(s) not promoted)". Merged and the commit come from the merge card; pushed from the target's
+`origin` branch (left out when there is no `origin`); live when this server already runs the
+merge (it started after it, or the merge changed no server file), else restart owed; spec from
+the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
+promoted when every spec file it changed now reads the same in the worktree's current spec. The
+line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
+row (`SessionSummary.readiness.status`).
+
 Routine session-list and merge-readiness refreshes never query spec assessment status or
-recapture assessment inputs, including for idle merged worktrees. Readiness carries no spec
-observations, and the row and its title display none. Ordinary git readiness, bash checks,
+recapture assessment inputs, including for idle merged worktrees, and never run a spec tool.
+The one spec fact readiness carries is the status line's draft count, read from the drafts'
+files and kept until one of them changes. Readiness carries no other spec observation, and the
+row and its title display none. Ordinary git readiness, bash checks,
 attention items, and routine follow-ups keep the rules above. Explicit companion CLI
 assessments remain separate and available; their observations are not passed tests or release
 gates.

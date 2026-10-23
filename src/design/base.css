@@ -4456,7 +4456,17 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.md-code-copy { flex: none; }
+.md-code-copy,
+.md-code-render { flex: none; }
+/* A markdown block's Rendered side (§chat.markdown/view-rendered): the document drawn in the
+   block's frame, under its head, on the page's ground; the inner body sheds its bubble. */
+.md-code-rendered { background: var(--color-surface); }
+.md-code-rendered > .message-body {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
 .md .md-code pre {
   margin: 0;
   border: 0;

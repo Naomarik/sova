@@ -7,8 +7,8 @@ export const requestListRefresh = (): void => void window.dispatchEvent(new Even
 
 /**
  * App's side: the list AND the attention digest, both at once. The same actions move Needs you (Get
- * Link clears "Send <name> their link", a hand-off to you adds one), and the digest otherwise waits
- * for its own 10-second read. Returns the unsubscribe.
+ * Link clears "Send <name> their link", a hand-off to you adds one), and this tab reads it at once
+ * rather than waiting for the feed's push. Returns the unsubscribe.
  */
 export function onListRefresh(target: Pick<EventTarget, "addEventListener" | "removeEventListener">, reads: { list(): void; attention(): void }): () => void {
   const run = () => {

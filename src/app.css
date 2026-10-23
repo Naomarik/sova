@@ -1376,3 +1376,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .app[data-focus-moving] > .app-main:has(> .transcript-wrap) > .session-head { transition: min-height var(--dur-base) var(--ease-standard); }
 .app[data-focus-moving] > .app-main > .transcript-wrap > .focus-toggle { transition: bottom var(--dur-base) var(--ease-standard); }
+
+/* A setup row's name opens its file in the markdown viewer (§chat.transcript/setup-card-open-file):
+   the name keeps its look and place (.setup-path), as a button with no chrome of its own. */
+.setup-open {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: start;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.setup-open:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+.setup-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

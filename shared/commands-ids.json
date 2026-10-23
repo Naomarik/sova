@@ -141,7 +141,8 @@
     "project.settings.propose.withdraw",
     "project.overseer.settings.set",
     "session.align.triage",
-    "session.workers.checks"
+    "session.workers.checks",
+    "session.context.file"
   ],
   "retired": [
     "settings.agents.get"

@@ -339,7 +339,9 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   reads `Planning with you` on the owner's page (worked out at read time; its stored status stays
   `with-team`), and `Plan agreed` once the chat is done while the request is still with the team.
 - **Needs you** (§app.overseer/attention-digest), act tier: each open (`with-team`) request is an
-  `owner-request` item, an outage an `owner-outage` item, which also sends a phone notification at
+  `owner-request` item (but a fix whose start waits in a hold, which is that held act's own item,
+  with Cancel, §app.project-overseer/holds; it reads `started` once its hold ends and its coding
+  session starts), an outage an `owner-outage` item, which also sends a phone notification at
   once (§app/notifications, kind `owner-outage`); an owner's ask for a new link is an
   `owner-link-request` item (§app.owner-page/link). A request's item opens the org's Requests tab at
   that request (`#/orgs/<id>/requests/<rid>`, §app.project-assistant/requests-tab); a link ask opens
@@ -441,9 +443,12 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   work isn't stopped: a fix already being worked on, a chat, a running copy all go on, and the team
   is told quietly: the request leaves Needs you, sends no phone notification, and the Requests tab
   says who closed it (§app.project-assistant/requests-tab). Two things stop: a fix whose start is
-  still waiting (held, §app.project-overseer/holds) has that start cancelled, and a `feature`
-  request's open feature request chat is ended (it stays readable as history, and the owner's one
-  open feature request chat is free again, §app.project-assistant/feature-chats). When the request
+  still waiting (held, §app.project-overseer/holds) has that start cancelled, whatever the request
+  reads (a held start never reads `started`: only a start that runs does, and a close that cancelled
+  a held start records it as closed while with the team), and a `feature` request's open feature
+  request chat is ended, one still starting included: a start that finishes after the close ends
+  its new chat and writes no status (it stays readable as history, and the owner's one open feature
+  request chat is free again, §app.project-assistant/feature-chats). When the request
   has a team chat that exists and isn't archived (the chat Start Chat opened, or a fix's coding
   session), a note that starts no turn lands in it: "{first} closed this request on their page" (or
   "…through their Project Assistant"), "The team can stop on it." A request closed while `started`

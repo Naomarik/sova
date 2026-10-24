@@ -106,6 +106,16 @@ test("a standalone project: No preference by default, its own login saved host-l
   assert.equal(recorded?.id, C, "an open chat keeps its recorded login");
   assert.equal(recorded?.source, undefined);
 
+  // Inside a chat process (no project statecharts there) the label reads what the server handed the process over.
+  process.env.SOVA_CHAT_UNIT = "sova-chat-test";
+  process.env[LOGIN_CONTEXT_ENV] = JSON.stringify({ prefer: { login: C, source: "org", name: "Fold" } });
+  try {
+    const inChat = chatClaudeLogin([], logins, { cwd: join(tmp, "elsewhere"), poolOthers: () => 0 });
+    assert.deepEqual([inChat?.id, inChat?.source], [C, "org"], "the handed-over context, not a folder lookup");
+  } finally {
+    delete process.env.SOVA_CHAT_UNIT;
+    delete process.env[LOGIN_CONTEXT_ENV];
+  }
   assert.deepEqual(loginUsedBy()[A], ["Project acme"]);
   // Back to No preference: the entry goes.
   await send("PUT", `/api/projects/${acme.id}/claude-login`, { login: "none" });

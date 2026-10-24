@@ -65,6 +65,18 @@ claude-code imports nothing outside its own directory. For worker niceness it ca
 - The one resolver login → `CLAUDE_CONFIG_DIR` that every `claude` spawn uses.
 - Written by Settings → Accounts and the pool agent. Read at each spawn by the chat provider, workers, model
   discovery and the topic-outline summarizer.
+- **A project's login** (§app.claude-logins/project-login): the server hands each chat process the variable
+  `SOVA_CLAUDE_LOGIN_CONTEXT` (JSON `ClaudeLoginContext`: `{prefer?: {login, source, name}, saved?: [ids]}`),
+  computed at its spawn from the chat's cwd (`server/claude-login-context.ts` → `server/projects/claude-login.ts`
+  `loginContextForCwd`, the folder rule of `server/project-folder.ts`; the assignments live host-local in
+  `<state root>/claude-login-assignments.json`, `server/claude-login-store.ts`). The chosen mechanism is this
+  per-spawn hand-over, like `CLAUDE_CONFIG_DIR`, not a rules file: cwd matching stays in the server, so
+  `accounts.ts` mirrors nothing of `folderMatcher`, and a terminal session (no variable) keeps the device's order.
+  Every process `chat-host` launches gets it (chats, workers, team members, hidden chats, overseers, a chat
+  started again after a reap or a server restart); `CHAT_PROCESS_ENV` lists it, so a server scrubs an inherited
+  one and `chatEnv` never passes it on. A chat the router opens in the server's own process (a boot failure's
+  fallback) gets none and keeps the order. The provider's `loginContext` option reads it per choice; the
+  one-shots (titles, memory summaries, topic outlines, Decisions, model discovery) never pass it.
 
 **The pool** (`server/claude-pool/`), on when the mesh is (`<agent dir>/sova/peers.json` lists a peer): logins
 form one pool. A registry login's `device` is the device that holds it; `null` means kept here, free for lending,

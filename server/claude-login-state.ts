@@ -6,7 +6,7 @@ import { poolAgent } from "./claude-pool/index";
 import { stateViewOf } from "./harness/pi/state";
 import { CLAUDE_LOGIN } from "./harness/state-kinds";
 import { loginContextForCwd } from "./projects/claude-login";
-import type { ClaudeLoginContext } from "../pi-config/extensions/claude-code/accounts.ts";
+import { loginContextFromEnv, type ClaudeLoginContext } from "../pi-config/extensions/claude-code/accounts.ts";
 
 // A chat's Claude login (§app.claude-logins/active-login): the login its newest `claude-login`
 // entry names, which the provider writes when the session's child first starts and at every
@@ -50,7 +50,9 @@ export function chatClaudeLogin(branch: readonly unknown[], logins: ClaudeLogins
     const recorded = newestLoginEntry(branch);
     let ctx: ClaudeLoginContext | undefined;
     if (!recorded) {
-      try { ctx = extra.context ?? (extra.cwd ? loginContextForCwd(extra.cwd) : undefined); } catch { ctx = undefined; }
+      // A chat process holds no project statecharts: it reads what the server handed it at its start for its
+      // own folder (the provider reads the same). The server's own process works it out from the folder.
+      try { ctx = extra.context ?? (process.env.SOVA_CHAT_UNIT ? loginContextFromEnv() : extra.cwd ? loginContextForCwd(extra.cwd) : undefined); } catch { ctx = undefined; }
     }
     const id = recorded?.login ?? logins.selectId(undefined, accounts, ctx);
     const source = !recorded && ctx?.prefer && ctx.prefer.login === id ? ctx.prefer.source : undefined;

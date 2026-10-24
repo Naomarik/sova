@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVis } from "../../parse";
 import { estimateWidth } from "../../core/text";
-import { FLOW_LEVELS, fitFlow, layoutFlow, type FlowLayout } from "./layout";
+import { FLOW_LEVELS, GROUP, fitFlow, layoutFlow, type FlowLayout } from "./layout";
 import type { FlowSpec } from "./parse";
 import { layoutSections } from "./sections";
 
@@ -117,13 +117,23 @@ test("group layout: generated graphs and groups keep the same invariants", () =>
   }
 });
 
-test("group layout: a long title in dir: right is cut with an ellipsis; the whole label stays for the tooltip", () => {
-  const l = layoutFlow(ok("flow", CASES[6]![2]));
-  const g = l.groups![0]!;
-  assert.equal(g.label, "A group title far longer than the frame it names");
-  assert.ok(g.title.endsWith("…") && g.title.length < g.label.length, g.title);
+test("group layout: a long title in dir: right wraps to the frame's width, never cut, and its lines sit above the members", () => {
+  for (let level = 0; level < FLOW_LEVELS; level++) {
+    const spec = ok("flow", CASES[6]![2]);
+    const l = layoutFlow(spec, estimateWidth, level);
+    const g = l.groups![0]!;
+    assert.equal(g.label, "A group title far longer than the frame it names");
+    assert.ok(g.titleLines.length > 1, `level ${level}: wraps (${g.titleLines.join(" / ")})`);
+    // A word longer than the frame breaks inside itself, but nothing is dropped.
+    assert.equal(g.titleLines.join("").replace(/\s+/g, ""), g.label.replace(/\s+/g, ""), "every word, none cut");
+    assert.ok(!g.titleLines.some((t) => t.includes("…")));
+    for (const t of g.titleLines) assert.ok(estimateWidth(t, GROUP.font) * 1.06 <= g.w - 2 * GROUP.pad + 0.01, `level ${level}: "${t}" fits the frame`);
+    const b = l.nodes.find((n) => n.id === "b")!;
+    assert.ok(b.y - b.h / 2 >= g.y + GROUP.title + (g.titleLines.length - 1) * GROUP.line - 0.01, `level ${level}: the member sits under the title's lines`);
+    invariants(spec, l, `long title level ${level}`);
+  }
   const down = layoutFlow(ok("flow", 'a -> b -> c\ngroup "A group title far longer than the frame it names" b'));
-  assert.equal(down.groups![0]!.title, down.groups![0]!.label, "down: the frame widens to its title");
+  assert.deepEqual(down.groups![0]!.titleLines, [down.groups![0]!.label], "down: the frame widens to its title");
 });
 
 test("no regression: a flow without groups lays out exactly as before groups existed (hashes taken from the earlier layout)", async () => {

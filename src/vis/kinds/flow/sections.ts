@@ -25,14 +25,15 @@ export interface SectionsLayout {
   panels: PlacedSection[];
 }
 
-const sub = (spec: FlowSpec, i: number): FlowSpec => {
+/** Panel i as a lone flow: what layoutFlow lays out for it. */
+export const sectionSpec = (spec: FlowSpec, i: number): FlowSpec => {
   const sec = spec.sections![i]!;
   return { kind: "flow", dir: spec.dir, nodes: sec.nodes, edges: sec.edges, ...(sec.groups ? { groups: sec.groups } : {}) };
 };
 
 /** Each panel's natural layout: the View's memo, so a resize only re-fits. */
 export function naturalSections(spec: FlowSpec, measure: Measure = canvasMeasure): FlowLayout[] {
-  return spec.sections!.map((_, i) => layoutFlow(sub(spec, i), measure));
+  return spec.sections!.map((_, i) => layoutFlow(sectionSpec(spec, i), measure));
 }
 
 /** The panels FlowView draws in a pane `width` px wide (0: not measured yet, side by side). */
@@ -42,7 +43,7 @@ export function layoutSections(spec: FlowSpec, width: number, measure: Measure =
   const side = secs.map((s, i) => ({ label: s.label, layout: natural[i]!, width: Math.max(natural[i]!.width, headW(s.label)) }));
   const rowWidth = side.reduce((a, p) => a + p.width, 0) + SECTION_CSS.gapRow * (secs.length - 1);
   if (width <= 0 || rowWidth <= width) return { row: true, panels: side };
-  return { row: false, panels: secs.map((s, i) => ({ label: s.label, layout: fitFlow(sub(spec, i), measure, width, natural[i]!), width })) };
+  return { row: false, panels: secs.map((s, i) => ({ label: s.label, layout: fitFlow(sectionSpec(spec, i), measure, width, natural[i]!), width })) };
 }
 
 /** A panel's head height at `width`: its label, wrapped as the browser will. */

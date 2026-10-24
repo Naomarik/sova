@@ -44,8 +44,8 @@ by argument list with no shell, locally only (a remote session refuses it).
   `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
   must have no tracked changes, and the merge runs there (fast-forward when possible, else a merge
   commit; a conflict is aborted and reported, changing nothing). Where it is not checked out, only
-  a fast-forward is done. In a project that turns the merge guard on, a merge into `main` or
-  `master` also needs the user's go-ahead for that exact commit (§chat.worktrees/merge-guard).
+  a fast-forward is done. No merge needs a recorded go-ahead, into `main` or `master` included
+  (§chat.worktrees/landing-answers).
 - **list**: the set with each worktree's status.
 
 `detach` and `merge` take the worktree's path or its branch name. Every answer lists the
@@ -377,36 +377,19 @@ The Session tab's chip reads **Ready to land** (or **Landing specs**) in place o
 Waiting for your OK while it holds; every other reader of readiness (the row's badge, the digest,
 the offers' `branch-ready`) is unchanged.
 
-## §chat.worktrees/merge-guard — Merging into master needs your go-ahead
+## §chat.worktrees/landing-answers — Land It and Not Yet are kept, never enforced
 
-A project turns this on in its offers file with `"mainMerges": "go-ahead"` (§chat.offers/file);
-Sova's own repository does. Read from the target branch itself (`git show
-refs/heads/<target>:.sova/offers.json`), so a branch can't switch it off for its own merge. Then:
+Sova keeps the user's answers on a branch's Landing card (§chat.offers/sova-landing) in
+`<state root>/landing.json`, outside every repository: a go-ahead (Land It, or Merge Without
+Specs… with the branch's spec drafts left behind) or a Not Yet, each for the branch at the commit
+the card was shown for, the newest 200 of each kept. Both may be recorded at one commit: the later
+recorded time wins, and Not Yet wins a tie or a time that can't be read. The merge round's driver
+reads them as the user's word (§chat.merge-round/driver); nothing else acts on them.
 
-- the `worktree merge` tool (§chat.worktrees/tool) into `main` or `master` refuses, merging
-  nothing, unless the user's go-ahead for that branch at exactly its current head commit is
-  recorded: "This project lands branches on master only with the user's go-ahead for this exact
-  commit. Once the branch is Ready to land, the merge captain queues it and Sova shows its landing
-  card; until then there is no card to press." Land It (§chat.offers/sova-landing) records it in
-  `<state root>/landing.json`, outside every repository. A session on the Merge Captain profile
-  (its newest profile entry) is exempt: it lands on the user's Land It as before.
-- the Project Overseer's Merge Branch (§app.project-overseer/coding-worktrees) into `main` or
-  `master` follows the same rule: pressed on the operator's own page it is the go-ahead itself (and
-  is recorded); asked any other way it is refused without one for the branch's head.
-
-**A clean master merge keeps the go-ahead.** A go-ahead recorded for a branch at commit P also
-counts at its head M when M is a clean merge of the target into P: M has exactly two parents, P
-first and a commit already on the target branch second, and M's tree is exactly the tree `git
-merge-tree --write-tree` makes of those two parents (no conflict, nothing edited by hand). It
-carries through a chain of such merges (master merged in again after it moved), up to 20. Any
-other new commit (a merge with an extra edit, a resolved conflict, three parents, or a commit of
-the branch's own) needs a new go-ahead. A Not Yet is never carried past: walking back from the
-head, the first commit with an answer for the branch decides by its newest answer (the later
-recorded time; Not Yet when the two tie), so a Not Yet at the head or at any merge on the way
-stops the carry, and a go-ahead pressed after it lands again. The `worktree merge` tool, Merge Branch and the merge
-round's driver (§chat.merge-round/driver) all apply this one rule; `landing.json` is unchanged.
-
-Merges into any other branch, typed `git` commands and projects without the key are unchanged.
+Nothing enforces them. No merge needs a recorded go-ahead: the `worktree` tool's merge
+(§chat.worktrees/tool) and the Project Overseer's Merge Branch
+(§app.project-overseer/coding-worktrees) merge into `main` or `master` as into any other branch,
+from any session, whatever the project's offers file says, and Merge Branch records nothing.
 
 ## §chat.worktrees/cleanup — Removing merged worktrees
 

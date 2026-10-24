@@ -45,10 +45,9 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `buttons` (required): 1 to 4 buttons, each `{label, about}` with exactly one of `send` or
     `run` (§chat.offers/buttons). `label` is at most 32 characters, `about` at most 160 (one line:
     what the button does).
-- **`mainMerges`** (optional, top level): `"go-ahead"` turns on the merge guard
-  (§chat.worktrees/merge-guard); absent, merges are unchanged. Any other value makes the file broken.
 - **Strict, one offer at a time.** The file must be JSON with exactly the keys `version` (1) and
-  `offers`, and optionally `mainMerges`; anything else makes the whole file **broken**, and no offer shows. Inside, each offer
+  `offers`; anything else makes the whole file **broken**, and no offer shows, except a leftover
+  top-level `mainMerges` (the retired merge guard's switch), which is accepted and does nothing. Inside, each offer
   is checked on its own: an unknown key, a missing or over-long field, a bad name, an unknown
   condition, placeholder or `repeat` value, or a bad button makes that offer **broken**, listed
   with its reason, and never hides the others. At most 8 offers count; those after the eighth are
@@ -130,7 +129,7 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   click counts: the text, then Cancel or the button's label again. `{drafts}`, the worktree's
   spec drafts left unpromoted, may be filled in there and in `send`.
 - **Landing records.** `"landing": "go-ahead"` records the user's go-ahead to land this branch at
-  this exact commit (§chat.worktrees/merge-guard), `"go-ahead-without-specs"` the same with its
+  this commit (§chat.worktrees/landing-answers), `"go-ahead-without-specs"` the same with its
   spec drafts left behind, and `"not-yet"` the user's Not Yet for this commit. Each is recorded
   when the click's send succeeds, never on a refused one.
 - **To the chat that showed it.** A button of an `another-chat` offer may say `"to": "shower"`
@@ -223,11 +222,9 @@ buttons only:
 
 - **Land It** (only when no spec draft is left): records the go-ahead for this commit and sends it
   to the captain ("Go ahead: land {branch} at {commit}."), who lands, pushes and restarts as
-  usual without asking again.
+  usual without asking again. It is a shortcut for telling the captain: no merge waits for it.
 - **Merge Without Specs…** (only when drafts are left and the session said why it can't land
   them): asks first, naming the drafts that stay behind to promote later on a fresh branch from
   master, then records the go-ahead without specs and sends the captain the go-ahead without them.
 - **Not Yet**: records Not Yet for this commit and tells this session's agent to keep working; the
   captain leaves the branch until its head changes.
-
-The file also sets `"mainMerges": "go-ahead"` (§chat.worktrees/merge-guard).

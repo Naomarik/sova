@@ -3970,9 +3970,9 @@
         "§app.commands/catalogue"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.offers/card": {
@@ -4034,9 +4034,9 @@
         "§chat.profiles/projects"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-24T09:23Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.offers/from-another-chat": {
@@ -4095,9 +4095,9 @@
         "§chat.offers/from-another-chat"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-24T09:23Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.offers/tool": {
@@ -9557,9 +9557,9 @@
         "§app.requirements/frozen-spec"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T21:05Z",
-        "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§app.project-overseer/tools": {
@@ -10047,6 +10047,33 @@
         "src/components/SessionDetails.tsx"
       ]
     },
+    "§chat.worktrees/landing-answers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/landing.ts",
+        "pi-config/extensions/worktrees/landing.test.ts",
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/worktrees/index.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-routes.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/project-coding-runtime.test.ts",
+        "pi-config/extensions/worktrees/README.md",
+        "agents/extensions/worktrees/overview.md"
+      ],
+      "requires": [
+        "§chat.worktrees/tool",
+        "§chat.offers/sova-landing"
+      ],
+      "agreed": {
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+      }
+    },
     "§chat.worktrees/merge-board": {
       "kind": "behavior",
       "authority": "accepted",
@@ -10094,36 +10121,6 @@
         "by": "naomarik",
         "at": "2026-10-22T03:00Z",
         "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
-      }
-    },
-    "§chat.worktrees/merge-guard": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/worktrees/landing.ts",
-        "pi-config/extensions/worktrees/landing.test.ts",
-        "pi-config/extensions/worktrees/index.ts",
-        "pi-config/extensions/worktrees/index.test.ts",
-        "server/project-overseer.ts",
-        "server/project-overseer-routes.ts",
-        "pi-config/extensions/worktrees/README.md",
-        "agents/extensions/worktrees/overview.md",
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/project-coding-runtime.test.ts",
-        "pi-config/README.md",
-        "server/merge-round-rules.test.ts",
-        ".sova/playbooks/merge-round/scripts/round.mjs"
-      ],
-      "requires": [
-        "§chat.worktrees/tool",
-        "§chat.offers/file"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-24T10:22Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
       }
     },
     "§chat.worktrees/pane": {
@@ -10204,9 +10201,9 @@
         "pi-config/extensions/subagents/index.ts"
       ],
       "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat.worktrees/workers": {
@@ -17485,9 +17482,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-24T09:23Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§chat/merge-round": {
@@ -17522,9 +17519,9 @@
         "§chat.worktrees/merge-board"
       ],
       "agreed": {
-        "by": "user",
-        "at": "2026-10-24T10:22Z",
-        "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+        "by": "omar (user)",
+        "at": "2026-10-24T17:42Z",
+        "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
       }
     },
     "§app.access/callers": {

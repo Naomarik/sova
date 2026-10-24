@@ -380,6 +380,27 @@ const FIXTURES: Record<string, Fixture> = {
   "project.services.view": { values: () => ({ pid: "no-such-project" }), status: 404 },
   "org.owner.request.done": ownerRequestFixture("done"),
   "org.owner.request.decline": ownerRequestFixture("declined"),
+  "org.owner.request.noted": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => {
+        const orgs = await import("./orgs");
+        const store = await import("./project-assistant-store");
+        const d = join(root, `org-project-${++n}`);
+        mkdirSync(d, { recursive: true });
+        const org = await orgs.createOrg({ name: `Fuzz Org ${n}`, dir: join(root, `org-${n}`) });
+        const proj = await orgs.addProject(org.id, { name: "Fuzz project", root: d });
+        const r = store.fileRequest(org.id, { projectId: proj.id, kind: "bug", title: "A fuzz request", text: "Filed by the fuzz." });
+        store.setRequestStatus(org.id, r.id, "started");
+        store.closeRequestLine(org.id, r.id, { kind: "owner", personId: "p_fuzz" });
+        v["org-id"] = org.id;
+        v["request-id"] = r.id;
+      });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await import("./project-assistant-store")).findRequest(String(v["org-id"]), String(v["request-id"]))?.closed?.noted, true),
+  },
   "overseer.attention": { values: () => ({}), status: 200 },
   "overseer.todo.list": { values: () => ({}), status: 200 },
   "models.list": { values: () => ({}), status: 200 },

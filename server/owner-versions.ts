@@ -13,7 +13,7 @@ import { realGit } from "./project-services/engine";
 import { readRegistry, type InstanceRecord } from "./project-services/store";
 import { previewAddress, previewOrigin } from "./share/preview-address";
 import { awaitShareLinks } from "./share/links-events";
-import { orgRequests, setRequestStatus } from "./project-assistant-store";
+import { advanceRequest, orgRequests } from "./project-assistant-store";
 import { OWNER_REQUEST_TITLE_MAX, type OwnerRequest } from "../shared/project-assistant";
 
 /**
@@ -181,7 +181,7 @@ export function closeTryRequests(orgId: string, projectId: string, label: string
   for (const r of requests)
     if (r.projectId === projectId && r.kind === "try" && r.status === "with-team" && r.title === title)
       try {
-        setRequestStatus(orgId, r.id, "done");
+        advanceRequest(orgId, r.id, "done");
       } catch (err) {
         console.warn(`[owner-versions] closing a version request failed: ${err instanceof Error ? err.message : String(err)}`);
       }

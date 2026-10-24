@@ -8,7 +8,7 @@ import { assistantReplyState } from "./project-assistant-ready";
 import { assistantDefault, assistantPicksAdopted, markAssistantPicksAdopted, readBatonSettings, writeAssistantDefault, writeBatonSettings } from "./baton-settings";
 import type { BatonSettings } from "../shared/baton";
 import { pricedPick } from "./project-assistant-prices";
-import { adoptDefaultPicks, effectiveAssistantModel, orgRequests, samePick, setAssistantModels, setRequestStatus } from "./project-assistant-store";
+import { adoptDefaultPicks, effectiveAssistantModel, noteClosedRequest, orgRequests, samePick, setAssistantModels, setRequestStatus } from "./project-assistant-store";
 import { assistantProjects } from "./project-assistant-tools";
 import { HasChatError, startRequestChat, withChats } from "./owner-request-chat";
 import { projectOverseerPaths, readPoSettings, sessionIdOfFile } from "./project-overseer-store";
@@ -146,8 +146,10 @@ export function registerAssistantRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      if (b.status !== "done" && b.status !== "declined") throw new OrgError('status is "done" or "declined".');
-      setRequestStatus(id, p(c, "rid"), b.status);
+      // Got It on a request the owner closed while it was being worked on (§app.project-assistant/closing).
+      if (b.noted === true && b.status === undefined) noteClosedRequest(id, p(c, "rid"));
+      else if (b.status !== "done" && b.status !== "declined") throw new OrgError('status is "done" or "declined", or { noted: true }.');
+      else setRequestStatus(id, p(c, "rid"), b.status);
       return c.json(await assistantInfo(id));
     }),
   );

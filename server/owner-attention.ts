@@ -10,7 +10,9 @@ import { convergeFeatureChats } from "./feature-chats";
  * every open owner request (`owner-request`; an outage `owner-outage`, which a phone notification also
  * tells), each opening the org's Requests tab at that request; an open `try` request is an
  * `owner-version-request`, opening the project's Branches tab; and an owner who asked for a new link
- * (`owner-link-request`), opening the People tab (its Owner card). No session: `path` "".
+ * (`owner-link-request`), opening the People tab (its Owner card); and a request the owner closed while it was
+ * being worked on (`owner-request-closed`, until the operator's Got It). A request the owner closed otherwise leaves
+ * Needs you quietly. No session: `path` "".
  */
 
 const clip = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1)}…` : t);
@@ -70,6 +72,23 @@ export function ownerAttention(): AttentionItem[] {
       }
     };
     for (const r of requests) {
+      // Closed by the owner while the team was working on it (§app.project-assistant/closing): one item, until Got It.
+      if (r.status === "closed" && r.closed && r.closed.prior === "started" && !r.closed.noted) {
+        const project = projects.find((p) => p.id === r.projectId);
+        out.push({
+          id: `owner-request-closed:${r.id}:${r.closed.at}`,
+          path: "",
+          title: r.title,
+          where: orgName,
+          tier: "act",
+          kind: "owner-request-closed",
+          since: Date.parse(r.closed.at) || 0,
+          detail: clip(`${ownerName} closed a request the team was working on, on ${project?.name ?? "a project"}: ${r.title}`, 200),
+          href: `#/orgs/${encodeURIComponent(o.id)}/requests/${encodeURIComponent(r.id)}`,
+          org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
+        });
+        continue;
+      }
       if (r.status !== "with-team") continue;
       const chat = r.kind === "feature" ? chats.find((c) => c.requestId === r.id) : undefined;
       if (chat?.ended) {

@@ -3477,6 +3477,7 @@ export type AttentionKind =
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
   | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
   | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-request-closed" // act tier, never pushed: the owner closed a request the team was working on, until the operator's Got It (§app.project-assistant/closing)
   | "owner-feature-ended"; // act tier, never pushed: a feature request chat ended because its owner stopped being the owner (its request still with the team; `href` the Requests tab)
 
 export interface AttentionItem {

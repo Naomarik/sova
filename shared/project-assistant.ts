@@ -11,12 +11,15 @@
  * WS   /ws/i?token=T&v=<tab>     server -> client AssistantServerMessage; client messages ignored
  * GET  /i/T/v/<v_…>              -> 302 to the version (an owner-bound preview link) | 404 | 410
  * POST /i/T/ask-link             -> 202 { ok, askedAt } | 409 (still works) | 410 | 404 (§app.owner-page/link)
+ * POST /api/i/T/requests/<r_…>   body { action: "close" | "reopen" } -> 202 { ok: true } | 404 | 409 { code: "closed" | "not-yours" } | 429
+ *                                (the owner closes or reopens their own request, §app.project-assistant/closing)
  * OwnerHome gains `requests`, `versions` and `assistant` (shared/owner.ts).
  *
  * Operator routes (main listener only):
  * GET  /api/orgs/:id/owner/assistant              -> AssistantInfo
  * PUT  /api/orgs/:id/owner/assistant              body { models: WorkModels } -> AssistantInfo (a kind's null: follow the default)
- * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } -> AssistantInfo
+ * POST /api/orgs/:id/owner/requests/:rid          body { status: "done" | "declined" } | { noted: true } -> AssistantInfo
+ *      ({ noted: true }: Got It on a request the owner closed while it was being worked on)
  * POST /api/orgs/:id/owner/assistant/open         -> { sessionId, path } (Open Assistant Chat; makes it when none)
  * POST /api/orgs/:id/owner/requests/:rid/chat     -> { sessionId, path } (Start Chat, §app.project-assistant/request-chat)
  *      | 404 unknown | 409 { code: "closed" } | 409 { code: "has-chat", sessionId, path } | 409 { code: "not-started" } (its note not written; nothing linked)
@@ -36,11 +39,21 @@ export interface ProjectAssistantMarkerData {
 
 export type OwnerRequestKind = "bug" | "outage" | "question" | "feature" | "fix" | "deploy" | "try";
 export const OWNER_REQUEST_KINDS: readonly OwnerRequestKind[] = ["bug", "outage", "question", "feature", "fix", "deploy", "try"];
-export type OwnerRequestStatus = "with-team" | "started" | "done" | "declined";
+export type OwnerRequestStatus = "with-team" | "started" | "done" | "declined" | "closed";
+
+/** Closed: done or declined by the team, or closed by the owner (§app.project-assistant/closing). The one test every
+    reader uses: a closed request takes no new chat, leaves the to-do lists, and nothing moves it on its own. */
+export const isRequestClosed = (status: OwnerRequestStatus): boolean => status === "done" || status === "declined" || status === "closed";
+
+/** Who closed (or reopened) a request for the owner: the owner on their page, or their assistant on their yes. */
+export interface OwnerRequestBy {
+  kind: "owner" | "assistant";
+  personId: string;
+}
 
 /** A kind and a status in the operator's words (the Requests tab, the request note). */
 export const OWNER_REQUEST_KIND_WORD: Record<OwnerRequestKind, string> = { bug: "Problem", outage: "App down", question: "Question", feature: "New feature", fix: "Fix", deploy: "Release", try: "Version to try" };
-export const OWNER_REQUEST_STATUS_WORD: Record<OwnerRequestStatus, string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined" };
+export const OWNER_REQUEST_STATUS_WORD: Record<OwnerRequestStatus, string> = { "with-team": "With the team", started: "Being worked on", done: "Done", declined: "Declined", closed: "Closed by the owner" };
 
 /** The note type of a request put in the chat Start Chat opened (§app.project-assistant/request-chat). */
 export const OWNER_REQUEST_NOTE = "sova-owner-request";
@@ -89,6 +102,11 @@ export interface OwnerRequest {
   sessionId?: string;
   /** The chat Start Chat linked, newest (its `linked` line; it changes no status). */
   linked?: { sessionId: string; at: string };
+  /** While `closed`: who closed it, when, the status it was closed from, and whether the operator pressed Got It
+      (only asked of one closed while `started`). */
+  closed?: { by: OwnerRequestBy; at: string; prior: OwnerRequestStatus; noted?: boolean };
+  /** A `try` request: the id of the version's copy it asked for (absent on one filed before). */
+  version?: string;
   /** Operator routes only: the request's chat (the linked one, else the fix's session), present
       only while it exists and isn't archived (worked out at read time). `startedAt`: when Start
       Chat linked it; absent for a fix's session. */
@@ -106,6 +124,9 @@ export interface OwnerRequestRow {
   title: string;
   status: OwnerRequestStatus;
   at: string;
+  /** A closed request (status `closed`): "you" when the owner closed it on their page, "assistant" when their
+      Project Assistant did on their yes. */
+  closedBy?: "you" | "assistant";
   /** A `feature` request's feature request chat, as it stands now (§app.project-assistant/feature-chats):
       "planning" while it is open, "agreed" once done; worked out at read time. */
   plan?: "planning" | "agreed";

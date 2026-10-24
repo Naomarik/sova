@@ -6,13 +6,24 @@ import { OWNER_REQUEST_KIND_WORD, OWNER_REQUEST_STATUS_WORD, type OwnerRequest, 
 export const KIND_WORD = OWNER_REQUEST_KIND_WORD;
 export const STATUS_WORD = OWNER_REQUEST_STATUS_WORD;
 /** The status chip's tone: with the team waits on the operator; declined is plain. */
-export const STATUS_TONE: Record<OwnerRequestStatus, "warn" | "info" | "success" | undefined> = { "with-team": "warn", started: "info", done: "success", declined: undefined };
+export const STATUS_TONE: Record<OwnerRequestStatus, "warn" | "info" | "success" | undefined> = { "with-team": "warn", started: "info", done: "success", declined: undefined, closed: undefined };
 
-export type RequestFilter = "open" | "done" | "declined" | "all";
+/** A row's status chip word: the owner's close names them ("Closed by Omar", §app.project-assistant/requests-tab). */
+export const statusWord = (r: Pick<OwnerRequest, "status">, owner: string): string => (r.status === "closed" ? `Closed by ${owner ? firstName(owner) : "the owner"}` : STATUS_WORD[r.status]);
+
+/** The line under a request the owner closed: when, and whether through their assistant. */
+export const closedLine = (r: Pick<OwnerRequest, "closed">, owner: string, ago: string): string | null =>
+  r.closed ? (r.closed.by.kind === "assistant" ? `Closed ${ago} · through the Project Assistant` : `Closed ${ago} · by ${owner ? firstName(owner) : "the owner"}`) : null;
+
+/** Got It shows on a request the owner closed while it was being worked on, until pressed (its Needs you item). */
+export const needsGotIt = (r: Pick<OwnerRequest, "status" | "closed">): boolean => r.status === "closed" && r.closed?.prior === "started" && !r.closed.noted;
+
+export type RequestFilter = "open" | "done" | "declined" | "closed" | "all";
 export const REQUEST_FILTERS: readonly { id: RequestFilter; label: string }[] = [
   { id: "open", label: "Open" },
   { id: "done", label: "Done" },
   { id: "declined", label: "Declined" },
+  { id: "closed", label: "Closed by Owner" },
   { id: "all", label: "All" },
 ];
 
@@ -30,11 +41,12 @@ export const filterShowing = (r: Pick<OwnerRequest, "status">, asked: RequestFil
   underFilter(r, asked) ? asked : isOpenRequest(r) ? "open" : (r.status as RequestFilter);
 
 export function filterCounts(rs: readonly Pick<OwnerRequest, "status">[]): Record<RequestFilter, number> {
-  const out: Record<RequestFilter, number> = { open: 0, done: 0, declined: 0, all: rs.length };
+  const out: Record<RequestFilter, number> = { open: 0, done: 0, declined: 0, closed: 0, all: rs.length };
   for (const r of rs) {
     if (isOpenRequest(r)) out.open++;
     else if (r.status === "done") out.done++;
     else if (r.status === "declined") out.declined++;
+    else if (r.status === "closed") out.closed++;
   }
   return out;
 }
@@ -75,6 +87,8 @@ export function emptyLine(rs: readonly Pick<OwnerRequest, "status">[], f: Reques
       return `${plural(c.open, "open request")}. None marked done yet.`;
     case "declined":
       return `${plural(c.open, "open request")}. None declined.`;
+    case "closed":
+      return `${plural(c.open, "open request")}. ${who} hasn't closed any.`;
     case "all":
       return `Nothing from ${who} yet. What they ask for through their Project Assistant lands here.`;
   }

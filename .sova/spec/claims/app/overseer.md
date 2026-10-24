@@ -1221,9 +1221,14 @@ feed's last list while nothing has changed since it was built, and builds a list
   sign-in code for {origin} on the tour card."), dated by when it began waiting. It comes from the server's
   memory of waiting recordings, so it ends when the recording stops waiting, and with a restart, which
   interrupts it. Never a phone notification.
+- **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
+  shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
+  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
+  answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
+  notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  turns, subagent errors, proposed playbook runs, open option cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
   that seems stalled and a branch ready to merge are decide items: a line in the digest and a
   quiet mark on the session's row, never a brief.
 - **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a

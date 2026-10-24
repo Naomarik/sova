@@ -361,6 +361,18 @@ never asked. The session's newest reply with that line gives the why, shown on t
 Landing card (§chat.offers/sova-landing). Once the drafts are promoted and committed the new head
 is Ready to land by the same rule.
 
+**What still blocks the card.** When the session's latest turn outcome says its work is finished
+but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself
+(uncommitted files, spec drafts not promoted, conflicts with its base, a temporary commit subject,
+a failing check run), and the project's offers file has an offer shown only when Ready to land
+(`ready-to-land`, as Sova's own Landing offer), Sova tells the session once per head commit, as a
+message in its chat, what still blocks its landing card, each blocker counted ("1 uncommitted file,
+11 spec drafts to make official"): to fix them on its branch, and that the card shows only once
+nothing does. That message never mentions Land It. When spec drafts are the only thing left, the
+specs message above is sent instead. Nothing is sent while a turn runs, for an archived or
+terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever
+recorded for the session).
+
 The Session tab's chip reads **Ready to land** (or **Landing specs**) in place of Ready to merge or
 Waiting for your OK while it holds; every other reader of readiness (the row's badge, the digest,
 the offers' `branch-ready`) is unchanged.
@@ -373,13 +385,23 @@ refs/heads/<target>:.sova/offers.json`), so a branch can't switch it off for its
 
 - the `worktree merge` tool (§chat.worktrees/tool) into `main` or `master` refuses, merging
   nothing, unless the user's go-ahead for that branch at exactly its current head commit is
-  recorded: "This project lands branches on master only with your go-ahead for this exact commit:
-  press Land It on the branch's landing card." Land It (§chat.offers/sova-landing) records it in
+  recorded: "This project lands branches on master only with the user's go-ahead for this exact
+  commit. Once the branch is Ready to land, the merge captain queues it and Sova shows its landing
+  card; until then there is no card to press." Land It (§chat.offers/sova-landing) records it in
   `<state root>/landing.json`, outside every repository. A session on the Merge Captain profile
   (its newest profile entry) is exempt: it lands on the user's Land It as before.
 - the Project Overseer's Merge Branch (§app.project-overseer/coding-worktrees) into `main` or
   `master` follows the same rule: pressed on the operator's own page it is the go-ahead itself (and
   is recorded); asked any other way it is refused without one for the branch's head.
+
+**A clean master merge keeps the go-ahead.** A go-ahead recorded for a branch at commit P also
+counts at its head M when M is a clean merge of the target into P: M has exactly two parents, P
+first and a commit already on the target branch second, and M's tree is exactly the tree `git
+merge-tree --write-tree` makes of those two parents (no conflict, nothing edited by hand). It
+carries through a chain of such merges (master merged in again after it moved), up to 20. Any
+other new commit (a merge with an extra edit, a resolved conflict, three parents, or a commit of
+the branch's own) needs a new go-ahead. The `worktree merge` tool, Merge Branch and the merge
+round's driver (§chat.merge-round/driver) all apply this one rule; `landing.json` is unchanged.
 
 Merges into any other branch, typed `git` commands and projects without the key are unchanged.
 
@@ -472,7 +494,7 @@ and no HTTP call (the merge round's driver, §chat.merge-round/driver); the sche
   common git directory, read from the worktree's `.git` entry without running git; null when
   unreadable), readiness `state` and `reason`, its `landing` when it is Ready to land or Landing
   specs (§chat.worktrees/ready-to-land: `state`, the full head `commit`, the unpromoted `drafts`, the
-  session's `specsWhy`), `readAt`, and its `owner`: session id, status
+  session's `specsWhy`), `readAt`, and its `owner`: session id, title, status
   `idle` | `busy` | `archived`, profile id (null for Default) and last activity. Rows are sorted by
   path.
 - **Who owns a row.** Built only from readiness's own last answers, never by reading git or a

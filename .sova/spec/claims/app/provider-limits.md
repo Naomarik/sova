@@ -74,7 +74,12 @@ and every process on the device reads and writes them the same way.
   turn: the request gives its slot back, waits a cooldown (the reply's `Retry-After` when the
   provider sends one, else 10 s) and queues again, at most 5 times. After the fifth, the error
   reaches pi as it would have, and pi's own retry runs as before. A 429 that says the quota or
-  balance is exhausted is not retried here.
+  balance is exhausted is not retried here, nor one that says a usage limit was reached (a monthly
+  or weekly one included, such as Ollama's "you have reached your monthly usage limit") or that
+  credits or billing ran out: the one out-of-usage classifier the standing team roles use decides
+  it (§teams.defaults/runtime-fallback). A quota or limit over a short window (per minute, second
+  or hour, RPM, TPM, "requests per", "tokens per", such as "429 RESOURCE_EXHAUSTED: Quota exceeded
+  for metric x, limit: 15 per minute") is a rate limit and is re-queued like one.
 - A 429 also **lowers** that provider's limit for 5 minutes, to one below the limit the rejected
   request was sent under, never below 1. The lowering is shared by every process on the device
   (`<agent dir>/provider-limits/<provider>/lowered.json`, `{v, limit, until}`). Another 429 on a

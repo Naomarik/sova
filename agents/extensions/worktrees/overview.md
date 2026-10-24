@@ -35,7 +35,9 @@ and each merge becomes a card.
   target branch's `.sova/offers.json` (§chat.worktrees/merge-guard). Sova writes the store (a Land It
   click, `server/session-offers.ts`; the operator's Merge Branch, `server/project-overseer.ts`) and the
   merge round's driver reads it; `worktree merge` refuses a guarded merge without a record, the merge
-  captain's session excepted.
+  captain's session excepted. `goAheadFor` (async) also carries a go-ahead over clean master merges
+  (`cleanMergeParent`); the round's driver keeps a copy, held equal by
+  `server/merge-round-rules.test.ts`: change both together.
 
 `create <name>` runs `git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>`
 (AGENTS.md's worktree rule) and tracks it, so workers may start there. The dev watcher doesn't watch this directory: an edit reaches a running server only at

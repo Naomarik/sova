@@ -1196,3 +1196,65 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     r.resetReadiness();
   }
 });
+
+test("a finished branch that can't be queued to land: Sova names what blocks its card once per commit, never mentioning Land It, and only where the project offers the card", async () => {
+  const { fileLandingStore, landingBlockers, blockedNoteText } = await import("./ready-to-land");
+  const live = { running: false, openQuestions: 0 };
+  const t = { readable: true, merged: false, ahead: 1, head: "f".repeat(40), base: "master" };
+  assert.equal(landingBlockers({ ...t, ahead: 0 }, live, undefined), undefined, "nothing to land");
+  assert.equal(landingBlockers(t, { ...live, running: true }, ["x"]), undefined, "a turn runs");
+  assert.equal(landingBlockers(t, { ...live, openQuestions: 1 }, ["x"]), undefined, "it asks the user");
+  assert.deepEqual(landingBlockers(t, live, undefined), []);
+  const drafts = Array.from({ length: 11 }, (_, i) => `d${i}`);
+  const words = landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live, drafts)!.map((b) => b.text);
+  assert.deepEqual(words, ["1 uncommitted folder", "11 spec drafts to make official"]);
+  assert.deepEqual(landingBlockers({ ...t, dirty: true, dirtyCount: 2, dirtyFiles: ["a.ts", "b.ts"], conflicts: 3, tempCommit: "WIP x" }, { ...live, lastCheck: { at: 1, ok: false } }, undefined)!.map((b) => b.text), [
+    "2 uncommitted files",
+    "conflicts with master in 3 files",
+    'a temporary commit ("WIP x")',
+    "a failing check run",
+  ]);
+  const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live, drafts)!);
+  assert.match(note, /^Sova: feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder, 11 spec drafts to make official\. /);
+  assert.doesNotMatch(note, /Land It/i);
+
+  // End to end, through the published reading.
+  const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const sent: string[] = [];
+  let offered = false;
+  let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"], head: "1".repeat(40) };
+  let now = 2_000_000;
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => now, processStart: 0, landing: fileLandingStore(() => join(agentDir, "rtl-blocked.json")), drafts: () => drafts, finished: () => "yes", nudge: async (_p, text) => void sent.push(text), landingOffered: async () => offered });
+  const settle = async () => {
+    await r.readinessIdle();
+    for (let i = 0; i < 20; i++) await new Promise((done) => setTimeout(done, 1));
+  };
+  try {
+    const row = summary(path);
+    r.readinessOverlay(row);
+    await settle();
+    const reading = r.readinessReading(path);
+    assert.ok(reading.known);
+    assert.equal(reading.value?.trees[0]?.landing, undefined, "not Ready to land");
+    assert.deepEqual(sent, [], "a project without a landing card hears nothing");
+    offered = true;
+    now += r.READINESS_TTL_MS + 1;
+    r.readinessOverlay(row);
+    await settle();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at 1111111, but it can't be queued to land yet: 1 uncommitted folder, 11 spec drafts to make official\./);
+    assert.doesNotMatch(sent[0]!, /Land It/i);
+    now += r.READINESS_TTL_MS + 1;
+    r.readinessOverlay(row);
+    await settle();
+    assert.equal(sent.length, 1, "once per commit");
+    status = { ...status, head: "2".repeat(40), ahead: 2 };
+    now += r.READINESS_TTL_MS + 1;
+    r.readinessOverlay(row);
+    await settle();
+    assert.equal(sent.length, 2, "a new head is a new moment");
+  } finally {
+    r.resetReadiness();
+  }
+});

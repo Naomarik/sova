@@ -1164,7 +1164,7 @@ async function landingGuard(projectId: string, sessionId: unknown, byPage: boole
   const head = r.code === 0 ? r.stdout.trim() : "";
   if (!head) return;
   if (byPage) return recordGoAhead({ branch, commit: head, session: sessionId, at: new Date().toISOString(), by: "page" }, landingFileOf());
-  if (!goAheadFor(branch, head, landingFileOf())) throw new OrgError(LANDING_REFUSAL, 409);
+  if (!(await goAheadFor(branch, head, landingFileOf(), { git: runGit, cwd: root, target }))) throw new OrgError(LANDING_REFUSAL, 409);
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */

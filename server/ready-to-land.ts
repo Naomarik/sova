@@ -21,6 +21,10 @@ export interface LandingTree {
   merged?: boolean;
   dirty?: boolean;
   dirtyCount?: number;
+  /** The uncommitted entries git lists (a folder ends in "/"), when known. */
+  dirtyFiles?: string[];
+  /** The branch it merges into. */
+  base?: string;
   ahead?: number;
   conflicts?: number;
   tempCommit?: string;
@@ -49,6 +53,49 @@ export function landingLive(t: LandingTree, s: LandingSession): boolean {
   if (t.conflicts || t.tempCommit) return false;
   if (s.lastCheck && !s.lastCheck.ok) return false;
   return s.openQuestions === 0 && !s.running;
+}
+
+/** One thing that keeps a finished branch from Ready to land, as Sova's note counts it, and what fixes it. */
+export interface LandingBlocker {
+  kind: "uncommitted" | "drafts" | "conflicts" | "temp" | "check";
+  /** "1 uncommitted folder", "11 spec drafts to make official". */
+  text: string;
+  /** What the session does about it. */
+  fix: string;
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * What still blocks a finished branch's landing card (§chat.worktrees/ready-to-land), each counted, for the
+ * things the session can fix itself: uncommitted files, unpromoted spec drafts, conflicts with its base, a
+ * temporary commit, a failing check. undefined when the rule doesn't ask (nothing to land, merged, a turn
+ * running, an open question: none of those is the session's to fix now). Pure.
+ */
+export function landingBlockers(t: LandingTree, s: LandingSession, drafts: readonly string[] | undefined): LandingBlocker[] | undefined {
+  if (!t.readable || t.merged || !t.head || !t.ahead || t.ahead < 1) return undefined;
+  if (s.running || s.openQuestions > 0) return undefined;
+  const out: LandingBlocker[] = [];
+  const dirty = t.dirtyCount ?? (t.dirty ? 1 : 0);
+  if (dirty > 0) {
+    const files = t.dirtyFiles?.length === dirty ? t.dirtyFiles : undefined;
+    const folders = files?.filter((f) => f.endsWith("/")).length ?? 0;
+    const what = files && folders === dirty ? plural(dirty, "uncommitted folder") : files && folders === 0 ? plural(dirty, "uncommitted file") : `${dirty} uncommitted ${dirty === 1 ? "file or folder" : "files and folders"}`;
+    out.push({ kind: "uncommitted", text: what, fix: "commit or remove what is uncommitted" });
+  }
+  if (drafts?.length) out.push({ kind: "drafts", text: `${plural(drafts.length, "spec draft")} to make official`, fix: "promote the spec drafts on this branch and commit them (the user's go-ahead to land covers it: don't ask them)" });
+  if (t.conflicts) out.push({ kind: "conflicts", text: `conflicts with ${t.base ?? "its base"} in ${plural(t.conflicts, "file")}`, fix: `merge ${t.base ?? "its base"} in and resolve them` });
+  if (t.tempCommit) out.push({ kind: "temp", text: `a temporary commit ("${t.tempCommit.slice(0, 60)}")`, fix: "reword or squash the temporary commit" });
+  if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: "a failing check run", fix: "fix what the check reports and run it again" });
+  return out;
+}
+
+/** The message Sova sends a finished session whose branch can't be offered for landing yet (§chat.worktrees/ready-to-land).
+    It names what blocks the card and never mentions Land It: there is no card to press. */
+export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
+  const list = blockers.map((b) => b.text).join(", ");
+  const fixes = blockers.map((b) => b.fix).join("; ");
+  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Its landing card shows only once nothing blocks it.`;
 }
 
 /** The line a session answers with when it can't land its specs. */
@@ -97,6 +144,8 @@ export interface HeldLanding {
 interface StoreFile {
   v: 1;
   trees: Record<string, HeldLanding>;
+  /** Per session and tree, the head commit Sova last told the session what blocks its landing card at. */
+  told?: Record<string, string>;
 }
 
 export const readyToLandFile = () => join(stateRoot(), "ready-to-land.json");
@@ -112,7 +161,10 @@ function load(file: string): StoreFile {
       if (typeof v?.branch !== "string" || typeof v.commit !== "string" || !SHA.test(v.commit) || typeof v.at !== "number") continue;
       trees[k] = { branch: v.branch, commit: v.commit, at: v.at, ...(v.nudged === true ? { nudged: true as const } : {}) };
     }
-    return { v: 1, trees };
+    const told: Record<string, string> = {};
+    const rawTold = (raw as { told?: unknown }).told;
+    if (rawTold && typeof rawTold === "object") for (const [k, v] of Object.entries(rawTold as Record<string, unknown>)) if (typeof v === "string" && SHA.test(v)) told[k] = v;
+    return { v: 1, trees, ...(Object.keys(told).length ? { told } : {}) };
   } catch {
     return { v: 1, trees: {} };
   }
@@ -138,6 +190,8 @@ export interface LandingStore {
   drop(sessionId: string, path: string): void;
   /** Mark that Sova told the session to land its specs for this commit; false when it already had. */
   nudge(sessionId: string, path: string, commit: string): boolean;
+  /** Mark that Sova told the session what blocks its landing card at this commit; false when it already had. */
+  tell(sessionId: string, path: string, commit: string): boolean;
 }
 
 /** The file store (tests pass their own file). */
@@ -163,6 +217,16 @@ export function fileLandingStore(file: () => string = readyToLandFile): LandingS
       const rec = d.trees[keyOf(sid, path)];
       if (!rec || rec.commit !== commit || rec.nudged) return false;
       rec.nudged = true;
+      save(file(), d);
+      return true;
+    },
+    tell(sid, path, commit) {
+      const d = load(file());
+      const k = keyOf(sid, path);
+      if (d.told?.[k] === commit) return false;
+      // Kept for the newest 500 trees: a told commit only ever stops a repeat.
+      const told = Object.entries({ ...(d.told ?? {}), [k]: commit }).slice(-500);
+      d.told = Object.fromEntries(told);
       save(file(), d);
       return true;
     },

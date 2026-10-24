@@ -138,7 +138,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		if (profileIdOf(ctx.sessionManager.getBranch()) === CAPTAIN_PROFILE) return;
 		const head = await git(["rev-parse", "--verify", "-q", `refs/heads/${t.branch}^{commit}`], t.path);
 		const sha = head.code === 0 ? head.stdout.trim() : "";
-		if (!sha || !goAheadFor(t.branch, sha, goAheadsFile())) throw new Error(LANDING_REFUSAL);
+		if (!sha || !(await goAheadFor(t.branch, sha, goAheadsFile(), { git, cwd: t.path, target }))) throw new Error(LANDING_REFUSAL);
 	}
 
 	/** The spec report of a merge; best-effort, so a failure never fails the merge. */

@@ -38,7 +38,7 @@ const writeBoard = (rows, { pending = 0, at = Date.now() } = {}) => {
   const iso = new Date(at).toISOString();
   writeFileSync(boardFile, JSON.stringify({
     v: 1, at: iso, read: 10, pending,
-    rows: rows.map(([branch, state, owner, status, path = wt(branch), landing]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, ...(landing ? { landing } : {}), readAt: iso, owner: { id: owner, status, profile: null, lastActiveAt: iso } })),
+    rows: rows.map(([branch, state, owner, status, path = wt(branch), landing]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, ...(landing ? { landing } : {}), readAt: iso, owner: { id: owner, title: `Chat of ${owner}`, status, profile: null, lastActiveAt: iso } })),
   }));
 };
 const outputs = [];
@@ -935,7 +935,7 @@ test("start confirms a restart from /api/health, and report gives the skeleton",
   const rep = await run(["report"]);
   assert.equal(rep.code, 0, rep.out);
   assert.match(rep.out, /^- Merged: /m);
-  assert.match(rep.out, /^- For you, once \(no live owner\): /m);
+  assert.match(rep.out, /^- For you, once \(no live owner, so no Landing card\): /m);
 });
 
 test("report: a branch with no live owner reaches the user once; a quiet round is one line", async () => {
@@ -943,7 +943,7 @@ test("report: a branch with no live owner reaches the user once; a quiet round i
   assert.equal((await run(["start"])).code, 0);
   assert.equal((await run(["status"])).code, 0);
   const first = await run(["report"]);
-  assert.match(first.out, /^- For you, once \(no live owner\): .*feat\/dirty \(owner archived, your call\).*feat\/slow \(no session tracks this worktree, your call\)/m);
+  assert.match(first.out, /^- For you, once \(no live owner, so no Landing card\): .*feat\/dirty \(owner archived: say "land feat\/dirty" here to land it\).*feat\/slow \(no session tracks this worktree: say "land feat\/slow" here to land it\)/m);
   assert.equal((await run(["status"])).code, 0);
   const again = await run(["report"]);
   assert.equal(again.out.split("\n")[0], "Nothing new on the merge board.", again.out);
@@ -1387,7 +1387,7 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
     const q = await run(["ask", "feat/landq"]);
     assert.equal(q.code, 0, q.out);
-    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows ${OWNER} the Landing card\\.$`, "m"));
+    assert.match(q.out, new RegExp(`^Queued feat/landq at ${head.slice(0, 7)}: Sova shows the Landing card in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)\\.$`, "m"));
     assert.match(q.out, /don't poll/);
     const entries = JSON.parse(readFileSync(queueFile, "utf8")).entries;
     assert.deepEqual(entries.map((e) => [e.branch, e.head, e.owner, e.captain, e.path === wt("feat/landq")]), [["feat/landq", head, OWNER, ME, true]]);
@@ -1397,6 +1397,10 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), card: "of_1" } } }));
     const shown = await run(["status", "--json"]);
     assert.equal(JSON.parse(shown.out).branches.find((b) => b.branch === "feat/landq").group, "waiting");
+    // The owner's chat by its title and a link, never "its card is shown" alone; the report lists it too.
+    assert.match(await line(), new RegExp(`Landing card shown in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)`));
+    const rep = await run(["report"]);
+    assert.match(rep.out, new RegExp(`^- Waiting for your Land It: feat/landq at ${head.slice(0, 7)} in "Chat of ${OWNER}" \\(#/sid/${OWNER}\\)$`, "m"));
     writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/landq", commit: head, at: "x" }] }));
     assert.match(await line(), /the user said Not Yet at [0-9a-f]{7}: it waits for a new commit/);
     assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "not-ready");
@@ -1404,6 +1408,22 @@ test("Ready to land: ask queues the branch for Sova's Landing card; status reads
     assert.match(await line(), /the user's go-ahead \(Land It\) at [0-9a-f]{7}/);
     const go = await run(["status", "--json"]);
     assert.equal(JSON.parse(go.out).branches.find((b) => b.branch === "feat/landq").group, "check", "Land It counts as READY");
+    // The press survives a clean merge of master into the branch (the check's own), and nothing else.
+    const masterBefore = git(main, "rev-parse", "master");
+    writeFileSync(join(main, "landq-master.txt"), "master moved\n");
+    git(main, "add", "landq-master.txt");
+    git(main, "commit", "-q", "-m", "master moves");
+    git(wt("feat/landq"), "merge", "--no-edit", "-q", "master");
+    const merged = git(main, "rev-parse", "feat/landq");
+    writeBoard([["feat/landq", "waiting-approval", OWNER, "idle", undefined, landed("feat/landq")]]);
+    assert.equal(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "check", "carried over the clean merge");
+    assert.match(await line(), new RegExp(`the user's go-ahead \\(Land It\\) at ${head.slice(0, 7)}, carried to ${merged.slice(0, 7)} over clean master merges`));
+    writeFileSync(join(wt("feat/landq"), "landq.txt"), "edited after the press\n");
+    git(wt("feat/landq"), "commit", "-q", "-am", "more work");
+    assert.notEqual(JSON.parse((await run(["status", "--json"])).out).branches.find((b) => b.branch === "feat/landq").group, "check", "a commit of its own needs a new press");
+    git(wt("feat/landq"), "reset", "-q", "--hard", head);
+    git(main, "update-ref", "refs/heads/master", masterBefore);
+    git(main, "reset", "-q", "--hard", masterBefore);
     // Sova refused to show it: the next ask falls back to the typed READY ask, on the round's topic.
     writeFileSync(landingFile, JSON.stringify({ v: 1, goAheads: [], notYet: [] }));
     writeFileSync(shownFile, JSON.stringify({ v: 1, results: { [entries[0].id]: { at: Date.now(), refused: "an open offer" } } }));

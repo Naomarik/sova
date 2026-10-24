@@ -33,7 +33,7 @@ export const CAPTAIN_PROFILE = "merge-captain";
 export const PROFILE_ENTRY = "sova-profile";
 
 export const LANDING_REFUSAL =
-	"This project lands branches on master only with your go-ahead for this exact commit: press Land It on the branch's landing card.";
+	"This project lands branches on master only with the user's go-ahead for this exact commit. Once the branch is Ready to land, the merge captain queues it and Sova shows its landing card; until then there is no card to press.";
 
 export type GoAheadBy = "land-it" | "page";
 
@@ -132,9 +132,54 @@ export function recordNotYet(rec: NotYet, file: string = landingFile()): void {
 	writeLanding(file, d);
 }
 
-/** The go-ahead recorded for this branch at exactly this commit, if any. */
-export function goAheadFor(branch: string, commit: string, file: string = landingFile()): GoAhead | undefined {
-	return readLanding(file).goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
+/** How many clean master merges a go-ahead carries through (§chat.worktrees/merge-guard). */
+export const CARRY_MAX = 20;
+
+/** What a go-ahead may carry over: the repository (any checkout of it) and the target branch. */
+export interface Carry {
+	git: Git;
+	cwd: string;
+	/** The branch merged in, `master` or `main`. */
+	target: string;
+}
+
+/**
+ * The commit `merge` was made from when it is a clean merge of `target` into it (§chat.worktrees/merge-guard):
+ * exactly two parents, the first that commit and the second already on `target`, and its tree exactly
+ * the one `git merge-tree --write-tree` makes of those two parents (no conflict, nothing edited by hand).
+ * undefined for any other commit, or when git can't tell.
+ */
+export async function cleanMergeParent(git: Git, cwd: string, merge: string, target: string): Promise<string | undefined> {
+	const line = await git(["rev-list", "--parents", "-n", "1", merge], cwd);
+	const ids = line.code === 0 ? line.stdout.trim().split(/\s+/) : [];
+	if (ids.length !== 3) return undefined;
+	const [, first, second] = ids as [string, string, string];
+	const onTarget = await git(["merge-base", "--is-ancestor", second, `refs/heads/${target}`], cwd);
+	if (onTarget.code !== 0) return undefined;
+	const [tree, made] = await Promise.all([git(["rev-parse", "--verify", "-q", `${merge}^{tree}`], cwd), git(["merge-tree", "--write-tree", "--no-messages", first, second], cwd)]);
+	if (tree.code !== 0 || made.code !== 0) return undefined;
+	const want = tree.stdout.trim();
+	return want && made.stdout.split("\n")[0]?.trim() === want ? first : undefined;
+}
+
+/**
+ * The go-ahead for this branch at this commit, if any (§chat.worktrees/merge-guard). With `carry`, one
+ * recorded at an earlier commit counts too when every commit since is a clean merge of the target
+ * (cleanMergeParent), up to CARRY_MAX of them: the merge round's own master merge never costs the user's
+ * press. The worktree tool, Merge Branch and (through its copy) the merge round all ask this.
+ */
+export async function goAheadFor(branch: string, commit: string, file: string = landingFile(), carry?: Carry): Promise<GoAhead | undefined> {
+	const all = readLanding(file).goAheads.filter((g) => g.branch === branch);
+	const at = (sha: string) => all.filter((g) => g.commit === sha).at(-1);
+	let sha = commit;
+	for (let i = 0; ; i++) {
+		const hit = at(sha);
+		if (hit) return hit;
+		if (!carry || i >= CARRY_MAX || !all.length) return undefined;
+		const parent = await cleanMergeParent(carry.git, carry.cwd, sha, carry.target).catch(() => undefined);
+		if (!parent) return undefined;
+		sha = parent;
+	}
 }
 
 /** Whether the project's offers file, as the target branch holds it, turns the guard on. Pure. */

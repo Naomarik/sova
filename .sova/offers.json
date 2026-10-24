@@ -5,7 +5,7 @@
     "landing": {
       "when": "The Merge Captain queued this branch to land: its work is finished and committed, and it waits for your go-ahead on its current commit.",
       "why": "Saves writing the go-ahead to the captain by hand.",
-      "title": "Land {branch}?",
+      "title": "Land {branch} at {commit}?",
       "shownBy": "another-chat",
       "onlyIf": ["no-open-alignment", "ready-to-land"],
       "repeat": "once-per-commit",

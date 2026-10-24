@@ -772,8 +772,8 @@
       "authority": "accepted",
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       },
       "evidence": "verified"
     },
@@ -13373,8 +13373,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-22T22:00Z",
-        "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       }
     },
     "§app.claude-logins/idle-pin": {
@@ -16943,8 +16943,8 @@
       ],
       "agreed": {
         "by": "naomarik",
-        "at": "2026-10-23T14:32Z",
-        "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+        "at": "2026-10-24T06:48Z",
+        "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
       }
     },
     "§chat.playbooks/bundles": {
